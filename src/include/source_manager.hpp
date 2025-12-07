@@ -1,0 +1,4 @@
+#ifndef SOURCE_MANAGER_HPP
+#define SOURCE_MANAGER_HPP
+
+#endif // SOURCE_MANAGER_HPP
