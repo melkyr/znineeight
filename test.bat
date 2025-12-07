@@ -1,0 +1,3 @@
+@echo off
+echo Running tests...
+zig0.exe
