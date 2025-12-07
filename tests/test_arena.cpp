@@ -38,11 +38,34 @@ void test_reset() {
 
 void test_aligned_allocation() {
     ArenaAllocator arena(1024);
-    arena.alloc(3); // Misalign the offset
-    void* p = arena.alloc_aligned(16, 16);
-    assert(p != nullptr);
-    assert((reinterpret_cast<size_t>(p) & 15) == 0); // Check if aligned to 16 bytes
-    printf("test_aligned_allocation: PASS\n");
+    arena.alloc(3); // Misalign the offset to 3
+
+    // Test 1: Basic alignment
+    void* p1 = arena.alloc_aligned(16, 16);
+    assert(p1 != nullptr);
+    assert((reinterpret_cast<size_t>(p1) & 15) == 0);
+    printf("test_aligned_allocation (basic): PASS\n");
+
+    // Test 2: Different alignment
+    void* p2 = arena.alloc_aligned(8, 8);
+    assert(p2 != nullptr);
+    assert((reinterpret_cast<size_t>(p2) & 7) == 0);
+    printf("test_aligned_allocation (align 8): PASS\n");
+
+    // Test 3: Allocation when offset is already aligned
+    arena.reset();
+    assert(arena.alloc(16) != nullptr); // Offset is now 16
+    void* p3 = arena.alloc_aligned(16, 16);
+    assert(p3 != nullptr);
+    assert((reinterpret_cast<size_t>(p3) & 15) == 0);
+    printf("test_aligned_allocation (already aligned): PASS\n");
+
+    // Test 4: Edge case, allocation fails due to insufficient space
+    arena.reset();
+    arena.alloc(1024 - 15); // Leave 15 bytes, not enough for 16-byte alignment
+    void* p4 = arena.alloc_aligned(16, 16);
+    assert(p4 == nullptr);
+    printf("test_aligned_allocation (insufficient space): PASS\n");
 }
 
 int main() {
