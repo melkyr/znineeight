@@ -60,10 +60,12 @@ public:
         // Precondition: alignment must be a power of two.
         assert(align != 0 && (align & (align - 1)) == 0);
 
+        // This is a common bit-twiddling trick to align a pointer.
+        // It rounds the allocation start offset up to the nearest multiple of `align`.
         size_t new_offset = (offset + align - 1) & ~(align - 1);
 
         // Overflow-safe check: ensure the requested size fits in the remaining capacity.
-        if (size > capacity - new_offset) {
+        if (new_offset >= capacity || size > capacity - new_offset) {
             return nullptr;
         }
 
