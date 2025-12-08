@@ -43,3 +43,5 @@
 # Test executables
 test_arena
 test_arena.exe
+test_string_interner
+test_string_interner.exe

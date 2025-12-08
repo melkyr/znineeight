@@ -9,7 +9,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 2.  **Task 2:** Create the `common.hpp` compatibility header for MSVC 6.0 specifics (`i64`, `bool`).
 3.  **Task 3:** Implement the `ArenaAllocator` class in `memory.hpp` for bump allocation.
 4.  **Task 4:** Add alignment support to `ArenaAllocator::alloc_aligned`.
-5.  **Task 5:** Implement the `StringInterner` class using a hash table.
+5.  **Task 5:** Implement the `StringInterner` class using a hash table. (DONE)
 6.  **Task 6:** Implement the `SourceManager` to track file content and locations.
 7.  **Task 7:** Define the `ErrorReport` struct and `ErrorCode` enum in `error_handler.hpp`.
 8.  **Task 8:** Implement a basic diagnostic printing function for errors.
