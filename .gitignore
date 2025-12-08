@@ -45,3 +45,7 @@ test_arena
 test_arena.exe
 test_string_interner
 test_string_interner.exe
+test_memory
+test_memory.exe
+test_source_manager
+test_source_manager.exe

@@ -89,3 +89,75 @@ private:
 };
 
 #endif // MEMORY_HPP
+
+/**
+ * @class DynamicArray
+ * @brief A simple dynamic array that uses an ArenaAllocator for memory.
+ *
+ * This class provides a basic, resizable array implementation. When the array's
+ * capacity is exhausted, it reallocates a larger block of memory from the arena
+ * and copies the existing elements. The old memory block is not freed, as the
+ * arena will handle that in its lifecycle.
+ */
+template <typename T>
+class DynamicArray {
+    ArenaAllocator& allocator;
+    T* data;
+    size_t len;
+    size_t cap;
+
+public:
+    /**
+     * @brief Constructs a DynamicArray.
+     * @param allocator The ArenaAllocator to use for all memory allocations.
+     */
+    DynamicArray(ArenaAllocator& allocator)
+        : allocator(allocator), data(nullptr), len(0), cap(0) {}
+
+    /**
+     * @brief Appends an item to the end of the array.
+     * @param item The item to append.
+     */
+    void append(const T& item) {
+        if (len == cap) {
+            size_t new_cap = (cap == 0) ? 8 : cap * 2;
+            T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
+
+            // If the allocation fails, we can't proceed. This is considered a
+            // fatal error for this compiler, as the arena is expected to be
+            // large enough for the compilation unit.
+            assert(new_data);
+
+            // Copy existing data to the new buffer.
+            for (size_t i = 0; i < len; ++i) {
+                new_data[i] = data[i];
+            }
+            data = new_data;
+            cap = new_cap;
+        }
+        data[len++] = item;
+    }
+
+    /**
+     * @brief Returns the number of elements in the array.
+     */
+    size_t length() const {
+        return len;
+    }
+
+    /**
+     * @brief Provides access to an element by its index.
+     */
+    T& operator[](size_t index) {
+        assert(index < len);
+        return data[index];
+    }
+
+    /**
+     * @brief Provides const access to an element by its index.
+     */
+    const T& operator[](size_t index) const {
+        assert(index < len);
+        return data[index];
+    }
+};
