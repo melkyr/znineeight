@@ -10,23 +10,143 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 3.  **Task 3:** Implement the `ArenaAllocator` class in `memory.hpp` for bump allocation.
 4.  **Task 4:** Add alignment support to `ArenaAllocator::alloc_aligned`.
 5.  **Task 5:** Implement the `StringInterner` class using a hash table. (DONE)
-6.  **Task 6:** Implement the `SourceManager` to track file content and locations.
-7.  **Task 7:** Define the `ErrorReport` struct and `ErrorCode` enum in `error_handler.hpp`.
+6. ### **Task 6:** Source Manager Implementation
+   Create `src/include/source_manager.hpp` with empty `SourceManager` class declaration
+   Define `SourceLocation` struct in `source_manager.hpp` with:
+   ```cpp
+   struct SourceLocation {
+       u32 file_id;
+       u32 line;
+       u32 column;
+   };
+   Define SourceFile struct in source_manager.hpp with:
+   struct SourceFile {
+    const char* filename;
+    const char* content;
+    size_t size;
+  };
+  Implement SourceManager constructor in header:
+  class SourceManager {
+    ArenaAllocator& allocator;
+    DynamicArray<SourceFile> files; // Assume DynamicArray exists from memory.hpp
+public:
+    SourceManager(ArenaAllocator& alloc) : allocator(alloc), files(alloc) {}
+  };
+  Add addFile() method declaration in SourceManager class:
+  u32 addFile(const char* filename, const char* content, size_t size);
+  Implement addFile() method in new src/bootstrap/source_manager.cpp:
+  u32 SourceManager::addFile(const char* filename, const char* content, size_t size) {
+    SourceFile file = { filename, content, size };
+    files.append(file);
+    return files.length() - 1;
+  }
+  Add getLocation() declaration:
+  SourceLocation getLocation(u32 file_id, size_t offset);
+  Implement basic getLocation() ignoring line breaks (return {file_id, 1, 1})
+  Write test in tests/test_source_manager.cpp verifying file registration
+  Implement line/column calculation in getLocation() (count \n before offset)
+  Extend test to verify line/column calculations for sample text
+7.  **Task 7:** Define the `ErrorReport` struct and `ErrorCode` enum in `error_handler.hpp`:
+    Create src/include/error_handler.hpp with ErrorCode enum:
+    enum ErrorCode {
+    ERR_NONE = 0,
+    ERR_OUT_OF_MEMORY = 5000
+    };
+    Add ErrorReport struct to error_handler.hpp:
+    struct ErrorReport {
+    ErrorCode code;
+    SourceLocation location;
+    const char* message;
+    };
+
+    
 8.  **Task 8:** Implement a basic diagnostic printing function for errors.
+      Implement printErrorReport() function declaration:
+      void printErrorReport(const ErrorReport& report);
+      Implement minimal printErrorReport() body that prints "error: [code]"
+      Extend printErrorReport() to format location as "file(line:col)"
+      Write test verifying error output format matches specification
 9.  **Task 9:** Create a minimal unit testing framework in `test_framework.h`.
+    Create src/include/test_framework.hpp with:
+    #define ASSERT_TRUE(condition) \
+    if (!(condition)) { \
+        printf("FAIL: %s at %s:%d\n", #condition, __FILE__, __LINE__); \
+        return false; \
+    }
+    Add TEST_FUNC macro:
+    #define TEST_FUNC(name) bool test_##name()
+    Implement test runner in tests/main.cpp:
+    int main() {
+    bool (*tests[])() = { test_basic_allocation, /* ... */ };
+    int passed = 0;
+    for (auto test : tests) {
+        if (test()) passed++;
+    }
+    printf("Passed %d/%d tests\n", passed, sizeof(tests)/sizeof(tests[0]));
+    return passed == sizeof(tests)/sizeof(tests[0]) ? 0 : 1;
+    }
+    Convert existing arena tests to use new framework
+    Convert string interner tests to use new framework
+
 10. **Task 10:** Create initial `build.bat` and `test.bat` scripts.
+        Modify build.bat to:
+        Compile all .cpp files in src/bootstrap/
+        Output to zig0.exe
+        Compile tests with test-specific flags
+    Create clean.bat to delete build artifacts
+    Update test.bat to:
+        Run zig0.exe --self-test (stub)
+        Run individual test executables
+        Fail on first error
 
 ### Milestone 2: Lexer Implementation
 11. **Task 11:** Define all token types (`TokenType` enum) in `lexer.hpp`.
+    Create src/include/lexer.hpp with TokenType enum containing ONLY:
+    TOKEN_EOF, TOKEN_IDENTIFIER, TOKEN_INTEGER_LITERAL
 12. **Task 12:** Implement the `Token` struct with a union for literal values.
+    Define minimal Token struct:
+    struct Token {
+    TokenType type;
+    SourceLocation location;
+    union {
+        const char* identifier;
+        i64 integer;
+    } value;
+  };
 13. **Task 13:** Implement the `Lexer` class skeleton (`lexer.cpp`).
+      class Lexer {
+      const char* current;
+      SourceManager& source;
+  public:
+      Lexer(SourceManager& src, u32 file_id) : source(src) {}
+      Token nextToken();
+  }; 
 14. **Task 14:** Implement lexing for single-character tokens (e.g., `+`, `-`, `*`, `/`, `;`).
+        Add +, -, *, /, ; to TokenType enum
+        Implement handling for these tokens in nextToken()
+        Write test verifying "a + b;" produces correct token sequence
+        Add (, ), {, }, [, ] to token types
+        Extend nextToken() to handle brackets
+        Write test for bracket tokens
 15. **Task 15:** Implement lexing for multi-character tokens (e.g., `==`, `!=`, `<=`, `>=`).
+        Add ==, !=, <=, >= to TokenType
+      Implement two-character lookahead in nextToken()
+      Write test verifying ">=" lexes as single token, not two
+      Add = (single) token type and test assignment vs equality
 16. **Task 16:** Implement identifier and keyword recognition using a lookup table.
-17. **Task 17:** Implement lexing for integer literals (`i64`).
-18. **Task 18:** Implement lexing for string literals.
-19. **Task 19:** Implement logic to skip single-line and block comments.
-20. **Task 20:** Write comprehensive unit tests for the lexer, covering all token types and edge cases.
+        Complete integer lexing for decimal numbers
+        Add string literal token type and basic handling (no escapes yet)
+        Implement identifier lexing (letter + alphanum)
+        Add keyword recognition for "fn" only (hardcoded check)
+        Write test verifying "fn test() {}" lexes correctly
+        Implement space/tab skipping in nextToken()
+        Add line comment handling (// to end of line)
+        Add block comment handling (/* to */)
+        Write test verifying comments are fully skipped
+18. **Task 17:** Implement lexing for integer literals (`i64`).
+24. **Task 18:** Implement lexing for string literals.
+25. **Task 19:** Implement logic to skip single-line and block comments.
+26. **Task 20:** Write comprehensive unit tests for the lexer, covering all token types and edge cases.
 
 ### Milestone 3: Parser & AST
 21. **Task 21:** Define the base `ASTNode` and all derived node structures (e.g., `FnDeclNode`, `VarDeclNode`, `IfStmtNode`).
