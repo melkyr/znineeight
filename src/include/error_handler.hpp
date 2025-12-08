@@ -3,9 +3,6 @@
 
 #include "source_manager.hpp"
 
-// Forward declaration for the main error handling class
-class ErrorHandler;
-
 /**
  * @enum ErrorCode
  * @brief Defines numeric codes for different compiler errors.
@@ -55,6 +52,32 @@ struct ErrorReport {
 
     /// @brief An optional hint on how to resolve the error.
     const char* hint;
+};
+
+/**
+ * @class ErrorHandler
+ * @brief Manages the reporting of compilation errors.
+ *
+ * This class is responsible for formatting and displaying diagnostic
+ * messages to the user in a clear and consistent format. It uses
+ * a SourceManager to retrieve source code context for error locations.
+ */
+class ErrorHandler {
+private:
+    SourceManager& source_manager;
+
+public:
+    /**
+     * @brief Constructs an ErrorHandler.
+     * @param sm A reference to the SourceManager containing the source files.
+     */
+    ErrorHandler(SourceManager& sm) : source_manager(sm) {}
+
+    /**
+     * @brief Prints a formatted error report to standard error.
+     * @param report The ErrorReport structure to display.
+     */
+    void printErrorReport(const ErrorReport& report);
 };
 
 #endif // ERROR_HANDLER_HPP

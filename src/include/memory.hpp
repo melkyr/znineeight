@@ -88,8 +88,6 @@ private:
     ArenaAllocator& operator=(const ArenaAllocator&);
 };
 
-#endif // MEMORY_HPP
-
 /**
  * @class DynamicArray
  * @brief A simple dynamic array that uses an ArenaAllocator for memory.
@@ -161,3 +159,5 @@ public:
         return data[index];
     }
 };
+
+#endif // MEMORY_HPP
