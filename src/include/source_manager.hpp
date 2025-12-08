@@ -24,6 +24,7 @@ public:
     SourceManager(ArenaAllocator& alloc) : allocator(alloc), files(alloc) {}
     u32 addFile(const char* filename, const char* content, size_t size);
     SourceLocation getLocation(u32 file_id, size_t offset);
+    const SourceFile* getFile(u32 file_id) const;
 };
 
 #endif // SOURCE_MANAGER_HPP

@@ -65,6 +65,12 @@ public:
 
 ### 3.4 Error Handling System (`error_handler.hpp`)
 ```cpp
+class ErrorHandler {
+public:
+    ErrorHandler(SourceManager& sm);
+    void printErrorReport(const ErrorReport& report);
+};
+
 enum ErrorCode {
     ERR_SYNTAX_ERROR = 1000,
     ERR_TYPE_MISMATCH = 2000,
@@ -72,6 +78,7 @@ enum ErrorCode {
     ERR_INVALID_OPERATION = 4000,
     ERR_OUT_OF_MEMORY = 5000
 };
+
 struct ErrorReport {
     ErrorCode code;
     SourceLocation location;
