@@ -113,53 +113,8 @@ public:
     Token nextToken();
 };
 ```
-* **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. It is organized into logical groups for clarity.
-```cpp
-enum TokenType {
-    // Control Tokens
-    TOKEN_EOF,
+* **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. For a complete and up-to-date list of all tokens and their implementation status, please see the `Lexer.md` document.
 
-    // Literals
-    TOKEN_IDENTIFIER,
-    TOKEN_INTEGER_LITERAL,
-    TOKEN_STRING_LITERAL,
-
-    // Keywords
-    TOKEN_FN,
-    TOKEN_VAR,
-    TOKEN_CONST,
-    TOKEN_IF,
-    TOKEN_ELSE,
-    TOKEN_WHILE,
-    TOKEN_RETURN,
-    TOKEN_DEFER,
-
-    // Operators
-    TOKEN_PLUS,
-    TOKEN_MINUS,
-    TOKEN_STAR,
-    TOKEN_SLASH,
-    TOKEN_PERCENT,
-    TOKEN_EQUAL,            // =
-    TOKEN_EQUAL_EQUAL,      // ==
-    TOKEN_BANG,             // !
-    TOKEN_BANG_EQUAL,       // !=
-    TOKEN_LESS,             // <
-    TOKEN_LESS_EQUAL,       // <=
-    TOKEN_GREATER,          // >
-    TOKEN_GREATER_EQUAL,    // >=
-
-    // Delimiters
-    TOKEN_LPAREN,           // (
-    TOKEN_RPAREN,           // )
-    TOKEN_LBRACE,           // {
-    TOKEN_RBRACE,           // }
-    TOKEN_LBRACKET,         // [
-    TOKEN_RBRACKET,         // ]
-    TOKEN_SEMICOLON,        // ;
-    TOKEN_COLON,            // :
-};
-```
 * **Value Storage:** Unions for `i64`, `double`, and `char*` (interned string)
 * **Token Precedence Table:**
 ```cpp
