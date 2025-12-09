@@ -1,8 +1,24 @@
 @echo off
-echo Compiling and running all tests...
+setlocal
 
-REM Compile all test files and necessary source files together
-cl.exe /EHsc /W4 /Isrc/include ^
+echo Running build script...
+call build.bat
+if errorlevel 1 (
+    echo Build script failed!
+    exit /b 1
+)
+
+echo.
+echo Running compiler self-test...
+zig0.exe --self-test
+if errorlevel 1 (
+    echo Compiler self-test failed!
+    exit /b 1
+)
+
+echo.
+echo Compiling test runner...
+cl.exe /nologo /EHsc /W4 /Isrc/include ^
     tests/main.cpp ^
     tests/test_arena.cpp ^
     tests/test_string_interner.cpp ^
@@ -10,20 +26,19 @@ cl.exe /EHsc /W4 /Isrc/include ^
     src/bootstrap/string_interner.cpp ^
     /Fe:test_runner.exe
 
-REM Check if compilation was successful
 if errorlevel 1 (
-    echo Compilation failed!
+    echo Test runner compilation failed!
     exit /b 1
 )
 
-REM Run the tests
+echo.
+echo Running tests...
 test_runner.exe
-
-REM Check if tests passed
 if errorlevel 1 (
     echo Tests failed!
     exit /b 1
 )
 
-echo All tests passed!
+echo.
+echo All tests passed successfully!
 exit /b 0
