@@ -17,57 +17,25 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 10. **Task 10:** Create initial `build.bat` and `test.bat` scripts. (DONE)
 
 ### Milestone 2: Lexer Implementation
+*For a detailed list of all tokens and their status, see `lexer.md`.*
+
 11. **Task 11:** Define all token types (`TokenType` enum) in `lexer.hpp`. (DONE)
-    - Created `src/include/lexer.hpp` with a comprehensive `TokenType` enum.
-    - Expanded the initial token set as per user feedback to include keywords, operators, and delimiters to better bootstrap the lexer.
-12. **Task 12:** Implement the `Token` struct with a union for literal values.
-    Define minimal Token struct:
-    struct Token {
-    TokenType type;
-    SourceLocation location;
-    union {
-        const char* identifier;
-        i64 integer;
-    } value;
-  };
-13. **Task 13:** Implement the `Lexer` class skeleton (`lexer.cpp`).
-      class Lexer {
-      const char* current;
-      SourceManager& source;
-  public:
-      Lexer(SourceManager& src, u32 file_id) : source(src) {}
-      Token nextToken();
-  }; 
-14. **Task 14:** Implement lexing for single-character tokens (e.g., `+`, `-`, `*`, `/`, `;`).
-        Add +, -, *, /, ; to TokenType enum
-        Implement handling for these tokens in nextToken()
-        Write test verifying "a + b;" produces correct token sequence
-        Add (, ), {, }, [, ] to token types
-        Extend nextToken() to handle brackets
-        Write test for bracket tokens
-    - **Sub-task:** Write a comprehensive unit test for single-character tokens.
-        - Verify correct tokenization of `+`, `-`, `*`, `/`, `;`, `(`, `)`, `{`, `}`, `[`, `]`.
-        - Verify correct line and column tracking.
-        - Verify correct handling of invalid characters (TOKEN_ERROR).
-15. **Task 15:** Implement lexing for multi-character tokens (e.g., `==`, `!=`, `<=`, `>=`).
-        Add ==, !=, <=, >= to TokenType
-      Implement two-character lookahead in nextToken()
-      Write test verifying ">=" lexes as single token, not two
-      Add = (single) token type and test assignment vs equality
-16. **Task 16:** Implement identifier and keyword recognition using a lookup table.
-        Complete integer lexing for decimal numbers
-        Add string literal token type and basic handling (no escapes yet)
-        Implement identifier lexing (letter + alphanum)
-        Add keyword recognition for "fn" only (hardcoded check)
-        Write test verifying "fn test() {}" lexes correctly
-        Implement space/tab skipping in nextToken()
-        Add line comment handling (// to end of line)
-        Add block comment handling (/* to */)
-        Write test verifying comments are fully skipped
-18. **Task 17:** Implement lexing for integer literals (`i64`).
-24. **Task 18:** Implement lexing for string literals.
-25. **Task 19:** Implement logic to skip single-line and block comments.
-26. **Task 20:** Write comprehensive unit tests for the lexer, covering all token types and edge cases.
+12. **Task 12:** Implement the `Token` struct with a union for literal values. (DONE)
+13. **Task 13:** Implement the `Lexer` class skeleton (`lexer.cpp`). (DONE)
+14. **Task 14:** Implement lexing for single-character tokens. (DONE)
+15. **Task 15:** Implement lexing for multi-character tokens. (DONE)
+16. **Task 16:** Implement lexing for identifiers.
+17. **Task 17:** Implement keyword recognition using a lookup table.
+18. **Task 18:** Implement lexing for integer literals (`i64`).
+19. **Task 19:** Implement lexing for string literals.
+20. **Task 20:** Implement lexing for character literals.
+21. **Task 21:** Implement lexing for floating-point literals.
+22. **Task 22:** Implement logic to skip single-line (`//`) and block (`/* ... */`) comments.
+23. **Task 23:** Implement lexing for bitwise operators (`~`, `&`, `|`, `^`, `<<`, `>>`).
+24. **Task 24:** Implement lexing for compound assignment operators (`+=`, `-=`, etc.).
+25. **Task 25:** Implement lexing for special and wrapping operators (`.*`, `.?`, `+%`, etc.).
+26. **Task 26:** Implement lexing for remaining delimiters and symbols (`->`, `=>`, `...`).
+27. **Task 27:** Write comprehensive unit tests for the lexer, covering all token types and edge cases.
 
 ### Milestone 3: Parser & AST
 21. **Task 21:** Define the base `ASTNode` and all derived node structures (e.g., `FnDeclNode`, `VarDeclNode`, `IfStmtNode`).

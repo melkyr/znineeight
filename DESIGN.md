@@ -113,11 +113,12 @@ public:
     Token nextToken();
 };
 ```
-* **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. It is organized into logical groups for clarity.
+* **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. For a complete and up-to-date list of tokens and their implementation status, please refer to the `lexer.md` document. The list below is a non-exhaustive overview.
 ```cpp
 enum TokenType {
     // Control Tokens
     TOKEN_EOF,
+    TOKEN_ERROR,
 
     // Literals
     TOKEN_IDENTIFIER,
