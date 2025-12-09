@@ -46,7 +46,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_IDENTIFIER`      | `my_var`     | No          | Part of Task 16.                         |
 | `TOKEN_INTEGER_LITERAL` | `123`, `0xFF`| No          | Part of Task 17.                         |
 | `TOKEN_STRING_LITERAL`  | `"hello"`    | No          | Part of Task 18.                         |
-| `TOKEN_CHAR_LITERAL`    | `'a'`        | No          | New task required.                     |
+| `TOKEN_CHAR_LITERAL`    | `'a'`        | Yes         | Implemented as part of Task 18.        |
 | `TOKEN_FLOAT_LITERAL`   | `3.14`       | No          | Mentioned in `DESIGN.md`, new task required. |
 
 ### 2.2. Operators

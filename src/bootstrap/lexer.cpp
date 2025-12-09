@@ -1,5 +1,5 @@
-#include "../include/lexer.hpp"
-#include "../include/source_manager.hpp"
+#include "lexer.hpp"
+#include "source_manager.hpp"
 
 /**
  * @brief Constructs a new Lexer instance.
@@ -33,6 +33,97 @@ bool Lexer::match(char expected) {
     this->column++;
     return true;
 }
+
+Token Lexer::lexCharLiteral() {
+    Token token;
+    token.location.file_id = this->file_id;
+    token.location.line = this->line;
+    token.location.column = this->column;
+
+    if (*this->current == '\'') {
+        this->current++; // Consume the closing '
+        this->column++;
+        token.type = TOKEN_ERROR; // Empty character literal
+        return token;
+    }
+
+    long value;
+    if (*this->current == '\\') {
+        this->current++;
+        this->column++;
+        switch (*this->current) {
+            case 'n': value = '\n'; break;
+            case 'r': value = '\r'; break;
+            case 't': value = '\t'; break;
+            case '\\': value = '\\'; break;
+            case '\'': value = '\''; break;
+            case 'x': {
+                char hex_val = 0;
+                for (int i = 0; i < 2; ++i) {
+                    this->current++;
+                    this->column++;
+                    char c = *this->current;
+                    if (c >= '0' && c <= '9') {
+                        hex_val = (hex_val * 16) + (c - '0');
+                    } else if (c >= 'a' && c <= 'f') {
+                        hex_val = (hex_val * 16) + (c - 'a' + 10);
+                    } else if (c >= 'A' && c <= 'F') {
+                        hex_val = (hex_val * 16) + (c - 'A' + 10);
+                    } else {
+                        token.type = TOKEN_ERROR; // Invalid hex escape
+                        return token;
+                    }
+                }
+                value = hex_val;
+                break;
+            }
+            case 'u': {
+                if (*(++this->current) != '{') {
+                    token.type = TOKEN_ERROR; // Invalid unicode escape
+                    return token;
+                }
+                this->current++; // Skip '{'
+                long unicode_val = 0;
+                while(*this->current != '}') {
+                    char c = *this->current;
+                     if (c >= '0' && c <= '9') {
+                        unicode_val = (unicode_val * 16) + (c - '0');
+                    } else if (c >= 'a' && c <= 'f') {
+                        unicode_val = (unicode_val * 16) + (c - 'a' + 10);
+                    } else if (c >= 'A' && c <= 'F') {
+                        unicode_val = (unicode_val * 16) + (c - 'A' + 10);
+                    } else {
+                        token.type = TOKEN_ERROR; // Invalid unicode escape
+                        return token;
+                    }
+                    this->current++;
+                }
+                value = unicode_val;
+                break;
+            }
+            default:
+                token.type = TOKEN_ERROR; // Unsupported escape sequence
+                return token;
+        }
+    } else {
+        value = *this->current;
+    }
+
+    this->current++;
+    this->column++;
+
+    if (*this->current != '\'') {
+        token.type = TOKEN_ERROR; // Unterminated or multi-character literal
+        return token;
+    }
+    this->current++; // Consume the closing '
+    this->column++;
+
+    token.type = TOKEN_CHAR_LITERAL;
+    token.value.integer = value;
+    return token;
+}
+
 
 /**
  * @brief Scans and returns the next token from the source code.
@@ -130,6 +221,9 @@ Token Lexer::nextToken() {
         case '!': token.type = match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG; break;
         case '<': token.type = match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS; break;
         case '>': token.type = match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER; break;
+        case '\'':
+            token = lexCharLiteral();
+            break;
         default: token.type = TOKEN_ERROR; break;
     }
 

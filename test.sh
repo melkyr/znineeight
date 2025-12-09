@@ -10,6 +10,8 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \
+    tests/test_char_literal.cpp \
+    -Isrc/include \
     -o test_runner
 
 if [ $? -ne 0 ]; then

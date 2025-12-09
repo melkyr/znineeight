@@ -162,6 +162,7 @@ private:
 
     // Helper methods for tokenization
     bool match(char expected);
+    Token lexCharLiteral();
 
 public:
     /**
