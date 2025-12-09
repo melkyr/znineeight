@@ -440,7 +440,7 @@ fn main() -> i32 {
 set TEST_DIR=tests/
 set PASS_COUNT=0
 set FAIL_COUNT=0
-for %%f in (%TEST_DIR%*.zig) do (
+for %%f in (%Test_DIR%*.zig) do (
     echo Testing %%f...
     zigc.exe %%f -o test_output.exe
     if errorlevel 1 (
