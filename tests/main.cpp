@@ -12,6 +12,9 @@ TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(single_char_tokens);
 TEST_FUNC(multi_char_tokens);
 TEST_FUNC(assignment_vs_equality);
+TEST_FUNC(skip_comments);
+TEST_FUNC(nested_block_comments);
+TEST_FUNC(unterminated_block_comment);
 
 int main() {
     bool (*tests[])() = {
@@ -26,6 +29,9 @@ int main() {
         test_single_char_tokens,
         test_multi_char_tokens,
         test_assignment_vs_equality,
+        test_skip_comments,
+        test_nested_block_comments,
+        test_unterminated_block_comment,
     };
 
     int passed = 0;

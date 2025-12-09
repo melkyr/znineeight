@@ -83,7 +83,42 @@ Token Lexer::nextToken() {
         case '+': token.type = TOKEN_PLUS; break;
         case '-': token.type = TOKEN_MINUS; break;
         case '*': token.type = TOKEN_STAR; break;
-        case '/': token.type = TOKEN_SLASH; break;
+        case '/':
+            if (match('/')) {
+                while (*this->current != '\n' && *this->current != '\0') {
+                    this->current++;
+                    this->column++;
+                }
+                return nextToken();
+            } else if (match('*')) {
+                int nesting = 1;
+                while (nesting > 0) {
+                    if (*this->current == '\0') {
+                        token.type = TOKEN_EOF;
+                        return token;
+                    }
+                    if (*this->current == '/' && *(this->current + 1) == '*') {
+                        nesting++;
+                        this->current += 2;
+                        this->column += 2;
+                    } else if (*this->current == '*' && *(this->current + 1) == '/') {
+                        nesting--;
+                        this->current += 2;
+                        this->column += 2;
+                    } else if (*this->current == '\n') {
+                        this->line++;
+                        this->column = 1;
+                        this->current++;
+                    } else {
+                        this->current++;
+                        this->column++;
+                    }
+                }
+                return nextToken();
+            } else {
+                token.type = TOKEN_SLASH;
+            }
+            break;
         case ';': token.type = TOKEN_SEMICOLON; break;
         case '(': token.type = TOKEN_LPAREN; break;
         case ')': token.type = TOKEN_RPAREN; break;

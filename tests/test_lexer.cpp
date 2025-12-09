@@ -5,7 +5,7 @@
 TEST_FUNC(single_char_tokens) {
     ArenaAllocator arena(1024);
     SourceManager sm(arena);
-    const char* test_content = "+\t-\n/*;(){}[]@";
+    const char* test_content = "+\t-\n/ *;(){}[]@";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
     Lexer lexer(sm, 0);
@@ -28,49 +28,110 @@ TEST_FUNC(single_char_tokens) {
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_STAR, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(2, token.location.column);
+    ASSERT_EQ(3, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_SEMICOLON, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(3, token.location.column);
+    ASSERT_EQ(4, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_LPAREN, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(4, token.location.column);
+    ASSERT_EQ(5, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_RPAREN, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(5, token.location.column);
+    ASSERT_EQ(6, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_LBRACE, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(6, token.location.column);
+    ASSERT_EQ(7, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_RBRACE, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(7, token.location.column);
+    ASSERT_EQ(8, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_LBRACKET, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(8, token.location.column);
+    ASSERT_EQ(9, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_RBRACKET, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(9, token.location.column);
+    ASSERT_EQ(10, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_ERROR, token.type);
     ASSERT_EQ(2, token.location.line);
-    ASSERT_EQ(10, token.location.column);
+    ASSERT_EQ(11, token.location.column);
 
     token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
+TEST_FUNC(skip_comments) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* test_content = "// this is a line comment\n"
+                               "+\n"
+                               "/* this is a block comment */\n"
+                               "-\n"
+                               "// another line comment at EOF";
+    sm.addFile("test.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, 0);
+
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_PLUS, token.type);
+    ASSERT_EQ(2, token.location.line);
+    ASSERT_EQ(1, token.location.column);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_MINUS, token.type);
+    ASSERT_EQ(4, token.location.line);
+    ASSERT_EQ(1, token.location.column);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
+TEST_FUNC(nested_block_comments) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* test_content = "/* start /* nested */ end */+";
+    sm.addFile("test.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, 0);
+
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_PLUS, token.type);
+    ASSERT_EQ(1, token.location.line);
+    ASSERT_EQ(29, token.location.column);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
+TEST_FUNC(unterminated_block_comment) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* test_content = "/* this comment is not closed";
+    sm.addFile("test.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, 0);
+
+    Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
     return true;
