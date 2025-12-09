@@ -24,7 +24,7 @@ public:
      * @brief Constructs an ArenaAllocator with a given capacity.
      * @param capacity The total size of the memory arena in bytes.
      */
-    ArenaAllocator(size_t capacity) : buffer(nullptr), offset(0), capacity(capacity) {
+    ArenaAllocator(size_t capacity) : buffer(NULL), offset(0), capacity(capacity) {
         buffer = static_cast<char*>(malloc(capacity));
     }
 
@@ -43,7 +43,7 @@ public:
     void* alloc(size_t size) {
         // Overflow-safe check: ensure size doesn't exceed remaining capacity.
         if (size > capacity - offset) {
-            return nullptr;
+            return NULL;
         }
         void* ptr = buffer + offset;
         offset += size;
@@ -66,7 +66,7 @@ public:
 
         // Overflow-safe check: ensure the requested size fits in the remaining capacity.
         if (new_offset >= capacity || size > capacity - new_offset) {
-            return nullptr;
+            return NULL;
         }
 
         void* ptr = buffer + new_offset;
@@ -110,7 +110,7 @@ public:
      * @param allocator The ArenaAllocator to use for all memory allocations.
      */
     DynamicArray(ArenaAllocator& allocator)
-        : allocator(allocator), data(nullptr), len(0), cap(0) {}
+        : allocator(allocator), data(NULL), len(0), cap(0) {}
 
     /**
      * @brief Appends an item to the end of the array.
