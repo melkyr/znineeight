@@ -27,6 +27,7 @@
 enum TokenType {
     // Control Tokens
     TOKEN_EOF,              ///< End of the source file.
+    TOKEN_ERROR,            ///< Represents a lexical error.
 
     // Literals
     TOKEN_IDENTIFIER,       ///< An identifier (e.g., variable name, function name).
@@ -117,6 +118,8 @@ private:
     const char* current;      ///< Pointer to the current character in the source buffer.
     SourceManager& source;    ///< Reference to the source manager for location tracking.
     u32 file_id;              ///< The ID of the file currently being lexed.
+    u32 line;                 ///< The current line number.
+    u32 column;               ///< The current column number.
 
 public:
     /**

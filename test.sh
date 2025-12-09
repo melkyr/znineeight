@@ -6,7 +6,10 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_arena.cpp \
     tests/test_string_interner.cpp \
     tests/test_memory.cpp \
+    tests/test_lexer.cpp \
     src/bootstrap/string_interner.cpp \
+    src/bootstrap/source_manager.cpp \
+    src/bootstrap/lexer.cpp \
     -o test_runner
 
 if [ $? -ne 0 ]; then
