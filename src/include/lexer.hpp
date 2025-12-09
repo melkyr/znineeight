@@ -103,5 +103,37 @@ struct Token {
     } value;
 };
 
+/**
+ * @class Lexer
+ * @brief Processes source code and converts it into a stream of tokens.
+ *
+ * The Lexer is responsible for the first phase of compilation, turning raw
+ * source text into a sequence of tokens that the parser can understand. It
+ * handles skipping whitespace, comments, and recognizing keywords, identifiers,
+ * literals, and operators.
+ */
+class Lexer {
+private:
+    const char* current;      ///< Pointer to the current character in the source buffer.
+    SourceManager& source;    ///< Reference to the source manager for location tracking.
+    u32 file_id;              ///< The ID of the file currently being lexed.
+
+public:
+    /**
+     * @brief Constructs a new Lexer instance.
+     * @param src A reference to the SourceManager containing the source files.
+     * @param file_id The identifier of the specific file to be lexed from the SourceManager.
+     */
+    Lexer(SourceManager& src, u32 file_id);
+
+    /**
+     * @brief Scans the source code and returns the next token.
+     * @return The next token found in the source stream. When the end of the
+     *         file is reached, it will consistently return a token of type
+     *         TOKEN_EOF.
+     */
+    Token nextToken();
+};
+
 
 #endif // LEXER_HPP

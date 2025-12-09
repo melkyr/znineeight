@@ -103,6 +103,16 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 ### 4.1 Layer 1: Lexer (`lexer.hpp`)
 * **Input:** Source code text
 * **Output:** Stream of `Token` structs
+* **Lexer Class Interface:**
+```cpp
+class Lexer {
+    const char* current;
+    SourceManager& source;
+public:
+    Lexer(SourceManager& src, u32 file_id);
+    Token nextToken();
+};
+```
 * **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. It is organized into logical groups for clarity.
 ```cpp
 enum TokenType {
@@ -1051,7 +1061,7 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 - [x] Create String Interning system
 - Implement lexer class with token definitions
   - [x] Define Token struct and TokenType enum
-  - [ ] Implement Lexer class skeleton
+  - [x] Implement Lexer class skeleton
 
 ### Week 3: Parser & AST
 - [ ] Implement recursive descent parser
