@@ -18,12 +18,28 @@ Lexer::Lexer(SourceManager& src, u32 file_id) : source(src), file_id(file_id) {
 }
 
 /**
+ * @brief Consumes the current character if it matches the expected character.
+ *
+ * If the current character matches `expected`, the lexer advances its position
+ * and returns true. Otherwise, it stays at the current position and returns false.
+ *
+ * @param expected The character to match against the current character.
+ * @return `true` if the character was matched and consumed, `false` otherwise.
+ */
+bool Lexer::match(char expected) {
+    if (*this->current == '\0') return false;
+    if (*this->current != expected) return false;
+    this->current++;
+    this->column++;
+    return true;
+}
+
+/**
  * @brief Scans and returns the next token from the source code.
  *
- * TODO: Implement the full logic for lexical analysis.
- * This function should scan the source code character by character and
- * construct the next valid token. It needs to handle whitespace, comments,
- * identifiers, keywords, literals, and operators.
+ * This function scans the source code character by character to construct the
+ * next valid token. It handles whitespace, single-character and multi-character
+ * operators using a lookahead mechanism.
  *
  * @return The next token in the source stream.
  */
@@ -55,50 +71,32 @@ Token Lexer::nextToken() {
 
     char c = *this->current;
 
-    switch (c) {
-        case '\0':
-            token.type = TOKEN_EOF;
-            break;
-        case '+':
-            token.type = TOKEN_PLUS;
-            break;
-        case '-':
-            token.type = TOKEN_MINUS;
-            break;
-        case '*':
-            token.type = TOKEN_STAR;
-            break;
-        case '/':
-            token.type = TOKEN_SLASH;
-            break;
-        case ';':
-            token.type = TOKEN_SEMICOLON;
-            break;
-        case '(':
-            token.type = TOKEN_LPAREN;
-            break;
-        case ')':
-            token.type = TOKEN_RPAREN;
-            break;
-        case '{':
-            token.type = TOKEN_LBRACE;
-            break;
-        case '}':
-            token.type = TOKEN_RBRACE;
-            break;
-        case '[':
-            token.type = TOKEN_LBRACKET;
-            break;
-        case ']':
-            token.type = TOKEN_RBRACKET;
-            break;
-        default:
-            token.type = TOKEN_ERROR;
-            break;
+    if (c == '\0') {
+        token.type = TOKEN_EOF;
+        return token;
     }
 
     this->current++;
     this->column++;
+
+    switch (c) {
+        case '+': token.type = TOKEN_PLUS; break;
+        case '-': token.type = TOKEN_MINUS; break;
+        case '*': token.type = TOKEN_STAR; break;
+        case '/': token.type = TOKEN_SLASH; break;
+        case ';': token.type = TOKEN_SEMICOLON; break;
+        case '(': token.type = TOKEN_LPAREN; break;
+        case ')': token.type = TOKEN_RPAREN; break;
+        case '{': token.type = TOKEN_LBRACE; break;
+        case '}': token.type = TOKEN_RBRACE; break;
+        case '[': token.type = TOKEN_LBRACKET; break;
+        case ']': token.type = TOKEN_RBRACKET; break;
+        case '=': token.type = match('=') ? TOKEN_EQUAL_EQUAL : TOKEN_EQUAL; break;
+        case '!': token.type = match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG; break;
+        case '<': token.type = match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS; break;
+        case '>': token.type = match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER; break;
+        default: token.type = TOKEN_ERROR; break;
+    }
 
     return token;
 }

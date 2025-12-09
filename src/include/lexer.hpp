@@ -121,6 +121,9 @@ private:
     u32 line;                 ///< The current line number.
     u32 column;               ///< The current column number.
 
+    // Helper methods for tokenization
+    bool match(char expected);
+
 public:
     /**
      * @brief Constructs a new Lexer instance.
