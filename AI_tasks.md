@@ -17,9 +17,9 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 10. **Task 10:** Create initial `build.bat` and `test.bat` scripts. (DONE)
 
 ### Milestone 2: Lexer Implementation
-11. **Task 11:** Define all token types (`TokenType` enum) in `lexer.hpp`.
-    Create src/include/lexer.hpp with TokenType enum containing ONLY:
-    TOKEN_EOF, TOKEN_IDENTIFIER, TOKEN_INTEGER_LITERAL
+11. **Task 11:** Define all token types (`TokenType` enum) in `lexer.hpp`. (DONE)
+    - Created `src/include/lexer.hpp` with a comprehensive `TokenType` enum.
+    - Expanded the initial token set as per user feedback to include keywords, operators, and delimiters to better bootstrap the lexer.
 12. **Task 12:** Implement the `Token` struct with a union for literal values.
     Define minimal Token struct:
     struct Token {
