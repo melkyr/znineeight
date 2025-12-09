@@ -1063,6 +1063,7 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
   - [x] Define Token struct and TokenType enum
   - [x] Implement Lexer class skeleton
   - [x] Implement lexing for single-character tokens
+  - [x] Implement lexing for multi-character tokens (`==`, `!=`, `<=`, `>=`)
 
 ### Week 3: Parser & AST
 - [ ] Implement recursive descent parser

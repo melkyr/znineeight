@@ -10,6 +10,8 @@ TEST_FUNC(string_interning);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(single_char_tokens);
+TEST_FUNC(multi_char_tokens);
+TEST_FUNC(assignment_vs_equality);
 
 int main() {
     bool (*tests[])() = {
@@ -22,6 +24,8 @@ int main() {
         test_dynamic_array_append,
         test_dynamic_array_growth,
         test_single_char_tokens,
+        test_multi_char_tokens,
+        test_assignment_vs_equality,
     };
 
     int passed = 0;
