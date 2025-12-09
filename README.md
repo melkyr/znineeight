@@ -29,6 +29,24 @@ To get started with the project, you will need the following:
 
 Once you have the required software, you can clone the repository and start working on the bootstrap compiler.
 
+## How to Build and Test
+
+This project uses simple batch scripts for building and testing from the command line.
+
+*   `build.bat`: Compiles the C++ bootstrap compiler (`zig0.exe`).
+*   `test.bat`: Builds the compiler and runs all available tests, including the compiler's self-test and the unit test suite.
+*   `clean.bat`: Deletes all build artifacts (`.exe`, `.obj`).
+
+To build the compiler, run:
+```batch
+build.bat
+```
+
+To run the entire test suite, run:
+```batch
+test.bat
+```
+
 ## How to Contribute
 
 We welcome contributions from the community. If you are interested in helping out, please read the `architecture.md` file to learn more about the compiler's design and the `AI_tasks.md` file for a list of tasks that need to be done.
