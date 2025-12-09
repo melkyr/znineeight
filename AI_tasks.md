@@ -45,6 +45,10 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
         Add (, ), {, }, [, ] to token types
         Extend nextToken() to handle brackets
         Write test for bracket tokens
+    - **Sub-task:** Write a comprehensive unit test for single-character tokens.
+        - Verify correct tokenization of `+`, `-`, `*`, `/`, `;`, `(`, `)`, `{`, `}`, `[`, `]`.
+        - Verify correct line and column tracking.
+        - Verify correct handling of invalid characters (TOKEN_ERROR).
 15. **Task 15:** Implement lexing for multi-character tokens (e.g., `==`, `!=`, `<=`, `>=`).
         Add ==, !=, <=, >= to TokenType
       Implement two-character lookahead in nextToken()

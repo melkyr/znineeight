@@ -9,6 +9,7 @@ TEST_FUNC(aligned_allocation);
 TEST_FUNC(string_interning);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
+TEST_FUNC(single_char_tokens);
 
 int main() {
     bool (*tests[])() = {
@@ -20,6 +21,7 @@ int main() {
         test_string_interning,
         test_dynamic_array_append,
         test_dynamic_array_growth,
+        test_single_char_tokens,
     };
 
     int passed = 0;
