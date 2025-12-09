@@ -1,6 +1,9 @@
 #ifndef LEXER_HPP
 #define LEXER_HPP
 
+#include "common.hpp"
+#include "source_manager.hpp"
+
 /**
  * @file lexer.hpp
  * @brief Defines the token types and structures for the RetroZig lexer.
@@ -65,5 +68,40 @@ enum TokenType {
     TOKEN_SEMICOLON,        ///< ';' - Semicolon.
     TOKEN_COLON,            ///< ':' - Colon.
 };
+
+/**
+ * @struct Token
+ * @brief Represents a single token produced by the lexer.
+ *
+ * A token is the smallest unit of meaning in the source code. It consists of
+ * a type, its location in the source file, and an optional value for literals.
+ */
+struct Token {
+    /** @brief The type of the token, as defined by the TokenType enum. */
+    TokenType type;
+
+    /** @brief The location (file, line, column) where the token was found. */
+    SourceLocation location;
+
+    /**
+     * @union Value
+     * @brief Stores the literal value of the token, if applicable.
+     *
+     * This union provides storage for different kinds of literal values.
+     * The active member depends on the token's type:
+     * - `identifier`: for TOKEN_IDENTIFIER (pointer to interned string)
+     * - `integer`: for TOKEN_INTEGER_LITERAL
+     * - `floating_point`: for potential future floating-point tokens
+     */
+    union {
+        /** @brief Pointer to an interned string for identifiers. */
+        const char* identifier;
+        /** @brief 64-bit signed integer for integer literals. */
+        i64 integer;
+        /** @brief 64-bit floating-point for float literals. */
+        double floating_point;
+    } value;
+};
+
 
 #endif // LEXER_HPP

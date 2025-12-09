@@ -1049,7 +1049,9 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ### Week 2: Memory & Lexer
 - [x] Implement Arena Allocator with alignment support
 - [x] Create String Interning system
-- [ ] Implement lexer class with token definitions
+- Implement lexer class with token definitions
+  - [x] Define Token struct and TokenType enum
+  - [ ] Implement Lexer class skeleton
 
 ### Week 3: Parser & AST
 - [ ] Implement recursive descent parser
