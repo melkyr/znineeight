@@ -18,7 +18,9 @@ We are also committed to the following principles:
 
 ## Current Status
 
-The project is in its initial phase. The design is complete, and the next step is to start implementing the bootstrap compiler in C++98.
+Phase 0, the implementation of the core infrastructure for the bootstrap compiler in C++98, is now complete. The project has a solid foundation, including memory management, string interning, error handling, and a basic testing framework.
+
+The next step is to begin Phase 1, which will focus on implementing the lexer. This is the first step in turning the bootstrap compiler into a tool that can understand and process Zig source code.
 
 ## Getting Started
 

@@ -5,99 +5,16 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 ## Phase 0: The Bootstrap Compiler (C++98)
 
 ### Milestone 1: Core Infrastructure
-1.  **Task 1:** Set up the basic directory structure as defined in `DESIGN.md`.
-2.  **Task 2:** Create the `common.hpp` compatibility header for MSVC 6.0 specifics (`i64`, `bool`).
-3.  **Task 3:** Implement the `ArenaAllocator` class in `memory.hpp` for bump allocation.
-4.  **Task 4:** Add alignment support to `ArenaAllocator::alloc_aligned`.
+1.  **Task 1:** Set up the basic directory structure as defined in `DESIGN.md`. (DONE)
+2.  **Task 2:** Create the `common.hpp` compatibility header for MSVC 6.0 specifics (`i64`, `bool`). (DONE)
+3.  **Task 3:** Implement the `ArenaAllocator` class in `memory.hpp` for bump allocation. (DONE)
+4.  **Task 4:** Add alignment support to `ArenaAllocator::alloc_aligned`. (DONE)
 5.  **Task 5:** Implement the `StringInterner` class using a hash table. (DONE)
-6. ### **Task 6:** Source Manager Implementation
-   Create `src/include/source_manager.hpp` with empty `SourceManager` class declaration
-   Define `SourceLocation` struct in `source_manager.hpp` with:
-   ```cpp
-   struct SourceLocation {
-       u32 file_id;
-       u32 line;
-       u32 column;
-   };
-   Define SourceFile struct in source_manager.hpp with:
-   struct SourceFile {
-    const char* filename;
-    const char* content;
-    size_t size;
-  };
-  Implement SourceManager constructor in header:
-  class SourceManager {
-    ArenaAllocator& allocator;
-    DynamicArray<SourceFile> files; // Assume DynamicArray exists from memory.hpp
-public:
-    SourceManager(ArenaAllocator& alloc) : allocator(alloc), files(alloc) {}
-  };
-  Add addFile() method declaration in SourceManager class:
-  u32 addFile(const char* filename, const char* content, size_t size);
-  Implement addFile() method in new src/bootstrap/source_manager.cpp:
-  u32 SourceManager::addFile(const char* filename, const char* content, size_t size) {
-    SourceFile file = { filename, content, size };
-    files.append(file);
-    return files.length() - 1;
-  }
-  Add getLocation() declaration:
-  SourceLocation getLocation(u32 file_id, size_t offset);
-  Implement basic getLocation() ignoring line breaks (return {file_id, 1, 1})
-  Write test in tests/test_source_manager.cpp verifying file registration
-  Implement line/column calculation in getLocation() (count \n before offset)
-  Extend test to verify line/column calculations for sample text
-7.  **Task 7:** Define the `ErrorReport` struct and `ErrorCode` enum in `error_handler.hpp`:
-    Create src/include/error_handler.hpp with ErrorCode enum:
-    enum ErrorCode {
-    ERR_NONE = 0,
-    ERR_OUT_OF_MEMORY = 5000
-    };
-    Add ErrorReport struct to error_handler.hpp:
-    struct ErrorReport {
-    ErrorCode code;
-    SourceLocation location;
-    const char* message;
-    };
-
-    
-8.  **Task 8:** Implement a basic diagnostic printing function for errors.
-      Implement printErrorReport() function declaration:
-      void printErrorReport(const ErrorReport& report);
-      Implement minimal printErrorReport() body that prints "error: [code]"
-      Extend printErrorReport() to format location as "file(line:col)"
-      Write test verifying error output format matches specification
-9.  **Task 9:** Create a minimal unit testing framework in `test_framework.h`.
-    Create src/include/test_framework.hpp with:
-    #define ASSERT_TRUE(condition) \
-    if (!(condition)) { \
-        printf("FAIL: %s at %s:%d\n", #condition, __FILE__, __LINE__); \
-        return false; \
-    }
-    Add TEST_FUNC macro:
-    #define TEST_FUNC(name) bool test_##name()
-    Implement test runner in tests/main.cpp:
-    int main() {
-    bool (*tests[])() = { test_basic_allocation, /* ... */ };
-    int passed = 0;
-    for (auto test : tests) {
-        if (test()) passed++;
-    }
-    printf("Passed %d/%d tests\n", passed, sizeof(tests)/sizeof(tests[0]));
-    return passed == sizeof(tests)/sizeof(tests[0]) ? 0 : 1;
-    }
-    Convert existing arena tests to use new framework
-    Convert string interner tests to use new framework
-
-10. **Task 10:** Create initial `build.bat` and `test.bat` scripts.
-        Modify build.bat to:
-        Compile all .cpp files in src/bootstrap/
-        Output to zig0.exe
-        Compile tests with test-specific flags
-    Create clean.bat to delete build artifacts
-    Update test.bat to:
-        Run zig0.exe --self-test (stub)
-        Run individual test executables
-        Fail on first error
+6.  **Task 6:** Source Manager Implementation. (DONE)
+7.  **Task 7:** Define the `ErrorReport` struct and `ErrorCode` enum in `error_handler.hpp`. (DONE)
+8.  **Task 8:** Implement a basic diagnostic printing function for errors. (DONE)
+9.  **Task 9:** Create a minimal unit testing framework in `test_framework.h`. (DONE)
+10. **Task 10:** Create initial `build.bat` and `test.bat` scripts. (DONE)
 
 ### Milestone 2: Lexer Implementation
 11. **Task 11:** Define all token types (`TokenType` enum) in `lexer.hpp`.
