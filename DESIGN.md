@@ -259,7 +259,7 @@ public:
 push ebp
 mov ebp, esp
 sub esp, local_var_size
-; Function epilogue  
+; Function epilogue
 mov esp, ebp
 pop ebp
 ret
@@ -357,7 +357,7 @@ struct ComptimeContext {
 ## 7. Performance Optimization Strategies
 ### Critical Performance Metrics
 - **Parse Speed:** Target < 1ms per 100 lines
-- **Type Check:** Target < 2ms per 100 lines  
+- **Type Check:** Target < 2ms per 100 lines
 - **Code Gen:** Target < 3ms per 100 lines
 - **Memory Usage:** Peak < 16MB per 1000-line file
 
@@ -481,13 +481,13 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ## 10. Detailed Implementation Checklist
 
 ### Week 1: MSVC 6.0 Env Setup
-- [ ] Set up Windows 98 VM with MSVC 6.0
+- [x] Set up Windows 98 VM with MSVC 6.0
 - [ ] Create `PEBuilder` skeleton (generating a valid empty .exe)
-- [ ] Implement compatibility layer (`common.hpp`)
+- [x] Implement compatibility layer (`common.hpp`)
 
 ### Week 2: Memory & Lexer
-- [ ] Implement Arena Allocator with alignment support
-- [ ] Create String Interning system
+- [x] Implement Arena Allocator with alignment support
+- [x] Create String Interning system
 - [ ] Implement lexer class with token definitions
 
 ### Week 3: Parser & AST
