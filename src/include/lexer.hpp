@@ -33,6 +33,8 @@ enum TokenType {
     TOKEN_IDENTIFIER,       ///< An identifier (e.g., variable name, function name).
     TOKEN_INTEGER_LITERAL,  ///< An integer literal (e.g., 123, 0xFF).
     TOKEN_STRING_LITERAL,   ///< A string literal (e.g., "hello").
+    TOKEN_CHAR_LITERAL,     ///< A character literal (e.g., 'a').
+    TOKEN_FLOAT_LITERAL,    ///< A float literal (e.g., 3.14).
 
     // Keywords
     TOKEN_FN,               ///< 'fn' keyword for function definitions.
@@ -50,6 +52,14 @@ enum TokenType {
     TOKEN_STAR,             ///< '*' operator.
     TOKEN_SLASH,            ///< '/' operator.
     TOKEN_PERCENT,          ///< '%' operator.
+    TOKEN_TILDE,            ///< '~' operator.
+    TOKEN_AMPERSAND,        ///< '&' operator.
+    TOKEN_PIPE,             ///< '|' operator.
+    TOKEN_CARET,            ///< '^' operator.
+    TOKEN_LARROW2,          ///< '<<' operator.
+    TOKEN_RARROW2,          ///< '>>' operator.
+
+    // Comparison and Equality Operators
     TOKEN_EQUAL,            ///< '=' operator (assignment).
     TOKEN_EQUAL_EQUAL,      ///< '==' operator (equality).
     TOKEN_BANG,             ///< '!' operator (logical not).
@@ -58,6 +68,18 @@ enum TokenType {
     TOKEN_LESS_EQUAL,       ///< '<=' operator.
     TOKEN_GREATER,          ///< '>' operator.
     TOKEN_GREATER_EQUAL,    ///< '>=' operator.
+
+    // Compound Assignment Operators
+    TOKEN_PLUS_EQUAL,       ///< '+=' operator.
+    TOKEN_MINUS_EQUAL,      ///< '-=' operator.
+    TOKEN_STAR_EQUAL,       ///< '*=' operator.
+    TOKEN_SLASH_EQUAL,      ///< '/=' operator.
+    TOKEN_PERCENT_EQUAL,    ///< '%=' operator.
+    TOKEN_AMPERSAND_EQUAL,  ///< '&=' operator.
+    TOKEN_PIPE_EQUAL,       ///< '|=' operator.
+    TOKEN_CARET_EQUAL,      ///< '^=' operator.
+    TOKEN_LARROW2_EQUAL,    ///< '<<=' operator.
+    TOKEN_RARROW2_EQUAL,    ///< '>>=' operator.
 
     // Delimiters
     TOKEN_LPAREN,           ///< '(' - Left parenthesis.
@@ -68,6 +90,23 @@ enum TokenType {
     TOKEN_RBRACKET,         ///< ']' - Right bracket.
     TOKEN_SEMICOLON,        ///< ';' - Semicolon.
     TOKEN_COLON,            ///< ':' - Colon.
+    TOKEN_ARROW,            ///< '->' - Arrow.
+    TOKEN_FAT_ARROW,        ///< '=>' - Fat arrow.
+    TOKEN_ELLIPSIS,         ///< '...' - Ellipsis.
+
+    // Special and Wrapping Operators
+    TOKEN_DOT,              ///< '.' operator.
+    TOKEN_DOT_ASTERISK,     ///< '.*' operator.
+    TOKEN_DOT_QUESTION,     ///< '.?' operator.
+    TOKEN_QUESTION,         ///< '?' operator.
+    TOKEN_PLUS2,            ///< '++' operator.
+    TOKEN_MINUS2,           ///< '--' operator.
+    TOKEN_STAR2,            ///< '**' operator.
+    TOKEN_PIPE2,            ///< '||' operator.
+    TOKEN_AMPERSAND2,       ///< '&&' operator.
+    TOKEN_PLUSPERCENT,      ///< '+%' operator.
+    TOKEN_MINUSPERCENT,     ///< '-%' operator.
+    TOKEN_STARPERCENT,      ///< '*%' operator.
 };
 
 /**
