@@ -76,6 +76,28 @@ TEST_FUNC(single_char_tokens) {
     return true;
 }
 
+TEST_FUNC(IntegerLiterals) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* test_content = "123 0xFF";
+    sm.addFile("test.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, 0);
+
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(123, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(255, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
 TEST_FUNC(skip_comments) {
     ArenaAllocator arena(1024);
     SourceManager sm(arena);

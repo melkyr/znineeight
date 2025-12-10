@@ -163,6 +163,8 @@ private:
     // Helper methods for tokenization
     bool match(char expected);
     Token lexCharLiteral();
+    Token lexNumericLiteral();
+    Token parseHexFloat();
 
 public:
     /**

@@ -504,6 +504,7 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
   - [x] Implement Lexer class skeleton
   - [x] Implement lexing for single-character tokens
   - [x] Implement lexing for multi-character tokens (`==`, `!=`, `<=`, `>=`)
+  - [x] Implement lexing for float literals (`3.14`, `0x1.2p3`)
   - [x] Implement line comment handling (`//`)
   - [x] Implement block comment handling (`/* */`) with nesting support
 
