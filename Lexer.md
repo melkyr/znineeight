@@ -165,7 +165,7 @@ The following keywords are defined in the Zig grammar but are not yet implemente
 | `TOKEN_LBRACKET`  | `[`    | Yes         |                    |
 | `TOKEN_RBRACKET`  | `]`    | Yes         |                    |
 | `TOKEN_SEMICOLON` | `;`    | Yes         |                    |
-| `TOKEN_COLON`     | `:`    | No          | New task required. |
-| `TOKEN_ARROW`     | `->`   | No          | New task required. |
-| `TOKEN_FAT_ARROW` | `=>`   | No          | New task required. |
-| `TOKEN_ELLIPSIS`  | `...`  | No          | New task required. |
+| `TOKEN_COLON`     | `:`    | Yes         | Implemented as part of Task 23. |
+| `TOKEN_ARROW`     | `->`   | Yes         | Implemented as part of Task 23. |
+| `TOKEN_FAT_ARROW` | `=>`   | Yes         | Implemented as part of Task 23. |
+| `TOKEN_ELLIPSIS`  | `...`  | Yes         | Implemented as part of Task 23. |
