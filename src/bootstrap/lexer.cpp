@@ -5,19 +5,25 @@
 #include <cmath>   // For ldexp
 #include <cstring> // For strcmp
 
-// Keyword lookup table
+// Keyword lookup table.
+// IMPORTANT: This array must be kept sorted alphabetically for the binary search to work.
 const Keyword keywords[] = {
     {"break", TOKEN_BREAK},
     {"catch", TOKEN_CATCH},
     {"continue", TOKEN_CONTINUE},
     {"else", TOKEN_ELSE},
+    {"enum", TOKEN_ENUM},
+    {"error", TOKEN_ERROR_SET},
     {"for", TOKEN_FOR},
     {"if", TOKEN_IF},
+    {"opaque", TOKEN_OPAQUE},
     {"orelse", TOKEN_ORELSE},
     {"resume", TOKEN_RESUME},
+    {"struct", TOKEN_STRUCT},
     {"suspend", TOKEN_SUSPEND},
     {"switch", TOKEN_SWITCH},
     {"try", TOKEN_TRY},
+    {"union", TOKEN_UNION},
     {"while", TOKEN_WHILE},
 };
 const int num_keywords = sizeof(keywords) / sizeof(Keyword);
