@@ -333,21 +333,23 @@ Token Lexer::nextToken() {
     this->column++;
 
     switch (c) {
-        case '+': token.type = TOKEN_PLUS; break;
-        case '-': token.type = TOKEN_MINUS; break;
-        case '*': token.type = TOKEN_STAR; break;
+        case '+': token.type = match('=') ? TOKEN_PLUS_EQUAL : TOKEN_PLUS; break;
+        case '-': token.type = match('=') ? TOKEN_MINUS_EQUAL : TOKEN_MINUS; break;
+        case '*': token.type = match('=') ? TOKEN_STAR_EQUAL : TOKEN_STAR; break;
         case '.': token.type = TOKEN_DOT; break;
         case '/':
             if (match('/')) {
+                // Single-line comment
                 while (*this->current != '\n' && *this->current != '\0') {
                     this->current++;
                     this->column++;
                 }
                 return nextToken();
             } else if (match('*')) {
+                // Block comment with nesting support
                 int nesting = 1;
                 while (nesting > 0) {
-                    if (*this->current == '\0') {
+                    if (*this->current == '\0') { // End of file
                         token.type = TOKEN_EOF;
                         return token;
                     }
@@ -370,7 +372,8 @@ Token Lexer::nextToken() {
                 }
                 return nextToken();
             } else {
-                token.type = TOKEN_SLASH;
+                // Division or compound assignment
+                token.type = match('=') ? TOKEN_SLASH_EQUAL : TOKEN_SLASH;
             }
             break;
         case ';': token.type = TOKEN_SEMICOLON; break;
@@ -384,23 +387,23 @@ Token Lexer::nextToken() {
         case '!': token.type = match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG; break;
         case '<':
             if (match('<')) {
-                token.type = TOKEN_LARROW2;
+                token.type = match('=') ? TOKEN_LARROW2_EQUAL : TOKEN_LARROW2;
             } else {
                 token.type = match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS;
             }
             break;
         case '>':
             if (match('>')) {
-                token.type = TOKEN_RARROW2;
+                token.type = match('=') ? TOKEN_RARROW2_EQUAL : TOKEN_RARROW2;
             } else {
                 token.type = match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER;
             }
             break;
-        case '%': token.type = TOKEN_PERCENT; break;
+        case '%': token.type = match('=') ? TOKEN_PERCENT_EQUAL : TOKEN_PERCENT; break;
         case '~': token.type = TOKEN_TILDE; break;
-        case '&': token.type = TOKEN_AMPERSAND; break;
-        case '|': token.type = TOKEN_PIPE; break;
-        case '^': token.type = TOKEN_CARET; break;
+        case '&': token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND; break;
+        case '|': token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE; break;
+        case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
         case '\'':
             token = lexCharLiteral();
             break;
