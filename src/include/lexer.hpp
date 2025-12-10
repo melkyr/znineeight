@@ -45,6 +45,15 @@ enum TokenType {
     TOKEN_WHILE,            ///< 'while' keyword for loops.
     TOKEN_RETURN,           ///< 'return' keyword for function returns.
     TOKEN_DEFER,            ///< 'defer' keyword for scope-exit actions.
+    TOKEN_BREAK,            ///< 'break' keyword.
+    TOKEN_CATCH,            ///< 'catch' keyword.
+    TOKEN_CONTINUE,         ///< 'continue' keyword.
+    TOKEN_FOR,              ///< 'for' keyword.
+    TOKEN_ORELSE,           ///< 'orelse' keyword.
+    TOKEN_RESUME,           ///< 'resume' keyword.
+    TOKEN_SUSPEND,          ///< 'suspend' keyword.
+    TOKEN_SWITCH,           ///< 'switch' keyword.
+    TOKEN_TRY,              ///< 'try' keyword.
 
     // Operators
     TOKEN_PLUS,             ///< '+' operator.
@@ -110,6 +119,23 @@ enum TokenType {
 };
 
 /**
+ * @struct Keyword
+ * @brief Represents a language keyword and its corresponding token type.
+ */
+struct Keyword {
+    const char* name;
+    TokenType type;
+};
+
+/**
+ * @brief Extern declaration for the global keyword lookup table.
+ * The table is defined in lexer.cpp and sorted alphabetically.
+ */
+extern const Keyword keywords[];
+extern const int num_keywords;
+
+
+/**
  * @struct Token
  * @brief Represents a single token produced by the lexer.
  *
@@ -165,6 +191,7 @@ private:
     Token lexCharLiteral();
     Token lexNumericLiteral();
     Token parseHexFloat();
+    Token lexIdentifierOrKeyword();
 
 public:
     /**

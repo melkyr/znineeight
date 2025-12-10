@@ -3,6 +3,42 @@
 #include <cctype>
 #include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
+#include <cstring> // For strcmp
+
+// Keyword lookup table
+const Keyword keywords[] = {
+    {"break", TOKEN_BREAK},
+    {"catch", TOKEN_CATCH},
+    {"continue", TOKEN_CONTINUE},
+    {"else", TOKEN_ELSE},
+    {"for", TOKEN_FOR},
+    {"if", TOKEN_IF},
+    {"orelse", TOKEN_ORELSE},
+    {"resume", TOKEN_RESUME},
+    {"suspend", TOKEN_SUSPEND},
+    {"switch", TOKEN_SWITCH},
+    {"try", TOKEN_TRY},
+    {"while", TOKEN_WHILE},
+};
+const int num_keywords = sizeof(keywords) / sizeof(Keyword);
+
+static TokenType lookupIdentifier(const char* name) {
+    int left = 0;
+    int right = num_keywords - 1;
+
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        int cmp = strcmp(name, keywords[mid].name);
+        if (cmp == 0) {
+            return keywords[mid].type;
+        } else if (cmp < 0) {
+            right = mid - 1;
+        } else {
+            left = mid + 1;
+        }
+    }
+    return TOKEN_IDENTIFIER;
+}
 
 /**
  * @brief Constructs a new Lexer instance.
@@ -474,8 +510,50 @@ Token Lexer::nextToken() {
         case '\'':
             token = lexCharLiteral();
             break;
-        default: token.type = TOKEN_ERROR; break;
+        default:
+            if (isalpha(c) || c == '_') {
+                this->current--;
+                this->column--;
+                return lexIdentifierOrKeyword();
+            }
+            token.type = TOKEN_ERROR;
+            break;
     }
 
+    return token;
+}
+
+Token Lexer::lexIdentifierOrKeyword() {
+    Token token;
+    token.location.file_id = this->file_id;
+    token.location.line = this->line;
+    token.location.column = this->column;
+
+    const char* start = this->current;
+    while (isalnum(*this->current) || *this->current == '_') {
+        this->current++;
+    }
+
+    int length = this->current - start;
+    char buffer[256];
+    if (length >= 256) {
+        token.type = TOKEN_ERROR;
+        this->column += length;
+        return token;
+    }
+
+    strncpy(buffer, start, length);
+    buffer[length] = '\0';
+
+    token.type = lookupIdentifier(buffer);
+
+    if (token.type == TOKEN_IDENTIFIER) {
+        // This is where a string interner would be used.
+        // For now, we don't have one available in the lexer.
+        // The value will be left as NULL.
+        token.value.identifier = NULL;
+    }
+
+    this->column += length;
     return token;
 }
