@@ -1,5 +1,8 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
+#include <cctype>
+#include <cstdlib> // For strtol, strtod
+#include <cmath>   // For ldexp
 
 /**
  * @brief Constructs a new Lexer instance.
@@ -124,6 +127,155 @@ Token Lexer::lexCharLiteral() {
     return token;
 }
 
+/**
+ * @brief Parses a hexadecimal floating-point literal.
+ *
+ * This function manually parses a hexadecimal float (e.g., `0x1.Ap2`) into a
+ * `double`. It handles the integer part, the fractional part, and the binary
+ * exponent. This is necessary because `strtod` in C++98 does not support hex floats.
+ *
+ * @return A `Token` of type `TOKEN_FLOAT_LITERAL` or `TOKEN_ERROR`.
+ */
+Token Lexer::parseHexFloat() {
+    Token token;
+    token.location.file_id = this->file_id;
+    token.location.line = this->line;
+    token.location.column = this->column;
+    const char* start = this->current;
+
+    this->current += 2; // Skip "0x"
+
+    double value = 0.0;
+    while (isxdigit(*this->current)) {
+        value = value * 16.0 + (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10);
+        this->current++;
+    }
+
+    if (*this->current == '.') {
+        this->current++;
+        double fraction = 0.0;
+        double divisor = 16.0;
+        while (isxdigit(*this->current)) {
+            fraction += (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10) / divisor;
+            divisor *= 16.0;
+            this->current++;
+        }
+        value += fraction;
+    }
+
+    if (*this->current != 'p' && *this->current != 'P') {
+        token.type = TOKEN_ERROR;
+        return token;
+    }
+    this->current++;
+
+    int sign = 1;
+    if (*this->current == '-') {
+        sign = -1;
+        this->current++;
+    } else if (*this->current == '+') {
+        this->current++;
+    }
+
+    if (!isdigit(*this->current)) {
+        token.type = TOKEN_ERROR;
+        return token;
+    }
+
+    int exponent = 0;
+    while (isdigit(*this->current)) {
+        exponent = exponent * 10 + (*this->current - '0');
+        this->current++;
+    }
+
+    token.value.floating_point = ldexp(value, sign * exponent);
+    token.type = TOKEN_FLOAT_LITERAL;
+    this->column += (this->current - start);
+    return token;
+}
+
+/**
+ * @brief Parses a numeric literal, which can be an integer or a float.
+ *
+ * This function determines whether a numeric literal is a hexadecimal float,
+ * a decimal float, or an integer, and then calls the appropriate parsing
+ * function. It uses `strtol` for integers and `strtod` for decimal floats.
+ *
+ * @return A `Token` of the appropriate numeric type (`TOKEN_INTEGER_LITERAL` or
+ *         `TOKEN_FLOAT_LITERAL`) or `TOKEN_ERROR` if the format is invalid.
+ */
+Token Lexer::lexNumericLiteral() {
+    Token token;
+    token.location.file_id = this->file_id;
+    token.location.line = this->line;
+    token.location.column = this->column;
+    const char* start = this->current;
+
+    if (*start == '.') {
+        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
+        return token;
+    }
+
+    bool is_hex = false;
+    if (this->current[0] == '0' && (this->current[1] == 'x' || this->current[1] == 'X')) {
+        is_hex = true;
+    }
+
+    if (is_hex) {
+        const char* p = start + 2;
+        while (isxdigit(*p)) p++;
+        if (*p == '.' || *p == 'p' || *p == 'P') {
+            return parseHexFloat();
+        }
+    }
+
+
+    // Temporarily advance to find the end of the number
+    const char* end_ptr = start;
+    if (is_hex) {
+        end_ptr += 2;
+    }
+    while (isdigit(*end_ptr)) end_ptr++;
+    bool is_float = false;
+    if (*end_ptr == '.') {
+        if (!isdigit(end_ptr[1])) {
+             token.type = TOKEN_ERROR;
+             return token;
+        }
+        end_ptr++;
+        is_float = true;
+    }
+    while (isdigit(*end_ptr)) end_ptr++;
+    if (*end_ptr == 'e' || *end_ptr == 'E') {
+        const char* exp_ptr = end_ptr + 1;
+        if (*exp_ptr == '+' || *exp_ptr == '-') {
+            exp_ptr++;
+        }
+        if (!isdigit(*exp_ptr)) {
+            token.type = TOKEN_ERROR;
+            return token;
+        }
+        is_float = true;
+    }
+
+
+    if (is_float) {
+        char* end;
+        token.value.floating_point = strtod(start, &end);
+        this->column += (end - start);
+        this->current = end;
+        token.type = TOKEN_FLOAT_LITERAL;
+    } else {
+        char* end;
+        token.value.integer = strtol(start, &end, 0); // Base 0 auto-detects hex
+        this->column += (end - start);
+        this->current = end;
+        token.type = TOKEN_INTEGER_LITERAL;
+    }
+
+    return token;
+}
+
 
 /**
  * @brief Scans and returns the next token from the source code.
@@ -167,6 +319,11 @@ Token Lexer::nextToken() {
         return token;
     }
 
+    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
+        return lexNumericLiteral();
+    }
+
+
     this->current++;
     this->column++;
 
@@ -174,6 +331,7 @@ Token Lexer::nextToken() {
         case '+': token.type = TOKEN_PLUS; break;
         case '-': token.type = TOKEN_MINUS; break;
         case '*': token.type = TOKEN_STAR; break;
+        case '.': token.type = TOKEN_DOT; break;
         case '/':
             if (match('/')) {
                 while (*this->current != '\n' && *this->current != '\0') {
