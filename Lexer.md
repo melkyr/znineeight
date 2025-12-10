@@ -59,13 +59,13 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_MINUS`     | `-`    | Yes         |                      |
 | `TOKEN_STAR`      | `*`    | Yes         |                      |
 | `TOKEN_SLASH`     | `/`    | Yes         |                      |
-| `TOKEN_PERCENT`   | `%`    | No          | New task required.   |
-| `TOKEN_TILDE`     | `~`    | No          | Bitwise NOT. New task required. |
-| `TOKEN_AMPERSAND` | `&`    | No          | Bitwise AND. New task required. |
-| `TOKEN_PIPE`      | `|`    | No          | Bitwise OR. New task required.  |
-| `TOKEN_CARET`     | `^`    | No          | Bitwise XOR. New task required. |
-| `TOKEN_LARROW2`   | `<<`   | No          | Bitwise Shift Left. New task required. |
-| `TOKEN_RARROW2`   | `>>`   | No          | Bitwise Shift Right. New task required. |
+| `TOKEN_PERCENT`   | `%`    | Yes         | Implemented as part of Task 20. |
+| `TOKEN_TILDE`     | `~`    | Yes         | Implemented as part of Task 20. |
+| `TOKEN_AMPERSAND` | `&`    | Yes         | Implemented as part of Task 20. |
+| `TOKEN_PIPE`      | `|`    | Yes         | Implemented as part of Task 20. |
+| `TOKEN_CARET`     | `^`    | Yes         | Implemented as part of Task 20. |
+| `TOKEN_LARROW2`   | `<<`   | Yes         | Implemented as part of Task 20. |
+| `TOKEN_RARROW2`   | `>>`   | Yes         | Implemented as part of Task 20. |
 
 #### 2.2.2 Comparison and Equality Operators
 

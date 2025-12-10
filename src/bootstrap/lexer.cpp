@@ -280,13 +280,18 @@ Token Lexer::lexNumericLiteral() {
 /**
  * @brief Scans and returns the next token from the source code.
  *
- * This function scans the source code character by character to construct the
- * next valid token. It handles whitespace, single-character and multi-character
- * operators using a lookahead mechanism.
+ * This is the main entry point for the lexer. It consumes whitespace, identifies
+ * the start of a new token, and dispatches to helper functions for complex tokens
+ * like numbers and character literals. It handles single-character and multi-character
+ * operators using a lookahead mechanism (`match` function). The function is designed
+ * to be called repeatedly to generate a stream of tokens.
  *
- * @return The next token in the source stream.
+ * @return The next `Token` found in the source stream. When the end of the
+ *         file is reached, it will consistently return a token of type `TOKEN_EOF`.
+ *         If an unrecognized character is found, it returns `TOKEN_ERROR`.
  */
 Token Lexer::nextToken() {
+    // Skip whitespace and handle newlines first.
     while (true) {
         char c = *this->current;
         switch (c) {
@@ -377,8 +382,25 @@ Token Lexer::nextToken() {
         case ']': token.type = TOKEN_RBRACKET; break;
         case '=': token.type = match('=') ? TOKEN_EQUAL_EQUAL : TOKEN_EQUAL; break;
         case '!': token.type = match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG; break;
-        case '<': token.type = match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS; break;
-        case '>': token.type = match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER; break;
+        case '<':
+            if (match('<')) {
+                token.type = TOKEN_LARROW2;
+            } else {
+                token.type = match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS;
+            }
+            break;
+        case '>':
+            if (match('>')) {
+                token.type = TOKEN_RARROW2;
+            } else {
+                token.type = match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER;
+            }
+            break;
+        case '%': token.type = TOKEN_PERCENT; break;
+        case '~': token.type = TOKEN_TILDE; break;
+        case '&': token.type = TOKEN_AMPERSAND; break;
+        case '|': token.type = TOKEN_PIPE; break;
+        case '^': token.type = TOKEN_CARET; break;
         case '\'':
             token = lexCharLiteral();
             break;
