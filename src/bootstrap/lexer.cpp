@@ -333,10 +333,37 @@ Token Lexer::nextToken() {
     this->column++;
 
     switch (c) {
-        case '+': token.type = match('=') ? TOKEN_PLUS_EQUAL : TOKEN_PLUS; break;
-        case '-': token.type = match('=') ? TOKEN_MINUS_EQUAL : TOKEN_MINUS; break;
-        case '*': token.type = match('=') ? TOKEN_STAR_EQUAL : TOKEN_STAR; break;
-        case '.': token.type = TOKEN_DOT; break;
+        case '+':
+            if (match('=')) {
+                token.type = TOKEN_PLUS_EQUAL;
+            } else if (match('+')) {
+                token.type = TOKEN_PLUS2;
+            } else if (match('%')) {
+                token.type = TOKEN_PLUSPERCENT;
+            } else {
+                token.type = TOKEN_PLUS;
+            }
+            break;
+        case '-':
+            if (match('=')) {
+                token.type = TOKEN_MINUS_EQUAL;
+            } else if (match('%')) {
+                token.type = TOKEN_MINUSPERCENT;
+            } else {
+                token.type = TOKEN_MINUS;
+            }
+            break;
+        case '*':
+            if (match('=')) {
+                token.type = TOKEN_STAR_EQUAL;
+            } else if (match('*')) {
+                token.type = TOKEN_STAR2;
+            } else if (match('%')) {
+                token.type = TOKEN_STARPERCENT;
+            } else {
+                token.type = TOKEN_STAR;
+            }
+            break;
         case '/':
             if (match('/')) {
                 // Single-line comment
@@ -402,8 +429,26 @@ Token Lexer::nextToken() {
         case '%': token.type = match('=') ? TOKEN_PERCENT_EQUAL : TOKEN_PERCENT; break;
         case '~': token.type = TOKEN_TILDE; break;
         case '&': token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND; break;
-        case '|': token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE; break;
+        case '|':
+            if (match('=')) {
+                token.type = TOKEN_PIPE_EQUAL;
+            } else if (match('|')) {
+                token.type = TOKEN_PIPE2;
+            } else {
+                token.type = TOKEN_PIPE;
+            }
+            break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
+        case '.':
+            if (match('*')) {
+                token.type = TOKEN_DOT_ASTERISK;
+            } else if (match('?')) {
+                token.type = TOKEN_DOT_QUESTION;
+            } else {
+                token.type = TOKEN_DOT;
+            }
+            break;
+        case '?': token.type = TOKEN_QUESTION; break;
         case '\'':
             token = lexCharLiteral();
             break;
