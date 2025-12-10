@@ -127,6 +127,11 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_SWITCH` | `switch` |
 | `TOKEN_TRY` | `try` |
 | `TOKEN_WHILE` | `while` |
+| `TOKEN_ENUM` | `enum` |
+| `TOKEN_ERROR_SET` | `error` |
+| `TOKEN_STRUCT` | `struct` |
+| `TOKEN_UNION` | `union` |
+| `TOKEN_OPAQUE` | `opaque` |
 
 The following keywords are defined in the Zig grammar but are not yet implemented in the lexer.
 
@@ -139,24 +144,19 @@ The following keywords are defined in the Zig grammar but are not yet implemente
 - `asm`
 - `callconv`
 - `comptime`
-- `enum`
 - `errdefer`
-- `error`
 - `export`
 - `extern`
 - `inline`
 - `noalias`
 - `nosuspend`
 - `noinline`
-- `opaque`
 - `or`
 - `packed`
 - `pub`
 - `linksection`
-- `struct`
 - `test`
 - `threadlocal`
-- `union`
 - `unreachable`
 - `usingnamespace`
 - `volatile`

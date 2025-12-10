@@ -507,6 +507,7 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
   - [x] Implement lexing for float literals (`3.14`, `0x1.2p3`)
   - [x] Implement line comment handling (`//`)
   - [x] Implement block comment handling (`/* */`) with nesting support
+  - [x] Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`)
 
 ### Week 3: Parser & AST
 - [ ] Implement recursive descent parser

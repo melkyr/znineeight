@@ -55,6 +55,13 @@ enum TokenType {
     TOKEN_SWITCH,           ///< 'switch' keyword.
     TOKEN_TRY,              ///< 'try' keyword.
 
+    // Type Declaration Keywords
+    TOKEN_ENUM,             ///< 'enum' keyword.
+    TOKEN_ERROR_SET,        ///< 'error' keyword.
+    TOKEN_STRUCT,           ///< 'struct' keyword.
+    TOKEN_UNION,            ///< 'union' keyword.
+    TOKEN_OPAQUE,           ///< 'opaque' keyword.
+
     // Operators
     TOKEN_PLUS,             ///< '+' operator.
     TOKEN_MINUS,            ///< '-' operator.
