@@ -30,6 +30,8 @@ TEST_FUNC(Lexer_FloatHexInvalidFormat);
 TEST_FUNC(IntegerLiterals);
 TEST_FUNC(lex_arithmetic_and_bitwise_operators);
 TEST_FUNC(lex_compound_assignment_operators);
+TEST_FUNC(LexerSpecialOperators);
+TEST_FUNC(LexerSpecialOperatorsMixed);
 
 int main() {
     bool (*tests[])() = {
@@ -62,6 +64,8 @@ int main() {
         test_IntegerLiterals,
         test_lex_arithmetic_and_bitwise_operators,
         test_lex_compound_assignment_operators,
+        test_LexerSpecialOperators,
+        test_LexerSpecialOperatorsMixed,
     };
 
     int passed = 0;

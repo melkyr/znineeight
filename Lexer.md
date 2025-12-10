@@ -98,16 +98,16 @@ This section tracks the implementation status of all tokens required for the Ret
 
 | Token Type         | Symbol | Implemented | Notes                       |
 | ------------------ | ------ | ----------- | --------------------------- |
-| `TOKEN_DOT`        | `.`    | No          | New task required.          |
-| `TOKEN_DOT_ASTERISK`| `.*`   | No          | New task required.          |
-| `TOKEN_DOT_QUESTION`| `.?`   | No          | New task required.          |
-| `TOKEN_QUESTION`   | `?`    | No          | For optionals. New task required. |
-| `TOKEN_PLUS2`      | `++`   | No          | Array concatenation. New task required. |
-| `TOKEN_STAR2`      | `**`   | No          | Array multiplication. New task required. |
-| `TOKEN_PIPE2`      | `||`   | No          | Error set merge. New task required. |
-| `TOKEN_PLUSPERCENT`| `+%`   | No          | Wrapping addition. New task required. |
-| `TOKEN_MINUSPERCENT`| `-%`   | No          | Wrapping subtraction. New task required. |
-| `TOKEN_STARPERCENT`| `*%`   | No          | Wrapping multiplication. New task required. |
+| `TOKEN_DOT`        | `.`    | Yes         | Implemented as part of Task 22. |
+| `TOKEN_DOT_ASTERISK`| `.*`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_DOT_QUESTION`| `.?`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_QUESTION`   | `?`    | Yes         | Implemented as part of Task 22. |
+| `TOKEN_PLUS2`      | `++`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_STAR2`      | `**`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_PIPE2`      | `||`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_PLUSPERCENT`| `+%`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_MINUSPERCENT`| `-%`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_STARPERCENT`| `*%`   | Yes         | Implemented as part of Task 22. |
 
 ### 2.3. Keywords
 
