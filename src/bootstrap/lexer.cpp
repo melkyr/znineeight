@@ -344,8 +344,10 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_PLUS;
             }
             break;
-        case '-':
-            if (match('=')) {
+        case '-': // Handles '-', '->', '-=', '-%'
+            if (match('>')) {
+                token.type = TOKEN_ARROW;
+            } else if (match('=')) {
                 token.type = TOKEN_MINUS_EQUAL;
             } else if (match('%')) {
                 token.type = TOKEN_MINUSPERCENT;
@@ -410,7 +412,16 @@ Token Lexer::nextToken() {
         case '}': token.type = TOKEN_RBRACE; break;
         case '[': token.type = TOKEN_LBRACKET; break;
         case ']': token.type = TOKEN_RBRACKET; break;
-        case '=': token.type = match('=') ? TOKEN_EQUAL_EQUAL : TOKEN_EQUAL; break;
+        case ':': token.type = TOKEN_COLON; break;
+        case '=': // Handles '=', '==', '=>'
+            if (match('=')) {
+                token.type = TOKEN_EQUAL_EQUAL;
+            } else if (match('>')) {
+                token.type = TOKEN_FAT_ARROW;
+            } else {
+                token.type = TOKEN_EQUAL;
+            }
+            break;
         case '!': token.type = match('=') ? TOKEN_BANG_EQUAL : TOKEN_BANG; break;
         case '<':
             if (match('<')) {
@@ -439,8 +450,19 @@ Token Lexer::nextToken() {
             }
             break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
-        case '.':
-            if (match('*')) {
+        case '.': // Handles '.', '..', '...', '.*', '.?'
+            if (match('.')) {
+                if (match('.')) {
+                    token.type = TOKEN_ELLIPSIS;
+                } else {
+                    // If we see '..' but not '...', it's two separate dot tokens.
+                    // We've already consumed one '.', so we need to backtrack
+                    // to allow the next call to nextToken() to see the second '.'.
+                    this->current--;
+                    this->column--;
+                    token.type = TOKEN_DOT;
+                }
+            } else if (match('*')) {
                 token.type = TOKEN_DOT_ASTERISK;
             } else if (match('?')) {
                 token.type = TOKEN_DOT_QUESTION;

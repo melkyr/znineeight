@@ -15,6 +15,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \
     tests/test_char_literal.cpp \
+    tests/test_lexer_delimiters.cpp \
     -Isrc/include \
     -o test_runner
 
