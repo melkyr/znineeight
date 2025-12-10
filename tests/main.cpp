@@ -28,6 +28,7 @@ TEST_FUNC(Lexer_FloatHexNoFractionalPart);
 TEST_FUNC(Lexer_FloatHexNegativeExponent);
 TEST_FUNC(Lexer_FloatHexInvalidFormat);
 TEST_FUNC(IntegerLiterals);
+TEST_FUNC(lex_arithmetic_and_bitwise_operators);
 
 int main() {
     bool (*tests[])() = {
@@ -58,6 +59,7 @@ int main() {
         test_Lexer_FloatHexNegativeExponent,
         test_Lexer_FloatHexInvalidFormat,
         test_IntegerLiterals,
+        test_lex_arithmetic_and_bitwise_operators,
     };
 
     int passed = 0;

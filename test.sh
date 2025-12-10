@@ -8,6 +8,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_memory.cpp \
     tests/test_lexer.cpp \
     tests/test_lexer_float.cpp \
+    tests/test_lexer_operators.cpp \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \
