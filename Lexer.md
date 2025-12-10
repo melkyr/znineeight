@@ -83,16 +83,16 @@ This section tracks the implementation status of all tokens required for the Ret
 | Token Type             | Symbol | Implemented | Notes |
 | ---------------------- | ------ | ----------- | ----- |
 | `TOKEN_EQUAL`          | `=`    | Yes         |       |
-| `TOKEN_PLUS_EQUAL`     | `+=`   | No          | New task required. |
-| `TOKEN_MINUS_EQUAL`    | `-=`   | No          | New task required. |
-| `TOKEN_STAR_EQUAL`     | `*=`   | No          | New task required. |
-| `TOKEN_SLASH_EQUAL`    | `/=`   | No          | New task required. |
-| `TOKEN_PERCENT_EQUAL`  | `%=`  | No          | New task required. |
-| `TOKEN_AMPERSAND_EQUAL`| `&=`   | No          | New task required. |
-| `TOKEN_PIPE_EQUAL`     | `|=`   | No          | New task required. |
-| `TOKEN_CARET_EQUAL`    | `^=`   | No          | New task required. |
-| `TOKEN_LARROW2_EQUAL`  | `<<=`  | No          | New task required. |
-| `TOKEN_RARROW2_EQUAL`  | `>>=`  | No          | New task required. |
+| `TOKEN_PLUS_EQUAL`     | `+=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_MINUS_EQUAL`    | `-=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_STAR_EQUAL`     | `*=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_SLASH_EQUAL`    | `/=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_PERCENT_EQUAL`  | `%=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_AMPERSAND_EQUAL`| `&=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_PIPE_EQUAL`     | `|=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_CARET_EQUAL`    | `^=`   | Yes         | Implemented as part of Task 21. |
+| `TOKEN_LARROW2_EQUAL`  | `<<=`  | Yes         | Implemented as part of Task 21. |
+| `TOKEN_RARROW2_EQUAL`  | `>>=`  | Yes         | Implemented as part of Task 21. |
 
 #### 2.2.4 Special and Wrapping Operators
 
