@@ -40,7 +40,7 @@ TEST_FUNC(delimiters_lexing) {
     ASSERT_EQ(TOKEN_DOT, token.type);
     ASSERT_EQ(16, token.location.column);
 
-    // Malformed ..a should be two dots and an error
+    // Malformed ..a should be two dots and an identifier
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_DOT, token.type);
     ASSERT_EQ(18, token.location.column);
@@ -50,7 +50,7 @@ TEST_FUNC(delimiters_lexing) {
     ASSERT_EQ(19, token.location.column);
 
     token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_ERROR, token.type);
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
     ASSERT_EQ(20, token.location.column);
 
     token = lexer.nextToken();

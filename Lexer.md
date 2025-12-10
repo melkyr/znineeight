@@ -111,6 +111,23 @@ This section tracks the implementation status of all tokens required for the Ret
 
 ### 2.3. Keywords
 
+#### 2.3.1 Implemented Keywords
+
+| Token Type | Keyword |
+| --- | --- |
+| `TOKEN_BREAK` | `break` |
+| `TOKEN_CATCH` | `catch` |
+| `TOKEN_CONTINUE` | `continue` |
+| `TOKEN_ELSE` | `else` |
+| `TOKEN_FOR` | `for` |
+| `TOKEN_IF` | `if` |
+| `TOKEN_ORELSE` | `orelse` |
+| `TOKEN_RESUME` | `resume` |
+| `TOKEN_SUSPEND` | `suspend` |
+| `TOKEN_SWITCH` | `switch` |
+| `TOKEN_TRY` | `try` |
+| `TOKEN_WHILE` | `while` |
+
 The following keywords are defined in the Zig grammar but are not yet implemented in the lexer.
 
 - `addrspace`
@@ -120,35 +137,25 @@ The following keywords are defined in the Zig grammar but are not yet implemente
 - `anyframe`
 - `anytype`
 - `asm`
-- `break`
 - `callconv`
-- `catch`
 - `comptime`
-- `continue`
-- `else`
 - `enum`
 - `errdefer`
 - `error`
 - `export`
 - `extern`
-- `for`
 - `inline`
 - `noalias`
 - `nosuspend`
 - `noinline`
 - `opaque`
 - `or`
-- `orelse`
 - `packed`
 - `pub`
-- `resume`
 - `linksection`
 - `struct`
-- `suspend`
-- `switch`
 - `test`
 - `threadlocal`
-- `try`
 - `union`
 - `unreachable`
 - `usingnamespace`
