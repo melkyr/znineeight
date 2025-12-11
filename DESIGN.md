@@ -499,12 +499,13 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ### Week 2: Memory & Lexer
 - [x] Implement Arena Allocator with alignment support
 - [x] Create String Interning system
-- Implement lexer class with token definitions
+- [x] Implement lexer class with token definitions
   - [x] Define Token struct and TokenType enum
   - [x] Implement Lexer class skeleton
   - [x] Implement lexing for single-character tokens
   - [x] Implement lexing for multi-character tokens (`==`, `!=`, `<=`, `>=`)
   - [x] Implement lexing for float literals (`3.14`, `0x1.2p3`)
+  - [x] Implement lexing for integer literals (`123`, `0xFF`)
   - [x] Implement line comment handling (`//`)
   - [x] Implement block comment handling (`/* */`) with nesting support
   - [x] Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`)

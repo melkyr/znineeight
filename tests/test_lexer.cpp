@@ -76,6 +76,105 @@ TEST_FUNC(single_char_tokens) {
     return true;
 }
 
+TEST_FUNC(Lexer_ErrorConditions) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* source = "'a' ' " // Unterminated char literal
+                         "1.2.3 " // Invalid numeric format
+                         "a_really_long_identifier_that_is_well_over_256_characters_long_a_really_long_identifier_that_is_well_over_256_characters_long_a_really_long_identifier_that_is_well_over_256_characters_long_a_really_long_identifier_that_is_well_over_256_characters_long_a_really_long_identifier_that_is_well_over_256_characters_long "
+                         "@"; // Unrecognized character
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+    Lexer lexer(sm, file_id);
+
+    Token t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_CHAR_LITERAL, t.type);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ERROR, t.type); // Unterminated char literal
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ERROR, t.type); // Invalid numeric format
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ERROR, t.type); // Identifier too long
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ERROR, t.type); // Unrecognized character
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, t.type);
+
+    return true;
+}
+
+TEST_FUNC(Lexer_IdentifiersAndStrings) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* source = "my_var \"hello world\" _another_var \"\"";
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+    Lexer lexer(sm, file_id);
+
+    // Test my_var
+    Token t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, t.type);
+    // ASSERT_STREQ("my_var", t.value.identifier);
+
+    // Test "hello world"
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_STRING_LITERAL, t.type);
+    // ASSERT_STREQ("hello world", t.value.identifier);
+
+    // Test _another_var
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, t.type);
+    // ASSERT_STREQ("_another_var", t.value.identifier);
+
+    // Test ""
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_STRING_LITERAL, t.type);
+    // ASSERT_STREQ("", t.value.identifier);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, t.type);
+
+    return true;
+}
+
+TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* source = "if (x > 10) {\n"
+                         "  return 0xFF;\n"
+                         "} else {\n"
+                         "  while (i < 100) {\n"
+                         "    i += 1;\n"
+                         "  }\n"
+                         "}\n"
+                         "const pi = 3.14;\n";
+
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+    Lexer lexer(sm, file_id);
+
+    TokenType expected_tokens[] = {
+        TOKEN_IF, TOKEN_LPAREN, TOKEN_IDENTIFIER, TOKEN_GREATER, TOKEN_INTEGER_LITERAL, TOKEN_RPAREN, TOKEN_LBRACE,
+        TOKEN_RETURN, TOKEN_INTEGER_LITERAL, TOKEN_SEMICOLON,
+        TOKEN_RBRACE, TOKEN_ELSE, TOKEN_LBRACE,
+        TOKEN_WHILE, TOKEN_LPAREN, TOKEN_IDENTIFIER, TOKEN_LESS, TOKEN_INTEGER_LITERAL, TOKEN_RPAREN, TOKEN_LBRACE,
+        TOKEN_IDENTIFIER, TOKEN_PLUS_EQUAL, TOKEN_INTEGER_LITERAL, TOKEN_SEMICOLON,
+        TOKEN_RBRACE,
+        TOKEN_RBRACE,
+        TOKEN_CONST, TOKEN_IDENTIFIER, TOKEN_EQUAL, TOKEN_FLOAT_LITERAL, TOKEN_SEMICOLON,
+        TOKEN_EOF
+    };
+
+    for (int i = 0; i < sizeof(expected_tokens) / sizeof(TokenType); ++i) {
+        Token t = lexer.nextToken();
+        ASSERT_EQ(expected_tokens[i], t.type);
+    }
+
+    return true;
+}
+
 TEST_FUNC(IntegerLiterals) {
     ArenaAllocator arena(1024);
     SourceManager sm(arena);
