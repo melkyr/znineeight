@@ -1,14 +1,16 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/source_manager.hpp"
+#include "../src/include/string_interner.hpp"
 
 TEST_FUNC(empty_block_comment) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/**/+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -23,6 +25,7 @@ TEST_FUNC(empty_block_comment) {
 
 TEST_FUNC(multiline_commented_out_code) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/*\n"
                                "    var x: i32 = 10;\n"
@@ -33,7 +36,7 @@ TEST_FUNC(multiline_commented_out_code) {
                                "const y = 20;";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_CONST, token.type);
@@ -60,11 +63,12 @@ TEST_FUNC(multiline_commented_out_code) {
 
 TEST_FUNC(line_comment_in_block) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* // this is ignored */+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -77,11 +81,12 @@ TEST_FUNC(line_comment_in_block) {
 
 TEST_FUNC(block_comment_in_line) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "// /* this is ignored */\n+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -96,11 +101,12 @@ TEST_FUNC(block_comment_in_line) {
 
 TEST_FUNC(comment_with_keywords) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* if for while var const */ -";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_MINUS, token.type);
@@ -113,11 +119,12 @@ TEST_FUNC(comment_with_keywords) {
 
 TEST_FUNC(comment_with_operators) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* + - * / () {} [] */=";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EQUAL, token.type);
@@ -130,11 +137,12 @@ TEST_FUNC(comment_with_operators) {
 
 TEST_FUNC(block_comment_at_eof) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "+/* comment */";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -147,11 +155,12 @@ TEST_FUNC(block_comment_at_eof) {
 
 TEST_FUNC(complex_nesting) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* level 1 /* level 2 /* nested */ */ */*";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_STAR, token.type);

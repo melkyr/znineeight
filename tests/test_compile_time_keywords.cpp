@@ -1,16 +1,18 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/source_manager.hpp"
+#include "../src/include/string_interner.hpp"
 #include <cstring>
 
 TEST_FUNC(lex_compile_time_and_special_function_keywords) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
 
     const char* content = "asm comptime errdefer inline noinline test unreachable";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token1 = lexer.nextToken();
     ASSERT_EQ(TOKEN_ASM, token1.type);

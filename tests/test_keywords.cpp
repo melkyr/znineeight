@@ -2,14 +2,16 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
 #include "memory.hpp"
+#include "string_interner.hpp"
 #include <cstring>
 
 // Helper function to test a single keyword token
 static bool test_single_keyword(const char* keyword_str, TokenType expected_type) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", keyword_str, strlen(keyword_str));
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
     Token token = lexer.nextToken();
     ASSERT_EQ(token.type, expected_type);
     ASSERT_EQ(lexer.nextToken().type, TOKEN_EOF);
@@ -51,9 +53,10 @@ TEST_FUNC(LexerLongIdentifierError) {
     long_identifier[257] = '\0';
 
     ArenaAllocator arena(4096);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", long_identifier, strlen(long_identifier));
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
     Token token = lexer.nextToken();
     // The lexer should return an error for identifiers that are too long.
     ASSERT_EQ(token.type, TOKEN_ERROR);

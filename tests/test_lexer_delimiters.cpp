@@ -1,14 +1,16 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/source_manager.hpp"
+#include "../src/include/string_interner.hpp"
 
 TEST_FUNC(delimiters_lexing) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = ": -> => ... .. . ..a";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_COLON, token.type);

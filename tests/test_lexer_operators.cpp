@@ -2,15 +2,17 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
 #include "memory.hpp"
+#include "string_interner.hpp"
 #include <cstring> // For strlen
 
 TEST_FUNC(lex_arithmetic_and_bitwise_operators) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "% ~ & | ^ << >>";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
 
     Token t;
 
