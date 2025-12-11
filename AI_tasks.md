@@ -34,7 +34,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 25. **Task 25:** Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`).
 26. **Task 26:** Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`). (DONE)
 27. **Task 27:** Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`). (DONE)
-28. **Task 28:** Implement keyword recognition for memory and calling conventions (`addrspace`, `align`, `allowzero`, `anyframe`, `anytype`, `callconv`, `noalias`, `nosuspend`, `packed`, `threadlocal`, `volatile`).
+28. **Task 28:** Implement keyword recognition for memory and calling conventions (`addrspace`, `align`, `allowzero`, `and`, `anyframe`, `anytype`, `callconv`, `noalias`, `nosuspend`, `or`, `packed`, `threadlocal`, `volatile`). (DONE)
 29. **Task 29:** Implement logic to skip single-line and block comments. (This was previously part of other tasks, now consolidated).
 30. **Task 30:** Write comprehensive unit tests for the lexer, covering all new token types and edge cases.
 

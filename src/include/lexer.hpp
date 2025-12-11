@@ -78,6 +78,21 @@ enum TokenType {
     TOKEN_TEST,             ///< 'test' keyword.
     TOKEN_UNREACHABLE,      ///< 'unreachable' keyword.
 
+    // Miscellaneous Keywords
+    TOKEN_ADDRSPACE,        ///< 'addrspace' keyword.
+    TOKEN_ALIGN,            ///< 'align' keyword.
+    TOKEN_ALLOWZERO,        ///< 'allowzero' keyword.
+    TOKEN_AND,              ///< 'and' keyword.
+    TOKEN_ANYFRAME,         ///< 'anyframe' keyword.
+    TOKEN_ANYTYPE,          ///< 'anytype' keyword.
+    TOKEN_CALLCONV,         ///< 'callconv' keyword.
+    TOKEN_NOALIAS,          ///< 'noalias' keyword.
+    TOKEN_NOSUSPEND,        ///< 'nosuspend' keyword.
+    TOKEN_OR,               ///< 'or' keyword.
+    TOKEN_PACKED,           ///< 'packed' keyword.
+    TOKEN_THREADLOCAL,      ///< 'threadlocal' keyword.
+    TOKEN_VOLATILE,         ///< 'volatile' keyword.
+
     // Operators
     TOKEN_PLUS,             ///< '+' operator.
     TOKEN_MINUS,            ///< '-' operator.
