@@ -7,6 +7,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_string_interner.cpp \
     tests/test_memory.cpp \
     tests/test_lexer.cpp \
+    tests/test_lexer_comments.cpp \
     tests/test_lexer_float.cpp \
     tests/test_lexer_operators.cpp \
     tests/test_lexer_compound_operators.cpp \
