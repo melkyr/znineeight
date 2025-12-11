@@ -132,6 +132,11 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_STRUCT` | `struct` |
 | `TOKEN_UNION` | `union` |
 | `TOKEN_OPAQUE` | `opaque` |
+| `TOKEN_EXPORT` | `export` |
+| `TOKEN_EXTERN` | `extern` |
+| `TOKEN_PUB` | `pub` |
+| `TOKEN_LINKSECTION` | `linksection` |
+| `TOKEN_USINGNAMESPACE` | `usingnamespace` |
 
 The following keywords are defined in the Zig grammar but are not yet implemented in the lexer.
 
@@ -145,20 +150,15 @@ The following keywords are defined in the Zig grammar but are not yet implemente
 - `callconv`
 - `comptime`
 - `errdefer`
-- `export`
-- `extern`
 - `inline`
 - `noalias`
 - `nosuspend`
 - `noinline`
 - `or`
 - `packed`
-- `pub`
-- `linksection`
 - `test`
 - `threadlocal`
 - `unreachable`
-- `usingnamespace`
 - `volatile`
 
 ### 2.4. Delimiters and Other Symbols

@@ -32,7 +32,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 23. **Task 23:** Implement lexing for remaining delimiters (`:`, `->`, `=>`, `...`).
 24. **Task 24:** Implement keyword recognition for control flow (`break`, `catch`, `continue`, `else`, `for`, `if`, `orelse`, `resume`, `suspend`, `switch`, `try`, `while`). (DONE)
 25. **Task 25:** Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`).
-26. **Task 26:** Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`).
+26. **Task 26:** Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`). (DONE)
 27. **Task 27:** Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`).
 28. **Task 28:** Implement keyword recognition for memory and calling conventions (`addrspace`, `align`, `allowzero`, `anyframe`, `anytype`, `callconv`, `noalias`, `nosuspend`, `packed`, `threadlocal`, `volatile`).
 29. **Task 29:** Implement logic to skip single-line and block comments. (This was previously part of other tasks, now consolidated).

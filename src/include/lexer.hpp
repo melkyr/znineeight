@@ -62,6 +62,13 @@ enum TokenType {
     TOKEN_UNION,            ///< 'union' keyword.
     TOKEN_OPAQUE,           ///< 'opaque' keyword.
 
+    // Visibility and Linkage Keywords
+    TOKEN_EXPORT,           ///< 'export' keyword.
+    TOKEN_EXTERN,           ///< 'extern' keyword.
+    TOKEN_PUB,              ///< 'pub' keyword.
+    TOKEN_LINKSECTION,      ///< 'linksection' keyword.
+    TOKEN_USINGNAMESPACE,   ///< 'usingnamespace' keyword.
+
     // Operators
     TOKEN_PLUS,             ///< '+' operator.
     TOKEN_MINUS,            ///< '-' operator.
