@@ -21,6 +21,43 @@ TEST_FUNC(empty_block_comment) {
     return true;
 }
 
+TEST_FUNC(multiline_commented_out_code) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+    const char* test_content = "/*\n"
+                               "    var x: i32 = 10;\n"
+                               "    if (x > 5) {\n"
+                               "        return x;\n"
+                               "    }\n"
+                               "*/\n"
+                               "const y = 20;";
+    sm.addFile("test.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, 0);
+
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_CONST, token.type);
+    ASSERT_EQ(7, token.location.line);
+    ASSERT_EQ(1, token.location.column);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EQUAL, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_SEMICOLON, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
 TEST_FUNC(line_comment_in_block) {
     ArenaAllocator arena(1024);
     SourceManager sm(arena);
