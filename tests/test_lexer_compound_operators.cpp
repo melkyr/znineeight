@@ -12,7 +12,7 @@ TEST_FUNC(lex_compound_assignment_operators) {
     const char* source = "+= -= *= /= %= &= |= ^= <<= >>=";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     Token t;
 

@@ -10,7 +10,7 @@ TEST_FUNC(empty_block_comment) {
     const char* test_content = "/**/+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -36,7 +36,7 @@ TEST_FUNC(multiline_commented_out_code) {
                                "const y = 20;";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_CONST, token.type);
@@ -68,7 +68,7 @@ TEST_FUNC(line_comment_in_block) {
     const char* test_content = "/* // this is ignored */+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -86,7 +86,7 @@ TEST_FUNC(block_comment_in_line) {
     const char* test_content = "// /* this is ignored */\n+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -106,7 +106,7 @@ TEST_FUNC(comment_with_keywords) {
     const char* test_content = "/* if for while var const */ -";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_MINUS, token.type);
@@ -124,7 +124,7 @@ TEST_FUNC(comment_with_operators) {
     const char* test_content = "/* + - * / () {} [] */=";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EQUAL, token.type);
@@ -142,7 +142,7 @@ TEST_FUNC(block_comment_at_eof) {
     const char* test_content = "+/* comment */";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -160,7 +160,7 @@ TEST_FUNC(complex_nesting) {
     const char* test_content = "/* level 1 /* level 2 /* nested */ */ */*";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_STAR, token.type);

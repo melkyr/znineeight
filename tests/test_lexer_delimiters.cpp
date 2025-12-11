@@ -10,7 +10,7 @@ TEST_FUNC(delimiters_lexing) {
     const char* test_content = ": -> => ... .. . ..a";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_COLON, token.type);

@@ -11,7 +11,7 @@ TEST_FUNC(Lexer_CharLiteralHappyPath) {
     const char* source = "'a' 'Z' '\\n' '\\''";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
@@ -41,7 +41,7 @@ TEST_FUNC(Lexer_CharLiteralHex) {
     SourceManager sm(arena);
     const char* source = "'\\x41' '\\x6F'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
@@ -61,7 +61,7 @@ TEST_FUNC(Lexer_CharLiteralUnicode) {
     const char* source = "'\\u{1f4a9}'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
     ASSERT_EQ(t.value.integer, 0x1f4a9);
@@ -77,7 +77,7 @@ TEST_FUNC(Lexer_CharLiteralErrors) {
     const char* source = "'' 'a 'ab' '\\z'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     // Empty literal
     Token t = lexer.nextToken();

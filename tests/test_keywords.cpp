@@ -11,7 +11,7 @@ static bool test_single_keyword(const char* keyword_str, TokenType expected_type
     StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", keyword_str, strlen(keyword_str));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
     Token token = lexer.nextToken();
     ASSERT_EQ(token.type, expected_type);
     ASSERT_EQ(lexer.nextToken().type, TOKEN_EOF);
@@ -56,7 +56,7 @@ TEST_FUNC(LexerLongIdentifierError) {
     StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", long_identifier, strlen(long_identifier));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
     Token token = lexer.nextToken();
     // The lexer should return an error for identifiers that are too long.
     ASSERT_EQ(token.type, TOKEN_ERROR);

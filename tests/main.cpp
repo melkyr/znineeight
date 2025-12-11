@@ -39,6 +39,8 @@ TEST_FUNC(lex_miscellaneous_keywords);
 TEST_FUNC(Lexer_ComprehensiveCrossGroup);
 TEST_FUNC(Lexer_IdentifiersAndStrings);
 TEST_FUNC(Lexer_ErrorConditions);
+TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
+TEST_FUNC(Lexer_StringLiteral_LongString);
 
 int main() {
     bool (*tests[])() = {
@@ -80,6 +82,8 @@ int main() {
         test_Lexer_ComprehensiveCrossGroup,
         test_Lexer_IdentifiersAndStrings,
         test_Lexer_ErrorConditions,
+        test_Lexer_StringLiteral_EscapedCharacters,
+        test_Lexer_StringLiteral_LongString,
     };
 
     int passed = 0;

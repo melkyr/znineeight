@@ -11,7 +11,7 @@ static Token lex_string(const char* source, ArenaAllocator& alloc) {
     SourceManager sm(alloc);
     StringInterner interner(alloc);
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, alloc, file_id);
     return lexer.nextToken();
 }
 

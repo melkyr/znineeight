@@ -27,7 +27,7 @@ TEST_FUNC(lex_keywords) {
 
     sm.addFile("test.zig", test_content.c_str(), test_content.length());
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     for (int i = 0; i < num_keywords; ++i) {
         Token token = lexer.nextToken();
@@ -48,7 +48,7 @@ TEST_FUNC(lex_miscellaneous_keywords) {
     const char* content = "addrspace align allowzero and anyframe anytype callconv noalias nosuspend or packed threadlocal volatile";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token;
 
@@ -105,7 +105,7 @@ TEST_FUNC(lex_visibility_and_linkage_keywords) {
     const char* content = "export extern pub linksection usingnamespace";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token1 = lexer.nextToken();
     ASSERT_EQ(TOKEN_EXPORT, token1.type);

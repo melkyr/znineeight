@@ -11,7 +11,7 @@ TEST_FUNC(LexerSpecialOperators) {
     SourceManager source_manager(allocator);
     const char* source = ". .* .? ? ++ ** || +% -% *%";
     u32 file_id = source_manager.addFile("test.zig", source, strlen(source));
-    Lexer lexer(source_manager, interner, file_id);
+    Lexer lexer(source_manager, interner, allocator, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_DOT);
@@ -55,7 +55,7 @@ TEST_FUNC(LexerSpecialOperatorsMixed) {
     SourceManager source_manager(allocator);
     const char* source = ".+*?||**++";
     u32 file_id = source_manager.addFile("test.zig", source, strlen(source));
-    Lexer lexer(source_manager, interner, file_id);
+    Lexer lexer(source_manager, interner, allocator, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_DOT);

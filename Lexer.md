@@ -45,7 +45,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | ----------------------- | ------------ | ----------- | -------------------------------------- |
 | `TOKEN_IDENTIFIER`      | `my_var`     | Yes         | Now stores its value in the string interner. |
 | `TOKEN_INTEGER_LITERAL` | `123`, `0xFF`| Yes         | Implemented as part of Task 17.        |
-| `TOKEN_STRING_LITERAL`  | `"hello"`    | Yes         | Does not yet support escape sequences. |
+| `TOKEN_STRING_LITERAL`  | `"hello"`    | Yes         | Now supports escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\xNN`. |
 | `TOKEN_CHAR_LITERAL`    | `'a'`        | Yes         | Implemented as part of Task 18.        |
 | `TOKEN_FLOAT_LITERAL`   | `3.14`       | Yes         | Implemented as part of Task 19.        |
 

@@ -1,5 +1,6 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
+#include "memory.hpp"
 #include <cctype>
 #include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
@@ -80,9 +81,10 @@ static TokenType lookupIdentifier(const char* name) {
  *
  * @param src A reference to the SourceManager containing the source file.
  * @param interner A reference to the StringInterner.
+ * @param arena A reference to the ArenaAllocator.
  * @param file_id The identifier of the file to be lexed.
  */
-Lexer::Lexer(SourceManager& src, StringInterner& interner, u32 file_id) : source(src), interner(interner), file_id(file_id) {
+Lexer::Lexer(SourceManager& src, StringInterner& interner, ArenaAllocator& arena, u32 file_id) : source(src), interner(interner), arena(arena), file_id(file_id) {
     // Retrieve the source content from the manager and set the current pointer.
     const SourceFile* file = src.getFile(file_id);
     this->current = file->content;
@@ -564,6 +566,17 @@ Token Lexer::nextToken() {
     return token;
 }
 
+/**
+ * @brief Parses a string literal, handling escape sequences.
+ *
+ * This function scans a string literal, delimited by double quotes. It processes
+ * standard escape sequences (`\n`, `\t`, etc.), and hexadecimal escapes (`\xNN`).
+ * The parsed string content is stored in a temporary buffer allocated from the
+ * arena, and the final string is interned.
+ *
+ * @return A `Token` of type `TOKEN_STRING_LITERAL` or `TOKEN_ERROR` if the
+ *         string is unterminated or contains an invalid escape sequence.
+ */
 Token Lexer::lexStringLiteral() {
     Token token;
     token.location.file_id = this->file_id;
@@ -571,7 +584,45 @@ Token Lexer::lexStringLiteral() {
     token.location.column = this->column;
 
     const char* start = this->current;
+    DynamicArray<char> buffer(this->arena);
+
     while (*this->current != '"' && *this->current != '\0') {
+        if (*this->current == '\\') {
+            this->current++; // Consume the backslash
+            switch (*this->current) {
+                case 'n': buffer.append('\n'); break;
+                case 'r': buffer.append('\r'); break;
+                case 't': buffer.append('\t'); break;
+                case '\\': buffer.append('\\'); break;
+                case '"': buffer.append('"'); break;
+                case 'x': {
+                    this->current++; // Consume 'x'
+                    char hex_val = 0;
+                    for (int i = 0; i < 2; ++i) {
+                        char c = *this->current;
+                        if (c >= '0' && c <= '9') {
+                            hex_val = (hex_val * 16) + (c - '0');
+                        } else if (c >= 'a' && c <= 'f') {
+                            hex_val = (hex_val * 16) + (c - 'a' + 10);
+                        } else if (c >= 'A' && c <= 'F') {
+                            hex_val = (hex_val * 16) + (c - 'A' + 10);
+                        } else {
+                            token.type = TOKEN_ERROR; // Invalid hex escape
+                            return token;
+                        }
+                        this->current++;
+                    }
+                    this->current--; // Backtrack one char
+                    buffer.append(hex_val);
+                    break;
+                }
+                default:
+                    token.type = TOKEN_ERROR; // Unsupported escape sequence
+                    return token;
+            }
+        } else {
+            buffer.append(*this->current);
+        }
         this->current++;
     }
 
@@ -580,22 +631,12 @@ Token Lexer::lexStringLiteral() {
         return token;
     }
 
-    int length = this->current - start;
-    char buffer[256];
-    if (length >= 256) {
-        token.type = TOKEN_ERROR;
-        this->column += length;
-        return token;
-    }
-
-    strncpy(buffer, start, length);
-    buffer[length] = '\0';
-
     this->current++; // Consume the closing "
-    this->column += length + 2;
+    this->column += (this->current - start);
 
+    buffer.append('\0');
     token.type = TOKEN_STRING_LITERAL;
-    token.value.identifier = this->interner.intern(buffer);
+    token.value.identifier = this->interner.intern(buffer.getData());
     return token;
 }
 
