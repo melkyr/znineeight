@@ -35,6 +35,7 @@ TEST_FUNC(LexerSpecialOperatorsMixed);
 TEST_FUNC(delimiters_lexing);
 TEST_FUNC(lex_visibility_and_linkage_keywords);
 TEST_FUNC(lex_compile_time_and_special_function_keywords);
+TEST_FUNC(lex_miscellaneous_keywords);
 
 int main() {
     bool (*tests[])() = {
@@ -72,6 +73,7 @@ int main() {
         test_delimiters_lexing,
         test_lex_visibility_and_linkage_keywords,
         test_lex_compile_time_and_special_function_keywords,
+        test_lex_miscellaneous_keywords,
     };
 
     int passed = 0;

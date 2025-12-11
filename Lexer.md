@@ -137,22 +137,19 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_PUB` | `pub` |
 | `TOKEN_LINKSECTION` | `linksection` |
 | `TOKEN_USINGNAMESPACE` | `usingnamespace` |
-
-The following keywords are defined in the Zig grammar but are not yet implemented in the lexer.
-
-- `addrspace`
-- `align`
-- `allowzero`
-- `and`
-- `anyframe`
-- `anytype`
-- `callconv`
-- `noalias`
-- `nosuspend`
-- `or`
-- `packed`
-- `threadlocal`
-- `volatile`
+| `TOKEN_ADDRSPACE` | `addrspace` |
+| `TOKEN_ALIGN` | `align` |
+| `TOKEN_ALLOWZERO` | `allowzero` |
+| `TOKEN_AND` | `and` |
+| `TOKEN_ANYFRAME` | `anyframe` |
+| `TOKEN_ANYTYPE` | `anytype` |
+| `TOKEN_CALLCONV` | `callconv` |
+| `TOKEN_NOALIAS` | `noalias` |
+| `TOKEN_NOSUSPEND` | `nosuspend` |
+| `TOKEN_OR` | `or` |
+| `TOKEN_PACKED` | `packed` |
+| `TOKEN_THREADLOCAL` | `threadlocal` |
+| `TOKEN_VOLATILE` | `volatile` |
 
 The following keywords for compile-time and special functions are also implemented:
 

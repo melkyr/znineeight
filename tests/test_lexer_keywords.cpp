@@ -38,6 +38,62 @@ TEST_FUNC(lex_keywords) {
     return true;
 }
 
+TEST_FUNC(lex_miscellaneous_keywords) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+
+    const char* content = "addrspace align allowzero and anyframe anytype callconv noalias nosuspend or packed threadlocal volatile";
+    sm.addFile("test.zig", content, strlen(content));
+
+    Lexer lexer(sm, 0);
+
+    Token token;
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ADDRSPACE, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ALIGN, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ALLOWZERO, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_AND, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ANYFRAME, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_ANYTYPE, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_CALLCONV, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_NOALIAS, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_NOSUSPEND, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_OR, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_PACKED, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_THREADLOCAL, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_VOLATILE, token.type);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
 TEST_FUNC(lex_visibility_and_linkage_keywords) {
     ArenaAllocator arena(1024);
     SourceManager sm(arena);
