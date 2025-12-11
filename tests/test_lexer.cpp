@@ -10,7 +10,7 @@ TEST_FUNC(single_char_tokens) {
     const char* test_content = "+\t-\n/ *;(){}[]@";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -87,7 +87,7 @@ TEST_FUNC(Lexer_ErrorConditions) {
                          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa " // 3. Identifier too long
                          "@";    // 4. Unrecognized character
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(TOKEN_ERROR, t.type); // Unterminated char literal
@@ -113,7 +113,7 @@ TEST_FUNC(Lexer_IdentifiersAndStrings) {
     SourceManager sm(arena);
     const char* source = "my_var \"hello world\" _another_var \"\"";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     // Test my_var
     Token t = lexer.nextToken();
@@ -155,7 +155,7 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
                          "const pi = 3.14;\n";
 
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, file_id);
+    Lexer lexer(sm, interner, arena, file_id);
 
     TokenType expected_tokens[] = {
         TOKEN_IF, TOKEN_LPAREN, TOKEN_IDENTIFIER, TOKEN_GREATER, TOKEN_INTEGER_LITERAL, TOKEN_RPAREN, TOKEN_LBRACE,
@@ -184,7 +184,7 @@ TEST_FUNC(IntegerLiterals) {
     const char* test_content = "123 0xFF";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
@@ -211,7 +211,7 @@ TEST_FUNC(skip_comments) {
                                "// another line comment at EOF";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -236,7 +236,7 @@ TEST_FUNC(nested_block_comments) {
     const char* test_content = "/* start /* nested */ end */+";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_PLUS, token.type);
@@ -256,7 +256,7 @@ TEST_FUNC(unterminated_block_comment) {
     const char* test_content = "/* this comment is not closed";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);
@@ -271,7 +271,7 @@ TEST_FUNC(assignment_vs_equality) {
     const char* test_content = "= == = > >= < <= ! !=";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EQUAL, token.type);
@@ -322,7 +322,7 @@ TEST_FUNC(multi_char_tokens) {
     const char* test_content = "== != <= >= ";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EQUAL_EQUAL, token.type);

@@ -158,6 +158,13 @@ public:
         assert(index < len);
         return data[index];
     }
+
+    /**
+     * @brief Returns a pointer to the underlying data buffer.
+     */
+    T* getData() {
+        return data;
+    }
 };
 
 #endif // MEMORY_HPP

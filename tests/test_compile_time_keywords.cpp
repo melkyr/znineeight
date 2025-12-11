@@ -12,7 +12,7 @@ TEST_FUNC(lex_compile_time_and_special_function_keywords) {
     const char* content = "asm comptime errdefer inline noinline test unreachable";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, interner, 0);
+    Lexer lexer(sm, interner, arena, 0);
 
     Token token1 = lexer.nextToken();
     ASSERT_EQ(TOKEN_ASM, token1.type);
