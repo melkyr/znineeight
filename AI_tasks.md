@@ -38,10 +38,11 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 29. **Task 29:** Implement logic to skip single-line and block comments. (This was previously part of other tasks, now consolidated).
 30. **Task 30:** Write comprehensive unit tests for the lexer, covering all new token types and edge cases.
 31. **Task 31:** Implement lexing for `TOKEN_STRING_LITERAL` and properly handle `TOKEN_IDENTIFIER` values. This includes storing the string content (for string literals) and the identifier name, likely using the string interner.
+32. **Task 32:** Extend the lexer to handle escaped characters in string literals (e.g., `\n`, `\t`, `\\`, `\"`).
 
 ### Milestone 3: Parser & AST
-32. **Task 32:** Define the base `ASTNode` and all derived node structures (e.g., `FnDeclNode`, `VarDeclNode`, `IfStmtNode`).
-33. **Task 33:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
+33. **Task 33:** Define the base `ASTNode` and all derived node structures (e.g., `FnDeclNode`, `VarDeclNode`, `IfStmtNode`).
+34. **Task 34:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 34. **Task 34:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 35. **Task 35:** Implement parsing for top-level variable declarations (`var` and `const`).
 36. **Task 36:** Implement parsing for function definitions (`fn`).

@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "source_manager.hpp"
+#include "string_interner.hpp"
 
 /**
  * @file lexer.hpp
@@ -220,6 +221,7 @@ class Lexer {
 private:
     const char* current;      ///< Pointer to the current character in the source buffer.
     SourceManager& source;    ///< Reference to the source manager for location tracking.
+    StringInterner& interner; ///< Reference to the string interner for identifiers.
     u32 file_id;              ///< The ID of the file currently being lexed.
     u32 line;                 ///< The current line number.
     u32 column;               ///< The current column number.
@@ -230,14 +232,16 @@ private:
     Token lexNumericLiteral();
     Token parseHexFloat();
     Token lexIdentifierOrKeyword();
+    Token lexStringLiteral();
 
 public:
     /**
      * @brief Constructs a new Lexer instance.
      * @param src A reference to the SourceManager containing the source files.
+     * @param interner A reference to the StringInterner for managing strings.
      * @param file_id The identifier of the specific file to be lexed from the SourceManager.
      */
-    Lexer(SourceManager& src, u32 file_id);
+    Lexer(SourceManager& src, StringInterner& interner, u32 file_id);
 
     /**
      * @brief Scans the source code and returns the next token.

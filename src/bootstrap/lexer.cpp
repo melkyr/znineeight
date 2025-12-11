@@ -19,6 +19,7 @@ const Keyword keywords[] = {
     {"callconv", TOKEN_CALLCONV},
     {"catch", TOKEN_CATCH},
     {"comptime", TOKEN_COMPTIME},
+    {"const", TOKEN_CONST},
     {"continue", TOKEN_CONTINUE},
     {"else", TOKEN_ELSE},
     {"enum", TOKEN_ENUM},
@@ -39,6 +40,7 @@ const Keyword keywords[] = {
     {"packed", TOKEN_PACKED},
     {"pub", TOKEN_PUB},
     {"resume", TOKEN_RESUME},
+    {"return", TOKEN_RETURN},
     {"struct", TOKEN_STRUCT},
     {"suspend", TOKEN_SUSPEND},
     {"switch", TOKEN_SWITCH},
@@ -77,9 +79,10 @@ static TokenType lookupIdentifier(const char* name) {
  * Initializes the lexer with the source code to be processed.
  *
  * @param src A reference to the SourceManager containing the source file.
+ * @param interner A reference to the StringInterner.
  * @param file_id The identifier of the file to be lexed.
  */
-Lexer::Lexer(SourceManager& src, u32 file_id) : source(src), file_id(file_id) {
+Lexer::Lexer(SourceManager& src, StringInterner& interner, u32 file_id) : source(src), interner(interner), file_id(file_id) {
     // Retrieve the source content from the manager and set the current pointer.
     const SourceFile* file = src.getFile(file_id);
     this->current = file->content;
@@ -279,6 +282,8 @@ Token Lexer::lexNumericLiteral() {
     const char* start = this->current;
 
     if (*start == '.') {
+        this->current++;
+        this->column++;
         token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
         return token;
     }
@@ -307,6 +312,8 @@ Token Lexer::lexNumericLiteral() {
     if (*end_ptr == '.') {
         if (!isdigit(end_ptr[1])) {
              token.type = TOKEN_ERROR;
+             this->current = end_ptr + 1;
+             this->column += (this->current - start);
              return token;
         }
         end_ptr++;
@@ -541,6 +548,9 @@ Token Lexer::nextToken() {
         case '\'':
             token = lexCharLiteral();
             break;
+        case '"':
+            token = lexStringLiteral();
+            break;
         default:
             if (isalpha(c) || c == '_') {
                 this->current--;
@@ -551,6 +561,41 @@ Token Lexer::nextToken() {
             break;
     }
 
+    return token;
+}
+
+Token Lexer::lexStringLiteral() {
+    Token token;
+    token.location.file_id = this->file_id;
+    token.location.line = this->line;
+    token.location.column = this->column;
+
+    const char* start = this->current;
+    while (*this->current != '"' && *this->current != '\0') {
+        this->current++;
+    }
+
+    if (*this->current == '\0') {
+        token.type = TOKEN_ERROR; // Unterminated string literal
+        return token;
+    }
+
+    int length = this->current - start;
+    char buffer[256];
+    if (length >= 256) {
+        token.type = TOKEN_ERROR;
+        this->column += length;
+        return token;
+    }
+
+    strncpy(buffer, start, length);
+    buffer[length] = '\0';
+
+    this->current++; // Consume the closing "
+    this->column += length + 2;
+
+    token.type = TOKEN_STRING_LITERAL;
+    token.value.identifier = this->interner.intern(buffer);
     return token;
 }
 
@@ -579,10 +624,7 @@ Token Lexer::lexIdentifierOrKeyword() {
     token.type = lookupIdentifier(buffer);
 
     if (token.type == TOKEN_IDENTIFIER) {
-        // This is where a string interner would be used.
-        // For now, we don't have one available in the lexer.
-        // The value will be left as NULL.
-        token.value.identifier = NULL;
+        token.value.identifier = this->interner.intern(buffer);
     }
 
     this->column += length;

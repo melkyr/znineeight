@@ -2,14 +2,16 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
 #include "memory.hpp"
+#include "string_interner.hpp"
 
 TEST_FUNC(Lexer_CharLiteralHappyPath) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'a' 'Z' '\\n' '\\''";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
@@ -35,10 +37,11 @@ TEST_FUNC(Lexer_CharLiteralHappyPath) {
 
 TEST_FUNC(Lexer_CharLiteralHex) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'\\x41' '\\x6F'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
@@ -53,11 +56,12 @@ TEST_FUNC(Lexer_CharLiteralHex) {
 
 TEST_FUNC(Lexer_CharLiteralUnicode) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'\\u{1f4a9}'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
     ASSERT_EQ(t.value.integer, 0x1f4a9);
@@ -68,11 +72,12 @@ TEST_FUNC(Lexer_CharLiteralUnicode) {
 
 TEST_FUNC(Lexer_CharLiteralErrors) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'' 'a 'ab' '\\z'";
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
 
     // Empty literal
     Token t = lexer.nextToken();

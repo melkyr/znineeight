@@ -1,6 +1,7 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/source_manager.hpp"
+#include "../src/include/string_interner.hpp"
 #include <cstring>
 #include <string>
 
@@ -13,6 +14,7 @@ TEST_FUNC(keywords_are_sorted) {
 
 TEST_FUNC(lex_keywords) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
 
     std::string test_content;
@@ -25,7 +27,7 @@ TEST_FUNC(lex_keywords) {
 
     sm.addFile("test.zig", test_content.c_str(), test_content.length());
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     for (int i = 0; i < num_keywords; ++i) {
         Token token = lexer.nextToken();
@@ -40,12 +42,13 @@ TEST_FUNC(lex_keywords) {
 
 TEST_FUNC(lex_miscellaneous_keywords) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
 
     const char* content = "addrspace align allowzero and anyframe anytype callconv noalias nosuspend or packed threadlocal volatile";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token;
 
@@ -96,12 +99,13 @@ TEST_FUNC(lex_miscellaneous_keywords) {
 
 TEST_FUNC(lex_visibility_and_linkage_keywords) {
     ArenaAllocator arena(1024);
+    StringInterner interner(arena);
     SourceManager sm(arena);
 
     const char* content = "export extern pub linksection usingnamespace";
     sm.addFile("test.zig", content, strlen(content));
 
-    Lexer lexer(sm, 0);
+    Lexer lexer(sm, interner, 0);
 
     Token token1 = lexer.nextToken();
     ASSERT_EQ(TOKEN_EXPORT, token1.type);

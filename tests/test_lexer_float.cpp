@@ -2,14 +2,16 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
 #include "memory.hpp"
+#include "string_interner.hpp"
 
 #include <cmath> // For fabs
 
 // Helper function to initialize lexer and get the first token
 static Token lex_string(const char* source, ArenaAllocator& alloc) {
     SourceManager sm(alloc);
+    StringInterner interner(alloc);
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, file_id);
+    Lexer lexer(sm, interner, file_id);
     return lexer.nextToken();
 }
 
