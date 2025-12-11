@@ -37,3 +37,33 @@ TEST_FUNC(lex_keywords) {
 
     return true;
 }
+
+TEST_FUNC(lex_visibility_and_linkage_keywords) {
+    ArenaAllocator arena(1024);
+    SourceManager sm(arena);
+
+    const char* content = "export extern pub linksection usingnamespace";
+    sm.addFile("test.zig", content, strlen(content));
+
+    Lexer lexer(sm, 0);
+
+    Token token1 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EXPORT, token1.type);
+
+    Token token2 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EXTERN, token2.type);
+
+    Token token3 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_PUB, token3.type);
+
+    Token token4 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_LINKSECTION, token4.type);
+
+    Token token5 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_USINGNAMESPACE, token5.type);
+
+    Token token6 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token6.type);
+
+    return true;
+}
