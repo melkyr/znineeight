@@ -509,6 +509,7 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
   - [x] Implement block comment handling (`/* */`) with nesting support
   - [x] Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`)
   - [x] Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`)
+  - [x] Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`)
 
 ### Week 3: Parser & AST
 - [ ] Implement recursive descent parser

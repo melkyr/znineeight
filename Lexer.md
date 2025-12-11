@@ -146,20 +146,25 @@ The following keywords are defined in the Zig grammar but are not yet implemente
 - `and`
 - `anyframe`
 - `anytype`
-- `asm`
 - `callconv`
-- `comptime`
-- `errdefer`
-- `inline`
 - `noalias`
 - `nosuspend`
-- `noinline`
 - `or`
 - `packed`
-- `test`
 - `threadlocal`
-- `unreachable`
 - `volatile`
+
+The following keywords for compile-time and special functions are also implemented:
+
+| Token Type | Keyword |
+| --- | --- |
+| `TOKEN_ASM` | `asm` |
+| `TOKEN_COMPTIME` | `comptime` |
+| `TOKEN_ERRDEFER` | `errdefer` |
+| `TOKEN_INLINE` | `inline` |
+| `TOKEN_NOINLINE` | `noinline` |
+| `TOKEN_TEST` | `test` |
+| `TOKEN_UNREACHABLE` | `unreachable` |
 
 ### 2.4. Delimiters and Other Symbols
 
