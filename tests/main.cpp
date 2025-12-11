@@ -36,6 +36,9 @@ TEST_FUNC(delimiters_lexing);
 TEST_FUNC(lex_visibility_and_linkage_keywords);
 TEST_FUNC(lex_compile_time_and_special_function_keywords);
 TEST_FUNC(lex_miscellaneous_keywords);
+TEST_FUNC(Lexer_ComprehensiveCrossGroup);
+TEST_FUNC(Lexer_IdentifiersAndStrings);
+TEST_FUNC(Lexer_ErrorConditions);
 
 int main() {
     bool (*tests[])() = {
@@ -74,6 +77,9 @@ int main() {
         test_lex_visibility_and_linkage_keywords,
         test_lex_compile_time_and_special_function_keywords,
         test_lex_miscellaneous_keywords,
+        test_Lexer_ComprehensiveCrossGroup,
+        test_Lexer_IdentifiersAndStrings,
+        test_Lexer_ErrorConditions,
     };
 
     int passed = 0;
