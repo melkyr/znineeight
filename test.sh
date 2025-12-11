@@ -18,6 +18,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_lexer_delimiters.cpp \
     tests/test_lexer_keywords.cpp \
     tests/test_keywords.cpp \
+    tests/test_compile_time_keywords.cpp \
     -Isrc/include \
     -o test_runner
 

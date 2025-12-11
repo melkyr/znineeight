@@ -8,17 +8,22 @@
 // Keyword lookup table.
 // IMPORTANT: This array must be kept sorted alphabetically for the binary search to work.
 const Keyword keywords[] = {
+    {"asm", TOKEN_ASM},
     {"break", TOKEN_BREAK},
     {"catch", TOKEN_CATCH},
+    {"comptime", TOKEN_COMPTIME},
     {"continue", TOKEN_CONTINUE},
     {"else", TOKEN_ELSE},
     {"enum", TOKEN_ENUM},
+    {"errdefer", TOKEN_ERRDEFER},
     {"error", TOKEN_ERROR_SET},
     {"export", TOKEN_EXPORT},
     {"extern", TOKEN_EXTERN},
     {"for", TOKEN_FOR},
     {"if", TOKEN_IF},
+    {"inline", TOKEN_INLINE},
     {"linksection", TOKEN_LINKSECTION},
+    {"noinline", TOKEN_NOINLINE},
     {"opaque", TOKEN_OPAQUE},
     {"orelse", TOKEN_ORELSE},
     {"pub", TOKEN_PUB},
@@ -26,8 +31,10 @@ const Keyword keywords[] = {
     {"struct", TOKEN_STRUCT},
     {"suspend", TOKEN_SUSPEND},
     {"switch", TOKEN_SWITCH},
+    {"test", TOKEN_TEST},
     {"try", TOKEN_TRY},
     {"union", TOKEN_UNION},
+    {"unreachable", TOKEN_UNREACHABLE},
     {"usingnamespace", TOKEN_USINGNAMESPACE},
     {"while", TOKEN_WHILE},
 };

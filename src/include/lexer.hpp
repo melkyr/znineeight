@@ -69,6 +69,15 @@ enum TokenType {
     TOKEN_LINKSECTION,      ///< 'linksection' keyword.
     TOKEN_USINGNAMESPACE,   ///< 'usingnamespace' keyword.
 
+    // Compile-time and Special Function Keywords
+    TOKEN_ASM,              ///< 'asm' keyword.
+    TOKEN_COMPTIME,         ///< 'comptime' keyword.
+    TOKEN_ERRDEFER,         ///< 'errdefer' keyword.
+    TOKEN_INLINE,           ///< 'inline' keyword.
+    TOKEN_NOINLINE,         ///< 'noinline' keyword.
+    TOKEN_TEST,             ///< 'test' keyword.
+    TOKEN_UNREACHABLE,      ///< 'unreachable' keyword.
+
     // Operators
     TOKEN_PLUS,             ///< '+' operator.
     TOKEN_MINUS,            ///< '-' operator.
