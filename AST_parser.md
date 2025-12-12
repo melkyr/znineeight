@@ -190,7 +190,58 @@ Represents an operation with a single operand.
     };
     ```
 
-## 4. Statement Node Types
+## 4. Type Expression Node Types
+
+These nodes are used to represent types within the AST, such as in variable declarations or function return types.
+
+### `ASTTypeNameNode`
+Represents a type that is specified by a simple name or identifier.
+*   **Zig Code:** `i32`, `bool`, `MyCustomStruct`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTTypeNameNode
+     * @brief Represents a type specified by an identifier.
+     * @var ASTTypeNameNode::name The name of the type (interned string).
+     */
+    struct ASTTypeNameNode {
+        const char* name;
+    };
+    ```
+
+### `ASTPointerTypeNode`
+Represents a pointer to another type.
+*   **Zig Code:** `*u8`, `*const MyStruct`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTPointerTypeNode
+     * @brief Represents a pointer type.
+     * @var ASTPointerTypeNode::base A pointer to the ASTNode for the type being pointed to.
+     */
+    struct ASTPointerTypeNode {
+        ASTNode* base;
+    };
+    ```
+
+### `ASTArrayTypeNode`
+Represents both fixed-size arrays and dynamic slices.
+*   **Zig Code:** `[8]u8` (sized array), `[]bool` (slice)
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTArrayTypeNode
+     * @brief Represents an array or slice type.
+     * @var ASTArrayTypeNode::element_type A pointer to the ASTNode for the element type.
+     * @var ASTArrayTypeNode::size An expression for the array size (can be NULL for a slice).
+     */
+    struct ASTArrayTypeNode {
+        ASTNode* element_type;
+        ASTNode* size; // Can be NULL for a slice
+    };
+    ```
+
+## 5. Statement Node Types
 
 These nodes represent statements, which are instructions that perform actions.
 
@@ -281,7 +332,7 @@ Represents a `defer` statement.
     };
     ```
 
-## 5. Declaration Node Types
+## 6. Declaration Node Types
 
 These nodes represent declarations, which introduce new named entities like variables and functions into the program.
 

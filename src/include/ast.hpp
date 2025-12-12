@@ -36,13 +36,21 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
-    NODE_FN_DECL          ///< A function declaration.
+    NODE_FN_DECL,         ///< A function declaration.
+
+    // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
+    NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
+    NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
+    NODE_ARRAY_TYPE       ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
 };
 
 // --- Forward declarations for node-specific structs ---
 struct ASTVarDeclNode;
 struct ASTFnDeclNode;
 struct ASTParamDeclNode;
+struct ASTTypeNameNode;
+struct ASTPointerTypeNode;
+struct ASTArrayTypeNode;
 
 
 // --- Node-specific data structs ---
@@ -214,6 +222,37 @@ struct ASTFnDeclNode {
     ASTNode* body;
 };
 
+// --- Type Expression Nodes ---
+
+/**
+ * @struct ASTTypeNameNode
+ * @brief Represents a type specified by an identifier (e.g., `i32`, `MyStruct`).
+ * @var ASTTypeNameNode::name The name of the type (interned string).
+ */
+struct ASTTypeNameNode {
+    const char* name;
+};
+
+/**
+ * @struct ASTPointerTypeNode
+ * @brief Represents a pointer type.
+ * @var ASTPointerTypeNode::base A pointer to the ASTNode for the type being pointed to.
+ */
+struct ASTPointerTypeNode {
+    ASTNode* base;
+};
+
+/**
+ * @struct ASTArrayTypeNode
+ * @brief Represents an array or slice type.
+ * @var ASTArrayTypeNode::element_type A pointer to the ASTNode for the element type.
+ * @var ASTArrayTypeNode::size An expression for the array size (can be NULL for a slice).
+ */
+struct ASTArrayTypeNode {
+    ASTNode* element_type;
+    ASTNode* size; // Can be NULL for a slice
+};
+
 
 /**
  * @struct ASTNode
@@ -253,6 +292,11 @@ struct ASTNode {
         // Declarations
         ASTVarDeclNode var_decl;
         ASTFnDeclNode* fn_decl; // Pointer for out-of-line allocation
+
+        // Type Expressions
+        ASTTypeNameNode type_name;
+        ASTPointerTypeNode pointer_type;
+        ASTArrayTypeNode array_type;
     } as;
 };
 
