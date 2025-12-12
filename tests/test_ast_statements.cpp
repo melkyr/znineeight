@@ -13,9 +13,10 @@ TEST_FUNC(AST_Statements)
     // Test ASTIfStmtNode
     ASTNode if_node;
     if_node.type = NODE_IF_STMT;
-    if_node.as.if_stmt.condition = NULL;
-    if_node.as.if_stmt.then_block = NULL;
-    if_node.as.if_stmt.else_block = NULL;
+    if_node.as.if_stmt = (ASTIfStmtNode*)arena.alloc(sizeof(ASTIfStmtNode));
+    if_node.as.if_stmt->condition = NULL;
+    if_node.as.if_stmt->then_block = NULL;
+    if_node.as.if_stmt->else_block = NULL;
     ASSERT_TRUE(if_node.type == NODE_IF_STMT);
 
     // Test ASTWhileStmtNode

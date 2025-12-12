@@ -134,16 +134,17 @@ TEST_FUNC(ASTNode_BinaryOp)
 
     node->type = NODE_BINARY_OP;
     node->loc.line = 6;
-    node->as.binary_op.op = TOKEN_PLUS;
-    node->as.binary_op.left = left;
-    node->as.binary_op.right = right;
+    node->as.binary_op = (ASTBinaryOpNode*)arena.alloc(sizeof(ASTBinaryOpNode));
+    node->as.binary_op->op = TOKEN_PLUS;
+    node->as.binary_op->left = left;
+    node->as.binary_op->right = right;
 
     ASSERT_EQ(node->type, NODE_BINARY_OP);
-    ASSERT_EQ(node->as.binary_op.op, TOKEN_PLUS);
-    ASSERT_TRUE(node->as.binary_op.left != NULL);
-    ASSERT_TRUE(node->as.binary_op.right != NULL);
-    ASSERT_STREQ(node->as.binary_op.left->as.identifier.name, "a");
-    ASSERT_STREQ(node->as.binary_op.right->as.identifier.name, "b");
+    ASSERT_EQ(node->as.binary_op->op, TOKEN_PLUS);
+    ASSERT_TRUE(node->as.binary_op->left != NULL);
+    ASSERT_TRUE(node->as.binary_op->right != NULL);
+    ASSERT_STREQ(node->as.binary_op->left->as.identifier.name, "a");
+    ASSERT_STREQ(node->as.binary_op->right->as.identifier.name, "b");
 
     return true;
 }

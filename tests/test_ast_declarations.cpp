@@ -15,12 +15,12 @@ TEST_FUNC(ASTDeclarations) {
     var_node.loc.line = 1;
     var_node.loc.column = 1;
 
-    ASTVarDeclNode var_decl;
-    var_decl.name = "my_var";
-    var_decl.type = NULL;
-    var_decl.initializer = NULL;
-    var_decl.is_const = true;
-    var_decl.is_mut = false; // Zig: 'const' implies not mutable
+    ASTVarDeclNode* var_decl = (ASTVarDeclNode*)arena.alloc(sizeof(ASTVarDeclNode));
+    var_decl->name = "my_var";
+    var_decl->type = NULL;
+    var_decl->initializer = NULL;
+    var_decl->is_const = true;
+    var_decl->is_mut = false; // Zig: 'const' implies not mutable
 
     var_node.as.var_decl = var_decl;
 
@@ -47,7 +47,7 @@ TEST_FUNC(ASTDeclarations) {
     fn_node.as.fn_decl = fn_decl;
 
     ASSERT_TRUE(fn_node.as.fn_decl->name != NULL);
-    ASSERT_TRUE(var_node.as.var_decl.name != NULL);
+    ASSERT_TRUE(var_node.as.var_decl->name != NULL);
 
     return true;
 }

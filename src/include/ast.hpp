@@ -36,6 +36,7 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
+    NODE_PARAM_DECL,      ///< A function parameter declaration.
     NODE_FN_DECL,         ///< A function declaration.
 
     // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
@@ -45,6 +46,18 @@ enum NodeType {
 };
 
 // --- Forward declarations for node-specific structs ---
+struct ASTBinaryOpNode;
+struct ASTUnaryOpNode;
+struct ASTIntegerLiteralNode;
+struct ASTFloatLiteralNode;
+struct ASTCharLiteralNode;
+struct ASTStringLiteralNode;
+struct ASTIdentifierNode;
+struct ASTBlockStmtNode;
+struct ASTIfStmtNode;
+struct ASTWhileStmtNode;
+struct ASTReturnStmtNode;
+struct ASTDeferStmtNode;
 struct ASTVarDeclNode;
 struct ASTFnDeclNode;
 struct ASTParamDeclNode;
@@ -58,7 +71,7 @@ struct ASTArrayTypeNode;
 
 /**
  * @struct ASTBinaryOpNode
- * @brief Represents a binary operation.
+ * @brief Represents a binary operation (e.g., `a + b`).
  * @var ASTBinaryOpNode::left The left-hand side operand.
  * @var ASTBinaryOpNode::right The right-hand side operand.
  * @var ASTBinaryOpNode::op The token representing the operator (e.g., TOKEN_PLUS).
@@ -71,7 +84,7 @@ struct ASTBinaryOpNode {
 
 /**
  * @struct ASTUnaryOpNode
- * @brief Represents a unary operation.
+ * @brief Represents a unary operation (e.g., `-x`, `!false`).
  * @var ASTUnaryOpNode::operand The operand.
  * @var ASTUnaryOpNode::op The token representing the operator (e.g., TOKEN_MINUS).
  */
@@ -82,7 +95,7 @@ struct ASTUnaryOpNode {
 
 /**
  * @struct ASTIntegerLiteralNode
- * @brief Represents an integer literal.
+ * @brief Represents an integer literal (e.g., `42`, `0xFF`).
  * @var ASTIntegerLiteralNode::value The 64-bit integer value.
  */
 struct ASTIntegerLiteralNode {
@@ -91,7 +104,7 @@ struct ASTIntegerLiteralNode {
 
 /**
  * @struct ASTFloatLiteralNode
- * @brief Represents a floating-point literal.
+ * @brief Represents a floating-point literal (e.g., `3.14`).
  * @var ASTFloatLiteralNode::value The double-precision float value.
  */
 struct ASTFloatLiteralNode {
@@ -100,7 +113,7 @@ struct ASTFloatLiteralNode {
 
 /**
  * @struct ASTCharLiteralNode
- * @brief Represents a character literal.
+ * @brief Represents a character literal (e.g., `'z'`).
  * @var ASTCharLiteralNode::value The character value.
  */
 struct ASTCharLiteralNode {
@@ -109,7 +122,7 @@ struct ASTCharLiteralNode {
 
 /**
  * @struct ASTStringLiteralNode
- * @brief Represents a string literal.
+ * @brief Represents a string literal (e.g., `"hello"`).
  * @var ASTStringLiteralNode::value A pointer to the interned string.
  */
 struct ASTStringLiteralNode {
@@ -118,7 +131,7 @@ struct ASTStringLiteralNode {
 
 /**
  * @struct ASTIdentifierNode
- * @brief Represents an identifier.
+ * @brief Represents an identifier (e.g., `my_var`).
  * @var ASTIdentifierNode::name A pointer to the interned string for the identifier's name.
  */
 struct ASTIdentifierNode {
@@ -191,7 +204,7 @@ struct ASTParamDeclNode {
 
 /**
  * @struct ASTVarDeclNode
- * @brief Represents a variable or constant declaration (`var` or `const`).
+ * @brief Represents a `var` or `const` declaration. Allocated out-of-line.
  * @var ASTVarDeclNode::name The name of the variable (interned string).
  * @var ASTVarDeclNode::type A pointer to an ASTNode for the declared type (can be NULL for inferred types).
  * @var ASTVarDeclNode::initializer A pointer to the expression used to initialize the variable.
@@ -208,8 +221,7 @@ struct ASTVarDeclNode {
 
 /**
  * @struct ASTFnDeclNode
- * @brief Represents a function declaration. This is a larger struct and is allocated
- * separately; the ASTNode union holds a pointer to it.
+ * @brief Represents a function declaration. Allocated out-of-line.
  * @var ASTFnDeclNode::name The name of the function (interned string).
  * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
  * @var ASTFnDeclNode::return_type A pointer to an ASTNode for the return type (can be NULL).
@@ -235,7 +247,7 @@ struct ASTTypeNameNode {
 
 /**
  * @struct ASTPointerTypeNode
- * @brief Represents a pointer type.
+ * @brief Represents a pointer type (e.g., `*i32`).
  * @var ASTPointerTypeNode::base A pointer to the ASTNode for the type being pointed to.
  */
 struct ASTPointerTypeNode {
@@ -244,7 +256,7 @@ struct ASTPointerTypeNode {
 
 /**
  * @struct ASTArrayTypeNode
- * @brief Represents an array or slice type.
+ * @brief Represents an array or slice type (e.g., `[8]u8`, `[]const u8`).
  * @var ASTArrayTypeNode::element_type A pointer to the ASTNode for the element type.
  * @var ASTArrayTypeNode::size An expression for the array size (can be NULL for a slice).
  */
@@ -263,8 +275,8 @@ struct ASTArrayTypeNode {
  * specific data for that construct type. This union-based design is memory-efficient,
  * which is crucial for the target hardware.
  *
- * All ASTNodes should be allocated using the ArenaAllocator to ensure they are freed
- * all at once after compilation is finished.
+ * All ASTNodes should be allocated using the ArenaAllocator. For memory efficiency,
+ * larger node types are stored as pointers in the union ("out-of-line" allocation).
  */
 struct ASTNode {
     NodeType type;
@@ -272,7 +284,7 @@ struct ASTNode {
 
     union {
         // Expressions
-        ASTBinaryOpNode binary_op;
+        ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
 
         // Literals
@@ -284,14 +296,15 @@ struct ASTNode {
 
         // Statements
         ASTBlockStmtNode block_stmt;
-        ASTIfStmtNode if_stmt;
+        ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
 
         // Declarations
-        ASTVarDeclNode var_decl;
-        ASTFnDeclNode* fn_decl; // Pointer for out-of-line allocation
+        ASTVarDeclNode* var_decl; // Out-of-line
+        ASTParamDeclNode param_decl;
+        ASTFnDeclNode* fn_decl; // Out-of-line
 
         // Type Expressions
         ASTTypeNameNode type_name;
