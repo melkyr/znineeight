@@ -32,8 +32,18 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
-    NODE_DEFER_STMT       ///< A defer statement.
+    NODE_DEFER_STMT,      ///< A defer statement.
+
+    // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_VAR_DECL,        ///< A variable or constant declaration.
+    NODE_FN_DECL          ///< A function declaration.
 };
+
+// --- Forward declarations for node-specific structs ---
+struct ASTVarDeclNode;
+struct ASTFnDeclNode;
+struct ASTParamDeclNode;
+
 
 // --- Node-specific data structs ---
 // These structs are stored within the ASTNode's union.
@@ -158,6 +168,52 @@ struct ASTDeferStmtNode {
     ASTNode* statement;
 };
 
+// --- Declaration Nodes ---
+
+/**
+ * @struct ASTParamDeclNode
+ * @brief Represents a single parameter in a function declaration.
+ * @var ASTParamDeclNode::name The name of the parameter (interned string).
+ * @var ASTParamDeclNode::type A pointer to an ASTNode representing the parameter's type.
+ */
+struct ASTParamDeclNode {
+    const char* name;
+    ASTNode* type;
+};
+
+/**
+ * @struct ASTVarDeclNode
+ * @brief Represents a variable or constant declaration (`var` or `const`).
+ * @var ASTVarDeclNode::name The name of the variable (interned string).
+ * @var ASTVarDeclNode::type A pointer to an ASTNode for the declared type (can be NULL for inferred types).
+ * @var ASTVarDeclNode::initializer A pointer to the expression used to initialize the variable.
+ * @var ASTVarDeclNode::is_const True if the declaration is `const`.
+ * @var ASTVarDeclNode::is_mut True if the declaration is `var` (mutable).
+ */
+struct ASTVarDeclNode {
+    const char* name;
+    ASTNode* type; // Can be NULL
+    ASTNode* initializer;
+    bool is_const;
+    bool is_mut;
+};
+
+/**
+ * @struct ASTFnDeclNode
+ * @brief Represents a function declaration. This is a larger struct and is allocated
+ * separately; the ASTNode union holds a pointer to it.
+ * @var ASTFnDeclNode::name The name of the function (interned string).
+ * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+ * @var ASTFnDeclNode::return_type A pointer to an ASTNode for the return type (can be NULL).
+ * @var ASTFnDeclNode::body A pointer to the block statement that is the function's body.
+ */
+struct ASTFnDeclNode {
+    const char* name;
+    DynamicArray<ASTParamDeclNode*>* params;
+    ASTNode* return_type; // Can be NULL
+    ASTNode* body;
+};
+
 
 /**
  * @struct ASTNode
@@ -193,6 +249,10 @@ struct ASTNode {
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
+
+        // Declarations
+        ASTVarDeclNode var_decl;
+        ASTFnDeclNode* fn_decl; // Pointer for out-of-line allocation
     } as;
 };
 
