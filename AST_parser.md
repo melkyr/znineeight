@@ -34,7 +34,14 @@ enum NodeType {
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
     NODE_STRING_LITERAL,  ///< A string literal (e.g., `"hello"`).
-    NODE_IDENTIFIER       ///< An identifier (e.g., a variable name `my_var`).
+    NODE_IDENTIFIER,      ///< An identifier (e.g., a variable name `my_var`).
+
+    // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
+    NODE_IF_STMT,         ///< An if-else statement.
+    NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_RETURN_STMT,     ///< A return statement.
+    NODE_DEFER_STMT       ///< A defer statement.
 };
 ```
 
@@ -60,6 +67,13 @@ struct ASTNode {
         ASTUnaryOpNode unary_op;
         ASTIntegerLiteralNode integer_literal;
         // ... other node types
+
+        // Statements
+        ASTBlockStmtNode block_stmt;
+        ASTIfStmtNode if_stmt;
+        ASTWhileStmtNode while_stmt;
+        ASTReturnStmtNode return_stmt;
+        ASTDeferStmtNode defer_stmt;
     } as;
 };
 ```
@@ -173,6 +187,97 @@ Represents an operation with a single operand.
     struct ASTUnaryOpNode {
         ASTNode* operand;
         TokenType op;
+    };
+    ```
+
+## 4. Statement Node Types
+
+These nodes represent statements, which are instructions that perform actions.
+
+### `ASTBlockStmtNode`
+Represents a sequence of statements enclosed in braces `{ ... }`.
+*   **Zig Code:**
+    ```zig
+    {
+        var x = 1;
+        print(x);
+    }
+    ```
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTBlockStmtNode
+     * @brief Represents a block of statements.
+     * @var ASTBlockStmtNode::statements A pointer to a dynamic array of statement nodes.
+     */
+    struct ASTBlockStmtNode {
+        DynamicArray<ASTNode*>* statements;
+    };
+    ```
+
+### `ASTIfStmtNode`
+Represents an `if` statement with an optional `else` clause.
+*   **Zig Code:** `if (condition) { ... } else { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTIfStmtNode
+     * @brief Represents an if-else statement.
+     * @var ASTIfStmtNode::condition The condition expression.
+     * @var ASTIfStmtNode::then_block The statement block for the 'if' branch.
+     * @var ASTIfStmtNode::else_block The statement block for the 'else' branch (can be NULL).
+     */
+    struct ASTIfStmtNode {
+        ASTNode* condition;
+        ASTNode* then_block;
+        ASTNode* else_block; // Can be NULL
+    };
+    ```
+
+### `ASTWhileStmtNode`
+Represents a `while` loop.
+*   **Zig Code:** `while (condition) { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTWhileStmtNode
+     * @brief Represents a while loop.
+     * @var ASTWhileStmtNode::condition The loop condition expression.
+     * @var ASTWhileStmtNode::body The loop body.
+     */
+    struct ASTWhileStmtNode {
+        ASTNode* condition;
+        ASTNode* body;
+    };
+    ```
+
+### `ASTReturnStmtNode`
+Represents a `return` statement.
+*   **Zig Code:** `return;`, `return 42;`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTReturnStmtNode
+     * @brief Represents a return statement.
+     * @var ASTReturnStmtNode::expression The expression to return (can be NULL).
+     */
+    struct ASTReturnStmtNode {
+        ASTNode* expression; // Can be NULL
+    };
+    ```
+
+### `ASTDeferStmtNode`
+Represents a `defer` statement.
+*   **Zig Code:** `defer file.close();`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTDeferStmtNode
+     * @brief Represents a defer statement.
+     * @var ASTDeferStmtNode::statement The statement to be executed at scope exit.
+     */
+    struct ASTDeferStmtNode {
+        ASTNode* statement;
     };
     ```
 
