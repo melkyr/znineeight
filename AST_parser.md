@@ -41,7 +41,17 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
-    NODE_DEFER_STMT       ///< A defer statement.
+    NODE_DEFER_STMT,       ///< A defer statement.
+
+    // ~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~
+    NODE_FN_DECL,         ///< A function declaration.
+    NODE_VAR_DECL,        ///< A variable or constant declaration.
+    NODE_PARAM_DECL,      ///< A function parameter declaration.
+
+    // ~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~
+    NODE_TYPE_NAME,       ///< A type specified by a name (e.g., `i32`).
+    NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*i32`).
+    NODE_ARRAY_TYPE       ///< An array or slice type (e.g., `[8]u8`).
 };
 ```
 
@@ -63,17 +73,32 @@ struct ASTNode {
     SourceLocation loc;
 
     union {
-        ASTBinaryOpNode binary_op;
+        ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
+
+        // Literals
         ASTIntegerLiteralNode integer_literal;
-        // ... other node types
+        ASTFloatLiteralNode float_literal;
+        ASTCharLiteralNode char_literal;
+        ASTStringLiteralNode string_literal;
+        ASTIdentifierNode identifier;
 
         // Statements
         ASTBlockStmtNode block_stmt;
-        ASTIfStmtNode if_stmt;
+        ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
+
+        // Declarations
+        ASTVarDeclNode* var_decl; // Out-of-line
+        ASTParamDeclNode param_decl;
+        ASTFnDeclNode* fn_decl; // Out-of-line
+
+        // Type Expressions
+        ASTTypeNameNode type_name;
+        ASTPointerTypeNode pointer_type;
+        ASTArrayTypeNode array_type;
     } as;
 };
 ```
@@ -90,7 +115,47 @@ node->loc.column = 12;
 node->as.integer_literal.value = 1998;
 ```
 
-## 3. Implemented AST Node Types
+## 3. AST Node Memory Layout and Strategy
+
+To maintain a small memory footprint on constrained systems, the size of AST nodes is critical. The `ASTNode` struct itself has a base size, and the `union` member will be as large as its largest member.
+
+### "Out-of-Line" Allocation Strategy and Impact
+
+To keep the main `ASTNode` union small, any node-specific struct that is "large" should not be stored directly in the union. Instead, a pointer to the struct should be stored, and the struct itself should be allocated separately from the arena.
+
+**Guideline:** A node is considered "large" if its `sizeof` on a 32-bit architecture is greater than **8 bytes**.
+
+The initial implementation stored all node types inline. The largest member of the `ASTNode` union was `ASTVarDeclNode`, which was 16 bytes on a 32-bit system (due to pointers and bools). This forced the entire `ASTNode` to be **32 bytes** (`sizeof(NodeType)` + `sizeof(SourceLocation)` + `sizeof(union)` => 4 + 12 + 16).
+
+By applying the out-of-line strategy, the largest `ASTVarDeclNode`, `ASTIfStmtNode`, and `ASTBinaryOpNode` structs were converted to pointers in the union. The largest remaining inline members are now `ASTIntegerLiteralNode` (`i64`) and `ASTFloatLiteralNode` (`double`), both at 8 bytes. This reduces the size of the union to 8 bytes, and the total `sizeof(ASTNode)` to **24 bytes** (4 + 12 + 8).
+
+This change results in a **25% reduction in memory usage for every single node in the AST**, which is a significant saving for the target platform.
+
+### Node Size Analysis (32-bit architecture)
+
+| Node Struct                 | Size (bytes) | Stored in Union |
+| --------------------------- | ------------ | --------------- |
+| `ASTNode`                   | **24**       | -               |
+| `ASTBinaryOpNode`           | 12           | Pointer (4)     |
+| `ASTIfStmtNode`             | 12           | Pointer (4)     |
+| `ASTVarDeclNode`            | 16           | Pointer (4)     |
+| `ASTFnDeclNode`             | 16           | Pointer (4)     |
+| `ASTWhileStmtNode`          | 8            | Inline          |
+| `ASTArrayTypeNode`          | 8            | Inline          |
+| `ASTParamDeclNode`          | 8            | Inline          |
+| `ASTIntegerLiteralNode`     | 8            | Inline          |
+| `ASTFloatLiteralNode`       | 8            | Inline          |
+| `ASTBlockStmtNode`          | 4            | Inline          |
+| `ASTDeferStmtNode`          | 4            | Inline          |
+| `ASTIdentifierNode`         | 4            | Inline          |
+| `ASTPointerTypeNode`        | 4            | Inline          |
+| `ASTReturnStmtNode`         | 4            | Inline          |
+| `ASTStringLiteralNode`      | 4            | Inline          |
+| `ASTTypeNameNode`           | 4            | Inline          |
+| `ASTUnaryOpNode`            | 8            | Inline          |
+| `ASTCharLiteralNode`        | 1            | Inline          |
+
+## 4. Implemented AST Node Types
 
 The following node types are defined and tested, forming the foundation for parsing expressions.
 
@@ -190,7 +255,26 @@ Represents an operation with a single operand.
     };
     ```
 
-## 4. Type Expression Node Types
+#### `ASTBinaryOpNode`
+Represents an operation with two operands.
+*   **Zig Code:** `a + b`, `x * y`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTBinaryOpNode
+     * @brief Represents a binary operation.
+     * @var ASTBinaryOpNode::left The left-hand side operand.
+     * @var ASTBinaryOpNode::right The right-hand side operand.
+     * @var ASTBinaryOpNode::op The token representing the operator (e.g., TOKEN_PLUS).
+     */
+    struct ASTBinaryOpNode {
+        ASTNode* left;
+        ASTNode* right;
+        TokenType op;
+    };
+    ```
+
+## 5. Type Expression Node Types
 
 These nodes are used to represent types within the AST, such as in variable declarations or function return types.
 
@@ -241,7 +325,7 @@ Represents both fixed-size arrays and dynamic slices.
     };
     ```
 
-## 5. Statement Node Types
+## 6. Statement Node Types
 
 These nodes represent statements, which are instructions that perform actions.
 
@@ -332,7 +416,7 @@ Represents a `defer` statement.
     };
     ```
 
-## 6. Declaration Node Types
+## 7. Declaration Node Types
 
 These nodes represent declarations, which introduce new named entities like variables and functions into the program.
 
@@ -397,21 +481,30 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
     };
     ```
 
-#### `ASTBinaryOpNode`
-Represents an operation with two operands.
-*   **Zig Code:** `a + b`, `x * y`
-*   **Structure:**
-    ```cpp
-    /**
-     * @struct ASTBinaryOpNode
-     * @brief Represents a binary operation.
-     * @var ASTBinaryOpNode::left The left-hand side operand.
-     * @var ASTBinaryOpNode::right The right-hand side operand.
-     * @var ASTBinaryOpNode::op The token representing the operator (e.g., TOKEN_PLUS).
-     */
-    struct ASTBinaryOpNode {
-        ASTNode* left;
-        ASTNode* right;
-        TokenType op;
-    };
-    ```
+## 8. Future AST Node Requirements
+
+A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
+
+*   **Container Declarations:**
+    *   `StructDeclNode`: For `struct` definitions.
+    *   `EnumDeclNode`: For `enum` definitions.
+    *   `UnionDeclNode`: For `union` definitions.
+    *   `OpaqueDeclNode`: For `opaque` type declarations.
+
+*   **Control Flow:**
+    *   `ForStmtNode`: For `for` loops.
+    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases.
+
+*   **Error Handling:**
+    *   `TryExprNode`: For the `try` expression.
+    *   `CatchExprNode`: For the `catch` expression.
+    *   `ErrDeferStmtNode`: For `errdefer` statements.
+
+*   **Asynchronous Operations:**
+    *   `AsyncExprNode`: For `async` function calls.
+    *   `AwaitExprNode`: For the `await` expression.
+    *   `SuspendStmtNode`: For the `suspend` statement.
+    *   `ResumeStmtNode`: For the `resume` statement.
+
+*   **Compile-Time Operations:**
+    *   `ComptimeBlockNode`: For `comptime` blocks.
