@@ -24,6 +24,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_missing_keywords.cpp \
     tests/test_ast.cpp \
     tests/test_ast_statements.cpp \
+    tests/test_ast_declarations.cpp \
     -Isrc/include \
     -o test_runner
 

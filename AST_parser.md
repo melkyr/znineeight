@@ -281,6 +281,71 @@ Represents a `defer` statement.
     };
     ```
 
+## 5. Declaration Node Types
+
+These nodes represent declarations, which introduce new named entities like variables and functions into the program.
+
+### `ASTVarDeclNode`
+Represents a `var` or `const` declaration.
+*   **Zig Code:** `var x: i32 = 10;`, `const pi = 3.14;`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTVarDeclNode
+     * @brief Represents a variable or constant declaration (`var` or `const`).
+     * @var ASTVarDeclNode::name The name of the variable (interned string).
+     * @var ASTVarDeclNode::type A pointer to the declared type (can be NULL).
+     * @var ASTVarDeclNode::initializer A pointer to the initializer expression.
+     * @var ASTVarDeclNode::is_const True if the declaration is `const`.
+     * @var ASTVarDeclNode::is_mut True if the declaration is `var`.
+     */
+    struct ASTVarDeclNode {
+        const char* name;
+        ASTNode* type;
+        ASTNode* initializer;
+        bool is_const;
+        bool is_mut;
+    };
+    ```
+
+### `ASTParamDeclNode`
+Represents a single parameter within a function's parameter list. This node is not directly used in the main `ASTNode` union but is a component of `ASTFnDeclNode`.
+*   **Zig Code:** `a: i32`, `comptime message: []const u8`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTParamDeclNode
+     * @brief Represents a single function parameter.
+     * @var ASTParamDeclNode::name The name of the parameter.
+     * @var ASTParamDeclNode::type A pointer to the parameter's type expression.
+     */
+    struct ASTParamDeclNode {
+        const char* name;
+        ASTNode* type;
+    };
+    ```
+
+### `ASTFnDeclNode`
+Represents a function declaration. This is a large node, so the `ASTNode` union stores a pointer to it rather than the struct itself.
+*   **Zig Code:** `fn add(a: i32, b: i32) -> i32 { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTFnDeclNode
+     * @brief Represents a function declaration.
+     * @var ASTFnDeclNode::name The name of the function.
+     * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+     * @var ASTFnDeclNode::return_type A pointer to the return type expression (can be NULL).
+     * @var ASTFnDeclNode::body A pointer to the function's body (a block statement).
+     */
+    struct ASTFnDeclNode {
+        const char* name;
+        DynamicArray<ASTParamDeclNode*>* params;
+        ASTNode* return_type;
+        ASTNode* body;
+    };
+    ```
+
 #### `ASTBinaryOpNode`
 Represents an operation with two operands.
 *   **Zig Code:** `a + b`, `x * y`
