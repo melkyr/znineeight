@@ -48,6 +48,11 @@ enum NodeType {
     NODE_VAR_DECL,        ///< A variable or constant declaration.
     NODE_PARAM_DECL,      ///< A function parameter declaration.
 
+    // ~~~~~~~~~~~~~~ Container Declarations ~~~~~~~~~~~~~~~~~
+    NODE_STRUCT_DECL,     ///< A struct declaration.
+    NODE_UNION_DECL,      ///< A union declaration.
+    NODE_ENUM_DECL,       ///< An enum declaration.
+
     // ~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type specified by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*i32`).
@@ -94,6 +99,9 @@ struct ASTNode {
         ASTVarDeclNode* var_decl; // Out-of-line
         ASTParamDeclNode param_decl;
         ASTFnDeclNode* fn_decl; // Out-of-line
+        ASTStructDeclNode* struct_decl; // Out-of-line
+        ASTUnionDeclNode* union_decl; // Out-of-line
+        ASTEnumDeclNode* enum_decl; // Out-of-line
 
         // Type Expressions
         ASTTypeNameNode type_name;
@@ -481,14 +489,60 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
     };
     ```
 
-## 8. Future AST Node Requirements
+## 8. Container Declaration Node Types
+
+These nodes represent container types like structs, unions, and enums.
+
+### `ASTStructDeclNode`
+Represents a `struct` definition.
+*   **Zig Code:** `struct { field1: i32, field2: bool }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTStructDeclNode
+     * @brief Represents a `struct` declaration. Allocated out-of-line.
+     * @var ASTStructDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the struct fields.
+     */
+    struct ASTStructDeclNode {
+        DynamicArray<ASTNode*>* fields;
+    };
+    ```
+
+### `ASTUnionDeclNode`
+Represents a `union` definition.
+*   **Zig Code:** `union { a: i32, b: f32 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTUnionDeclNode
+     * @brief Represents a `union` declaration. Allocated out-of-line.
+     * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the union fields.
+     */
+    struct ASTUnionDeclNode {
+        DynamicArray<ASTNode*>* fields;
+    };
+    ```
+
+### `ASTEnumDeclNode`
+Represents an `enum` definition.
+*   **Zig Code:** `enum { Red, Green, Blue }`, `enum { A = 1, B = 2 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTEnumDeclNode
+     * @brief Represents an `enum` declaration. Allocated out-of-line.
+     * @var ASTEnumDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the enum fields, allowing for explicit values.
+     */
+    struct ASTEnumDeclNode {
+        DynamicArray<ASTNode*>* fields;
+    };
+    ```
+
+## 9. Future AST Node Requirements
 
 A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
 
 *   **Container Declarations:**
-    *   `StructDeclNode`: For `struct` definitions.
-    *   `EnumDeclNode`: For `enum` definitions.
-    *   `UnionDeclNode`: For `union` definitions.
     *   `OpaqueDeclNode`: For `opaque` type declarations.
 
 *   **Control Flow:**

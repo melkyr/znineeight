@@ -47,7 +47,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 36. **Task 36:** Define AST nodes for Statements (`IfStmt`, `WhileStmt`, `ReturnStmt`, `DeferStmt`, `BlockStmt`).
 37. **Task 37:** Define AST nodes for Declarations (`FnDecl`, `VarDecl`, `ParamDecl`).
 38. **Task 38:** Define AST nodes for Type Expressions (`TypeName`, `PointerType`, `ArrayType`). (DONE)
-39. **Task 39:** Define AST nodes for Container Declarations (`struct`, `enum`, `union`).
+39. **Task 39:** Define AST nodes for Container Declarations (`struct`, `enum`, `union`). (DONE)
     - Add `ASTStructDeclNode`, `ASTEnumDeclNode`, `ASTUnionDeclNode`.
     - Add corresponding `NodeType` enums.
     - Create a basic compile-time test to validate the new structures.
