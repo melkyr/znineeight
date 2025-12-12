@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "lexer.hpp" // For SourceLocation and TokenType
+#include "memory.hpp" // For DynamicArray
 
 // Forward-declare the main ASTNode struct so it can be used in the specific node structs.
 struct ASTNode;
@@ -24,7 +25,14 @@ enum NodeType {
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
     NODE_STRING_LITERAL,  ///< A string literal (e.g., `"hello"`).
-    NODE_IDENTIFIER       ///< An identifier (e.g., a variable name `my_var`).
+    NODE_IDENTIFIER,      ///< An identifier (e.g., a variable name `my_var`).
+
+    // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
+    NODE_IF_STMT,         ///< An if-else statement.
+    NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_RETURN_STMT,     ///< A return statement.
+    NODE_DEFER_STMT       ///< A defer statement.
 };
 
 // --- Node-specific data structs ---
@@ -99,6 +107,57 @@ struct ASTIdentifierNode {
     const char* name;
 };
 
+/**
+ * @struct ASTBlockStmtNode
+ * @brief Represents a block of statements enclosed in braces `{}`.
+ * @var ASTBlockStmtNode::statements A pointer to a dynamic array of pointers to the statements in the block.
+ */
+struct ASTBlockStmtNode {
+    DynamicArray<ASTNode*>* statements;
+};
+
+/**
+ * @struct ASTIfStmtNode
+ * @brief Represents an if-else statement.
+ * @var ASTIfStmtNode::condition The condition expression.
+ * @var ASTIfStmtNode::then_block The statement block to execute if the condition is true.
+ * @var ASTIfStmtNode::else_block The statement block to execute if the condition is false (can be NULL).
+ */
+struct ASTIfStmtNode {
+    ASTNode* condition;
+    ASTNode* then_block;
+    ASTNode* else_block; // Can be NULL
+};
+
+/**
+ * @struct ASTWhileStmtNode
+ * @brief Represents a while loop.
+ * @var ASTWhileStmtNode::condition The loop condition expression.
+ * @var ASTWhileStmtNode::body The statement block to execute while the condition is true.
+ */
+struct ASTWhileStmtNode {
+    ASTNode* condition;
+    ASTNode* body;
+};
+
+/**
+ * @struct ASTReturnStmtNode
+ * @brief Represents a return statement.
+ * @var ASTReturnStmtNode::expression The expression to return (can be NULL for a void return).
+ */
+struct ASTReturnStmtNode {
+    ASTNode* expression; // Can be NULL
+};
+
+/**
+ * @struct ASTDeferStmtNode
+ * @brief Represents a defer statement.
+ * @var ASTDeferStmtNode::statement The statement to be executed at the end of the scope.
+ */
+struct ASTDeferStmtNode {
+    ASTNode* statement;
+};
+
 
 /**
  * @struct ASTNode
@@ -117,13 +176,23 @@ struct ASTNode {
     SourceLocation loc;
 
     union {
+        // Expressions
         ASTBinaryOpNode binary_op;
         ASTUnaryOpNode unary_op;
+
+        // Literals
         ASTIntegerLiteralNode integer_literal;
         ASTFloatLiteralNode float_literal;
         ASTCharLiteralNode char_literal;
         ASTStringLiteralNode string_literal;
         ASTIdentifierNode identifier;
+
+        // Statements
+        ASTBlockStmtNode block_stmt;
+        ASTIfStmtNode if_stmt;
+        ASTWhileStmtNode while_stmt;
+        ASTReturnStmtNode return_stmt;
+        ASTDeferStmtNode defer_stmt;
     } as;
 };
 

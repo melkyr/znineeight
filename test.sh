@@ -23,6 +23,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_string_literal.cpp \
     tests/test_missing_keywords.cpp \
     tests/test_ast.cpp \
+    tests/test_ast_statements.cpp \
     -Isrc/include \
     -o test_runner
 
