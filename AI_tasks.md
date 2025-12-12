@@ -46,7 +46,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 35. **Task 35:** Define foundational AST structures and nodes for Expressions (Literals, Unary, Binary).
 36. **Task 36:** Define AST nodes for Statements (`IfStmt`, `WhileStmt`, `ReturnStmt`, `DeferStmt`, `BlockStmt`).
 37. **Task 37:** Define AST nodes for Declarations (`FnDecl`, `VarDecl`, `ParamDecl`).
-38. **Task 38:** Define AST nodes for Type Expressions (`TypeName`, `PointerType`, `ArrayType`).
+38. **Task 38:** Define AST nodes for Type Expressions (`TypeName`, `PointerType`, `ArrayType`). (DONE)
 39. **Task 39:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 40. **Task 40:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 41. **Task 41:** Implement parsing for top-level variable declarations (`var` and `const`).
