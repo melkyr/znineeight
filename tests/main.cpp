@@ -42,6 +42,7 @@ TEST_FUNC(Lexer_ErrorConditions);
 TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
 TEST_FUNC(Lexer_StringLiteral_LongString);
 TEST_FUNC(lex_missing_keywords);
+TEST_FUNC(Lexer_MissingOperators);
 
 int main() {
     bool (*tests[])() = {
@@ -86,6 +87,7 @@ int main() {
         test_Lexer_StringLiteral_EscapedCharacters,
         test_Lexer_StringLiteral_LongString,
         test_lex_missing_keywords,
+        test_Lexer_MissingOperators,
     };
 
     int passed = 0;

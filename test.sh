@@ -22,6 +22,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_compile_time_keywords.cpp \
     tests/test_string_literal.cpp \
     tests/test_missing_keywords.cpp \
+    tests/test_lexer_missing_operators.cpp \
     -Isrc/include \
     -o test_runner
 

@@ -430,6 +430,8 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_MINUS_EQUAL;
             } else if (match('%')) {
                 token.type = TOKEN_MINUSPERCENT;
+            } else if (match('-')) {
+                token.type = TOKEN_MINUS2;
             } else {
                 token.type = TOKEN_MINUS;
             }
@@ -518,7 +520,13 @@ Token Lexer::nextToken() {
             break;
         case '%': token.type = match('=') ? TOKEN_PERCENT_EQUAL : TOKEN_PERCENT; break;
         case '~': token.type = TOKEN_TILDE; break;
-        case '&': token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND; break;
+        case '&':
+            if (match('&')) {
+                token.type = TOKEN_AMPERSAND2;
+            } else {
+                token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND;
+            }
+            break;
         case '|':
             if (match('=')) {
                 token.type = TOKEN_PIPE_EQUAL;
