@@ -25,6 +25,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_ast.cpp \
     tests/test_ast_statements.cpp \
     tests/test_ast_declarations.cpp \
+    tests/test_ast_container_declarations.cpp \
     tests/test_ast_types.cpp \
     -Isrc/include \
     -o test_runner

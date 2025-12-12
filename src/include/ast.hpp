@@ -39,6 +39,11 @@ enum NodeType {
     NODE_PARAM_DECL,      ///< A function parameter declaration.
     NODE_FN_DECL,         ///< A function declaration.
 
+    // ~~~~~~~~~~~~~~ Container Declarations ~~~~~~~~~~~~~~~~~
+    NODE_STRUCT_DECL,     ///< A struct declaration.
+    NODE_UNION_DECL,      ///< A union declaration.
+    NODE_ENUM_DECL,       ///< An enum declaration.
+
     // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
@@ -61,6 +66,9 @@ struct ASTDeferStmtNode;
 struct ASTVarDeclNode;
 struct ASTFnDeclNode;
 struct ASTParamDeclNode;
+struct ASTStructDeclNode;
+struct ASTUnionDeclNode;
+struct ASTEnumDeclNode;
 struct ASTTypeNameNode;
 struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
@@ -234,6 +242,36 @@ struct ASTFnDeclNode {
     ASTNode* body;
 };
 
+// --- Container Declaration Nodes ---
+
+/**
+ * @struct ASTStructDeclNode
+ * @brief Represents a `struct` declaration. Allocated out-of-line.
+ * @var ASTStructDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the struct fields.
+ */
+struct ASTStructDeclNode {
+    DynamicArray<ASTNode*>* fields;
+};
+
+/**
+ * @struct ASTUnionDeclNode
+ * @brief Represents a `union` declaration. Allocated out-of-line.
+ * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the union fields.
+ */
+struct ASTUnionDeclNode {
+    DynamicArray<ASTNode*>* fields;
+};
+
+/**
+ * @struct ASTEnumDeclNode
+ * @brief Represents an `enum` declaration. Allocated out-of-line.
+ * @var ASTEnumDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the enum fields, allowing for explicit values.
+ */
+struct ASTEnumDeclNode {
+    DynamicArray<ASTNode*>* fields;
+};
+
+
 // --- Type Expression Nodes ---
 
 /**
@@ -305,6 +343,10 @@ struct ASTNode {
         ASTVarDeclNode* var_decl; // Out-of-line
         ASTParamDeclNode param_decl;
         ASTFnDeclNode* fn_decl; // Out-of-line
+        ASTStructDeclNode* struct_decl; // Out-of-line
+        ASTUnionDeclNode* union_decl; // Out-of-line
+        ASTEnumDeclNode* enum_decl; // Out-of-line
+
 
         // Type Expressions
         ASTTypeNameNode type_name;
