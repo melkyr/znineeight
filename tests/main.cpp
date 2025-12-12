@@ -43,6 +43,16 @@ TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
 TEST_FUNC(Lexer_StringLiteral_LongString);
 TEST_FUNC(lex_missing_keywords);
 
+// AST Node Tests
+TEST_FUNC(ASTNode_IntegerLiteral);
+TEST_FUNC(ASTNode_FloatLiteral);
+TEST_FUNC(ASTNode_CharLiteral);
+TEST_FUNC(ASTNode_StringLiteral);
+TEST_FUNC(ASTNode_Identifier);
+TEST_FUNC(ASTNode_UnaryOp);
+TEST_FUNC(ASTNode_BinaryOp);
+
+
 int main() {
     bool (*tests[])() = {
         test_basic_allocation,
@@ -86,6 +96,14 @@ int main() {
         test_Lexer_StringLiteral_EscapedCharacters,
         test_Lexer_StringLiteral_LongString,
         test_lex_missing_keywords,
+        // AST Tests
+        test_ASTNode_IntegerLiteral,
+        test_ASTNode_FloatLiteral,
+        test_ASTNode_CharLiteral,
+        test_ASTNode_StringLiteral,
+        test_ASTNode_Identifier,
+        test_ASTNode_UnaryOp,
+        test_ASTNode_BinaryOp,
     };
 
     int passed = 0;
