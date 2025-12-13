@@ -600,7 +600,60 @@ Represents an `enum` definition.
     };
     ```
 
-## 10. Future AST Node Requirements
+## 10. Error Handling Node Types
+
+These nodes represent Zig's error handling mechanisms.
+
+### `ASTTryExprNode`
+Represents a `try` expression, which either unwraps a successful value or propagates an error.
+*   **Zig Code:** `try fallible_operation()`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTTryExprNode
+     * @brief Represents a `try` expression.
+     * @var ASTTryExprNode::expression The expression that may return an error.
+     */
+    struct ASTTryExprNode {
+        ASTNode* expression;
+    };
+    ```
+
+### `ASTCatchExprNode`
+Represents a `catch` expression, providing a fallback value in case of an error.
+*   **Zig Code:** `my_value catch |err| fallback_value`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTCatchExprNode
+     * @brief Represents a `catch` expression. Allocated out-of-line.
+     * @var ASTCatchExprNode::payload The expression that may produce an error.
+     * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
+     * @var ASTCatchExprNode::else_expr The expression to evaluate if an error occurs.
+     */
+    struct ASTCatchExprNode {
+        ASTNode* payload;
+        const char* error_name; // Can be NULL
+        ASTNode* else_expr;
+    };
+    ```
+
+### `ASTErrDeferStmtNode`
+Represents an `errdefer` statement, which is executed only if the function returns an error.
+*   **Zig Code:** `errdefer cleanup();`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTErrDeferStmtNode
+     * @brief Represents an `errdefer` statement.
+     * @var ASTErrDeferStmtNode::statement The statement to execute upon error-based scope exit.
+     */
+    struct ASTErrDeferStmtNode {
+        ASTNode* statement;
+    };
+    ```
+
+## 11. Future AST Node Requirements
 
 A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
 
@@ -612,9 +665,9 @@ A review of the Zig language specification has identified several language featu
     *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
 
 *   **Error Handling:**
-    *   `TryExprNode`: For the `try` expression.
-    *   `CatchExprNode`: For the `catch` expression.
-    *   `ErrDeferStmtNode`: For `errdefer` statements.
+    *   `TryExprNode`: For the `try` expression. (DONE)
+    *   `CatchExprNode`: For the `catch` expression. (DONE)
+    *   `ErrDeferStmtNode`: For `errdefer` statements. (DONE)
 
 *   **Asynchronous Operations:**
     *   `AsyncExprNode`: For `async` function calls.

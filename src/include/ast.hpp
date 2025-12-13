@@ -51,7 +51,12 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
-    NODE_ARRAY_TYPE       ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
+    NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
+
+    // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
+    NODE_TRY_EXPR,        ///< A try expression.
+    NODE_CATCH_EXPR,      ///< A catch expression.
+    NODE_ERRDEFER_STMT    ///< An errdefer statement.
 };
 
 // --- Forward declarations for node-specific structs ---
@@ -79,6 +84,9 @@ struct ASTEnumDeclNode;
 struct ASTTypeNameNode;
 struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
+struct ASTTryExprNode;
+struct ASTCatchExprNode;
+struct ASTErrDeferStmtNode;
 
 
 // --- Node-specific data structs ---
@@ -243,6 +251,40 @@ struct ASTSwitchExprNode {
     DynamicArray<ASTSwitchProngNode*>* prongs;
 };
 
+// --- Error Handling Nodes ---
+
+/**
+ * @struct ASTTryExprNode
+ * @brief Represents a `try` expression, which unwraps a result or propagates an error.
+ * @var ASTTryExprNode::expression The expression that might return an error.
+ */
+struct ASTTryExprNode {
+    ASTNode* expression;
+};
+
+/**
+ * @struct ASTCatchExprNode
+ * @brief Represents a `catch` expression, which handles a potential error from a payload.
+ * @var ASTCatchExprNode::payload The expression being evaluated that may result in an error.
+ * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
+ * @var ASTCatchExprNode::else_expr The expression to execute if the payload is an error.
+ */
+struct ASTCatchExprNode {
+    ASTNode* payload;
+    const char* error_name; // Can be NULL
+    ASTNode* else_expr;
+};
+
+/**
+ * @struct ASTErrDeferStmtNode
+ * @brief Represents an `errdefer` statement.
+ * @var ASTErrDeferStmtNode::statement The statement to be executed upon error-based scope exit.
+ */
+struct ASTErrDeferStmtNode {
+    ASTNode* statement;
+};
+
+
 // --- Declaration Nodes ---
 
 /**
@@ -388,6 +430,11 @@ struct ASTNode {
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line
+
+        // Error Handling
+        ASTTryExprNode try_expr;
+        ASTCatchExprNode* catch_expr; // Out-of-line
+        ASTErrDeferStmtNode errdefer_stmt;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
