@@ -33,6 +33,10 @@ enum NodeType {
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
+    NODE_FOR_STMT,        ///< A for loop statement.
+
+    // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
+    NODE_SWITCH_EXPR,     ///< A switch expression.
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -63,6 +67,9 @@ struct ASTIfStmtNode;
 struct ASTWhileStmtNode;
 struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
+struct ASTForStmtNode;
+struct ASTSwitchExprNode;
+struct ASTSwitchProngNode;
 struct ASTVarDeclNode;
 struct ASTFnDeclNode;
 struct ASTParamDeclNode;
@@ -195,6 +202,45 @@ struct ASTReturnStmtNode {
  */
 struct ASTDeferStmtNode {
     ASTNode* statement;
+};
+
+/**
+ * @struct ASTForStmtNode
+ * @brief Represents a for loop statement.
+ * @var ASTForStmtNode::iterable_expr The expression being iterated over.
+ * @var ASTForStmtNode::item_name The name of the item capture variable.
+ * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
+ * @var ASTForStmtNode::body The block statement that is the loop's body.
+ */
+struct ASTForStmtNode {
+    ASTNode* iterable_expr;
+    const char* item_name;
+    const char* index_name; // Can be NULL
+    ASTNode* body;
+};
+
+/**
+ * @struct ASTSwitchProngNode
+ * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
+ * @var ASTSwitchProngNode::cases A dynamic array of case expressions for this prong.
+ * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
+ * @var ASTSwitchProngNode::body The expression to execute for this prong.
+ */
+struct ASTSwitchProngNode {
+    DynamicArray<ASTNode*>* cases;
+    bool is_else;
+    ASTNode* body;
+};
+
+/**
+ * @struct ASTSwitchExprNode
+ * @brief Represents a switch expression.
+ * @var ASTSwitchExprNode::expression The expression whose value is being switched on.
+ * @var ASTSwitchExprNode::prongs A dynamic array of pointers to the switch prongs.
+ */
+struct ASTSwitchExprNode {
+    ASTNode* expression;
+    DynamicArray<ASTSwitchProngNode*>* prongs;
 };
 
 // --- Declaration Nodes ---
@@ -338,6 +384,10 @@ struct ASTNode {
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
+        ASTForStmtNode* for_stmt; // Out-of-line
+
+        // Expressions
+        ASTSwitchExprNode* switch_expr; // Out-of-line
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
