@@ -52,6 +52,8 @@ TEST_FUNC(ASTNode_Identifier);
 TEST_FUNC(ASTNode_UnaryOp);
 TEST_FUNC(ASTNode_BinaryOp);
 TEST_FUNC(ASTNode_ContainerDeclarations);
+TEST_FUNC(ASTNode_ForStmt);
+TEST_FUNC(ASTNode_SwitchExpr);
 
 
 int main() {
@@ -106,6 +108,8 @@ int main() {
         test_ASTNode_UnaryOp,
         test_ASTNode_BinaryOp,
         test_ASTNode_ContainerDeclarations,
+        test_ASTNode_ForStmt,
+        test_ASTNode_SwitchExpr,
     };
 
     int passed = 0;

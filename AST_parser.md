@@ -489,7 +489,69 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
     };
     ```
 
-## 8. Container Declaration Node Types
+## 8. Control Flow Node Types
+
+These nodes represent control flow constructs like loops and switches.
+
+### `ASTForStmtNode`
+Represents a `for` loop statement. This is a large node, so it is allocated out-of-line.
+*   **Zig Code:** `for (my_array) |item, i| { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTForStmtNode
+     * @brief Represents a for loop statement.
+     * @var ASTForStmtNode::iterable_expr The expression being iterated over.
+     * @var ASTForStmtNode::item_name The name of the item capture variable.
+     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
+     * @var ASTForStmtNode::body The block statement that is the loop's body.
+     */
+    struct ASTForStmtNode {
+        ASTNode* iterable_expr;
+        const char* item_name;
+        const char* index_name; // Can be NULL
+        ASTNode* body;
+    };
+    ```
+
+### `ASTSwitchExprNode`
+Represents a `switch` expression. This is a large node, so it is allocated out-of-line. It contains a list of `ASTSwitchProngNode`s.
+*   **Zig Code:**
+    ```zig
+    switch (value) {
+        1 => "one",
+        2, 3 => "two or three",
+        else => "other",
+    }
+    ```
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTSwitchProngNode
+     * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
+     * @var ASTSwitchProngNode::cases A dynamic array of case expressions for this prong.
+     * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
+     * @var ASTSwitchProngNode::body The expression to execute for this prong.
+     */
+    struct ASTSwitchProngNode {
+        DynamicArray<ASTNode*>* cases;
+        bool is_else;
+        ASTNode* body;
+    };
+
+    /**
+     * @struct ASTSwitchExprNode
+     * @brief Represents a switch expression.
+     * @var ASTSwitchExprNode::expression The expression whose value is being switched on.
+     * @var ASTSwitchExprNode::prongs A dynamic array of pointers to the switch prongs.
+     */
+    struct ASTSwitchExprNode {
+        ASTNode* expression;
+        DynamicArray<ASTSwitchProngNode*>* prongs;
+    };
+    ```
+
+## 9. Container Declaration Node Types
 
 These nodes represent container types like structs, unions, and enums.
 
@@ -538,7 +600,7 @@ Represents an `enum` definition.
     };
     ```
 
-## 9. Future AST Node Requirements
+## 10. Future AST Node Requirements
 
 A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
 
@@ -546,8 +608,8 @@ A review of the Zig language specification has identified several language featu
     *   `OpaqueDeclNode`: For `opaque` type declarations.
 
 *   **Control Flow:**
-    *   `ForStmtNode`: For `for` loops.
-    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases.
+    *   `ForStmtNode`: For `for` loops. (DONE)
+    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
 
 *   **Error Handling:**
     *   `TryExprNode`: For the `try` expression.
