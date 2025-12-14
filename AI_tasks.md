@@ -71,7 +71,15 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
 Task 47: Function definitions (signature + block body)
-Task 48: parseBlockStatement (empty blocks + ; statements)    
+Task 48: parseBlockStatement (empty blocks + ; statements)
+        Recommended test cases to include besides the proper for task 48, due to the dependency from task 47 for this to be tested.:
+        Test Cases for Task 48 (tests/test_parser_blocks.cpp):  
+
+    {} → NODE_BLOCK with 0 statements  
+    {;} → NODE_BLOCK with 1 NODE_EMPTY_STMT  
+    { var x: i32 = 10; } → NODE_BLOCK with 1 NODE_VAR_DECL  
+    { var x: i32 = 10 } → Aborts (missing ;)  
+    { fn foo() {} } → Aborts (functions not allowed yet)
 Task 49: parseIfStatement (if/else chains)  
 Task 50: parseWhileStatement  
 Task 51: parseDeferStatement (AST node ONLY – no scope logic)  
