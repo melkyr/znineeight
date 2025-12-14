@@ -70,16 +70,15 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 44. **Task 44:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
-47. **Task 47:** Implement parsing for function definitions (`fn`).
-48. **Task 48:** Implement `parseBlockStatement` for `{ ... }` scopes.
-49. **Task 49:** Implement `parseIfStatement` including `else` branches.
-50. **Task 50:** Implement `parseWhileStatement`.
-51. **Task 51:** Implement `parseDeferStatement`, adding the node to a list for the current scope.
-52. **Task 52:** Implement `parseReturnStatement`.
-53. **Task 53:** Implement expression parsing with correct operator precedence.
-54. **Task 54:** Handle unary operators (`-`, `!`).
-55. **Task 55:** Handle function call expressions.
-56. **Task 56:** Handle array/slice access expressions (`expr[index]`).
+Task 47: Function definitions (signature + block body)  
+Task 49: parseIfStatement (if/else chains)  
+Task 50: parseWhileStatement  
+Task 51: parseDeferStatement (AST node ONLY – no scope logic)  
+Task 52: parseReturnStatement  
+Task 53: Primary expressions (literals, identifiers, (expr))  
+Task 54: Function calls + array access (postfix operations)  
+Task 55: Unary operators (-, !)  
+Task 56: Binary operator precedence (additive → multiplicative → comparison)  
 57. **Task 57:** Write unit tests to verify the parser constructs the correct AST for various language features.
 
 ### Milestone 4: Type System & Symbol Table
