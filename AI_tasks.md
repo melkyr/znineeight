@@ -70,7 +70,8 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 44. **Task 44:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
-Task 47: Function definitions (signature + block body)  
+Task 47: Function definitions (signature + block body)
+Task 48: parseBlockStatement (empty blocks + ; statements)    
 Task 49: parseIfStatement (if/else chains)  
 Task 50: parseWhileStatement  
 Task 51: parseDeferStatement (AST node ONLY – no scope logic)  
