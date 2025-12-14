@@ -765,3 +765,20 @@ The parser will abort with an error in the following cases:
 - A type expression is expected but not found.
 - An array's size is not an integer literal.
 - The closing `]` is missing in an array type declaration.
+
+## 14. Parser Error Handling
+
+The parser's error handling strategy is designed for simplicity and adherence to the strict technical constraints of the project.
+
+### No-Recovery Policy
+At this foundational stage, any syntax error is considered fatal. When the parser encounters a token sequence that violates the language grammar (e.g., a missing semicolon or an unexpected token), it does not attempt to recover by synchronizing to a future state. Instead, it immediately halts the compilation process. This simplifies the initial parser implementation significantly.
+
+### The `error()` Function
+All fatal parsing errors are routed through the `Parser::error(const char* msg)` function. Its behavior is platform-dependent to comply with the project's dependency limitations:
+
+-   **On Windows (`_WIN32`):** It uses the Win32 API call `OutputDebugStringA` to print a "Parser Error: " prefix followed by the specific error message to the debugger's output console.
+-   **On other platforms:** It produces no output.
+
+After printing the message (on Windows), the function **always** calls `abort()`. This terminates the program immediately, preventing any further processing of the invalid source code.
+
+This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
