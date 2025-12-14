@@ -1,4 +1,11 @@
 #include "../src/include/test_framework.hpp"
+#include "../src/include/memory.hpp"
+#include "../src/include/string_interner.hpp"
+#include "../src/include/source_manager.hpp"
+#include "../src/include/lexer.hpp"
+#include "../src/include/parser.hpp"
+#include <cstring>
+#include <cstdio>
 
 // Forward declarations for all test functions
 TEST_FUNC(basic_allocation);
@@ -54,9 +61,44 @@ TEST_FUNC(ASTNode_BinaryOp);
 TEST_FUNC(ASTNode_ContainerDeclarations);
 TEST_FUNC(ASTNode_ForStmt);
 TEST_FUNC(ASTNode_SwitchExpr);
+TEST_FUNC(Parser_Error_OnMissingColon);
 
+// This function is executed in a child process by the error handling test.
+// It sets up the parser and attempts to parse invalid code.
+// The successful outcome is for the program to abort.
+void run_parser_test_and_abort(const char* source_code) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager src_manager(arena);
+    u32 file_id = src_manager.addFile("test.zig", source_code, strlen(source_code));
+    Lexer lexer(src_manager, interner, arena, file_id);
 
-int main() {
+    DynamicArray<Token> tokens(arena);
+    Token token;
+    do {
+        token = lexer.nextToken();
+        tokens.append(token);
+    } while (token.type != TOKEN_EOF);
+
+    Parser parser(tokens.getData(), tokens.length(), &arena);
+    parser.parseVarDecl(); // This should trigger the error and abort
+
+    // If we reach here, the parser did NOT abort as expected.
+    // Exit with 0, which the parent process will interpret as a test failure.
+    exit(0);
+}
+
+int main(int argc, char* argv[]) {
+    // Check if the test runner is being invoked in the special mode
+    // for testing parser errors.
+    if (argc == 3 && strcmp(argv[1], "--run-parser-test") == 0) {
+        run_parser_test_and_abort(argv[2]);
+        // This line should be unreachable if the test works correctly.
+        // Return 1 to indicate failure if it is ever reached.
+        return 1;
+    }
+
+    // Normal test suite execution
     bool (*tests[])() = {
         test_basic_allocation,
         test_multiple_allocations,
@@ -110,6 +152,7 @@ int main() {
         test_ASTNode_ContainerDeclarations,
         test_ASTNode_ForStmt,
         test_ASTNode_SwitchExpr,
+        test_Parser_Error_OnMissingColon,
     };
 
     int passed = 0;
