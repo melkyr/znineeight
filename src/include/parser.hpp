@@ -24,6 +24,18 @@ public:
     ASTNode* parseType();
 
     /**
+     * @brief Parses a top-level variable declaration (`var` or `const`).
+     * @return A pointer to the ASTNode representing the variable declaration.
+     */
+    ASTNode* parseVarDecl();
+
+    /**
+     * @brief Parses an expression. NOTE: For now, only supports integer literals.
+     * @return A pointer to the ASTNode representing the expression.
+     */
+    ASTNode* parseExpression();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      */
@@ -48,6 +60,14 @@ private:
      * @return True if the token matched and was consumed, false otherwise.
      */
     bool match(TokenType type);
+
+    /**
+     * @brief If the current token matches the expected type, consumes it. Otherwise, reports an error and aborts.
+     * @param type The expected token type.
+     * @param msg The error message to display if the token does not match.
+     * @return The consumed token.
+     */
+    Token expect(TokenType type, const char* msg);
 
     /**
      * @brief Reports a syntax error and terminates the compilation.
