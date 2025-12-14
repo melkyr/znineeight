@@ -457,6 +457,24 @@ Represents a `var` or `const` declaration.
     };
     ```
 
+#### Parsing Logic (`parseVarDecl`)
+The `parseVarDecl` function is responsible for parsing variable and constant declarations. It strictly follows the grammar:
+`('var'|'const') IDENT ':' type_expr '=' expr ';'`
+
+- It consumes a `var` or `const` token.
+- It expects an identifier, a colon, a type expression (parsed via `parseType`), an equals sign, and an initializer expression.
+- The initializer expression is currently handled by a minimal `parseExpression` function that **only supports integer literals**.
+- The function constructs and returns a `NODE_VAR_DECL` AST node.
+- Any deviation from this grammar results in a fatal error.
+
+**Example Usage in Parser:**
+```cpp
+// Source code: "const answer: i32 = 42;"
+Parser parser = create_parser_for_test("const answer: i32 = 42;", ...);
+ASTNode* decl = parser.parseVarDecl();
+// `decl` now points to a fully populated ASTNode with type NODE_VAR_DECL.
+```
+
 ### `ASTParamDeclNode`
 Represents a single parameter within a function's parameter list. This node is not directly used in the main `ASTNode` union but is a component of `ASTFnDeclNode`.
 *   **Zig Code:** `a: i32`, `comptime message: []const u8`

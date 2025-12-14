@@ -33,6 +33,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_ast_async.cpp \
     tests/test_ast_comptime.cpp \
     tests/test_parser_navigation.cpp \
+    tests/test_parser_vars.cpp \
     -Isrc/include \
     -o test_runner
 

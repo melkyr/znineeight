@@ -3,6 +3,7 @@
 
 #include "lexer.hpp"
 #include "memory.hpp"
+#include "ast.hpp"
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
@@ -15,6 +16,24 @@ public:
      * @param arena A pointer to the ArenaAllocator for memory management.
      */
     Parser(Token* tokens, size_t count, ArenaAllocator* arena);
+
+    /**
+     * @brief Parses a type expression from the token stream.
+     * @return A pointer to the root ASTNode of the parsed type.
+     */
+    ASTNode* parseType();
+
+    /**
+     * @brief Parses a top-level variable declaration (`var` or `const`).
+     * @return A pointer to the ASTNode representing the variable declaration.
+     */
+    ASTNode* parseVarDecl();
+
+    /**
+     * @brief Parses an expression. NOTE: For now, only supports integer literals.
+     * @return A pointer to the ASTNode representing the expression.
+     */
+    ASTNode* parseExpression();
 
     /**
      * @brief Consumes the current token and advances the stream position by one.
@@ -35,6 +54,33 @@ public:
     bool is_at_end() const;
 
 private:
+    /**
+     * @brief If the current token matches the expected type, consumes it and returns true.
+     * @param type The expected token type.
+     * @return True if the token matched and was consumed, false otherwise.
+     */
+    bool match(TokenType type);
+
+    /**
+     * @brief If the current token matches the expected type, consumes it. Otherwise, reports an error and aborts.
+     * @param type The expected token type.
+     * @param msg The error message to display if the token does not match.
+     * @return The consumed token.
+     */
+    Token expect(TokenType type, const char* msg);
+
+    /**
+     * @brief Reports a syntax error and terminates the compilation.
+     * @param msg The error message to display.
+     */
+    void error(const char* msg);
+
+    /** @brief Parses a pointer type (e.g., `*u8`, `**i32`). */
+    ASTNode* parsePointerType();
+
+    /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). */
+    ASTNode* parseArrayType();
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;
