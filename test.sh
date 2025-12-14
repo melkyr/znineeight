@@ -15,6 +15,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \
+    src/bootstrap/parser.cpp \
     tests/test_char_literal.cpp \
     tests/test_lexer_delimiters.cpp \
     tests/test_lexer_keywords.cpp \
@@ -31,6 +32,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_ast_error_nodes.cpp \
     tests/test_ast_async.cpp \
     tests/test_ast_comptime.cpp \
+    tests/test_parser_navigation.cpp \
     -Isrc/include \
     -o test_runner
 
