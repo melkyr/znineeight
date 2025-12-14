@@ -63,7 +63,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Add `ASTAsyncExprNode` and `ASTAwaitExprNode`.
     - Add corresponding `NodeType` enums.
     - Create a basic compile-time test to validate the new structures.
-43. **Task 43:** Define AST nodes for Comptime Operations (`comptime`).
+43. **Task 43:** Define AST nodes for Comptime Operations (`comptime`). (DONE)
     - Add `ASTComptimeBlockNode`.
     - Add corresponding `NodeType` enum.
     - Create a basic compile-time test to validate the new structure.

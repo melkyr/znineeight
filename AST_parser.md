@@ -56,7 +56,10 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type specified by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*i32`).
-    NODE_ARRAY_TYPE       ///< An array or slice type (e.g., `[8]u8`).
+    NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`).
+
+    // ~~~~~~~~~~~~~~~~~~ Compile-Time Operations ~~~~~~~~~~~~~~~~~
+    NODE_COMPTIME_BLOCK   ///< A comptime block.
 };
 ```
 
@@ -107,6 +110,9 @@ struct ASTNode {
         ASTTypeNameNode type_name;
         ASTPointerTypeNode pointer_type;
         ASTArrayTypeNode array_type;
+
+        // Compile-Time Operations
+        ASTComptimeBlockNode comptime_block;
     } as;
 };
 ```
@@ -676,4 +682,23 @@ A review of the Zig language specification has identified several language featu
     *   `ResumeStmtNode`: For the `resume` statement.
 
 *   **Compile-Time Operations:**
-    *   `ComptimeBlockNode`: For `comptime` blocks.
+    *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
+
+## 12. Compile-Time Operation Node Types
+
+These nodes are related to compile-time execution and evaluation.
+
+### `ASTComptimeBlockNode`
+Represents a `comptime` block, which contains an expression that must be evaluated at compile-time.
+*   **Zig Code:** `comptime { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTComptimeBlockNode
+     * @brief Represents a `comptime` block.
+     * @var ASTComptimeBlockNode::expression The expression inside the block to be evaluated at compile-time.
+     */
+    struct ASTComptimeBlockNode {
+        ASTNode* expression;
+    };
+    ```

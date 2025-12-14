@@ -30,6 +30,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_ast_control_flow.cpp \
     tests/test_ast_error_nodes.cpp \
     tests/test_ast_async.cpp \
+    tests/test_ast_comptime.cpp \
     -Isrc/include \
     -o test_runner
 

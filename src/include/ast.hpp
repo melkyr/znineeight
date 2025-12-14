@@ -60,7 +60,10 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~ Async Operations ~~~~~~~~~~~~~~~~~
     NODE_ASYNC_EXPR,      ///< An async function call.
-    NODE_AWAIT_EXPR       ///< An await expression.
+    NODE_AWAIT_EXPR,      ///< An await expression.
+
+    // ~~~~~~~~~~~~~~~~ Compile-Time Operations ~~~~~~~~~~~~~~~~~
+    NODE_COMPTIME_BLOCK   ///< A comptime block.
 };
 
 // --- Forward declarations for node-specific structs ---
@@ -93,6 +96,7 @@ struct ASTCatchExprNode;
 struct ASTErrDeferStmtNode;
 struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
+struct ASTComptimeBlockNode;
 
 
 // --- Node-specific data structs ---
@@ -310,6 +314,17 @@ struct ASTAwaitExprNode {
     ASTNode* expression;
 };
 
+// --- Comptime Nodes ---
+
+/**
+ * @struct ASTComptimeBlockNode
+ * @brief Represents a `comptime` block, which contains an expression to be evaluated at compile-time.
+ * @var ASTComptimeBlockNode::expression The expression inside the comptime block.
+ */
+struct ASTComptimeBlockNode {
+    ASTNode* expression;
+};
+
 
 // --- Declaration Nodes ---
 
@@ -465,6 +480,9 @@ struct ASTNode {
         // Async
         ASTAsyncExprNode async_expr;
         ASTAwaitExprNode await_expr;
+
+        // Comptime
+        ASTComptimeBlockNode comptime_block;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
