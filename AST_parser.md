@@ -743,4 +743,25 @@ Represents a `comptime` block, which contains an expression that must be evaluat
     };
     ```
 
+## 13. Type Expression Parsing
 
+The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
+
+`type = primitive | pointer_type | array_type | slice_type`
+`primitive = IDENTIFIER`
+`pointer_type = '*' type`
+`array_type = '[' <expr> ']' type`
+`slice_type = '[]' type`
+
+### AST Node Structures
+
+- **`ASTTypeNameNode`**: Represents a primitive or named type (e.g., `i32`, `MyStruct`).
+- **`ASTPointerTypeNode`**: Represents a pointer to a base type.
+- **`ASTArrayTypeNode`**: Represents both fixed-size arrays and slices. For slices, the `size` field is `NULL`.
+
+### Error Cases
+
+The parser will abort with an error in the following cases:
+- A type expression is expected but not found.
+- An array's size is not an integer literal.
+- The closing `]` is missing in an array type declaration.
