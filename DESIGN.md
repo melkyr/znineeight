@@ -14,6 +14,9 @@ To ensure compatibility with 1998-era hardware and software:
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
 * **Dependencies:** Win32 API (`kernel32.dll`) only. No third-party libs
+* **C++ Standard Library Usage Policy:**
+  * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
+  * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<string>` (`std::string`), and `<vector>` (`std::vector`).
 * **Specific MSVC 6.0 Hacks:**
   * Use `__int64` instead of `long long`
   * Define `bool`, `true`, `false` manually if missing

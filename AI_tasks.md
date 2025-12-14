@@ -70,25 +70,41 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 44. **Task 44:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
-Task 47: Function definitions (signature + block body)
-Task 48: parseBlockStatement (empty blocks + ; statements)
-        Recommended test cases to include besides the proper for task 48, due to the dependency from task 47 for this to be tested.:
-        Test Cases for Task 48 (tests/test_parser_blocks.cpp):  
-
-    {} → NODE_BLOCK with 0 statements  
-    {;} → NODE_BLOCK with 1 NODE_EMPTY_STMT  
-    { var x: i32 = 10; } → NODE_BLOCK with 1 NODE_VAR_DECL  
-    { var x: i32 = 10 } → Aborts (missing ;)  
-    { fn foo() {} } → Aborts (functions not allowed yet)
-Task 49: parseIfStatement (if/else chains)  
-Task 50: parseWhileStatement  
-Task 51: parseDeferStatement (AST node ONLY – no scope logic)  
-Task 52: parseReturnStatement  
-Task 53: Primary expressions (literals, identifiers, (expr))  
-Task 54: Function calls + array access (postfix operations)  
-Task 55: Unary operators (-, !)  
-Task 56: Binary operator precedence (additive → multiplicative → comparison)  
-57. **Task 57:** Write unit tests to verify the parser constructs the correct AST for various language features.
+47. **Task 47:** Refactor Parser Error Handling and Cleanup.
+    - Remove the forbidden `<cstdio>` header include from `src/bootstrap/parser.cpp`.
+    - Modify the `error()` function to remove the `fprintf` call, ensuring it only uses `OutputDebugStringA` (under `#ifdef _WIN32`) and `abort()`.
+    - Remove duplicate function implementations (`error`, `match`, `parseType` and its helpers) from `parser.cpp`.
+    - Clean up any duplicate header includes at the top of the file.
+48. **Task 48:** Implement `parseFnDecl` for function definitions.
+    - Parse the `fn` keyword, function name (identifier), parameter list `(`, `)`, and return type `-> type`.
+    - For now, the function body should be parsed as an empty block `{}`.
+49. **Task 49:** Implement `parseBlockStatement`.
+    - Parse a `{` followed by a sequence of statements (currently only other empty blocks `{}`) and a closing `}`.
+    - Handle empty blocks `{}` and blocks with empty statements `{;}`.
+50. **Task 50:** Implement `parseIfStatement`.
+    - Parse `if`, a parenthesized condition `(expr)`, a `then` block, and an optional `else` block.
+    - The condition `expr` will be a stub that calls `parseExpression`.
+51. **Task 51:** Implement `parseWhileStatement`.
+    - Parse `while`, a parenthesized condition `(expr)`, and a body block.
+52. **Task 52:** Implement `parseDeferStatement`.
+    - Parse `defer` followed by a single statement.
+53. **Task 53:** Implement `parseReturnStatement`.
+    - Parse `return` followed by an optional expression and a semicolon.
+54. **Task 54:** Implement `parsePrimaryExpr` for primary expressions.
+    - Handle integer, float, char, and string literals.
+    - Handle identifiers.
+    - Handle parenthesized expressions `(expr)`.
+55. **Task 55:** Implement parsing for postfix expressions.
+    - Parse function calls with arguments `(arg1, arg2, ...)`.
+    - Parse array access expressions `[index]`.
+56. **Task 56:** Implement `parseUnaryExpr` for unary operators.
+    - Handle prefix operators like `-`, `!`, `~`, `&`.
+57. **Task 57:** Implement `parseBinaryExpr` for binary operator precedence.
+    - Use a precedence climbing or Pratt parsing algorithm.
+    - Correctly handle the order of operations for additive, multiplicative, and comparison operators.
+58. **Task 58:** Create Integration Tests for the Parser.
+    - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement).
+    - Verify that the resulting AST is structured correctly.
 
 ### Milestone 4: Type System & Symbol Table
 58. **Task 58:** Define the `Type` struct and `TypeKind` enum for all supported types.
