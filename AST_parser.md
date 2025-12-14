@@ -623,6 +623,28 @@ Represents a `try` expression, which either unwraps a successful value or propag
     struct ASTTryExprNode {
         ASTNode* expression;
     };
+
+
+## Parser Skeleton Design (Task 44a)
+
+### Core Principles
+- **Zero-allocation navigation**: Methods `advance()`, `peek()`, and `is_at_end()` perform no memory allocations. Critical for memory-constrained environments.
+- **Bounds safety**: All operations validated via `assert()` in debug builds. Release builds rely on caller guarantees (lexer must provide valid EOF).
+- **State minimalism**: Only tracks token stream position. No AST construction at this stage.
+
+### Memory Strategy
+- **Arena usage**: Reserved for future node allocation (44b+). Not utilized in 44a methods.
+- **Token references**: `peek()` returns const reference to avoid copying tokens. Lexer guarantees token lifetime exceeds parser lifetime.
+
+### Error Handling (44a Scope)
+- **Fatal errors only**: Out-of-bounds access aborts immediately via `assert()`. Recovery mechanisms deferred to 44b.
+- **No error messages**: Memory constraints prohibit string allocation for errors in this phase.
+
+### TDD Verification Points
+1. `advance()` correctly increments position and returns consumed token
+2. `peek()` never modifies parser state
+3. `is_at_end()` returns true exactly at `token_count_` position
+4. All methods handle empty token streams safely (via constructor assertions)
     ```
 
 ### `ASTCatchExprNode`
@@ -704,25 +726,3 @@ Represents a `comptime` block, which contains an expression that must be evaluat
     ```
 
 
-    PARSER
-    ## Parser Skeleton Design (Task 44a)
-
-### Core Principles
-- **Zero-allocation navigation**: Methods `advance()`, `peek()`, and `is_at_end()` perform no memory allocations. Critical for memory-constrained environments.
-- **Bounds safety**: All operations validated via `assert()` in debug builds. Release builds rely on caller guarantees (lexer must provide valid EOF).
-- **State minimalism**: Only tracks token stream position. No AST construction at this stage.
-
-### Memory Strategy
-- **Arena usage**: Reserved for future node allocation (44b+). Not utilized in 44a methods.
-- **Token references**: `peek()` returns const reference to avoid copying tokens. Lexer guarantees token lifetime exceeds parser lifetime.
-
-### Error Handling (44a Scope)
-- **Fatal errors only**: Out-of-bounds access aborts immediately via `assert()`. Recovery mechanisms deferred to 44b.
-- **No error messages**: Memory constraints prohibit string allocation for errors in this phase.
-
-### TDD Verification Points
-1. `advance()` correctly increments position and returns consumed token
-2. `peek()` never modifies parser state
-3. `is_at_end()` returns true exactly at `token_count_` position
-4. All methods handle empty token streams safely (via constructor assertions)
-5. 
