@@ -18,6 +18,9 @@ Responsibilities of the AI Agent
     Interpret Tasks: Accurately parse and understand the task description provided in AI_tasks.md.
     Consult Documentation: Read and comprehend relevant project documents (Design.md, lexer.md, AST_parser.md, etc.) before implementing.
     Adhere to Constraints: Strictly follow all technical constraints (C++98, memory limits, dependencies) without deviation.
+        C++ Standard Library Usage Policy:
+        Allowed: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like <new> (for placement new), <cstddef> (for size_t), <cassert> (for assert), and <climits>.
+        Forbidden: Headers that depend on a C/C++ runtime library (like msvcrt.dll beyond kernel32.dll) or perform dynamic memory allocation. This includes headers like <cstdio> (fprintf), <cstdlib> (malloc), <string> (std::string), and <vector> (std::vector).
     Implement Code: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
     Document Changes: Update existing documentation (e.g., AST_parser.md) and add Doxygen-style comments to the generated code.
     Seek Clarification: When encountering ambiguity in task specifications or required decisions not covered by documentation, explicitly ask for clarification rather than making assumptions.
