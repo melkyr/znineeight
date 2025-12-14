@@ -56,7 +56,11 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
     NODE_CATCH_EXPR,      ///< A catch expression.
-    NODE_ERRDEFER_STMT    ///< An errdefer statement.
+    NODE_ERRDEFER_STMT,   ///< An errdefer statement.
+
+    // ~~~~~~~~~~~~~~~~ Async Operations ~~~~~~~~~~~~~~~~~
+    NODE_ASYNC_EXPR,      ///< An async function call.
+    NODE_AWAIT_EXPR       ///< An await expression.
 };
 
 // --- Forward declarations for node-specific structs ---
@@ -87,6 +91,8 @@ struct ASTArrayTypeNode;
 struct ASTTryExprNode;
 struct ASTCatchExprNode;
 struct ASTErrDeferStmtNode;
+struct ASTAsyncExprNode;
+struct ASTAwaitExprNode;
 
 
 // --- Node-specific data structs ---
@@ -284,6 +290,26 @@ struct ASTErrDeferStmtNode {
     ASTNode* statement;
 };
 
+// --- Async Nodes ---
+
+/**
+ * @struct ASTAsyncExprNode
+ * @brief Represents an `async` expression, which initiates an asynchronous operation.
+ * @var ASTAsyncExprNode::expression The function call or expression being executed asynchronously.
+ */
+struct ASTAsyncExprNode {
+    ASTNode* expression;
+};
+
+/**
+ * @struct ASTAwaitExprNode
+ * @brief Represents an `await` expression, which pauses execution until an async operation completes.
+ * @var ASTAwaitExprNode::expression The async expression being awaited.
+ */
+struct ASTAwaitExprNode {
+    ASTNode* expression;
+};
+
 
 // --- Declaration Nodes ---
 
@@ -435,6 +461,10 @@ struct ASTNode {
         ASTTryExprNode try_expr;
         ASTCatchExprNode* catch_expr; // Out-of-line
         ASTErrDeferStmtNode errdefer_stmt;
+
+        // Async
+        ASTAsyncExprNode async_expr;
+        ASTAwaitExprNode await_expr;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
