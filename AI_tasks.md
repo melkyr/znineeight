@@ -70,7 +70,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 44. **Task 44:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
 45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
 46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
-47. **Task 47:** Refactor Parser Error Handling and Cleanup.
+47. **Task 47:** Refactor Parser Error Handling and Cleanup. (DONE)
     - Remove the forbidden `<cstdio>` header include from `src/bootstrap/parser.cpp`.
     - Modify the `error()` function to remove the `fprintf` call, ensuring it only uses `OutputDebugStringA` (under `#ifdef _WIN32`) and `abort()`.
     - Remove duplicate function implementations (`error`, `match`, `parseType` and its helpers) from `parser.cpp`.

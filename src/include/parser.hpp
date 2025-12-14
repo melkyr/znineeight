@@ -75,16 +75,6 @@ private:
      */
     void error(const char* msg);
 
-    /**
-     * @brief Checks if a token represents a primitive type keyword.
-     * @param token The token to check.
-     * @return True if the token is a primitive type, false otherwise.
-     */
-    bool isPrimitiveType(const Token& token);
-
-    /** @brief Parses a primitive type (e.g., `i32`, `bool`). */
-    ASTNode* parsePrimitiveType();
-
     /** @brief Parses a pointer type (e.g., `*u8`, `**i32`). */
     ASTNode* parsePointerType();
 

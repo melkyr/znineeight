@@ -35,6 +35,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_navigation.cpp \
     tests/test_parser_vars.cpp \
     tests/test_parser_types.cpp \
+    tests/test_parser_refactor.cpp \
     -Isrc/include \
     -o test_runner
 
