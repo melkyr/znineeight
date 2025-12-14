@@ -3,6 +3,7 @@
 
 #include "lexer.hpp"
 #include "memory.hpp"
+#include "error.hpp"
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
@@ -34,11 +35,38 @@ public:
      */
     bool is_at_end() const;
 
+    /**
+     * @brief Checks if the current token matches the given type. If it does,
+     * the token is consumed and the method returns true. Otherwise, the
+     * stream is not advanced and the method returns false.
+     * @param type The TokenType to match against.
+     * @return True if the token matches and was consumed, false otherwise.
+     */
+    bool match(TokenType type);
+
+    /**
+     * @brief Expects the current token to be of a specific type. If it matches,
+     * the token is consumed and returned. If it does not match, an error is
+     * recorded, the stream is not advanced, and the mismatched token is returned.
+     * @param expected_type The expected TokenType.
+     * @return The consumed token on success, or the mismatched token on failure.
+     */
+    Token expect(TokenType expected_type);
+
+    /**
+     * @brief Retrieves the list of errors encountered during parsing.
+     * @return A pointer to the dynamic array of ErrorReport objects.
+     */
+    const DynamicArray<ErrorReport>* getErrors() const;
+
 private:
+    void reportError(const Token& token, const char* message);
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
+    DynamicArray<ErrorReport> errors_;
 };
 
 #endif // PARSER_HPP

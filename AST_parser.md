@@ -645,6 +645,28 @@ Represents a `try` expression, which either unwraps a successful value or propag
 2. `peek()` never modifies parser state
 3. `is_at_end()` returns true exactly at `token_count_` position
 4. All methods handle empty token streams safely (via constructor assertions)
+
+## Parser Pattern Matching and Error Handling (Task 44b)
+
+To build the AST, the parser needs to consume tokens in a structured way. This is accomplished with pattern matching methods that can check for expected tokens and report errors when the source code does not match the language's grammar.
+
+### Methods
+
+-   `bool match(TokenType type)`: This method checks if the current token matches the given `type`. If it does, the token is consumed, and the method returns `true`. If not, the parser's state is unchanged, and it returns `false`. This is useful for optional syntax, like an `else` block.
+
+-   `Token expect(TokenType type)`: This method requires the current token to be of a specific `type`.
+    -   On success, it consumes the token and returns it.
+    -   On failure, it triggers the error handling system, does **not** consume the token, and returns the mismatched token it found. This allows the parser to report an error and decide whether to attempt recovery.
+
+### Error Handling Infrastructure
+
+The parser now includes a foundational error handling system that is integrated with the arena allocator for memory safety.
+
+-   **`ErrorReport` Struct**: A new struct, `ErrorReport`, is defined in `error.hpp`. It stores the token that caused the error (for location information) and a `const char*` to a detailed error message.
+
+-   **Arena-Allocated Messages**: When `expect()` fails, it formats a specific error message (e.g., "Expected 'const', got 'identifier'") on the stack, then allocates a permanent copy of that message from the `ArenaAllocator`. This guarantees that the error message's memory is valid for the entire compilation lifecycle without risking memory leaks.
+
+-   **Error List**: The `Parser` class now contains a `DynamicArray<ErrorReport>` to store any errors it encounters. This allows the parser to continue finding more than one error in a single pass (though recovery logic is not yet implemented). A `getErrors()` method provides access to this list for testing and eventual display to the user.
     ```
 
 ### `ASTCatchExprNode`
