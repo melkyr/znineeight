@@ -118,36 +118,62 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 66. **Task 66:** Type-check function calls, matching argument types to parameter types.
 67. **Task 67:** Write unit tests for the type checker, including tests for valid and invalid programs.
 
-### Milestone 5: Code Generation (x86)
-68. **Task 68:** Implement a basic x86 assembly emitter class in `codegen.hpp`.
-69. **Task 69:** Implement the `RegisterAllocator` using a linear scan strategy.
-70. **Task 70:** Generate function prologues (`push ebp; mov ebp, esp`) and epilogues.
-71. **Task 71:** Generate code for loading integer literals into registers.
-72. **Task 72:** Generate code for local variable access (`mov eax, [ebp-offset]`).
-73. **Task 73:** Generate code for basic arithmetic operations (`add`, `sub`, `imul`, `idiv`).
-74. **Task 74:** Generate code for comparison operators and conditional jumps (`cmp`, `je`, `jne`, etc.).
-75. **Task 75:** Generate code for `if` statements using labels and jumps.
-76. **Task 76:** Generate code for `while` loops.
-77. **Task 77:** Generate code for `return` statements, placing the return value in `EAX`.
-78. **Task 78:** Implement the function call ABI (pushing arguments to the stack).
-79. **Task 79:** Implement code generation for `defer` statements, emitting their code in reverse order at scope exit.
-80. **Task 80:** Generate code for slice types, passing pointer and length on the stack.
-81. **Task 81:** Generate code for error unions, using `EDX` for the error code and `EAX` for the payload.
-82. **Task 82:** Write integration tests that compile simple Zig programs and verify the output assembly.
+Milestone 5: Code Generation (C89)
 
-### Milestone 6: PE Backend & Final Bootstrap
-83. **Task 83:** Implement the `PEBuilder` class skeleton.
-84. **Task 84:** Implement generation of the `IMAGE_DOS_HEADER` and `IMAGE_NT_HEADERS`.
-85. **Task 85:** Add logic to create the `.text` (code) and `.data` (globals) sections.
-86. **Task 86:** Implement logic to create the `.idata` section for `kernel32.dll` imports (`ExitProcess`).
-87. **Task 87:** Integrate the `PEBuilder` with the code generator to write a complete `.exe` file.
-88. **Task 88:** Compile a "hello world" style Zig program using the full C++ bootstrap compiler (`zig0.exe`).
+Task 68: Implement a basic C89 emitter class in codegen.hpp that outputs valid C89-compliant code.
 
-## Phase 1: The Cross-Compiler (Zig)
-89. **Task 89:** Begin translating the C++ compiler logic (`lexer`, `parser`, etc.) into the supported Zig subset in `lib/compiler.zig`.
-90. **Task 90:** Use the C++ bootstrap compiler (`zig0.exe`) to compile `lib/compiler.zig` into `zig1.exe`.
-91. **Task 91:** Verify that `zig1.exe` is a functional compiler by using it to compile the test suite.
+Task 69: Implement the CVariableAllocator to manage variable names and scopes for C output, avoiding C reserved words and managing name conflicts.
 
-## Phase 2: Self-Hosting
-92. **Task 92:** Use the generated Zig compiler (`zig1.exe`) to compile its own source code (`lib/compiler.zig`) to produce `zig2.exe`.
-93. **Task 93:** Perform a binary comparison (`fc /b`) between `zig1.exe` and `zig2.exe`. If they are identical, the compiler is officially self-hosting.
+Task 70: Generate function declarations in C89 format with proper type mapping (e.g., Zig i32 → C int, Zig bool → C int).
+
+Task 71: Generate code for loading and outputting integer literals as C constants.
+
+Task 72: Generate code for local variable declarations and access in C89 format with proper scoping.
+
+Task 73: Generate code for basic arithmetic operations that map directly to C89 operators (+, -, *, /, %).
+
+Task 74: Generate code for comparison operators and logical operations compatible with C89.
+
+Task 75: Generate code for if statements using standard C89 if/else constructs.
+
+Task 76: Generate code for while loops and for loops in C89 format.
+
+Task 77: Generate code for return statements, ensuring proper return type handling in C89.
+
+Task 78: Implement the function call generation with proper argument passing and type mapping for C89.
+
+Task 79: Implement code generation for defer statements by emitting them in reverse order at scope exit as C cleanup code.
+
+Task 80: Generate code for slice types by mapping them to C structures with pointer and length fields.
+
+Task 81: Generate code for error unions by mapping them to C structures with payload and error code fields.
+
+Task 82: Write integration tests that compile simple Zig programs and verify the output C89 code compiles with a C89 compiler.
+
+Milestone 6: C Library Integration & Final Bootstrap
+
+Task 83: Implement the CBackend class skeleton for final code emission.
+
+Task 84: Add logic to generate proper C89 headers and include guards for the emitted code.
+
+Task 85: Implement logic to create wrapper functions for Zig-specific runtime features that map to C library calls.
+
+Task 86: Implement logic to handle Zig's memory management and safety features using C89-compatible patterns.
+
+Task 87: Integrate the CBackend with the code generator to write complete C89 .c files with proper includes.
+
+Task 88: Compile a "hello world" style Zig program using the full C++ bootstrap compiler (zig0.exe) to generate C89 output, then compile that C89 code with a C compiler to create the final executable.
+
+Phase 1: The Cross-Compiler (Zig)
+
+Task 89: Begin translating the C++ compiler logic (lexer, parser, etc.) into the supported Zig subset in lib/compiler.zig.
+
+Task 90: Use the C++ bootstrap compiler (zig0.exe) to compile lib/compiler.zig into zig1.exe.
+
+Task 91: Verify that zig1.exe is a functional compiler by using it to compile the test suite.
+
+Phase 2: Self-Hosting
+
+Task 92: Use the generated Zig compiler (zig1.exe) to compile its own source code (lib/compiler.zig) to produce zig2.exe.
+
+Task 93: Perform a binary comparison (fc /b) between zig1.exe and zig2.exe. If they are identical, the compiler is officially self-hosting.
