@@ -13,7 +13,7 @@
 
 // Helper function to run a parsing task in a separate process
 // and check if it terminates as expected.
-static bool expect_parser_abort(const char* source_code) {
+bool expect_parser_abort(const char* source_code) {
     char command[512];
 #if defined(_WIN32)
     // On Windows, snprintf is available in modern SDKs but might not be in C++98 compilers.

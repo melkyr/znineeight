@@ -475,6 +475,37 @@ ASTNode* decl = parser.parseVarDecl();
 // `decl` now points to a fully populated ASTNode with type NODE_VAR_DECL.
 ```
 
+### `ASTFnDeclNode`
+Represents a function declaration. This is a large node, so the `ASTNode` union stores a pointer to it rather than the struct itself.
+*   **Zig Code:** `fn add(a: i32, b: i32) -> i32 { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTFnDeclNode
+     * @brief Represents a function declaration.
+     * @var ASTFnDeclNode::name The name of the function.
+     * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+     * @var ASTFnDeclNode::return_type A pointer to the return type expression (can be NULL).
+     * @var ASTFnDeclNode::body A pointer to the function's body (a block statement).
+     */
+    struct ASTFnDeclNode {
+        const char* name;
+        DynamicArray<ASTParamDeclNode*>* params;
+        ASTNode* return_type;
+        ASTNode* body;
+    };
+    ```
+
+#### Parsing Logic (`parseFnDecl`)
+The `parseFnDecl` function is responsible for parsing function declarations. It strictly follows the grammar:
+`'fn' IDENT '(' ')' '->' type_expr '{' '}'`
+
+- It consumes the `fn` keyword, the function's identifier, an opening parenthesis, a closing parenthesis, an arrow `->`, a type expression, an opening brace, and a closing brace.
+- **Parameter lists must be empty.** Any tokens between the parentheses will result in a fatal error. This will be expanded in a future task.
+- **Function bodies must be empty.** Any tokens between the braces will result in a fatal error. This will be expanded in a future task.
+- The return type is mandatory.
+- Any deviation from this grammar results in a fatal error, adhering to the parser's no-recovery policy.
+
 ### `ASTParamDeclNode`
 Represents a single parameter within a function's parameter list. This node is not directly used in the main `ASTNode` union but is a component of `ASTFnDeclNode`.
 *   **Zig Code:** `a: i32`, `comptime message: []const u8`

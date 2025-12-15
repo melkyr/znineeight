@@ -62,6 +62,12 @@ TEST_FUNC(ASTNode_ContainerDeclarations);
 TEST_FUNC(ASTNode_ForStmt);
 TEST_FUNC(ASTNode_SwitchExpr);
 TEST_FUNC(Parser_Error_OnMissingColon);
+TEST_FUNC(Parser_FnDecl_ValidEmpty);
+TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
+TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
+TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
+TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
+TEST_FUNC(Parser_FnDecl_Error_MissingParens);
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -153,6 +159,12 @@ int main(int argc, char* argv[]) {
         test_ASTNode_ForStmt,
         test_ASTNode_SwitchExpr,
         test_Parser_Error_OnMissingColon,
+        test_Parser_FnDecl_ValidEmpty,
+        test_Parser_FnDecl_Error_NonEmptyParams,
+        test_Parser_FnDecl_Error_NonEmptyBody,
+        test_Parser_FnDecl_Error_MissingArrow,
+        test_Parser_FnDecl_Error_MissingReturnType,
+        test_Parser_FnDecl_Error_MissingParens,
     };
 
     int passed = 0;

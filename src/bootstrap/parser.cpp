@@ -2,6 +2,7 @@
 #include "ast.hpp"
 #include <cstdlib>   // For abort()
 #include <cstring>   // For strcmp
+#include <new>       // For placement new
 
 #ifdef _WIN32
 #include <windows.h> // For OutputDebugStringA
@@ -97,6 +98,54 @@ ASTNode* Parser::parseVarDecl() {
     node->type = NODE_VAR_DECL;
     node->loc = keyword_token.location;
     node->as.var_decl = var_decl;
+
+    return node;
+}
+
+
+ASTNode* Parser::parseFnDecl() {
+    Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
+    Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
+
+    expect(TOKEN_LPAREN, "Expected '(' after function name");
+    if (peek().type != TOKEN_RPAREN) {
+        error("Non-empty parameter lists are not yet supported");
+    }
+    expect(TOKEN_RPAREN, "Expected ')' after parameter list");
+
+    expect(TOKEN_ARROW, "Expected '->' for return type in function declaration");
+    ASTNode* return_type_node = parseType();
+
+    Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' for function body");
+    if (peek().type != TOKEN_RBRACE) {
+        error("Non-empty function bodies are not yet supported");
+    }
+    expect(TOKEN_RBRACE, "Expected '}' to close function body");
+
+    // Create the empty body node
+    ASTBlockStmtNode body_stmt;
+    body_stmt.statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    new (body_stmt.statements) DynamicArray<ASTNode*>(*arena_); // Placement new
+
+    ASTNode* body_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    body_node->type = NODE_BLOCK_STMT;
+    body_node->loc = lbrace_token.location;
+    body_node->as.block_stmt = body_stmt;
+
+    // Create the function declaration node
+    ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
+    fn_decl->name = name_token.value.identifier;
+    fn_decl->return_type = return_type_node;
+    fn_decl->body = body_node;
+
+    // Initialize the parameters array
+    fn_decl->params = (DynamicArray<ASTParamDeclNode*>*)arena_->alloc(sizeof(DynamicArray<ASTParamDeclNode*>));
+    new (fn_decl->params) DynamicArray<ASTParamDeclNode*>(*arena_);
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_FN_DECL;
+    node->loc = fn_token.location;
+    node->as.fn_decl = fn_decl;
 
     return node;
 }

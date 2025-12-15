@@ -71,4 +71,16 @@
  */
 #define TEST_FUNC(name) bool test_##name()
 
+/**
+ * @brief Runs the parser on a given source string and asserts that it aborts.
+ *
+ * This function is defined in `tests/test_parser_errors.cpp` but declared here
+ * so it can be used by any test file that needs to verify fatal parser errors.
+ * It works by re-invoking the test runner executable in a special mode.
+ *
+ * @param source The source code string to parse.
+ * @return True if the parser aborted as expected, false otherwise.
+ */
+bool expect_parser_abort(const char* source);
+
 #endif // TEST_FRAMEWORK_HPP
