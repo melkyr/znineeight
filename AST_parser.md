@@ -472,6 +472,14 @@ Represents a `defer` statement.
     };
     ```
 
+#### Parsing Logic (`parseDeferStatement`)
+The `parseDeferStatement` function handles the `defer` statement. It adheres to the grammar:
+`'defer' statement`
+
+- It consumes a `defer` token.
+- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- Any deviation from this structure results in a fatal error.
+
 ## 7. Declaration Node Types
 
 These nodes represent declarations, which introduce new named entities like variables and functions into the program.

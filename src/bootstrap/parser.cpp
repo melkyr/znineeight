@@ -108,6 +108,28 @@ ASTNode* Parser::parseVarDecl() {
     return node;
 }
 
+/**
+ * @brief Parses a defer statement.
+ *        Grammar: `'defer' block_statement`
+ * @return A pointer to the ASTNode representing the defer statement.
+ */
+ASTNode* Parser::parseDeferStatement() {
+    Token defer_token = expect(TOKEN_DEFER, "Expected 'defer' keyword");
+
+    // The statement following 'defer' must be a block statement.
+    ASTNode* statement = parseBlockStatement();
+
+    ASTDeferStmtNode defer_stmt;
+    defer_stmt.statement = statement;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_DEFER_STMT;
+    node->loc = defer_token.location;
+    node->as.defer_stmt = defer_stmt;
+
+    return node;
+}
+
 
 /**
  * @brief Parses a top-level function declaration.
@@ -173,6 +195,8 @@ ASTNode* Parser::parseFnDecl() {
  */
 ASTNode* Parser::parseStatement() {
     switch (peek().type) {
+        case TOKEN_DEFER:
+            return parseDeferStatement();
         case TOKEN_IF:
             return parseIfStatement();
         case TOKEN_WHILE:

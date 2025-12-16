@@ -40,6 +40,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_block.cpp \
     tests/test_parser_if_statement.cpp \
     tests/test_parser_while.cpp \
+    tests/test_parser_defer.cpp \
     -Isrc/include \
     -o test_runner
 

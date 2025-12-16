@@ -89,6 +89,13 @@ public:
     ASTNode* parseWhileStatement();
 
     /**
+     * @brief Parses a defer statement.
+     *        Grammar: `'defer' block_statement`
+     * @return A pointer to the ASTNode representing the defer statement.
+     */
+    ASTNode* parseDeferStatement();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      * @pre The parser is not at the end of the token stream (`!is_at_end()`).
