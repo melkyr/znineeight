@@ -548,6 +548,15 @@ Represents a single parameter within a function's parameter list. This node is n
     };
     ```
 
+#### Parsing Logic (`parseIfStatement`)
+The `parseIfStatement` function handles the `if-else` control flow structure. It adheres to the grammar:
+`'if' '(' expr ')' block_statement ('else' block_statement)?`
+
+- It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
+- It then requires a block statement (`{...}`) for the `then` branch, parsed by `parseBlockStatement`.
+- It checks for an optional `else` token. If found, it requires a subsequent block statement for the `else` branch.
+- Any deviation from this structure results in a fatal error.
+
 ### `ASTFnDeclNode`
 Represents a function declaration. This is a large node, so the `ASTNode` union stores a pointer to it rather than the struct itself.
 *   **Zig Code:** `fn add(a: i32, b: i32) -> i32 { ... }`

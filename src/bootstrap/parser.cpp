@@ -185,6 +185,32 @@ ASTNode* Parser::parseBlockStatement() {
     return block_node;
 }
 
+ASTNode* Parser::parseIfStatement() {
+    Token if_token = expect(TOKEN_IF, "Expected 'if' keyword");
+    expect(TOKEN_LPAREN, "Expected '(' after 'if'");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after if condition");
+
+    ASTNode* then_block = parseBlockStatement();
+    ASTNode* else_block = NULL;
+
+    if (match(TOKEN_ELSE)) {
+        else_block = parseBlockStatement();
+    }
+
+    ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));
+    if_stmt_node->condition = condition;
+    if_stmt_node->then_block = then_block;
+    if_stmt_node->else_block = else_block;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_IF_STMT;
+    node->loc = if_token.location;
+    node->as.if_stmt = if_stmt_node;
+
+    return node;
+}
+
 
 ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_STAR) {
