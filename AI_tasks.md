@@ -106,17 +106,151 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement).
     - Verify that the resulting AST is structured correctly.
 
-### Milestone 4: Type System & Symbol Table
-58. **Task 58:** Define the `Type` struct and `TypeKind` enum for all supported types.
-59. **Task 59:** Implement the `Symbol` struct and `SymbolTable` class.
-60. **Task 60:** Implement scope management in `SymbolTable` (`pushScope`, `popScope`).
-61. **Task 61:** Implement symbol lookup and insertion logic.
-62. **Task 62:** Implement the type-checking visitor/pass.
-63. **Task 63:** Add type-checking logic for variable declarations, ensuring the expression type matches the declared type.
-64. **Task 64:** Implement type compatibility rules for assignments (e.g., integer widening).
-65. **Task 65:** Type-check binary expressions (e.g., `int + int`).
-66. **Task 66:** Type-check function calls, matching argument types to parameter types.
-67. **Task 67:** Write unit tests for the type checker, including tests for valid and invalid programs.
+Milestone 4: Bootstrap Type System & Semantic Analysis
+Milestone 4A: Basic Type System & Symbol Management
+
+Task 58: Define core Type struct and TypeKind for C89-compatible types.
+
+    Focus only on types that map directly to C89: i8,i16,i32,i64,u8,u16,u32,u64,isize,usize,f32,f64,bool,void,*T
+    No advanced Zig types like slices, error unions, optionals for now
+    Simple Type struct with size and basic category info
+
+Task 59: Implement minimal Symbol struct and SymbolTable.
+
+    Basic symbol storage for functions, global variables, local variables
+    No complex namespaces or usingnamespace for bootstrap
+    Simple name-to-type mapping
+
+Task 60: Implement basic scope management.
+
+    Only global scope and function scope needed initially
+    Simple variable declaration tracking
+    Function parameter scoping
+
+Task 61: Implement symbol insertion and lookup.
+
+    Basic variable/function name resolution
+    Simple duplicate detection
+    No complex overload resolution needed
+
+Milestone 4B: Essential Type Checking
+
+Task 62: Implement TypeChecker skeleton for bootstrap types.
+
+    Focus only on basic C89-compatible operations
+    No comptime, no async, no advanced control flow
+    Minimal error reporting
+
+Task 63: Implement basic type compatibility.
+
+    Integer type compatibility (no coercion yet)
+    Pointer type compatibility
+    Basic function signature matching
+
+Task 64: Type-check variable declarations (basic).
+
+    Simple type annotation checking
+    Basic initializer compatibility
+    No complex type inference needed
+
+Task 65: Type-check function signatures.
+
+    Parameter type checking
+    Return type verification
+    Basic function overloading (if needed for C compatibility)
+
+Milestone 4C: Expression & Statement Checking
+
+Task 66: Implement basic expression type checking.
+
+    Integer/float/boolean literals
+    Variable access
+    Basic arithmetic operations
+    Simple comparisons
+
+Task 67: Implement function call checking.
+
+    Argument count validation
+    Basic type matching for arguments
+    Return type handling
+
+Task 68: Implement basic control flow.
+
+    If statements with boolean conditions
+    While loops with boolean conditions
+    Simple return statements
+
+Task 69: Implement basic pointer operations.
+
+    Address-of operator (&)
+    Dereference operator (*)
+    Basic pointer arithmetic
+
+Milestone 4D: Bootstrap-Specific Validations
+
+Task 70: Implement C89 compatibility checking.
+
+    Ensure all generated types map to C89 equivalents
+    Validate no unsupported Zig features used
+    Check for potential C89 compilation issues
+
+Task 71: Implement basic memory safety for bootstrap.
+
+    Simple pointer safety (no dangling checks yet)
+    Basic array bounds (at compile time only)
+    No advanced lifetime analysis
+
+Task 72: Implement struct type checking (simple).
+
+    Basic struct field access
+    No packed/extern attributes yet
+    Simple struct initialization
+
+Milestone 4E: Bootstrap Type System Completion
+
+Task 73: Implement basic enum type checking.
+
+    Simple enum value access
+    No complex enum features
+    Basic enum compatibility
+
+Task 74: Implement basic error checking.
+
+    Simple function return type validation
+    No error unions or try/catch for bootstrap
+    Basic error return conventions
+
+Task 75: Implement basic function overloading resolution.
+
+    Only simple function resolution needed
+    No complex generic resolution
+    Focus on C89-compatible function generation
+
+Milestone 4F: Bootstrap Testing & Validation
+
+Task 76: Write bootstrap-specific unit tests.
+
+    Test basic type checking functionality
+    Verify C89 compatibility of generated types
+    Test simple programs that should compile to C89
+
+Task 77: Implement basic integration tests.
+
+    Parse simple Zig code → Type check → Generate C89
+    Verify generated C89 compiles with C89 compiler
+    Test basic functionality end-to-end
+
+Task 78: Optimize for bootstrap performance.
+
+    Minimal type checking overhead
+    Fast symbol lookups for simple cases
+    Efficient error reporting for basic issues
+
+Task 79: Document bootstrap limitations clearly.
+
+    List unsupported Zig features
+    Document C89 mapping decisions
+    Plan for future full implementation
 
 ### Milestone 5: Code Generation (C89)
 68. **Task 68:** Implement a basic C89 emitter class in codegen.hpp that outputs valid C89-compliant code.
