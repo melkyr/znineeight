@@ -107,7 +107,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Parse array access expressions `[index]`.
 59. **Task 59:** Implement `parseUnaryExpr` for unary operators.
     - Handle prefix operators like `-`, `!`, `~`, `&`.
-60. **Task 60:** Implement `parseBinaryExpr` for Core Binary Operators. (DONE)
+60. **Task 60:** Implement `parseBinaryExpr` for Core Binary Operators. 
     - Implement a Pratt parser for handling binary operator precedence.
     - This implementation focuses on the core arithmetic (`+`, `-`, `*`, `/`, `%`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`) operators.
 61. **Task 61:** Extend `parseBinaryExpr` for Bitwise Operators.
