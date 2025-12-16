@@ -58,6 +58,13 @@ public:
     ASTNode* parseFnDecl();
 
     /**
+     * @brief Parses a block statement.
+     *        Grammar: `'{' (statement)* '}'`
+     * @return A pointer to the ASTNode representing the block statement.
+     */
+    ASTNode* parseBlockStatement();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      * @pre The parser is not at the end of the token stream (`!is_at_end()`).

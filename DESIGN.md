@@ -234,53 +234,17 @@ public:
 ```
 
 ### 4.5 Layer 5: Code Generation (`codegen.hpp`)
-**Target:** 32-bit x86 Assembly (Intel Syntax)
-**Register Strategy:** Linear scan allocation
-* **Volatile Registers:** `EAX`, `ECX`, `EDX` (Caller-save)
-* **Non-Volatile:** `EBX`, `ESI`, `EDI`, `EBP` (Callee-save)
-
-**Register Allocator Design:**
-```cpp
-enum Register {
-    EAX = 0, ECX, EDX, EBX, ESP, EBP, ESI, EDI
-};
-class RegisterAllocator {
-    bool allocated[8];      // Track register usage
-    int spill_count;        // Counter for temporary variables
-public:
-    Register allocateRegister(Type* type);
-    void freeRegister(Register reg);
-    void spillRegister(Register reg);  // Move to stack
-};
-```
+**Target:** C89
+**Register Strategy:** N/A (Handled by C compiler)
 
 **Special Implementation Details:**
-1. **Slices (`[]T`):** Passed on the stack as two 32-bit words (`ptr`, `len`)
-   * `[EBP+12]` = Length
-   * `[EBP+8]` = Pointer
-2. **Error Unions (`!T`):**
-   * **Success:** `EDX = 0`, `EAX = Result`
-   * **Error:** `EDX = ErrorCode`, `EAX = Undefined`
+1. **Slices (`[]T`):** Mapped to a C struct `{ T* ptr, size_t len }`
+2. **Error Unions (`!T`):** Mapped to a C struct `{ union { T payload; int err; } data; bool is_error; }`
 3. **Defer Implementation:**
    * When generating code for a `{ block }`:
      1. Push `defer` nodes into a vector `defers` during parsing
      2. Emit block body code
-     3. At scope exit (`}` or `return`), iterate `defers` in **reverse order** and emit their assembly
-
-**Assembly Generation Patterns:**
-```asm
-; Function prologue
-push ebp
-mov ebp, esp
-sub esp, local_var_size
-; Function epilogue
-mov esp, ebp
-pop ebp
-ret
-; Variable access
-mov eax, [ebp-4]    ; Load local variable at offset -4
-mov [ebp-8], ebx    ; Store register to local variable
-```
+     3. At scope exit (`}` or `return`), iterate `defers` in **reverse order** and emit their C code
 
 ### 4.6 Layer 6: PE Backend (`pe_builder.hpp`)
 **Goal:** Direct `.exe` generation (No `LINK.EXE` needed for Stage 2)
@@ -526,11 +490,11 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 - [ ] Implement type compatibility rules
 - [ ] Create symbol table system
 
-### Week 5: Basic Code Generation
-- [ ] Design register allocation system
-- [ ] Implement x86 assembly emitter
-- [ ] Generate function prologues/epilogues
-- [ ] Handle variable access patterns
+### Week 5: Basic Code Generation (C89)
+- [ ] Design C89 emitter
+- [ ] Implement C89 code generation for functions
+- [ ] Generate code for variable declarations
+- [ ] Handle basic expressions
 
 ### Week 6: Advanced Code Generation
 - [ ] Implement defer statement code generation
