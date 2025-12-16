@@ -408,6 +408,15 @@ Represents an `if` statement with an optional `else` clause.
     };
     ```
 
+#### Parsing Logic (`parseIfStatement`)
+The `parseIfStatement` function handles the `if-else` control flow structure. It adheres to the grammar:
+`'if' '(' expr ')' block_statement ('else' block_statement)?`
+
+- It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
+- It then requires a block statement (`{...}`) for the `then` branch, parsed by `parseBlockStatement`.
+- It checks for an optional `else` token. If found, it requires a subsequent block statement for the `else` branch.
+- Any deviation from this structure results in a fatal error.
+
 ### `ASTWhileStmtNode`
 Represents a `while` loop.
 *   **Zig Code:** `while (condition) { ... }`
@@ -424,6 +433,14 @@ Represents a `while` loop.
         ASTNode* body;
     };
     ```
+
+#### Parsing Logic (`parseWhileStatement`)
+The `parseWhileStatement` function is responsible for parsing a `while` loop. It adheres to the grammar:
+`'while' '(' expr ')' statement`
+
+- It consumes a `while` token, followed by a parenthesized expression parsed by `parseExpression`.
+- It then requires a statement for the loop body. At this foundational stage, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- Any deviation from this structure results in a fatal error.
 
 ### `ASTReturnStmtNode`
 Represents a `return` statement.
@@ -545,36 +562,6 @@ Represents a single parameter within a function's parameter list. This node is n
     struct ASTParamDeclNode {
         const char* name;
         ASTNode* type;
-    };
-    ```
-
-#### Parsing Logic (`parseIfStatement`)
-The `parseIfStatement` function handles the `if-else` control flow structure. It adheres to the grammar:
-`'if' '(' expr ')' block_statement ('else' block_statement)?`
-
-- It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
-- It then requires a block statement (`{...}`) for the `then` branch, parsed by `parseBlockStatement`.
-- It checks for an optional `else` token. If found, it requires a subsequent block statement for the `else` branch.
-- Any deviation from this structure results in a fatal error.
-
-### `ASTFnDeclNode`
-Represents a function declaration. This is a large node, so the `ASTNode` union stores a pointer to it rather than the struct itself.
-*   **Zig Code:** `fn add(a: i32, b: i32) -> i32 { ... }`
-*   **Structure:**
-    ```cpp
-    /**
-     * @struct ASTFnDeclNode
-     * @brief Represents a function declaration.
-     * @var ASTFnDeclNode::name The name of the function.
-     * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
-     * @var ASTFnDeclNode::return_type A pointer to the return type expression (can be NULL).
-     * @var ASTFnDeclNode::body A pointer to the function's body (a block statement).
-     */
-    struct ASTFnDeclNode {
-        const char* name;
-        DynamicArray<ASTParamDeclNode*>* params;
-        ASTNode* return_type;
-        ASTNode* body;
     };
     ```
 
