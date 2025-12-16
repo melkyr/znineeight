@@ -74,6 +74,12 @@ ASTNode* Parser::parseExpression() {
     return NULL; // Unreachable
 }
 
+/**
+ * @brief Parses a top-level variable declaration (`var` or `const`).
+ *        Grammar: `('var'|'const') IDENT ':' type_expr '=' expr ';'`
+ * @note This parser currently only supports integer literals for the initializer expression.
+ * @return A pointer to the ASTNode representing the variable declaration.
+ */
 ASTNode* Parser::parseVarDecl() {
     Token keyword_token = advance(); // Consume 'var' or 'const'
     bool is_const = keyword_token.type == TOKEN_CONST;
@@ -103,6 +109,12 @@ ASTNode* Parser::parseVarDecl() {
 }
 
 
+/**
+ * @brief Parses a top-level function declaration.
+ *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
+ * @note This parser currently enforces that the parameter list and function body are empty.
+ * @return A pointer to the ASTNode representing the function declaration.
+ */
 ASTNode* Parser::parseFnDecl() {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
@@ -150,6 +162,15 @@ ASTNode* Parser::parseFnDecl() {
     return node;
 }
 
+/**
+ * @brief Parses a single statement.
+ *
+ * This function acts as a dispatcher. It looks at the current token and decides
+ * which specific parsing function to call. It currently handles `if`, `while`,
+ * block (`{}`), and empty (`;`) statements.
+ *
+ * @return A pointer to the ASTNode representing the parsed statement.
+ */
 ASTNode* Parser::parseStatement() {
     switch (peek().type) {
         case TOKEN_IF:
@@ -191,6 +212,11 @@ ASTNode* Parser::parseBlockStatement() {
     return block_node;
 }
 
+/**
+ * @brief Parses an if statement with an optional else clause.
+ *        Grammar: `'if' '(' expr ')' block_statement ('else' block_statement)?`
+ * @return A pointer to the ASTNode representing the if statement.
+ */
 ASTNode* Parser::parseIfStatement() {
     Token if_token = expect(TOKEN_IF, "Expected 'if' keyword");
     expect(TOKEN_LPAREN, "Expected '(' after 'if'");
