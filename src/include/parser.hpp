@@ -65,6 +65,13 @@ public:
     ASTNode* parsePostfixExpression();
 
     /**
+     * @brief Parses a unary expression.
+     *        Grammar: `( '-' | '!' | '~' | '&' )* postfix_expression`
+     * @return A pointer to the ASTNode representing the unary expression.
+     */
+    ASTNode* parseUnaryExpr();
+
+    /**
      * @brief Parses a top-level function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
      * @return A pointer to the ASTNode representing the function declaration.

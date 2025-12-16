@@ -174,10 +174,50 @@ ASTNode* Parser::parsePostfixExpression() {
     return expr;
 }
 
+/**
+ * @brief Parses a unary expression.
+ *
+ * This function handles prefix unary operators like `-`, `!`, `~`, and `&`. It
+ * uses an iterative approach to handle chained operators (e.g., `!!x`) to avoid
+ * deep recursion. It collects all unary operators, parses the postfix expression,
+ * and then builds the nested unary expression nodes.
+ *
+ * Grammar:
+ * `unary_expr ::= ('-' | '!' | '~' | '&')* postfix_expr`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed unary expression.
+ *         The node is allocated from the parser's arena.
+ */
+ASTNode* Parser::parseUnaryExpr() {
+    DynamicArray<Token> operators(*arena_);
+
+    while (peek().type == TOKEN_MINUS || peek().type == TOKEN_BANG || peek().type == TOKEN_TILDE || peek().type == TOKEN_AMPERSAND) {
+        operators.append(advance());
+    }
+
+    ASTNode* expr = parsePostfixExpression();
+
+    for (int i = operators.length() - 1; i >= 0; --i) {
+        Token op_token = operators[i];
+
+        ASTUnaryOpNode unary_op_node;
+        unary_op_node.op = op_token.type;
+        unary_op_node.operand = expr;
+
+        ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        new_expr_node->type = NODE_UNARY_OP;
+        new_expr_node->loc = op_token.location;
+        new_expr_node->as.unary_op = unary_op_node;
+        expr = new_expr_node;
+    }
+
+    return expr;
+}
+
 ASTNode* Parser::parseExpression() {
-    // For now, expression parsing only handles postfix expressions.
-    // This will be expanded later to handle operator precedence.
-    return parsePostfixExpression();
+    // For now, expression parsing only handles unary and postfix expressions.
+    // This will be expanded later to handle operator precedence for binary operators.
+    return parseUnaryExpr();
 }
 
 /**

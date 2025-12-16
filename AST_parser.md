@@ -271,6 +271,14 @@ Represents an operation with a single operand.
     };
     ```
 
+#### Parsing Logic (`parseUnaryExpr`)
+The `parseUnaryExpr` function is responsible for handling prefix unary operators. To avoid deep recursion and potential stack overflow on constrained systems, it uses an iterative approach to handle chained operators like `!!x` or `-&y`.
+
+- It first enters a `while` loop to consume all consecutive unary operator tokens (`-`, `!`, `~`, `&`), storing them in a temporary list.
+- After consuming all prefix operators, it calls `parsePostfixExpression` to parse the operand.
+- It then iterates through the stored operator tokens in reverse order. For each operator, it constructs an `ASTUnaryOpNode` with the current expression as its operand.
+- The newly created `ASTUnaryOpNode` then becomes the new expression, effectively wrapping the previous one. This process correctly builds the nested AST structure from right to left, ensuring the correct operator precedence.
+
 #### Parsing Logic (`parsePrimaryExpr`)
 The `parsePrimaryExpr` function is the entry point for parsing the simplest expression types, which form the building blocks for more complex expressions. It examines the current token and proceeds as follows:
 - **Literals**: If the token is `TOKEN_INTEGER_LITERAL`, `TOKEN_FLOAT_LITERAL`, `TOKEN_CHAR_LITERAL`, or `TOKEN_STRING_LITERAL`, it creates the corresponding `AST<Type>LiteralNode` and populates it with the token's value.
