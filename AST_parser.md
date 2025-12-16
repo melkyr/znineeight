@@ -457,6 +457,15 @@ Represents a `return` statement.
     };
     ```
 
+#### Parsing Logic (`parseReturnStatement`)
+The `parseReturnStatement` function handles the `return` statement. It adheres to the grammar:
+`'return' (expr)? ';'`
+
+- It consumes a `return` token.
+- It then checks for a semicolon. If the next token is not a semicolon, it assumes an expression is present and calls `parseExpression` to parse it.
+- Finally, it requires a terminating semicolon.
+- Any deviation from this structure results in a fatal error.
+
 ### `ASTDeferStmtNode`
 Represents a `defer` statement.
 *   **Zig Code:** `defer file.close();`

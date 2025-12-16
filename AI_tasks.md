@@ -96,7 +96,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Remove the forbidden `#include <cstdlib>` from `src/bootstrap/parser.cpp` to comply with the project's C++ Standard Library Usage Policy.
 55. **Task 55:** Implement `parseDeferStatement`.
     - Parse `defer` followed by a single statement.
-56. **Task 56:** Implement `parseReturnStatement`.
+56. **Task 56:** Implement `parseReturnStatement`. (DONE)
     - Parse `return` followed by an optional expression and a semicolon.
 57. **Task 57:** Implement `parsePrimaryExpr` for primary expressions.
     - Handle integer, float, char, and string literals.

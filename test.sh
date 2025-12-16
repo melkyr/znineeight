@@ -41,6 +41,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_if_statement.cpp \
     tests/test_parser_while.cpp \
     tests/test_parser_defer.cpp \
+    tests/test_parser_return.cpp \
     -Isrc/include \
     -o test_runner
 
