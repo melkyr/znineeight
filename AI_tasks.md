@@ -75,7 +75,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Modify the `error()` function to remove the `fprintf` call, ensuring it only uses `OutputDebugStringA` (under `#ifdef _WIN32`) and `abort()`.
     - Remove duplicate function implementations (`error`, `match`, `parseType` and its helpers) from `parser.cpp`.
     - Clean up any duplicate header includes at the top of the file.
-48. **Task 48:** Implement `parseFnDecl` for function definitions.
+48. **Task 48:** Implement `parseFnDecl` for function definitions. (DONE)
     - Parse the `fn` keyword, function name (identifier), parameter list `(`, `)`, and return type `-> type`.
     - For now, the function body should be parsed as an empty block `{}`.
 49. **Task 49:** Implement `parseBlockStatement`.

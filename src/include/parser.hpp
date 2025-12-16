@@ -51,6 +51,13 @@ public:
     ASTNode* parseExpression();
 
     /**
+     * @brief Parses a top-level function declaration.
+     *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
+     * @return A pointer to the ASTNode representing the function declaration.
+     */
+    ASTNode* parseFnDecl();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      * @pre The parser is not at the end of the token stream (`!is_at_end()`).
