@@ -278,6 +278,57 @@ The `parsePrimaryExpr` function is the entry point for parsing the simplest expr
 - **Parenthesized Expressions**: If the token is `TOKEN_LPAREN`, it recursively calls `parseExpression` to parse the inner expression and then expects a closing `TOKEN_RPAREN`.
 - **Errors**: If the token is anything else, it is considered a syntax error, and the parser aborts.
 
+#### `ASTFunctionCallNode`
+Represents a function call.
+*   **Zig Code:** `my_func()`, `add(1, 2)`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTFunctionCallNode
+     * @brief Represents a function call expression.
+     * @var ASTFunctionCallNode::callee The expression being called.
+     * @var ASTFunctionCallNode::args A dynamic array of argument expressions.
+     */
+    struct ASTFunctionCallNode {
+        ASTNode* callee;
+        DynamicArray<ASTNode*>* args;
+    };
+    ```
+
+#### `ASTArrayAccessNode`
+Represents an array or slice access.
+*   **Zig Code:** `my_array[i]`, `get_slice()[0]`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTArrayAccessNode
+     * @brief Represents an array or slice access expression.
+     * @var ASTArrayAccessNode::array The expression being indexed.
+     * @var ASTArrayAccessNode::index The index expression.
+     */
+    struct ASTArrayAccessNode {
+        ASTNode* array;
+        ASTNode* index;
+    };
+    ```
+
+#### Parsing Logic (`parsePostfixExpression`)
+The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
+
+- It starts by calling `parsePrimaryExpr` to get the base of the expression (e.g., an identifier, a literal, or a parenthesized expression).
+- It then enters a loop, checking for either a `TOKEN_LPAREN` (indicating a function call) or a `TOKEN_LBRACKET` (indicating an array access).
+- **For a function call**:
+    - It constructs an `ASTFunctionCallNode`.
+    - It parses a comma-separated list of arguments until it finds a `TOKEN_RPAREN`.
+    - It supports empty argument lists (`()`) and allows an optional trailing comma (e.g., `(a, b,)`).
+- **For an array access**:
+    - It constructs an `ASTArrayAccessNode`.
+    - It calls `parseExpression` to parse the index expression within the brackets.
+    - It expects a closing `TOKEN_RBRACKET`.
+- The result of the postfix operation (e.g., the `ASTFunctionCallNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
+- If no postfix operator is found, the loop terminates, and the function returns the constructed expression tree.
+
+
 #### `ASTBinaryOpNode`
 Represents an operation with two operands.
 *   **Zig Code:** `a + b`, `x * y`

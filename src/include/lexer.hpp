@@ -139,6 +139,7 @@ enum TokenType {
     TOKEN_RBRACKET,         ///< ']' - Right bracket.
     TOKEN_SEMICOLON,        ///< ';' - Semicolon.
     TOKEN_COLON,            ///< ':' - Colon.
+    TOKEN_COMMA,            ///< ',' - Comma.
     TOKEN_ARROW,            ///< '->' - Arrow.
     TOKEN_FAT_ARROW,        ///< '=>' - Fat arrow.
     TOKEN_ELLIPSIS,         ///< '...' - Ellipsis.

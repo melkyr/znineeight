@@ -117,10 +117,67 @@ ASTNode* Parser::parsePrimaryExpr() {
     }
 }
 
+/**
+ * @brief Parses a postfix expression, including function calls and array accesses.
+ *
+ * This function handles expressions that are built upon primary expressions, such as
+ * `my_func()`, `my_array[index]`, or chained calls like `get_array()[0]()`. It
+ * parses the base expression and then loops to handle any number of trailing
+ * postfix operations.
+ *
+ * Grammar:
+ * `postfix_expr ::= primary_expr ( '(' (expr (',' expr)* ','?)? ')' | '[' expr ']' )*`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed postfix expression.
+ *         The node is allocated from the parser's arena.
+ */
+ASTNode* Parser::parsePostfixExpression() {
+    ASTNode* expr = parsePrimaryExpr();
+
+    while (true) {
+        if (match(TOKEN_LPAREN)) {
+            // Function Call
+            ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+            call_node->callee = expr;
+            call_node->args = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            new (call_node->args) DynamicArray<ASTNode*>(*arena_);
+
+            if (!match(TOKEN_RPAREN)) {
+                do {
+                    call_node->args->append(parseExpression());
+                } while (match(TOKEN_COMMA) && peek().type != TOKEN_RPAREN);
+                expect(TOKEN_RPAREN, "Expected ')' after function arguments");
+            }
+
+            ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            new_expr_node->type = NODE_FUNCTION_CALL;
+            new_expr_node->loc = expr->loc; // Use location of the callee
+            new_expr_node->as.function_call = call_node;
+            expr = new_expr_node;
+        } else if (match(TOKEN_LBRACKET)) {
+            // Array Access
+            ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
+            access_node->array = expr;
+            access_node->index = parseExpression();
+            expect(TOKEN_RBRACKET, "Expected ']' after array index");
+
+            ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            new_expr_node->type = NODE_ARRAY_ACCESS;
+            new_expr_node->loc = expr->loc; // Use location of the array expression
+            new_expr_node->as.array_access = access_node;
+            expr = new_expr_node;
+        } else {
+            break;
+        }
+    }
+
+    return expr;
+}
+
 ASTNode* Parser::parseExpression() {
-    // For now, expression parsing only handles primary expressions.
+    // For now, expression parsing only handles postfix expressions.
     // This will be expanded later to handle operator precedence.
-    return parsePrimaryExpr();
+    return parsePostfixExpression();
 }
 
 /**

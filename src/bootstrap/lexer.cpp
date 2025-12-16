@@ -492,6 +492,7 @@ Token Lexer::nextToken() {
         case '[': token.type = TOKEN_LBRACKET; break;
         case ']': token.type = TOKEN_RBRACKET; break;
         case ':': token.type = TOKEN_COLON; break;
+        case ',': token.type = TOKEN_COMMA; break;
         case '=': // Handles '=', '==', '=>'
             if (match('=')) {
                 token.type = TOKEN_EQUAL_EQUAL;

@@ -58,6 +58,13 @@ public:
     ASTNode* parsePrimaryExpr();
 
     /**
+     * @brief Parses a postfix expression, which includes function calls and array accesses.
+     *        Grammar: `primary_expr ( '(' arg_list ')' | '[' expr ']' )*`
+     * @return A pointer to the ASTNode representing the postfix expression.
+     */
+    ASTNode* parsePostfixExpression();
+
+    /**
      * @brief Parses a top-level function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
      * @return A pointer to the ASTNode representing the function declaration.

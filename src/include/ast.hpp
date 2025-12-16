@@ -19,6 +19,8 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~
     NODE_UNARY_OP,        ///< A unary operation (e.g., `-x`, `!y`).
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
+    NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
+    NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
@@ -99,6 +101,8 @@ struct ASTErrDeferStmtNode;
 struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
 struct ASTComptimeBlockNode;
+struct ASTFunctionCallNode;
+struct ASTArrayAccessNode;
 
 
 // --- Node-specific data structs ---
@@ -171,6 +175,28 @@ struct ASTStringLiteralNode {
  */
 struct ASTIdentifierNode {
     const char* name;
+};
+
+/**
+ * @struct ASTFunctionCallNode
+ * @brief Represents a function call expression (e.g., `my_func(arg1, arg2)`).
+ * @var ASTFunctionCallNode::callee The expression being called, typically an identifier.
+ * @var ASTFunctionCallNode::args A dynamic array of pointers to the argument expressions.
+ */
+struct ASTFunctionCallNode {
+    ASTNode* callee;
+    DynamicArray<ASTNode*>* args;
+};
+
+/**
+ * @struct ASTArrayAccessNode
+ * @brief Represents an array or slice access expression (e.g., `my_array[index]`).
+ * @var ASTArrayAccessNode::array The expression being indexed.
+ * @var ASTArrayAccessNode::index The index expression.
+ */
+struct ASTArrayAccessNode {
+    ASTNode* array;
+    ASTNode* index;
 };
 
 /**
@@ -463,6 +489,8 @@ struct ASTNode {
         // Expressions
         ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
+        ASTFunctionCallNode* function_call; // Out-of-line
+        ASTArrayAccessNode* array_access; // Out-of-line
 
         // Literals
         ASTIntegerLiteralNode integer_literal;
