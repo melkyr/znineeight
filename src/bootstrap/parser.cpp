@@ -197,6 +197,8 @@ ASTNode* Parser::parseStatement() {
     switch (peek().type) {
         case TOKEN_DEFER:
             return parseDeferStatement();
+        case TOKEN_RETURN:
+            return parseReturnStatement();
         case TOKEN_IF:
             return parseIfStatement();
         case TOKEN_WHILE:
@@ -288,6 +290,32 @@ ASTNode* Parser::parseWhileStatement() {
     node->type = NODE_WHILE_STMT;
     node->loc = while_token.location;
     node->as.while_stmt = while_stmt_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses a return statement.
+ *        Grammar: `'return' (expr)? ';'`
+ * @return A pointer to the ASTNode representing the return statement.
+ */
+ASTNode* Parser::parseReturnStatement() {
+    Token return_token = expect(TOKEN_RETURN, "Expected 'return' keyword");
+
+    ASTNode* expression = NULL;
+    if (peek().type != TOKEN_SEMICOLON) {
+        expression = parseExpression();
+    }
+
+    expect(TOKEN_SEMICOLON, "Expected ';' after return statement");
+
+    ASTReturnStmtNode return_stmt;
+    return_stmt.expression = expression;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_RETURN_STMT;
+    node->loc = return_token.location;
+    node->as.return_stmt = return_stmt;
 
     return node;
 }

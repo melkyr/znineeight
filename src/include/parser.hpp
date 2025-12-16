@@ -96,6 +96,13 @@ public:
     ASTNode* parseDeferStatement();
 
     /**
+     * @brief Parses a return statement.
+     *        Grammar: `'return' (expr)? ';'`
+     * @return A pointer to the ASTNode representing the return statement.
+     */
+    ASTNode* parseReturnStatement();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      * @pre The parser is not at the end of the token stream (`!is_at_end()`).
