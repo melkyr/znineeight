@@ -90,6 +90,14 @@ TEST_FUNC(Parser_IfStatement_Error_MissingRParen);
 TEST_FUNC(Parser_IfStatement_Error_MissingThenBlock);
 TEST_FUNC(Parser_IfStatement_Error_MissingElseBlock);
 
+// Postfix Expression Parser Tests
+TEST_FUNC(Parser_FunctionCall_NoArgs);
+TEST_FUNC(Parser_FunctionCall_WithArgs);
+TEST_FUNC(Parser_FunctionCall_WithTrailingComma);
+TEST_FUNC(Parser_ArrayAccess);
+TEST_FUNC(Parser_ChainedPostfixOps);
+
+
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
 // The successful outcome is for the program to abort.
@@ -208,6 +216,12 @@ int main(int argc, char* argv[]) {
         test_Parser_ParsePrimaryExpr_Identifier,
         test_Parser_ParsePrimaryExpr_ParenthesizedExpression,
         test_Parser_Error_OnUnexpectedToken,
+        // Postfix Expression Parser tests
+        test_Parser_FunctionCall_NoArgs,
+        test_Parser_FunctionCall_WithArgs,
+        test_Parser_FunctionCall_WithTrailingComma,
+        test_Parser_ArrayAccess,
+        test_Parser_ChainedPostfixOps,
     };
 
     int passed = 0;
