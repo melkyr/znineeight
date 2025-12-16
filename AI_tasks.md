@@ -92,7 +92,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Add a "Parsing Logic" subsection for `ASTWhileStmtNode` for consistency.
 53. **Task 53:** Add Doxygen comments to `parser.cpp` functions.
     - Add comprehensive Doxygen-style comments to `parseVarDecl`, `parseFnDecl`, `parseStatement`, and `parseIfStatement` to explain their purpose, grammar, and behavior, similar to the existing comment for `parseWhileStatement`.
-54. **Task 54:** Resolve Technical Constraint Violations in Parser.
+54. **Task 54:** Resolve Technical Constraint Violations in Parser. (DONE)
     - Remove the forbidden `#include <cstdlib>` from `src/bootstrap/parser.cpp` to comply with the project's C++ Standard Library Usage Policy.
 55. **Task 55:** Implement `parseDeferStatement`.
     - Parse `defer` followed by a single statement.
