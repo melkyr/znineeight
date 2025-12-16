@@ -37,6 +37,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_types.cpp \
     tests/test_parser_errors.cpp \
     tests/test_parser_fn_decl.cpp \
+    tests/test_parser_block.cpp \
     -Isrc/include \
     -o test_runner
 

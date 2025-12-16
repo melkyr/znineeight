@@ -8,6 +8,12 @@
 #include <cstdio>
 
 // Forward declarations for all test functions
+TEST_FUNC(Parser_ParseEmptyBlock);
+TEST_FUNC(Parser_ParseBlockWithEmptyStatement);
+TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements);
+TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock);
+TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks);
+TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement);
 TEST_FUNC(basic_allocation);
 TEST_FUNC(multiple_allocations);
 TEST_FUNC(allocation_failure);
@@ -165,6 +171,12 @@ int main(int argc, char* argv[]) {
         test_Parser_FnDecl_Error_MissingArrow,
         test_Parser_FnDecl_Error_MissingReturnType,
         test_Parser_FnDecl_Error_MissingParens,
+        test_Parser_ParseEmptyBlock,
+        test_Parser_ParseBlockWithEmptyStatement,
+        test_Parser_ParseBlockWithMultipleEmptyStatements,
+        test_Parser_ParseBlockWithNestedEmptyBlock,
+        test_Parser_ParseBlockWithMultipleNestedEmptyBlocks,
+        test_Parser_ParseBlockWithNestedBlockAndEmptyStatement,
     };
 
     int passed = 0;

@@ -29,6 +29,7 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
+    NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
@@ -75,6 +76,7 @@ struct ASTCharLiteralNode;
 struct ASTStringLiteralNode;
 struct ASTIdentifierNode;
 struct ASTBlockStmtNode;
+struct ASTEmptyStmtNode;
 struct ASTIfStmtNode;
 struct ASTWhileStmtNode;
 struct ASTReturnStmtNode;
@@ -178,6 +180,14 @@ struct ASTIdentifierNode {
  */
 struct ASTBlockStmtNode {
     DynamicArray<ASTNode*>* statements;
+};
+
+/**
+ * @struct ASTEmptyStmtNode
+ * @brief Represents an empty statement, which is just a semicolon.
+ */
+struct ASTEmptyStmtNode {
+    // This node has no data.
 };
 
 /**
@@ -463,6 +473,7 @@ struct ASTNode {
 
         // Statements
         ASTBlockStmtNode block_stmt;
+        ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;

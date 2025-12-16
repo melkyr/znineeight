@@ -38,6 +38,7 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
+    NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
@@ -93,6 +94,7 @@ struct ASTNode {
 
         // Statements
         ASTBlockStmtNode block_stmt;
+        ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
@@ -361,6 +363,29 @@ Represents a sequence of statements enclosed in braces `{ ... }`.
      */
     struct ASTBlockStmtNode {
         DynamicArray<ASTNode*>* statements;
+    };
+    ```
+
+#### Parsing Logic (`parseBlockStatement`)
+The `parseBlockStatement` function is responsible for parsing a block of statements. It handles the following cases:
+- An empty block: `{}`
+- A block with one or more empty statements: `{;}` or `{; ;}`
+- A block with nested empty blocks: `{{}}`
+- A mix of the above.
+
+At this stage, it only recognizes other blocks and empty statements. Any other type of statement will result in a fatal error.
+
+### `ASTEmptyStmtNode`
+Represents an empty statement, which is just a semicolon.
+*   **Zig Code:** `;`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTEmptyStmtNode
+     * @brief Represents an empty statement.
+     */
+    struct ASTEmptyStmtNode {
+        // No data needed.
     };
     ```
 

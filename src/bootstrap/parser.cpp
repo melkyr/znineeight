@@ -150,6 +150,41 @@ ASTNode* Parser::parseFnDecl() {
     return node;
 }
 
+ASTNode* Parser::parseBlockStatement() {
+    Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
+
+    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
+
+    while (!is_at_end() && peek().type != TOKEN_RBRACE) {
+        if (match(TOKEN_SEMICOLON)) {
+            // Empty statement
+            ASTNode* empty_stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            empty_stmt_node->type = NODE_EMPTY_STMT;
+            // The location of the semicolon is not easily available after `match`,
+            // but for an empty statement, the location of the block is sufficient for now.
+            empty_stmt_node->loc = lbrace_token.location;
+            statements->append(empty_stmt_node);
+        } else if (peek().type == TOKEN_LBRACE) {
+            // Nested block statement
+            statements->append(parseBlockStatement());
+        } else {
+            // In the future, this is where we would call parseStatement()
+            // For now, only empty statements and blocks are supported.
+            error("Unsupported statement in block; only '{...}' and ';' are allowed.");
+        }
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to end a block");
+
+    ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    block_node->type = NODE_BLOCK_STMT;
+    block_node->loc = lbrace_token.location;
+    block_node->as.block_stmt.statements = statements;
+
+    return block_node;
+}
+
 
 ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_STAR) {
