@@ -37,6 +37,63 @@ TEST_FUNC(Parser_ParseEmptyBlock) {
     return true;
 }
 
+TEST_FUNC(Parser_ParseBlockWithIfStatement) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    Parser parser = create_parser_for_test("{if (1) {}}", arena, interner, sm);
+
+    ASTNode* node = parser.parseBlockStatement();
+
+    ASSERT_TRUE(node != NULL);
+    ASSERT_EQ(node->type, NODE_BLOCK_STMT);
+    ASSERT_EQ(node->as.block_stmt.statements->length(), 1);
+
+    ASTNode* if_stmt = (*node->as.block_stmt.statements)[0];
+    ASSERT_EQ(if_stmt->type, NODE_IF_STMT);
+
+    return true;
+}
+
+TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    Parser parser = create_parser_for_test("{while (1) {}}", arena, interner, sm);
+
+    ASTNode* node = parser.parseBlockStatement();
+
+    ASSERT_TRUE(node != NULL);
+    ASSERT_EQ(node->type, NODE_BLOCK_STMT);
+    ASSERT_EQ(node->as.block_stmt.statements->length(), 1);
+
+    ASTNode* while_stmt = (*node->as.block_stmt.statements)[0];
+    ASSERT_EQ(while_stmt->type, NODE_WHILE_STMT);
+
+    return true;
+}
+
+TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    Parser parser = create_parser_for_test("{if (1) {} while (1) {}}", arena, interner, sm);
+
+    ASTNode* node = parser.parseBlockStatement();
+
+    ASSERT_TRUE(node != NULL);
+    ASSERT_EQ(node->type, NODE_BLOCK_STMT);
+    ASSERT_EQ(node->as.block_stmt.statements->length(), 2);
+
+    ASTNode* if_stmt = (*node->as.block_stmt.statements)[0];
+    ASSERT_EQ(if_stmt->type, NODE_IF_STMT);
+
+    ASTNode* while_stmt = (*node->as.block_stmt.statements)[1];
+    ASSERT_EQ(while_stmt->type, NODE_WHILE_STMT);
+
+    return true;
+}
+
 TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);

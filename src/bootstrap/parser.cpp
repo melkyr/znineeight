@@ -150,6 +150,27 @@ ASTNode* Parser::parseFnDecl() {
     return node;
 }
 
+ASTNode* Parser::parseStatement() {
+    switch (peek().type) {
+        case TOKEN_IF:
+            return parseIfStatement();
+        case TOKEN_WHILE:
+            return parseWhileStatement();
+        case TOKEN_LBRACE:
+            return parseBlockStatement();
+        case TOKEN_SEMICOLON: {
+            Token semi_token = advance(); // Consume ';'
+            ASTNode* empty_stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            empty_stmt_node->type = NODE_EMPTY_STMT;
+            empty_stmt_node->loc = semi_token.location;
+            return empty_stmt_node;
+        }
+        default:
+            error("Expected a statement");
+            return NULL; // Unreachable
+    }
+}
+
 ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
@@ -157,22 +178,7 @@ ASTNode* Parser::parseBlockStatement() {
     new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
 
     while (!is_at_end() && peek().type != TOKEN_RBRACE) {
-        if (match(TOKEN_SEMICOLON)) {
-            // Empty statement
-            ASTNode* empty_stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-            empty_stmt_node->type = NODE_EMPTY_STMT;
-            // The location of the semicolon is not easily available after `match`,
-            // but for an empty statement, the location of the block is sufficient for now.
-            empty_stmt_node->loc = lbrace_token.location;
-            statements->append(empty_stmt_node);
-        } else if (peek().type == TOKEN_LBRACE) {
-            // Nested block statement
-            statements->append(parseBlockStatement());
-        } else {
-            // In the future, this is where we would call parseStatement()
-            // For now, only empty statements and blocks are supported.
-            error("Unsupported statement in block; only '{...}' and ';' are allowed.");
-        }
+        statements->append(parseStatement());
     }
 
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
@@ -211,6 +217,30 @@ ASTNode* Parser::parseIfStatement() {
     return node;
 }
 
+/**
+ * @brief Parses a while statement.
+ *        Grammar: `'while' '(' expr ')' block_statement`
+ * @return A pointer to the ASTNode representing the while statement.
+ */
+ASTNode* Parser::parseWhileStatement() {
+    Token while_token = expect(TOKEN_WHILE, "Expected 'while' keyword");
+    expect(TOKEN_LPAREN, "Expected '(' after 'while'");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after while condition");
+
+    ASTNode* body = parseBlockStatement();
+
+    ASTWhileStmtNode while_stmt_node;
+    while_stmt_node.condition = condition;
+    while_stmt_node.body = body;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_WHILE_STMT;
+    node->loc = while_token.location;
+    node->as.while_stmt = while_stmt_node;
+
+    return node;
+}
 
 ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_STAR) {
