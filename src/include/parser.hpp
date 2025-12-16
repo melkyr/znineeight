@@ -58,6 +58,16 @@ public:
     ASTNode* parseFnDecl();
 
     /**
+     * @brief Parses a single statement.
+     *
+     * This function acts as a dispatcher. It looks at the current token and decides
+     * which specific parsing function to call (e.g., `parseIfStatement`, `parseWhileStatement`).
+     *
+     * @return A pointer to the ASTNode representing the parsed statement.
+     */
+    ASTNode* parseStatement();
+
+    /**
      * @brief Parses a block statement.
      *        Grammar: `'{' (statement)* '}'`
      * @return A pointer to the ASTNode representing the block statement.
@@ -70,6 +80,13 @@ public:
      * @return A pointer to the ASTNode representing the if statement.
      */
     ASTNode* parseIfStatement();
+
+    /**
+     * @brief Parses a while statement.
+     *        Grammar: `'while' '(' expr ')' block_statement`
+     * @return A pointer to the ASTNode representing the while statement.
+     */
+    ASTNode* parseWhileStatement();
 
     /**
      * @brief Consumes the current token and advances the stream position by one.
