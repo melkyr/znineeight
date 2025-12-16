@@ -206,6 +206,8 @@ struct Token {
         i64 integer;
         /** @brief 64-bit floating-point for float literals. */
         double floating_point;
+        /** @brief Character for char literals. */
+        char character;
     } value;
 };
 

@@ -58,20 +58,69 @@ void Parser::error(const char* msg) {
     abort();
 }
 
-ASTNode* Parser::parseExpression() {
-    // This is a stub for now. It only handles integer literals.
+/**
+ * @brief Parses a primary expression from the token stream.
+ *
+ * Primary expressions are the highest-precedence expressions and form the
+ * base of the expression parsing hierarchy. This function handles literals
+ * (integers, floats, chars, strings), identifiers, and expressions grouped
+ * by parentheses.
+ *
+ * Grammar:
+ * `primary_expr ::= INTEGER | FLOAT | CHAR | STRING | IDENTIFIER | '(' expression ')'`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed primary expression.
+ *         The node is allocated from the parser's arena.
+ * @note If an unexpected token is encountered, this function will call `error()`
+ *       which aborts the compilation process.
+ */
+ASTNode* Parser::parsePrimaryExpr() {
     Token token = peek();
-    if (token.type == TOKEN_INTEGER_LITERAL) {
-        advance();
-        ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        node->type = NODE_INTEGER_LITERAL;
-        node->loc = token.location;
-        node->as.integer_literal.value = token.value.integer;
-        return node;
-    }
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->loc = token.location;
 
-    error("Expected an expression (currently only integer literals are supported)");
-    return NULL; // Unreachable
+    switch (token.type) {
+        case TOKEN_INTEGER_LITERAL:
+            advance();
+            node->type = NODE_INTEGER_LITERAL;
+            node->as.integer_literal.value = token.value.integer;
+            return node;
+        case TOKEN_FLOAT_LITERAL:
+            advance();
+            node->type = NODE_FLOAT_LITERAL;
+            node->as.float_literal.value = token.value.floating_point;
+            return node;
+        case TOKEN_CHAR_LITERAL:
+            advance();
+            node->type = NODE_CHAR_LITERAL;
+            node->as.char_literal.value = token.value.character;
+            return node;
+        case TOKEN_STRING_LITERAL:
+            advance();
+            node->type = NODE_STRING_LITERAL;
+            node->as.string_literal.value = token.value.identifier;
+            return node;
+        case TOKEN_IDENTIFIER:
+            advance();
+            node->type = NODE_IDENTIFIER;
+            node->as.identifier.name = token.value.identifier;
+            return node;
+        case TOKEN_LPAREN: {
+            advance(); // consume '('
+            ASTNode* expr_node = parseExpression();
+            expect(TOKEN_RPAREN, "Expected ')' after parenthesized expression");
+            return expr_node;
+        }
+        default:
+            error("Expected a primary expression (literal, identifier, or parenthesized expression)");
+            return NULL; // Unreachable
+    }
+}
+
+ASTNode* Parser::parseExpression() {
+    // For now, expression parsing only handles primary expressions.
+    // This will be expanded later to handle operator precedence.
+    return parsePrimaryExpr();
 }
 
 /**

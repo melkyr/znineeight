@@ -198,7 +198,7 @@ Token Lexer::lexCharLiteral() {
     this->column++;
 
     token.type = TOKEN_CHAR_LITERAL;
-    token.value.integer = value;
+    token.value.character = (char)value;
     return token;
 }
 

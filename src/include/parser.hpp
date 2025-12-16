@@ -51,6 +51,13 @@ public:
     ASTNode* parseExpression();
 
     /**
+     * @brief Parses a primary expression.
+     *        Grammar: `literal | identifier | '(' expr ')'`
+     * @return A pointer to the ASTNode representing the primary expression.
+     */
+    ASTNode* parsePrimaryExpr();
+
+    /**
      * @brief Parses a top-level function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
      * @return A pointer to the ASTNode representing the function declaration.

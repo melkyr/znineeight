@@ -14,6 +14,13 @@ TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements);
 TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock);
 TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks);
 TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement);
+TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_Identifier);
+TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression);
+TEST_FUNC(Parser_Error_OnUnexpectedToken);
 TEST_FUNC(basic_allocation);
 TEST_FUNC(multiple_allocations);
 TEST_FUNC(allocation_failure);
@@ -101,7 +108,9 @@ void run_parser_test_and_abort(const char* source_code) {
     } while (token.type != TOKEN_EOF);
 
     Parser parser(tokens.getData(), tokens.length(), &arena);
-    parser.parseVarDecl(); // This should trigger the error and abort
+    // Let's call parseExpression, as it's the more general entry point for what we'll be testing.
+    // Both old and new error tests should fail correctly.
+    parser.parseExpression();
 
     // If we reach here, the parser did NOT abort as expected.
     // Exit with 0, which the parent process will interpret as a test failure.
@@ -191,6 +200,14 @@ int main(int argc, char* argv[]) {
         test_Parser_ParseBlockWithNestedEmptyBlock,
         test_Parser_ParseBlockWithMultipleNestedEmptyBlocks,
         test_Parser_ParseBlockWithNestedBlockAndEmptyStatement,
+        // Expression Parser tests
+        test_Parser_ParsePrimaryExpr_IntegerLiteral,
+        test_Parser_ParsePrimaryExpr_FloatLiteral,
+        test_Parser_ParsePrimaryExpr_CharLiteral,
+        test_Parser_ParsePrimaryExpr_StringLiteral,
+        test_Parser_ParsePrimaryExpr_Identifier,
+        test_Parser_ParsePrimaryExpr_ParenthesizedExpression,
+        test_Parser_Error_OnUnexpectedToken,
     };
 
     int passed = 0;

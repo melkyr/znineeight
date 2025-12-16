@@ -271,6 +271,13 @@ Represents an operation with a single operand.
     };
     ```
 
+#### Parsing Logic (`parsePrimaryExpr`)
+The `parsePrimaryExpr` function is the entry point for parsing the simplest expression types, which form the building blocks for more complex expressions. It examines the current token and proceeds as follows:
+- **Literals**: If the token is `TOKEN_INTEGER_LITERAL`, `TOKEN_FLOAT_LITERAL`, `TOKEN_CHAR_LITERAL`, or `TOKEN_STRING_LITERAL`, it creates the corresponding `AST<Type>LiteralNode` and populates it with the token's value.
+- **Identifiers**: If the token is `TOKEN_IDENTIFIER`, it creates an `ASTIdentifierNode`.
+- **Parenthesized Expressions**: If the token is `TOKEN_LPAREN`, it recursively calls `parseExpression` to parse the inner expression and then expects a closing `TOKEN_RPAREN`.
+- **Errors**: If the token is anything else, it is considered a syntax error, and the parser aborts.
+
 #### `ASTBinaryOpNode`
 Represents an operation with two operands.
 *   **Zig Code:** `a + b`, `x * y`
