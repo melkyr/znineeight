@@ -75,6 +75,14 @@ TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
 TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
 TEST_FUNC(Parser_FnDecl_Error_MissingParens);
 
+// If Statement Parser Tests
+TEST_FUNC(Parser_IfStatement_Simple);
+TEST_FUNC(Parser_IfStatement_WithElse);
+TEST_FUNC(Parser_IfStatement_Error_MissingLParen);
+TEST_FUNC(Parser_IfStatement_Error_MissingRParen);
+TEST_FUNC(Parser_IfStatement_Error_MissingThenBlock);
+TEST_FUNC(Parser_IfStatement_Error_MissingElseBlock);
+
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
 // The successful outcome is for the program to abort.
@@ -171,6 +179,12 @@ int main(int argc, char* argv[]) {
         test_Parser_FnDecl_Error_MissingArrow,
         test_Parser_FnDecl_Error_MissingReturnType,
         test_Parser_FnDecl_Error_MissingParens,
+        test_Parser_IfStatement_Simple,
+        test_Parser_IfStatement_WithElse,
+        test_Parser_IfStatement_Error_MissingLParen,
+        test_Parser_IfStatement_Error_MissingRParen,
+        test_Parser_IfStatement_Error_MissingThenBlock,
+        test_Parser_IfStatement_Error_MissingElseBlock,
         test_Parser_ParseEmptyBlock,
         test_Parser_ParseBlockWithEmptyStatement,
         test_Parser_ParseBlockWithMultipleEmptyStatements,

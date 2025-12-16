@@ -65,6 +65,13 @@ public:
     ASTNode* parseBlockStatement();
 
     /**
+     * @brief Parses an if statement.
+     *        Grammar: `'if' '(' expr ')' block_statement ('else' block_statement)?`
+     * @return A pointer to the ASTNode representing the if statement.
+     */
+    ASTNode* parseIfStatement();
+
+    /**
      * @brief Consumes the current token and advances the stream position by one.
      * @return The token that was consumed.
      * @pre The parser is not at the end of the token stream (`!is_at_end()`).
