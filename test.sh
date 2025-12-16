@@ -43,6 +43,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_defer.cpp \
     tests/test_parser_return.cpp \
     tests/test_parser_expressions.cpp \
+    tests/test_parser_unary.cpp \
     -Isrc/include \
     -o test_runner
 
