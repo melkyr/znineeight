@@ -116,27 +116,51 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
 62. **Task 62:** Define core Type struct and TypeKind for C89-compatible types.
+    - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T.
+    - No advanced Zig types like slices, error unions, or optionals for now.
 63. **Task 63:** Implement minimal Symbol struct and SymbolTable.
+    - Basic symbol storage for functions, global variables, and local variables.
+    - Simple name-to-type mapping.
 64. **Task 64:** Implement basic scope management.
+    - Only global and function scopes are needed initially.
 65. **Task 65:** Implement symbol insertion and lookup.
+    - Basic name resolution for variables/functions with simple duplicate detection.
 66. **Task 66:** Implement TypeChecker skeleton for bootstrap types.
+    - Focus only on basic C89-compatible operations with minimal error reporting.
 67. **Task 67:** Implement basic type compatibility.
+    - Integer and pointer type compatibility; basic function signature matching.
 68. **Task 68:** Type-check variable declarations (basic).
+    - Simple type annotation checking and basic initializer compatibility.
 69. **Task 69:** Type-check function signatures.
+    - Parameter and return type verification.
 70. **Task 70:** Implement basic expression type checking.
+    - Handle literals, variable access, basic arithmetic, and simple comparisons.
 71. **Task 71:** Implement function call checking.
+    - Argument count validation and basic type matching for arguments.
 72. **Task 72:** Implement basic control flow checking.
+    - Ensure `if` and `while` statements have boolean conditions.
 73. **Task 73:** Implement basic pointer operation checking.
+    - Check address-of (`&`) and dereference (`*`) operators.
 74. **Task 74:** Implement C89 compatibility checking.
+    - Ensure all generated types map to C89 equivalents and no unsupported Zig features are used.
 75. **Task 75:** Implement basic memory safety for bootstrap.
+    - Simple pointer safety and compile-time array bounds checking.
 76. **Task 76:** Implement struct type checking (simple).
+    - Basic struct field access and initialization.
 77. **Task 77:** Implement basic enum type checking.
+    - Simple enum value access and compatibility.
 78. **Task 78:** Implement basic error checking.
+    - Simple function return type validation.
 79. **Task 79:** Implement basic function overloading resolution.
+    - Only simple function resolution needed, focusing on C89-compatible generation.
 80. **Task 80:** Write bootstrap-specific unit tests.
+    - Test basic type checking functionality and verify C89 compatibility of generated types.
 81. **Task 81:** Implement basic integration tests.
+    - Parse, type-check, and generate C89 for simple Zig code, and verify the C89 output compiles.
 82. **Task 82:** Optimize for bootstrap performance.
+    - Minimal type checking overhead and fast symbol lookups.
 83. **Task 83:** Document bootstrap limitations clearly.
+    - List unsupported Zig features and document C89 mapping decisions.
 
 ### Milestone 5: Code Generation (C89)
 84. **Task 84:** Implement a basic C89 emitter class in `codegen.hpp`.
