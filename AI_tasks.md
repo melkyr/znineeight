@@ -86,202 +86,88 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - The condition `expr` will be a stub that calls `parseExpression`.
 51. **Task 51:** Implement `parseWhileStatement`.
     - Parse `while`, a parenthesized condition `(expr)`, and a body block.
-52. **Task 52:** Implement `parseDeferStatement`.
+52. **Task 52:** Refactor `AST_parser.md` for clarity and correctness.
+    - Remove the duplicated section for `ASTFnDeclNode`.
+    - Relocate the "Parsing Logic (`parseIfStatement`)" description to be under the `ASTIfStmtNode` section where it belongs.
+    - Add a "Parsing Logic" subsection for `ASTWhileStmtNode` for consistency.
+53. **Task 53:** Add Doxygen comments to `parser.cpp` functions.
+    - Add comprehensive Doxygen-style comments to `parseVarDecl`, `parseFnDecl`, `parseStatement`, and `parseIfStatement` to explain their purpose, grammar, and behavior, similar to the existing comment for `parseWhileStatement`.
+54. **Task 54:** Resolve Technical Constraint Violations in Parser.
+    - Remove the forbidden `#include <cstdlib>` from `src/bootstrap/parser.cpp` to comply with the project's C++ Standard Library Usage Policy.
+55. **Task 55:** Implement `parseDeferStatement`.
     - Parse `defer` followed by a single statement.
-53. **Task 53:** Implement `parseReturnStatement`.
+56. **Task 56:** Implement `parseReturnStatement`.
     - Parse `return` followed by an optional expression and a semicolon.
-54. **Task 54:** Implement `parsePrimaryExpr` for primary expressions.
+57. **Task 57:** Implement `parsePrimaryExpr` for primary expressions.
     - Handle integer, float, char, and string literals.
     - Handle identifiers.
     - Handle parenthesized expressions `(expr)`.
-55. **Task 55:** Implement parsing for postfix expressions.
+58. **Task 58:** Implement parsing for postfix expressions.
     - Parse function calls with arguments `(arg1, arg2, ...)`.
     - Parse array access expressions `[index]`.
-56. **Task 56:** Implement `parseUnaryExpr` for unary operators.
+59. **Task 59:** Implement `parseUnaryExpr` for unary operators.
     - Handle prefix operators like `-`, `!`, `~`, `&`.
-57. **Task 57:** Implement `parseBinaryExpr` for binary operator precedence.
+60. **Task 60:** Implement `parseBinaryExpr` for binary operator precedence.
     - Use a precedence climbing or Pratt parsing algorithm.
     - Correctly handle the order of operations for additive, multiplicative, and comparison operators.
-58. **Task 58:** Create Integration Tests for the Parser.
+61. **Task 61:** Create Integration Tests for the Parser.
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement).
     - Verify that the resulting AST is structured correctly.
 
-Milestone 4: Bootstrap Type System & Semantic Analysis
-Milestone 4A: Basic Type System & Symbol Management
-
-Task 58: Define core Type struct and TypeKind for C89-compatible types.
-
-    Focus only on types that map directly to C89: i8,i16,i32,i64,u8,u16,u32,u64,isize,usize,f32,f64,bool,void,*T
-    No advanced Zig types like slices, error unions, optionals for now
-    Simple Type struct with size and basic category info
-
-Task 59: Implement minimal Symbol struct and SymbolTable.
-
-    Basic symbol storage for functions, global variables, local variables
-    No complex namespaces or usingnamespace for bootstrap
-    Simple name-to-type mapping
-
-Task 60: Implement basic scope management.
-
-    Only global scope and function scope needed initially
-    Simple variable declaration tracking
-    Function parameter scoping
-
-Task 61: Implement symbol insertion and lookup.
-
-    Basic variable/function name resolution
-    Simple duplicate detection
-    No complex overload resolution needed
-
-Milestone 4B: Essential Type Checking
-
-Task 62: Implement TypeChecker skeleton for bootstrap types.
-
-    Focus only on basic C89-compatible operations
-    No comptime, no async, no advanced control flow
-    Minimal error reporting
-
-Task 63: Implement basic type compatibility.
-
-    Integer type compatibility (no coercion yet)
-    Pointer type compatibility
-    Basic function signature matching
-
-Task 64: Type-check variable declarations (basic).
-
-    Simple type annotation checking
-    Basic initializer compatibility
-    No complex type inference needed
-
-Task 65: Type-check function signatures.
-
-    Parameter type checking
-    Return type verification
-    Basic function overloading (if needed for C compatibility)
-
-Milestone 4C: Expression & Statement Checking
-
-Task 66: Implement basic expression type checking.
-
-    Integer/float/boolean literals
-    Variable access
-    Basic arithmetic operations
-    Simple comparisons
-
-Task 67: Implement function call checking.
-
-    Argument count validation
-    Basic type matching for arguments
-    Return type handling
-
-Task 68: Implement basic control flow.
-
-    If statements with boolean conditions
-    While loops with boolean conditions
-    Simple return statements
-
-Task 69: Implement basic pointer operations.
-
-    Address-of operator (&)
-    Dereference operator (*)
-    Basic pointer arithmetic
-
-Milestone 4D: Bootstrap-Specific Validations
-
-Task 70: Implement C89 compatibility checking.
-
-    Ensure all generated types map to C89 equivalents
-    Validate no unsupported Zig features used
-    Check for potential C89 compilation issues
-
-Task 71: Implement basic memory safety for bootstrap.
-
-    Simple pointer safety (no dangling checks yet)
-    Basic array bounds (at compile time only)
-    No advanced lifetime analysis
-
-Task 72: Implement struct type checking (simple).
-
-    Basic struct field access
-    No packed/extern attributes yet
-    Simple struct initialization
-
-Milestone 4E: Bootstrap Type System Completion
-
-Task 73: Implement basic enum type checking.
-
-    Simple enum value access
-    No complex enum features
-    Basic enum compatibility
-
-Task 74: Implement basic error checking.
-
-    Simple function return type validation
-    No error unions or try/catch for bootstrap
-    Basic error return conventions
-
-Task 75: Implement basic function overloading resolution.
-
-    Only simple function resolution needed
-    No complex generic resolution
-    Focus on C89-compatible function generation
-
-Milestone 4F: Bootstrap Testing & Validation
-
-Task 76: Write bootstrap-specific unit tests.
-
-    Test basic type checking functionality
-    Verify C89 compatibility of generated types
-    Test simple programs that should compile to C89
-
-Task 77: Implement basic integration tests.
-
-    Parse simple Zig code → Type check → Generate C89
-    Verify generated C89 compiles with C89 compiler
-    Test basic functionality end-to-end
-
-Task 78: Optimize for bootstrap performance.
-
-    Minimal type checking overhead
-    Fast symbol lookups for simple cases
-    Efficient error reporting for basic issues
-
-Task 79: Document bootstrap limitations clearly.
-
-    List unsupported Zig features
-    Document C89 mapping decisions
-    Plan for future full implementation
+### Milestone 4: Bootstrap Type System & Semantic Analysis
+62. **Task 62:** Define core Type struct and TypeKind for C89-compatible types.
+63. **Task 63:** Implement minimal Symbol struct and SymbolTable.
+64. **Task 64:** Implement basic scope management.
+65. **Task 65:** Implement symbol insertion and lookup.
+66. **Task 66:** Implement TypeChecker skeleton for bootstrap types.
+67. **Task 67:** Implement basic type compatibility.
+68. **Task 68:** Type-check variable declarations (basic).
+69. **Task 69:** Type-check function signatures.
+70. **Task 70:** Implement basic expression type checking.
+71. **Task 71:** Implement function call checking.
+72. **Task 72:** Implement basic control flow checking.
+73. **Task 73:** Implement basic pointer operation checking.
+74. **Task 74:** Implement C89 compatibility checking.
+75. **Task 75:** Implement basic memory safety for bootstrap.
+76. **Task 76:** Implement struct type checking (simple).
+77. **Task 77:** Implement basic enum type checking.
+78. **Task 78:** Implement basic error checking.
+79. **Task 79:** Implement basic function overloading resolution.
+80. **Task 80:** Write bootstrap-specific unit tests.
+81. **Task 81:** Implement basic integration tests.
+82. **Task 82:** Optimize for bootstrap performance.
+83. **Task 83:** Document bootstrap limitations clearly.
 
 ### Milestone 5: Code Generation (C89)
-68. **Task 68:** Implement a basic C89 emitter class in codegen.hpp that outputs valid C89-compliant code.
-69. **Task 69:** Implement the CVariableAllocator to manage variable names and scopes for C output, avoiding C reserved words and managing name conflicts.
-70. **Task 70:** Generate function declarations in C89 format with proper type mapping (e.g., Zig i32 → C int, Zig bool → C int).
-71. **Task 71:** Generate code for loading and outputting integer literals as C constants.
-72. **Task 72:** Generate code for local variable declarations and access in C89 format with proper scoping.
-73. **Task 73:** Generate code for basic arithmetic operations that map directly to C89 operators (+, -, *, /, %).
-74. **Task 74:** Generate code for comparison operators and logical operations compatible with C89.
-75. **Task 75:** Generate code for if statements using standard C89 if/else constructs.
-76. **Task 76:** Generate code for while loops and for loops in C89 format.
-77. **Task 77:** Generate code for return statements, ensuring proper return type handling in C89.
-78. **Task 78:** Implement the function call generation with proper argument passing and type mapping for C89.
-79. **Task 79:** Implement code generation for defer statements by emitting them in reverse order at scope exit as C cleanup code.
-80. **Task 80:** Generate code for slice types by mapping them to C structures with pointer and length fields.
-81. **Task 81:** Generate code for error unions by mapping them to C structures with payload and error code fields.
-82. **Task 82:** Write integration tests that compile simple Zig programs and verify the output C89 code compiles with a C89 compiler.
+84. **Task 84:** Implement a basic C89 emitter class in `codegen.hpp`.
+85. **Task 85:** Implement `CVariableAllocator` to manage C variable names.
+86. **Task 86:** Generate C89 function declarations.
+87. **Task 87:** Generate C89 code for integer literals.
+88. **Task 88:** Generate C89 code for local variable declarations.
+89. **Task 89:** Generate C89 code for basic arithmetic operations.
+90. **Task 90:** Generate C89 code for comparison and logical operations.
+91. **Task 91:** Generate C89 code for if statements.
+92. **Task 92:** Generate C89 code for while and for loops.
+93. **Task 93:** Generate C89 code for return statements.
+94. **Task 94:** Implement C89 function call generation.
+95. **Task 95:** Implement C89 code generation for defer statements.
+96. **Task 96:** Generate C89 code for slice types.
+97. **Task 97:** Generate C89 code for error unions.
+98. **Task 98:** Write integration tests for the C89 code generator.
 
 ### Milestone 6: C Library Integration & Final Bootstrap
-83. **Task 83:** Implement the CBackend class skeleton for final code emission.
-84. **Task 84:** Add logic to generate proper C89 headers and include guards for the emitted code.
-85. **Task 85:** Implement logic to create wrapper functions for Zig-specific runtime features that map to C library calls.
-86. **Task 86:** Implement logic to handle Zig's memory management and safety features using C89-compatible patterns.
-87. **Task 87:** Integrate the CBackend with the code generator to write complete C89 .c files with proper includes.
-88. **Task 88:** Compile a "hello world" style Zig program using the full C++ bootstrap compiler (zig0.exe) to generate C89 output, then compile that C89 code with a C compiler to create the final executable.
+99. **Task 99:** Implement the CBackend class skeleton for final code emission.
+100. **Task 100:** Add logic to generate proper C89 headers and include guards.
+101. **Task 101:** Implement wrappers for Zig runtime features to C library calls.
+102. **Task 102:** Handle Zig memory management with C89-compatible patterns.
+103. **Task 103:** Integrate CBackend to write complete C89 `.c` files.
+104. **Task 104:** Compile a "hello world" Zig program end-to-end.
 
 ## Phase 1: The Cross-Compiler (Zig)
-89. **Task 89:** Begin translating the C++ compiler logic (lexer, parser, etc.) into the supported Zig subset in lib/compiler.zig.
-90. **Task 90:** Use the C++ bootstrap compiler (zig0.exe) to compile lib/compiler.zig into zig1.exe.
-91. **Task 91:** Verify that zig1.exe is a functional compiler by using it to compile the test suite.
+105. **Task 105:** Translate the C++ compiler logic into the supported Zig subset.
+106. **Task 106:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
+107. **Task 107:** Verify `zig1.exe` by using it to compile the test suite.
 
 ## Phase 2: Self-Hosting
-92. **Task 92:** Use the generated Zig compiler (zig1.exe) to compile its own source code (lib/compiler.zig) to produce zig2.exe.
-93. **Task 93:** Perform a binary comparison (fc /b) between zig1.exe and zig2.exe. If they are identical, the compiler is officially self-hosting.
+108. **Task 108:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
+109. **Task 109:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
