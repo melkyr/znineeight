@@ -8,17 +8,33 @@
 #include <windows.h> // For OutputDebugStringA
 #endif
 
+/**
+ * @brief Constructs a new Parser instance.
+ * @param tokens A pointer to the array of tokens from the lexer.
+ * @param count The total number of tokens in the stream.
+ * @param arena A pointer to the ArenaAllocator for memory management.
+ */
 Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena)
     : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena) {
     assert(tokens_ != NULL && "Token stream cannot be null");
     assert(arena_ != NULL && "Arena allocator is required");
 }
 
+/**
+ * @brief Consumes the current token and advances the stream position by one.
+ * @return The token that was consumed.
+ * @pre The parser is not at the end of the token stream (`!is_at_end()`).
+ */
 Token Parser::advance() {
     assert(!is_at_end() && "Cannot advance beyond the end of the token stream");
     return tokens_[current_index_++];
 }
 
+/**
+ * @brief Returns the current token without consuming it.
+ * @return A constant reference to the current token. Can be called when at the
+ *         end of the stream, in which case it will return the EOF token.
+ */
 const Token& Parser::peek() const {
     // This can be called when current_index_ points to the EOF token.
     // The is_at_end() check uses this, and the expression parser needs to be able to
@@ -27,12 +43,22 @@ const Token& Parser::peek() const {
     return tokens_[current_index_];
 }
 
+/**
+ * @brief Checks if the parser has consumed all tokens up to the final EOF token.
+ * @return True if the current token is EOF, false otherwise.
+ */
 bool Parser::is_at_end() const {
     // Check if we are at the very last token, which should be EOF.
     // The loop in `create_parser_for_test` includes the EOF token in the count.
     return tokens_[current_index_].type == TOKEN_EOF;
 }
 
+/**
+ * @brief If the current token matches the expected type, consumes it and returns true.
+ *        Otherwise, it returns false without advancing the stream.
+ * @param type The expected token type.
+ * @return True if the token matched and was consumed, false otherwise.
+ */
 bool Parser::match(TokenType type) {
     if (is_at_end() || peek().type != type) {
         return false;
@@ -41,6 +67,13 @@ bool Parser::match(TokenType type) {
     return true;
 }
 
+/**
+ * @brief If the current token matches the expected type, consumes it and returns it.
+ *        Otherwise, it reports a fatal syntax error and aborts the compilation.
+ * @param type The expected token type.
+ * @param msg The error message to display if the token does not match.
+ * @return The consumed token.
+ */
 Token Parser::expect(TokenType type, const char* msg) {
     if (is_at_end() || peek().type != type) {
         error(msg);
@@ -48,6 +81,16 @@ Token Parser::expect(TokenType type, const char* msg) {
     return advance();
 }
 
+/**
+ * @brief Reports a fatal syntax error and terminates the compilation process.
+ *
+ * In a Windows environment (`_WIN32`), this function prints the error message to
+ * the debug console using `OutputDebugStringA`. On other platforms, it has no
+ * output. In all cases, it calls `abort()` to halt execution, as parser errors
+ * are considered unrecoverable in this compiler.
+ *
+ * @param msg The error message to display.
+ */
 void Parser::error(const char* msg) {
 #ifdef _WIN32
     // On Windows, use the debug output string function.
@@ -478,6 +521,11 @@ ASTNode* Parser::parseStatement() {
     }
 }
 
+/**
+ * @brief Parses a block statement.
+ *        Grammar: `'{' (statement)* '}'`
+ * @return A pointer to the ASTNode representing the block statement.
+ */
 ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
@@ -580,6 +628,15 @@ ASTNode* Parser::parseReturnStatement() {
     return node;
 }
 
+/**
+ * @brief Parses a type expression from the token stream.
+ *
+ * This function acts as a dispatcher for type parsing. It checks for pointer (`*`),
+ * array/slice (`[`), or identifier tokens to decide which specific type parsing
+ * function to call.
+ *
+ * @return A pointer to an `ASTNode` representing the parsed type expression.
+ */
 ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_STAR) {
         return parsePointerType();
@@ -599,6 +656,11 @@ ASTNode* Parser::parseType() {
     return NULL; // Unreachable
 }
 
+/**
+ * @brief Parses a pointer type expression.
+ *        Grammar: `'*' type_expr`
+ * @return A pointer to an `ASTPointerTypeNode`.
+ */
 ASTNode* Parser::parsePointerType() {
     Token star_token = advance(); // Consume '*'
     ASTNode* base_type = parseType();
@@ -611,6 +673,11 @@ ASTNode* Parser::parsePointerType() {
     return node;
 }
 
+/**
+ * @brief Parses an array or slice type expression.
+ *        Grammar: `'[' (expr)? ']' type_expr`
+ * @return A pointer to an `ASTArrayTypeNode`.
+ */
 ASTNode* Parser::parseArrayType() {
     Token lbracket_token = advance(); // Consume '['
     ASTNode* size_expr = NULL;

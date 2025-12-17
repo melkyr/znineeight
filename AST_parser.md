@@ -799,30 +799,7 @@ Represents a `try` expression, which either unwraps a successful value or propag
     struct ASTTryExprNode {
         ASTNode* expression;
     };
-
-
-## Parser Skeleton Design (Task 44a)
-
-### Core Principles
-- **Zero-allocation navigation**: Methods `advance()`, `peek()`, and `is_at_end()` perform no memory allocations. Critical for memory-constrained environments.
-- **Bounds safety**: All operations validated via `assert()` in debug builds. Release builds rely on caller guarantees (lexer must provide valid EOF).
-- **State minimalism**: Only tracks token stream position. No AST construction at this stage.
-
-### Memory Strategy
-- **Arena usage**: Reserved for future node allocation (44b+). Not utilized in 44a methods.
-- **Token references**: `peek()` returns const reference to avoid copying tokens. Lexer guarantees token lifetime exceeds parser lifetime.
-
-### Error Handling (44a Scope)
-- **Fatal errors only**: Out-of-bounds access aborts immediately via `assert()`. Recovery mechanisms deferred to 44b.
-- **No error messages**: Memory constraints prohibit string allocation for errors in this phase.
-
-### TDD Verification Points
-1. `advance()` correctly increments position and returns consumed token
-2. `peek()` never modifies parser state
-3. `is_at_end()` returns true exactly at `token_count_` position
-4. All methods handle empty token streams safely (via constructor assertions)
     ```
-
 ### `ASTCatchExprNode`
 Represents a `catch` expression, providing a fallback value in case of an error.
 *   **Zig Code:** `my_value catch |err| fallback_value`
@@ -857,51 +834,7 @@ Represents an `errdefer` statement, which is executed only if the function retur
     };
     ```
 
-## 11. Future AST Node Requirements
-
-A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
-
-*   **Container Declarations:**
-    *   `OpaqueDeclNode`: For `opaque` type declarations.
-
-*   **Control Flow:**
-    *   `ForStmtNode`: For `for` loops. (DONE)
-    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
-
-*   **Error Handling:**
-    *   `TryExprNode`: For the `try` expression. (DONE)
-    *   `CatchExprNode`: For the `catch` expression. (DONE)
-    *   `ErrDeferStmtNode`: For `errdefer` statements. (DONE)
-
-*   **Asynchronous Operations:**
-    *   `AsyncExprNode`: For `async` function calls.
-    *   `AwaitExprNode`: For the `await` expression.
-    *   `SuspendStmtNode`: For the `suspend` statement.
-    *   `ResumeStmtNode`: For the `resume` statement.
-
-*   **Compile-Time Operations:**
-    *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
-
-## 12. Compile-Time Operation Node Types
-
-These nodes are related to compile-time execution and evaluation.
-
-### `ASTComptimeBlockNode`
-Represents a `comptime` block, which contains an expression that must be evaluated at compile-time.
-*   **Zig Code:** `comptime { ... }`
-*   **Structure:**
-    ```cpp
-    /**
-     * @struct ASTComptimeBlockNode
-     * @brief Represents a `comptime` block.
-     * @var ASTComptimeBlockNode::expression The expression inside the block to be evaluated at compile-time.
-     */
-    struct ASTComptimeBlockNode {
-        ASTNode* expression;
-    };
-    ```
-
-## 13. Type Expression Parsing
+## 11. Type Expression Parsing
 
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
 
@@ -924,7 +857,7 @@ The parser will abort with an error in the following cases:
 - An array's size is not an integer literal.
 - The closing `]` is missing in an array type declaration.
 
-## 14. Parser Error Handling
+## 12. Parser Error Handling
 
 The parser's error handling strategy is designed for simplicity and adherence to the strict technical constraints of the project.
 
@@ -940,3 +873,21 @@ All fatal parsing errors are routed through the `Parser::error(const char* msg)`
 After printing the message (on Windows), the function **always** calls `abort()`. This terminates the program immediately, preventing any further processing of the invalid source code.
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
+
+## 13. Deprecated Documentation
+
+### Parser Skeleton Design (Task 44a)
+*This section describes the initial, minimal parser skeleton and is preserved for historical context.*
+
+#### Core Principles
+- **Zero-allocation navigation**: Methods `advance()`, `peek()`, and `is_at_end()` perform no memory allocations. Critical for memory-constrained environments.
+- **Bounds safety**: All operations validated via `assert()` in debug builds. Release builds rely on caller guarantees (lexer must provide valid EOF).
+- **State minimalism**: Only tracks token stream position. No AST construction at this stage.
+
+#### Memory Strategy
+- **Arena usage**: Reserved for future node allocation (44b+). Not utilized in 44a methods.
+- **Token references**: `peek()` returns const reference to avoid copying tokens. Lexer guarantees token lifetime exceeds parser lifetime.
+
+#### Error Handling (44a Scope)
+- **Fatal errors only**: Out-of-bounds access aborts immediately via `assert()`. Recovery mechanisms deferred to 44b.
+- **No error messages**: Memory constraints prohibit string allocation for errors in this phase.
