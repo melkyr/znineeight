@@ -369,6 +369,46 @@ ASTNode* Parser::parseVarDecl() {
 }
 
 /**
+ * @brief Parses a for statement.
+ *        Grammar: `'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
+ * @return A pointer to the ASTNode representing the for statement.
+ */
+ASTNode* Parser::parseForStatement() {
+    Token for_token = expect(TOKEN_FOR, "Expected 'for' keyword");
+    expect(TOKEN_LPAREN, "Expected '(' after 'for'");
+    ASTNode* iterable_expr = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after for iterable expression");
+
+    expect(TOKEN_PIPE, "Expected '|' to start for loop capture list");
+
+    Token item_token = expect(TOKEN_IDENTIFIER, "Expected item name in for loop capture list");
+    const char* item_name = item_token.value.identifier;
+    const char* index_name = NULL;
+
+    if (match(TOKEN_COMMA)) {
+        Token index_token = expect(TOKEN_IDENTIFIER, "Expected index name after comma in for loop capture list");
+        index_name = index_token.value.identifier;
+    }
+
+    expect(TOKEN_PIPE, "Expected '|' to end for loop capture list");
+
+    ASTNode* body = parseBlockStatement();
+
+    ASTForStmtNode* for_stmt_node = (ASTForStmtNode*)arena_->alloc(sizeof(ASTForStmtNode));
+    for_stmt_node->iterable_expr = iterable_expr;
+    for_stmt_node->item_name = item_name;
+    for_stmt_node->index_name = index_name;
+    for_stmt_node->body = body;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_FOR_STMT;
+    node->loc = for_token.location;
+    node->as.for_stmt = for_stmt_node;
+
+    return node;
+}
+
+/**
  * @brief Parses a defer statement.
  *        Grammar: `'defer' block_statement`
  * @return A pointer to the ASTNode representing the defer statement.
@@ -461,6 +501,8 @@ ASTNode* Parser::parseStatement() {
             return parseReturnStatement();
         case TOKEN_IF:
             return parseIfStatement();
+        case TOKEN_FOR:
+            return parseForStatement();
         case TOKEN_WHILE:
             return parseWhileStatement();
         case TOKEN_LBRACE:
