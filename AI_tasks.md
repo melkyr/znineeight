@@ -109,52 +109,163 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Verify that the resulting AST is structured correctly.
 
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
-75. **Task 75:** Define core Type struct and TypeKind for C89-compatible types.
-    - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T.
-    - No advanced Zig types like slices, error unions, or optionals for now.
-76. **Task 76:** Implement minimal Symbol struct and SymbolTable.
-    - Basic symbol storage for functions, global variables, and local variables.
-    - Simple name-to-type mapping.
-77. **Task 77:** Implement basic scope management.
-    - Only global and function scopes are needed initially.
-78. **Task 78:** Implement symbol insertion and lookup.
-    - Basic name resolution for variables/functions with simple duplicate detection.
-79. **Task 79:** Implement TypeChecker skeleton for bootstrap types.
-    - Focus only on basic C89-compatible operations with minimal error reporting.
-80. **Task 80:** Implement basic type compatibility.
-    - Integer and pointer type compatibility; basic function signature matching.
-81. **Task 81:** Type-check variable declarations (basic).
-    - Simple type annotation checking and basic initializer compatibility.
-82. **Task 82:** Type-check function signatures.
-    - Parameter and return type verification.
-83. **Task 83:** Implement basic expression type checking.
-    - Handle literals, variable access, basic arithmetic, and simple comparisons.
-84. **Task 84:** Implement function call checking.
-    - Argument count validation and basic type matching for arguments.
-85. **Task 85:** Implement basic control flow checking.
-    - Ensure `if` and `while` statements have boolean conditions.
-86. **Task 86:** Implement basic pointer operation checking.
-    - Check address-of (`&`) and dereference (`*`) operators.
-87. **Task 87:** Implement C89 compatibility checking.
-    - Ensure all generated types map to C89 equivalents and no unsupported Zig features are used.
-88. **Task 88:** Implement basic memory safety for bootstrap.
-    - Simple pointer safety and compile-time array bounds checking.
-89. **Task 89:** Implement struct type checking (simple).
-    - Basic struct field access and initialization.
-90. **Task 90:** Implement basic enum type checking.
-    - Simple enum value access and compatibility.
-91. **Task 91:** Implement basic error checking.
-    - Simple function return type validation.
-92. **Task 92:** Implement basic function overloading resolution.
-    - Only simple function resolution needed, focusing on C89-compatible generation.
-93. **Task 93:** Write bootstrap-specific unit tests.
-    - Test basic type checking functionality and verify C89 compatibility of generated types.
-94. **Task 94:** Implement basic integration tests.
-    - Parse, type-check, and generate C89 for simple Zig code, and verify the C89 output compiles.
-95. **Task 95:** Optimize for bootstrap performance.
-    - Minimal type checking overhead and fast symbol lookups.
-96. **Task 96:** Document bootstrap limitations clearly.
-    - List unsupported Zig features and document C89 mapping decisions.
+Task 75: Define core Type struct and TypeKind for C89-compatible types
+
+Risk Level: LOW
+
+    Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T
+    No advanced Zig types like slices, error unions, or optionals for now
+    Constraint Check: All these types can map to C89 equivalent types
+
+Task 76: Implement minimal Symbol struct and SymbolTable
+
+Risk Level: LOW 
+
+    Basic symbol storage for functions, global variables, and local variables
+    Simple name-to-type mapping using C++98 compatible data structures
+    Constraint Check: Standard symbol table implementation works fine
+
+Task 77: Implement basic scope management
+
+Risk Level: LOW
+
+    Only global and function scopes are needed initially
+    Constraint Check: Scope management is language-independent
+
+Task 78: Implement symbol insertion and lookup
+
+Risk Level: LOW
+
+    Basic name resolution for variables/functions with simple duplicate detection
+    Constraint Check: Standard hash table/string interning techniques work
+
+Task 79: Implement TypeChecker skeleton for bootstrap types
+
+Risk Level: MEDIUM
+
+    Focus only on basic C89-compatible operations with minimal error reporting
+    Constraint Risk: Need to carefully validate against C89 subset - may miss some restrictions
+
+Task 80: Implement basic type compatibility
+
+Risk Level: LOW
+
+    Integer and pointer type compatibility; basic function signature matching
+    Constraint Check: C89 type compatibility rules are well-defined
+
+Task 81: Type-check variable declarations (basic)
+
+Risk Level: LOW
+
+    Simple type annotation checking and basic initializer compatibility
+    Constraint Check: C89 variable declarations are straightforward
+
+Task 82: Type-check function signatures
+
+Risk Level: MEDIUM
+
+    Parameter and return type verification
+    Constraint Risk: Must reject function pointers, complex return types that don't map to C89
+
+Task 83: Implement basic expression type checking
+
+Risk Level: MEDIUM
+
+    Handle literals, variable access, basic arithmetic, and simple comparisons
+    Constraint Risk: Need to ensure all operations map to C89-compatible operations
+
+Task 84: Implement function call checking
+
+Risk Level: HIGH ⚠️
+
+    Argument count validation and basic type matching for arguments
+    Constraint Risk: Function pointers, variadic functions, and calling conventions may not be C89-compatible
+    May need to reject many Zig-specific calling patterns
+
+Task 85: Implement basic control flow checking
+
+Risk Level: LOW
+
+    Ensure if and while statements have boolean conditions
+    Constraint Check: C89 control flow is supported
+
+Task 86: Implement basic pointer operation checking
+
+Risk Level: MEDIUM
+
+    Check address-of (&) and dereference (*) operators
+    Constraint Risk: Must ensure no unsafe pointer arithmetic beyond C89 capabilities
+
+Task 87: Implement C89 compatibility checking
+
+Risk Level: CRITICAL ⚠️⚠️⚠️
+
+    Ensure all generated types map to C89 equivalents and no unsupported Zig features are used
+    Constraint Risk: This is the main gatekeeper - failure here means generated C code won't compile
+    Most complex validation task
+
+Task 88: Implement basic memory safety for bootstrap
+
+Risk Level: HIGH ⚠️
+
+    Simple pointer safety and compile-time array bounds checking
+    Constraint Risk: C89 has limited safety mechanisms - must be very conservative
+
+Task 89: Implement struct type checking (simple)
+
+Risk Level: MEDIUM
+
+    Basic struct field access and initialization
+    Constraint Risk: Must ensure no Zig-specific struct features (like methods, etc.)
+
+Task 90: Implement basic enum type checking
+
+Risk Level: LOW
+
+    Simple enum value access and compatibility
+    Constraint Check: C89 enums are supported
+
+Task 91: Implement basic error checking
+
+Risk Level: CRITICAL ⚠️⚠️⚠️
+
+    Simple function return type validation
+    Constraint Risk: Zig error handling doesn't exist in C89 - must map to int/error codes or similar
+
+Task 92: Implement basic function overloading resolution
+
+Risk Level: HIGH ⚠️
+
+    Only simple function resolution needed, focusing on C89-compatible generation
+    Constraint Risk: C89 doesn't support function overloading - must resolve to unique function names
+
+Task 93: Write bootstrap-specific unit tests
+
+Risk Level: MEDIUM
+
+    Test basic type checking functionality and verify C89 compatibility of generated types
+    Constraint Risk: Tests must cover all rejected features, not just accepted ones
+
+Task 94: Implement basic integration tests
+
+Risk Level: CRITICAL ⚠️⚠️⚠️
+
+    Parse, type-check, and generate C89 for simple Zig code, and verify the C89 output compiles
+    Constraint Risk: Final validation - if generated C doesn't compile, entire phase fails
+
+Task 95: Optimize for bootstrap performance
+
+Risk Level: LOW
+
+    Minimal type checking overhead and fast symbol lookups
+    Constraint Check: Performance optimization within C++98 constraints
+
+Task 96: Document bootstrap limitations clearly
+
+Risk Level: MEDIUM
+
+    List unsupported Zig features and document C89 mapping decisions
+    Constraint Risk: Documentation must be accurate to prevent false expectations
 
 ### Milestone 5: Code Generation (C89)
 97. **Task 97:** Implement a basic C89 emitter class in `codegen.hpp`.
