@@ -97,6 +97,11 @@ TEST_FUNC(Parser_FunctionCall_WithTrailingComma);
 TEST_FUNC(Parser_ArrayAccess);
 TEST_FUNC(Parser_ChainedPostfixOps);
 
+// Binary Expression Parser Tests
+TEST_FUNC(Parser_BinaryExpr_SimplePrecedence);
+TEST_FUNC(Parser_BinaryExpr_LeftAssociativity);
+TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -222,6 +227,10 @@ int main(int argc, char* argv[]) {
         test_Parser_FunctionCall_WithTrailingComma,
         test_Parser_ArrayAccess,
         test_Parser_ChainedPostfixOps,
+        // Binary Expression Parser tests
+        test_Parser_BinaryExpr_SimplePrecedence,
+        test_Parser_BinaryExpr_LeftAssociativity,
+        test_Parser_BinaryExpr_Error_MissingRHS,
     };
 
     int passed = 0;

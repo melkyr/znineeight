@@ -20,7 +20,10 @@ Token Parser::advance() {
 }
 
 const Token& Parser::peek() const {
-    assert(!is_at_end() && "Cannot peek beyond the end of the token stream");
+    // This can be called when current_index_ points to the EOF token.
+    // The is_at_end() check uses this, and the expression parser needs to be able to
+    // peek at the EOF token to know when to stop.
+    assert(current_index_ < token_count_ && "Cannot peek past the end of the token buffer");
     return tokens_[current_index_];
 }
 
@@ -214,10 +217,90 @@ ASTNode* Parser::parseUnaryExpr() {
     return expr;
 }
 
+/**
+ * @brief Gets the precedence level for a given binary operator token.
+ * @param type The TokenType of the operator.
+ * @return The operator's precedence level (higher value means higher precedence),
+ *         or -1 if the token is not a binary operator.
+ */
+static int get_token_precedence(TokenType type) {
+    switch (type) {
+        case TOKEN_STAR:
+        case TOKEN_SLASH:
+        case TOKEN_PERCENT:
+            return 7;
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:
+            return 6;
+        case TOKEN_EQUAL_EQUAL:
+        case TOKEN_BANG_EQUAL:
+        case TOKEN_LESS:
+        case TOKEN_GREATER:
+        case TOKEN_LESS_EQUAL:
+        case TOKEN_GREATER_EQUAL:
+            return 5;
+        default:
+            return -1;
+    }
+}
+
+/**
+ * @brief Parses a binary expression using a Pratt parser algorithm.
+ *
+ * This function is the core of the expression parser. It handles operator
+ * precedence and left-associativity. It takes a `min_precedence` to determine
+ * whether to continue parsing a sequence of operators. For example, when parsing
+ * `a + b * c`, after parsing `a + b`, it will see `*` which has a higher
+ * precedence, so it will recursively call itself to parse `b * c` first.
+ *
+ * @param min_precedence The minimum operator precedence to bind to the left expression.
+ * @return A pointer to the `ASTNode` representing the parsed expression, with
+ *         correct precedence and associativity.
+ */
+ASTNode* Parser::parseBinaryExpr(int min_precedence) {
+    ASTNode* left = parseUnaryExpr();
+
+    while (true) {
+        Token op_token = peek();
+        int precedence = get_token_precedence(op_token.type);
+
+        if (precedence < min_precedence) {
+            break;
+        }
+
+        advance(); // Consume the operator
+
+        if (is_at_end()) {
+            error("Expected expression after binary operator");
+        }
+
+        ASTNode* right = parseBinaryExpr(precedence + 1);
+
+        ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+        binary_op->left = left;
+        binary_op->right = right;
+        binary_op->op = op_token.type;
+
+        ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        new_node->type = NODE_BINARY_OP;
+        new_node->loc = op_token.location;
+        new_node->as.binary_op = binary_op;
+        left = new_node;
+    }
+
+    return left;
+}
+
+/**
+ * @brief Parses an expression, correctly handling binary operator precedence.
+ *
+ * This is the main entry point for parsing expressions. It kicks off the Pratt
+ * parser by calling `parseBinaryExpr` with a minimum precedence of 0.
+ *
+ * @return A pointer to the root `ASTNode` of the parsed expression tree.
+ */
 ASTNode* Parser::parseExpression() {
-    // For now, expression parsing only handles unary and postfix expressions.
-    // This will be expanded later to handle operator precedence for binary operators.
-    return parseUnaryExpr();
+    return parseBinaryExpr(0);
 }
 
 /**

@@ -35,6 +35,72 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
     return true;
 }
 
+TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    Parser parser = create_parser_for_test("2 + 3 * 4", arena, interner);
+
+    ASTNode* expr = parser.parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_BINARY_OP);
+
+    ASTBinaryOpNode* root = expr->as.binary_op;
+    ASSERT_EQ(root->op, TOKEN_PLUS);
+
+    // Left should be '2'
+    ASTNode* left = root->left;
+    ASSERT_EQ(left->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(left->as.integer_literal.value, 2);
+
+    // Right should be '3 * 4'
+    ASTNode* right = root->right;
+    ASSERT_EQ(right->type, NODE_BINARY_OP);
+    ASTBinaryOpNode* right_op = right->as.binary_op;
+    ASSERT_EQ(right_op->op, TOKEN_STAR);
+    ASSERT_EQ(right_op->left->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(right_op->left->as.integer_literal.value, 3);
+    ASSERT_EQ(right_op->right->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(right_op->right->as.integer_literal.value, 4);
+
+    return true;
+}
+
+TEST_FUNC(Parser_BinaryExpr_LeftAssociativity) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    Parser parser = create_parser_for_test("10 - 4 - 2", arena, interner);
+
+    ASTNode* expr = parser.parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_BINARY_OP);
+
+    // Root should be the second '-'
+    ASTBinaryOpNode* root = expr->as.binary_op;
+    ASSERT_EQ(root->op, TOKEN_MINUS);
+
+    // Right should be '2'
+    ASSERT_EQ(root->right->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(root->right->as.integer_literal.value, 2);
+
+    // Left should be '10 - 4'
+    ASTNode* left = root->left;
+    ASSERT_EQ(left->type, NODE_BINARY_OP);
+    ASTBinaryOpNode* left_op = left->as.binary_op;
+    ASSERT_EQ(left_op->op, TOKEN_MINUS);
+    ASSERT_EQ(left_op->left->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(left_op->left->as.integer_literal.value, 10);
+    ASSERT_EQ(left_op->right->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ(left_op->right->as.integer_literal.value, 4);
+
+    return true;
+}
+
+TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS) {
+    return expect_parser_abort("10 +");
+}
+
 TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
