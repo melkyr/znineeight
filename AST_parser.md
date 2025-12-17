@@ -546,6 +546,38 @@ The `parseWhileStatement` function is responsible for parsing a `while` loop. It
 - It then requires a statement for the loop body. At this foundational stage, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
+### `ASTForStmtNode`
+Represents a `for` loop, which iterates over an expression.
+*   **Zig Code:** `for (my_array) |item| { ... }`, `for (0..10) |val, i| { ... }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTForStmtNode
+     * @brief Represents a for loop statement.
+     * @var ASTForStmtNode::iterable_expr The expression being iterated over.
+     * @var ASTForStmtNode::item_name The name of the item capture variable.
+     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
+     * @var ASTForStmtNode::body The block statement that is the loop's body.
+     */
+    struct ASTForStmtNode {
+        ASTNode* iterable_expr;
+        const char* item_name;
+        const char* index_name; // Can be NULL
+        ASTNode* body;
+    };
+    ```
+
+#### Parsing Logic (`parseForStatement`)
+The `parseForStatement` function is responsible for parsing a `for` loop. It adheres to the grammar:
+`'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' statement`
+
+- It consumes a `for` token, a parenthesized expression for the iterable, and an opening `|`.
+- It then expects an identifier for the item capture variable.
+- It checks for an optional comma followed by another identifier for the index capture variable.
+- It requires a closing `|` to end the capture list.
+- Finally, it requires a statement for the loop body, which, like `while` and `if`, must be a block statement at this stage.
+- Any deviation from this structure results in a fatal error with a specific message.
+
 ### `ASTReturnStmtNode`
 Represents a `return` statement.
 *   **Zig Code:** `return;`, `return 42;`

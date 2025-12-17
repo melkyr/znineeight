@@ -117,6 +117,13 @@ public:
     ASTNode* parseWhileStatement();
 
     /**
+     * @brief Parses a for statement.
+     *        Grammar: `'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
+     * @return A pointer to the ASTNode representing the for statement.
+     */
+    ASTNode* parseForStatement();
+
+    /**
      * @brief Parses a defer statement.
      *        Grammar: `'defer' block_statement`
      * @return A pointer to the ASTNode representing the defer statement.
