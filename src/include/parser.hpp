@@ -72,6 +72,13 @@ public:
     ASTNode* parseUnaryExpr();
 
     /**
+     * @brief Parses a binary expression using a Pratt parser to handle operator precedence.
+     * @param min_precedence The minimum precedence level to parse.
+     * @return A pointer to the ASTNode representing the binary expression.
+     */
+    ASTNode* parseBinaryExpr(int min_precedence);
+
+    /**
      * @brief Parses a top-level function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
      * @return A pointer to the ASTNode representing the function declaration.
@@ -132,8 +139,8 @@ public:
 
     /**
      * @brief Returns the current token without consuming it.
-     * @return A constant reference to the current token.
-     * @pre The parser is not at the end of the token stream (`!is_at_end()`).
+     * @return A constant reference to the current token. Can be called when at the
+     *         end of the stream, in which case it will return the EOF token.
      */
     const Token& peek() const;
 

@@ -356,6 +356,22 @@ Represents an operation with two operands.
     };
     ```
 
+#### Parsing Logic (`parseExpression` and `parseBinaryExpr`)
+The parser uses a **Pratt parsing** algorithm to handle binary expressions, which elegantly solves the problem of operator precedence and associativity.
+
+- The main entry point for expression parsing is `parseExpression()`, which simply calls `parseBinaryExpr(0)` to start the process with the lowest possible precedence.
+- The `parseBinaryExpr(min_precedence)` function is the core of the algorithm. It starts by parsing a `unary_expr` as the initial left-hand side.
+- It then enters a loop, peeking at the next token. If the token is a binary operator with a precedence greater than or equal to `min_precedence`, it consumes the operator and recursively calls `parseBinaryExpr` to parse the right-hand side, but with a *higher* minimum precedence.
+- This recursive process naturally builds the AST in the correct order. For example, in `2 + 3 * 4`, the parser will first parse `2`, see the `+`, then recursively call itself to parse the rest of the expression with a higher precedence, which will correctly group `3 * 4` as the right-hand side of the `+` operation.
+- **Left-associativity** (for operators of the same precedence, like `10 - 4 - 2`) is handled by the `+ 1` adjustment to the precedence in the recursive call, which ensures that the loop continues for the first operator and groups `(10 - 4)` first.
+
+**Operator Precedence Levels:**
+| Precedence | Operators             |
+|------------|-----------------------|
+| 7          | `*`, `/`, `%`           |
+| 6          | `+`, `-`              |
+| 5          | `==`, `!=`, `<`, `>`, `<=`, `>=` |
+
 ## 5. Type Expression Node Types
 
 These nodes are used to represent types within the AST, such as in variable declarations or function return types.
