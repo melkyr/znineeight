@@ -184,16 +184,29 @@ private:
      * @brief Checks if a token represents a primitive type keyword (e.g., "i32", "bool").
      * @param token The token to check.
      * @return True if the token is an identifier corresponding to a primitive type, false otherwise.
+     * @note This function is declared but not yet implemented.
      */
     bool isPrimitiveType(const Token& token);
 
-    /** @brief Parses a primitive type (e.g., `i32`, `bool`). Helper for `parseType`. */
+    /**
+     * @brief Parses a primitive type specified by an identifier.
+     * @return An `ASTNode` of type `NODE_TYPE_NAME`.
+     * @note This is a helper function for `parseType`.
+     */
     ASTNode* parsePrimitiveType();
 
-    /** @brief Parses a pointer type (e.g., `*u8`, `**i32`). Helper for `parseType`. */
+    /**
+     * @brief Parses a pointer type expression (e.g., `*i32`, `**u8`).
+     * @return An `ASTNode` of type `NODE_POINTER_TYPE`.
+     * @note This is a helper function for `parseType`.
+     */
     ASTNode* parsePointerType();
 
-    /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). Helper for `parseType`. */
+    /**
+     * @brief Parses an array or slice type expression (e.g., `[8]u8`, `[]bool`).
+     * @return An `ASTNode` of type `NODE_ARRAY_TYPE`.
+     * @note This is a helper function for `parseType`.
+     */
     ASTNode* parseArrayType();
 
     Token* tokens_;

@@ -478,6 +478,20 @@ ASTNode* Parser::parseStatement() {
     }
 }
 
+/**
+ * @brief Parses a block statement.
+ *
+ * A block statement is a sequence of zero or more statements enclosed in curly
+ * braces `{}`. This function iteratively calls `parseStatement` until it
+
+ * encounters a closing brace `}`.
+ *
+ * Grammar:
+ * `block_statement ::= '{' statement* '}'`
+ *
+ * @return A pointer to an `ASTNode` of type `NODE_BLOCK_STMT`, which contains a
+ *         dynamic array of the statements within the block.
+ */
 ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
@@ -580,6 +594,18 @@ ASTNode* Parser::parseReturnStatement() {
     return node;
 }
 
+/**
+ * @brief Parses a type expression.
+ *
+ * This function acts as a dispatcher for parsing different kinds of type expressions.
+ * It checks the current token to determine if the type is a pointer, an array/slice,
+ * or a simple named type.
+ *
+ * Grammar:
+ * `type_expr ::= pointer_type | array_type | primitive_type`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed type expression.
+ */
 ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_STAR) {
         return parsePointerType();
@@ -599,6 +625,18 @@ ASTNode* Parser::parseType() {
     return NULL; // Unreachable
 }
 
+/**
+ * @brief Parses a pointer type expression.
+ *
+ * This function handles single and multi-level pointers (e.g., `*i32`, `**u8`).
+ * It consumes the `*` token and then recursively calls `parseType` to parse the
+ * base type that the pointer refers to.
+ *
+ * Grammar:
+ * `pointer_type ::= '*' type_expr`
+ *
+ * @return A pointer to an `ASTNode` of type `NODE_POINTER_TYPE`.
+ */
 ASTNode* Parser::parsePointerType() {
     Token star_token = advance(); // Consume '*'
     ASTNode* base_type = parseType();
@@ -611,6 +649,19 @@ ASTNode* Parser::parsePointerType() {
     return node;
 }
 
+/**
+ * @brief Parses an array or slice type expression.
+ *
+ * This function handles both fixed-size arrays (e.g., `[8]u8`) and slices
+ * (e.g., `[]bool`). It consumes the `[` and `]` tokens and recursively calls
+ * `parseType` for the element type and `parseExpression` for the size.
+ *
+ * Grammar:
+ * `array_type ::= '[' (expr)? ']' type_expr`
+ *
+ * @return A pointer to an `ASTNode` of type `NODE_ARRAY_TYPE`. The `size` field
+ *         will be `NULL` if the type is a slice.
+ */
 ASTNode* Parser::parseArrayType() {
     Token lbracket_token = advance(); // Consume '['
     ASTNode* size_expr = NULL;

@@ -43,161 +43,117 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 34. **Task 34:** Implement lexing for missing operators (`--`, `&&`).
 
 ### Milestone 3: Parser & AST
-35. **Task 35:** Define foundational AST structures and nodes for Expressions (Literals, Unary, Binary).
-36. **Task 36:** Define AST nodes for Statements (`IfStmt`, `WhileStmt`, `ReturnStmt`, `DeferStmt`, `BlockStmt`).
-37. **Task 37:** Define AST nodes for Declarations (`FnDecl`, `VarDecl`, `ParamDecl`).
-38. **Task 38:** Define AST nodes for Type Expressions (`TypeName`, `PointerType`, `ArrayType`). (DONE)
-39. **Task 39:** Define AST nodes for Container Declarations (`struct`, `enum`, `union`). (DONE)
-    - Add `ASTStructDeclNode`, `ASTEnumDeclNode`, `ASTUnionDeclNode`.
-    - Add corresponding `NodeType` enums.
-    - Create a basic compile-time test to validate the new structures.
-40. **Task 40:** Define AST nodes for Control Flow (`for`, `switch`).
-    - Add `ASTForStmtNode` and `ASTSwitchExprNode`.
-    - Add corresponding `NodeType` enums.
-    - Create a basic compile-time test to validate the new structures.
-41. **Task 41:** Define AST nodes for Error Handling (`try`, `catch`, `errdefer`).
-    - Add `ASTTryExprNode`, `ASTCatchExprNode`, and `ASTErrDeferStmtNode`.
-    - Add corresponding `NodeType` enums.
-    - Create a basic compile-time test to validate the new structures.
-42. **Task 42:** Define AST nodes for Async Operations (`async`, `await`).
-    - Add `ASTAsyncExprNode` and `ASTAwaitExprNode`.
-    - Add corresponding `NodeType` enums.
-    - Create a basic compile-time test to validate the new structures.
-43. **Task 43:** Define AST nodes for Comptime Operations (`comptime`). (DONE)
-    - Add `ASTComptimeBlockNode`.
-    - Add corresponding `NodeType` enum.
-    - Create a basic compile-time test to validate the new structure.
-44. **Task 44:** Implement the `Parser` class skeleton with helper methods (`advance`, `match`, `expect`).
-45. **Task 45:** Implement `parseType` to handle type expressions (e.g., `i32`, `*u8`, `[]bool`).
-46. **Task 46:** Implement parsing for top-level variable declarations (`var` and `const`).
-47. **Task 47:** Refactor Parser Error Handling and Cleanup.
-    - Remove the forbidden `<cstdio>` header include from `src/bootstrap/parser.cpp`.
-    - Modify the `error()` function to remove the `fprintf` call, ensuring it only uses `OutputDebugStringA` (under `#ifdef _WIN32`) and `abort()`.
-    - Remove duplicate function implementations (`error`, `match`, `parseType` and its helpers) from `parser.cpp`.
-    - Clean up any duplicate header includes at the top of the file.
-48. **Task 48:** Implement `parseFnDecl` for function definitions. (DONE)
-    - Parse the `fn` keyword, function name (identifier), parameter list `(`, `)`, and return type `-> type`.
-    - For now, the function body should be parsed as an empty block `{}`.
-49. **Task 49:** Implement `parseBlockStatement`. (DONE)
-    - Parse a `{` followed by a sequence of statements (currently only other empty blocks `{}`) and a closing `}`.
-    - Handle empty blocks `{}` and blocks with empty statements `{;}`.
-50. **Task 50:** Implement `parseIfStatement`.
-    - Parse `if`, a parenthesized condition `(expr)`, a `then` block, and an optional `else` block.
-    - The condition `expr` will be a stub that calls `parseExpression`.
-51. **Task 51:** Implement `parseWhileStatement`.
-    - Parse `while`, a parenthesized condition `(expr)`, and a body block.
-52. **Task 52:** Refactor `AST_parser.md` for clarity and correctness.
-    - Remove the duplicated section for `ASTFnDeclNode`.
-    - Relocate the "Parsing Logic (`parseIfStatement`)" description to be under the `ASTIfStmtNode` section where it belongs.
-    - Add a "Parsing Logic" subsection for `ASTWhileStmtNode` for consistency.
-53. **Task 53:** Add Doxygen comments to `parser.cpp` functions.
-    - Add comprehensive Doxygen-style comments to `parseVarDecl`, `parseFnDecl`, `parseStatement`, and `parseIfStatement` to explain their purpose, grammar, and behavior, similar to the existing comment for `parseWhileStatement`.
-54. **Task 54:** Resolve Technical Constraint Violations in Parser. (DONE)
-    - Remove the forbidden `#include <cstdlib>` from `src/bootstrap/parser.cpp` to comply with the project's C++ Standard Library Usage Policy.
-55. **Task 55:** Implement `parseDeferStatement`.
-    - Parse `defer` followed by a single statement.
-56. **Task 56:** Implement `parseReturnStatement`. (DONE)
-    - Parse `return` followed by an optional expression and a semicolon.
-57. **Task 57:** Implement `parsePrimaryExpr` for primary expressions.
-    - Handle integer, float, char, and string literals.
-    - Handle identifiers.
-    - Handle parenthesized expressions `(expr)`.
-58. **Task 58:** Implement parsing for postfix expressions.
-    - Parse function calls with arguments `(arg1, arg2, ...)`.
-    - Parse array access expressions `[index]`.
-59. **Task 59:** Implement `parseUnaryExpr` for unary operators.
-    - Handle prefix operators like `-`, `!`, `~`, `&`.
-60. **Task 60:** Implement `parseBinaryExpr` for Core Binary Operators. 
-    - Implement a Pratt parser for handling binary operator precedence.
-    - This implementation focuses on the core arithmetic (`+`, `-`, `*`, `/`, `%`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`) operators.
-61. **Task 61:** Extend `parseBinaryExpr` for Bitwise Operators.
-    - Add support for `&`, `|`, `^`, `<<`, `>>`.
-    - Create tests to verify correct precedence and associativity.
-62. **Task 62:** Extend `parseBinaryExpr` for Logical Operators.
-    - Add support for `and`, `or`, `orelse`.
-    - Create tests to verify correct precedence and short-circuiting behavior (if applicable at the parser level).
-63. **Task 63:** Create Integration Tests for the Parser.
+35. **Task 35:** Define foundational AST structures (Expressions, Statements, Declarations, Types). (DONE)
+36. **Task 36:** Define AST nodes for advanced language features (Containers, Control Flow, Error Handling, etc.). (DONE)
+37. **Task 37:** Implement core Parser class and foundational parsing logic (`parseType`, `parseVarDecl`, `parseFnDecl`, `parseBlockStatement`, etc.). (DONE)
+38. **Task 38:** Implement a complete, precedence-aware Expression Parser. (DONE)
+    - This includes primary, postfix (function calls, array access), unary, and binary expressions.
+    - This task consolidates and completes the original tasks 57-62.
+39. **Task 39:** Implement parsing for core statements (`if`, `while`, `defer`, `return`). (DONE)
+    - This task consolidates and completes the original tasks 50, 51, 55, and 56.
+40. **Task 40:** **(NEW)** Implement Parser for Control Flow.
+    - Implement `parseForStatement` to handle `for` loops.
+    - Implement `parseSwitchExpression` to handle `switch` expressions.
+    - Integrate these functions into the main `parseStatement` or `parseExpression` dispatcher.
+41. **Task 41:** **(NEW)** Implement Parser for Container Declarations.
+    - Implement `parseStructDecl` for `struct` definitions.
+    - Implement `parseUnionDecl` for `union` definitions.
+    - Implement `parseEnumDecl` for `enum` definitions.
+    - These functions will likely be called from a top-level parsing function.
+42. **Task 42:** **(NEW)** Implement Parser for Error Handling.
+    - Implement parsing for `try` expressions.
+    - Implement parsing for `catch` expressions.
+    - Implement `parseErrDeferStatement` for `errdefer` statements.
+43. **Task 43:** **(NEW)** Perform a Comprehensive Update of `AST_parser.md`.
+    - Synchronize the `NodeType` enum and `ASTNode` union definitions with `ast.hpp`.
+    - Update the "Out-of-Line" allocation strategy section and the node size table to be fully accurate.
+    - Remove the outdated "Future AST Node Requirements" section and ensure all parsing logic descriptions match the implementation.
+    - Update the operator precedence table to match the one in `parser.cpp`.
+44. **Task 44:** **(NEW)** Add Missing Doxygen Comments to Parser.
+    - Add Doxygen-style comments to all undocumented functions in `parser.hpp` and `parser.cpp`.
+    - Ensure existing comments are accurate and reflect the current implementation.
+45. **Task 45:** Create Integration Tests for the Parser.
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement with complex expressions).
     - Verify that the resulting AST is structured correctly.
 
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
-64. **Task 64:** Define core Type struct and TypeKind for C89-compatible types.
+46. **Task 46:** Define core Type struct and TypeKind for C89-compatible types.
     - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T.
     - No advanced Zig types like slices, error unions, or optionals for now.
-65. **Task 65:** Implement minimal Symbol struct and SymbolTable.
+47. **Task 47:** Implement minimal Symbol struct and SymbolTable.
     - Basic symbol storage for functions, global variables, and local variables.
     - Simple name-to-type mapping.
-66. **Task 66:** Implement basic scope management.
+48. **Task 48:** Implement basic scope management.
     - Only global and function scopes are needed initially.
-67. **Task 67:** Implement symbol insertion and lookup.
+49. **Task 49:** Implement symbol insertion and lookup.
     - Basic name resolution for variables/functions with simple duplicate detection.
-68. **Task 68:** Implement TypeChecker skeleton for bootstrap types.
+50. **Task 50:** Implement TypeChecker skeleton for bootstrap types.
     - Focus only on basic C89-compatible operations with minimal error reporting.
-69. **Task 69:** Implement basic type compatibility.
+51. **Task 51:** Implement basic type compatibility.
     - Integer and pointer type compatibility; basic function signature matching.
-70. **Task 70:** Type-check variable declarations (basic).
+52. **Task 52:** Type-check variable declarations (basic).
     - Simple type annotation checking and basic initializer compatibility.
-71. **Task 71:** Type-check function signatures.
+53. **Task 53:** Type-check function signatures.
     - Parameter and return type verification.
-72. **Task 72:** Implement basic expression type checking.
+54. **Task 54:** Implement basic expression type checking.
     - Handle literals, variable access, basic arithmetic, and simple comparisons.
-73. **Task 73:** Implement function call checking.
+55. **Task 55:** Implement function call checking.
     - Argument count validation and basic type matching for arguments.
-74. **Task 74:** Implement basic control flow checking.
+56. **Task 56:** Implement basic control flow checking.
     - Ensure `if` and `while` statements have boolean conditions.
-75. **Task 75:** Implement basic pointer operation checking.
+57. **Task 57:** Implement basic pointer operation checking.
     - Check address-of (`&`) and dereference (`*`) operators.
-76. **Task 76:** Implement C89 compatibility checking.
+58. **Task 58:** Implement C89 compatibility checking.
     - Ensure all generated types map to C89 equivalents and no unsupported Zig features are used.
-77. **Task 77:** Implement basic memory safety for bootstrap.
+59. **Task 59:** Implement basic memory safety for bootstrap.
     - Simple pointer safety and compile-time array bounds checking.
-78. **Task 78:** Implement struct type checking (simple).
+60. **Task 60:** Implement struct type checking (simple).
     - Basic struct field access and initialization.
-79. **Task 79:** Implement basic enum type checking.
+61. **Task 61:** Implement basic enum type checking.
     - Simple enum value access and compatibility.
-80. **Task 80:** Implement basic error checking.
+62. **Task 62:** Implement basic error checking.
     - Simple function return type validation.
-81. **Task 81:** Implement basic function overloading resolution.
+63. **Task 63:** Implement basic function overloading resolution.
     - Only simple function resolution needed, focusing on C89-compatible generation.
-82. **Task 82:** Write bootstrap-specific unit tests.
+64. **Task 64:** Write bootstrap-specific unit tests.
     - Test basic type checking functionality and verify C89 compatibility of generated types.
-83. **Task 83:** Implement basic integration tests.
+65. **Task 65:** Implement basic integration tests.
     - Parse, type-check, and generate C89 for simple Zig code, and verify the C89 output compiles.
-84. **Task 84:** Optimize for bootstrap performance.
+66. **Task 66:** Optimize for bootstrap performance.
     - Minimal type checking overhead and fast symbol lookups.
-85. **Task 85:** Document bootstrap limitations clearly.
+67. **Task 67:** Document bootstrap limitations clearly.
     - List unsupported Zig features and document C89 mapping decisions.
 
 ### Milestone 5: Code Generation (C89)
-86. **Task 86:** Implement a basic C89 emitter class in `codegen.hpp`.
-87. **Task 87:** Implement `CVariableAllocator` to manage C variable names.
-88. **Task 88:** Generate C89 function declarations.
-89. **Task 89:** Generate C89 code for integer literals.
-90. **Task 90:** Generate C89 code for local variable declarations.
-91. **Task 91:** Generate C89 code for basic arithmetic operations.
-92. **Task 92:** Generate C89 code for comparison and logical operations.
-93. **Task 93:** Generate C89 code for if statements.
-94. **Task 94:** Generate C89 code for while and for loops.
-95. **Task 95:** Generate C89 code for return statements.
-96. **Task 96:** Implement C89 function call generation.
-97. **Task 97:** Implement C89 code generation for defer statements.
-98. **Task 98:** Generate C89 code for slice types.
-99. **Task 99:** Generate C89 code for error unions.
-100. **Task 100:** Write integration tests for the C89 code generator.
+68. **Task 68:** Implement a basic C89 emitter class in `codegen.hpp`.
+69. **Task 69:** Implement `CVariableAllocator` to manage C variable names.
+70. **Task 70:** Generate C89 function declarations.
+71. **Task 71:** Generate C89 code for integer literals.
+72. **Task 72:** Generate C89 code for local variable declarations.
+73. **Task 73:** Generate C89 code for basic arithmetic operations.
+74. **Task 74:** Generate C89 code for comparison and logical operations.
+75. **Task 75:** Generate C89 code for if statements.
+76. **Task 76:** Generate C89 code for while and for loops.
+77. **Task 77:** Generate C89 code for return statements.
+78. **Task 78:** Implement C89 function call generation.
+79. **Task 79:** Implement C89 code generation for defer statements.
+80. **Task 80:** Generate C89 code for slice types.
+81. **Task 81:** Generate C89 code for error unions.
+82. **Task 82:** Write integration tests for the C89 code generator.
 
 ### Milestone 6: C Library Integration & Final Bootstrap
-101. **Task 101:** Implement the CBackend class skeleton for final code emission.
-102. **Task 102:** Add logic to generate proper C89 headers and include guards.
-103. **Task 103:** Implement wrappers for Zig runtime features to C library calls.
-104. **Task 104:** Handle Zig memory management with C89-compatible patterns.
-105. **Task 105:** Integrate CBackend to write complete C89 `.c` files.
-106. **Task 106:** Compile a "hello world" Zig program end-to-end.
+83. **Task 83:** Implement the CBackend class skeleton for final code emission.
+84. **Task 84:** Add logic to generate proper C89 headers and include guards.
+85. **Task 85:** Implement wrappers for Zig runtime features to C library calls.
+86. **Task 86:** Handle Zig memory management with C89-compatible patterns.
+87. **Task 87:** Integrate CBackend to write complete C89 `.c` files.
+88. **Task 88:** Compile a "hello world" Zig program end-to-end.
 
 ## Phase 1: The Cross-Compiler (Zig)
-107. **Task 107:** Translate the C++ compiler logic into the supported Zig subset.
-108. **Task 108:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
-109. **Task 109:** Verify `zig1.exe` by using it to compile the test suite.
+89. **Task 89:** Translate the C++ compiler logic into the supported Zig subset.
+90. **Task 90:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
+91. **Task 91:** Verify `zig1.exe` by using it to compile the test suite.
 
 ## Phase 2: Self-Hosting
-110. **Task 110:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
-111. **Task 111:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
+92. **Task 92:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
+93. **Task 93:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
