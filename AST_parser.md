@@ -28,6 +28,8 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~
     NODE_UNARY_OP,        ///< A unary operation (e.g., `-x`, `!y`).
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
+    NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
+    NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
@@ -42,24 +44,37 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_RETURN_STMT,     ///< A return statement.
-    NODE_DEFER_STMT,       ///< A defer statement.
+    NODE_DEFER_STMT,      ///< A defer statement.
+    NODE_FOR_STMT,        ///< A for loop statement.
 
-    // ~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~
-    NODE_FN_DECL,         ///< A function declaration.
+    // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
+    NODE_SWITCH_EXPR,     ///< A switch expression.
+
+    // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
     NODE_PARAM_DECL,      ///< A function parameter declaration.
+    NODE_FN_DECL,         ///< A function declaration.
 
     // ~~~~~~~~~~~~~~ Container Declarations ~~~~~~~~~~~~~~~~~
     NODE_STRUCT_DECL,     ///< A struct declaration.
     NODE_UNION_DECL,      ///< A union declaration.
     NODE_ENUM_DECL,       ///< An enum declaration.
 
-    // ~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~
-    NODE_TYPE_NAME,       ///< A type specified by a name (e.g., `i32`).
-    NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*i32`).
-    NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`).
+    // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
+    NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
+    NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
+    NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
 
-    // ~~~~~~~~~~~~~~~~~~ Compile-Time Operations ~~~~~~~~~~~~~~~~~
+    // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
+    NODE_TRY_EXPR,        ///< A try expression.
+    NODE_CATCH_EXPR,      ///< A catch expression.
+    NODE_ERRDEFER_STMT,   ///< An errdefer statement.
+
+    // ~~~~~~~~~~~~~~~~ Async Operations ~~~~~~~~~~~~~~~~~
+    NODE_ASYNC_EXPR,      ///< An async function call.
+    NODE_AWAIT_EXPR,      ///< An await expression.
+
+    // ~~~~~~~~~~~~~~~~ Compile-Time Operations ~~~~~~~~~~~~~~~~~
     NODE_COMPTIME_BLOCK   ///< A comptime block.
 };
 ```
@@ -857,31 +872,6 @@ Represents an `errdefer` statement, which is executed only if the function retur
     };
     ```
 
-## 11. Future AST Node Requirements
-
-A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
-
-*   **Container Declarations:**
-    *   `OpaqueDeclNode`: For `opaque` type declarations.
-
-*   **Control Flow:**
-    *   `ForStmtNode`: For `for` loops. (DONE)
-    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
-
-*   **Error Handling:**
-    *   `TryExprNode`: For the `try` expression. (DONE)
-    *   `CatchExprNode`: For the `catch` expression. (DONE)
-    *   `ErrDeferStmtNode`: For `errdefer` statements. (DONE)
-
-*   **Asynchronous Operations:**
-    *   `AsyncExprNode`: For `async` function calls.
-    *   `AwaitExprNode`: For the `await` expression.
-    *   `SuspendStmtNode`: For the `suspend` statement.
-    *   `ResumeStmtNode`: For the `resume` statement.
-
-*   **Compile-Time Operations:**
-    *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
-
 ## 12. Compile-Time Operation Node Types
 
 These nodes are related to compile-time execution and evaluation.
@@ -940,3 +930,34 @@ All fatal parsing errors are routed through the `Parser::error(const char* msg)`
 After printing the message (on Windows), the function **always** calls `abort()`. This terminates the program immediately, preventing any further processing of the invalid source code.
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
+
+---
+
+## Deprecated
+
+This section contains documentation that is outdated but preserved for historical context.
+
+### 11. Future AST Node Requirements
+
+A review of the Zig language specification has identified several language features for which AST nodes have not yet been defined. Adding these nodes will be necessary to parse a more complete subset of the Zig language. Future tasks should be created to address the following:
+
+*   **Container Declarations:**
+    *   `OpaqueDeclNode`: For `opaque` type declarations.
+
+*   **Control Flow:**
+    *   `ForStmtNode`: For `for` loops. (DONE)
+    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
+
+*   **Error Handling:**
+    *   `TryExprNode`: For the `try` expression. (DONE)
+    *   `CatchExprNode`: For the `catch` expression. (DONE)
+    *   `ErrDeferStmtNode`: For `errdefer` statements. (DONE)
+
+*   **Asynchronous Operations:**
+    *   `AsyncExprNode`: For `async` function calls.
+    *   `AwaitExprNode`: For the `await` expression.
+    *   `SuspendStmtNode`: For the `suspend` statement.
+    *   `ResumeStmtNode`: For the `resume` statement.
+
+*   **Compile-Time Operations:**
+    *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
