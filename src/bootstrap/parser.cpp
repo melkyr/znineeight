@@ -232,13 +232,22 @@ static int get_token_precedence(TokenType type) {
         case TOKEN_PLUS:
         case TOKEN_MINUS:
             return 6;
+        case TOKEN_LARROW2:
+        case TOKEN_RARROW2:
+            return 5;
+        case TOKEN_AMPERSAND:
+            return 4;
+        case TOKEN_CARET:
+            return 3;
+        case TOKEN_PIPE:
+            return 2;
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
         case TOKEN_GREATER:
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER_EQUAL:
-            return 5;
+            return 1;
         default:
             return -1;
     }
