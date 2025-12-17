@@ -4,6 +4,7 @@
 #include <cstddef> // For size_t
 #include <cstdlib> // For malloc, free
 #include <cassert> // For assert
+#include <cstring> // For memcpy
 
 /**
  * @class ArenaAllocator
@@ -113,6 +114,26 @@ public:
         : allocator(allocator), data(NULL), len(0), cap(0) {}
 
     /**
+     * @brief Ensures the array has at least a given capacity.
+     * @param min_cap The minimum required capacity.
+     */
+    void ensure_capacity(size_t min_cap) {
+        if (cap < min_cap) {
+            size_t new_cap = (cap == 0) ? 8 : cap * 2;
+            if (new_cap < min_cap) {
+                new_cap = min_cap;
+            }
+            T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
+            assert(new_data);
+            if (data) {
+                memcpy(new_data, data, len * sizeof(T));
+            }
+            data = new_data;
+            cap = new_cap;
+        }
+    }
+
+    /**
      * @brief Appends an item to the end of the array.
      * @param item The item to append.
      */
@@ -127,8 +148,8 @@ public:
             assert(new_data);
 
             // Copy existing data to the new buffer.
-            for (size_t i = 0; i < len; ++i) {
-                new_data[i] = data[i];
+            if (data) {
+                memcpy(new_data, data, len * sizeof(T));
             }
             data = new_data;
             cap = new_cap;

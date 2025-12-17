@@ -45,6 +45,7 @@ enum NodeType {
     NODE_VAR_DECL,        ///< A variable or constant declaration.
     NODE_PARAM_DECL,      ///< A function parameter declaration.
     NODE_FN_DECL,         ///< A function declaration.
+    NODE_STRUCT_FIELD,    ///< A single field within a struct declaration.
 
     // ~~~~~~~~~~~~~~ Container Declarations ~~~~~~~~~~~~~~~~~
     NODE_STRUCT_DECL,     ///< A struct declaration.
@@ -89,6 +90,7 @@ struct ASTSwitchProngNode;
 struct ASTVarDeclNode;
 struct ASTFnDeclNode;
 struct ASTParamDeclNode;
+struct ASTStructFieldNode;
 struct ASTStructDeclNode;
 struct ASTUnionDeclNode;
 struct ASTEnumDeclNode;
@@ -410,6 +412,17 @@ struct ASTFnDeclNode {
 // --- Container Declaration Nodes ---
 
 /**
+ * @struct ASTStructFieldNode
+ * @brief Represents a single field within a struct declaration.
+ * @var ASTStructFieldNode::name The name of the field (interned string).
+ * @var ASTStructFieldNode::type A pointer to an ASTNode representing the field's type.
+ */
+struct ASTStructFieldNode {
+    const char* name;
+    ASTNode* type;
+};
+
+/**
  * @struct ASTStructDeclNode
  * @brief Represents a `struct` declaration. Allocated out-of-line.
  * @var ASTStructDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the struct fields.
@@ -527,6 +540,7 @@ struct ASTNode {
         ASTVarDeclNode* var_decl; // Out-of-line
         ASTParamDeclNode param_decl;
         ASTFnDeclNode* fn_decl; // Out-of-line
+        ASTStructFieldNode* struct_field; // Out-of-line
         ASTStructDeclNode* struct_decl; // Out-of-line
         ASTUnionDeclNode* union_decl; // Out-of-line
         ASTEnumDeclNode* enum_decl; // Out-of-line

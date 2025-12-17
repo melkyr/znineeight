@@ -75,6 +75,11 @@ TEST_FUNC(ASTNode_ContainerDeclarations);
 TEST_FUNC(ASTNode_ForStmt);
 TEST_FUNC(ASTNode_SwitchExpr);
 TEST_FUNC(Parser_Error_OnMissingColon);
+TEST_FUNC(Parser_Struct_Error_MissingLBrace);
+TEST_FUNC(Parser_Struct_Error_MissingRBrace);
+TEST_FUNC(Parser_Struct_Error_MissingColon);
+TEST_FUNC(Parser_Struct_Error_MissingType);
+TEST_FUNC(Parser_Struct_Error_InvalidField);
 TEST_FUNC(Parser_FnDecl_ValidEmpty);
 TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
 TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
@@ -101,6 +106,13 @@ TEST_FUNC(Parser_ChainedPostfixOps);
 TEST_FUNC(Parser_BinaryExpr_SimplePrecedence);
 TEST_FUNC(Parser_BinaryExpr_LeftAssociativity);
 TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS);
+
+// Struct Parser Tests
+TEST_FUNC(Parser_StructDeclaration_Simple);
+TEST_FUNC(Parser_StructDeclaration_Empty);
+TEST_FUNC(Parser_StructDeclaration_MultipleFields);
+TEST_FUNC(Parser_StructDeclaration_WithTrailingComma);
+TEST_FUNC(Parser_StructDeclaration_ComplexFieldType);
 
 
 // This function is executed in a child process by the error handling test.
@@ -195,6 +207,11 @@ int main(int argc, char* argv[]) {
         test_ASTNode_ForStmt,
         test_ASTNode_SwitchExpr,
         test_Parser_Error_OnMissingColon,
+        test_Parser_Struct_Error_MissingLBrace,
+        test_Parser_Struct_Error_MissingRBrace,
+        test_Parser_Struct_Error_MissingColon,
+        test_Parser_Struct_Error_MissingType,
+        test_Parser_Struct_Error_InvalidField,
         test_Parser_FnDecl_ValidEmpty,
         test_Parser_FnDecl_Error_NonEmptyParams,
         test_Parser_FnDecl_Error_NonEmptyBody,
@@ -231,6 +248,13 @@ int main(int argc, char* argv[]) {
         test_Parser_BinaryExpr_SimplePrecedence,
         test_Parser_BinaryExpr_LeftAssociativity,
         test_Parser_BinaryExpr_Error_MissingRHS,
+
+        // Struct Parser tests
+        test_Parser_StructDeclaration_Simple,
+        test_Parser_StructDeclaration_Empty,
+        test_Parser_StructDeclaration_MultipleFields,
+        test_Parser_StructDeclaration_WithTrailingComma,
+        test_Parser_StructDeclaration_ComplexFieldType,
     };
 
     int passed = 0;

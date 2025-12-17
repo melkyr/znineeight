@@ -797,20 +797,44 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
 
 These nodes represent container types like structs, unions, and enums.
 
-### `ASTStructDeclNode`
-Represents a `struct` definition.
+### `ASTStructDeclNode` and `ASTStructFieldNode`
+Represents a `struct` definition. The declaration node contains a list of field nodes.
 *   **Zig Code:** `struct { field1: i32, field2: bool }`
 *   **Structure:**
     ```cpp
     /**
+     * @struct ASTStructFieldNode
+     * @brief Represents a single field within a struct declaration.
+     * @var ASTStructFieldNode::name The name of the field (interned string).
+     * @var ASTStructFieldNode::type A pointer to an ASTNode representing the field's type.
+     */
+    struct ASTStructFieldNode {
+        const char* name;
+        ASTNode* type;
+    };
+
+    /**
      * @struct ASTStructDeclNode
      * @brief Represents a `struct` declaration. Allocated out-of-line.
-     * @var ASTStructDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the struct fields.
+     * @var ASTStructDeclNode::fields A dynamic array of pointers to ASTNode (of type NODE_STRUCT_FIELD).
      */
     struct ASTStructDeclNode {
         DynamicArray<ASTNode*>* fields;
     };
     ```
+
+#### Parsing Logic (`parseStructDeclaration`)
+The `parseStructDeclaration` function is responsible for parsing anonymous struct literals. It is invoked from `parsePrimaryExpr` when a `struct` keyword is found. The function adheres to the grammar:
+`'struct' '{' (field (',' field)* ','?)? '}'`
+`field ::= IDENTIFIER ':' type`
+
+- It consumes the `struct` and `{` tokens.
+- It then enters a loop that continues as long as the next token is not `}`.
+- Inside the loop, it parses a single field by expecting an identifier, a colon, and a type expression (parsed via `parseType`).
+- It constructs an `ASTStructFieldNode` for each field and appends it to the `DynamicArray` in the `ASTStructDeclNode`.
+- The loop correctly handles an optional trailing comma by checking for a comma after each field, but only if the next token is not the closing brace.
+- It correctly handles empty structs (`{}`).
+- Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
 
 ### `ASTUnionDeclNode`
 Represents a `union` definition.
