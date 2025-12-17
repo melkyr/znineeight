@@ -366,15 +366,18 @@ The parser uses a **Pratt parsing** algorithm to handle binary expressions, whic
 - **Left-associativity** (for operators of the same precedence, like `10 - 4 - 2`) is handled by the `+ 1` adjustment to the precedence in the recursive call, which ensures that the loop continues for the first operator and groups `(10 - 4)` first.
 
 **Operator Precedence Levels:**
-| Precedence | Operators                      |
-|------------|--------------------------------|
-| 7          | `*`, `/`, `%`                  |
-| 6          | `+`, `-`                       |
-| 5          | `<<`, `>>`                     |
-| 4          | `&`                            |
-| 3          | `^`                            |
-| 2          | `|`                            |
-| 1          | `==`, `!=`, `<`, `>`, `<=`, `>=` |
+| Precedence | Operators                      | Associativity |
+|------------|--------------------------------|---------------|
+| 10         | `*`, `/`, `%`                  | Left          |
+| 9          | `+`, `-`                       | Left          |
+| 8          | `<<`, `>>`                     | Left          |
+| 7          | `&`                            | Left          |
+| 6          | `^`                            | Left          |
+| 5          | `|`                            | Left          |
+| 4          | `==`, `!=`, `<`, `>`, `<=`, `>=` | Left          |
+| 3          | `and`                          | Left          |
+| 2          | `or`                           | Left          |
+| 1          | `orelse`                       | Right         |
 
 ## 5. Type Expression Node Types
 

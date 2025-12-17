@@ -225,31 +225,47 @@ ASTNode* Parser::parseUnaryExpr() {
  */
 static int get_token_precedence(TokenType type) {
     switch (type) {
+        // Arithmetic operators (highest precedence)
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            return 7;
+            return 10;
         case TOKEN_PLUS:
         case TOKEN_MINUS:
-            return 6;
+            return 9;
+
+        // Bitwise shift operators
         case TOKEN_LARROW2:
         case TOKEN_RARROW2:
-            return 5;
+            return 8;
+
+        // Bitwise logical operators
         case TOKEN_AMPERSAND:
-            return 4;
+            return 7;
         case TOKEN_CARET:
-            return 3;
+            return 6;
         case TOKEN_PIPE:
-            return 2;
+            return 5;
+
+        // Comparison operators
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
         case TOKEN_GREATER:
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER_EQUAL:
+            return 4;
+
+        // Logical operators
+        case TOKEN_AND:
+            return 3;
+        case TOKEN_OR:
+            return 2;
+        case TOKEN_ORELSE:
             return 1;
+
         default:
-            return -1;
+            return -1; // Not a binary operator
     }
 }
 
@@ -283,7 +299,13 @@ ASTNode* Parser::parseBinaryExpr(int min_precedence) {
             error("Expected expression after binary operator");
         }
 
-        ASTNode* right = parseBinaryExpr(precedence + 1);
+        // Handle associativity. Most operators are left-associative.
+        // `orelse` is right-associative.
+        int next_min_precedence = precedence + 1;
+        if (op_token.type == TOKEN_ORELSE) {
+            next_min_precedence = precedence;
+        }
+        ASTNode* right = parseBinaryExpr(next_min_precedence);
 
         ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
         binary_op->left = left;
