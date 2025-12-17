@@ -116,6 +116,8 @@ ASTNode* Parser::parsePrimaryExpr() {
         }
         case TOKEN_SWITCH:
             return parseSwitchExpression();
+        case TOKEN_STRUCT:
+            return parseStructDeclaration();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -403,6 +405,63 @@ ASTNode* Parser::parseSwitchExpression() {
     node->type = NODE_SWITCH_EXPR;
     node->loc = switch_token.location;
     node->as.switch_expr = switch_node;
+
+    return node;
+}
+
+
+/**
+ * @brief Parses a struct declaration type expression.
+ *
+ * This function handles anonymous struct literals, which can be used anywhere a
+ * type is expected. It parses a comma-separated list of fields, where each
+ * field consists of an identifier, a colon, and a type expression. It correctly
+ * handles empty structs and optional trailing commas.
+ *
+ * Grammar:
+ * `struct '{' (field (',' field)* ','?)? '}'`
+ * `field ::= IDENTIFIER ':' type`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed struct declaration.
+ *         The node is allocated from the parser's arena.
+ */
+ASTNode* Parser::parseStructDeclaration() {
+    Token struct_token = expect(TOKEN_STRUCT, "Expected 'struct' keyword");
+    expect(TOKEN_LBRACE, "Expected '{' to begin struct declaration");
+
+    ASTStructDeclNode* struct_decl = (ASTStructDeclNode*)arena_->alloc(sizeof(ASTStructDeclNode));
+    struct_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    new (struct_decl->fields) DynamicArray<ASTNode*>(*arena_);
+
+    // Handle fields
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct declaration");
+        expect(TOKEN_COLON, "Expected ':' after field name");
+        ASTNode* type_node = parseType();
+
+        ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        field_data->name = name_token.value.identifier;
+        field_data->type = type_node;
+
+        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        field_node->type = NODE_STRUCT_FIELD;
+        field_node->loc = name_token.location;
+        field_node->as.struct_field = field_data;
+
+        struct_decl->fields->append(field_node);
+
+        // If the next token is not a closing brace, it must be a comma.
+        if (peek().type != TOKEN_RBRACE) {
+            expect(TOKEN_COMMA, "Expected ',' or '}' after struct field");
+        }
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to end struct declaration");
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_STRUCT_DECL;
+    node->loc = struct_token.location;
+    node->as.struct_decl = struct_decl;
 
     return node;
 }

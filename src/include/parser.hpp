@@ -206,6 +206,9 @@ private:
     /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseSwitchExpression();
 
+    /** @brief Parses a struct declaration type expression. Helper for `parsePrimaryExpr`. */
+    ASTNode* parseStructDeclaration();
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;
