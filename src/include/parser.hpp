@@ -203,6 +203,9 @@ private:
     /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). Helper for `parseType`. */
     ASTNode* parseArrayType();
 
+    /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
+    ASTNode* parseSwitchExpression();
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;

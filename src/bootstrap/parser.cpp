@@ -114,6 +114,8 @@ ASTNode* Parser::parsePrimaryExpr() {
             expect(TOKEN_RPAREN, "Expected ')' after parenthesized expression");
             return expr_node;
         }
+        case TOKEN_SWITCH:
+            return parseSwitchExpression();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -333,6 +335,78 @@ ASTNode* Parser::parseBinaryExpr(int min_precedence) {
 ASTNode* Parser::parseExpression() {
     return parseBinaryExpr(0);
 }
+
+/**
+ * @brief Parses a switch expression.
+ *
+ * Grammar:
+ * `switch '(' expr ')' '{' (prong (',' prong)* ','?)? '}'`
+ * `prong ::= (expr (',' expr)* | 'else') '=>' expr`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed switch expression.
+ */
+ASTNode* Parser::parseSwitchExpression() {
+    Token switch_token = expect(TOKEN_SWITCH, "Expected 'switch' keyword");
+
+    expect(TOKEN_LPAREN, "Missing opening parenthesis after switch");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Missing closing parenthesis around condition");
+
+    expect(TOKEN_LBRACE, "Missing opening brace for prongs");
+
+    ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)arena_->alloc(sizeof(ASTSwitchExprNode));
+    switch_node->expression = condition;
+    switch_node->prongs = (DynamicArray<ASTSwitchProngNode*>*)arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+    new (switch_node->prongs) DynamicArray<ASTSwitchProngNode*>(*arena_);
+
+    bool has_else = false;
+
+    if (peek().type == TOKEN_RBRACE) {
+        advance(); // consume '}'
+        error("Empty switch body {}");
+    }
+
+    do {
+        ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        prong_node->cases = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        new (prong_node->cases) DynamicArray<ASTNode*>(*arena_);
+        prong_node->is_else = false;
+
+        if (match(TOKEN_ELSE)) {
+            if (has_else) {
+                error("Duplicate else prong");
+            }
+            has_else = true;
+            prong_node->is_else = true;
+        } else {
+            // Parse one or more case expressions
+            do {
+                prong_node->cases->append(parseExpression());
+            } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
+        }
+
+        expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
+
+        prong_node->body = parseExpression();
+        if (prong_node->body == NULL) {
+             error("Cases without corresponding body expression");
+        }
+
+        switch_node->prongs->append(prong_node);
+
+    } while (match(TOKEN_COMMA) && peek().type != TOKEN_RBRACE);
+
+
+    expect(TOKEN_RBRACE, "Expected '}' to close switch expression");
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_SWITCH_EXPR;
+    node->loc = switch_token.location;
+    node->as.switch_expr = switch_node;
+
+    return node;
+}
+
 
 /**
  * @brief Parses a top-level variable declaration (`var` or `const`).
