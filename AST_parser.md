@@ -380,6 +380,19 @@ The parser uses a **Pratt parsing** algorithm to handle binary expressions, whic
 - This recursive process naturally builds the AST in the correct order. For example, in `2 + 3 * 4`, the parser will first parse `2`, see the `+`, then recursively call itself to parse the rest of the expression with a higher precedence, which will correctly group `3 * 4` as the right-hand side of the `+` operation.
 - **Left-associativity** (for operators of the same precedence, like `10 - 4 - 2`) is handled by the `+ 1` adjustment to the precedence in the recursive call, which ensures that the loop continues for the first operator and groups `(10 - 4)` first.
 
+#### Parsing Logic (`parseSwitchExpression`)
+The `parseSwitchExpression` function handles the `switch` expression. It adheres to the grammar:
+`'switch' '(' expr ')' '{' (prong (',' prong)* ','?)? '}'`
+`prong ::= (expr (',' expr)* | 'else') '=>' expr`
+
+- It consumes a `switch` token, a parenthesized expression for the condition, and an opening brace.
+- It then enters a loop to parse one or more "prongs".
+- For each prong, it checks for the `else` keyword. If not present, it parses a comma-separated list of one or more case expressions.
+- It then requires a `=>` token, followed by the body of the prong, which is parsed as a full expression.
+- The loop continues as long as there are commas separating the prongs.
+- Finally, it expects a closing brace.
+- It enforces several error conditions, such as a missing `=>`, a duplicate `else` prong, or an empty switch body.
+
 **Operator Precedence Levels:**
 | Precedence | Operators                      | Associativity |
 |------------|--------------------------------|---------------|
