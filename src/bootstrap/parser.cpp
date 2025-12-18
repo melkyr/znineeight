@@ -617,6 +617,28 @@ ASTNode* Parser::parseUnionDeclaration() {
     return node;
 }
 
+/**
+ * @brief Parses an errdefer statement.
+ *        Grammar: `'errdefer' block_statement`
+ * @return A pointer to the ASTNode representing the errdefer statement.
+ */
+ASTNode* Parser::parseErrDeferStatement() {
+    Token errdefer_token = expect(TOKEN_ERRDEFER, "Expected 'errdefer' keyword");
+
+    // The statement following 'errdefer' must be a block statement.
+    ASTNode* statement = parseBlockStatement();
+
+    ASTErrDeferStmtNode errdefer_stmt;
+    errdefer_stmt.statement = statement;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_ERRDEFER_STMT;
+    node->loc = errdefer_token.location;
+    node->as.errdefer_stmt = errdefer_stmt;
+
+    return node;
+}
+
 
 /**
  * @brief Parses a struct declaration type expression.
@@ -838,6 +860,8 @@ ASTNode* Parser::parseStatement() {
     switch (peek().type) {
         case TOKEN_DEFER:
             return parseDeferStatement();
+        case TOKEN_ERRDEFER:
+            return parseErrDeferStatement();
         case TOKEN_RETURN:
             return parseReturnStatement();
         case TOKEN_IF:
