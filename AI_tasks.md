@@ -137,6 +137,12 @@ Task 79: Complete For Loop Statement Parsing with Slice Iteration
     Update parseForStatement to handle slice/iterator expressions like my_slice[0..4] in addition to simple identifiers
     Ensure the parser can handle the pipe syntax |item| for loop variables
     Recommendation: This combines the range operator and slice parsing to fully support the failing for loop test case.
+Task 80: Final Integration Test Suite Validation
+
+    Run all previous integration tests again to ensure no regressions were introduced
+    Add edge cases discovered during the fixing process as separate, focused regression tests
+    Document any remaining known limitations in a TODO.md or similar file
+    Recommendation: Always validate that fixes don't break existing functionality.
 
     
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
