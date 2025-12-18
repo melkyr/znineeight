@@ -134,6 +134,14 @@ TEST_FUNC(Parser_Enum_SyntaxError_MissingInitializer);
 TEST_FUNC(Parser_Enum_SyntaxError_BackingTypeNoParens);
 TEST_FUNC(Parser_Enum_ComplexInitializer);
 
+// Catch Expression Parser Tests
+TEST_FUNC(Parser_CatchExpression_Simple);
+TEST_FUNC(Parser_CatchExpression_WithPayload);
+TEST_FUNC(Parser_CatchExpression_RightAssociativity);
+TEST_FUNC(Parser_CatchExpression_Error_MissingElseExpr);
+TEST_FUNC(Parser_CatchExpression_Error_IncompletePayload);
+TEST_FUNC(Parser_CatchExpression_Error_MissingPipe);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -295,6 +303,14 @@ int main(int argc, char* argv[]) {
         test_Parser_TryExpr_Simple,
         test_Parser_TryExpr_Chained,
         test_Parser_TryExpr_InvalidSyntax,
+
+        // Catch Expression Parser tests
+        test_Parser_CatchExpression_Simple,
+        test_Parser_CatchExpression_WithPayload,
+        test_Parser_CatchExpression_RightAssociativity,
+        test_Parser_CatchExpression_Error_MissingElseExpr,
+        test_Parser_CatchExpression_Error_IncompletePayload,
+        test_Parser_CatchExpression_Error_MissingPipe,
     };
 
     int passed = 0;
