@@ -915,6 +915,12 @@ Represents a `try` expression, which either unwraps a successful value or propag
         ASTNode* expression;
     };
 
+#### Parsing Logic (`parseUnaryExpr` for `try`)
+The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExpr` function.
+- When a `TOKEN_TRY` is encountered, it is consumed.
+- The function then recursively calls `parseUnaryExpr` to handle the subsequent expression. This allows `try` to correctly compose with other unary operators (e.g., `try !fallible_operation()`).
+- An `ASTTryExprNode` is created, wrapping the parsed expression.
+
 
 ## Parser Skeleton Design (Task 44a)
 
