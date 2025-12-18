@@ -105,7 +105,40 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 74. **Task 74:** Create Integration Tests for the Parser.
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement with complex expressions).
     - Verify that the resulting AST is structured correctly.
+Task 75: Implement Range Operator (..) Lexing
 
+    Add TOKEN_RANGE to the TokenType enum in src/include/lexer.hpp
+    Update the lexer's dot handling logic in src/bootstrap/lexer.cpp to recognize .. as TOKEN_RANGE before attempting to parse ... (ELLIPSIS)
+    Add unit tests for the range operator lexing
+    Recommendation: This is critical as it's blocking the for loop test case and will likely be needed for slice operations throughout the language.
+
+Task 76: Implement Non-Empty Function Body Support
+
+    Modify parseFnDecl in src/bootstrap/parser.cpp to remove the restriction on empty function bodies
+    Instead of expecting TOKEN_RBRACE immediately, call parseBlockStatement to handle the function body contents
+    Ensure parseBlockStatement correctly parses multiple statements until the closing brace
+    Recommendation: This is essential for completing the integration test. The function declaration parser needs to delegate to the general statement parser for the body.
+
+Task 77: Enhance Expression Parsing State Management
+
+    Review and fix the Pratt parser (parsePrecedenceExpr) in src/bootstrap/parser.cpp to ensure correct token consumption, especially after parsing parenthesized expressions
+    Add debug logging or assertions to verify parser position advancement during complex nested expressions like a && (b || c)
+    Consider adding a maximum recursion depth check to prevent stack overflows during expression parsing
+    Recommendation: This addresses the potential infinite loop/memory corruption issue in complex boolean expressions. Proper state management is crucial for parser stability.
+
+Task 78: Implement Array Slice Expression Parsing
+
+    Extend parsePostfixExpression to handle range expressions within array access brackets [start..end]
+    This will enable parsing of expressions like my_slice[0..4] used in the for loop test
+    Recommendation: This builds on Task 75 (range operator) and is necessary for the for loop functionality.
+
+Task 79: Complete For Loop Statement Parsing with Slice Iteration
+
+    Update parseForStatement to handle slice/iterator expressions like my_slice[0..4] in addition to simple identifiers
+    Ensure the parser can handle the pipe syntax |item| for loop variables
+    Recommendation: This combines the range operator and slice parsing to fully support the failing for loop test case.
+
+    
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
 Task 75: Define core Type struct and TypeKind for C89-compatible types
 
