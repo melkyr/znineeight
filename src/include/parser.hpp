@@ -131,6 +131,13 @@ public:
     ASTNode* parseDeferStatement();
 
     /**
+     * @brief Parses an errdefer statement.
+     *        Grammar: `'errdefer' block_statement`
+     * @return A pointer to the ASTNode representing the errdefer statement.
+     */
+    ASTNode* parseErrDeferStatement();
+
+    /**
      * @brief Parses a return statement.
      *        Grammar: `'return' (expr)? ';'`
      * @return A pointer to the ASTNode representing the return statement.

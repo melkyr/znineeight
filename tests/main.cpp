@@ -87,6 +87,9 @@ TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
 TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
 TEST_FUNC(Parser_FnDecl_Error_MissingParens);
 
+TEST_FUNC(Parser_ErrDeferStatement_Simple);
+TEST_FUNC(Parser_ErrDeferStatement_Error_MissingBlock);
+
 // If Statement Parser Tests
 TEST_FUNC(Parser_IfStatement_Simple);
 TEST_FUNC(Parser_IfStatement_WithElse);
@@ -146,7 +149,7 @@ TEST_FUNC(Parser_CatchExpression_Error_MissingPipe);
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
 // The successful outcome is for the program to abort.
-void run_parser_test_and_abort(const char* source_code) {
+void run_parser_test_and_abort(const char* source_code, bool is_statement_test) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
     SourceManager src_manager(arena);
@@ -161,9 +164,11 @@ void run_parser_test_and_abort(const char* source_code) {
     } while (token.type != TOKEN_EOF);
 
     Parser parser(tokens.getData(), tokens.length(), &arena);
-    // Let's call parseExpression, as it's the more general entry point for what we'll be testing.
-    // Both old and new error tests should fail correctly.
-    parser.parseExpression();
+    if (is_statement_test) {
+        parser.parseStatement();
+    } else {
+        parser.parseExpression();
+    }
 
     // If we reach here, the parser did NOT abort as expected.
     // Exit with 0, which the parent process will interpret as a test failure.
@@ -174,11 +179,15 @@ int main(int argc, char* argv[]) {
     // Check if the test runner is being invoked in the special mode
     // for testing parser errors.
     if (argc == 3 && strcmp(argv[1], "--run-parser-test") == 0) {
-        run_parser_test_and_abort(argv[2]);
-        // This line should be unreachable if the test works correctly.
-        // Return 1 to indicate failure if it is ever reached.
-        return 1;
+        run_parser_test_and_abort(argv[2], false);
+        return 1; // Should be unreachable
     }
+
+    if (argc == 3 && strcmp(argv[1], "--run-statement-parser-test") == 0) {
+        run_parser_test_and_abort(argv[2], true);
+        return 1; // Should be unreachable
+    }
+
 
     // Normal test suite execution
     bool (*tests[])() = {
@@ -311,6 +320,8 @@ int main(int argc, char* argv[]) {
         test_Parser_CatchExpression_Error_MissingElseExpr,
         test_Parser_CatchExpression_Error_IncompletePayload,
         test_Parser_CatchExpression_Error_MissingPipe,
+        test_Parser_ErrDeferStatement_Simple,
+        test_Parser_ErrDeferStatement_Error_MissingBlock,
     };
 
     int passed = 0;

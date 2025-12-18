@@ -13,13 +13,11 @@
 
 // Helper function to run a parsing task in a separate process
 // and check if it terminates as expected.
-bool expect_parser_abort(const char* source_code) {
+static bool run_test_in_child_process(const char* source_code, const char* test_type_flag) {
     char command[512];
 #if defined(_WIN32)
-    // On Windows, snprintf is available in modern SDKs but might not be in C++98 compilers.
-    // _snprintf is the MSVC equivalent.
-    _snprintf(command, sizeof(command), "test_runner.exe --run-parser-test \"%s\"", source_code);
-    command[sizeof(command) - 1] = '\0'; // Ensure null termination
+    _snprintf(command, sizeof(command), "test_runner.exe %s \"%s\"", test_type_flag, source_code);
+    command[sizeof(command) - 1] = '\0';
 
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
@@ -45,7 +43,7 @@ bool expect_parser_abort(const char* source_code) {
         // Suppress stdout/stderr to keep test output clean.
         freopen("/dev/null", "w", stdout);
         freopen("/dev/null", "w", stderr);
-        execlp("./test_runner", "test_runner", "--run-parser-test", source_code, (char*)NULL);
+        execlp("./test_runner", "test_runner", test_type_flag, source_code, (char*)NULL);
         // If execlp returns, it means an error occurred.
         exit(127); // Exit with a special code to indicate exec failure.
     } else if (pid > 0) {
@@ -58,6 +56,14 @@ bool expect_parser_abort(const char* source_code) {
     }
     return false; // Fork failed.
 #endif
+}
+
+bool expect_parser_abort(const char* source_code) {
+    return run_test_in_child_process(source_code, "--run-parser-test");
+}
+
+bool expect_statement_parser_abort(const char* source_code) {
+    return run_test_in_child_process(source_code, "--run-statement-parser-test");
 }
 
 TEST_FUNC(Parser_Error_OnMissingColon) {

@@ -639,6 +639,29 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 - It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
+### `ASTErrDeferStmtNode`
+Represents an `errdefer` statement, which is executed only if the function returns an error.
+*   **Zig Code:** `errdefer cleanup();`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTErrDeferStmtNode
+     * @brief Represents an `errdefer` statement.
+     * @var ASTErrDeferStmtNode::statement The statement to execute upon error-based scope exit.
+     */
+    struct ASTErrDeferStmtNode {
+        ASTNode* statement;
+    };
+    ```
+
+#### Parsing Logic (`parseErrDeferStatement`)
+The `parseErrDeferStatement` function handles the `errdefer` statement. It adheres to the grammar:
+`'errdefer' statement`
+
+- It consumes an `errdefer` token.
+- It then requires a subsequent statement. Consistent with `defer`, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- Any deviation from this structure results in a fatal error.
+
 ## 7. Declaration Node Types
 
 These nodes represent declarations, which introduce new named entities like variables and functions into the program.
