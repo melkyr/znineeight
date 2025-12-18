@@ -76,7 +76,7 @@ public:
      * @param min_precedence The minimum precedence level to parse.
      * @return A pointer to the ASTNode representing the binary expression.
      */
-    ASTNode* parseBinaryExpr(int min_precedence);
+    ASTNode* parsePrecedenceExpr(int min_precedence);
 
     /**
      * @brief Parses a top-level function declaration.
@@ -158,6 +158,12 @@ public:
     bool is_at_end() const;
 
 private:
+    // A helper struct for iterative right-associative operator parsing.
+    struct OperatorInfo {
+        Token op;
+        const char* catch_payload_name;
+    };
+
     /**
      * @brief If the current token matches the expected type, consumes it and returns true.
      *        Otherwise, it returns false without advancing the stream.

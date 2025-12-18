@@ -300,33 +300,32 @@ static int get_token_precedence(TokenType type) {
  * precedence, so it will recursively call itself to parse `b * c` first.
  *
  * @param min_precedence The minimum operator precedence to bind to the left expression.
+ * @brief Parses binary expressions with precedence greater than 1.
+ *
+ * This function is a helper for the main `parseExpression` function. It uses a
+ * standard Pratt parsing (recursive descent) approach to handle all left-associative
+ * operators with a precedence level of 2 or higher (i.e., everything except
+ * `orelse` and `catch`).
+ *
+ * @param min_precedence The minimum operator precedence to bind to the left expression.
  * @return A pointer to the `ASTNode` representing the parsed expression, with
  *         correct precedence and associativity.
  */
-ASTNode* Parser::parseBinaryExpr(int min_precedence) {
+ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
     ASTNode* left = parseUnaryExpr();
 
     while (true) {
         Token op_token = peek();
         int precedence = get_token_precedence(op_token.type);
 
+        // This function now only handles left-associative operators with precedence > 1
         if (precedence < min_precedence) {
             break;
         }
 
         advance(); // Consume the operator
 
-        if (is_at_end()) {
-            error("Expected expression after binary operator");
-        }
-
-        // Handle associativity. Most operators are left-associative.
-        // `orelse` is right-associative.
-        int next_min_precedence = precedence + 1;
-        if (op_token.type == TOKEN_ORELSE) {
-            next_min_precedence = precedence;
-        }
-        ASTNode* right = parseBinaryExpr(next_min_precedence);
+        ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
         ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
         binary_op->left = left;
@@ -344,15 +343,80 @@ ASTNode* Parser::parseBinaryExpr(int min_precedence) {
 }
 
 /**
- * @brief Parses an expression, correctly handling binary operator precedence.
+ * @brief Parses an expression, handling right-associative operators iteratively.
  *
- * This is the main entry point for parsing expressions. It kicks off the Pratt
- * parser by calling `parseBinaryExpr` with a minimum precedence of 0.
+ * This function is the main entry point for expression parsing. It handles the
+ * lowest precedence, right-associative operators (`orelse`, `catch`) with an
+ * iterative approach to prevent deep recursion on long chains. It uses a helper
+ * function, `parsePrecedenceExpr`, to handle all higher-precedence, left-associative
+ * operators recursively.
  *
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
 ASTNode* Parser::parseExpression() {
-    return parseBinaryExpr(0);
+    // 1. Parse the first operand, which includes all operators with precedence > 1.
+    ASTNode* first_operand = parsePrecedenceExpr(2);
+
+    // 2. If there are no low-precedence operators, we're done.
+    if (peek().type != TOKEN_ORELSE && peek().type != TOKEN_CATCH) {
+        return first_operand;
+    }
+
+    // 3. Collect all subsequent operands and right-associative operators.
+    DynamicArray<Parser::OperatorInfo> operators(*arena_);
+    DynamicArray<ASTNode*> operands(*arena_);
+    operands.append(first_operand);
+
+    while (peek().type == TOKEN_ORELSE || peek().type == TOKEN_CATCH) {
+        Token op_token = advance();
+        const char* payload_name = NULL;
+
+        if (op_token.type == TOKEN_CATCH) {
+            if (match(TOKEN_PIPE)) {
+                Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier for error capture payload");
+                payload_name = id_token.value.identifier;
+                expect(TOKEN_PIPE, "Expected closing '|' after error capture payload");
+            }
+        }
+
+        Parser::OperatorInfo op_info = {op_token, payload_name};
+        operators.append(op_info);
+        operands.append(parsePrecedenceExpr(2));
+    }
+
+    // 4. Build the AST from right to left to ensure right-associativity.
+    ASTNode* right_node = operands[operands.length() - 1];
+
+    for (int i = operators.length() - 1; i >= 0; --i) {
+        Parser::OperatorInfo op_info = operators[i];
+        ASTNode* left_node = operands[i];
+
+        if (op_info.op.type == TOKEN_CATCH) {
+            ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
+            catch_node->payload = left_node;
+            catch_node->error_name = op_info.catch_payload_name;
+            catch_node->else_expr = right_node;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            new_node->type = NODE_CATCH_EXPR;
+            new_node->loc = op_info.op.location;
+            new_node->as.catch_expr = catch_node;
+            right_node = new_node;
+        } else { // TOKEN_ORELSE
+            ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+            binary_op->left = left_node;
+            binary_op->right = right_node;
+            binary_op->op = op_info.op.type;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            new_node->type = NODE_BINARY_OP;
+            new_node->loc = op_info.op.location;
+            new_node->as.binary_op = binary_op;
+            right_node = new_node;
+        }
+    }
+
+    return right_node;
 }
 
 /**
