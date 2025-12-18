@@ -1084,7 +1084,7 @@ A review of the Zig language specification has identified several language featu
     *   `ErrDeferStmtNode`: For `errdefer` statements. (DONE)
 
 *   **Asynchronous Operations:**
-    *   `AsyncExprNode`: For `async` function calls.
+    *   `AsyncExprNode`: For `async` function calls. (Note: The `async` keyword is not currently recognized by the lexer, so parsing for this node is not implemented.)
     *   `AwaitExprNode`: For the `await` expression.
     *   `SuspendStmtNode`: For the `suspend` statement.
     *   `ResumeStmtNode`: For the `resume` statement.
