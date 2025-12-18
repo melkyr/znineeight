@@ -62,6 +62,35 @@ void Parser::error(const char* msg) {
 }
 
 /**
+ * @brief Parses a comptime block.
+ * @return A pointer to the ASTNode representing the comptime block.
+ * @grammar `comptime '{' expression '}'`
+ */
+ASTNode* Parser::parseComptimeBlock() {
+    Token comptime_token = expect(TOKEN_COMPTIME, "Expected 'comptime' keyword.");
+
+    expect(TOKEN_LBRACE, "Expected '{' after 'comptime'.");
+
+    ASTNode* expr = parseExpression();
+    if (expr == NULL) {
+        error("Expected an expression inside comptime block.");
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' after comptime block expression.");
+
+    // Build the AST node
+    ASTComptimeBlockNode comptime_block;
+    comptime_block.expression = expr;
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_COMPTIME_BLOCK;
+    node->loc = comptime_token.location;
+    node->as.comptime_block = comptime_block;
+
+    return node;
+}
+
+/**
  * @brief Parses a primary expression from the token stream.
  *
  * Primary expressions are the highest-precedence expressions and form the
@@ -864,6 +893,8 @@ ASTNode* Parser::parseStatement() {
             return parseErrDeferStatement();
         case TOKEN_RETURN:
             return parseReturnStatement();
+        case TOKEN_COMPTIME:
+            return parseComptimeBlock();
         case TOKEN_IF:
             return parseIfStatement();
         case TOKEN_FOR:
