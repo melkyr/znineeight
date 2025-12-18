@@ -118,6 +118,8 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseSwitchExpression();
         case TOKEN_STRUCT:
             return parseStructDeclaration();
+        case TOKEN_UNION:
+            return parseUnionDeclaration();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -405,6 +407,62 @@ ASTNode* Parser::parseSwitchExpression() {
     node->type = NODE_SWITCH_EXPR;
     node->loc = switch_token.location;
     node->as.switch_expr = switch_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses a union declaration type expression.
+ *
+ * This function handles anonymous union literals, which can be used anywhere a
+ * type is expected. It parses a comma-separated list of fields, where each
+ * field consists of an identifier, a colon, and a type expression. It correctly
+ * handles empty unions and optional trailing commas.
+ *
+ * Grammar:
+ * `union '{' (field (',' field)* ','?)? '}'`
+ * `field ::= IDENTIFIER ':' type`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed union declaration.
+ *         The node is allocated from the parser's arena.
+ */
+ASTNode* Parser::parseUnionDeclaration() {
+    Token union_token = expect(TOKEN_UNION, "Expected 'union' keyword");
+    expect(TOKEN_LBRACE, "Expected '{' to begin union declaration");
+
+    ASTUnionDeclNode* union_decl = (ASTUnionDeclNode*)arena_->alloc(sizeof(ASTUnionDeclNode));
+    union_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    new (union_decl->fields) DynamicArray<ASTNode*>(*arena_);
+
+    // Handle fields
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in union declaration");
+        expect(TOKEN_COLON, "Expected ':' after field name");
+        ASTNode* type_node = parseType();
+
+        ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        field_data->name = name_token.value.identifier;
+        field_data->type = type_node;
+
+        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        field_node->type = NODE_STRUCT_FIELD;
+        field_node->loc = name_token.location;
+        field_node->as.struct_field = field_data;
+
+        union_decl->fields->append(field_node);
+
+        // If the next token is not a closing brace, it must be a comma.
+        if (peek().type != TOKEN_RBRACE) {
+            expect(TOKEN_COMMA, "Expected ',' or '}' after union field");
+        }
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to end union declaration");
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_UNION_DECL;
+    node->loc = union_token.location;
+    node->as.union_decl = union_decl;
 
     return node;
 }
