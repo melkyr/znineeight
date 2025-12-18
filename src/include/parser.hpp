@@ -228,6 +228,9 @@ private:
     /** @brief Parses an enum declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseEnumDeclaration();
 
+    /** @brief Parses a comptime block. Helper for `parseStatement`. */
+    ASTNode* parseComptimeBlock();
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;

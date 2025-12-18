@@ -1021,6 +1021,15 @@ Represents a `comptime` block, which contains an expression that must be evaluat
     };
     ```
 
+#### Parsing Logic (`parseComptimeBlock`)
+The `parseComptimeBlock` function is responsible for parsing a `comptime` block. It is invoked from `parseStatement` when a `comptime` keyword is found. The function adheres to the grammar:
+`'comptime' '{' expression '}'`
+
+- It consumes the `comptime` and `{` tokens.
+- It then calls `parseExpression` to parse the expression within the block.
+- It requires that the block contains exactly one expression.
+- Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
+
 ## 13. Type Expression Parsing
 
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:

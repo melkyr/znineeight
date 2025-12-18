@@ -99,7 +99,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 72. **Task 72:** Implement `parseAwaitExpression`. (DONE - NOT SUPPORTED BY DESIGN)
     - Implement the parsing logic for `await` expressions.
     - Update the expression parsing hierarchy.
-73. **Task 73:** Implement `parseComptimeBlock`.
+73. **Task 73:** Implement `parseComptimeBlock`. (DONE)
     - Implement the parsing logic for `comptime` blocks.
     - Update `parseStatement` to dispatch to the new function.
 74. **Task 74:** Create Integration Tests for the Parser.

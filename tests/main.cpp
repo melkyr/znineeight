@@ -145,6 +145,12 @@ TEST_FUNC(Parser_CatchExpression_Error_MissingElseExpr);
 TEST_FUNC(Parser_CatchExpression_Error_IncompletePayload);
 TEST_FUNC(Parser_CatchExpression_Error_MissingPipe);
 
+// Comptime Block Parser Tests
+TEST_FUNC(Parser_ComptimeBlock_Valid);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingExpression);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingOpeningBrace);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -322,6 +328,12 @@ int main(int argc, char* argv[]) {
         test_Parser_CatchExpression_Error_MissingPipe,
         test_Parser_ErrDeferStatement_Simple,
         test_Parser_ErrDeferStatement_Error_MissingBlock,
+
+        // Comptime block tests
+        test_Parser_ComptimeBlock_Valid,
+        test_Parser_ComptimeBlock_Error_MissingExpression,
+        test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
+        test_Parser_ComptimeBlock_Error_MissingClosingBrace,
     };
 
     int passed = 0;

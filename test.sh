@@ -44,6 +44,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_for_statement.cpp \
     tests/test_parser_defer.cpp \
     tests/test_parser_errdefer.cpp \
+    tests/test_parser_comptime.cpp \
     tests/test_parser_return.cpp \
     tests/test_parser_expressions.cpp \
     tests/test_parser_bitwise_expr.cpp \
