@@ -443,9 +443,11 @@ struct ASTUnionDeclNode {
 /**
  * @struct ASTEnumDeclNode
  * @brief Represents an `enum` declaration. Allocated out-of-line.
+ * @var ASTEnumDeclNode::backing_type The optional explicit backing type for the enum (can be NULL).
  * @var ASTEnumDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the enum fields, allowing for explicit values.
  */
 struct ASTEnumDeclNode {
+    ASTNode* backing_type; // Can be NULL
     DynamicArray<ASTNode*>* fields;
 };
 

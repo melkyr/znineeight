@@ -866,18 +866,36 @@ The `parseUnionDeclaration` function is responsible for parsing anonymous union 
 
 ### `ASTEnumDeclNode`
 Represents an `enum` definition.
-*   **Zig Code:** `enum { Red, Green, Blue }`, `enum { A = 1, B = 2 }`
+*   **Zig Code:** `enum { Red, Green, Blue }`, `enum(u8) { A = 1, B = 2 }`
 *   **Structure:**
     ```cpp
     /**
      * @struct ASTEnumDeclNode
      * @brief Represents an `enum` declaration. Allocated out-of-line.
+     * @var ASTEnumDeclNode::backing_type The optional explicit backing type for the enum (can be NULL).
      * @var ASTEnumDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the enum fields, allowing for explicit values.
      */
     struct ASTEnumDeclNode {
+        ASTNode* backing_type; // Can be NULL
         DynamicArray<ASTNode*>* fields;
     };
     ```
+
+#### Parsing Logic (`parseEnumDeclaration`)
+The `parseEnumDeclaration` function handles anonymous enum literals. It is invoked from `parsePrimaryExpr` when an `enum` keyword is encountered. The function adheres to the grammar:
+`'enum' ('(' type ')')? '{' (field (',' field)* ','?)? '}'`
+`field ::= IDENTIFIER ('=' expr)?`
+
+- It consumes the `enum` token.
+- It then checks for an optional parenthesized backing type, which is parsed by `parseType`.
+- It requires an opening `{` to start the member list.
+- It enters a loop to parse the members, which continues as long as the next token is not `}`.
+- Inside the loop, it expects an identifier for the member's name.
+- It checks for an optional `=` followed by an initializer expression, which is parsed by `parseExpression`.
+- For simplicity and to match the AST design, each enum member is stored as an `ASTVarDeclNode`.
+- The loop correctly handles an optional trailing comma.
+- It correctly handles empty enums (`{}`).
+- Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
 
 ## 10. Error Handling Node Types
 

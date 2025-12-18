@@ -114,6 +114,21 @@ TEST_FUNC(Parser_StructDeclaration_MultipleFields);
 TEST_FUNC(Parser_StructDeclaration_WithTrailingComma);
 TEST_FUNC(Parser_StructDeclaration_ComplexFieldType);
 
+// Enum Parser Tests
+TEST_FUNC(Parser_Enum_Empty);
+TEST_FUNC(Parser_Enum_SimpleMembers);
+TEST_FUNC(Parser_Enum_TrailingComma);
+TEST_FUNC(Parser_Enum_WithValues);
+TEST_FUNC(Parser_Enum_MixedMembers);
+TEST_FUNC(Parser_Enum_WithBackingType);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingOpeningBrace);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingClosingBrace);
+TEST_FUNC(Parser_Enum_SyntaxError_NoComma);
+TEST_FUNC(Parser_Enum_SyntaxError_InvalidMember);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingInitializer);
+TEST_FUNC(Parser_Enum_SyntaxError_BackingTypeNoParens);
+TEST_FUNC(Parser_Enum_ComplexInitializer);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -255,6 +270,21 @@ int main(int argc, char* argv[]) {
         test_Parser_StructDeclaration_MultipleFields,
         test_Parser_StructDeclaration_WithTrailingComma,
         test_Parser_StructDeclaration_ComplexFieldType,
+
+        // Enum Parser Tests
+        test_Parser_Enum_Empty,
+        test_Parser_Enum_SimpleMembers,
+        test_Parser_Enum_TrailingComma,
+        test_Parser_Enum_WithValues,
+        test_Parser_Enum_MixedMembers,
+        test_Parser_Enum_WithBackingType,
+        test_Parser_Enum_SyntaxError_MissingOpeningBrace,
+        test_Parser_Enum_SyntaxError_MissingClosingBrace,
+        test_Parser_Enum_SyntaxError_NoComma,
+        test_Parser_Enum_SyntaxError_InvalidMember,
+        test_Parser_Enum_SyntaxError_MissingInitializer,
+        test_Parser_Enum_SyntaxError_BackingTypeNoParens,
+        test_Parser_Enum_ComplexInitializer,
     };
 
     int passed = 0;

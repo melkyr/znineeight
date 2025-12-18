@@ -120,6 +120,8 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseStructDeclaration();
         case TOKEN_UNION:
             return parseUnionDeclaration();
+        case TOKEN_ENUM:
+            return parseEnumDeclaration();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -407,6 +409,77 @@ ASTNode* Parser::parseSwitchExpression() {
     node->type = NODE_SWITCH_EXPR;
     node->loc = switch_token.location;
     node->as.switch_expr = switch_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses an enum declaration type expression.
+ *
+ * This function handles anonymous enum literals. It parses an optional parenthesized
+ * backing type, followed by a comma-separated list of members inside braces.
+ * Each member can be a simple identifier or an identifier with an explicit
+ * integer value.
+ *
+ * Grammar:
+ * `enum ('(' type ')')? '{' (member (',' member)* ','?)? '}'`
+ * `member ::= IDENTIFIER ('=' expr)?`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed enum declaration.
+ *         The node is allocated from the parser's arena.
+ */
+ASTNode* Parser::parseEnumDeclaration() {
+    Token enum_token = expect(TOKEN_ENUM, "Expected 'enum' keyword");
+    ASTNode* backing_type = NULL;
+
+    // Parse optional backing type
+    if (match(TOKEN_LPAREN)) {
+        backing_type = parseType();
+        expect(TOKEN_RPAREN, "Expected ')' after enum backing type");
+    }
+
+    expect(TOKEN_LBRACE, "Expected '{' to begin enum declaration");
+
+    ASTEnumDeclNode* enum_decl = (ASTEnumDeclNode*)arena_->alloc(sizeof(ASTEnumDeclNode));
+    enum_decl->backing_type = backing_type;
+    enum_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    new (enum_decl->fields) DynamicArray<ASTNode*>(*arena_);
+
+    // Handle members
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        Token name_token = expect(TOKEN_IDENTIFIER, "Expected member name in enum declaration");
+        ASTNode* initializer = NULL;
+
+        if (match(TOKEN_EQUAL)) {
+            initializer = parseExpression();
+        }
+
+        ASTVarDeclNode* field_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+        field_data->name = name_token.value.identifier;
+        field_data->type = NULL; // Enums members don't have a type annotation
+        field_data->initializer = initializer;
+        field_data->is_const = true; // Enum members are constants
+        field_data->is_mut = false;
+
+        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        field_node->type = NODE_VAR_DECL;
+        field_node->loc = name_token.location;
+        field_node->as.var_decl = field_data;
+
+        enum_decl->fields->append(field_node);
+
+        // If the next token is not a closing brace, it must be a comma.
+        if (peek().type != TOKEN_RBRACE) {
+            expect(TOKEN_COMMA, "Expected ',' or '}' after enum member");
+        }
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to end enum declaration");
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    node->type = NODE_ENUM_DECL;
+    node->loc = enum_token.location;
+    node->as.enum_decl = enum_decl;
 
     return node;
 }
