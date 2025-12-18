@@ -117,6 +117,11 @@ TEST_FUNC(Parser_StructDeclaration_ComplexFieldType);
 // Enum Parser Tests
 TEST_FUNC(Parser_Enum_Empty);
 TEST_FUNC(Parser_Enum_SimpleMembers);
+
+// Try Expression Parser Tests
+TEST_FUNC(Parser_TryExpr_Simple);
+TEST_FUNC(Parser_TryExpr_Chained);
+TEST_FUNC(Parser_TryExpr_InvalidSyntax);
 TEST_FUNC(Parser_Enum_TrailingComma);
 TEST_FUNC(Parser_Enum_WithValues);
 TEST_FUNC(Parser_Enum_MixedMembers);
@@ -285,6 +290,11 @@ int main(int argc, char* argv[]) {
         test_Parser_Enum_SyntaxError_MissingInitializer,
         test_Parser_Enum_SyntaxError_BackingTypeNoParens,
         test_Parser_Enum_ComplexInitializer,
+
+        // Try Expression Parser tests
+        test_Parser_TryExpr_Simple,
+        test_Parser_TryExpr_Chained,
+        test_Parser_TryExpr_InvalidSyntax,
     };
 
     int passed = 0;

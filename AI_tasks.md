@@ -86,7 +86,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 67. **Task 67:** Implement `parseEnumDeclaration`.
     - Implement the parsing logic for `enum` declarations.
     - This should be handled as a type expression.
-68. **Task 68:** Implement `parseTryExpression`.
+68. **Task 68:** Implement `parseTryExpression`. (DONE)
     - Implement the parsing logic for `try` expressions.
     - Update the expression parsing hierarchy.
 69. **Task 69:** Implement `parseCatchExpression`.

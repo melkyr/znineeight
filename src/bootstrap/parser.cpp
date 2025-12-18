@@ -200,6 +200,19 @@ ASTNode* Parser::parsePostfixExpression() {
  *         The node is allocated from the parser's arena.
  */
 ASTNode* Parser::parseUnaryExpr() {
+    if (peek().type == TOKEN_TRY) {
+        Token try_token = advance();
+        ASTNode* expression = parseUnaryExpr(); // Recursively call to handle chained operators e.g. try !foo()
+
+        ASTTryExprNode try_expr_node;
+        try_expr_node.expression = expression;
+
+        ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        node->type = NODE_TRY_EXPR;
+        node->loc = try_token.location;
+        node->as.try_expr = try_expr_node;
+        return node;
+    }
     DynamicArray<Token> operators(*arena_);
 
     while (peek().type == TOKEN_MINUS || peek().type == TOKEN_BANG || peek().type == TOKEN_TILDE || peek().type == TOKEN_AMPERSAND) {
