@@ -152,6 +152,13 @@ TEST_FUNC(Parser_ComptimeBlock_Error_MissingExpression);
 TEST_FUNC(Parser_ComptimeBlock_Error_MissingOpeningBrace);
 TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
 
+// Parser Integration Tests
+TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
+// TEST_FUNC(ParserIntegration_IfWithComplexCondition);
+TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
+// TEST_FUNC(ParserIntegration_ForLoopOverSlice);
+// TEST_FUNC(ParserIntegration_ComprehensiveFunction);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -336,6 +343,13 @@ int main(int argc, char* argv[]) {
         test_Parser_ComptimeBlock_Error_MissingExpression,
         test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
         test_Parser_ComptimeBlock_Error_MissingClosingBrace,
+
+        // Parser Integration Tests
+        test_ParserIntegration_VarDeclWithBinaryExpr,
+        // test_ParserIntegration_IfWithComplexCondition,
+        test_ParserIntegration_WhileWithFunctionCall,
+        // test_ParserIntegration_ForLoopOverSlice,
+        // test_ParserIntegration_ComprehensiveFunction,
     };
 
     int passed = 0;
