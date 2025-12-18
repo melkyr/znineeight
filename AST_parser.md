@@ -844,12 +844,25 @@ Represents a `union` definition.
     /**
      * @struct ASTUnionDeclNode
      * @brief Represents a `union` declaration. Allocated out-of-line.
-     * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the union fields.
+     * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTNode (of type NODE_STRUCT_FIELD) representing the union fields.
      */
     struct ASTUnionDeclNode {
         DynamicArray<ASTNode*>* fields;
     };
     ```
+
+#### Parsing Logic (`parseUnionDeclaration`)
+The `parseUnionDeclaration` function is responsible for parsing anonymous union literals, which are treated as type expressions. It is invoked from `parsePrimaryExpr` when a `union` keyword is found. The function's logic is nearly identical to that of `parseStructDeclaration`. It adheres to the grammar:
+`'union' '{' (field (',' field)* ','?)? '}'`
+`field ::= IDENTIFIER ':' type`
+
+- It consumes the `union` and `{` tokens.
+- It then enters a loop that continues as long as the next token is not `}`.
+- Inside the loop, it parses a single field by expecting an identifier, a colon, and a type expression (parsed via `parseType`).
+- It constructs an `ASTStructFieldNode` for each field and appends it to the `DynamicArray` in the `ASTUnionDeclNode`. This is the same node type used for struct fields, as the syntax is identical.
+- The loop correctly handles an optional trailing comma.
+- It correctly handles empty unions (`{}`).
+- Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
 
 ### `ASTEnumDeclNode`
 Represents an `enum` definition.
