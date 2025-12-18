@@ -105,7 +105,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 74. **Task 74:** Create Integration Tests for the Parser.
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement with complex expressions).
     - Verify that the resulting AST is structured correctly.
-Task 75: Implement Range Operator (..) Lexing
+75.  Task 75: Implement Range Operator (..) Lexing
 
     Add TOKEN_RANGE to the TokenType enum in src/include/lexer.hpp
     Update the lexer's dot handling logic in src/bootstrap/lexer.cpp to recognize .. as TOKEN_RANGE before attempting to parse ... (ELLIPSIS)
