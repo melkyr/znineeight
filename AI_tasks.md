@@ -95,8 +95,8 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 70. **Task 70:** Implement `parseErrDeferStatement`.
     - Implement the parsing logic for `errdefer` statements.
     - Update `parseStatement` to dispatch to the new function.
-71. **Task 71:** Implement `parseAsyncExpression`. (DONE)
-72. **Task 72:** Implement `parseAwaitExpression`.
+71. **Task 71:** Implement `parseAsyncExpression`. (DONE - NOT SUPPORTED BY DESIGN)
+72. **Task 72:** Implement `parseAwaitExpression`. (DONE - NOT SUPPORTED BY DESIGN)
     - Implement the parsing logic for `await` expressions.
     - Update the expression parsing hierarchy.
 73. **Task 73:** Implement `parseComptimeBlock`.
