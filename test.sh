@@ -50,6 +50,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_switch.cpp \
     tests/test_parser_struct.cpp \
     tests/test_parser_union.cpp \
+    tests/test_parser_enums.cpp \
     -Isrc/include \
     -o test_runner
 

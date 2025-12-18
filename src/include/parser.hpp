@@ -212,6 +212,9 @@ private:
     /** @brief Parses a union declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseUnionDeclaration();
 
+    /** @brief Parses an enum declaration type expression. Helper for `parsePrimaryExpr`. */
+    ASTNode* parseEnumDeclaration();
+
     Token* tokens_;
     size_t token_count_;
     size_t current_index_;
