@@ -168,6 +168,13 @@ public:
     const Token& peek() const;
 
     /**
+     * @brief Returns the token after the current one without consuming it.
+     * @return A constant reference to the next token.
+     * @pre The parser is not at the end of the token stream.
+     */
+    const Token& peekNext() const;
+
+    /**
      * @brief Checks if the parser has consumed all tokens up to the final EOF token.
      * @return True if the current token is EOF, false otherwise.
      */

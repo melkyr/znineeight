@@ -87,6 +87,30 @@ TEST_FUNC(token_fields_are_initialized) {
     Token token = lexer.nextToken();
     ASSERT_EQ(token.type, TOKEN_FN);
     ASSERT_TRUE(token.value.integer == 0);
+}
+TEST_FUNC(Lexer_IntegerFollowedByRange) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "0..10", 5);
+
+    Lexer lexer(sm, interner, arena, file_id);
+    DynamicArray<Token> tokens(arena);
+    Token token;
+
+    do {
+        token = lexer.nextToken();
+        tokens.append(token);
+    } while (token.type != TOKEN_EOF);
+
+    ASSERT_EQ(tokens.length(), 4);
+    ASSERT_EQ(tokens[0].type, TOKEN_INTEGER_LITERAL);
+    ASSERT_EQ(tokens[0].value.integer, 0);
+    ASSERT_EQ(tokens[1].type, TOKEN_RANGE);
+    ASSERT_EQ(tokens[2].type, TOKEN_INTEGER_LITERAL);
+    ASSERT_EQ(tokens[2].value.integer, 10);
+    ASSERT_EQ(tokens[3].type, TOKEN_EOF);
+
     return true;
 }
 
