@@ -7,6 +7,9 @@
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
+// Define a reasonable recursion limit to prevent stack overflow with malicious input.
+#define MAX_PARSER_RECURSION_DEPTH 500
+
 /**
  * @class Parser
  * @brief Consumes a stream of tokens and produces an Abstract Syntax Tree (AST).
@@ -235,6 +238,7 @@ private:
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
+    int recursion_depth_;
 };
 
 #endif // PARSER_HPP

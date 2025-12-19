@@ -81,6 +81,7 @@ TEST_FUNC(Parser_Struct_Error_MissingRBrace);
 TEST_FUNC(Parser_Struct_Error_MissingColon);
 TEST_FUNC(Parser_Struct_Error_MissingType);
 TEST_FUNC(Parser_Struct_Error_InvalidField);
+TEST_FUNC(Parser_RecursionLimit_Aborts);
 TEST_FUNC(Parser_FnDecl_ValidEmpty);
 TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
 TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
@@ -267,6 +268,7 @@ int main(int argc, char* argv[]) {
         test_Parser_Struct_Error_MissingColon,
         test_Parser_Struct_Error_MissingType,
         test_Parser_Struct_Error_InvalidField,
+        test_Parser_RecursionLimit_Aborts,
         test_Parser_FnDecl_ValidEmpty,
         test_Parser_FnDecl_Error_NonEmptyParams,
         test_Parser_FnDecl_Error_NonEmptyBody,

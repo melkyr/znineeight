@@ -97,3 +97,21 @@ TEST_FUNC(Parser_Struct_Error_InvalidField) {
     ASSERT_TRUE(expect_parser_abort("struct { 123 }"));
     return true;
 }
+
+TEST_FUNC(Parser_RecursionLimit_Aborts) {
+    std::string source = "if (";
+    for (int i = 0; i < 300; ++i) {
+        source += "(";
+    }
+    source += "a";
+    for (int i = 0; i < 300; ++i) {
+        source += ")";
+    }
+    source += ") {}";
+
+    // This test should cause the parser to abort due to the recursion limit.
+    // The expect_parser_abort function returns true if the child process aborts as expected.
+    ASSERT_TRUE(expect_parser_abort(source.c_str()));
+
+    return true;
+}

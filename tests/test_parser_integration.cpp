@@ -68,6 +68,76 @@ TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr) {
     return true;
 }
 
+TEST_FUNC(ParserIntegration_ExtremelyComplexExpression) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    DynamicArray<Token> tokens(arena);
+
+    const char* source = "if (w + (x * (y - z))) {}";
+    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+
+    ASTNode* node = parser.parseIfStatement();
+    ASSERT_TRUE(node != NULL);
+    ASSERT_TRUE(node->type == NODE_IF_STMT);
+
+    return true;
+}
+
+TEST_FUNC(ParserIntegration_IfWithDeeplyNestedConditions) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    DynamicArray<Token> tokens(arena);
+
+    const char* source = "if ((a || b) && (c || (d && e))) {}";
+    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+
+    ASTNode* node = parser.parseIfStatement();
+
+    ASSERT_TRUE(node != NULL);
+    ASSERT_TRUE(node->type == NODE_IF_STMT);
+
+    ASTIfStmtNode* if_stmt = node->as.if_stmt;
+    ASSERT_TRUE(if_stmt != NULL);
+
+    ASTNode* condition = if_stmt->condition;
+    ASSERT_TRUE(condition != NULL);
+    ASSERT_TRUE(condition->type == NODE_BINARY_OP);
+
+    // Top-level operator should be &&
+    ASTBinaryOpNode* top_and_op = condition->as.binary_op;
+    ASSERT_TRUE(top_and_op->op == TOKEN_AND);
+
+    // Left side of && should be (a || b)
+    ASTNode* left_or_node = top_and_op->left;
+    ASSERT_TRUE(left_or_node != NULL);
+    ASSERT_TRUE(left_or_node->type == NODE_BINARY_OP);
+    ASTBinaryOpNode* left_or_op = left_or_node->as.binary_op;
+    ASSERT_TRUE(left_or_op->op == TOKEN_OR);
+    ASSERT_STREQ(left_or_op->left->as.identifier.name, "a");
+    ASSERT_STREQ(left_or_op->right->as.identifier.name, "b");
+
+    // Right side of && should be (c || (d && e))
+    ASTNode* right_or_node = top_and_op->right;
+    ASSERT_TRUE(right_or_node != NULL);
+    ASSERT_TRUE(right_or_node->type == NODE_BINARY_OP);
+    ASTBinaryOpNode* right_or_op = right_or_node->as.binary_op;
+    ASSERT_TRUE(right_or_op->op == TOKEN_OR);
+    ASSERT_STREQ(right_or_op->left->as.identifier.name, "c");
+
+    // Right side of || should be (d && e)
+    ASTNode* nested_and_node = right_or_op->right;
+    ASSERT_TRUE(nested_and_node != NULL);
+    ASSERT_TRUE(nested_and_node->type == NODE_BINARY_OP);
+    ASTBinaryOpNode* nested_and_op = nested_and_node->as.binary_op;
+    ASSERT_TRUE(nested_and_op->op == TOKEN_AND);
+    ASSERT_STREQ(nested_and_op->left->as.identifier.name, "d");
+    ASSERT_STREQ(nested_and_op->right->as.identifier.name, "e");
+
+    return true;
+}
+
 // TEST_FUNC(ParserIntegration_ForLoopOverSlice) {
 //     ArenaAllocator arena(1024 * 1024);
 //     StringInterner interner(arena);

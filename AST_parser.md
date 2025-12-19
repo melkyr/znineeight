@@ -1070,6 +1070,9 @@ After printing the message (on Windows), the function **always** calls `abort()`
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
 
+### Recursion Depth Check
+To prevent stack overflows when parsing deeply nested expressions, the `parsePrecedenceExpr` function includes a recursion depth check. If the nesting level exceeds `MAX_PARSER_RECURSION_DEPTH` (defaulting to 255), the parser will call `error()` and abort. This is a crucial safety measure for the target environment, which may have limited stack space.
+
 ---
 
 ## Deprecated
