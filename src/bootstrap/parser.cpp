@@ -27,6 +27,15 @@ const Token& Parser::peek() const {
     return tokens_[current_index_];
 }
 
+const Token& Parser::peekNext() const {
+    if (current_index_ + 1 >= token_count_) {
+        static Token eof_token;
+        eof_token.type = TOKEN_EOF;
+        return eof_token;
+    }
+    return tokens_[current_index_ + 1];
+}
+
 bool Parser::is_at_end() const {
     // Check if we are at the very last token, which should be EOF.
     // The loop in `create_parser_for_test` includes the EOF token in the count.
@@ -157,56 +166,75 @@ ASTNode* Parser::parsePrimaryExpr() {
     }
 }
 
-/**
- * @brief Parses a postfix expression, including function calls and array accesses.
- *
- * This function handles expressions that are built upon primary expressions, such as
- * `my_func()`, `my_array[index]`, or chained calls like `get_array()[0]()`. It
- * parses the base expression and then loops to handle any number of trailing
- * postfix operations.
- *
- * Grammar:
- * `postfix_expr ::= primary_expr ( '(' (expr (',' expr)* ','?)? ')' | '[' expr ']' )*`
- *
- * @return A pointer to an `ASTNode` representing the parsed postfix expression.
- *         The node is allocated from the parser's arena.
- */
 ASTNode* Parser::parsePostfixExpression() {
     ASTNode* expr = parsePrimaryExpr();
 
     while (true) {
         if (match(TOKEN_LPAREN)) {
-            // Function Call
+            // Function call logic (unchanged)
             ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
             call_node->callee = expr;
             call_node->args = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
             new (call_node->args) DynamicArray<ASTNode*>(*arena_);
-
             if (!match(TOKEN_RPAREN)) {
                 do {
                     call_node->args->append(parseExpression());
                 } while (match(TOKEN_COMMA) && peek().type != TOKEN_RPAREN);
                 expect(TOKEN_RPAREN, "Expected ')' after function arguments");
             }
-
             ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
             new_expr_node->type = NODE_FUNCTION_CALL;
-            new_expr_node->loc = expr->loc; // Use location of the callee
+            new_expr_node->loc = expr->loc;
             new_expr_node->as.function_call = call_node;
             expr = new_expr_node;
-        } else if (match(TOKEN_LBRACKET)) {
-            // Array Access
-            ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
-            access_node->array = expr;
-            access_node->index = parseExpression();
-            expect(TOKEN_RBRACKET, "Expected ']' after array index");
+        }
+        else if (match(TOKEN_LBRACKET)) {
+            // Check if this is a slice expression [start..end], [..end], [start..], or [..]
+            if (peek().type == TOKEN_RANGE ||
+                (peek().type != TOKEN_RBRACKET && peekNext().type == TOKEN_RANGE)) {
 
-            ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-            new_expr_node->type = NODE_ARRAY_ACCESS;
-            new_expr_node->loc = expr->loc; // Use location of the array expression
-            new_expr_node->as.array_access = access_node;
-            expr = new_expr_node;
-        } else {
+                ASTArraySliceNode* slice_node = (ASTArraySliceNode*)arena_->alloc(sizeof(ASTArraySliceNode));
+                slice_node->array = expr;
+
+                // Parse start index (if present)
+                if (peek().type != TOKEN_RANGE) {
+                    slice_node->start = parseExpression();
+                    expect(TOKEN_RANGE, "Expected '..' after start index in slice expression");
+                } else {
+                    slice_node->start = NULL; // Implicit start (array[..end])
+                    advance(); // Consume the '..'
+                }
+
+                // Parse end index (if present)
+                if (peek().type != TOKEN_RBRACKET) {
+                    slice_node->end = parseExpression();
+                } else {
+                    slice_node->end = NULL; // Implicit end (array[start..] or array[..])
+                }
+
+                expect(TOKEN_RBRACKET, "Expected ']' after slice expression");
+
+                ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+                new_expr_node->type = NODE_ARRAY_SLICE;
+                new_expr_node->loc = expr->loc;
+                new_expr_node->as.array_slice = slice_node;
+                expr = new_expr_node;
+            }
+            else {
+                // Regular array access [index]
+                ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
+                access_node->array = expr;
+                access_node->index = parseExpression();
+                expect(TOKEN_RBRACKET, "Expected ']' after array index");
+
+                ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+                new_expr_node->type = NODE_ARRAY_ACCESS;
+                new_expr_node->loc = expr->loc;
+                new_expr_node->as.array_access = access_node;
+                expr = new_expr_node;
+            }
+        }
+        else {
             break;
         }
     }
