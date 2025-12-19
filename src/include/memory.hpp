@@ -29,7 +29,12 @@ public:
     ArenaAllocator(size_t capacity) : offset(0), capacity(capacity) {
         buffer = (u8*)malloc(capacity);
     }
-
+    /**
+     * @brief Destroys the ArenaAllocator, freeing the entire memory arena.
+     */
+    ~ArenaAllocator() {
+        free(buffer);
+    }
 
     /**
      * @brief Allocates a block of memory of a given size.
