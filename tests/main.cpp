@@ -152,6 +152,9 @@ TEST_FUNC(Parser_ComptimeBlock_Error_MissingExpression);
 TEST_FUNC(Parser_ComptimeBlock_Error_MissingOpeningBrace);
 TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
 
+// Function Parser Tests
+TEST_FUNC(Parser_NonEmptyFunctionBody);
+
 // Parser Integration Tests
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
 // TEST_FUNC(ParserIntegration_IfWithComplexCondition);
@@ -343,6 +346,9 @@ int main(int argc, char* argv[]) {
         test_Parser_ComptimeBlock_Error_MissingExpression,
         test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
         test_Parser_ComptimeBlock_Error_MissingClosingBrace,
+
+        // Function Parser Tests
+        test_Parser_NonEmptyFunctionBody,
 
         // Parser Integration Tests
         test_ParserIntegration_VarDeclWithBinaryExpr,
