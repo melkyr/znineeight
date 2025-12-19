@@ -30,12 +30,6 @@ public:
         buffer = (u8*)malloc(capacity);
     }
 
-    /**
-     * @brief Destroys the ArenaAllocator, freeing the entire memory arena.
-     */
-    ~ArenaAllocator() {
-        free(buffer);
-    }
 
     /**
      * @brief Allocates a block of memory of a given size.
@@ -163,6 +157,10 @@ public:
      */
     size_t length() const {
         return len;
+    }
+
+    size_t getCapacity() const {
+        return cap;
     }
 
     /**

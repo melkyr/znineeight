@@ -78,6 +78,18 @@ TEST_FUNC(single_char_tokens) {
     return true;
 }
 
+TEST_FUNC(token_fields_are_initialized) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "fn", 2);
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+    ASSERT_EQ(token.type, TOKEN_FN);
+    ASSERT_TRUE(token.value.integer == 0);
+    return true;
+}
+
 TEST_FUNC(Lexer_ErrorConditions) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);

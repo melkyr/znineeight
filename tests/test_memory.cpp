@@ -23,6 +23,16 @@ TEST_FUNC(dynamic_array_growth) {
     return true;
 }
 
+TEST_FUNC(dynamic_array_growth_from_zero) {
+    ArenaAllocator arena(1024);
+    DynamicArray<int> arr(arena);
+    arr.append(42);
+    ASSERT_EQ(arr.length(), 1);
+    ASSERT_TRUE(arr.getCapacity() > 0);
+    ASSERT_EQ(arr[0], 42);
+    return true;
+}
+
 TEST_FUNC(arena_allocator_actually_allocates) {
     ArenaAllocator arena(1024);
     void* ptr = arena.alloc(16);
