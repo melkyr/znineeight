@@ -825,8 +825,14 @@ ASTNode* Parser::parseDeferStatement() {
 
 /**
  * @brief Parses a top-level function declaration.
- *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
- * @note This parser currently enforces that the parameter list and function body are empty.
+ *
+ * This function handles the parsing of a complete function, including its name,
+ * parameters (currently unsupported), return type, and body.
+ *
+ * Grammar:
+ * `fn IDENT '(' ')' '->' type_expr block_statement`
+ *
+ * @note This parser currently enforces that the parameter list is empty.
  * @return A pointer to the ASTNode representing the function declaration.
  */
 ASTNode* Parser::parseFnDecl() {
@@ -842,21 +848,10 @@ ASTNode* Parser::parseFnDecl() {
     expect(TOKEN_ARROW, "Expected '->' for return type in function declaration");
     ASTNode* return_type_node = parseType();
 
-    Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' for function body");
-    if (peek().type != TOKEN_RBRACE) {
-        error("Non-empty function bodies are not yet supported");
+    ASTNode* body_node = parseBlockStatement();
+    if (body_node == NULL) {
+        error("Failed to parse function body");
     }
-    expect(TOKEN_RBRACE, "Expected '}' to close function body");
-
-    // Create the empty body node
-    ASTBlockStmtNode body_stmt;
-    body_stmt.statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    new (body_stmt.statements) DynamicArray<ASTNode*>(*arena_); // Placement new
-
-    ASTNode* body_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    body_node->type = NODE_BLOCK_STMT;
-    body_node->loc = lbrace_token.location;
-    body_node->as.block_stmt = body_stmt;
 
     // Create the function declaration node
     ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
@@ -887,6 +882,9 @@ ASTNode* Parser::parseFnDecl() {
  */
 ASTNode* Parser::parseStatement() {
     switch (peek().type) {
+        case TOKEN_CONST:
+        case TOKEN_VAR:
+            return parseVarDecl();
         case TOKEN_DEFER:
             return parseDeferStatement();
         case TOKEN_ERRDEFER:

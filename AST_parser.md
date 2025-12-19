@@ -729,12 +729,12 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
     ```
 
 #### Parsing Logic (`parseFnDecl`)
-The `parseFnDecl` function is responsible for parsing function declarations. It strictly follows the grammar:
-`'fn' IDENT '(' ')' '->' type_expr '{' '}'`
+The `parseFnDecl` function is responsible for parsing function declarations. It follows the grammar:
+`'fn' IDENT '(' ')' '->' type_expr block_statement`
 
-- It consumes the `fn` keyword, the function's identifier, an opening parenthesis, a closing parenthesis, an arrow `->`, a type expression, an opening brace, and a closing brace.
-- **Parameter lists must be empty.** Any tokens between the parentheses will result in a fatal error. This will be expanded in a future task.
-- **Function bodies must be empty.** Any tokens between the braces will result in a fatal error. This will be expanded in a future task.
+- It consumes the `fn` keyword, the function's identifier, an opening and closing parenthesis, an arrow `->`, and a type expression.
+- After parsing the function signature, it calls `parseBlockStatement` to parse the function's body. This allows function bodies to contain any valid sequence of statements that the parser supports.
+- **Parameter lists must be empty.** Any tokens between the parentheses will result in a fatal error. This functionality will be expanded in a future task.
 - The return type is mandatory.
 - Any deviation from this grammar results in a fatal error, adhering to the parser's no-recovery policy.
 
