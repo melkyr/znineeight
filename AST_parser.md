@@ -370,13 +370,6 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
 - The result of the postfix operation (e.g., the `ASTFunctionCallNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
 - If no postfix operator is found, the loop terminates, and the function returns the constructed expression tree.
 
-- **For an array slice**:
-  - It checks if the expression is a slice by looking ahead for a `TOKEN_RANGE` (`..`) token.
-  - It constructs an `ASTArraySliceNode`.
-  - It parses an optional start expression before the `..`.
-  - It parses an optional end expression after the `..`.
-  - It expects a closing `TOKEN_RBRACKET`.
-
 
 #### `ASTBinaryOpNode`
 Represents an operation with two operands.
