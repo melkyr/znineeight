@@ -3,11 +3,11 @@
 #include "../src/include/source_manager.hpp"
 #include "../src/include/string_interner.hpp"
 
-TEST_FUNC(delimiters_lexing) {
+TEST_FUNC(Lexer_Delimiters) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
     SourceManager sm(arena);
-    const char* test_content = ": -> => ... .. . ..a";
+    const char* test_content = ": -> =>";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
     Lexer lexer(sm, interner, arena, 0);
@@ -25,35 +25,39 @@ TEST_FUNC(delimiters_lexing) {
     ASSERT_EQ(6, token.location.column);
 
     token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_EOF, token.type);
+
+    return true;
+}
+
+TEST_FUNC(Lexer_DotOperators) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    const char* test_content = ". .. ... .ident";
+    sm.addFile("test_dots.zig", test_content, strlen(test_content));
+
+    Lexer lexer(sm, interner, arena, 0);
+
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_DOT, token.type);
+    ASSERT_EQ(1, token.location.column);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_RANGE, token.type);
+    ASSERT_EQ(3, token.location.column);
+
+    token = lexer.nextToken();
     ASSERT_EQ(TOKEN_ELLIPSIS, token.type);
-    ASSERT_EQ(9, token.location.column);
-
-    // Malformed .. should be two dots
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_DOT, token.type);
-    ASSERT_EQ(13, token.location.column);
+    ASSERT_EQ(6, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_DOT, token.type);
-    ASSERT_EQ(14, token.location.column);
-
-    // Malformed .
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_DOT, token.type);
-    ASSERT_EQ(16, token.location.column);
-
-    // Malformed ..a should be two dots and an identifier
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_DOT, token.type);
-    ASSERT_EQ(18, token.location.column);
-
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_DOT, token.type);
-    ASSERT_EQ(19, token.location.column);
+    ASSERT_EQ(10, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
-    ASSERT_EQ(20, token.location.column);
+    ASSERT_EQ(11, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);

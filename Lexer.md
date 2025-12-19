@@ -178,3 +178,4 @@ The following keywords for compile-time and special functions are also implement
 | `TOKEN_ARROW`     | `->`   | Yes         | Implemented as part of Task 23. |
 | `TOKEN_FAT_ARROW` | `=>`   | Yes         | Implemented as part of Task 23. |
 | `TOKEN_ELLIPSIS`  | `...`  | Yes         | Implemented as part of Task 23. |
+| `TOKEN_RANGE`     | `..`   | Yes         | Implemented as part of Task 75. |
