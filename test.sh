@@ -57,6 +57,8 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_catch_expr.cpp \
     tests/test_parser_integration.cpp \
     tests/test_parser_functions.cpp \
+    tests/test_parser_bug.cpp \
+    tests/test_parser_recursion.cpp \
     -Isrc/include \
     -o test_runner
 

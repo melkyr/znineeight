@@ -404,9 +404,18 @@ The `parseSwitchExpression` function handles the `switch` expression. It adheres
 | 6          | `^`                            | Left          |
 | 5          | `|`                            | Left          |
 | 4          | `==`, `!=`, `<`, `>`, `<=`, `>=` | Left          |
-| 3          | `and`                          | Left          |
-| 2          | `or`                           | Left          |
+| 3          | `&&`                           | Left          |
+| 2          | `||`                           | Left          |
 | 1          | `orelse`, `catch`              | Right         |
+
+### Parser Robustness: Recursion Depth Limit
+To prevent stack overflows when parsing deeply nested or complex expressions, the parser implements a recursion depth limit.
+
+- **Mechanism**: A counter, `recursion_depth_`, is incremented at the start of `parsePrecedenceExpr` and decremented at the end.
+- **Limit**: The maximum depth is defined by `MAX_PARSER_RECURSION_DEPTH` (currently 255).
+- **Behavior**: If the depth exceeds the limit, the parser calls `error()` and aborts compilation, preventing a crash.
+
+This feature is a critical safeguard for the compiler's stability, especially given the limited resources of the target environment.
 
 ## 5. Type Expression Node Types
 

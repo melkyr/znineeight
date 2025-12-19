@@ -9,7 +9,7 @@
 #endif
 
 Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena)
-    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena) {
+    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), recursion_depth_(0) {
     assert(tokens_ != NULL && "Token stream cannot be null");
     assert(arena_ != NULL && "Arena allocator is required");
 }
@@ -341,6 +341,11 @@ static int get_token_precedence(TokenType type) {
  *         correct precedence and associativity.
  */
 ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Expression too complex, recursion limit reached");
+    }
+
     ASTNode* left = parseUnaryExpr();
 
     while (true) {
@@ -368,6 +373,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         left = new_node;
     }
 
+    recursion_depth_--;
     return left;
 }
 
