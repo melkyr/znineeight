@@ -21,6 +21,7 @@ enum NodeType {
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
     NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
+    NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
@@ -105,6 +106,7 @@ struct ASTAwaitExprNode;
 struct ASTComptimeBlockNode;
 struct ASTFunctionCallNode;
 struct ASTArrayAccessNode;
+struct ASTArraySliceNode;
 
 
 // --- Node-specific data structs ---
@@ -199,6 +201,19 @@ struct ASTFunctionCallNode {
 struct ASTArrayAccessNode {
     ASTNode* array;
     ASTNode* index;
+};
+
+/**
+ * @struct ASTArraySliceNode
+ * @brief Represents an array or slice expression (e.g., `my_array[start..end]`).
+ * @var ASTArraySliceNode::array The expression being sliced.
+ * @var ASTArraySliceNode::start The start index expression (can be NULL).
+ * @var ASTArraySliceNode::end The end index expression (can be NULL).
+ */
+struct ASTArraySliceNode {
+    ASTNode* array;
+    ASTNode* start; // Can be NULL
+    ASTNode* end;   // Can be NULL
 };
 
 /**
@@ -506,6 +521,7 @@ struct ASTNode {
         ASTUnaryOpNode unary_op;
         ASTFunctionCallNode* function_call; // Out-of-line
         ASTArrayAccessNode* array_access; // Out-of-line
+        ASTArraySliceNode* array_slice; // Out-of-line
 
         // Literals
         ASTIntegerLiteralNode integer_literal;
