@@ -166,6 +166,18 @@ ASTNode* Parser::parsePrimaryExpr() {
     }
 }
 
+/**
+ * @brief Parses a postfix expression, including function calls, array accesses, and slices.
+ *
+ * This function handles expressions that follow a primary expression, such as `()`, `[]`,
+ * and `[..]`. It iteratively parses these constructs to handle chained calls like
+ * `foo()[0][1..2]`.
+ *
+ * Grammar:
+ * `postfix_expr ::= primary_expr ( '(' args ')' | '[' index ']' | '[' start '..' end ']' )*`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed postfix expression.
+ */
 ASTNode* Parser::parsePostfixExpression() {
     ASTNode* expr = parsePrimaryExpr();
 
@@ -189,27 +201,28 @@ ASTNode* Parser::parsePostfixExpression() {
             expr = new_expr_node;
         }
         else if (match(TOKEN_LBRACKET)) {
-            // Check if this is a slice expression [start..end], [..end], [start..], or [..]
+            // Check if this is a slice expression by looking for ".." token
             if (peek().type == TOKEN_RANGE ||
-                (peek().type != TOKEN_RBRACKET && peekNext().type == TOKEN_RANGE)) {
+               (peek().type != TOKEN_RBRACKET && peekNext().type == TOKEN_RANGE)) {
 
                 ASTArraySliceNode* slice_node = (ASTArraySliceNode*)arena_->alloc(sizeof(ASTArraySliceNode));
                 slice_node->array = expr;
 
-                // Parse start index (if present)
+                // Parse start index (optional)
                 if (peek().type != TOKEN_RANGE) {
                     slice_node->start = parseExpression();
+                    // After parsing start, we must have a range operator
                     expect(TOKEN_RANGE, "Expected '..' after start index in slice expression");
                 } else {
                     slice_node->start = NULL; // Implicit start (array[..end])
                     advance(); // Consume the '..'
                 }
 
-                // Parse end index (if present)
+                // Parse end index (optional)
                 if (peek().type != TOKEN_RBRACKET) {
                     slice_node->end = parseExpression();
                 } else {
-                    slice_node->end = NULL; // Implicit end (array[start..] or array[..])
+                    slice_node->end = NULL; // Implicit end
                 }
 
                 expect(TOKEN_RBRACKET, "Expected ']' after slice expression");
@@ -221,7 +234,7 @@ ASTNode* Parser::parsePostfixExpression() {
                 expr = new_expr_node;
             }
             else {
-                // Regular array access [index]
+                // Standard array access
                 ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
                 access_node->array = expr;
                 access_node->index = parseExpression();
@@ -238,7 +251,6 @@ ASTNode* Parser::parsePostfixExpression() {
             break;
         }
     }
-
     return expr;
 }
 

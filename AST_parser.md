@@ -358,16 +358,16 @@ Represents an array slice expression.
 The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
 
 - It starts by calling `parsePrimaryExpr` to get the base of the expression (e.g., an identifier, a literal, or a parenthesized expression).
-- It then enters a loop, checking for either a `TOKEN_LPAREN` (indicating a function call) or a `TOKEN_LBRACKET` (indicating an array access).
+- It then enters a loop, checking for either a `TOKEN_LPAREN` (indicating a function call) or a `TOKEN_LBRACKET` (indicating an array access or slice).
 - **For a function call**:
     - It constructs an `ASTFunctionCallNode`.
     - It parses a comma-separated list of arguments until it finds a `TOKEN_RPAREN`.
     - It supports empty argument lists (`()`) and allows an optional trailing comma (e.g., `(a, b,)`).
-- **For an array access**:
-    - It constructs an `ASTArrayAccessNode`.
-    - It calls `parseExpression` to parse the index expression within the brackets.
-    - It expects a closing `TOKEN_RBRACKET`.
-- The result of the postfix operation (e.g., the `ASTFunctionCallNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
+- **For an array access or slice**:
+    - It peeks ahead to see if a `TOKEN_RANGE` (`..`) is present within the brackets.
+    - **If a range is found**, it parses an `ASTArraySliceNode`. It handles all slice variations: `[start..end]`, `[..end]`, `[start..]`, and `[..]`.
+    - **If no range is found**, it parses a standard `ASTArrayAccessNode` with a single index expression.
+- The result of the postfix operation (e.g., the `ASTFunctionCallNode` or `ASTArraySliceNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
 - If no postfix operator is found, the loop terminates, and the function returns the constructed expression tree.
 
 
