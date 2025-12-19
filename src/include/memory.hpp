@@ -1,6 +1,7 @@
 #ifndef MEMORY_HPP
 #define MEMORY_HPP
 
+#include "common.hpp"
 #include <cstddef> // For size_t
 #include <cstdlib> // For malloc, free
 #include <cassert> // For assert
@@ -16,7 +17,7 @@
  * memory management, such as during different stages of a compiler.
  */
 class ArenaAllocator {
-    char* buffer;
+    u8* buffer;
     size_t offset;
     size_t capacity;
 
@@ -25,8 +26,8 @@ public:
      * @brief Constructs an ArenaAllocator with a given capacity.
      * @param capacity The total size of the memory arena in bytes.
      */
-    ArenaAllocator(size_t capacity) : buffer(NULL), offset(0), capacity(capacity) {
-        buffer = static_cast<char*>(malloc(capacity));
+    ArenaAllocator(size_t capacity) : offset(0), capacity(capacity) {
+        buffer = (u8*)malloc(capacity);
     }
 
     /**
@@ -46,7 +47,7 @@ public:
         if (size > capacity - offset) {
             return NULL;
         }
-        void* ptr = buffer + offset;
+        u8* ptr = buffer + offset;
         offset += size;
         return ptr;
     }
@@ -70,7 +71,7 @@ public:
             return NULL;
         }
 
-        void* ptr = buffer + new_offset;
+        u8* ptr = buffer + new_offset;
         offset = new_offset + size;
         return ptr;
     }
