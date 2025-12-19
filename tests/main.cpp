@@ -8,6 +8,8 @@
 #include <cstdio>
 
 // Forward declarations for all test functions
+TEST_FUNC(Lexer_Delimiters);
+TEST_FUNC(Lexer_DotOperators);
 TEST_FUNC(Parser_ParseEmptyBlock);
 TEST_FUNC(Parser_ParseBlockWithEmptyStatement);
 TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements);
@@ -52,7 +54,6 @@ TEST_FUNC(lex_arithmetic_and_bitwise_operators);
 TEST_FUNC(lex_compound_assignment_operators);
 TEST_FUNC(LexerSpecialOperators);
 TEST_FUNC(LexerSpecialOperatorsMixed);
-TEST_FUNC(delimiters_lexing);
 TEST_FUNC(lex_visibility_and_linkage_keywords);
 TEST_FUNC(lex_compile_time_and_special_function_keywords);
 TEST_FUNC(lex_miscellaneous_keywords);
@@ -228,7 +229,8 @@ int main(int argc, char* argv[]) {
         test_lex_compound_assignment_operators,
         test_LexerSpecialOperators,
         test_LexerSpecialOperatorsMixed,
-        test_delimiters_lexing,
+        test_Lexer_Delimiters,
+        test_Lexer_DotOperators,
         test_lex_visibility_and_linkage_keywords,
         test_lex_compile_time_and_special_function_keywords,
         test_lex_miscellaneous_keywords,

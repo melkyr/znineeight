@@ -535,12 +535,7 @@ Token Lexer::nextToken() {
                 if (match('.')) {
                     token.type = TOKEN_ELLIPSIS;
                 } else {
-                    // If we see '..' but not '...', it's two separate dot tokens.
-                    // We've already consumed one '.', so we need to backtrack
-                    // to allow the next call to nextToken() to see the second '.'.
-                    this->current--;
-                    this->column--;
-                    token.type = TOKEN_DOT;
+                    token.type = TOKEN_RANGE;
                 }
             } else if (match('*')) {
                 token.type = TOKEN_DOT_ASTERISK;

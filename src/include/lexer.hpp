@@ -143,6 +143,7 @@ enum TokenType {
     TOKEN_ARROW,            ///< '->' - Arrow.
     TOKEN_FAT_ARROW,        ///< '=>' - Fat arrow.
     TOKEN_ELLIPSIS,         ///< '...' - Ellipsis.
+    TOKEN_RANGE,            ///< '..' - Range operator.
 
     // Special and Wrapping Operators
     TOKEN_DOT,              ///< '.' operator.
