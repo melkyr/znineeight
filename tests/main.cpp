@@ -219,7 +219,7 @@ TEST_FUNC(Parser_NonEmptyFunctionBody);
 
 // Parser Integration Tests
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
-// TEST_FUNC(ParserIntegration_IfWithComplexCondition);
+TEST_FUNC(ParserIntegration_IfWithComplexCondition);
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
 // TEST_FUNC(ParserIntegration_ForLoopOverSlice);
 // TEST_FUNC(ParserIntegration_ComprehensiveFunction);
@@ -416,7 +416,7 @@ int main(int argc, char* argv[]) {
 
         // Parser Integration Tests
         test_ParserIntegration_VarDeclWithBinaryExpr,
-        // test_ParserIntegration_IfWithComplexCondition,
+        test_ParserIntegration_IfWithComplexCondition,
         test_ParserIntegration_WhileWithFunctionCall,
         // test_ParserIntegration_ForLoopOverSlice,
         // test_ParserIntegration_ComprehensiveFunction,
