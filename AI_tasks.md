@@ -128,11 +128,36 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Update parseForStatement to handle slice/iterator expressions like my_slice[0..4] in addition to simple identifiers
     - Ensure the parser can handle the pipe syntax |item| for loop variables
     - Recommendation: This combines the range operator and slice parsing to fully support the failing for loop test case.
-80. **Task 80:** Final Integration Test Suite Validation
+80.   **Task 80:** Fixing minor concerns
+        - Void Pointer Arithmetic (Undefined Behavior) In src/include/memory.hpp (and likely used in ArenaAllocator), you are likely performing arithmetic on void* pointers.  The Issue: void* ptr; ptr += size; is a GCC         extension. In standard C++98 (and MSVC 6.0 for Windows 98), this is illegal because void has no size. The Fix: You must cast to char* or u8* before performing arithmetic.  C++ // BAD offset += size;  // GOOD char*         current = (char*)buffer + offset;
+    DynamicArray Growth Logic
+      -In src/include/memory.hpp, verify your ensure_capacity logic: Potential Bug: If capacity is initially 0, the line size_t new_cap = capacity * 2; results in 0.    Consequence: If you rely solely on doubling, the array will never grow from 0, potentially causing a crash or infinite allocation attempts when append is called.    The Fix: Ensure a minimum fallback:  size_t new_cap = (capacity == 0) ? 8 : capacity * 2;
+    -Lexer::match Buffer Over-read In src/bootstrap/lexer.cpp: The Issue: bool Lexer::match(char expected) typically checks source[current] == expected. If current is already at EOF (end of source), accessing source[current] is an out-of-bounds read.   The Fix: Ensure the bounds check happens before the memory access.
+    bool Lexer::match(char expected) {
+    if (isAtEnd()) return false; // Critical check
+    if (source[current] != expected) return false;
+    current++;
+    return true;
+}
+    -Integer vs. Range Operator Ambiguity (Task 75) You implemented TOKEN_RANGE (..), but this creates a conflict with TOKEN_FLOAT_LITERAL. The Scenario: Consider the valid Zig for-loop syntax: 0..10. The Bug: The lexer encounters 0, sees a ., and may aggressively consume it as a float (0.). This leaves the second . as a simplified dot operator, resulting in FLOAT(0.) followed by DOT(.) and INT(10), instead of INT(0) and RANGE(..).   Verification: Check lexNumericLiteral. It must peek two characters ahead when it encounters a dot.  If it sees . followed by another ., it must abort float parsing immediately and return the integer 0.
+   -// In Parser class Recommendation: Add a depth counter to parseExpression or parsePrecedenceExpr.
+int recursion_depth;
+const int MAX_DEPTH = 500
+ASTNode* parseExpression() {
+    if (++recursion_depth > MAX_DEPTH) error("Expression too complex");
+    // ... parse ...
+    recursion_depth--;
+    return result;
+}
+ -String Interning Lifetime In src/bootstrap/string_interner.cpp: Verification: Does StringInterner::intern(const char* str) copy the string into the Arena? The Risk: If it just stores the str pointer passed from the Lexer, and the Lexer is using a temporary buffer or pointing into a file buffer that might move/close, the AST nodes will hold dangling pointers.    Correct behavior: intern must allocate strlen(str) + 1 bytes in the ArenaAllocator, strcpy the data there, and store that pointer.
+  - Review of "Task 76: Non-Empty Function Body" You implemented support for non-empty function bodies by calling parseBlockStatement. Potential Edge Case: Zig allows functions to return immediately with an expression in some contexts (though usually block-bound).  Check: Ensure parseBlockStatement correctly consumes the closing brace }.  If parseBlockStatement expects { to start, but parseFnDecl has already consumed the { (to check for empty body), the parser will error expecting {.  Fix: parseFnDecl should consume arguments, checks for return_type, and then delegate immediately to parseBlockStatement without peeking inside, allowing parseBlockStatement to handle the opening {.
+  - 
+81. **Task 81:** Final Integration Test Suite Validation
     - Run all previous integration tests again to ensure no regressions were introduced
     - Add edge cases discovered during the fixing process as separate, focused regression tests
     - Document any remaining known limitations in a TODO.md or similar file
     - Recommendation: Always validate that fixes don't break existing functionality.
+
 
     
 ### Milestone 4: Bootstrap Type System & Semantic Analysis
