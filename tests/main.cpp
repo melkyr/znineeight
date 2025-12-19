@@ -93,8 +93,10 @@ TEST_FUNC(aligned_allocation);
 TEST_FUNC(string_interning);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
+TEST_FUNC(dynamic_array_growth_from_zero);
 TEST_FUNC(single_char_tokens);
 TEST_FUNC(multi_char_tokens);
+TEST_FUNC(token_fields_are_initialized);
 TEST_FUNC(assignment_vs_equality);
 TEST_FUNC(skip_comments);
 TEST_FUNC(nested_block_comments);
@@ -288,8 +290,10 @@ int main(int argc, char* argv[]) {
         test_string_interning,
         test_dynamic_array_append,
         test_dynamic_array_growth,
+        test_dynamic_array_growth_from_zero,
         test_single_char_tokens,
         test_multi_char_tokens,
+        test_token_fields_are_initialized,
         test_assignment_vs_equality,
         test_skip_comments,
         test_nested_block_comments,

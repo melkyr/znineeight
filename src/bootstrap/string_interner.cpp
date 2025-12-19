@@ -1,12 +1,14 @@
 #include "../include/string_interner.hpp"
 #include <cstring>
 #include <cstdlib> // For exit
+#include <cassert>
 
 // FNV-1a hash constants
 static const unsigned int FNV_PRIME = 16777619;
 static const unsigned int FNV_OFFSET_BASIS = 2166136261;
 
 unsigned int StringInterner::hash(const char* str) {
+    assert(str != NULL);
     unsigned int hash = FNV_OFFSET_BASIS;
     const char* p = str;
     while (*p) {
@@ -24,6 +26,7 @@ StringInterner::StringInterner(ArenaAllocator& allocator) : allocator(allocator)
 }
 
 const char* StringInterner::intern(const char* str) {
+    assert(str != NULL);
     // Hash the string to find the correct bucket.
     unsigned int h = hash(str);
     size_t index = h % NUM_BUCKETS;
