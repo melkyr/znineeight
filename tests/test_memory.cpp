@@ -22,3 +22,13 @@ TEST_FUNC(dynamic_array_growth) {
     ASSERT_TRUE(arr[19] == 19);
     return true;
 }
+
+TEST_FUNC(arena_allocator_actually_allocates) {
+    ArenaAllocator arena(1024);
+    void* ptr = arena.alloc(16);
+    ASSERT_TRUE(ptr != NULL);
+    // Attempt to write to the allocated memory. This will cause a crash
+    // if the pointer is null, providing a more robust failure signal.
+    memset(ptr, 0, 16);
+    return true;
+}
