@@ -7,6 +7,10 @@
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
+// Define the maximum recursion depth for the parser to prevent stack overflows.
+// A value of 255 is a reasonable limit for expressions.
+#define MAX_PARSER_RECURSION_DEPTH 255
+
 /**
  * @class Parser
  * @brief Consumes a stream of tokens and produces an Abstract Syntax Tree (AST).
@@ -73,6 +77,11 @@ public:
 
     /**
      * @brief Parses a binary expression using a Pratt parser to handle operator precedence.
+     *
+     * This function implements a Pratt parser, which is an elegant way to handle
+     * operator precedence and associativity. It also includes a recursion depth
+     * check to prevent stack overflows on deeply nested expressions.
+     *
      * @param min_precedence The minimum precedence level to parse.
      * @return A pointer to the ASTNode representing the binary expression.
      */
@@ -235,6 +244,7 @@ private:
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
+    int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
 };
 
 #endif // PARSER_HPP
