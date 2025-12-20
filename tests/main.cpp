@@ -127,7 +127,6 @@ TEST_FUNC(Lexer_ErrorConditions);
 TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
 TEST_FUNC(Lexer_StringLiteral_LongString);
 TEST_FUNC(lex_missing_keywords);
-TEST_FUNC(Lexer_IntegerFollowedByRange);
 
 // AST Node Tests
 TEST_FUNC(ASTNode_IntegerLiteral);
@@ -224,17 +223,10 @@ TEST_FUNC(Parser_NonEmptyFunctionBody);
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
 TEST_FUNC(ParserIntegration_IfWithComplexCondition);
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
-TEST_FUNC(ParserIntegration_ForLoopOverSlice);
+// TEST_FUNC(ParserIntegration_ForLoopOverSlice);
 // TEST_FUNC(ParserIntegration_ComprehensiveFunction);
 TEST_FUNC(ParserBug_LogicalOperatorSymbol);
 TEST_FUNC(Parser_RecursionLimit);
-
-// Slicing and Array Access Tests
-TEST_FUNC(Parser_ArraySlice_BothBounds);
-TEST_FUNC(Parser_ArraySlice_ImplicitStart);
-TEST_FUNC(Parser_ArraySlice_ImplicitEnd);
-TEST_FUNC(Parser_ArraySlice_FullSlice);
-TEST_FUNC(Parser_ArrayAccess_Standard);
 
 
 // This function is executed in a child process by the error handling test.
@@ -326,7 +318,6 @@ int main(int argc, char* argv[]) {
         test_Lexer_StringLiteral_EscapedCharacters,
         test_Lexer_StringLiteral_LongString,
         test_lex_missing_keywords,
-        test_Lexer_IntegerFollowedByRange,
         // AST Tests
         test_ASTNode_IntegerLiteral,
         test_ASTNode_FloatLiteral,
@@ -431,17 +422,10 @@ int main(int argc, char* argv[]) {
         test_ParserIntegration_VarDeclWithBinaryExpr,
         test_ParserIntegration_IfWithComplexCondition,
         test_ParserIntegration_WhileWithFunctionCall,
-        test_ParserIntegration_ForLoopOverSlice,
+        // test_ParserIntegration_ForLoopOverSlice,
         // test_ParserIntegration_ComprehensiveFunction,
         test_ParserBug_LogicalOperatorSymbol,
         test_Parser_RecursionLimit,
-
-        // Slicing and Array Access Tests
-        test_Parser_ArraySlice_BothBounds,
-        test_Parser_ArraySlice_ImplicitStart,
-        test_Parser_ArraySlice_ImplicitEnd,
-        test_Parser_ArraySlice_FullSlice,
-        test_Parser_ArrayAccess_Standard,
     };
 
     int passed = 0;

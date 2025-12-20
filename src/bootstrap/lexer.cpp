@@ -315,19 +315,14 @@ Token Lexer::lexNumericLiteral() {
     while (isdigit(*end_ptr)) end_ptr++;
     bool is_float = false;
     if (*end_ptr == '.') {
-        // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[1] == '.') {
-            // This is an integer followed by a '..' operator.
-            // Do not consume the dot.
-        } else if (!isdigit(end_ptr[1])) {
+        if (!isdigit(end_ptr[1])) {
              token.type = TOKEN_ERROR;
              this->current = end_ptr + 1;
              this->column += (this->current - start);
              return token;
-        } else {
-            end_ptr++;
-            is_float = true;
         }
+        end_ptr++;
+        is_float = true;
     }
     while (isdigit(*end_ptr)) end_ptr++;
     if (*end_ptr == 'e' || *end_ptr == 'E') {
