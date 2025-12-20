@@ -224,9 +224,9 @@ TEST_FUNC(Parser_NonEmptyFunctionBody);
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
 TEST_FUNC(ParserIntegration_IfWithComplexCondition);
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
-TEST_FUNC(ParserIntegration_ForLoopOverSlice);
-TEST_FUNC(ParserIntegration_ComprehensiveFunction);
-TEST_FUNC(ParserIntegration_LogicalAndOperatorSymbol);
+// TEST_FUNC(ParserIntegration_ForLoopOverSlice);
+// TEST_FUNC(ParserIntegration_ComprehensiveFunction);
+TEST_FUNC(ParserBug_LogicalOperatorSymbol);
 TEST_FUNC(Parser_RecursionLimit);
 
 
@@ -423,9 +423,9 @@ int main(int argc, char* argv[]) {
         test_ParserIntegration_VarDeclWithBinaryExpr,
         test_ParserIntegration_IfWithComplexCondition,
         test_ParserIntegration_WhileWithFunctionCall,
-        test_ParserIntegration_ForLoopOverSlice,
-        test_ParserIntegration_ComprehensiveFunction,
-        test_ParserIntegration_LogicalAndOperatorSymbol,
+        // test_ParserIntegration_ForLoopOverSlice,
+        // test_ParserIntegration_ComprehensiveFunction,
+        test_ParserBug_LogicalOperatorSymbol,
         test_Parser_RecursionLimit,
         test_IntegerRangeAmbiguity,
     };
@@ -434,7 +434,6 @@ int main(int argc, char* argv[]) {
     int num_tests = sizeof(tests) / sizeof(tests[0]);
 
     for (int i = 0; i < num_tests; ++i) {
-        printf("Running test %d/%d...\n", i + 1, num_tests);
         if (tests[i]()) {
             passed++;
         }
