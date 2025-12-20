@@ -8,10 +8,11 @@
 #include <windows.h> // For OutputDebugStringA
 #endif
 
-Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena)
-    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), recursion_depth_(0) {
+Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols)
+    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), symbols_(symbols), recursion_depth_(0) {
     assert(tokens_ != NULL && "Token stream cannot be null");
     assert(arena_ != NULL && "Arena allocator is required");
+    assert(symbols_ != NULL && "Symbol table is required");
 }
 
 Token Parser::advance() {

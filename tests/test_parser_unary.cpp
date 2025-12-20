@@ -5,12 +5,15 @@
 #include "string_interner.hpp"
 #include "source_manager.hpp"
 
+#include "symbol_table.hpp"
+
 // Helper to set up parser for a single test case
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
     Lexer lexer(sm, interner, arena, file_id);
+    SymbolTable table(arena);
     DynamicArray<Token> tokens(arena);
     while (true) {
         Token token = lexer.nextToken();
@@ -19,7 +22,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
             break;
         }
     }
-    return Parser(tokens.getData(), tokens.length(), &arena);
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 TEST_FUNC(Parser_UnaryOp_SimpleNegation) {

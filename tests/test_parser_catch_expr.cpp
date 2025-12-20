@@ -7,10 +7,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include "symbol_table.hpp"
+
 // --- Test Helper ---
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
     Lexer lexer(sm, interner, arena, file_id);
+    SymbolTable table(arena);
 
     // Lex all tokens into a dynamic array
     DynamicArray<Token> tokens(arena);
@@ -20,7 +23,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
         tokens.append(token);
     } while (token.type != TOKEN_EOF);
 
-    return Parser(tokens.getData(), tokens.length(), &arena);
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 // --- Test Cases ---

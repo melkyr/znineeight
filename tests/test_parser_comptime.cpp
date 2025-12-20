@@ -11,6 +11,8 @@
 // Helper function from test_parser_errors.cpp
 bool expect_parser_abort(const char* source);
 
+#include "symbol_table.hpp"
+
 // Helper to create a parser for a given source string.
 static Parser create_parser_for_test(
     const char* source,
@@ -20,6 +22,7 @@ static Parser create_parser_for_test(
 ) {
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
     Lexer lexer(sm, interner, arena, file_id);
+    SymbolTable table(arena);
 
     DynamicArray<Token> tokens(arena);
     Token token;
@@ -28,7 +31,7 @@ static Parser create_parser_for_test(
         tokens.append(token);
     } while (token.type != TOKEN_EOF);
 
-    return Parser(tokens.getData(), tokens.length(), &arena);
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 // Test parsing a valid comptime block

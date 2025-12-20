@@ -6,6 +6,8 @@
 #include "source_manager.hpp"
 #include <cstdlib>
 
+#include "symbol_table.hpp"
+
 // Helper function to create a parser for a given source string.
 // This is a simplified version of what's in other test files.
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
@@ -13,6 +15,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
 
     Lexer lexer(sm, interner, arena, file_id);
+    SymbolTable table(arena);
     DynamicArray<Token> tokens(arena);
     Token token;
     do {
@@ -20,7 +23,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
         tokens.append(token);
     } while (token.type != TOKEN_EOF);
 
-    return Parser(tokens.getData(), tokens.length(), &arena);
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 

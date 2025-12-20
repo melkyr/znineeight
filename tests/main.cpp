@@ -70,6 +70,8 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(symbol_table_insertion_and_lookup);
+TEST_FUNC(parser_symbol_table_integration);
 TEST_FUNC(Lexer_Delimiters);
 TEST_FUNC(Lexer_DotOperators);
 TEST_FUNC(Parser_ParseEmptyBlock);
@@ -247,7 +249,8 @@ void run_parser_test_and_abort(const char* source_code, bool is_statement_test) 
         tokens.append(token);
     } while (token.type != TOKEN_EOF);
 
-    Parser parser(tokens.getData(), tokens.length(), &arena);
+    SymbolTable symbols(arena);
+    Parser parser(tokens.getData(), tokens.length(), &arena, &symbols);
     if (is_statement_test) {
         parser.parseStatement();
     } else {
@@ -275,6 +278,8 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_symbol_table_insertion_and_lookup,
+        test_parser_symbol_table_integration,
         test_basic_allocation,
         test_multiple_allocations,
         test_allocation_failure,
