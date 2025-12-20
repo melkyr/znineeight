@@ -2,6 +2,7 @@
 #define TYPE_SYSTEM_HPP
 
 #include "common.hpp"
+#include <cstddef> // For size_t
 
 // Forward-declare Type for the pointer union member
 struct Type;

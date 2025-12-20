@@ -4,6 +4,7 @@
 #include "lexer.hpp"
 #include "memory.hpp"
 #include "ast.hpp"
+#include "symbol_table.hpp" // Added
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
@@ -30,8 +31,9 @@ public:
      * @param tokens A pointer to the array of tokens from the lexer.
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
+     * @param symbols A pointer to the SymbolTable for symbol management.
      */
-    Parser(Token* tokens, size_t count, ArenaAllocator* arena);
+    Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols);
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -251,6 +253,7 @@ private:
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
+    SymbolTable* symbols_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
 };
 

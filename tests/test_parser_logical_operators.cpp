@@ -16,6 +16,8 @@
 
 // --- Test Helper Functions ---
 
+#include "symbol_table.hpp"
+
 static Parser create_parser_for_test(
     const char* source,
     ArenaAllocator& arena,
@@ -24,12 +26,13 @@ static Parser create_parser_for_test(
 
     u32 file_id = src_manager.addFile("test.zig", source, strlen(source));
     Lexer lexer(src_manager, interner, arena, file_id);
+    SymbolTable table(arena);
     DynamicArray<Token> tokens(arena);
     for (Token token = lexer.nextToken(); token.type != TOKEN_EOF; token = lexer.nextToken()) {
         tokens.append(token);
     }
     tokens.append(lexer.nextToken());
-    return Parser(tokens.getData(), tokens.length(), &arena);
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name, const char* right_name) {
