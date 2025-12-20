@@ -8,11 +8,21 @@
 #include <windows.h> // For OutputDebugStringA
 #endif
 
-Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols)
-    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), symbols_(symbols), recursion_depth_(0) {
-    assert(tokens_ != NULL && "Token stream cannot be null");
-    assert(arena_ != NULL && "Arena allocator is required");
-    assert(symbols_ != NULL && "Symbol table is required");
+Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols, int max_recursion_depth)
+    : tokens_(tokens),
+      token_count_(count),
+      current_index_(0),
+      arena_(arena),
+      symbols_(symbols),
+      recursion_depth_(0),
+      max_recursion_depth_(max_recursion_depth) {
+    assert(tokens_ != NULL && "Token stream cannot be null.");
+    assert(arena_ != NULL && "Arena allocator cannot be null.");
+    assert(symbols_ != NULL && "Symbol table cannot be null.");
+}
+
+Parser ParserBuilder::build() {
+    return Parser(tokens_, token_count_, arena_, symbols_, max_recursion_depth_);
 }
 
 Token Parser::advance() {
@@ -385,7 +395,7 @@ static int get_token_precedence(TokenType type) {
  */
 ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
     recursion_depth_++;
-    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+    if (recursion_depth_ > max_recursion_depth_) {
         error("Expression too complex, recursion limit reached");
     }
 
