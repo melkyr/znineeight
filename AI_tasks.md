@@ -222,11 +222,57 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Risk Level: MEDIUM
     - Handle literals, variable access, basic arithmetic, and simple comparisons
     - Constraint Risk: Need to ensure all operations map to C89-compatible operations
-90. **Task 90:** Implement function call checking
-    - Risk Level: HIGH ⚠️
-    - Argument count validation and basic type matching for arguments
-    - Constraint Risk: Function pointers, variadic functions, and calling conventions may not be C89-compatible
-    - May need to reject many Zig-specific calling patterns
+
+**DETAILED MICRO-TASK BREAKDOWN WITH RISK MITIGATION**
+Operation Compatibility Validator (MEDIUM RISK)  
+
+    Validate expressions against C89 operations matrix:  
+    Operation
+    	
+    Allowed Types
+    +, -
+    	
+    Numeric only
+    *, /
+    	
+    Exclude bool
+    &, *
+    	
+    Pointers only
+    []
+    	
+    REJECT (defer to Milestone 5)
+    Mitigation: Explicit allow-list prevents unsafe ops. Rejects array indexing entirely for now.  
+    Output: Operation validation table in TypeChecker
+
+**RESOURCE ALLOCATION RECOMMENDATION:**
+
+Given memory constraints, allocate:
+
+    Static arrays for type mapping tables (93A)
+
+    Arena allocation for validation state (93O)
+
+    String interning for error messages (97 series)
+
+    Pre-allocated buffers for integration test output (100 series)
+    
+Task 90: Function Calls → SPLIT INTO SAFE CORE + REJECTION
+
+(High risk reduced to Low/Medium)
+
+    Task 90a: Reject Complex Calls (LOW RISK)  
+        Immediately reject:  
+            Calls with >4 arguments (C89 stack limits)  
+            Any function pointer calls  
+            Variadic calls (printf-style)
+        Output: Early AST validation pass
+    Task 90b: Basic Call Validation (LOW RISK)  
+        For allowed calls:  
+            Verify argument count matches declaration  
+            Check type compatibility using is_c89_compatible() (Task 93a)
+        Mitigation: Leverages existing type validation. No overloading resolution needed.  
+        Output: Call validation in TypeChecker
 91. **Task 91:** Implement basic control flow checking
     - Risk Level: LOW
     - Ensure if and while statements have boolean conditions
@@ -235,15 +281,300 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Risk Level: MEDIUM
     - Check address-of (&) and dereference (*) operators
     - Constraint Risk: Must ensure no unsafe pointer arithmetic beyond C89 capabilities
-93. **Task 93:** Implement C89 compatibility checking
-    - Risk Level: CRITICAL ⚠️⚠️⚠️
-    - Ensure all generated types map to C89 equivalents and no unsupported Zig features are used
-    - Constraint Risk: This is the main gatekeeper - failure here means generated C code won't compile
-    - Most complex validation task
-94. **Task 94:** Implement basic memory safety for bootstrap
-    - Risk Level: HIGH ⚠️
-    - Simple pointer safety and compile-time array bounds checking
-    - Constraint Risk: C89 has limited safety mechanisms - must be very conservative
+93.TASK 93A: PRIMITIVE TYPE MAPPING TABLE SETUP (LOW)
+
+    What to implement: Static arrays/maps for type equivalency
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Memory allocation (use static arrays only)
+        Missing Zig primitive types in mapping
+        Incorrect C89 equivalents (e.g., bool vs int)
+    Validation: Print all mappings to console for verification
+    Success criteria: All basic types (void, bool, i8-u64, f32-f64) have C89 equivalents
+
+    Create is_c89_compatible(Type*) function that ONLY accepts:
+    i8..i64, u8..u64, f32/f64, bool, void, *T (where T is whitelisted)  
+    Mitigation: Hardcoded whitelist avoids complex validation logic. Rejects isize/usize since no C89 equivalent.  
+    Output: Header file with type validation functions
+
+TASK 93B: INTEGER TYPE COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Check integer sizes match C89 requirements
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Platform-specific integer sizes (test on 32-bit vs 64-bit)
+        Signed vs unsigned mismatches
+        Range overflow in conversions
+    Validation: Compare sizeof() results between Zig and C89 types
+    Success criteria: All integer operations stay within C89 range limits
+    Create is_c89_compatible(Type*) function that ONLY accepts:
+    i8..i64, u8..u64, f32/f64, bool, void, *T (where T is whitelisted)  
+    Mitigation: Hardcoded whitelist avoids complex validation logic. Rejects isize/usize since no C89 equivalent.  
+    Output: Header file with type validation functions
+
+TASK 93C: FLOAT TYPE COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Validate float precision and representation
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        IEEE 754 compliance differences
+        Precision loss in float-to-double conversions
+        NaN/infinity handling differences
+    Validation: Compare floating-point behavior edge cases
+    Success criteria: All float operations maintain C89 precision standards
+    Create is_c89_compatible(Type*) function that ONLY accepts:
+    i8..i64, u8..u64, f32/f64, bool, void, *T (where T is whitelisted)  
+    Mitigation: Hardcoded whitelist avoids complex validation logic. Rejects isize/usize since no C89 equivalent.  
+    Output: Header file with type validation functions
+
+TASK 93D: BOOLEAN TYPE COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Map Zig bool to C89 int (0/1 convention)
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Non-zero values being treated as true in C89
+        Size differences between Zig bool and C int
+        Boolean operation result types
+    Validation: Test boolean logic consistency across translation
+    Success criteria: Boolean expressions behave identically in both languages
+    Create is_c89_compatible(Type*) function that ONLY accepts:
+    i8..i64, u8..u64, f32/f64, bool, void, *T (where T is whitelisted)  
+    Mitigation: Hardcoded whitelist avoids complex validation logic. Rejects isize/usize since no C89 equivalent.  
+    Output: Header file with type validation functions
+
+TASK 93E: VOID TYPE COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Verify void type usage restrictions
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Attempting to declare void variables
+        Void function return handling
+        Void pointer compatibility
+    Validation: Ensure no void-related compilation errors in C89
+    Success criteria: All void uses translate to legal C89 constructs
+    Create is_c89_compatible(Type*) function that ONLY accepts:
+    i8..i64, u8..u64, f32/f64, bool, void, *T (where T is whitelisted)  
+    Mitigation: Hardcoded whitelist avoids complex validation logic. Rejects isize/usize since no C89 equivalent.  
+    Output: Header file with type validation functions
+
+TASK 93F: POINTER TYPE COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate pointer operations and types
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Void pointer vs typed pointer handling
+        Pointer arithmetic beyond C89 capabilities
+        Const/volatile qualifier mismatches
+    Validation: Test pointer operations compile in C89 environment
+    Success criteria: All pointer operations remain C89-compliant
+
+TASK 93G: ARRAY TYPE COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate array declaration and access patterns
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Runtime-sized arrays (not C89-compatible)
+        Multidimensional array mapping
+        Array-to-pointer decay differences
+    Validation: Ensure array declarations compile in C89
+    Success criteria: All array operations map to legal C89 syntax
+
+TASK 93H: FUNCTION TYPE COMPATIBILITY VALIDATION (HIGH)
+
+    What to implement: Validate function signatures and calling
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Function pointers (may require special handling)
+        Parameter passing conventions
+        Return type limitations in C89
+    Validation: Test function declarations compile in C89
+    Success criteria: All function types translate to C89-compatible declarations
+
+TASK 93I: STRUCT FIELD TYPE COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate struct member types
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Nested struct compatibility
+        Function members (not allowed in C89 structs)
+        Alignment differences between languages
+    Validation: Ensure struct definitions compile in C89
+    Success criteria: All struct fields map to C89-compatible types
+
+TASK 93J: ENUM VALUE TYPE COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Validate enum value types and ranges
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Enum value size differences
+        Negative enum values
+        Enum comparison compatibility
+    Validation: Test enum usage in C89 context
+    Success criteria: All enum operations remain C89-compliant
+
+TASK 93K: LITERAL EXPRESSION COMPATIBILITY VALIDATION (LOW)
+
+    What to implement: Validate literal expressions map to C89
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        String literal null-termination
+        Character literal differences
+        Number literal precision
+    Validation: Ensure all literals compile correctly in C89
+    Success criteria: All literal expressions translate to valid C89 syntax
+
+TASK 93L: BINARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate binary operators map to C89
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Operator precedence differences
+        Short-circuit evaluation requirements
+        Bitwise vs logical operator differences
+    Validation: Test all binary operations compile in C89
+    Success criteria: All binary operators behave identically in both languages
+
+TASK 93M: UNARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate unary operators map to C89
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Pre/post increment/decrement differences
+        Logical vs bitwise NOT
+        Address-of and dereference restrictions
+    Validation: Ensure unary operations compile in C89
+    Success criteria: All unary operators translate to valid C89 operations
+
+TASK 93N: ASSIGNMENT COMPATIBILITY VALIDATION (MEDIUM)
+
+    What to implement: Validate assignment operations
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Assignment return values (different in C vs C++)
+        Type coercion differences
+        Compound assignment operators
+    Validation: Test assignment operations in C89 context
+    Success criteria: All assignments remain C89-compliant
+
+TASK 93O: C89 FEATURE REJECTION FRAMEWORK (HIGH)
+
+    What to implement: System to detect and reject non-C89 features
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Missing rejection rules
+        Performance impact of validation
+        False positives in rejection
+    Validation: Test that rejected features actually fail compilation
+    Success criteria: Any non-C89 feature triggers compilation error
+
+
+	AST Pre-Scan for Forbidden Nodes (MEDIUM RISK)  
+    Before type checking, traverse AST to reject:  
+        Function pointers (FnPtrType)  
+        Variadic parameters (...)  
+        Error unions (!T), optionals (?T), slices ([]T)  
+        Struct methods (only allow C-style struct + external functions)
+    Mitigation: Early rejection avoids complex error recovery later.  
+    Output: AST visitor that fails compilation immediately on forbidden constructs
+	
+    Type Emission Verifier (LOW RISK)  
+
+    After type checking, verify every used type has a C89 emission mapping:  
+	// In codegen phase  
+	assert(map_to_c89_type(zig_type) != nullptr);  
+Mitigation: Decouples validation from type checking. Final safety net before codegen.  
+Output: Runtime assertions in codegen module
+94. TASK 94A: ADDRESS-OF OPERATOR VALIDATION (LOW)
+
+    What to implement: Validate & operator usage
+    Watch for: 
+        Taking address of rvalues
+        Address of temporary objects
+        Address of register variables (if any)
+    Validation: Ensure address-of generates valid C89 syntax
+    Success criteria: All & operations translate to legal C89 address-taking
+
+TASK 94B: DEREFERENCE OPERATOR VALIDATION (LOW)
+
+    What to implement: Validate * operator usage
+    Watch for: 
+        Dereferencing non-pointer types
+        Double dereferencing issues
+        Null pointer dereference detection
+    Validation: Test dereference operations compile in C89
+    Success criteria: All * operations remain safe and valid in C89
+
+TASK 94C: POINTER ARITHMETIC VALIDATION (MEDIUM)
+
+    What to implement: Validate pointer arithmetic operations
+    Watch for: 
+        Pointer arithmetic beyond array bounds
+        Mixed pointer arithmetic (different types)
+        Pointer subtraction limitations in C89
+    Validation: Ensure arithmetic operations stay within C89 safety limits
+    Success criteria: All pointer arithmetic remains within C89-compliant bounds
+
+TASK 94D: ARRAY ACCESS BOUNDS CHECKING (MEDIUM)
+
+    What to implement: Compile-time array bounds analysis
+    Watch for: 
+        Dynamic index bounds checking (runtime impossible in C89)
+        Multi-dimensional array access
+        Array slice operations (not C89-compatible)
+    Validation: Flag all potentially out-of-bounds accesses
+    Success criteria: All static array accesses are proven safe at compile time
+
+TASK 94E: SLICE OPERATION DETECTION (HIGH)
+
+    What to implement: Detect when slice operations are used
+    Watch for: 
+        Array slicing syntax [start..end]
+        Slice parameter passing
+        Slice return values
+    Validation: Log all slice operations as incompatible with C89
+    Success criteria: All slice operations are identified and flagged as non-C89
+
+    Sub-task 94E.1: Detect array slicing syntax [start..end]
+    Sub-task 94E.2: Detect slice parameter types
+    Sub-task 94E.3: Detect slice return types
+    Sub-task 94E.4: Detect slice literal creation
+    Sub-task 94E.5: Report slice operations as compilation errors
+
+TASK 94F: MEMORY ALLOCATION DETECTION (HIGH)
+
+    What to implement: Identify memory allocation operations
+    Watch for: 
+        new, create, destroy operations
+        Heap allocation functions
+        Memory management calls
+    Validation: Flag all allocation operations as C89-incompatible
+    Success criteria: All dynamic memory operations are detected and rejected
+    Sub-task 94F.1: Scan for allocation keywords (new, create, etc.)
+    Sub-task 94F.2: Detect heap allocation function calls
+    Sub-task 94F.3: Identify memory management utilities
+    Sub-task 94F.4: Flag all allocation operations
+    Sub-task 94F.5: Provide C89-safe allocation alternatives
+
+TASK 94G: LIFETIME ANALYSIS FRAMEWORK (HIGH)
+
+    What to implement: Track object lifetimes and validity
+    Watch for: 
+        Use-after-free scenarios
+        Dangling pointer references
+        Stack variable lifetime issues
+    Validation: Create lifetime tracking system that doesn't require runtime support
+    Success criteria: All lifetime violations are caught at compile time
+
+TASK 94H: NULL POINTER DETECTION (MEDIUM)
+
+    What to implement: Identify potential null pointer dereferences
+    Watch for: 
+        Uninitialized pointer usage
+        Function returning null pointers
+        Conditional null checks
+    Validation: Flag all potential null dereference points
+    Success criteria: All null pointer risks are identified in advance
+
+TASK 94I: DOUBLE FREE DETECTION (HIGH)
+
+    What to implement: Detect potential double-free scenarios
+    Watch for: 
+        Multiple deallocation calls
+        Shared ownership situations
+        Conditional deallocation paths
+    Validation: Track allocation/deallocation pairs
+    Success criteria: All potential double-free scenarios are identified
+    Sub-task 94I.1: Track allocation sites
+    Sub-task 94I.2: Track deallocation sites
+    Sub-task 94I.3: Analyze control flow paths
+    Sub-task 94I.4: Identify potential multiple deallocations
+    Sub-task 94I.5: Flag all double-free risks
+
 95. **Task 95:** Implement struct type checking (simple)
     - Risk Level: MEDIUM
     - Basic struct field access and initialization
@@ -252,22 +583,314 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Risk Level: LOW
     - Simple enum value access and compatibility
     - Constraint Check: C89 enums are supported
-97. **Task 97:** Implement basic error checking
-    - Risk Level: CRITICAL ⚠️⚠️⚠️
-    - Simple function return type validation
-    - Constraint Risk: Zig error handling doesn't exist in C89 - must map to int/error codes or similar
-98. **Task 98:** Implement basic function overloading resolution
-    - Risk Level: HIGH ⚠️
-    - Only simple function resolution needed, focusing on C89-compatible generation
-    - Constraint Risk: C89 doesn't support function overloading - must resolve to unique function names
+97. TASK 97A: ERROR UNION TYPE DETECTION (LOW)
+
+    What to implement: Identify when error union types are used
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Nested error union types
+        Error union in function parameters
+        Complex error union expressions
+    Validation: Log all detected error union locations
+    Success criteria: All error union usages are identified and flagged
+
+TASK 97B: ERROR SET DEFINITION DETECTION (LOW)
+
+    What to implement: Find all error set declarations
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Anonymous error sets
+        Nested error set references
+        Imported error sets
+    Validation: List all error sets found in source
+    Success criteria: All error set definitions are catalogued
+    Sub-task 98D.1: Detect explicit template instantiation
+    Sub-task 98D.2: Detect implicit template instantiation
+    Sub-task 98D.3: Track template specialization
+    Sub-task 98D.4: Catalog instantiation parameters
+    Sub-task 98D.5: Validate instantiation safety
+
+TASK 97C: ERROR FUNCTION SIGNATURE DETECTION (LOW)
+
+    What to implement: Identify functions that return errors
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Functions returning error unions
+        Functions returning error sets
+        Generic functions with error returns
+    Validation: Flag all functions with error return types
+    Success criteria: All error-returning functions are identified
+
+TASK 97D: TRY EXPRESSION DETECTION (LOW)
+
+    What to implement: Find all try expressions in code
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Nested try expressions
+        Try in different contexts (assignments, parameters, etc.)
+        Multiple try expressions in single statement
+    Validation: Log location and context of all try expressions
+    Success criteria: All try expressions are located and catalogued
+
+TASK 97E: CATCH EXPRESSION DETECTION (LOW)
+
+    What to implement: Find all catch expressions
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Catch with multiple handlers
+        Nested catch expressions
+        Catch in complex expressions
+    Validation: Document all catch expression locations
+    Success criteria: All catch expressions are identified
+
+TASK 97F: ERROR CODE MAPPING STRATEGY (MEDIUM)
+
+    What to implement: Design how to map errors to C89 integers
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Error code collision risks
+        Negative vs positive error code conventions
+        Error code range limitations
+    Validation: Create mapping table example
+    Success criteria: Clear strategy for converting all errors to integers
+
+TASK 97G: SUCCESS VALUE EXTRACTION MAPPING (MEDIUM)
+
+    What to implement: Strategy to extract success values from error unions
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Success value type preservation
+        Memory layout considerations
+        Out-parameter design choices
+    Validation: Design sample success value extraction patterns
+    Success criteria: Clear method for separating success from error paths
+
+TASK 97H: ERROR PROPAGATION ALTERNATIVE DESIGN (MEDIUM)
+
+    What to implement: Design C89 alternative to error propagation
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Performance implications of error handling
+        Stack unwinding alternatives
+        Error context preservation
+    Validation: Create prototype error propagation patterns
+    Success criteria: Viable C89 replacement for Zig error propagation
+
+TASK 97I: ERROR RETURN PATTERN GENERATION (HIGH)
+
+    What to implement: Generate C89-compatible error return patterns
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Generated code compilation issues
+        Performance degradation
+        Code complexity explosion
+    Validation: Test generated patterns compile in C89
+    Success criteria: All error-returning functions generate valid C89 code
+
+TASK 97J: ERROR HANDLING VALIDATION RULES (MEDIUM)
+
+    What to implement: Rules to validate error handling patterns
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Inconsistent error handling approaches
+        Missing error checks in translated code
+        Invalid error handling combinations
+    Validation: Apply rules to sample error-handling code
+    Success criteria: All error handling follows consistent C89 patterns
+
+TASK 97K: ERROR TYPE ELIMINATION IMPLEMENTATION (HIGH)
+
+    What to implement: Actually remove error types from type system
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Breaking existing type relationships
+        Performance impact on type checking
+        Memory leaks during elimination
+    Validation: Ensure type system remains consistent after elimination
+    Success criteria: No error types remain in final type system
+
+TASK 97L: ERROR-FREE TYPE CONVERSION (MEDIUM)
+
+    What to implement: Convert error union types to base types
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Type safety violations after conversion
+        Loss of important type information
+        Inconsistent conversion across codebase
+    Validation: Test that converted types still work correctly
+    Success criteria: All types remain safe and functional without error components
+98. 
+TASK 98A: FUNCTION NAME COLLISION DETECTION (LOW)
+
+    What to implement: Find functions with identical names
+    Watch for: 
+        Functions with same name but different signatures
+        Namespace collisions
+        Hidden function declarations
+    Validation: Catalog all function names and their signatures
+    Success criteria: All function name conflicts are identified
+
+TASK 98B: PARAMETER TYPE SIGNATURE ANALYSIS (MEDIUM)
+
+    What to implement: Analyze function parameter types for uniqueness
+    Watch for: 
+        Type aliases creating apparent differences
+        Pointer vs array parameter confusion
+        Const/volatile qualifiers affecting signatures
+    Validation: Ensure signature analysis correctly distinguishes functions
+    Success criteria: Each function signature is uniquely identifiable
+
+TASK 98C: GENERIC FUNCTION DETECTION (MEDIUM)
+
+    What to implement: Identify generic/polymporphic functions
+    Watch for: 
+        Template functions
+        Generic type parameters
+        Type inference in function calls
+    Validation: Log all generic function definitions
+    Success criteria: All generic functions are identified as needing special handling
+
+TASK 98D: TEMPLATE INSTANTIATION DETECTION (HIGH)
+
+    What to implement: Find where templates are instantiated
+    Watch for: 
+        Implicit template instantiation
+        Explicit instantiation requests
+        Recursive template instantiations
+    Validation: Track all template instantiation sites
+    Success criteria: All template usage is catalogued for processing
+    Sub-task 98D.1: Detect explicit template instantiation
+    Sub-task 98D.2: Detect implicit template instantiation
+    Sub-task 98D.3: Track template specialization
+    Sub-task 98D.4: Catalog instantiation parameters
+    Sub-task 98D.5: Validate instantiation safety
+
+TASK 98E: NAME MANGLING ALGORITHM DESIGN (MEDIUM)
+
+    What to implement: Design algorithm to create unique C89 function names
+    Watch for: 
+        Name length limitations in C89 compilers
+        Reserved word conflicts
+        Readability vs uniqueness tradeoffs
+    Validation: Test algorithm with various function signatures
+    Success criteria: Algorithm produces unique, C89-compliant names consistently
+
+TASK 98F: UNIQUE NAME GENERATION (MEDIUM)
+
+    What to implement: Generate actual unique names for functions
+    Watch for: 
+        Name collision in generated output
+        Excessive name length
+        Debugging readability issues
+    Validation: Verify all generated names are truly unique
+    Success criteria: Every function gets a unique C89-safe name
+
+TASK 98G: CALL SITE RESOLUTION UPDATES (HIGH)
+
+    What to implement: Update function calls to use new mangled names
+    Watch for: 
+        Missing call site updates
+        Performance impact of name resolution
+        Indirect call handling
+    Validation: Ensure all function calls point to correct mangled names
+    Success criteria: All function calls resolve to the correct target functions
+    Sub-task 98G.1: Build call site lookup table
+    Sub-task 98G.2: Update direct function calls
+    Sub-task 98G.3: Update indirect function calls
+    Sub-task 98G.4: Update recursive calls
+    Sub-task 98G.5: Validate all call resolutions work correctly
+
 99. **Task 99:** Write bootstrap-specific unit tests
     - Risk Level: MEDIUM
     - Test basic type checking functionality and verify C89 compatibility of generated types
     - Constraint Risk: Tests must cover all rejected features, not just accepted ones
-100. **Task 100:** Implement basic integration tests
-    - Risk Level: CRITICAL ⚠️⚠️⚠️
-    - Parse, type-check, and generate C89 for simple Zig code, and verify the C89 output compiles
-    - Constraint Risk: Final validation - if generated C doesn't compile, entire phase fails
+100. TASK 100A: LITERAL EXPRESSION INTEGRATION TEST (LOW)
+
+    What to implement: Test literal expressions end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Literal value corruption during translation
+        Type mismatch in generated C code
+        Compilation errors in C89 compiler
+    Validation: Run generated C through C89 compiler
+    Success criteria: All literal expressions generate and compile successfully
+
+TASK 100B: VARIABLE DECLARATION INTEGRATION TEST (LOW)
+
+    What to implement: Test variable declarations end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Variable name conflicts in C89
+        Type declaration errors
+        Initialization problems
+    Validation: Verify C89 compilation succeeds
+    Success criteria: All variable declarations work in C89 environment
+
+TASK 100C: BASIC ARITHMETIC INTEGRATION TEST (LOW)
+
+    What to implement: Test arithmetic operations end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Operator precedence issues
+        Type promotion differences
+        Overflow/underflow behavior changes
+    Validation: Compare arithmetic results between Zig and C89
+    Success criteria: Arithmetic operations produce identical results
+
+TASK 100D: FUNCTION DECLARATION INTEGRATION TEST (MEDIUM)
+
+    What to implement: Test function declarations end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Function name mangling issues
+        Parameter type mismatches
+        Return type problems
+    Validation: Ensure C89 compiler accepts function declarations
+    Success criteria: All function declarations compile successfully
+
+TASK 100E: SIMPLE FUNCTION CALL INTEGRATION TEST (MEDIUM)
+
+    What to implement: Test function calls end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Calling convention mismatches
+        Parameter passing errors
+        Return value handling issues
+    Validation: Execute generated C code and verify correctness
+    Success criteria: Function calls work identically in both versions
+
+TASK 100F: IF STATEMENT INTEGRATION TEST (MEDIUM)
+
+    What to implement: Test if statements end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Condition evaluation differences
+        Scoping issues in generated C
+        Branch prediction differences
+    Validation: Test all if statement variations compile and run
+    Success criteria: Control flow behaves identically in both languages
+
+TASK 100G: WHILE LOOP INTEGRATION TEST (MEDIUM)
+
+    What to implement: Test while loops end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Loop condition evaluation
+        Variable scoping in loops
+        Break/continue statement handling
+    Validation: Ensure loops execute correctly in C89
+    Success criteria: Loops produce identical results in both implementations
+
+TASK 100H: BASIC STRUCT INTEGRATION TEST (MEDIUM)
+
+    What to implement: Test struct usage end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Struct definition compatibility
+        Member access translation
+        Memory layout differences
+    Validation: Verify struct operations compile and work in C89
+    Success criteria: Struct operations function identically in both languages
+
+TASK 100I: POINTER OPERATION INTEGRATION TEST (HIGH)
+
+    What to implement: Test pointer operations end-to-end
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        Pointer arithmetic limitations
+        Memory safety issues
+        Compilation warnings/errors in C89
+    Validation: Run comprehensive pointer operation tests
+    Success criteria: All pointer operations work safely in C89 environment
+
+TASK 100J: C89 COMPILER VALIDATION FRAMEWORK (HIGH)
+
+    What to implement: Framework to validate generated C89 code
+    Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
+        External compiler dependency issues
+        Performance impact of validation
+        False positive/negative validation results
+    Validation: Test framework with known good and bad C89 samples
+    Success criteria: Framework accurately identifies valid/invalid C89 code
 101. **Task 101:** Optimize for bootstrap performance
     - Risk Level: LOW
     - Minimal type checking overhead and fast symbol lookups
