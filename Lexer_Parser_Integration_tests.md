@@ -57,3 +57,40 @@ if (a && (b || c)) {}
   1.  **Expression Parsing:** The condition `a && (b || c)` is parsed by `parseExpression`, which uses a Pratt parser (`parsePrecedenceExpr`).
   2.  **Potential Flaw:** The logic for handling parenthesized expressions occurs in `parsePrimaryExpr`. When `parsePrecedenceExpr` is parsing the `&&` operator, it recursively calls `parsePrecedenceExpr` for the right-hand side. This recursive call should correctly handle the `(b || c)` part.
   3.  The crash suggests that the parser state is becoming corrupted during this process. A possible cause is that after parsing the parenthesized `(b || c)` expression, the parser's position is not correctly advanced past the closing `)`. This could lead to an infinite loop where the parser keeps re-parsing the same tokens, eventually causing a stack overflow or other fatal error. Another possibility is a memory corruption issue in the arena allocator when building the nested binary operator AST nodes.
+
+---
+
+# Integration Test Results (Post-Fixes)
+
+This section summarizes the results of the integration tests after the parser was fixed.
+
+## Logical AND Operator
+
+- The `&&` operator is correctly parsed as a logical AND operator (`TOKEN_AMPERSAND2`).
+- The `and` keyword is tokenized as `TOKEN_AND`, but it is not currently supported as a logical AND operator by the parser. This is a known limitation.
+
+## Comprehensive Function Test
+
+The `ParserIntegration_ComprehensiveFunction` test passed, demonstrating that the parser can successfully handle a combination of:
+
+- Variable declarations (`var`)
+- `while` loops with complex conditions
+- `if-else` statements
+- `for` loops
+- `return` statements
+
+## For Loop Over Slice
+
+The `ParserIntegration_ForLoopOverSlice` test passed, confirming that the parser can handle `for` loops that iterate over a slice of an array.
+
+## Switch Expression
+
+The `ParserIntegration_SwitchExpression` test passed, indicating that the parser correctly handles `switch` expressions with multiple prongs, including an `else` prong.
+
+## Struct Declaration
+
+The `ParserIntegration_StructDeclaration` test passed, showing that the parser can correctly parse `struct` declarations with multiple fields.
+
+## Defer Statement
+
+The `ParserIntegration_DeferStatement` test passed, confirming that the parser can handle `defer` statements with member access and function calls.

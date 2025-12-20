@@ -588,6 +588,29 @@ The `parseWhileStatement` function is responsible for parsing a `while` loop. It
 - It then requires a statement for the loop body. At this foundational stage, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
+### `ASTDeferStmtNode`
+Represents a `defer` statement.
+*   **Zig Code:** `defer file.close();`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTDeferStmtNode
+     * @brief Represents a defer statement.
+     * @var ASTDeferStmtNode::statement The statement to be executed at scope exit.
+     */
+    struct ASTDeferStmtNode {
+        ASTNode* statement;
+    };
+    ```
+
+#### Parsing Logic (`parseDeferStatement`)
+The `parseDeferStatement` function handles the `defer` statement. It adheres to the grammar:
+`'defer' statement`
+
+- It consumes a `defer` token.
+- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- Any deviation from this structure results in a fatal error.
+
 ### `ASTForStmtNode`
 Represents a `for` loop, which iterates over an expression.
 *   **Zig Code:** `for (my_array) |item| { ... }`, `for (0..10) |val, i| { ... }`
