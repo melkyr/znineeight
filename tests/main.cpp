@@ -71,6 +71,7 @@ bool expect_statement_parser_abort(const char* source_code) {
 
 // Forward declarations for all test functions
 TEST_FUNC(symbol_table_insertion_and_lookup);
+TEST_FUNC(scope_management);
 TEST_FUNC(parser_symbol_table_integration);
 TEST_FUNC(Lexer_Delimiters);
 TEST_FUNC(Lexer_DotOperators);
@@ -279,6 +280,7 @@ int main(int argc, char* argv[]) {
     // Normal test suite execution
     bool (*tests[])() = {
         test_symbol_table_insertion_and_lookup,
+        test_scope_management,
         test_parser_symbol_table_integration,
         test_basic_allocation,
         test_multiple_allocations,

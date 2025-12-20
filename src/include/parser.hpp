@@ -253,7 +253,8 @@ private:
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
-    SymbolTable* symbols_;
+    SymbolTable* global_scope_;
+    SymbolTable* current_scope_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
 };
 

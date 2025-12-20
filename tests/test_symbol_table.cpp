@@ -4,7 +4,7 @@
 #include "string_interner.hpp"
 
 TEST_FUNC(symbol_table_insertion_and_lookup) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SymbolTable table(arena);
 

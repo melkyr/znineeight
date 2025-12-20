@@ -4,7 +4,7 @@
 #include "memory.hpp"
 
 TEST_FUNC(parser_symbol_table_integration) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(8192);
     SymbolTable table(arena);
     Token tokens[1]; // Dummy token stream
 

@@ -9,10 +9,10 @@
 #endif
 
 Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols)
-    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), symbols_(symbols), recursion_depth_(0) {
+    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), global_scope_(symbols), current_scope_(symbols), recursion_depth_(0) {
     assert(tokens_ != NULL && "Token stream cannot be null");
     assert(arena_ != NULL && "Arena allocator is required");
-    assert(symbols_ != NULL && "Symbol table is required");
+    assert(global_scope_ != NULL && "Symbol table is required");
 }
 
 Token Parser::advance() {
@@ -806,6 +806,18 @@ ASTNode* Parser::parseVarDecl() {
     node->loc = keyword_token.location;
     node->as.var_decl = var_decl;
 
+    // Add the variable to the current scope
+    Symbol symbol;
+    symbol.kind = SYMBOL_VARIABLE;
+    symbol.name = var_decl->name;
+    symbol.type = NULL; // This will be resolved during type checking
+    symbol.definition = node;
+    symbol.address_offset = 0; // This will be assigned during code generation
+
+    if (!current_scope_->insert(symbol)) {
+        error("Variable with this name already declared in the current scope");
+    }
+
     return node;
 }
 
@@ -888,6 +900,10 @@ ASTNode* Parser::parseFnDecl() {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
 
+    // Create a new scope for the function body
+    SymbolTable* previous_scope = current_scope_;
+    current_scope_ = new (arena_->alloc(sizeof(SymbolTable))) SymbolTable(*arena_, previous_scope);
+
     expect(TOKEN_LPAREN, "Expected '(' after function name");
     if (peek().type != TOKEN_RPAREN) {
         error("Non-empty parameter lists are not yet supported");
@@ -901,6 +917,9 @@ ASTNode* Parser::parseFnDecl() {
     if (body_node == NULL) {
         error("Failed to parse function body");
     }
+
+    // Restore the previous scope
+    current_scope_ = previous_scope;
 
     // Create the function declaration node
     ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
@@ -966,6 +985,10 @@ ASTNode* Parser::parseStatement() {
 ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
+    // Enter a new scope
+    SymbolTable* previous_scope = current_scope_;
+    current_scope_ = new (arena_->alloc(sizeof(SymbolTable))) SymbolTable(*arena_, previous_scope);
+
     DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
 
@@ -974,6 +997,9 @@ ASTNode* Parser::parseBlockStatement() {
     }
 
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
+
+    // Exit the current scope and restore the previous one
+    current_scope_ = previous_scope;
 
     ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     block_node->type = NODE_BLOCK_STMT;

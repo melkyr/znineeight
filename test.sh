@@ -63,6 +63,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_recursion.cpp \
     tests/test_symbol_table.cpp \
     tests/test_parser_symbol_table.cpp \
+    tests/scope_tests.cpp \
     -Isrc/include \
     -o test_runner
 

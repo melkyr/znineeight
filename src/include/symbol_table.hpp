@@ -4,6 +4,7 @@
 #include "common.hpp"
 #include "type_system.hpp"
 #include "memory.hpp"
+#include "string_interner.hpp"
 
 // Forward-declare ASTNode to avoid circular dependency
 struct ASTNode;
@@ -43,7 +44,7 @@ public:
      * @brief Constructs a new SymbolTable.
      * @param arena The ArenaAllocator to use for symbol storage.
      */
-    SymbolTable(ArenaAllocator& arena);
+    SymbolTable(ArenaAllocator& arena, SymbolTable* parent = NULL);
 
     /**
      * @brief Inserts a new symbol into the table.
@@ -59,8 +60,16 @@ public:
      */
     Symbol* lookup(const char* name);
 
+    /**
+     * @brief Looks up a symbol by name in the current scope only.
+     * @param name The name of the symbol to find.
+     * @return A pointer to the Symbol if found, otherwise NULL.
+     */
+    Symbol* lookup_local(const char* name);
+
 private:
     DynamicArray<Symbol> symbols;
+    SymbolTable* parent;
 };
 
 #endif // SYMBOL_TABLE_HPP
