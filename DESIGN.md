@@ -170,33 +170,40 @@ private:
   * During parsing of a block, `defer` statements are pushed into a vector for later processing
 
 ### 4.3 Layer 3: Type System (`type_system.hpp`)
-**Supported Types (Phase 1):**
-* **Primitives:** `i8`-`i64`, `u8`-`u64`, `bool`, `f32`, `f64`
-* **Pointers:** `*T` (Single level initially)
-* **Slices:** `[]T` (Struct of `{ ptr, len }`)
-* **Error Unions:** `!T` (Enum/Int for error + Value)
+**Supported Types (Bootstrap Phase):**
+* **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`
+* **Pointers:** `*T` (Single level)
 
 **Type Representation:**
 ```cpp
+// Forward-declare Type for the pointer union member
+struct Type;
+
 enum TypeKind {
-    TYPE_VOID, TYPE_BOOL,
+    TYPE_VOID,
+    TYPE_BOOL,
+    // Integer Types
     TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64,
     TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64,
-    TYPE_POINTER,
-    TYPE_ARRAY,
-    TYPE_SLICE,         // NEW: []T
-    TYPE_ERROR_UNION    // NEW: !T
+    // Platform-dependent Integer Types
+    TYPE_ISIZE, // Maps to i32 on 32-bit target
+    TYPE_USIZE, // Maps to u32 on 32-bit target
+    // Floating-Point Types
+    TYPE_F32,
+    TYPE_F64,
+    // Complex Types
+    TYPE_POINTER
 };
+
 struct Type {
     TypeKind kind;
     size_t size;
     size_t alignment;
     union {
-        struct { Type* base; } pointer;
-        struct { Type* elem; size_t count; } array;
-        struct { Type* elem; } slice; // Implicitly { ptr, len }
-        struct { Type* payload; } error_union;
-    };
+        struct {
+            Type* base;
+        } pointer;
+    } as;
 };
 ```
 
