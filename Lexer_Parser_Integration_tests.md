@@ -64,3 +64,15 @@ As of this milestone, the parser is robust for the features tested above, but th
 -   **Limited Standard Library:** The parser does not yet interact with a standard library, so concepts like namespaces (`usingnamespace`) and complex built-in functions are not handled.
 -   **Error Recovery:** The parser still operates on a fatal-error-only basis. It does not attempt to recover from syntax errors.
 -   **Logical Operators:** The parser currently recognizes both `and` and `&&` as logical AND. This is a temporary measure to support legacy tests and will be resolved in a future task.
+
+## Failing Tests Summary
+
+### `test_ParserIntegration_ForLoopOverSlice`
+
+-   **Test Output:**
+    ```
+    Running test 126/135...
+    ./test.sh: line 70:  1946 Aborted                 ./test_runner
+    Tests failed!
+    ```
+-   **Hypothesis:** The test runner aborts, which strongly suggests a failed `assert` or a segmentation fault within the test case. The `test_ParserIntegration_ForLoopOverSlice` test is designed to verify that the parser can correctly handle a `for` loop that iterates over an array slice (e.g., `for (my_slice[0..4])`). The crash indicates that the parser is not correctly parsing this syntax, leading to an invalid `ASTNode` being created. When the test attempts to access this node's properties, it likely encounters a `NULL` pointer or an incorrect node type, triggering an assertion failure and causing the program to abort. The root cause is likely a bug in the parser's logic for handling array slice expressions as the iterable in a `for` loop.
