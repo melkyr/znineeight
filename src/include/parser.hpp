@@ -24,17 +24,42 @@
  * The parser uses a recursive descent strategy and allocates all AST nodes from
  * a provided ArenaAllocator to ensure efficient memory management.
  */
-class Parser {
+class Parser; // Forward declaration
+
+class ParserBuilder {
+private:
+    Token* tokens_;
+    size_t token_count_;
+    ArenaAllocator* arena_;
+    SymbolTable* symbols_;
+    int max_recursion_depth_;
+
 public:
+    ParserBuilder(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols)
+        : tokens_(tokens), token_count_(count), arena_(arena), symbols_(symbols),
+          max_recursion_depth_(MAX_PARSER_RECURSION_DEPTH) {}
+
+    ParserBuilder& withMaxRecursionDepth(int depth) {
+        max_recursion_depth_ = depth;
+        return *this;
+    }
+
+    Parser build();
+};
+
+class Parser {
+    friend class ParserBuilder; // Allow Builder to access private constructor
+private:
     /**
      * @brief Constructs a new Parser instance.
      * @param tokens A pointer to the array of tokens from the lexer.
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
      * @param symbols A pointer to the SymbolTable for symbol management.
+     * @param max_recursion_depth The maximum depth for recursive descent parsing.
      */
-    Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols);
-
+    Parser(Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbols, int max_recursion_depth);
+public:
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
      * @return A pointer to the root ASTNode of the parsed type. The node is allocated
@@ -255,6 +280,7 @@ private:
     ArenaAllocator* arena_;
     SymbolTable* symbols_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
+    int max_recursion_depth_; ///< The maximum allowed recursion depth.
 };
 
 #endif // PARSER_HPP

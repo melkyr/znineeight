@@ -9,7 +9,7 @@ TEST_FUNC(parser_symbol_table_integration) {
     Token tokens[1]; // Dummy token stream
 
     // This line should fail to compile initially
-    Parser parser(tokens, 1, &arena, &table);
+    Parser parser = ParserBuilder(tokens, 1, &arena, &table).build();
 
     // This assertion is just to have a valid test body.
     // The real test is the successful compilation.

@@ -26,7 +26,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
         }
     }
 
-    return Parser(tokens.getData(), tokens.length(), &arena, &table);
+    return ParserBuilder(tokens.getData(), tokens.length(), &arena, &table).build();
 }
 
 TEST_FUNC(Parser_ErrDeferStatement_Simple) {
