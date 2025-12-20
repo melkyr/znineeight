@@ -29,6 +29,21 @@
     }
 
 /**
+ * @def ASSERT_FALSE(condition)
+ * @brief Asserts that a given condition is false.
+ *
+ * If the condition is true, it prints a failure message with the file and line number
+ * and causes the test function to return `false`.
+ *
+ * @param condition The condition to evaluate.
+ */
+#define ASSERT_FALSE(condition) \
+    if (condition) { \
+        printf("FAIL: %s at %s:%d\n", #condition, __FILE__, __LINE__); \
+        return false; \
+    }
+
+/**
  * @def ASSERT_EQ(expected, actual)
  * @brief Asserts that two values are equal.
  *

@@ -232,11 +232,11 @@ private:
     /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). Helper for `parseType`. */
     ASTNode* parseArrayType();
 
-    /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
-    ASTNode* parseSwitchExpression();
-
     /** @brief Parses a struct declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseStructDeclaration();
+
+    /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
+    ASTNode* parseSwitchExpression();
 
     /** @brief Parses a union declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseUnionDeclaration();
