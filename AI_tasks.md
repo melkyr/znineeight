@@ -4,7 +4,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 
 ## Phase 0: The Bootstrap Compiler (C++98)
 
-### Milestone 1: Core Infrastructure
+### Milestone 1: Core Infrastructure (COMPLETE)
 1.  **Task 1:** Set up the basic directory structure. (DONE)
 2.  **Task 2:** Create the `common.hpp` compatibility header. (DONE)
 3.  **Task 3:** Implement the `ArenaAllocator` class. (DONE)
@@ -16,7 +16,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 9.  **Task 9:** Create a minimal unit testing framework. (DONE)
 10. **Task 10:** Create initial `build.bat` and `test.bat` scripts. (DONE)
 
-### Milestone 2: Lexer Implementation
+### Milestone 2: Lexer Implementation (COMPLETE)
 11. **Task 11:** Define initial `TokenType` enum in `lexer.hpp`. (DONE)
 12. **Task 12:** Implement the `Token` struct with a union for literal values. (DONE)
 13. **Task 13:** Implement the `Lexer` class skeleton. (DONE)
@@ -42,7 +42,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 33. **Task 33:** Implement lexing for crucial missing keywords (`fn`, `var`, `defer`). (DONE)
 34. **Task 34:** Implement lexing for missing operators (`--`, `&&`).
 
-### Milestone 3: Parser & AST
+### Milestone 3: Parser & AST (COMPLETE)
 35. **Task 35:** Define foundational AST structures and nodes for Expressions (Literals, Unary, Binary). (DONE)
 36. **Task 36:** Define AST nodes for Statements (`IfStmt`, `WhileStmt`, `ReturnStmt`, `DeferStmt`, `BlockStmt`). (DONE)
 37. **Task 37:** Define AST nodes for Declarations (`FnDecl`, `VarDecl`, `ParamDecl`). (DONE)
@@ -183,7 +183,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 
 
     
-### Milestone 4: Bootstrap Type System & Semantic Analysis
+### Milestone 4: Bootstrap Type System & Semantic Analysis (IN PROGRESS)
 81. **Task 81:** Define core Type struct and TypeKind for C89-compatible types
     - Risk Level: LOW
     - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T
