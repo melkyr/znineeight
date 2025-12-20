@@ -975,6 +975,9 @@ The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExp
 2. `peek()` never modifies parser state
 3. `is_at_end()` returns true exactly at `token_count_` position
 4. All methods handle empty token streams safely (via constructor assertions)
+
+### `peekNext()`
+The `peekNext()` function provides a one-token lookahead without consuming the current token. This is useful in situations where the parser needs to make a decision based on the token that follows the current one. For example, it can be used to distinguish between an array access `[i]` and an array slice `[i..]`.
     ```
 
 ### `ASTCatchExprNode`
