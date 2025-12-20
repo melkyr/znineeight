@@ -1,66 +1,59 @@
-# Lexer-Parser Integration Test Suite
+# Lexer-Parser Integration Test Failures
 
-This document tracks the status and findings of the integration tests for the Lexer and Parser components, as established in Task 81.
+This document tracks and analyzes failures discovered during the integration testing of the Lexer and Parser components (Task 74).
 
-## 1. Test Suite Overview
+### 1. Test Case: `ParserIntegration_ForLoopOverSlice`
+- **Source Code:**
+```zig
+for (my_slice[0..4]) |item| {}
+```
+- **Observed Behavior:**
+  - The test runner process aborted, indicating a fatal error in the parser. The test `ParserIntegration_ForLoopOverSlice` was the last one added and is the likely cause.
+- **Hypothesis / Root Cause Analysis:**
+  1.  **Lexer Mismatch:** The lexer does not have a token for the range operator `..`. In `src/bootstrap/lexer.cpp`, the logic for `.` handles `...` (`TOKEN_ELLIPSIS`) and `.` (`TOKEN_DOT`), but not `..`. When it sees `..`, it emits a `TOKEN_DOT` and backtracks, leaving the second `.` to be processed as the next token.
+  2.  **Parser Failure:** The `parsePostfixExpression` function in `src/bootstrap/parser.cpp` is responsible for array access `[...]`. It calls `parseExpression` to handle the contents within the brackets.
+  3.  `parseExpression` parses the integer `0` successfully. It then sees the `.` token. `TOKEN_DOT` is not a binary operator, so `parsePrecedenceExpr` returns the node for `0`.
+  4.  `parsePostfixExpression` then expects a closing `]`. However, the current token is the second `.`.
+  5.  The `expect(TOKEN_RBRACKET, ...)` call fails, which invokes `parser->error()`, leading to an `abort()`.
 
-The primary integration test file is `tests/test_parser_integration.cpp`. It contains a suite of tests designed to validate that the parser correctly constructs an Abstract Syntax Tree (AST) from various source code snippets. These tests cover a range of language features, from simple variable declarations to more complex control flow and expression parsing.
+  The core issue is that the parser and lexer do not support range expressions (`..`) as valid syntax within an array access. The test passed erroneously before because it was not being correctly registered and run by the test harness.
+---
+### 2. Test Case: `ParserIntegration_ComprehensiveFunction`
+- **Source Code:**
+```zig
+fn comprehensive_test() -> i32 {
+    var i: i32 = 0;
+    while (i < 10) {
+        if (i % 2 == 0) {
+            i = i + 1;
+        } else {
+            i = i + 2;
+        }
+    }
+    for (some_iterable) |item| {
+        // do nothing
+    }
+    return i;
+}
+```
+- **Observed Behavior:**
+  - The test runner process aborted. This indicates a fatal error in the parser, as the test attempts to parse a full function definition.
+- **Hypothesis / Root Cause Analysis:**
+  1.  **Parser Limitation:** The documentation in `AST_parser.md` and the implementation in `src/bootstrap/parser.cpp` for `parseFnDecl` explicitly state that it only supports empty function bodies.
+  2.  **Error Trigger:** The parser, after parsing the function signature `fn comprehensive_test() -> i32 {`, encounters the `var` token, which is not the expected `}`.
+  3.  The `parseFnDecl` function has a check: `if (peek().type != TOKEN_RBRACE) { error("Non-empty function bodies are not yet supported"); }`.
+  4.  This `error()` call correctly triggers an `abort()`, which terminates the test runner.
 
-## 2. Implemented Test Cases
-
-The following test cases have been implemented and are passing, ensuring the robustness of the parser for these scenarios:
-
-### `ParserIntegration_VarDeclWithBinaryExpr`
-- **Purpose:** Verifies that a variable declaration with a simple binary expression as an initializer is parsed correctly.
-- **Source Code:** `var x: i32 = 10 + 20;`
-- **Validation:** Checks that the AST root is a `NODE_VAR_DECL` and that its initializer is a `NODE_BINARY_OP` with the correct operator (`+`) and integer literal operands.
-
-### `ParserIntegration_ForLoopOverSlice`
-- **Purpose:** Ensures the parser can handle a `for` loop that iterates over an array slice.
-- **Source Code:** `for (my_slice[0..4]) |item| {}`
-- **Validation:** Confirms that the parser creates a `NODE_FOR_STMT` whose iterable expression is a `NODE_ARRAY_SLICE` with the correct start and end indices.
-
-### `ParserIntegration_ComprehensiveFunction`
-- **Purpose:** A high-level test to ensure a function with a non-empty body containing various statements (variable declaration, `while` loop, `if` statement, `for` loop, `return`) can be parsed.
-- **Source Code:** A multi-line function with nested control flow.
-- **Validation:** Checks that a `NODE_FN_DECL` is created and that its body contains the correct number of top-level statements.
-
-### `ParserIntegration_WhileWithFunctionCall`
-- **Purpose:** Tests that the condition of a `while` loop can be a function call.
-- **Source Code:** `while (should_continue()) {}`
-- **Validation:** Asserts that the `condition` field of the `NODE_WHILE_STMT` is a `NODE_FUNCTION_CALL`.
-
-### `ParserIntegration_IfWithComplexCondition`
-- **Purpose:** Verifies correct precedence and associativity for nested logical operators (`&&`, `||`) in an `if` statement's condition.
-- **Source Code:** `if (a && (b || c)) {}`
-- **Validation:** Deeply inspects the AST to ensure that the `&&` and `||` binary operations are nested correctly according to operator precedence.
-
-### `ParserIntegration_LogicalAndOperatorSymbol`
-- **Purpose:** A regression test to ensure that the `&&` is correctly parsed as a logical AND operator (`TOKEN_AMPERSAND2`).
-- **Source Code:** `const x: bool = a && b;`
-- **Validation:** Checks that the initializer is a `NODE_BINARY_OP` with the `TOKEN_AMPERSAND2` operator.
-
-### `ParserIntegration_ForLoopWithIndex`
-- **Purpose:** Verifies that a `for` loop with both an item and an index capture variable is parsed correctly.
-- **Source Code:** `for (my_array) |item, i| {}`
-- **Validation:** Confirms that the `item_name` and `index_name` fields of the `NODE_FOR_STMT` are correctly populated.
-
-### `ParserIntegration_TryCatchExpression`
-- **Purpose:** Tests the parsing of a `try...catch` expression.
-- **Source Code:** `var result = try risky_op() catch |err| fallback_op();`
-- **Validation:** Ensures the parser creates a `NODE_CATCH_EXPR` that contains a `NODE_TRY_EXPR` and correctly captures the error name.
-
-### `ParserIntegration_FunctionWithBody`
-- **Purpose:** Explicitly verifies that a function with a simple body (a single variable declaration) is parsed correctly, confirming the fix for empty-body-only functions.
-- **Source Code:** `fn do_stuff() -> void { var a: i32 = 1; }`
-- **Validation:** Checks that the function's body is a `NODE_BLOCK_STMT` containing one statement of type `NODE_VAR_DECL`.
-
-## 3. Known Limitations
-
-As of this milestone, the parser is robust for the features tested above, but the following limitations should be noted for future work:
-
--   **Function Parameters:** Function declarations are parsed, but parameter lists are not yet supported. The parser will raise an error if any parameters are present.
--   **Advanced `comptime`:** While `comptime` blocks are parsed, the full range of compile-time operations and semantics is not yet implemented or tested.
--   **Limited Standard Library:** The parser does not yet interact with a standard library, so concepts like namespaces (`usingnamespace`) and complex built-in functions are not handled.
--   **Error Recovery:** The parser still operates on a fatal-error-only basis. It does not attempt to recover from syntax errors.
--   **Logical Operators:** The parser currently recognizes both `and` and `&&` as logical AND. This is a temporary measure to support legacy tests and will be resolved in a future task.
+  The failure is not a bug in the parser, but rather a limitation that the comprehensive test was designed to expose. The parser is behaving as documented. A more advanced `parseStatement` dispatcher that can be called from `parseBlockStatement` is needed to handle statements inside a function body.
+---
+### 3. Test Case: `ParserIntegration_IfWithComplexCondition`
+- **Source Code:**
+```zig
+if (a && (b || c)) {}
+```
+- **Observed Behavior:**
+  - The test runner process aborted, indicating a fatal error in the parser when this specific test is enabled.
+- **Hypothesis / Root Cause Analysis:**
+  1.  **Expression Parsing:** The condition `a && (b || c)` is parsed by `parseExpression`, which uses a Pratt parser (`parsePrecedenceExpr`).
+  2.  **Potential Flaw:** The logic for handling parenthesized expressions occurs in `parsePrimaryExpr`. When `parsePrecedenceExpr` is parsing the `&&` operator, it recursively calls `parsePrecedenceExpr` for the right-hand side. This recursive call should correctly handle the `(b || c)` part.
+  3.  The crash suggests that the parser state is becoming corrupted during this process. A possible cause is that after parsing the parenthesized `(b || c)` expression, the parser's position is not correctly advanced past the closing `)`. This could lead to an infinite loop where the parser keeps re-parsing the same tokens, eventually causing a stack overflow or other fatal error. Another possibility is a memory corruption issue in the arena allocator when building the nested binary operator AST nodes.
