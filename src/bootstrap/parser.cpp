@@ -350,6 +350,7 @@ static int get_token_precedence(TokenType type) {
 
         // Logical operators
         case TOKEN_AND:
+        case TOKEN_AMPERSAND2:
             return 3;
         case TOKEN_OR:
             return 2;
