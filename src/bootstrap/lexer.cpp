@@ -272,9 +272,14 @@ Token Lexer::parseHexFloat() {
 /**
  * @brief Parses a numeric literal, which can be an integer or a float.
  *
- * This function determines whether a numeric literal is a hexadecimal float,
- * a decimal float, or an integer, and then calls the appropriate parsing
- * function. It uses `strtol` for integers and `strtod` for decimal floats.
+ * This function handles decimal and hexadecimal integer literals, as well as
+ * decimal and hexadecimal floating-point literals.
+ *
+ * It includes a special lookahead mechanism to disambiguate between a
+ * floating-point number and an integer followed by a range operator (`..`).
+ * When a `.` is encountered, the lexer checks the next character. If it is
+ * also a `.`, the number is treated as an integer, and the `..` is left
+ * for the next tokenization step.
  *
  * @return A `Token` of the appropriate numeric type (`TOKEN_INTEGER_LITERAL` or
  *         `TOKEN_FLOAT_LITERAL`) or `TOKEN_ERROR` if the format is invalid.
@@ -315,14 +320,19 @@ Token Lexer::lexNumericLiteral() {
     while (isdigit(*end_ptr)) end_ptr++;
     bool is_float = false;
     if (*end_ptr == '.') {
-        if (!isdigit(end_ptr[1])) {
+        // Lookahead to distinguish between float literal and range operator
+        if (end_ptr[1] == '.') {
+            // This is an integer followed by a '..' operator.
+            // Do not consume the dot; treat the preceding number as an integer.
+        } else if (!isdigit(end_ptr[1])) {
              token.type = TOKEN_ERROR;
              this->current = end_ptr + 1;
              this->column += (this->current - start);
              return token;
-        }
+	} else {
         end_ptr++;
         is_float = true;
+        }
     }
     while (isdigit(*end_ptr)) end_ptr++;
     if (*end_ptr == 'e' || *end_ptr == 'E') {

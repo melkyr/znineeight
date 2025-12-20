@@ -90,6 +90,15 @@ ASTNode* Parser::parseComptimeBlock() {
     return node;
 }
 
+const Token& Parser::peekNext() const {
+    if (current_index_ + 1 >= token_count_) {
+        static Token eof_token;
+        eof_token.type = TOKEN_EOF;
+        return eof_token;
+    }
+    return tokens_[current_index_ + 1];
+}
+
 /**
  * @brief Parses a primary expression from the token stream.
  *

@@ -173,6 +173,13 @@ public:
      */
     bool is_at_end() const;
 
+    /**
+     * @brief Returns the token after the current one without consuming it.
+     * @return A constant reference to the next token.
+     * @pre The parser is not at the end of the token stream.
+     */
+    const Token& peekNext() const;
+
 private:
     // A helper struct for iterative right-associative operator parsing.
     struct OperatorInfo {

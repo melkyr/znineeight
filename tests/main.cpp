@@ -127,6 +127,7 @@ TEST_FUNC(Lexer_ErrorConditions);
 TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
 TEST_FUNC(Lexer_StringLiteral_LongString);
 TEST_FUNC(lex_missing_keywords);
+TEST_FUNC(IntegerRangeAmbiguity);
 
 // AST Node Tests
 TEST_FUNC(ASTNode_IntegerLiteral);
@@ -426,6 +427,7 @@ int main(int argc, char* argv[]) {
         // test_ParserIntegration_ComprehensiveFunction,
         test_ParserBug_LogicalOperatorSymbol,
         test_Parser_RecursionLimit,
+        test_IntegerRangeAmbiguity,
     };
 
     int passed = 0;
