@@ -335,6 +335,25 @@ Represents an array or slice access.
     };
     ```
 
+#### `ASTArraySliceNode`
+Represents an array slice expression.
+*   **Zig Code:** `my_array[0..10]`, `my_array[..]`, `my_array[5..]`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTArraySliceNode
+     * @brief Represents an array or slice expression (e.g., `my_array[start..end]`).
+     * @var ASTArraySliceNode::array The expression being sliced.
+     * @var ASTArraySliceNode::start The start index expression (can be NULL).
+     * @var ASTArraySliceNode::end The end index expression (can be NULL).
+     */
+    struct ASTArraySliceNode {
+        ASTNode* array;
+        ASTNode* start; // Can be NULL
+        ASTNode* end;   // Can be NULL
+    };
+    ```
+
 #### Parsing Logic (`parsePostfixExpression`)
 The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
 
