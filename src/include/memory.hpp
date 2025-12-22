@@ -80,6 +80,14 @@ public:
         offset = 0;
     }
 
+    /**
+     * @brief Returns the current memory offset within the arena.
+     * @return The number of bytes currently allocated.
+     */
+    size_t getOffset() const {
+        return offset;
+    }
+
 private:
     // Make the class non-copyable to prevent accidental copies of the buffer.
     ArenaAllocator(const ArenaAllocator&);
