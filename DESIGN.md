@@ -252,7 +252,7 @@ struct Symbol {
     void* definition;         // Pointer to AST node
 };
 class SymbolTable {
-    std::vector<Symbol> symbols;
+    DynamicArray<Symbol>* symbols;
     SymbolTable* parent_scope;
 public:
     Symbol* lookup(const char* name);
