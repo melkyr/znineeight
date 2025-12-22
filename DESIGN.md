@@ -39,6 +39,7 @@ public:
 ```
 * **Usage:** AST Nodes, Types, and Symbols are allocated here
 * **Alignment:** Support aligned allocations for SIMD data (future extension)
+* **Safety:** The allocator uses overflow-safe checks to prevent memory corruption when the arena is full.
 
 ### 3.2 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.

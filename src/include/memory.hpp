@@ -37,13 +37,12 @@ public:
     }
 
     /**
-     * @brief Allocates a block of memory of a given size.
+     * @brief Allocates a block of memory of a given size with overflow protection.
      * @param size The number of bytes to allocate.
-     * @return A pointer to the allocated memory, or nullptr if the arena is full.
+     * @return A pointer to the allocated memory, or nullptr if the arena is full or size is 0.
      */
     void* alloc(size_t size) {
-        // Overflow-safe check: ensure size doesn't exceed remaining capacity.
-        if (size > capacity - offset) {
+        if (size == 0 || capacity - offset < size) { // Overflow-safe check
             return NULL;
         }
         u8* ptr = buffer + offset;
@@ -52,21 +51,19 @@ public:
     }
 
     /**
-     * @brief Allocates a block of memory with a specific alignment.
+     * @brief Allocates a block of memory with a specific alignment and overflow protection.
      * @param size The number of bytes to allocate.
      * @param align The desired alignment of the memory block. Must be a power of two.
      * @return A pointer to the allocated, aligned memory, or nullptr if the arena is full.
      */
     void* alloc_aligned(size_t size, size_t align) {
-        // Precondition: alignment must be a power of two.
         assert(align != 0 && (align & (align - 1)) == 0);
 
-        // This is a common bit-twiddling trick to align a pointer.
-        // It rounds the allocation start offset up to the nearest multiple of `align`.
-        size_t new_offset = (offset + align - 1) & ~(align - 1);
+        const size_t mask = align - 1;
+        size_t new_offset = (offset + mask) & ~mask;
 
-        // Overflow-safe check: ensure the requested size fits in the remaining capacity.
-        if (new_offset >= capacity || size > capacity - new_offset) {
+        // Check overflow and capacity
+        if (new_offset < offset || new_offset > capacity - size) {
             return NULL;
         }
 
