@@ -11,7 +11,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
 
     const char* source = "const x: bool = a && b;";
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 

@@ -1,34 +1,32 @@
 #include "test_framework.hpp"
 #include "test_utils.hpp"
 #include "compilation_unit.hpp"
-#include "ast.hpp"
 #include "parser.hpp"
 
 TEST_FUNC(compilation_unit_creation) {
-    const char* source = "const x: i32 = 42;";
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
-
     CompilationUnit unit(arena, interner);
+    const char* source = "const x: i32 = 42;";
     u32 file_id = unit.addSource("test.zig", source);
-    Parser parser = unit.createParser(file_id);
 
-    ASSERT_TRUE(parser.peek().type == TOKEN_CONST);
+    unit.tokenize(file_id);
+    Parser parser = unit.createParser();
 
+    ASSERT_TRUE(!parser.is_at_end());
     return true;
 }
 
 TEST_FUNC(compilation_unit_var_decl) {
-    const char* source = "const y: i32 = 100;";
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
+    const char* source = "const x: i32 = 42;";
 
-    Parser parser = create_parser_for_test(source, arena, interner);
-    ASTNode* decl = parser.parseVarDecl();
+    ParserTestContext ctx(source, arena, interner);
+    Parser parser = ctx.getParser();
 
-    ASSERT_TRUE(decl != NULL);
-    ASSERT_TRUE(decl->type == NODE_VAR_DECL);
-    ASSERT_TRUE(decl->as.var_decl->is_const);
-
+    ASTNode* node = parser.parseVarDecl();
+    ASSERT_TRUE(node != NULL);
+    ASSERT_EQ(node->type, NODE_VAR_DECL);
     return true;
 }

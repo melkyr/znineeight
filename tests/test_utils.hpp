@@ -40,51 +40,38 @@ private:
 };
 
 /**
- * @brief Creates a Parser for a given source string for use in tests.
- * @param source The source code string to be parsed.
- * @param arena The ArenaAllocator to use for all allocations.
- * @param interner The StringInterner to use for managing strings.
- * @return A Parser instance ready to parse the source code.
- */
-inline Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    CompilationUnit unit(arena, interner);
-    u32 file_id = unit.addSource("test.zig", source);
-    return unit.createParser(file_id);
-}
-
-/**
  * @class ParserTestContext
  * @brief Encapsulates the setup logic for parser tests.
  *
- * This utility class handles the boilerplate of setting up a Lexer, tokenizing
- * a source string, and creating a Parser instance. It ensures that parser tests
- * are consistent and easy to write. The context owns the token array and the parser.
+ * This utility class handles the boilerplate of setting up a CompilationUnit,
+ * tokenizing a source string, and creating Parser instances for tests. It owns
+ * the token stream, ensuring its lifetime exceeds that of any Parser created.
  */
 class ParserTestContext {
 public:
     /**
-     * @brief Constructs a new ParserTestContext.
+     * @brief Constructs a new ParserTestContext, which tokenizes the source.
      * @param source The source code string to be parsed.
      * @param arena The ArenaAllocator to use for all allocations.
      * @param interner The StringInterner to use for managing strings.
      */
     ParserTestContext(const char* source, ArenaAllocator& arena, StringInterner& interner)
-        : unit_(arena, interner), parser_(create_parser_for_test(source, arena, interner))
+        : unit_(arena, interner)
     {
+        u32 file_id = unit_.addSource("test.zig", source);
+        unit_.tokenize(file_id);
     }
 
     /**
-     * @brief Returns a reference to the Parser instance for the tokenized source code.
-     * @return A reference to the Parser instance.
+     * @brief Returns a new Parser instance that views the tokenized source.
+     * @return A new Parser instance.
      */
-    Parser& getParser() {
-        parser_.reset();
-        return parser_;
+    Parser getParser() {
+        return unit_.createParser();
     }
 
 private:
     CompilationUnit unit_;
-    Parser parser_;
 };
 
 

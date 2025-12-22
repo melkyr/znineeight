@@ -71,6 +71,7 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
 TEST_FUNC(arena_alloc_out_of_memory);
 TEST_FUNC(arena_alloc_zero_size);
 TEST_FUNC(arena_alloc_aligned_out_of_memory);
@@ -247,7 +248,7 @@ void run_parser_test_and_abort(const char* source_code, bool is_statement_test) 
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source_code, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     if (is_statement_test) {
         parser.parseStatement();
@@ -437,6 +438,7 @@ int main(int argc, char* argv[]) {
         test_compilation_unit_creation,
         test_compilation_unit_var_decl,
         test_Parser_CopyIsSafeAndDoesNotDoubleFree,
+        test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
     };
 
     int passed = 0;

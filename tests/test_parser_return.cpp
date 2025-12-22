@@ -8,7 +8,7 @@ TEST_FUNC(Parser_ReturnStatement_NoValue) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("return;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
     ASSERT_TRUE(stmt != NULL);
@@ -25,7 +25,7 @@ TEST_FUNC(Parser_ReturnStatement_WithValue) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("return 42;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
     ASSERT_TRUE(stmt != NULL);

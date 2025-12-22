@@ -8,7 +8,7 @@ TEST_FUNC(Parser_ParseConstDecl_Simple) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("const x: i32 = 123;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -37,7 +37,7 @@ TEST_FUNC(Parser_ParseVarDecl_Simple) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var y: u8 = 42;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -66,7 +66,7 @@ TEST_FUNC(Parser_ParseVarDecl_PointerType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var p: *i32 = 0;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -93,7 +93,7 @@ TEST_FUNC(Parser_ParseVarDecl_SliceType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("const s: []u8 = 1;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
     ASSERT_TRUE(node != NULL);
@@ -120,7 +120,7 @@ TEST_FUNC(Parser_ParseVarDecl_FixedArrayType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var buf: [1024]u8 = 0;", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
     ASSERT_TRUE(node != NULL);
