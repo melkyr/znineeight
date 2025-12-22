@@ -1,12 +1,7 @@
 #include "test_framework.hpp"
+#include "test_utils.hpp"
 #include <cstring>
 #include <cstdio>
-#include <cstdlib>
-
-#ifndef _WIN32
-#include <unistd.h>
-#include <sys/wait.h>
-#endif
 
 TEST_FUNC(Parser_RecursionLimit) {
     // Create a very deeply nested expression string to trigger the recursion limit.
@@ -24,7 +19,7 @@ TEST_FUNC(Parser_RecursionLimit) {
 
     // This test is designed to check that the parser aborts.
     // We expect `expect_parser_abort` to return true.
-    ASSERT_TRUE(expect_parser_abort(source));
+    ASSERT_TRUE(expect_statement_parser_abort(source));
 
     return true;
 }
