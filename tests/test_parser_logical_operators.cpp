@@ -32,7 +32,7 @@ static Parser create_parser_for_test(
         tokens.append(token);
     }
     tokens.append(lexer.nextToken());
-    return ParserBuilder(tokens.getData(), tokens.length(), &arena, &table).build();
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name, const char* right_name) {

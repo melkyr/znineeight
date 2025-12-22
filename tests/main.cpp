@@ -250,7 +250,7 @@ void run_parser_test_and_abort(const char* source_code, bool is_statement_test) 
     } while (token.type != TOKEN_EOF);
 
     SymbolTable symbols(arena);
-    Parser parser = ParserBuilder(tokens.getData(), tokens.length(), &arena, &symbols).build();
+    Parser parser(tokens.getData(), tokens.length(), &arena, &symbols);
     if (is_statement_test) {
         parser.parseStatement();
     } else {

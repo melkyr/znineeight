@@ -15,7 +15,7 @@ TEST_FUNC(Parser_Navigation_Simple) {
     tokens[2].type = TOKEN_EOF;
 
     SymbolTable table(arena);
-    Parser p = ParserBuilder(tokens, 3, &arena, &table).build();
+    Parser p(tokens, 3, &arena, &table);
 
     ASSERT_TRUE(!p.is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_VAR);
@@ -46,7 +46,7 @@ TEST_FUNC(Parser_Navigation_EmptyStream) {
     Token tokens[1];
     tokens[0].type = TOKEN_EOF;
     SymbolTable table(arena);
-    Parser p1 = ParserBuilder(tokens, 0, &arena, &table).build();
+    Parser p1(tokens, 0, &arena, &table);
     ASSERT_TRUE(p1.is_at_end());
 
     // Test case 2: NULL pointer, zero count.
@@ -68,7 +68,7 @@ TEST_FUNC(Parser_Navigation_BoundaryCheck) {
     tokens[1].type = TOKEN_EOF;
 
     SymbolTable table(arena);
-    Parser p = ParserBuilder(tokens, 2, &arena, &table).build();
+    Parser p(tokens, 2, &arena, &table);
 
     p.advance(); // Consumes the integer literal
     ASSERT_TRUE(!p.is_at_end());

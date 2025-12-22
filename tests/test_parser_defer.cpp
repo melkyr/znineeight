@@ -24,7 +24,7 @@ TEST_FUNC(Parser_ParseDeferStatement) {
     }
 
     SymbolTable table(arena);
-    Parser parser = ParserBuilder(tokens.getData(), tokens.length(), &arena, &table).build();
+    Parser parser(tokens.getData(), tokens.length(), &arena, &table);
     ASTNode* stmt = parser.parseStatement();
 
     ASSERT_TRUE(stmt != NULL);

@@ -31,7 +31,7 @@ static Parser create_parser_for_test(
         tokens.append(token);
     } while (token.type != TOKEN_EOF);
 
-    return ParserBuilder(tokens.getData(), tokens.length(), &arena, &table).build();
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 // Test parsing a valid comptime block

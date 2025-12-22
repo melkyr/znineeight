@@ -27,7 +27,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
     }
 
     // The lexer includes the EOF token, so the count is correct.
-    return ParserBuilder(tokens.getData(), tokens.length(), &arena, &table).build();
+    return Parser(tokens.getData(), tokens.length(), &arena, &table);
 }
 
 TEST_FUNC(Parser_StructDeclaration_Simple) {
