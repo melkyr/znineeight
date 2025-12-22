@@ -4,7 +4,6 @@
 #include "memory.hpp"
 #include "string_interner.hpp"
 #include "source_manager.hpp"
-#include "symbol_table.hpp"
 
 TEST_FUNC(Parser_ParseDeferStatement) {
     ArenaAllocator arena(1024);
@@ -23,8 +22,7 @@ TEST_FUNC(Parser_ParseDeferStatement) {
         }
     }
 
-    SymbolTable table(arena);
-    Parser parser(tokens.getData(), tokens.length(), &arena, &table);
+    Parser parser(tokens.getData(), tokens.length(), &arena);
     ASTNode* stmt = parser.parseStatement();
 
     ASSERT_TRUE(stmt != NULL);

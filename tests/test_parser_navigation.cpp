@@ -2,7 +2,6 @@
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "memory.hpp"
-#include "symbol_table.hpp"
 
 // Note: These tests will not compile until parser.hpp and parser.cpp are created.
 
@@ -14,8 +13,7 @@ TEST_FUNC(Parser_Navigation_Simple) {
     tokens[1].type = TOKEN_IDENTIFIER;
     tokens[2].type = TOKEN_EOF;
 
-    SymbolTable table(arena);
-    Parser p(tokens, 3, &arena, &table);
+    Parser p(tokens, 3, &arena);
 
     ASSERT_TRUE(!p.is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_VAR);
@@ -45,8 +43,7 @@ TEST_FUNC(Parser_Navigation_EmptyStream) {
     // Test case 1: Valid pointer, zero count.
     Token tokens[1];
     tokens[0].type = TOKEN_EOF;
-    SymbolTable table(arena);
-    Parser p1(tokens, 0, &arena, &table);
+    Parser p1(tokens, 0, &arena);
     ASSERT_TRUE(p1.is_at_end());
 
     // Test case 2: NULL pointer, zero count.
@@ -67,8 +64,7 @@ TEST_FUNC(Parser_Navigation_BoundaryCheck) {
     tokens[0].value.integer = 123;
     tokens[1].type = TOKEN_EOF;
 
-    SymbolTable table(arena);
-    Parser p(tokens, 2, &arena, &table);
+    Parser p(tokens, 2, &arena);
 
     p.advance(); // Consumes the integer literal
     ASSERT_TRUE(!p.is_at_end());
