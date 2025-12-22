@@ -31,7 +31,7 @@ public:
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
      */
-    Parser(Token* tokens, size_t count, ArenaAllocator* arena)
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena)
         : tokens_(tokens),
           token_count_(count),
           current_index_(0),
@@ -254,7 +254,7 @@ private:
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();
 
-    Token* tokens_;
+    const Token* tokens_;
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
