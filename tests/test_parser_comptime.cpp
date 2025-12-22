@@ -14,7 +14,7 @@ TEST_FUNC(Parser_ComptimeBlock_Valid) {
     StringInterner interner(arena);
     const char* source = "comptime { 123 }";
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
     ASSERT_TRUE(stmt != NULL);

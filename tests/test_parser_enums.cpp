@@ -11,7 +11,7 @@ TEST_FUNC(Parser_Enum_Empty) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum {}", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -30,7 +30,7 @@ TEST_FUNC(Parser_Enum_SimpleMembers) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { Red, Green, Blue }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -64,7 +64,7 @@ TEST_FUNC(Parser_Enum_TrailingComma) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A, B, }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
     ASSERT_TRUE(node != NULL);
@@ -82,7 +82,7 @@ TEST_FUNC(Parser_Enum_WithValues) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A = 1, B = 20 }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -113,7 +113,7 @@ TEST_FUNC(Parser_Enum_MixedMembers) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A, B = 10, C }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -145,7 +145,7 @@ TEST_FUNC(Parser_Enum_WithBackingType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum(u8) { A, B }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -191,7 +191,7 @@ TEST_FUNC(Parser_Enum_ComplexInitializer) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A = 1 + 2 }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 

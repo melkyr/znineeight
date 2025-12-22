@@ -10,7 +10,7 @@ TEST_FUNC(Parser_Navigation_Simple) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var my_var", arena, interner);
-    Parser& p = ctx.getParser();
+    Parser p = ctx.getParser();
 
     ASSERT_TRUE(!p.is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_VAR);
@@ -35,7 +35,7 @@ TEST_FUNC(Parser_Navigation_BoundaryCheck) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("123", arena, interner);
-    Parser& p = ctx.getParser();
+    Parser p = ctx.getParser();
 
     p.advance(); // Consumes the integer literal
     ASSERT_TRUE(p.is_at_end());

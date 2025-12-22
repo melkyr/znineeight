@@ -8,7 +8,7 @@ TEST_FUNC(Parser_ParseDeferStatement) {
     StringInterner interner(arena);
     const char* source = "defer {;}";
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
     ASTNode* stmt = parser.parseStatement();
 
     ASSERT_TRUE(stmt != NULL);

@@ -12,7 +12,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("123", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -28,7 +28,7 @@ TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("2 + 3 * 4", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -61,7 +61,7 @@ TEST_FUNC(Parser_BinaryExpr_LeftAssociativity) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("10 - 4 - 2", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -98,7 +98,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("3.14", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -114,7 +114,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("'a'", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -130,7 +130,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("\"hello\"", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -146,7 +146,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_var", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -162,7 +162,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("(42)", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -184,7 +184,7 @@ TEST_FUNC(Parser_FunctionCall_NoArgs) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_func()", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -201,7 +201,7 @@ TEST_FUNC(Parser_FunctionCall_WithArgs) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("add(1, 2)", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -222,7 +222,7 @@ TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("add(1, 2,)", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -239,7 +239,7 @@ TEST_FUNC(Parser_ArrayAccess) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_array[0]", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -257,7 +257,7 @@ TEST_FUNC(Parser_ChainedPostfixOps) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("get_func()[0]", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 

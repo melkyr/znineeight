@@ -11,7 +11,7 @@ TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 
@@ -36,7 +36,7 @@ TEST_FUNC(Parser_For_ValidStatement_ItemAndIndex) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 
@@ -96,7 +96,7 @@ TEST_FUNC(Parser_For_WithComplexIterable) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 

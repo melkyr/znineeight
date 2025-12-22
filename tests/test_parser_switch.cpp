@@ -11,7 +11,7 @@ TEST_FUNC(Parser_SwitchExpression_Basic) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("switch (x) { 1 => 10, else => 20 }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);
@@ -45,7 +45,7 @@ TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("switch (y) { 1, 2, 3 => 42, else => 0 }", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);
@@ -72,7 +72,7 @@ TEST_FUNC(Parser_SwitchExpression_Nested) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);

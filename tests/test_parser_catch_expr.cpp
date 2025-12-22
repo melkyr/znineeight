@@ -9,7 +9,7 @@ TEST_FUNC(Parser_CatchExpression_Simple) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a catch b", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 
@@ -34,7 +34,7 @@ TEST_FUNC(Parser_CatchExpression_WithPayload) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a catch |err| b", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 
@@ -60,7 +60,7 @@ TEST_FUNC(Parser_CatchExpression_RightAssociativity) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a catch b orelse c", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 

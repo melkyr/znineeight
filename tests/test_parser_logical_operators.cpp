@@ -26,7 +26,7 @@ TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a and b or c", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -48,7 +48,7 @@ TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a or b and c", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -70,7 +70,7 @@ TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("x orelse y or z", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -92,7 +92,7 @@ TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a and b and c", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -114,7 +114,7 @@ TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a orelse b orelse c", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -136,7 +136,7 @@ TEST_FUNC(Parser_Logical_ComplexPrecedence) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("flag and val orelse default", arena, interner);
-    Parser& parser = ctx.getParser();
+    Parser parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
