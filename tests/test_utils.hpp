@@ -6,6 +6,7 @@
 #include "memory.hpp"
 #include "string_interner.hpp"
 #include "source_manager.hpp"
+#include "compilation_unit.hpp" // Include the new header
 #include <new> // For placement new
 
 /**
@@ -39,6 +40,19 @@ private:
 };
 
 /**
+ * @brief Creates a Parser for a given source string for use in tests.
+ * @param source The source code string to be parsed.
+ * @param arena The ArenaAllocator to use for all allocations.
+ * @param interner The StringInterner to use for managing strings.
+ * @return A Parser instance ready to parse the source code.
+ */
+inline Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
+    CompilationUnit unit(arena, interner);
+    u32 file_id = unit.addSource("test.zig", source);
+    return unit.createParser(file_id);
+}
+
+/**
  * @class ParserTestContext
  * @brief Encapsulates the setup logic for parser tests.
  *
@@ -55,22 +69,8 @@ public:
      * @param interner The StringInterner to use for managing strings.
      */
     ParserTestContext(const char* source, ArenaAllocator& arena, StringInterner& interner)
-        : arena_(arena),
-          token_array_(arena),
-          parser_(NULL, 0, &arena) // Dummy initialization
+        : unit_(arena, interner), parser_(create_parser_for_test(source, arena, interner))
     {
-        SourceManager sm(arena);
-        u32 file_id = sm.addFile("test.zig", source, strlen(source));
-        Lexer lexer(sm, interner, arena, file_id);
-
-        Token token;
-        do {
-            token = lexer.nextToken();
-            token_array_.append(token);
-        } while (token.type != TOKEN_EOF);
-
-        // Use placement new to construct the parser in place
-        new (&parser_) Parser(token_array_.getData(), token_array_.length(), &arena_);
     }
 
     /**
@@ -83,10 +83,10 @@ public:
     }
 
 private:
-    ArenaAllocator& arena_;
-    DynamicArray<Token> token_array_;
+    CompilationUnit unit_;
     Parser parser_;
 };
+
 
 // Forward declarations for test helpers defined in main.cpp
 bool expect_parser_abort(const char* source_code);

@@ -270,9 +270,7 @@ public:
     }
 
 private:
-    // Prevent accidental copies
-    Parser(const Parser&);
-    Parser& operator=(const Parser&);
+
 };
 
 #endif // PARSER_HPP

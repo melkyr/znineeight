@@ -104,6 +104,27 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 
 ## 4. Compilation Pipeline
 
+### 4.0 Compilation Unit (`compilation_unit.hpp`)
+**Concept:** A `CompilationUnit` is an ownership wrapper that manages the memory and resources for a single compilation task. It ties together the `ArenaAllocator`, `StringInterner`, and `SourceManager` to provide a clean, unified interface for compiling source code.
+
+**Key Responsibilities:**
+- **Lifetime Management:** Ensures that all objects related to a compilation (AST nodes, tokens, interned strings) are allocated from a single arena, making cleanup trivial.
+- **Source Aggregation:** Manages one or more source files through the `SourceManager`.
+- **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis.
+
+**Example Usage:**
+```cpp
+// In a test environment
+ArenaAllocator arena(1024);
+StringInterner interner(arena);
+CompilationUnit unit(arena, interner);
+u32 file_id = unit.addSource("test.zig", "const x: i32 = 42;");
+Parser parser = unit.createParser(file_id);
+// ... proceed with parsing ...
+```
+
+This abstraction is critical for future work, as it will simplify the management of multiple files, diagnostic reporting, and the overall compilation state.
+
 ### 4.1 Layer 1: Lexer (`lexer.hpp`)
 * **Input:** Source code text
 * **Output:** Stream of `Token` structs
