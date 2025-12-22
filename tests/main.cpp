@@ -71,6 +71,8 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
+TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
 TEST_FUNC(arena_alloc_out_of_memory);
 TEST_FUNC(arena_alloc_zero_size);
@@ -277,6 +279,8 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
+        test_ArenaAllocator_AllocShouldReturn8ByteAligned,
         test_arena_alloc_out_of_memory,
         test_arena_alloc_zero_size,
         test_arena_alloc_aligned_out_of_memory,

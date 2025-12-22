@@ -30,14 +30,9 @@ TEST_FUNC(dynamic_array_non_pod_reallocation) {
     //
     // A correct implementation uses an element-wise copy loop during
     // reallocation.
-    // Expected calls:
-    // - 1 for the 1st append (triggers initial allocation)
-    // - 7 for appends 2-8
-    // - On 9th append (reallocation):
-    //   - 8 for copying old elements
-    //   - 1 for the new element
-    // Total = 1 + 7 + 8 + 1 = 17
-    ASSERT_EQ(17, copy_assignment_calls);
+    // With copy-construction on realloc, only the append calls use assignment.
+    // Total = 9
+    ASSERT_EQ(9, copy_assignment_calls);
 
     return true;
 }

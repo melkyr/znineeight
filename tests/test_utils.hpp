@@ -58,8 +58,7 @@ public:
     ParserTestContext(const char* source, ArenaAllocator& arena, StringInterner& interner)
         : unit_(arena, interner)
     {
-        u32 file_id = unit_.addSource("test.zig", source);
-        unit_.tokenize(file_id);
+        file_id_ = unit_.addSource("test.zig", source);
     }
 
     /**
@@ -67,11 +66,12 @@ public:
      * @return A new Parser instance.
      */
     Parser getParser() {
-        return unit_.createParser();
+        return unit_.createParser(file_id_);
     }
 
 private:
     CompilationUnit unit_;
+    u32 file_id_;
 };
 
 
