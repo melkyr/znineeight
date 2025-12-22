@@ -3,6 +3,8 @@ echo "Compiling and running all tests..."
 
 g++ -std=c++98 -Wall -Isrc/include \
     tests/main.cpp \
+    tests/memory_alignment_test.cpp \
+    tests/dynamic_array_copy_test.cpp \
     tests/test_arena.cpp \
     tests/test_arena_guard.cpp \
     tests/test_arena_overflow.cpp \

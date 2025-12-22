@@ -6,6 +6,7 @@
 #include <cstdlib> // For malloc, free
 #include <cassert> // For assert
 #include <cstring> // For memcpy
+#include <new>     // For placement new
 
 /**
  * @class ArenaAllocator
@@ -37,17 +38,18 @@ public:
     }
 
     /**
-     * @brief Allocates a block of memory of a given size with overflow protection.
+     * @brief Allocates a block of memory with a default 8-byte alignment.
+     *
+     * This method is the primary, simplified interface for allocation. It guarantees
+     * that the returned pointer is aligned to at least 8 bytes, which is safe for
+     * most data types, including `double` and `__int64`. For specific alignment
+     * needs, use `alloc_aligned`.
+     *
      * @param size The number of bytes to allocate.
-     * @return A pointer to the allocated memory, or nullptr if the arena is full or size is 0.
+     * @return A pointer to the allocated memory, or nullptr if the allocation fails.
      */
     void* alloc(size_t size) {
-        if (size == 0 || capacity - offset < size) { // Overflow-safe check
-            return NULL;
-        }
-        u8* ptr = buffer + offset;
-        offset += size;
-        return ptr;
+        return alloc_aligned(size, 8);  // Default to 8-byte alignment
     }
 
     /**
@@ -57,6 +59,9 @@ public:
      * @return A pointer to the allocated, aligned memory, or nullptr if the arena is full.
      */
     void* alloc_aligned(size_t size, size_t align) {
+        if (size == 0) {
+            return NULL;
+        }
         assert(align != 0 && (align & (align - 1)) == 0);
 
         const size_t mask = align - 1;
@@ -122,11 +127,15 @@ public:
 
     /**
      * @brief Ensures the array has at least a given capacity.
+     *
      * If the current capacity is insufficient, it reallocates a larger buffer.
      * The new capacity is doubled, or set to the minimum required if that's larger.
-     * @warning This operation can be expensive as it involves allocating new
-     * memory and copying all existing elements. It is now safe for non-POD types
-     * as it uses element-wise assignment instead of memcpy.
+     *
+     * @warning This operation can be expensive. It allocates a new memory block
+     * and copy-constructs all existing elements into it using placement new.
+     * This is safe for non-POD types but does not call destructors on the old
+     * objects, as is standard for arena-based allocators.
+     *
      * @param min_cap The minimum required capacity.
      */
     void ensure_capacity(size_t min_cap) {
@@ -140,9 +149,9 @@ public:
         T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
         assert(new_data);
 
-        // Element-wise copy (safe for non-POD types)
+        // Use placement new to copy-construct elements into the new buffer
         for (size_t i = 0; i < len; ++i) {
-            new_data[i] = data[i];
+            new (&new_data[i]) T(data[i]);
         }
 
         data = new_data;

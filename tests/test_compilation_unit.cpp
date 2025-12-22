@@ -2,6 +2,7 @@
 #include "test_utils.hpp"
 #include "compilation_unit.hpp"
 #include "parser.hpp"
+#include "lexer.hpp"
 
 TEST_FUNC(compilation_unit_creation) {
     ArenaAllocator arena(1024);
@@ -10,10 +11,10 @@ TEST_FUNC(compilation_unit_creation) {
     const char* source = "const x: i32 = 42;";
     u32 file_id = unit.addSource("test.zig", source);
 
-    unit.tokenize(file_id);
-    Parser parser = unit.createParser();
+    Parser parser = unit.createParser(file_id);
 
     ASSERT_TRUE(!parser.is_at_end());
+    ASSERT_TRUE(parser.peek().type == TOKEN_CONST);
     return true;
 }
 

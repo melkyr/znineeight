@@ -6,8 +6,8 @@
  */
 TEST_FUNC(arena_alloc_out_of_memory) {
     ArenaAllocator arena(16);
-    arena.alloc(10);
-    void* ptr = arena.alloc(10); // Should fail
+    arena.alloc(8); // This will succeed
+    void* ptr = arena.alloc(9); // This will fail because 8 + 9 > 16
     ASSERT_TRUE(ptr == NULL);
     return true;
 }
@@ -27,8 +27,8 @@ TEST_FUNC(arena_alloc_zero_size) {
  */
 TEST_FUNC(arena_alloc_aligned_out_of_memory) {
     ArenaAllocator arena(32);
-    arena.alloc(20);
-    // This should fail because it needs space for alignment padding + 16 bytes.
+    arena.alloc(17); // This will advance the offset to 24 due to alignment padding.
+    // This should fail because there are only 8 bytes left (32 - 24).
     void* ptr = arena.alloc_aligned(16, 16);
     ASSERT_TRUE(ptr == NULL);
     return true;
