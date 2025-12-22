@@ -16,7 +16,6 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \
     src/bootstrap/parser.cpp \
-    src/bootstrap/symbol_table.cpp \
     tests/test_char_literal.cpp \
     tests/test_lexer_delimiters.cpp \
     tests/test_lexer_keywords.cpp \
@@ -61,8 +60,6 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_functions.cpp \
     tests/test_parser_bug.cpp \
     tests/test_parser_recursion.cpp \
-    tests/test_symbol_table.cpp \
-    tests/test_parser_symbol_table.cpp \
     -Isrc/include \
     -o test_runner
 

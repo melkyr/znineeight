@@ -5,8 +5,6 @@
 #include "string_interner.hpp"
 #include <cstring> // For strlen
 
-#include "symbol_table.hpp"
-
 // Helper function to create a parser instance for a given source string.
 // This is a common setup for parser tests.
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
@@ -14,7 +12,6 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
     u32 file_id = src_manager.addFile("test.zig", source, strlen(source));
 
     Lexer lexer(src_manager, interner, arena, file_id);
-    SymbolTable table(arena);
     DynamicArray<Token> tokens(arena);
     while (true) {
         Token token = lexer.nextToken();
@@ -23,7 +20,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
             break;
         }
     }
-    return Parser(tokens.getData(), tokens.length(), &arena, &table);
+    return Parser(tokens.getData(), tokens.length(), &arena);
 }
 
 TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {

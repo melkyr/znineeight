@@ -5,13 +5,10 @@
 #include "string_interner.hpp"
 #include "source_manager.hpp"
 
-#include "symbol_table.hpp"
-
 // Helper function to create a parser for a given source string
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
     u32 file_id = sm.addFile("test.zig", source, strlen(source));
     Lexer lexer(sm, interner, arena, file_id);
-    SymbolTable table(arena);
 
     DynamicArray<Token> tokens(arena);
     while (true) {
@@ -22,7 +19,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
         }
     }
 
-    return Parser(tokens.getData(), tokens.length(), &arena, &table);
+    return Parser(tokens.getData(), tokens.length(), &arena);
 }
 
 TEST_FUNC(Parser_IfStatement_Simple) {

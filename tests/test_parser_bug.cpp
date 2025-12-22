@@ -8,13 +8,10 @@
 #include <new>
 #include <cstring>
 
-#include "symbol_table.hpp"
-
 // Helper function to set up the parser for a given source string
 static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm, DynamicArray<Token>& tokens) {
     u32 file_id = sm.addFile("test_bug.zig", source, strlen(source));
     Lexer lexer(sm, interner, arena, file_id);
-    SymbolTable table(arena);
 
     while (true) {
         Token token = lexer.nextToken();
@@ -24,7 +21,7 @@ static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, 
         }
     }
 
-    return Parser(tokens.getData(), tokens.length(), &arena, &table);
+    return Parser(tokens.getData(), tokens.length(), &arena);
 }
 
 TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
