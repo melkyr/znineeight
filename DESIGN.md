@@ -248,17 +248,17 @@ struct Symbol {
     enum Kind { VARIABLE, FUNCTION, TYPE } kind;
     const char* name;
     Type* type;
-    uint32_t address_offset;  // For variables
-    void* definition;         // Pointer to AST node
+    u32 address_offset;  // For variables
+    ASTNode* definition;         // Pointer to AST node
 };
+
 class SymbolTable {
     DynamicArray<Symbol>* symbols;
-    SymbolTable* parent_scope;
+    ArenaAllocator* arena;
 public:
+    SymbolTable(ArenaAllocator* allocator);
     Symbol* lookup(const char* name);
     void insert(Symbol& sym);
-    void pushScope();
-    void popScope();
 };
 ```
 
