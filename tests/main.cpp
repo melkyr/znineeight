@@ -18,8 +18,8 @@
 // Helper function to run a parsing task in a separate process
 // and check if it terminates as expected.
 static bool run_test_in_child_process(const char* source_code, const char* test_type_flag) {
-    char command[512];
 #if defined(_WIN32)
+    char command[512];
     _snprintf(command, sizeof(command), "test_runner.exe %s \"%s\"", test_type_flag, source_code);
     command[sizeof(command) - 1] = '\0';
 

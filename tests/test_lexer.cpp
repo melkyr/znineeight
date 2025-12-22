@@ -207,7 +207,7 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
         TOKEN_EOF
     };
 
-    for (int i = 0; i < sizeof(expected_tokens) / sizeof(TokenType); ++i) {
+    for (int i = 0; i < static_cast<int>(sizeof(expected_tokens) / sizeof(TokenType)); ++i) {
         Token t = lexer.nextToken();
         ASSERT_EQ(expected_tokens[i], t.type);
     }
