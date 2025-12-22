@@ -6,6 +6,8 @@
 #include "string_interner.hpp"
 #include "memory.hpp"
 
+#define TAB_WIDTH 4
+
 /**
  * @file lexer.hpp
  * @brief Defines the token types and structures for the RetroZig lexer.
@@ -209,7 +211,7 @@ struct Token {
         /** @brief 64-bit floating-point for float literals. */
         double floating_point;
         /** @brief Character for char literals. */
-        char character;
+        u32 character;
     } value;
 
     Token() : type(TOKEN_ERROR), location() {

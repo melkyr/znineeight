@@ -74,6 +74,11 @@ bool expect_statement_parser_abort(const char* source_code) {
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(lexer_handles_tab_correctly);
+TEST_FUNC(lexer_handles_unicode_correctly);
+TEST_FUNC(lexer_handles_unterminated_char_hex_escape);
+TEST_FUNC(lexer_handles_unterminated_string_hex_escape);
+TEST_FUNC(lexer_handles_long_identifier);
 TEST_FUNC(arena_alloc_out_of_memory);
 TEST_FUNC(arena_alloc_zero_size);
 TEST_FUNC(arena_alloc_aligned_out_of_memory);
@@ -443,6 +448,11 @@ int main(int argc, char* argv[]) {
         test_compilation_unit_var_decl,
         test_Parser_CopyIsSafeAndDoesNotDoubleFree,
         test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
+        test_lexer_handles_tab_correctly,
+        test_lexer_handles_unicode_correctly,
+        test_lexer_handles_unterminated_char_hex_escape,
+        test_lexer_handles_unterminated_string_hex_escape,
+        test_lexer_handles_long_identifier,
     };
 
     int passed = 0;

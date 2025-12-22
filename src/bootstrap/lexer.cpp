@@ -59,16 +59,20 @@ const Keyword keywords[] = {
 };
 const int num_keywords = sizeof(keywords) / sizeof(Keyword);
 
-static TokenType lookupIdentifier(const char* name) {
+static TokenType lookupIdentifier(const char* name, int length) {
     int left = 0;
     int right = num_keywords - 1;
 
     while (left <= right) {
         int mid = left + (right - left) / 2;
-        int cmp = strcmp(name, keywords[mid].name);
+        int cmp = strncmp(name, keywords[mid].name, length);
         if (cmp == 0) {
-            return keywords[mid].type;
-        } else if (cmp < 0) {
+            // Make sure the keyword is not a prefix of the identifier
+            if (keywords[mid].name[length] == '\0') {
+                return keywords[mid].type;
+            }
+        }
+        if (cmp < 0) {
             right = mid - 1;
         } else {
             left = mid + 1;
@@ -140,6 +144,10 @@ Token Lexer::lexCharLiteral() {
                 for (int i = 0; i < 2; ++i) {
                     this->current++;
                     this->column++;
+                    if (*this->current == '\0') {
+                        token.type = TOKEN_ERROR;
+                        return token;
+                    }
                     char c = *this->current;
                     if (c >= '0' && c <= '9') {
                         hex_val = (hex_val * 16) + (c - '0');
@@ -198,7 +206,7 @@ Token Lexer::lexCharLiteral() {
     this->column++;
 
     token.type = TOKEN_CHAR_LITERAL;
-    token.value.character = (char)value;
+    token.value.character = (u32)value;
     return token;
 }
 
@@ -385,10 +393,13 @@ Token Lexer::nextToken() {
         char c = *this->current;
         switch (c) {
             case ' ':
-            case '\t':
             case '\r':
                 this->current++;
                 this->column++;
+                continue;
+            case '\t':
+                this->current++;
+                this->column = (((this->column - 1) / TAB_WIDTH) + 1) * TAB_WIDTH + 1;
                 continue;
             case '\n':
                 this->line++;
@@ -616,6 +627,10 @@ Token Lexer::lexStringLiteral() {
                     this->current++; // Consume 'x'
                     char hex_val = 0;
                     for (int i = 0; i < 2; ++i) {
+                        if (*this->current == '\0' || *this->current == '"') {
+                            token.type = TOKEN_ERROR;
+                            return token;
+                        }
                         char c = *this->current;
                         if (c >= '0' && c <= '9') {
                             hex_val = (hex_val * 16) + (c - '0');
@@ -669,20 +684,10 @@ Token Lexer::lexIdentifierOrKeyword() {
     }
 
     int length = this->current - start;
-    char buffer[256];
-    if (length >= 256) {
-        token.type = TOKEN_ERROR;
-        this->column += length;
-        return token;
-    }
-
-    strncpy(buffer, start, length);
-    buffer[length] = '\0';
-
-    token.type = lookupIdentifier(buffer);
+    token.type = lookupIdentifier(start, length);
 
     if (token.type == TOKEN_IDENTIFIER) {
-        token.value.identifier = this->interner.intern(buffer);
+        token.value.identifier = this->interner.intern(start, length);
     }
 
     this->column += length;

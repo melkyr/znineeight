@@ -8,7 +8,7 @@ The lexer scans the source file character by character, grouping them into meani
 
 ### 1.1 Whitespace
 
-All whitespace characters (`' '`, `'\t'`, `'\r'`, `'\n'`) are consumed and ignored by the lexer. They serve only to separate other tokens. Line breaks (`'\n'`) are significant for tracking token locations (line and column numbers).
+All whitespace characters (`' '`, `'\t'`, `'\r'`, `'\n'`) are consumed and ignored by the lexer. They serve only to separate other tokens. Line breaks (`'\n'`) are significant for tracking token locations (line and column numbers). Tab characters (`\t`) are handled specially for column tracking: they advance the column to the next 4-space tab stop to ensure accurate error reporting.
 
 ### 1.2 Comments
 
@@ -43,10 +43,10 @@ This section tracks the implementation status of all tokens required for the Ret
 
 | Token Type              | Example      | Implemented | Notes                                  |
 | ----------------------- | ------------ | ----------- | -------------------------------------- |
-| `TOKEN_IDENTIFIER`      | `my_var`     | Yes         | Now stores its value in the string interner. |
+| `TOKEN_IDENTIFIER`      | `my_var`     | Yes         | Now stores its value in the string interner. No longer has a length limit. |
 | `TOKEN_INTEGER_LITERAL` | `123`, `0xFF`| Yes         | Implemented as part of Task 17.        |
 | `TOKEN_STRING_LITERAL`  | `"hello"`    | Yes         | Now supports escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\xNN`. |
-| `TOKEN_CHAR_LITERAL`    | `'a'`        | Yes         | Implemented as part of Task 18.        |
+| `TOKEN_CHAR_LITERAL`    | `'a'`        | Yes         | Now supports Unicode escape sequences (e.g., `\u{1F4A9}`). |
 | `TOKEN_FLOAT_LITERAL`   | `3.14`       | Yes         | Implemented as part of Task 19.        |
 
 ### 2.2. Operators
