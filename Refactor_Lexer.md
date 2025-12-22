@@ -28,3 +28,5 @@ The following parser test files have been successfully refactored to use the `Pa
 *   `test_parser_union.cpp`
 *   `test_parser_vars.cpp`
 *   `test_parser_while.cpp`
+*   `test_parser_errors.cpp`
+*   `test_parser_recursion.cpp`
