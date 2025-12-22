@@ -236,6 +236,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol);
 TEST_FUNC(Parser_RecursionLimit);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
+TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
 
 
 // This function is executed in a child process by the error handling test.
@@ -435,6 +436,7 @@ int main(int argc, char* argv[]) {
         test_IntegerRangeAmbiguity,
         test_compilation_unit_creation,
         test_compilation_unit_var_decl,
+        test_Parser_CopyIsSafeAndDoesNotDoubleFree,
     };
 
     int passed = 0;
