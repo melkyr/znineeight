@@ -64,6 +64,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_bug.cpp \
     tests/test_parser_recursion.cpp \
     tests/test_compilation_unit.cpp \
+    tests/test_parser_lifecycle.cpp \
     -Isrc/include \
     -o test_runner
 
