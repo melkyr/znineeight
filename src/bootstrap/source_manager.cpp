@@ -11,7 +11,7 @@ SourceLocation SourceManager::getLocation(u32 file_id, size_t offset) {
     const SourceFile* file = getFile(file_id);
     if (!file || offset > file->size) {
         // Return a default/invalid location if the file_id or offset is bad.
-        return SourceLocation{file_id, 0, 0};
+        return SourceLocation(file_id, 0, 0);
     }
 
     u32 line = 1;
@@ -28,7 +28,7 @@ SourceLocation SourceManager::getLocation(u32 file_id, size_t offset) {
 
     // The column is the distance from the start of the line to the offset.
     u32 column = (u32)(&file->content[offset] - line_start) + 1;
-    return SourceLocation{file_id, line, column};
+    return SourceLocation(file_id, line, column);
 }
 
 const SourceFile* SourceManager::getFile(u32 file_id) const {

@@ -113,7 +113,7 @@ bool Lexer::match(char expected) {
 }
 
 Token Lexer::lexCharLiteral() {
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;
@@ -212,7 +212,7 @@ Token Lexer::lexCharLiteral() {
  * @return A `Token` of type `TOKEN_FLOAT_LITERAL` or `TOKEN_ERROR`.
  */
 Token Lexer::parseHexFloat() {
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;
@@ -285,7 +285,7 @@ Token Lexer::parseHexFloat() {
  *         `TOKEN_FLOAT_LITERAL`) or `TOKEN_ERROR` if the format is invalid.
  */
 Token Lexer::lexNumericLiteral() {
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;
@@ -401,7 +401,7 @@ Token Lexer::nextToken() {
         break;
     }
 
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;
@@ -595,7 +595,7 @@ Token Lexer::nextToken() {
  *         string is unterminated or contains an invalid escape sequence.
  */
 Token Lexer::lexStringLiteral() {
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;
@@ -658,7 +658,7 @@ Token Lexer::lexStringLiteral() {
 }
 
 Token Lexer::lexIdentifierOrKeyword() {
-    Token token = { TOKEN_ERROR, {0}, {0} };
+    Token token = Token();
     token.location.file_id = this->file_id;
     token.location.line = this->line;
     token.location.column = this->column;

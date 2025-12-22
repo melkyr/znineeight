@@ -211,6 +211,10 @@ struct Token {
         /** @brief Character for char literals. */
         char character;
     } value;
+
+    Token() : type(TOKEN_ERROR), location() {
+        value.integer = 0;
+    }
 };
 
 /**

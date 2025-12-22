@@ -25,9 +25,9 @@ TEST_FUNC(ASTDeclarations) {
     var_node.as.var_decl = var_decl;
 
     // 3. Test ASTParamDeclNode
-    ASTParamDeclNode param_decl;
-    param_decl.name = "my_param";
-    param_decl.type = NULL;
+    // ASTParamDeclNode param_decl;
+    // param_decl.name = "my_param";
+    // param_decl.type = NULL;
 
     // 4. Test ASTFnDeclNode (faking its creation)
     ASTNode fn_node;

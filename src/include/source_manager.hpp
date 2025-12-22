@@ -19,6 +19,9 @@ struct SourceLocation {
     u32 line;
     /** @brief The column number within the line (1-based). */
     u32 column;
+
+    SourceLocation() : file_id(0), line(0), column(0) {}
+    SourceLocation(u32 id, u32 l, u32 c) : file_id(id), line(l), column(c) {}
 };
 
 /**
