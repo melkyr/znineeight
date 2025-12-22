@@ -1,32 +1,17 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 
-// Helper to create a parser instance.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    while(true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+// Helper function from test_parser_errors.cpp
+bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
     const char* source = "for (my_array) |item| {}";
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test(source, arena, interner);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 
@@ -48,8 +33,10 @@ TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
 TEST_FUNC(Parser_For_ValidStatement_ItemAndIndex) {
     const char* source = "for (my_array) |item, index| {}";
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test(source, arena, interner);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 
@@ -106,8 +93,10 @@ TEST_FUNC(Parser_For_MissingBody) {
 TEST_FUNC(Parser_For_WithComplexIterable) {
     const char* source = "for (get_array(1)) |item| {}";
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test(source, arena, interner);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
 

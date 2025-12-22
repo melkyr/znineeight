@@ -1,35 +1,15 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include <cstdio>
 #include <cstring>
 
-// --- Test Helper ---
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    // Lex all tokens into a dynamic array
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
-
-// --- Test Cases ---
-
 TEST_FUNC(Parser_CatchExpression_Simple) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("a catch b", arena, interner, sm);
+    ParserTestContext ctx("a catch b", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 
@@ -51,9 +31,10 @@ TEST_FUNC(Parser_CatchExpression_Simple) {
 
 TEST_FUNC(Parser_CatchExpression_WithPayload) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("a catch |err| b", arena, interner, sm);
+    ParserTestContext ctx("a catch |err| b", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 
@@ -76,9 +57,10 @@ TEST_FUNC(Parser_CatchExpression_WithPayload) {
 
 TEST_FUNC(Parser_CatchExpression_RightAssociativity) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("a catch b orelse c", arena, interner, sm);
+    ParserTestContext ctx("a catch b orelse c", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* root = parser.parseExpression();
 

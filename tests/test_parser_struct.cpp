@@ -1,38 +1,15 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
-
+#include "test_utils.hpp"
 #include <cstring> // For strlen in the helper
-
-// Helper function to create a parser for a given source string.
-// This is a common pattern in the existing parser tests.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    tokens.ensure_capacity(256); // Pre-allocate to avoid reallocations
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    // The lexer includes the EOF token, so the count is correct.
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
 
 TEST_FUNC(Parser_StructDeclaration_Simple) {
     ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
-    Parser parser = create_parser_for_test("struct { x: i32 }", arena, interner, sm);
+    ParserTestContext ctx("struct { x: i32 }", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -57,10 +34,11 @@ TEST_FUNC(Parser_StructDeclaration_Simple) {
 
 TEST_FUNC(Parser_StructDeclaration_Empty) {
     ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
-    Parser parser = create_parser_for_test("struct {}", arena, interner, sm);
+    ParserTestContext ctx("struct {}", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -75,10 +53,11 @@ TEST_FUNC(Parser_StructDeclaration_Empty) {
 
 TEST_FUNC(Parser_StructDeclaration_MultipleFields) {
     ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
-    Parser parser = create_parser_for_test("struct { a: i32, b: bool, c: *u8 }", arena, interner, sm);
+    ParserTestContext ctx("struct { a: i32, b: bool, c: *u8 }", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -119,10 +98,11 @@ TEST_FUNC(Parser_StructDeclaration_MultipleFields) {
 
 TEST_FUNC(Parser_StructDeclaration_WithTrailingComma) {
     ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
-    Parser parser = create_parser_for_test("struct { x: i32, }", arena, interner, sm);
+    ParserTestContext ctx("struct { x: i32, }", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -136,10 +116,11 @@ TEST_FUNC(Parser_StructDeclaration_WithTrailingComma) {
 
 TEST_FUNC(Parser_StructDeclaration_ComplexFieldType) {
     ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
-    Parser parser = create_parser_for_test("struct { ptr: *[8]u8 }", arena, interner, sm);
+    ParserTestContext ctx("struct { ptr: *[8]u8 }", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);

@@ -1,33 +1,17 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include <cstdlib>
 
-// Helper function to create a parser for a given source string.
-// This is a simplified version of what's in other test files.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-
-    Lexer lexer(sm, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
-
+// Helper function from test_parser_errors.cpp
+bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_SwitchExpression_Basic) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("switch (x) { 1 => 10, else => 20 }", arena, interner);
+    ParserTestContext ctx("switch (x) { 1 => 10, else => 20 }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);
@@ -58,8 +42,10 @@ TEST_FUNC(Parser_SwitchExpression_Basic) {
 
 TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("switch (y) { 1, 2, 3 => 42, else => 0 }", arena, interner);
+    ParserTestContext ctx("switch (y) { 1, 2, 3 => 42, else => 0 }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);
@@ -83,8 +69,10 @@ TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
 TEST_FUNC(Parser_SwitchExpression_Nested) {
     const char* source = "switch (a) { 1 => switch (b) { 10 => 100, else => 200 }, else => 300 }";
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test(source, arena, interner);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
     ASSERT_TRUE(node != NULL);

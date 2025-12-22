@@ -1,30 +1,18 @@
 #include "test_framework.hpp"
-#include "lexer.hpp"
 #include "parser.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
+#include "test_utils.hpp"
 #include <cstring> // For strcmp
 
-// Helper function to set up a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+// This test depends on the `expect_parser_abort` helper function,
+// which is defined in `test_parser_errors.cpp`. We need to declare it here.
+bool expect_parser_abort(const char* source_code);
 
 TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("123", arena, interner);
+    ParserTestContext ctx("123", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -37,8 +25,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
 
 TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("2 + 3 * 4", arena, interner);
+    ParserTestContext ctx("2 + 3 * 4", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -68,8 +58,10 @@ TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
 
 TEST_FUNC(Parser_BinaryExpr_LeftAssociativity) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("10 - 4 - 2", arena, interner);
+    ParserTestContext ctx("10 - 4 - 2", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -103,8 +95,10 @@ TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS) {
 
 TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("3.14", arena, interner);
+    ParserTestContext ctx("3.14", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -117,8 +111,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
 
 TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("'a'", arena, interner);
+    ParserTestContext ctx("'a'", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -131,8 +127,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
 
 TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("\"hello\"", arena, interner);
+    ParserTestContext ctx("\"hello\"", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -145,8 +143,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
 
 TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("my_var", arena, interner);
+    ParserTestContext ctx("my_var", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -159,8 +159,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
 
 TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("(42)", arena, interner);
+    ParserTestContext ctx("(42)", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -171,10 +173,6 @@ TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
     return true;
 }
 
-// This test depends on the `expect_parser_abort` helper function,
-// which is defined in `test_parser_errors.cpp`. We need to declare it here.
-bool expect_parser_abort(const char* source_code);
-
 TEST_FUNC(Parser_Error_OnUnexpectedToken) {
     const char* source = ";"; // Semicolon is not a primary expression
     ASSERT_TRUE(expect_parser_abort(source));
@@ -183,8 +181,10 @@ TEST_FUNC(Parser_Error_OnUnexpectedToken) {
 
 TEST_FUNC(Parser_FunctionCall_NoArgs) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("my_func()", arena, interner);
+    ParserTestContext ctx("my_func()", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -198,8 +198,10 @@ TEST_FUNC(Parser_FunctionCall_NoArgs) {
 
 TEST_FUNC(Parser_FunctionCall_WithArgs) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("add(1, 2)", arena, interner);
+    ParserTestContext ctx("add(1, 2)", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -217,8 +219,10 @@ TEST_FUNC(Parser_FunctionCall_WithArgs) {
 
 TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("add(1, 2,)", arena, interner);
+    ParserTestContext ctx("add(1, 2,)", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -232,8 +236,10 @@ TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
 
 TEST_FUNC(Parser_ArrayAccess) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("my_array[0]", arena, interner);
+    ParserTestContext ctx("my_array[0]", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -248,8 +254,10 @@ TEST_FUNC(Parser_ArrayAccess) {
 
 TEST_FUNC(Parser_ChainedPostfixOps) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("get_func()[0]", arena, interner);
+    ParserTestContext ctx("get_func()[0]", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 

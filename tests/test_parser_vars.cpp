@@ -1,29 +1,14 @@
 #include "test_framework.hpp"
-#include "lexer.hpp"
 #include "parser.hpp"
-#include "memory.hpp"
 #include "string_interner.hpp"
-
-// Helper function to set up a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseConstDecl_Simple) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("const x: i32 = 123;", arena, interner);
+    ParserTestContext ctx("const x: i32 = 123;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -49,8 +34,10 @@ TEST_FUNC(Parser_ParseConstDecl_Simple) {
 
 TEST_FUNC(Parser_ParseVarDecl_Simple) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("var y: u8 = 42;", arena, interner);
+    ParserTestContext ctx("var y: u8 = 42;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -76,8 +63,10 @@ TEST_FUNC(Parser_ParseVarDecl_Simple) {
 
 TEST_FUNC(Parser_ParseVarDecl_PointerType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("var p: *i32 = 0;", arena, interner);
+    ParserTestContext ctx("var p: *i32 = 0;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -101,8 +90,10 @@ TEST_FUNC(Parser_ParseVarDecl_PointerType) {
 
 TEST_FUNC(Parser_ParseVarDecl_SliceType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("const s: []u8 = 1;", arena, interner);
+    ParserTestContext ctx("const s: []u8 = 1;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
     ASSERT_TRUE(node != NULL);
@@ -126,8 +117,10 @@ TEST_FUNC(Parser_ParseVarDecl_SliceType) {
 
 TEST_FUNC(Parser_ParseVarDecl_FixedArrayType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("var buf: [1024]u8 = 0;", arena, interner);
+    ParserTestContext ctx("var buf: [1024]u8 = 0;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
     ASSERT_TRUE(node != NULL);

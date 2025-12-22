@@ -1,35 +1,17 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 
 // Forward declaration for the helper function from test_parser_errors.cpp
 bool expect_parser_abort(const char* source_code);
 
-// Helper to set up parser for a single test case
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-
-    Lexer lexer(sm, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
-
 TEST_FUNC(Parser_TryExpr_Simple) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("try foo()", arena, interner);
+    ParserTestContext ctx("try foo()", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -48,9 +30,11 @@ TEST_FUNC(Parser_TryExpr_Simple) {
 
 TEST_FUNC(Parser_TryExpr_Chained) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("try !foo()", arena, interner);
+    ParserTestContext ctx("try !foo()", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);

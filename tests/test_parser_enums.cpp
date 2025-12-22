@@ -1,33 +1,17 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include <cstring> // For strlen
 
-// Helper function to create parser for tests
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    tokens.ensure_capacity(128);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+// Helper function from test_parser_errors.cpp
+bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_Enum_Empty) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum {}", arena, interner);
+    ParserTestContext ctx("enum {}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -43,8 +27,10 @@ TEST_FUNC(Parser_Enum_Empty) {
 
 TEST_FUNC(Parser_Enum_SimpleMembers) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum { Red, Green, Blue }", arena, interner);
+    ParserTestContext ctx("enum { Red, Green, Blue }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -75,8 +61,10 @@ TEST_FUNC(Parser_Enum_SimpleMembers) {
 
 TEST_FUNC(Parser_Enum_TrailingComma) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum { A, B, }", arena, interner);
+    ParserTestContext ctx("enum { A, B, }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
     ASSERT_TRUE(node != NULL);
@@ -91,8 +79,10 @@ TEST_FUNC(Parser_Enum_TrailingComma) {
 
 TEST_FUNC(Parser_Enum_WithValues) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum { A = 1, B = 20 }", arena, interner);
+    ParserTestContext ctx("enum { A = 1, B = 20 }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -120,8 +110,10 @@ TEST_FUNC(Parser_Enum_WithValues) {
 
 TEST_FUNC(Parser_Enum_MixedMembers) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum { A, B = 10, C }", arena, interner);
+    ParserTestContext ctx("enum { A, B = 10, C }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -150,8 +142,10 @@ TEST_FUNC(Parser_Enum_MixedMembers) {
 
 TEST_FUNC(Parser_Enum_WithBackingType) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum(u8) { A, B }", arena, interner);
+    ParserTestContext ctx("enum(u8) { A, B }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -194,8 +188,10 @@ TEST_FUNC(Parser_Enum_SyntaxError_BackingTypeNoParens) {
 
 TEST_FUNC(Parser_Enum_ComplexInitializer) {
     ArenaAllocator arena(4096);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("enum { A = 1 + 2 }", arena, interner);
+    ParserTestContext ctx("enum { A = 1 + 2 }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 

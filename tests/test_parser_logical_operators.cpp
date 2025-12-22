@@ -1,36 +1,13 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include <cstdlib> // For abort
 #include <new>     // For placement new
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
+// Helper function from test_parser_errors.cpp
+bool expect_parser_abort(const char* source);
 
 // --- Test Helper Functions ---
-
-static Parser create_parser_for_test(
-    const char* source,
-    ArenaAllocator& arena,
-    StringInterner& interner,
-    SourceManager& src_manager) {
-
-    u32 file_id = src_manager.addFile("test.zig", source, strlen(source));
-    Lexer lexer(src_manager, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    for (Token token = lexer.nextToken(); token.type != TOKEN_EOF; token = lexer.nextToken()) {
-        tokens.append(token);
-    }
-    tokens.append(lexer.nextToken());
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
 
 static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name, const char* right_name) {
     ASSERT_TRUE(node->type == NODE_BINARY_OP);
@@ -42,15 +19,14 @@ static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name,
     return true;
 }
 
-
-
 // --- Test Cases ---
 
 TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("a and b or c", arena, interner, src_manager);
+    ParserTestContext ctx("a and b or c", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -69,9 +45,10 @@ TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
 
 TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("a or b and c", arena, interner, src_manager);
+    ParserTestContext ctx("a or b and c", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -90,9 +67,10 @@ TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
 
 TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("x orelse y or z", arena, interner, src_manager);
+    ParserTestContext ctx("x orelse y or z", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -111,9 +89,10 @@ TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
 
 TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("a and b and c", arena, interner, src_manager);
+    ParserTestContext ctx("a and b and c", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -132,9 +111,10 @@ TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
 
 TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("a orelse b orelse c", arena, interner, src_manager);
+    ParserTestContext ctx("a orelse b orelse c", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 
@@ -153,9 +133,10 @@ TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
 
 TEST_FUNC(Parser_Logical_ComplexPrecedence) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    Parser parser = create_parser_for_test("flag and val orelse default", arena, interner, src_manager);
+    ParserTestContext ctx("flag and val orelse default", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* expr = parser.parseExpression();
 

@@ -1,38 +1,19 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include <cstdlib>
 
 // Forward declaration for the test helper from test_parser_errors.cpp
 bool expect_statement_parser_abort(const char* source);
 
-// Helper to create a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
-
 TEST_FUNC(Parser_ErrDeferStatement_Simple) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
     const char* source = "errdefer {; }";
-    Parser parser = create_parser_for_test(source, arena, interner, sm);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt_node = parser.parseStatement();
     ASSERT_TRUE(stmt_node != NULL);

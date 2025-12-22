@@ -84,6 +84,8 @@ private:
     // Make the class non-copyable to prevent accidental copies of the buffer.
     ArenaAllocator(const ArenaAllocator&);
     ArenaAllocator& operator=(const ArenaAllocator&);
+
+    friend class ArenaLifetimeGuard;
 };
 
 /**

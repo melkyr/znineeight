@@ -31,7 +31,14 @@ public:
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
      */
-    Parser(Token* tokens, size_t count, ArenaAllocator* arena);
+    Parser(Token* tokens, size_t count, ArenaAllocator* arena)
+        : tokens_(tokens),
+          token_count_(count),
+          current_index_(0),
+          arena_(arena),
+          recursion_depth_(0) {
+        assert(arena_ != NULL && "ArenaAllocator cannot be null");
+    }
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -252,6 +259,20 @@ private:
     size_t current_index_;
     ArenaAllocator* arena_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
+
+public:
+    /**
+     * @brief Resets the parser's state to the beginning of the token stream.
+     */
+    void reset() {
+        current_index_ = 0;
+        recursion_depth_ = 0;
+    }
+
+private:
+    // Prevent accidental copies
+    Parser(const Parser&);
+    Parser& operator=(const Parser&);
 };
 
 #endif // PARSER_HPP

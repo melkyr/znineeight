@@ -1,32 +1,18 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
+#include "test_utils.hpp"
 #include <cstring> // For strlen
 
-// Helper function to create a parser instance for a given source string.
-// This is a common setup for parser tests.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager src_manager(arena);
-    u32 file_id = src_manager.addFile("test.zig", source, strlen(source));
-
-    Lexer lexer(src_manager, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+// The expect_parser_abort function is defined in test_parser_errors.cpp
+// and declared in test_framework.hpp. We just need to call it.
+bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("union {}", arena, interner);
+    ParserTestContext ctx("union {}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -42,8 +28,10 @@ TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
 
 TEST_FUNC(Parser_ParseUnionDeclaration_WithFields) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("union { a: i32, b: bool }", arena, interner);
+    ParserTestContext ctx("union { a: i32, b: bool }", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -72,9 +60,6 @@ TEST_FUNC(Parser_ParseUnionDeclaration_WithFields) {
 
     return true;
 }
-
-// The expect_parser_abort function is defined in test_parser_errors.cpp
-// and declared in test_framework.hpp. We just need to call it.
 
 TEST_FUNC(Parser_Union_Error_MissingLBrace) {
     ASSERT_TRUE(expect_parser_abort("union"));

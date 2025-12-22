@@ -4,31 +4,16 @@
 #include "memory.hpp"
 #include "string_interner.hpp"
 #include "source_manager.hpp"
-
-// Helper function to create a parser instance for a given source string.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_FnDecl_ValidEmpty) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
     const char* source = "fn my_func() -> i32 {}";
-    Parser parser = create_parser_for_test(source, arena, interner, sm);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* fn_decl_node = parser.parseFnDecl();
 

@@ -8,12 +8,6 @@
 #include <windows.h> // For OutputDebugStringA
 #endif
 
-Parser::Parser(Token* tokens, size_t count, ArenaAllocator* arena)
-    : tokens_(tokens), token_count_(count), current_index_(0), arena_(arena), recursion_depth_(0) {
-    assert(tokens_ != NULL && "Token stream cannot be null");
-    assert(arena_ != NULL && "Arena allocator is required");
-}
-
 Token Parser::advance() {
     assert(!is_at_end() && "Cannot advance beyond the end of the token stream");
     return tokens_[current_index_++];

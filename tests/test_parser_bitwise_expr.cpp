@@ -1,30 +1,14 @@
 #include "test_framework.hpp"
-#include "lexer.hpp"
 #include "parser.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
+#include "test_utils.hpp"
 #include <cstring> // For strcmp
-
-// Helper function to set up a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
 
 TEST_FUNC(Parser_BitwiseExpr_SimpleAnd) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a & b", arena, interner);
+    ParserTestContext ctx("a & b", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -40,8 +24,10 @@ TEST_FUNC(Parser_BitwiseExpr_SimpleAnd) {
 
 TEST_FUNC(Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a + b & c", arena, interner);
+    ParserTestContext ctx("a + b & c", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -67,8 +53,10 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd) {
 
 TEST_FUNC(Parser_BitwiseExpr_Precedence_BitwiseAndAndShift) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a & b << c", arena, interner);
+    ParserTestContext ctx("a & b << c", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -94,8 +82,10 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_BitwiseAndAndShift) {
 
 TEST_FUNC(Parser_BitwiseExpr_Associativity_Xor) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a ^ b ^ c", arena, interner);
+    ParserTestContext ctx("a ^ b ^ c", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -121,8 +111,10 @@ TEST_FUNC(Parser_BitwiseExpr_Associativity_Xor) {
 
 TEST_FUNC(Parser_BitwiseExpr_ComplexExpression) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a | b & c ^ d << 1", arena, interner);
+    ParserTestContext ctx("a | b & c ^ d << 1", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     // Expected structure: (a | (b & (c ^ (d << 1))))
@@ -156,8 +148,10 @@ TEST_FUNC(Parser_BitwiseExpr_ComplexExpression) {
 
 TEST_FUNC(Parser_BitwiseExpr_ComparisonPrecedence) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("a & b == 0", arena, interner);
+    ParserTestContext ctx("a & b == 0", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     // Expected structure: ((a & b) == 0)

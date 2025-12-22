@@ -4,6 +4,7 @@
 #include "../src/include/source_manager.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/parser.hpp"
+#include "test_utils.hpp"
 #include <cstring>
 #include <cstdio>
 
@@ -235,19 +236,11 @@ TEST_FUNC(Parser_RecursionLimit);
 // The successful outcome is for the program to abort.
 void run_parser_test_and_abort(const char* source_code, bool is_statement_test) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
-    u32 file_id = src_manager.addFile("test.zig", source_code, strlen(source_code));
-    Lexer lexer(src_manager, interner, arena, file_id);
+    ParserTestContext ctx(source_code, arena, interner);
+    Parser& parser = ctx.getParser();
 
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    Parser parser(tokens.getData(), tokens.length(), &arena);
     if (is_statement_test) {
         parser.parseStatement();
     } else {

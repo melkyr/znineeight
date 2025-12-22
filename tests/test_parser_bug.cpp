@@ -1,37 +1,17 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
-
+#include "test_utils.hpp"
 #include <new>
 #include <cstring>
 
-// Helper function to set up the parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm, DynamicArray<Token>& tokens) {
-    u32 file_id = sm.addFile("test_bug.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
-
 TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "const x: bool = a && b;";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 

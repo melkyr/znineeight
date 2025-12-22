@@ -1,32 +1,13 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "source_manager.hpp"
-#include "string_interner.hpp"
-#include "memory.hpp"
-
-// Helper function to create a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseEmptyBlock) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{}", arena, interner, sm);
+    ParserTestContext ctx("{}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -39,9 +20,10 @@ TEST_FUNC(Parser_ParseEmptyBlock) {
 
 TEST_FUNC(Parser_ParseBlockWithIfStatement) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{if (1) {}}", arena, interner, sm);
+    ParserTestContext ctx("{if (1) {}}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -57,9 +39,10 @@ TEST_FUNC(Parser_ParseBlockWithIfStatement) {
 
 TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{while (1) {}}", arena, interner, sm);
+    ParserTestContext ctx("{while (1) {}}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -75,9 +58,10 @@ TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
 
 TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{if (1) {} while (1) {}}", arena, interner, sm);
+    ParserTestContext ctx("{if (1) {} while (1) {}}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -96,9 +80,10 @@ TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
 
 TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{;}", arena, interner, sm);
+    ParserTestContext ctx("{;}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -114,9 +99,10 @@ TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
 
 TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{;;}", arena, interner, sm);
+    ParserTestContext ctx("{;;}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -135,9 +121,10 @@ TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
 
 TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{{}}", arena, interner, sm);
+    ParserTestContext ctx("{{}}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -154,9 +141,10 @@ TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
 
 TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{{}{}}", arena, interner, sm);
+    ParserTestContext ctx("{{}{}}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -177,9 +165,10 @@ TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
 
 TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    Parser parser = create_parser_for_test("{{};}", arena, interner, sm);
+    ParserTestContext ctx("{{};}", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
