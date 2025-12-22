@@ -99,6 +99,7 @@ TEST_FUNC(string_interning);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
+TEST_FUNC(dynamic_array_non_pod_reallocation);
 TEST_FUNC(single_char_tokens);
 TEST_FUNC(multi_char_tokens);
 TEST_FUNC(token_fields_are_initialized);
@@ -285,6 +286,7 @@ int main(int argc, char* argv[]) {
         test_dynamic_array_append,
         test_dynamic_array_growth,
         test_dynamic_array_growth_from_zero,
+        test_dynamic_array_non_pod_reallocation,
         test_single_char_tokens,
         test_multi_char_tokens,
         test_token_fields_are_initialized,

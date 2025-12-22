@@ -8,6 +8,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_arena_overflow.cpp \
     tests/test_string_interner.cpp \
     tests/test_memory.cpp \
+    tests/memory_tests.cpp \
     tests/test_lexer.cpp \
     tests/test_lexer_comments.cpp \
     tests/test_lexer_float.cpp \
