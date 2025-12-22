@@ -1,28 +1,14 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseDeferStatement) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager src_manager(arena);
     const char* source = "defer {;}";
-    u32 file_id = src_manager.addFile("test.zig", source, strlen(source));
-
-    Lexer lexer(src_manager, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    while(true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    Parser parser(tokens.getData(), tokens.length(), &arena);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* stmt = parser.parseStatement();
 
     ASSERT_TRUE(stmt != NULL);

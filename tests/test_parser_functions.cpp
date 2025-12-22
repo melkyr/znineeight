@@ -1,29 +1,11 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
-
-// Helper function to set up a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_NonEmptyFunctionBody) {
     ArenaAllocator arena(1024 * 1024); // 1MB arena
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
     const char* source =
         "fn main() -> i32 {\n"
@@ -34,7 +16,8 @@ TEST_FUNC(Parser_NonEmptyFunctionBody) {
         "    return 1;\n"
         "}";
 
-    Parser parser = create_parser_for_test(source, arena, interner, sm);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* decl = parser.parseFnDecl();
 
     // Verify the function declaration itself

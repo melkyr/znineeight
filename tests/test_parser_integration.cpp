@@ -1,36 +1,19 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
-
+#include "test_utils.hpp"
 #include <new>
 
-// Helper function to set up the parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm, DynamicArray<Token>& tokens) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+// Helper function from test_parser_errors.cpp
+bool expect_parser_abort(const char* source);
 
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "var x: i32 = 10 + 20;";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -70,14 +53,14 @@ TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr) {
 
 TEST_FUNC(ParserIntegration_LogicalAnd) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
 
     // Test with '&&'
     {
-        DynamicArray<Token> tokens(arena);
         const char* source = "if (a && b) {}";
-        Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+        ParserTestContext ctx(source, arena, interner);
+        Parser& parser = ctx.getParser();
         ASTNode* node = parser.parseIfStatement();
         ASSERT_TRUE(node != NULL);
         ASTIfStmtNode* if_stmt = node->as.if_stmt;
@@ -93,12 +76,12 @@ TEST_FUNC(ParserIntegration_LogicalAnd) {
 
 TEST_FUNC(ParserIntegration_DeferStatement) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "defer file.close();";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseDeferStatement();
 
@@ -125,12 +108,12 @@ TEST_FUNC(ParserIntegration_DeferStatement) {
 
 TEST_FUNC(ParserIntegration_StructDeclaration) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "const MyStruct = struct { a: i32, b: bool, };";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -168,9 +151,8 @@ TEST_FUNC(ParserIntegration_StructDeclaration) {
 
 TEST_FUNC(ParserIntegration_SwitchExpression) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source =
         "const x = switch (value) {\n"
@@ -178,7 +160,8 @@ TEST_FUNC(ParserIntegration_SwitchExpression) {
         "    2, 3 => 20,\n"
         "    else => 30,\n"
         "};\n";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -228,13 +211,13 @@ TEST_FUNC(ParserIntegration_SwitchExpression) {
 
 TEST_FUNC(ParserIntegration_ForLoopOverSlice) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     // This is a guess at the slice syntax, as it's not fully documented.
     const char* source = "for (my_slice[0..4]) |item| {}";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseForStatement();
 
@@ -283,9 +266,8 @@ TEST_FUNC(ParserIntegration_ForLoopOverSlice) {
 
 TEST_FUNC(ParserIntegration_ComprehensiveFunction) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source =
         "fn comprehensive_test() -> i32 {\n"
@@ -303,7 +285,8 @@ TEST_FUNC(ParserIntegration_ComprehensiveFunction) {
         "    return i;\n"
         "}\n";
 
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* node = parser.parseFnDecl();
 
     // High-level checks: Just ensure it parses and has the basic structure.
@@ -325,12 +308,12 @@ TEST_FUNC(ParserIntegration_ComprehensiveFunction) {
 
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "while (should_continue()) {}";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseWhileStatement();
 
@@ -361,12 +344,12 @@ TEST_FUNC(ParserIntegration_WhileWithFunctionCall) {
 
 TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
     ArenaAllocator arena(1024 * 1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    DynamicArray<Token> tokens(arena);
 
     const char* source = "if (a && (b || c)) {}";
-    Parser parser = create_parser_for_test(source, arena, interner, sm, tokens);
+    ParserTestContext ctx(source, arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* node = parser.parseIfStatement();
 

@@ -1,32 +1,14 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
-
-// Helper to set up parser for a single test case
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-
-    Lexer lexer(sm, interner, arena, file_id);
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("-123", arena, interner);
+    ParserTestContext ctx("-123", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -45,9 +27,11 @@ TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
 
 TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("--123", arena, interner);
+    ParserTestContext ctx("--123", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -73,9 +57,11 @@ TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
 
 TEST_FUNC(Parser_UnaryOp_MixedOperators) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("!~-&foo", arena, interner);
+    ParserTestContext ctx("!~-&foo", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -107,9 +93,11 @@ TEST_FUNC(Parser_UnaryOp_MixedOperators) {
 
 TEST_FUNC(Parser_UnaryOp_WithPostfix) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    Parser parser = create_parser_for_test("-foo()", arena, interner);
+    ParserTestContext ctx("-foo()", arena, interner);
+    Parser& parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);

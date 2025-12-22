@@ -1,33 +1,14 @@
 #include "test_framework.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-#include "source_manager.hpp"
+#include "test_utils.hpp"
 #include "ast.hpp"
-
-// Helper function to create a parser instance for a given source string.
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner, SourceManager& sm) {
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    while (true) {
-        Token token = lexer.nextToken();
-        tokens.append(token);
-        if (token.type == TOKEN_EOF) {
-            break;
-        }
-    }
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
 
 TEST_FUNC(Parser_ReturnStatement_NoValue) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager source_manager(arena);
-    Parser parser = create_parser_for_test("return;", arena, interner, source_manager);
+    ParserTestContext ctx("return;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
     ASSERT_TRUE(stmt != NULL);
@@ -41,9 +22,10 @@ TEST_FUNC(Parser_ReturnStatement_NoValue) {
 
 TEST_FUNC(Parser_ReturnStatement_WithValue) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager source_manager(arena);
-    Parser parser = create_parser_for_test("return 42;", arena, interner, source_manager);
+    ParserTestContext ctx("return 42;", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseStatement();
     ASSERT_TRUE(stmt != NULL);

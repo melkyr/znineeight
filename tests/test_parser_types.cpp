@@ -1,29 +1,13 @@
 #include "test_framework.hpp"
-#include "lexer.hpp"
 #include "parser.hpp"
-#include "memory.hpp"
-#include "string_interner.hpp"
-
-// Helper function to set up a parser for a given source string
-static Parser create_parser_for_test(const char* source, ArenaAllocator& arena, StringInterner& interner) {
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-
-    DynamicArray<Token> tokens(arena);
-    Token token;
-    do {
-        token = lexer.nextToken();
-        tokens.append(token);
-    } while (token.type != TOKEN_EOF);
-
-    return Parser(tokens.getData(), tokens.length(), &arena);
-}
+#include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParsePrimitiveType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("i32", arena, interner);
+    ParserTestContext ctx("i32", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -36,8 +20,10 @@ TEST_FUNC(Parser_ParsePrimitiveType) {
 
 TEST_FUNC(Parser_ParsePointerType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("*u8", arena, interner);
+    ParserTestContext ctx("*u8", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -54,8 +40,10 @@ TEST_FUNC(Parser_ParsePointerType) {
 
 TEST_FUNC(Parser_ParseSliceType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("[]bool", arena, interner);
+    ParserTestContext ctx("[]bool", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -73,8 +61,10 @@ TEST_FUNC(Parser_ParseSliceType) {
 
 TEST_FUNC(Parser_ParseNestedPointerType) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("**i32", arena, interner);
+    ParserTestContext ctx("**i32", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -95,8 +85,10 @@ TEST_FUNC(Parser_ParseNestedPointerType) {
 
 TEST_FUNC(Parser_ParseSliceOfPointers) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("[]*i32", arena, interner);
+    ParserTestContext ctx("[]*i32", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -118,8 +110,10 @@ TEST_FUNC(Parser_ParseSliceOfPointers) {
 
 TEST_FUNC(Parser_ParseFixedSizeArray) {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    Parser parser = create_parser_for_test("[8]u8", arena, interner);
+    ParserTestContext ctx("[8]u8", arena, interner);
+    Parser& parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
