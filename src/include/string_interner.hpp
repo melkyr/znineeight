@@ -29,6 +29,14 @@ public:
      */
     const char* intern(const char* str);
 
+    /**
+     * @brief Interns a string from a pointer and length, returning a pointer to the unique copy.
+     * @param str The string to intern.
+     * @param length The length of the string.
+     * @return A const pointer to the unique, interned string.
+     */
+    const char* intern(const char* str, size_t length);
+
 private:
     /**
      * @struct StringEntry

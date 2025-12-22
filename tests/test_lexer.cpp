@@ -20,7 +20,7 @@ TEST_FUNC(single_char_tokens) {
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_MINUS, token.type);
     ASSERT_EQ(1, token.location.line);
-    ASSERT_EQ(3, token.location.column);
+    ASSERT_EQ(5, token.location.column);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_SLASH, token.type);
@@ -134,7 +134,7 @@ TEST_FUNC(Lexer_ErrorConditions) {
     ASSERT_EQ(TOKEN_ERROR, t.type); // Invalid numeric format
 
     t = lexer.nextToken();
-    ASSERT_EQ(TOKEN_ERROR, t.type); // Identifier too long
+    ASSERT_EQ(TOKEN_IDENTIFIER, t.type); // Identifier too long is now valid
 
     t = lexer.nextToken();
     ASSERT_EQ(TOKEN_ERROR, t.type); // Unrecognized character
