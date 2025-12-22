@@ -122,46 +122,42 @@ public:
 
     /**
      * @brief Ensures the array has at least a given capacity.
+     * If the current capacity is insufficient, it reallocates a larger buffer.
+     * The new capacity is doubled, or set to the minimum required if that's larger.
+     * @warning This operation can be expensive as it involves allocating new
+     * memory and copying all existing elements. It is now safe for non-POD types
+     * as it uses element-wise assignment instead of memcpy.
      * @param min_cap The minimum required capacity.
      */
     void ensure_capacity(size_t min_cap) {
-        if (cap < min_cap) {
-            size_t new_cap = (cap == 0) ? 8 : cap * 2;
-            if (new_cap < min_cap) {
-                new_cap = min_cap;
-            }
-            T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
-            assert(new_data);
-            if (data) {
-                memcpy(new_data, data, len * sizeof(T));
-            }
-            data = new_data;
-            cap = new_cap;
+        if (cap >= min_cap) return;
+
+        size_t new_cap = (cap == 0) ? 8 : cap * 2;
+        if (new_cap < min_cap) {
+            new_cap = min_cap;
         }
+
+        T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
+        assert(new_data);
+
+        // Element-wise copy (safe for non-POD types)
+        for (size_t i = 0; i < len; ++i) {
+            new_data[i] = data[i];
+        }
+
+        data = new_data;
+        cap = new_cap;
     }
 
     /**
      * @brief Appends an item to the end of the array.
+     * If the array is full, it will trigger a reallocation.
      * @param item The item to append.
      */
     void append(const T& item) {
-        if (len == cap) {
-            size_t new_cap = (cap == 0) ? 8 : cap * 2;
-            T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
-
-            // If the allocation fails, we can't proceed. This is considered a
-            // fatal error for this compiler, as the arena is expected to be
-            // large enough for the compilation unit.
-            assert(new_data);
-
-            // Copy existing data to the new buffer.
-            if (data) {
-                memcpy(new_data, data, len * sizeof(T));
-            }
-            data = new_data;
-            cap = new_cap;
-        }
-        data[len++] = item;
+        ensure_capacity(len + 1);
+        data[len] = item;
+        ++len;
     }
 
     /**

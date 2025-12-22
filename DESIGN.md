@@ -39,7 +39,7 @@ public:
 ```
 * **Usage:** AST Nodes, Types, and Symbols are allocated here
 * **Alignment:** Support aligned allocations for SIMD data (future extension)
-* **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full.
+* **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses element-wise assignment instead of `memcpy` during reallocation.
 
 ### 3.2 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.
