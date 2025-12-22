@@ -71,6 +71,10 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(arena_alloc_out_of_memory);
+TEST_FUNC(arena_alloc_zero_size);
+TEST_FUNC(arena_alloc_aligned_out_of_memory);
+TEST_FUNC(arena_alloc_aligned_overflow_check);
 TEST_FUNC(Lexer_Delimiters);
 TEST_FUNC(Lexer_DotOperators);
 TEST_FUNC(Parser_ParseEmptyBlock);
@@ -268,6 +272,10 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_arena_alloc_out_of_memory,
+        test_arena_alloc_zero_size,
+        test_arena_alloc_aligned_out_of_memory,
+        test_arena_alloc_aligned_overflow_check,
         test_basic_allocation,
         test_multiple_allocations,
         test_allocation_failure,

@@ -1124,6 +1124,16 @@ After printing the message (on Windows), the function **always** calls `abort()`
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
 
+## 15. Parser Lifetime and Memory Safety
+
+The `Parser` is designed with clear ownership semantics to ensure memory safety and prevent unintended side effects.
+
+-   **Token Ownership:** The `Parser` does **not** own the token stream it processes. It receives a `const Token*` in its constructor, making it a read-only consumer of the tokens. This `const` contract guarantees that the parser cannot modify the tokens, which are owned and managed by the `Lexer` or the test harness. The lifetime of the token array must exceed the lifetime of the `Parser`.
+
+-   **AST Node Ownership:** The `Parser` does **not** own the AST nodes it creates. All `ASTNode` objects are allocated from an `ArenaAllocator` that is passed into the parser's constructor. The arena's owner is responsible for managing its lifetime and freeing the memory when the AST is no longer needed, typically by using an `ArenaLifetimeGuard` in test scenarios.
+
+This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
+
 ---
 
 ## Deprecated
