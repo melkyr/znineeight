@@ -72,6 +72,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_lifecycle.cpp \
     tests/lexer_edge_cases.cpp \
     tests/lexer_fixes.cpp \
+    tests/lexer_utils.cpp \
     -Isrc/include \
     -o test_runner
 
