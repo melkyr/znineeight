@@ -9,6 +9,24 @@
 #define TAB_WIDTH 4
 
 /**
+ * @brief Checks if a character is a valid starting character for an identifier.
+ * @param c The character to check.
+ * @return `true` if the character can start an identifier, `false` otherwise.
+ */
+static inline bool isIdentifierStart(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+/**
+ * @brief Checks if a character is a valid non-starting character for an identifier.
+ * @param c The character to check.
+ * @return `true` if the character can be part of an identifier, `false` otherwise.
+ */
+static inline bool isIdentifierChar(char c) {
+    return isIdentifierStart(c) || (c >= '0' && c <= '9');
+}
+
+/**
  * @file lexer.hpp
  * @brief Defines the token types and structures for the RetroZig lexer.
  *
@@ -266,7 +284,16 @@ public:
      *         TOKEN_EOF.
      */
     Token nextToken();
+    /**
+     * @brief Peeks at the character at the given offset from the current position.
+     * @param n The offset from the current position. Defaults to 0.
+     * @return The character at the given offset.
+     */
     char peek(int n = 0) const;
+    /**
+     * @brief Advances the lexer's position by the given number of characters.
+     * @param n The number of characters to advance. Defaults to 1.
+     */
     void advance(int n = 1);
 };
 

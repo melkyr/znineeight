@@ -95,14 +95,6 @@ void Lexer::advance(int n) {
     }
 }
 
-bool isIdentifierStart(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
-
-bool isIdentifierChar(char c) {
-    return isIdentifierStart(c) || (c >= '0' && c <= '9');
-}
-
 static TokenType lookupIdentifier(const char* name, size_t len) {
     int left = 0;
     int right = num_keywords - 1;
@@ -626,6 +618,11 @@ Token Lexer::nextToken() {
             token = lexStringLiteral();
             break;
         default:
+            if (c == 'c' && this->current[0] == '"') {
+                this->current++; // Consume the "
+                this->column++;
+                return lexStringLiteral();
+            }
             if (isIdentifierStart(c)) {
                 this->current--;
                 this->column--;
@@ -659,7 +656,11 @@ Token Lexer::lexStringLiteral() {
     DynamicArray<char> buffer(this->arena);
 
     while (*this->current != '"' && *this->current != '\0') {
-        if (*this->current == '\\') {
+        if (*this->current == '\\' && this->current[1] == '\n') {
+            this->current += 2;
+            this->line++;
+            this->column = 1;
+        } else if (*this->current == '\\') {
             bool success;
             u32 value = parseEscapeSequence(success);
             if (!success) {
@@ -773,29 +774,41 @@ u32 Lexer::parseEscapeSequence(bool& success) {
             this->current++; // Consume the '{'
             this->column++;
             u32 unicode_val = 0;
-            while (*this->current != '}' && *this->current != '\0') {
+            int digit_count = 0;
+            const int MAX_UNICODE_DIGITS = 6;
+
+            while (*this->current != '}' && *this->current != '\0' && digit_count < MAX_UNICODE_DIGITS) {
                 char digit = *this->current;
+                u32 digit_value;
                 if (digit >= '0' && digit <= '9') {
-                    unicode_val = (unicode_val * 16) + (digit - '0');
+                    digit_value = digit - '0';
                 } else if (digit >= 'a' && digit <= 'f') {
-                    unicode_val = (unicode_val * 16) + (digit - 'a' + 10);
+                    digit_value = digit - 'a' + 10;
                 } else if (digit >= 'A' && digit <= 'F') {
-                    unicode_val = (unicode_val * 16) + (digit - 'A' + 10);
+                    digit_value = digit - 'A' + 10;
                 } else {
-                    success = false;
+                    success = false; // Invalid hex digit
                     return 0;
                 }
+                unicode_val = (unicode_val * 16) + digit_value;
                 this->current++;
                 this->column++;
+                digit_count++;
             }
-            if (*this->current == '}') {
-                this->current++; // Consume the '}'
-                this->column++;
-                return unicode_val;
-            } else {
+
+            if (*this->current != '}' || digit_count == 0) {
                 success = false;
                 return 0;
             }
+
+            if (unicode_val > 0x10FFFF || (unicode_val >= 0xD800 && unicode_val <= 0xDFFF)) {
+                 success = false;
+                 return 0;
+            }
+
+            this->current++; // Consume the '}'
+            this->column++;
+            return unicode_val;
         }
         default:
             success = false;
