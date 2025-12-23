@@ -4,77 +4,108 @@
 #include <cctype>
 #include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
-#include <cstring> // For strcmp
+#include <cstring> // For memcmp, strncmp
 
 // Keyword lookup table.
-// IMPORTANT: This array must be kept sorted alphabetically for the binary search to work.
+// IMPORTANT: This array is sorted ALPHABETICALLY by name.
 const Keyword keywords[] = {
-    {"addrspace", TOKEN_ADDRSPACE},
-    {"align", TOKEN_ALIGN},
-    {"allowzero", TOKEN_ALLOWZERO},
-    {"and", TOKEN_AND},
-    {"anyframe", TOKEN_ANYFRAME},
-    {"anytype", TOKEN_ANYTYPE},
-    {"asm", TOKEN_ASM},
-    {"break", TOKEN_BREAK},
-    {"callconv", TOKEN_CALLCONV},
-    {"catch", TOKEN_CATCH},
-    {"comptime", TOKEN_COMPTIME},
-    {"const", TOKEN_CONST},
-    {"continue", TOKEN_CONTINUE},
-    {"defer", TOKEN_DEFER},
-    {"else", TOKEN_ELSE},
-    {"enum", TOKEN_ENUM},
-    {"errdefer", TOKEN_ERRDEFER},
-    {"error", TOKEN_ERROR_SET},
-    {"export", TOKEN_EXPORT},
-    {"extern", TOKEN_EXTERN},
-    {"fn", TOKEN_FN},
-    {"for", TOKEN_FOR},
-    {"if", TOKEN_IF},
-    {"inline", TOKEN_INLINE},
-    {"linksection", TOKEN_LINKSECTION},
-    {"noalias", TOKEN_NOALIAS},
-    {"noinline", TOKEN_NOINLINE},
-    {"nosuspend", TOKEN_NOSUSPEND},
-    {"opaque", TOKEN_OPAQUE},
-    {"or", TOKEN_OR},
-    {"orelse", TOKEN_ORELSE},
-    {"packed", TOKEN_PACKED},
-    {"pub", TOKEN_PUB},
-    {"resume", TOKEN_RESUME},
-    {"return", TOKEN_RETURN},
-    {"struct", TOKEN_STRUCT},
-    {"suspend", TOKEN_SUSPEND},
-    {"switch", TOKEN_SWITCH},
-    {"test", TOKEN_TEST},
-    {"threadlocal", TOKEN_THREADLOCAL},
-    {"try", TOKEN_TRY},
-    {"union", TOKEN_UNION},
-    {"unreachable", TOKEN_UNREACHABLE},
-    {"usingnamespace", TOKEN_USINGNAMESPACE},
-    {"var", TOKEN_VAR},
-    {"volatile", TOKEN_VOLATILE},
-    {"while", TOKEN_WHILE},
+    {"addrspace", 9, TOKEN_ADDRSPACE},
+    {"align", 5, TOKEN_ALIGN},
+    {"allowzero", 9, TOKEN_ALLOWZERO},
+    {"and", 3, TOKEN_AND},
+    {"anyframe", 8, TOKEN_ANYFRAME},
+    {"anytype", 7, TOKEN_ANYTYPE},
+    {"asm", 3, TOKEN_ASM},
+    {"break", 5, TOKEN_BREAK},
+    {"callconv", 8, TOKEN_CALLCONV},
+    {"catch", 5, TOKEN_CATCH},
+    {"comptime", 8, TOKEN_COMPTIME},
+    {"const", 5, TOKEN_CONST},
+    {"continue", 8, TOKEN_CONTINUE},
+    {"defer", 5, TOKEN_DEFER},
+    {"else", 4, TOKEN_ELSE},
+    {"enum", 4, TOKEN_ENUM},
+    {"errdefer", 8, TOKEN_ERRDEFER},
+    {"error", 5, TOKEN_ERROR_SET},
+    {"export", 6, TOKEN_EXPORT},
+    {"extern", 6, TOKEN_EXTERN},
+    {"fn", 2, TOKEN_FN},
+    {"for", 3, TOKEN_FOR},
+    {"if", 2, TOKEN_IF},
+    {"inline", 6, TOKEN_INLINE},
+    {"linksection", 11, TOKEN_LINKSECTION},
+    {"noalias", 7, TOKEN_NOALIAS},
+    {"noinline", 8, TOKEN_NOINLINE},
+    {"nosuspend", 9, TOKEN_NOSUSPEND},
+    {"opaque", 6, TOKEN_OPAQUE},
+    {"or", 2, TOKEN_OR},
+    {"orelse", 6, TOKEN_ORELSE},
+    {"packed", 6, TOKEN_PACKED},
+    {"pub", 3, TOKEN_PUB},
+    {"resume", 6, TOKEN_RESUME},
+    {"return", 6, TOKEN_RETURN},
+    {"struct", 6, TOKEN_STRUCT},
+    {"suspend", 7, TOKEN_SUSPEND},
+    {"switch", 6, TOKEN_SWITCH},
+    {"test", 4, TOKEN_TEST},
+    {"threadlocal", 11, TOKEN_THREADLOCAL},
+    {"try", 3, TOKEN_TRY},
+    {"union", 5, TOKEN_UNION},
+    {"unreachable", 11, TOKEN_UNREACHABLE},
+    {"usingnamespace", 14, TOKEN_USINGNAMESPACE},
+    {"var", 3, TOKEN_VAR},
+    {"volatile", 8, TOKEN_VOLATILE},
+    {"while", 5, TOKEN_WHILE},
 };
 const int num_keywords = sizeof(keywords) / sizeof(Keyword);
 
-static TokenType lookupIdentifier(const char* name, int length) {
+static void encode_utf8(DynamicArray<char>& buffer, u32 codepoint) {
+    if (codepoint <= 0x7F) {
+        buffer.append(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7FF) {
+        buffer.append(static_cast<char>(0xC0 | (codepoint >> 6)));
+        buffer.append(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0xFFFF) {
+        buffer.append(static_cast<char>(0xE0 | (codepoint >> 12)));
+        buffer.append(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        buffer.append(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0x10FFFF) {
+        buffer.append(static_cast<char>(0xF0 | (codepoint >> 18)));
+        buffer.append(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+        buffer.append(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        buffer.append(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+}
+
+static TokenType lookupIdentifier(const char* name, size_t len) {
     int left = 0;
     int right = num_keywords - 1;
 
     while (left <= right) {
         int mid = left + (right - left) / 2;
-        int cmp = strncmp(name, keywords[mid].name, length);
+        const Keyword& k = keywords[mid];
+
+        // Determine the length to compare (the shorter of the two)
+        size_t common_len = (len < k.len) ? len : k.len;
+
+        // Compare the shared prefix bytes
+        int cmp = memcmp(name, k.name, common_len);
+
         if (cmp == 0) {
-            // Make sure the keyword is not a prefix of the identifier
-            if (keywords[mid].name[length] == '\0') {
-                return keywords[mid].type;
+            // The prefixes match. Now distinguishing based on length.
+            if (len < k.len) {
+                right = mid - 1;
+            } else if (len > k.len) {
+                left = mid + 1;
+            } else {
+                // Exact match in content and length.
+                return k.type;
             }
-        }
-        if (cmp < 0) {
+        } else if (cmp < 0) {
+            // Name is alphabetically smaller
             right = mid - 1;
         } else {
+            // Name is alphabetically larger
             left = mid + 1;
         }
     }
@@ -129,74 +160,19 @@ Token Lexer::lexCharLiteral() {
         return token;
     }
 
-    long value;
+    u32 value;
     if (*this->current == '\\') {
-        this->current++;
-        this->column++;
-        switch (*this->current) {
-            case 'n': value = '\n'; break;
-            case 'r': value = '\r'; break;
-            case 't': value = '\t'; break;
-            case '\\': value = '\\'; break;
-            case '\'': value = '\''; break;
-            case 'x': {
-                char hex_val = 0;
-                for (int i = 0; i < 2; ++i) {
-                    this->current++;
-                    this->column++;
-                    if (*this->current == '\0') {
-                        token.type = TOKEN_ERROR;
-                        return token;
-                    }
-                    char c = *this->current;
-                    if (c >= '0' && c <= '9') {
-                        hex_val = (hex_val * 16) + (c - '0');
-                    } else if (c >= 'a' && c <= 'f') {
-                        hex_val = (hex_val * 16) + (c - 'a' + 10);
-                    } else if (c >= 'A' && c <= 'F') {
-                        hex_val = (hex_val * 16) + (c - 'A' + 10);
-                    } else {
-                        token.type = TOKEN_ERROR; // Invalid hex escape
-                        return token;
-                    }
-                }
-                value = hex_val;
-                break;
-            }
-            case 'u': {
-                if (*(++this->current) != '{') {
-                    token.type = TOKEN_ERROR; // Invalid unicode escape
-                    return token;
-                }
-                this->current++; // Skip '{'
-                long unicode_val = 0;
-                while(*this->current != '}') {
-                    char c = *this->current;
-                     if (c >= '0' && c <= '9') {
-                        unicode_val = (unicode_val * 16) + (c - '0');
-                    } else if (c >= 'a' && c <= 'f') {
-                        unicode_val = (unicode_val * 16) + (c - 'a' + 10);
-                    } else if (c >= 'A' && c <= 'F') {
-                        unicode_val = (unicode_val * 16) + (c - 'A' + 10);
-                    } else {
-                        token.type = TOKEN_ERROR; // Invalid unicode escape
-                        return token;
-                    }
-                    this->current++;
-                }
-                value = unicode_val;
-                break;
-            }
-            default:
-                token.type = TOKEN_ERROR; // Unsupported escape sequence
-                return token;
+        bool success;
+        value = parseEscapeSequence(success);
+        if (!success) {
+            token.type = TOKEN_ERROR;
+            return token;
         }
     } else {
         value = *this->current;
+        this->current++;
+        this->column++;
     }
-
-    this->current++;
-    this->column++;
 
     if (*this->current != '\'') {
         token.type = TOKEN_ERROR; // Unterminated or multi-character literal
@@ -206,7 +182,7 @@ Token Lexer::lexCharLiteral() {
     this->column++;
 
     token.type = TOKEN_CHAR_LITERAL;
-    token.value.character = (u32)value;
+    token.value.character = value;
     return token;
 }
 
@@ -324,15 +300,17 @@ Token Lexer::lexNumericLiteral() {
     const char* end_ptr = start;
     if (is_hex) {
         end_ptr += 2;
+        while (isxdigit(*end_ptr)) end_ptr++;
+    } else {
+        while (isdigit(*end_ptr)) end_ptr++;
     }
-    while (isdigit(*end_ptr)) end_ptr++;
     bool is_float = false;
     if (*end_ptr == '.') {
         // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[1] == '.') {
+        if (end_ptr[0] != '\0' && end_ptr[1] == '.') {
             // This is an integer followed by a '..' operator.
             // Do not consume the dot; treat the preceding number as an integer.
-        } else if (!isdigit(end_ptr[1])) {
+        } else if (end_ptr[0] == '\0' || !isdigit(end_ptr[1])) {
              token.type = TOKEN_ERROR;
              this->current = end_ptr + 1;
              this->column += (this->current - start);
@@ -363,16 +341,56 @@ Token Lexer::lexNumericLiteral() {
         this->current = end;
         token.type = TOKEN_FLOAT_LITERAL;
     } else {
-        char* end;
-        token.value.integer = strtol(start, &end, 0); // Base 0 auto-detects hex
-        this->column += (end - start);
-        this->current = end;
+        // Use the new custom parser for 64-bit integers
+        token.value.integer = parseInteger(start, end_ptr);
+        this->column += (end_ptr - start);
+        this->current = (char*)end_ptr;
         token.type = TOKEN_INTEGER_LITERAL;
     }
 
     return token;
 }
 
+/**
+ * @brief Parses an integer from a string slice into a u64.
+ *
+ * This function manually parses a string of digits into a 64-bit unsigned
+ * integer. It supports decimal (base 10) and hexadecimal (base 16) literals.
+ * It is designed to be a direct replacement for `strtol` to ensure that
+ * 64-bit integer literals are handled correctly, especially in 32-bit
+ * environments where `long` is only 32 bits.
+ *
+ * @param start A pointer to the beginning of the string slice to parse.
+ * @param end A pointer to the end of the string slice to parse.
+ * @return The parsed `u64` integer value.
+ */
+u64 Lexer::parseInteger(const char* start, const char* end) {
+    u64 result = 0;
+    int base = 10;
+    const char* p = start;
+
+    if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        base = 16;
+        p += 2;
+    }
+
+    for (; p < end; ++p) {
+        int digit;
+        if (*p >= '0' && *p <= '9') {
+            digit = *p - '0';
+        } else if (base == 16 && *p >= 'a' && *p <= 'f') {
+            digit = *p - 'a' + 10;
+        } else if (base == 16 && *p >= 'A' && *p <= 'F') {
+            digit = *p - 'A' + 10;
+        } else {
+            // This should not happen if the caller has correctly identified the end of the number.
+            break;
+        }
+        result = result * base + digit;
+    }
+
+    return result;
+}
 
 /**
  * @brief Scans and returns the next token from the source code.
@@ -616,46 +634,17 @@ Token Lexer::lexStringLiteral() {
 
     while (*this->current != '"' && *this->current != '\0') {
         if (*this->current == '\\') {
-            this->current++; // Consume the backslash
-            switch (*this->current) {
-                case 'n': buffer.append('\n'); break;
-                case 'r': buffer.append('\r'); break;
-                case 't': buffer.append('\t'); break;
-                case '\\': buffer.append('\\'); break;
-                case '"': buffer.append('"'); break;
-                case 'x': {
-                    this->current++; // Consume 'x'
-                    char hex_val = 0;
-                    for (int i = 0; i < 2; ++i) {
-                        if (*this->current == '\0' || *this->current == '"') {
-                            token.type = TOKEN_ERROR;
-                            return token;
-                        }
-                        char c = *this->current;
-                        if (c >= '0' && c <= '9') {
-                            hex_val = (hex_val * 16) + (c - '0');
-                        } else if (c >= 'a' && c <= 'f') {
-                            hex_val = (hex_val * 16) + (c - 'a' + 10);
-                        } else if (c >= 'A' && c <= 'F') {
-                            hex_val = (hex_val * 16) + (c - 'A' + 10);
-                        } else {
-                            token.type = TOKEN_ERROR; // Invalid hex escape
-                            return token;
-                        }
-                        this->current++;
-                    }
-                    this->current--; // Backtrack one char
-                    buffer.append(hex_val);
-                    break;
-                }
-                default:
-                    token.type = TOKEN_ERROR; // Unsupported escape sequence
-                    return token;
+            bool success;
+            u32 value = parseEscapeSequence(success);
+            if (!success) {
+                token.type = TOKEN_ERROR;
+                return token;
             }
+            encode_utf8(buffer, value);
         } else {
             buffer.append(*this->current);
+            this->current++;
         }
-        this->current++;
     }
 
     if (*this->current == '\0') {
@@ -683,7 +672,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         this->current++;
     }
 
-    int length = this->current - start;
+    size_t length = this->current - start;
     token.type = lookupIdentifier(start, length);
 
     if (token.type == TOKEN_IDENTIFIER) {
@@ -692,4 +681,98 @@ Token Lexer::lexIdentifierOrKeyword() {
 
     this->column += length;
     return token;
+}
+
+/**
+ * @brief Parses an escape sequence and returns the resulting character value.
+ *
+ * This function is a centralized handler for all escape sequences in both
+ * character and string literals. It consumes the characters for the escape
+ * sequence from the input stream and returns the corresponding value.
+ *
+ * The function handles standard escapes (`\\n`, `\\t`, etc.), hexadecimal
+ * escapes (`\\xHH`), and Unicode escapes (`\\u{...}`). It performs bounds
+ * checking to ensure it does not read past the end of the input buffer.
+ *
+ * @param success [out] A boolean reference that is set to `true` if the parse
+ *                is successful, and `false` otherwise.
+ * @return The `u32` value of the parsed character. If parsing fails, the
+ *         return value is undefined, and `success` will be `false`.
+ */
+u32 Lexer::parseEscapeSequence(bool& success) {
+    this->current++; // Consume the '\\'
+    this->column++;
+    success = true;
+    char c = *this->current;
+
+    switch (c) {
+        case 'n': this->current++; this->column++; return '\n';
+        case 'r': this->current++; this->column++; return '\r';
+        case 't': this->current++; this->column++; return '\t';
+        case '\\': this->current++; this->column++; return '\\';
+        case '\'': this->current++; this->column++; return '\'';
+        case '"': this->current++; this->column++; return '"';
+        case 'x': {
+            this->current++; // Consume the 'x'
+            this->column++;
+            u32 hex_val = 0;
+            for (int i = 0; i < 2; ++i) {
+                if (*this->current == '\0') {
+                    success = false;
+                    return 0;
+                }
+                char digit = *this->current;
+                if (digit >= '0' && digit <= '9') {
+                    hex_val = (hex_val * 16) + (digit - '0');
+                } else if (digit >= 'a' && digit <= 'f') {
+                    hex_val = (hex_val * 16) + (digit - 'a' + 10);
+                } else if (digit >= 'A' && digit <= 'F') {
+                    hex_val = (hex_val * 16) + (digit - 'A' + 10);
+                } else {
+                    success = false;
+                    return 0;
+                }
+                this->current++;
+                this->column++;
+            }
+            return hex_val;
+        }
+        case 'u': {
+            this->current++; // Consume the 'u'
+            this->column++;
+            if (*this->current != '{') {
+                success = false;
+                return 0;
+            }
+            this->current++; // Consume the '{'
+            this->column++;
+            u32 unicode_val = 0;
+            while (*this->current != '}' && *this->current != '\0') {
+                char digit = *this->current;
+                if (digit >= '0' && digit <= '9') {
+                    unicode_val = (unicode_val * 16) + (digit - '0');
+                } else if (digit >= 'a' && digit <= 'f') {
+                    unicode_val = (unicode_val * 16) + (digit - 'a' + 10);
+                } else if (digit >= 'A' && digit <= 'F') {
+                    unicode_val = (unicode_val * 16) + (digit - 'A' + 10);
+                } else {
+                    success = false;
+                    return 0;
+                }
+                this->current++;
+                this->column++;
+            }
+            if (*this->current == '}') {
+                this->current++; // Consume the '}'
+                this->column++;
+                return unicode_val;
+            } else {
+                success = false;
+                return 0;
+            }
+        }
+        default:
+            success = false;
+            return 0;
+    }
 }

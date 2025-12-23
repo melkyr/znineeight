@@ -79,6 +79,12 @@ TEST_FUNC(lexer_handles_unicode_correctly);
 TEST_FUNC(lexer_handles_unterminated_char_hex_escape);
 TEST_FUNC(lexer_handles_unterminated_string_hex_escape);
 TEST_FUNC(lexer_handles_long_identifier);
+TEST_FUNC(Lexer_HandlesLongIdentifier);
+TEST_FUNC(Lexer_HandlesU64Integer);
+TEST_FUNC(Lexer_UnterminatedCharHexEscape);
+TEST_FUNC(Lexer_UnterminatedStringHexEscape);
+TEST_FUNC(Lexer_NumericLookaheadSafety);
+TEST_FUNC(Lexer_UnicodeInStringLiteral);
 TEST_FUNC(arena_alloc_out_of_memory);
 TEST_FUNC(arena_alloc_zero_size);
 TEST_FUNC(arena_alloc_aligned_out_of_memory);
@@ -453,6 +459,12 @@ int main(int argc, char* argv[]) {
         test_lexer_handles_unterminated_char_hex_escape,
         test_lexer_handles_unterminated_string_hex_escape,
         test_lexer_handles_long_identifier,
+        test_Lexer_HandlesLongIdentifier,
+        test_Lexer_HandlesU64Integer,
+        test_Lexer_UnterminatedCharHexEscape,
+        test_Lexer_UnterminatedStringHexEscape,
+        test_Lexer_NumericLookaheadSafety,
+        test_Lexer_UnicodeInStringLiteral,
     };
 
     int passed = 0;

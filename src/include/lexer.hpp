@@ -168,6 +168,7 @@ enum TokenType {
  */
 struct Keyword {
     const char* name;
+    size_t len;      // Optimized length field
     TokenType type;
 };
 
@@ -242,6 +243,8 @@ private:
     bool match(char expected);
     Token lexCharLiteral();
     Token lexNumericLiteral();
+    u64 parseInteger(const char* start, const char* end);
+    u32 parseEscapeSequence(bool& success);
     Token parseHexFloat();
     Token lexIdentifierOrKeyword();
     Token lexStringLiteral();
