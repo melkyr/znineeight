@@ -6,10 +6,6 @@
 #include "test_utils.hpp"
 #include <cstring>
 
-// Forward declarations for functions from lexer.cpp
-bool isIdentifierStart(char c);
-bool isIdentifierChar(char c);
-
 TEST_FUNC(peek_and_advance) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);

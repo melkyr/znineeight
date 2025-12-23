@@ -73,6 +73,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/lexer_edge_cases.cpp \
     tests/lexer_fixes.cpp \
     tests/lexer_utils.cpp \
+    tests/lexer_strings.cpp \
     -Isrc/include \
     -o test_runner
 
