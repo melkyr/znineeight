@@ -76,6 +76,32 @@ static void encode_utf8(DynamicArray<char>& buffer, u32 codepoint) {
         buffer.append(static_cast<char>(0x80 | (codepoint & 0x3F)));
     }
 }
+char Lexer::peek(int n) const {
+    return this->current[n];
+}
+
+void Lexer::advance(int n) {
+    for (int i = 0; i < n; i++) {
+        if (*this->current == '\0') {
+            return;
+        }
+        if (*this->current == '\n') {
+            this->line++;
+            this->column = 1;
+        } else {
+            this->column++;
+        }
+        this->current++;
+    }
+}
+
+bool isIdentifierStart(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+bool isIdentifierChar(char c) {
+    return isIdentifierStart(c) || (c >= '0' && c <= '9');
+}
 
 static TokenType lookupIdentifier(const char* name, size_t len) {
     int left = 0;
@@ -600,7 +626,7 @@ Token Lexer::nextToken() {
             token = lexStringLiteral();
             break;
         default:
-            if (isalpha(c) || c == '_') {
+            if (isIdentifierStart(c)) {
                 this->current--;
                 this->column--;
                 return lexIdentifierOrKeyword();
@@ -668,7 +694,7 @@ Token Lexer::lexIdentifierOrKeyword() {
     token.location.column = this->column;
 
     const char* start = this->current;
-    while (isalnum(*this->current) || *this->current == '_') {
+    while (isIdentifierChar(*this->current)) {
         this->current++;
     }
 

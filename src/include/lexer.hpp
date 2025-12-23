@@ -266,6 +266,8 @@ public:
      *         TOKEN_EOF.
      */
     Token nextToken();
+    char peek(int n = 0) const;
+    void advance(int n = 1);
 };
 
 
