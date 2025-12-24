@@ -79,4 +79,49 @@ private:
 bool expect_parser_abort(const char* source_code);
 bool expect_statement_parser_abort(const char* source_code);
 
+#define SETUP_LEXER_TEST(source_str) \
+    ArenaAllocator arena(1024); \
+    StringInterner interner(arena); \
+    SourceManager sm(arena); \
+    u32 file_id = sm.addFile("test.zig", source_str, strlen(source_str)); \
+    Lexer lexer(sm, interner, arena, file_id)
+
+#define ASSERT_TOKEN_KIND(source_str, kind) \
+    { \
+        SETUP_LEXER_TEST(source_str); \
+        Token t = lexer.nextToken(); \
+        ASSERT_TRUE(t.type == kind); \
+    }
+
+#define ASSERT_TOKEN_INT(source_str, val) \
+    { \
+        SETUP_LEXER_TEST(source_str); \
+        Token t = lexer.nextToken(); \
+        ASSERT_TRUE(t.type == TOKEN_INTEGER_LITERAL); \
+        ASSERT_TRUE(t.value.integer == val); \
+    }
+
+#define ASSERT_TOKEN_UINT(source_str, val) \
+    { \
+        SETUP_LEXER_TEST(source_str); \
+        Token t = lexer.nextToken(); \
+        ASSERT_TRUE(t.type == TOKEN_INTEGER_LITERAL); \
+        ASSERT_TRUE((u64)t.value.integer == val); \
+    }
+
+#define ASSERT_TOKEN_FLOAT(source_str, val) \
+    { \
+        SETUP_LEXER_TEST(source_str); \
+        Token t = lexer.nextToken(); \
+        ASSERT_TRUE(t.type == TOKEN_FLOAT_LITERAL); \
+        ASSERT_TRUE(t.value.floating_point == val); \
+    }
+
+#define ASSERT_TOKEN_ERROR(source_str) \
+    { \
+        SETUP_LEXER_TEST(source_str); \
+        Token t = lexer.nextToken(); \
+        ASSERT_TRUE(t.type == TOKEN_ERROR); \
+    }
+
 #endif // TEST_UTILS_HPP

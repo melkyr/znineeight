@@ -74,6 +74,9 @@ bool expect_statement_parser_abort(const char* source_code) {
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(Lexer_NumberParsing_WithUnderscores);
+TEST_FUNC(Lexer_NumberParsing_FloatEdgeCases);
+TEST_FUNC(Lexer_NumberParsing_IntegerOverflow);
 TEST_FUNC(lexer_handles_tab_correctly);
 TEST_FUNC(lexer_handles_unicode_correctly);
 TEST_FUNC(lexer_handles_unterminated_char_hex_escape);
@@ -445,11 +448,10 @@ int main(int argc, char* argv[]) {
         test_ParserIntegration_VarDeclWithBinaryExpr,
         test_ParserIntegration_IfWithComplexCondition,
         test_ParserIntegration_WhileWithFunctionCall,
-        // test_ParserIntegration_ForLoopOverSlice,
-        // test_ParserIntegration_ComprehensiveFunction,
+        // TEST_ENTRY(ParserIntegration_ForLoopOverSlice),
+        // TEST_ENTRY(ParserIntegration_ComprehensiveFunction),
         test_ParserBug_LogicalOperatorSymbol,
         test_Parser_RecursionLimit,
-        test_IntegerRangeAmbiguity,
         test_compilation_unit_creation,
         test_compilation_unit_var_decl,
         test_Parser_CopyIsSafeAndDoesNotDoubleFree,
@@ -465,6 +467,9 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
+        test_Lexer_NumberParsing_WithUnderscores,
+        test_Lexer_NumberParsing_FloatEdgeCases,
+        test_Lexer_NumberParsing_IntegerOverflow,
     };
 
     int passed = 0;

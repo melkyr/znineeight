@@ -17,6 +17,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_lexer_operators.cpp \
     tests/test_lexer_compound_operators.cpp \
     tests/test_lexer_special_ops.cpp \
+    tests/lexer_numbers.cpp \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/lexer.cpp \

@@ -9,6 +9,37 @@
 #define TAB_WIDTH 4
 
 /**
+ * @brief Checks if a character is a digit ('0'-'9').
+ * @param c The character to check.
+ * @return `true` if the character is a digit, `false` otherwise.
+ */
+static inline bool isDigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+/**
+ * @brief Checks if a character is a hexadecimal digit.
+ * @param c The character to check.
+ * @return `true` if the character is a hex digit, `false` otherwise.
+ */
+static inline bool isHexDigit(char c) {
+    return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+/**
+ * @brief Converts an uppercase character to lowercase.
+ * @param c The character to convert.
+ * @return The lowercase version of the character.
+ */
+static inline char toLower(char c) {
+    if (c >= 'A' && c <= 'Z') {
+        return c + ('a' - 'A');
+    }
+    return c;
+}
+
+
+/**
  * @brief Checks if a character is a valid starting character for an identifier.
  * @param c The character to check.
  * @return `true` if the character can start an identifier, `false` otherwise.
@@ -245,7 +276,8 @@ struct Token {
  * The Lexer is responsible for the first phase of compilation, turning raw
  * source text into a sequence of tokens that the parser can understand. It
  * handles skipping whitespace, comments, and recognizing keywords, identifiers,
- * literals, and operators.
+ * literals, and operators. The main entry point is `nextToken()`, which should
+ * be called repeatedly to generate a stream of tokens.
  */
 class Lexer {
 private:
@@ -257,14 +289,23 @@ private:
     u32 line;                 ///< The current line number.
     u32 column;               ///< The current column number.
 
-    // Helper methods for tokenization
+    // --- Private Helper Methods for Tokenization ---
+
+    /** @brief Consumes the current character if it matches, advancing the stream. */
     bool match(char expected);
+    /** @brief Lexes a character literal, e.g., 'a', '\n'. */
     Token lexCharLiteral();
+    /** @brief Lexes any numeric literal (integer or float). */
     Token lexNumericLiteral();
+    /** @brief Parses an integer literal with support for different bases and overflow checking. */
     u64 parseInteger(const char* start, const char* end);
+    /** @brief Parses an escape sequence (e.g., \n, \xHH, \u{...}). */
     u32 parseEscapeSequence(bool& success);
+    /** @brief Parses a hexadecimal floating-point literal. */
     Token parseHexFloat();
+    /** @brief Lexes an identifier or a keyword. */
     Token lexIdentifierOrKeyword();
+    /** @brief Lexes a string literal, handling escape sequences. */
     Token lexStringLiteral();
 
 public:

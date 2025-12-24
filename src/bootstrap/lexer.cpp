@@ -1,9 +1,8 @@
 #include "lexer.hpp"
 #include "source_manager.hpp"
 #include "memory.hpp"
-#include <cctype>
-#include <cstdlib> // For strtol, strtod
-#include <cmath>   // For ldexp
+#include <cstdlib> // For strtod
+#include <cmath>   // For ldexp, pow
 #include <cstring> // For memcmp, strncmp
 
 // Keyword lookup table.
@@ -130,16 +129,6 @@ static TokenType lookupIdentifier(const char* name, size_t len) {
     return TOKEN_IDENTIFIER;
 }
 
-/**
- * @brief Constructs a new Lexer instance.
- *
- * Initializes the lexer with the source code to be processed.
- *
- * @param src A reference to the SourceManager containing the source file.
- * @param interner A reference to the StringInterner.
- * @param arena A reference to the ArenaAllocator.
- * @param file_id The identifier of the file to be lexed.
- */
 Lexer::Lexer(SourceManager& src, StringInterner& interner, ArenaAllocator& arena, u32 file_id) : source(src), interner(interner), arena(arena), file_id(file_id) {
     // Retrieve the source content from the manager and set the current pointer.
     const SourceFile* file = src.getFile(file_id);
@@ -148,15 +137,6 @@ Lexer::Lexer(SourceManager& src, StringInterner& interner, ArenaAllocator& arena
     this->column = 1;
 }
 
-/**
- * @brief Consumes the current character if it matches the expected character.
- *
- * If the current character matches `expected`, the lexer advances its position
- * and returns true. Otherwise, it stays at the current position and returns false.
- *
- * @param expected The character to match against the current character.
- * @return `true` if the character was matched and consumed, `false` otherwise.
- */
 bool Lexer::match(char expected) {
     if (*this->current == '\0') return false;
     if (*this->current != expected) return false;
@@ -204,15 +184,6 @@ Token Lexer::lexCharLiteral() {
     return token;
 }
 
-/**
- * @brief Parses a hexadecimal floating-point literal.
- *
- * This function manually parses a hexadecimal float (e.g., `0x1.Ap2`) into a
- * `double`. It handles the integer part, the fractional part, and the binary
- * exponent. This is necessary because `strtod` in C++98 does not support hex floats.
- *
- * @return A `Token` of type `TOKEN_FLOAT_LITERAL` or `TOKEN_ERROR`.
- */
 Token Lexer::parseHexFloat() {
     Token token = Token();
     token.location.file_id = this->file_id;
@@ -223,8 +194,8 @@ Token Lexer::parseHexFloat() {
     this->current += 2; // Skip "0x"
 
     double value = 0.0;
-    while (isxdigit(*this->current)) {
-        value = value * 16.0 + (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10);
+    while (isHexDigit(*this->current)) {
+        value = value * 16.0 + (*this->current <= '9' ? *this->current - '0' : toLower(*this->current) - 'a' + 10);
         this->current++;
     }
 
@@ -232,8 +203,8 @@ Token Lexer::parseHexFloat() {
         this->current++;
         double fraction = 0.0;
         double divisor = 16.0;
-        while (isxdigit(*this->current)) {
-            fraction += (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10) / divisor;
+        while (isHexDigit(*this->current)) {
+            fraction += (*this->current <= '9' ? *this->current - '0' : toLower(*this->current) - 'a' + 10) / divisor;
             divisor *= 16.0;
             this->current++;
         }
@@ -241,6 +212,7 @@ Token Lexer::parseHexFloat() {
     }
 
     if (*this->current != 'p' && *this->current != 'P') {
+        this->current = (char*)start;
         token.type = TOKEN_ERROR;
         return token;
     }
@@ -254,13 +226,14 @@ Token Lexer::parseHexFloat() {
         this->current++;
     }
 
-    if (!isdigit(*this->current)) {
+    if (!isDigit(*this->current)) {
+        this->current = (char*)start;
         token.type = TOKEN_ERROR;
         return token;
     }
 
     int exponent = 0;
-    while (isdigit(*this->current)) {
+    while (isDigit(*this->current)) {
         exponent = exponent * 10 + (*this->current - '0');
         this->current++;
     }
@@ -271,21 +244,6 @@ Token Lexer::parseHexFloat() {
     return token;
 }
 
-/**
- * @brief Parses a numeric literal, which can be an integer or a float.
- *
- * This function handles decimal and hexadecimal integer literals, as well as
- * decimal and hexadecimal floating-point literals.
- *
- * It includes a special lookahead mechanism to disambiguate between a
- * floating-point number and an integer followed by a range operator (`..`).
- * When a `.` is encountered, the lexer checks the next character. If it is
- * also a `.`, the number is treated as an integer, and the `..` is left
- * for the next tokenization step.
- *
- * @return A `Token` of the appropriate numeric type (`TOKEN_INTEGER_LITERAL` or
- *         `TOKEN_FLOAT_LITERAL`) or `TOKEN_ERROR` if the format is invalid.
- */
 Token Lexer::lexNumericLiteral() {
     Token token = Token();
     token.location.file_id = this->file_id;
@@ -293,10 +251,9 @@ Token Lexer::lexNumericLiteral() {
     token.location.column = this->column;
     const char* start = this->current;
 
-    if (*start == '.') {
-        this->current++;
-        this->column++;
-        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
+    if (*start == '_') {
+        token.type = TOKEN_ERROR;
+        this->advance();
         return token;
     }
 
@@ -307,7 +264,7 @@ Token Lexer::lexNumericLiteral() {
 
     if (is_hex) {
         const char* p = start + 2;
-        while (isxdigit(*p)) p++;
+        while (isHexDigit(*p) || *p == '_') p++;
         if (*p == '.' || *p == 'p' || *p == 'P') {
             return parseHexFloat();
         }
@@ -318,74 +275,86 @@ Token Lexer::lexNumericLiteral() {
     const char* end_ptr = start;
     if (is_hex) {
         end_ptr += 2;
-        while (isxdigit(*end_ptr)) end_ptr++;
+        while (isHexDigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     } else {
-        while (isdigit(*end_ptr)) end_ptr++;
+        while (isDigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     }
+
+
+    if (end_ptr > start && *(end_ptr - 1) == '_') {
+        this->current = end_ptr;
+        this->column += (end_ptr - start);
+        token.type = TOKEN_ERROR;
+        return token;
+    }
+
     bool is_float = false;
     if (*end_ptr == '.') {
         // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[0] != '\0' && end_ptr[1] == '.') {
+        if (end_ptr[1] == '.') {
             // This is an integer followed by a '..' operator.
             // Do not consume the dot; treat the preceding number as an integer.
-        } else if (end_ptr[0] == '\0' || !isdigit(end_ptr[1])) {
-             token.type = TOKEN_ERROR;
-             this->current = end_ptr + 1;
-             this->column += (this->current - start);
-             return token;
-	} else {
-        end_ptr++;
-        is_float = true;
+        } else {
+            is_float = true;
+            end_ptr++;
+            if (*(end_ptr) == '_') {
+                 token.type = TOKEN_ERROR;
+                 this->current = end_ptr;
+                 this->column += (this->current - start);
+                 return token;
+            }
+            while (isDigit(*end_ptr) || *end_ptr == '_') end_ptr++;
         }
     }
-    while (isdigit(*end_ptr)) end_ptr++;
+
+    if (end_ptr > start && *(end_ptr - 1) == '_') {
+        token.type = TOKEN_ERROR;
+        this->current = end_ptr;
+        this->column += (end_ptr - start);
+        return token;
+    }
     if (*end_ptr == 'e' || *end_ptr == 'E') {
-        const char* exp_ptr = end_ptr + 1;
-        if (*exp_ptr == '+' || *exp_ptr == '-') {
-            exp_ptr++;
+        is_float = true;
+        end_ptr++;
+        if (*end_ptr == '+' || *end_ptr == '-') {
+            end_ptr++;
         }
-        if (!isdigit(*exp_ptr)) {
+        if (!isDigit(*end_ptr)) {
             token.type = TOKEN_ERROR;
+            this->current = end_ptr;
+            this->column += (end_ptr - start);
             return token;
         }
-        is_float = true;
+        while (isDigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     }
 
 
     if (is_float) {
-        char* end;
-        token.value.floating_point = strtod(start, &end);
-        this->column += (end - start);
-        this->current = end;
+        char* final_end;
+        token.value.floating_point = strtod(start, &final_end);
+        this->column += (end_ptr - start);
+        this->current = const_cast<char*>(end_ptr);
         token.type = TOKEN_FLOAT_LITERAL;
     } else {
-        // Use the new custom parser for 64-bit integers
-        token.value.integer = parseInteger(start, end_ptr);
+        u64 value = parseInteger(start, end_ptr);
+        if (value == (u64)-1) {
+            token.type = TOKEN_ERROR;
+        } else {
+            token.value.integer = static_cast<i64>(value);
+            token.type = TOKEN_INTEGER_LITERAL;
+        }
         this->column += (end_ptr - start);
-        this->current = (char*)end_ptr;
-        token.type = TOKEN_INTEGER_LITERAL;
+        this->current = const_cast<char*>(end_ptr);
     }
 
     return token;
 }
 
-/**
- * @brief Parses an integer from a string slice into a u64.
- *
- * This function manually parses a string of digits into a 64-bit unsigned
- * integer. It supports decimal (base 10) and hexadecimal (base 16) literals.
- * It is designed to be a direct replacement for `strtol` to ensure that
- * 64-bit integer literals are handled correctly, especially in 32-bit
- * environments where `long` is only 32 bits.
- *
- * @param start A pointer to the beginning of the string slice to parse.
- * @param end A pointer to the end of the string slice to parse.
- * @return The parsed `u64` integer value.
- */
 u64 Lexer::parseInteger(const char* start, const char* end) {
     u64 result = 0;
     int base = 10;
     const char* p = start;
+    bool overflow = false;
 
     if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
         base = 16;
@@ -393,36 +362,34 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
     }
 
     for (; p < end; ++p) {
+        if (*p == '_') {
+             if (p + 1 < end && p[1] == '_') { // Double underscore
+                return -1; // sentinel for error
+            }
+            continue; // Skip underscores
+        }
+
         int digit;
-        if (*p >= '0' && *p <= '9') {
+        if (isDigit(*p)) {
             digit = *p - '0';
-        } else if (base == 16 && *p >= 'a' && *p <= 'f') {
-            digit = *p - 'a' + 10;
-        } else if (base == 16 && *p >= 'A' && *p <= 'F') {
-            digit = *p - 'A' + 10;
+        } else if (base == 16 && isHexDigit(*p)) {
+            digit = toLower(*p) - 'a' + 10;
         } else {
-            // This should not happen if the caller has correctly identified the end of the number.
+            // This can happen if a float is passed in, e.g., "1.2"
+            break;
+        }
+
+        u64 max_val = 18446744073709551615U; // ULLONG_MAX
+        if (result > (max_val - digit) / base) {
+            overflow = true;
             break;
         }
         result = result * base + digit;
     }
 
-    return result;
+    return overflow ? (u64)-1 : result;
 }
 
-/**
- * @brief Scans and returns the next token from the source code.
- *
- * This is the main entry point for the lexer. It consumes whitespace, identifies
- * the start of a new token, and dispatches to helper functions for complex tokens
- * like numbers and character literals. It handles single-character and multi-character
- * operators using a lookahead mechanism (`match` function). The function is designed
- * to be called repeatedly to generate a stream of tokens.
- *
- * @return The next `Token` found in the source stream. When the end of the
- *         file is reached, it will consistently return a token of type `TOKEN_EOF`.
- *         If an unrecognized character is found, it returns `TOKEN_ERROR`.
- */
 Token Lexer::nextToken() {
     // Skip whitespace and handle newlines first.
     while (true) {
@@ -460,7 +427,7 @@ Token Lexer::nextToken() {
         return token;
     }
 
-    if (isdigit(c) || (c == '.' && isdigit(this->current[1]))) {
+    if (isDigit(c) || (c == '.' && isDigit(this->current[1]))) {
         return lexNumericLiteral();
     }
 
@@ -596,6 +563,9 @@ Token Lexer::nextToken() {
             break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
         case '.': // Handles '.', '..', '...', '.*', '.?'
+            if (isDigit(this->peek(1))) {
+                return lexNumericLiteral();
+            }
             if (match('.')) {
                 if (match('.')) {
                     token.type = TOKEN_ELLIPSIS;
@@ -635,17 +605,6 @@ Token Lexer::nextToken() {
     return token;
 }
 
-/**
- * @brief Parses a string literal, handling escape sequences.
- *
- * This function scans a string literal, delimited by double quotes. It processes
- * standard escape sequences (`\n`, `\t`, etc.), and hexadecimal escapes (`\xNN`).
- * The parsed string content is stored in a temporary buffer allocated from the
- * arena, and the final string is interned.
- *
- * @return A `Token` of type `TOKEN_STRING_LITERAL` or `TOKEN_ERROR` if the
- *         string is unterminated or contains an invalid escape sequence.
- */
 Token Lexer::lexStringLiteral() {
     Token token = Token();
     token.location.file_id = this->file_id;
@@ -710,22 +669,6 @@ Token Lexer::lexIdentifierOrKeyword() {
     return token;
 }
 
-/**
- * @brief Parses an escape sequence and returns the resulting character value.
- *
- * This function is a centralized handler for all escape sequences in both
- * character and string literals. It consumes the characters for the escape
- * sequence from the input stream and returns the corresponding value.
- *
- * The function handles standard escapes (`\\n`, `\\t`, etc.), hexadecimal
- * escapes (`\\xHH`), and Unicode escapes (`\\u{...}`). It performs bounds
- * checking to ensure it does not read past the end of the input buffer.
- *
- * @param success [out] A boolean reference that is set to `true` if the parse
- *                is successful, and `false` otherwise.
- * @return The `u32` value of the parsed character. If parsing fails, the
- *         return value is undefined, and `success` will be `false`.
- */
 u32 Lexer::parseEscapeSequence(bool& success) {
     this->current++; // Consume the '\\'
     this->column++;
@@ -749,7 +692,7 @@ u32 Lexer::parseEscapeSequence(bool& success) {
                     return 0;
                 }
                 char digit = *this->current;
-                if (digit >= '0' && digit <= '9') {
+                if (isDigit(digit)) {
                     hex_val = (hex_val * 16) + (digit - '0');
                 } else if (digit >= 'a' && digit <= 'f') {
                     hex_val = (hex_val * 16) + (digit - 'a' + 10);
@@ -780,7 +723,7 @@ u32 Lexer::parseEscapeSequence(bool& success) {
             while (*this->current != '}' && *this->current != '\0' && digit_count < MAX_UNICODE_DIGITS) {
                 char digit = *this->current;
                 u32 digit_value;
-                if (digit >= '0' && digit <= '9') {
+                if (isDigit(digit)) {
                     digit_value = digit - '0';
                 } else if (digit >= 'a' && digit <= 'f') {
                     digit_value = digit - 'a' + 10;

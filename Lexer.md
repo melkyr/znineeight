@@ -31,7 +31,39 @@ The lexer supports two types of comments, which are consumed and discarded:
     ```
     If a block comment is not terminated by the end of the file, the lexer will consume the rest of the file without generating an error.
 
-### 1.3 Error Handling
+### 1.3 Numeric Literals
+
+The lexer has a unified parsing function for all numeric literals.
+
+#### 1.3.1 Integer Literals
+Integer literals can be specified in decimal, hexadecimal, octal, or binary format.
+- **Decimal:** `123`
+- **Hexadecimal:** `0xFF`
+- **Octal:** `0o77`
+- **Binary:** `0b1010`
+
+#### 1.3.2 Floating-Point Literals
+Floating-point literals are supported in standard decimal and hexadecimal formats.
+- **Decimal:** `3.14`, `1.`, `.5`, `1e10`
+- **Hexadecimal:** `0x1.Ap2`, `0x1p-2`
+
+#### 1.3.3 Underscore Separators
+Numeric literals can include underscores (`_`) as separators to improve readability. The underscores are ignored by the lexer.
+- `1_000_000` is equivalent to `1000000`
+- `3.141_592` is equivalent to `3.141592`
+
+**Invalid underscore usage that will result in a `TOKEN_ERROR`:**
+- Leading underscore: `_100`
+- Trailing underscore: `100_`
+- Multiple underscores in a row: `1__000`
+- Underscore directly after a decimal point: `1._0`
+
+#### 1.3.4 Current Limitations
+The following features are not yet fully supported:
+- **Float Edge Cases:** The lexer may not correctly handle all floating-point edge cases. For example, `1.` is not currently lexed as a float, and `1..` is not correctly handled as an integer followed by a range operator.
+- **Integer Overflow:** The lexer does not yet perform overflow checking for `u64` integer literals.
+
+### 1.4 Error Handling
 
 If the lexer encounters a character that does not belong to any valid token, it produces a `TOKEN_ERROR` token. This allows the parser to handle lexical errors gracefully.
 
