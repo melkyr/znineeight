@@ -322,6 +322,14 @@ Token Lexer::lexNumericLiteral() {
     } else {
         while (isdigit(*end_ptr)) end_ptr++;
     }
+
+    if (*(end_ptr) == '_') {
+        token.location.column += (end_ptr - start);
+        token.type = TOKEN_ERROR;
+        this->column += (end_ptr - start + 1);
+        this->current = end_ptr + 1;
+        return token;
+    }
     bool is_float = false;
     if (*end_ptr == '.') {
         // Lookahead to distinguish between float literal and range operator
