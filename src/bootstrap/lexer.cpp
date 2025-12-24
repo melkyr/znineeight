@@ -293,81 +293,72 @@ Token Lexer::lexNumericLiteral() {
     token.location.column = this->column;
     const char* start = this->current;
 
-    if (*start == '.') {
-        this->current++;
-        this->column++;
-        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
-        return token;
-    }
-
     bool is_hex = false;
-    if (this->current[0] == '0' && (this->current[1] == 'x' || this->current[1] == 'X')) {
+    if (start[0] == '0' && (start[1] == 'x' || start[1] == 'X')) {
         is_hex = true;
     }
 
-    if (is_hex) {
-        const char* p = start + 2;
-        while (isxdigit(*p)) p++;
-        if (*p == '.' || *p == 'p' || *p == 'P') {
-            return parseHexFloat();
-        }
-    }
-
-
-    // Temporarily advance to find the end of the number
     const char* end_ptr = start;
     if (is_hex) {
         end_ptr += 2;
-        while (isxdigit(*end_ptr)) end_ptr++;
+        while (isxdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     } else {
-        while (isdigit(*end_ptr)) end_ptr++;
+        while (isdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     }
+
     bool is_float = false;
     if (*end_ptr == '.') {
-        // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[0] != '\0' && end_ptr[1] == '.') {
-            // This is an integer followed by a '..' operator.
-            // Do not consume the dot; treat the preceding number as an integer.
-        } else if (end_ptr[0] == '\0' || !isdigit(end_ptr[1])) {
-             token.type = TOKEN_ERROR;
-             this->current = end_ptr + 1;
-             this->column += (this->current - start);
-             return token;
-	} else {
-        end_ptr++;
-        is_float = true;
+        if (end_ptr[1] == '.') {
+            // Range operator, so this is an integer.
+        } else {
+            is_float = true;
+            end_ptr++;
+            while (isdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
         }
-    }
-    while (isdigit(*end_ptr)) end_ptr++;
-    if (*end_ptr == 'e' || *end_ptr == 'E') {
-        const char* exp_ptr = end_ptr + 1;
-        if (*exp_ptr == '+' || *exp_ptr == '-') {
-            exp_ptr++;
-        }
-        if (!isdigit(*exp_ptr)) {
-            token.type = TOKEN_ERROR;
-            return token;
-        }
-        is_float = true;
     }
 
+    if (!is_hex && (*end_ptr == 'e' || *end_ptr == 'E')) {
+        is_float = true;
+        end_ptr++;
+        if (*end_ptr == '+' || *end_ptr == '-') end_ptr++;
+        while (isdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
+    }
+
+    if (is_hex && (*end_ptr == 'p' || *end_ptr == 'P')) {
+        return parseHexFloat();
+    }
+
+    if (end_ptr > start && *(end_ptr - 1) == '_') {
+        token.location.column += (end_ptr - 1 - start);
+        token.type = TOKEN_ERROR;
+        this->current = (char*)end_ptr;
+        this->column += (end_ptr - start);
+        return token;
+    }
 
     if (is_float) {
+        char buffer[256];
+        char* buf_ptr = buffer;
+        for (const char* p = start; p < end_ptr; ++p) {
+            if (*p != '_') {
+                *buf_ptr++ = *p;
+            }
+        }
+        *buf_ptr = '\0';
+
         char* end;
-        token.value.floating_point = strtod(start, &end);
-        this->column += (end - start);
-        this->current = end;
+        token.value.floating_point = strtod(buffer, &end);
         token.type = TOKEN_FLOAT_LITERAL;
     } else {
-        // Use the new custom parser for 64-bit integers
         token.value.integer = parseInteger(start, end_ptr);
-        this->column += (end_ptr - start);
-        this->current = (char*)end_ptr;
         token.type = TOKEN_INTEGER_LITERAL;
     }
 
+    this->current = (char*)end_ptr;
+    this->column += (end_ptr - start);
     return token;
 }
+
 
 /**
  * @brief Parses an integer from a string slice into a u64.
@@ -393,6 +384,7 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
     }
 
     for (; p < end; ++p) {
+        if (*p == '_') continue;
         int digit;
         if (*p >= '0' && *p <= '9') {
             digit = *p - '0';
@@ -401,7 +393,6 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
         } else if (base == 16 && *p >= 'A' && *p <= 'F') {
             digit = *p - 'A' + 10;
         } else {
-            // This should not happen if the caller has correctly identified the end of the number.
             break;
         }
         result = result * base + digit;
@@ -717,8 +708,8 @@ Token Lexer::lexIdentifierOrKeyword() {
  * character and string literals. It consumes the characters for the escape
  * sequence from the input stream and returns the corresponding value.
  *
- * The function handles standard escapes (`\\n`, `\\t`, etc.), hexadecimal
- * escapes (`\\xHH`), and Unicode escapes (`\\u{...}`). It performs bounds
+ * The function handles standard escapes (`\n`, `\t`, etc.), hexadecimal
+ * escapes (`\xHH`), and Unicode escapes (`\u{...}`). It performs bounds
  * checking to ensure it does not read past the end of the input buffer.
  *
  * @param success [out] A boolean reference that is set to `true` if the parse

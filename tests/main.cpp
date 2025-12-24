@@ -251,6 +251,11 @@ TEST_FUNC(Parser_RecursionLimit);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
+TEST_FUNC(Lexer_ValidNumericUnderscore);
+TEST_FUNC(Lexer_InvalidTrailingUnderscore);
+TEST_FUNC(Lexer_InvalidTrailingUnderscoreHex);
+TEST_FUNC(Lexer_ValidFloatWithUnderscore);
+TEST_FUNC(Lexer_InvalidFloatTrailingUnderscore);
 
 
 // This function is executed in a child process by the error handling test.
@@ -465,6 +470,11 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
+        test_Lexer_ValidNumericUnderscore,
+        test_Lexer_InvalidTrailingUnderscore,
+        test_Lexer_InvalidTrailingUnderscoreHex,
+        test_Lexer_ValidFloatWithUnderscore,
+        test_Lexer_InvalidFloatTrailingUnderscore,
     };
 
     int passed = 0;
