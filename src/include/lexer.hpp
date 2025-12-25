@@ -285,9 +285,16 @@ public:
      */
     Token nextToken();
     /**
-     * @brief Peeks at the character at the given offset from the current position.
-     * @param n The offset from the current position. Defaults to 0.
-     * @return The character at the given offset.
+     * @brief Safely peeks at a character in the source buffer at a given offset.
+     *
+     * This method allows looking ahead in the source stream without consuming
+     * characters. It is guaranteed to be safe and will not read past the end
+     * of the source buffer.
+     *
+     * @param n The offset from the current position to peek at. A value of 0
+     *          (the default) peeks at the current character.
+     * @return The character at the specified offset. If the offset is beyond
+     *         the end of the source file, it returns the null terminator ('\0').
      */
     char peek(int n = 0) const;
     /**
