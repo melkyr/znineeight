@@ -258,6 +258,21 @@ private:
     u32 column;               ///< The current column number.
 
     // Helper methods for tokenization
+    /**
+     * @brief Parses a decimal floating-point literal from the source.
+     *
+     * This function handles the parsing of decimal floats, including support
+     * for underscores as separators in the integer, fractional, and exponent
+     * parts. It replaces the dependency on `strtod` to ensure consistent
+     * parsing behavior across different locales and to support Zig-specific
+     * syntax.
+     *
+     * @param start A pointer to the beginning of the float literal in the source.
+     * @param end A pointer that will be updated to point to the character
+     *            immediately following the parsed float literal.
+     * @return The parsed `double` value.
+     */
+    double parseDecimalFloat(const char* start, const char** end);
     bool match(char expected);
     Token lexCharLiteral();
     Token lexNumericLiteral();
