@@ -71,6 +71,8 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(lexer_peek_safe_at_end);
+TEST_FUNC(lexer_peek_within_bounds);
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
@@ -290,6 +292,8 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_lexer_peek_safe_at_end,
+        test_lexer_peek_within_bounds,
         test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
         test_ArenaAllocator_AllocShouldReturn8ByteAligned,
         test_arena_alloc_out_of_memory,
