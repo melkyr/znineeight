@@ -260,9 +260,34 @@ private:
     // Helper methods for tokenization
     bool match(char expected);
     Token lexCharLiteral();
+    /**
+     * @brief Parses a numeric literal, handling integers, floats (decimal and hex),
+     *        and underscore separators.
+     * @return A `Token` of type `TOKEN_INTEGER_LITERAL`, `TOKEN_FLOAT_LITERAL`, or `TOKEN_ERROR`.
+     */
     Token lexNumericLiteral();
+
+    /**
+     * @brief Parses an integer from a string slice, ignoring underscores.
+     * @param start A pointer to the beginning of the string slice to parse.
+     * @param end A pointer to the end of the string slice to parse.
+     * @return The parsed `u64` integer value.
+     */
     u64 parseInteger(const char* start, const char* end);
+
+    /**
+     * @brief Parses a decimal floating-point number from a string, ignoring underscores.
+     * @param start A pointer to the beginning of the string slice to parse.
+     * @return The parsed `double` floating-point value.
+     */
+    double parseDecimalFloat(const char* start);
+
     u32 parseEscapeSequence(bool& success);
+
+    /**
+     * @brief Parses a hexadecimal floating-point literal, ignoring underscores.
+     * @return A `Token` of type `TOKEN_FLOAT_LITERAL` or `TOKEN_ERROR`.
+     */
     Token parseHexFloat();
     Token lexIdentifierOrKeyword();
     Token lexStringLiteral();

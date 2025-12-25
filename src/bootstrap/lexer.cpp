@@ -220,6 +220,48 @@ Token Lexer::lexCharLiteral() {
  *
  * @return A `Token` of type `TOKEN_FLOAT_LITERAL` or `TOKEN_ERROR`.
  */
+double Lexer::parseDecimalFloat(const char* start) {
+    double value = 0.0;
+    const char* p = start;
+
+    // 1. Integer Part
+    while (isdigit(*p) || *p == '_') {
+        if (*p == '_') { p++; continue; } // Skip
+        value = value * 10.0 + (*p - '0');
+        p++;
+    }
+
+    // 2. Fractional Part
+    if (*p == '.') {
+        p++;
+        double divisor = 10.0;
+        while (isdigit(*p) || *p == '_') {
+            if (*p == '_') { p++; continue; } // Skip
+            value += (*p - '0') / divisor;
+            divisor *= 10.0;
+            p++;
+        }
+    }
+
+    // 3. Exponent Part
+    if (*p == 'e' || *p == 'E') {
+        p++;
+        int sign = 1;
+        if (*p == '-') { sign = -1; p++; }
+        else if (*p == '+') { p++; }
+
+        int exponent = 0;
+        while (isdigit(*p) || *p == '_') {
+            if (*p == '_') { p++; continue; } // Skip
+            exponent = exponent * 10 + (*p - '0');
+            p++;
+        }
+        value *= pow(10.0, sign * exponent);
+    }
+
+    return value;
+}
+
 Token Lexer::parseHexFloat() {
     Token token = Token();
     token.location.file_id = this->file_id;
@@ -227,53 +269,61 @@ Token Lexer::parseHexFloat() {
     token.location.column = this->column;
     const char* start = this->current;
 
-    this->current += 2; // Skip "0x"
+    const char* p = this->current + 2; // Skip "0x"
 
     double value = 0.0;
-    while (isxdigit(*this->current)) {
-        value = value * 16.0 + (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10);
-        this->current++;
+    while (isxdigit(*p) || *p == '_') {
+        if (*p == '_') { p++; continue; }
+        value = value * 16.0 + (*p <= '9' ? *p - '0' : tolower(*p) - 'a' + 10);
+        p++;
     }
 
-    if (*this->current == '.') {
-        this->current++;
+    if (*p == '.') {
+        p++;
         double fraction = 0.0;
         double divisor = 16.0;
-        while (isxdigit(*this->current)) {
-            fraction += (*this->current <= '9' ? *this->current - '0' : tolower(*this->current) - 'a' + 10) / divisor;
+        while (isxdigit(*p) || *p == '_') {
+            if (*p == '_') { p++; continue; }
+            fraction += (*p <= '9' ? *p - '0' : tolower(*p) - 'a' + 10) / divisor;
             divisor *= 16.0;
-            this->current++;
+            p++;
         }
         value += fraction;
     }
 
-    if (*this->current != 'p' && *this->current != 'P') {
+    if (*p != 'p' && *p != 'P') {
+        this->current = p;
+        this->column += (p - start);
         token.type = TOKEN_ERROR;
         return token;
     }
-    this->current++;
+    p++;
 
     int sign = 1;
-    if (*this->current == '-') {
+    if (*p == '-') {
         sign = -1;
-        this->current++;
-    } else if (*this->current == '+') {
-        this->current++;
+        p++;
+    } else if (*p == '+') {
+        p++;
     }
 
-    if (!isdigit(*this->current)) {
+    if (!isdigit(*p)) {
+        this->current = p;
+        this->column += (p - start);
         token.type = TOKEN_ERROR;
         return token;
     }
 
     int exponent = 0;
-    while (isdigit(*this->current)) {
-        exponent = exponent * 10 + (*this->current - '0');
-        this->current++;
+    while (isdigit(*p) || (*p == '_' && isdigit(p[1]))) {
+        if (*p == '_') { p++; continue; }
+        exponent = exponent * 10 + (*p - '0');
+        p++;
     }
 
     token.value.floating_point = ldexp(value, sign * exponent);
     token.type = TOKEN_FLOAT_LITERAL;
+    this->current = p;
     this->column += (this->current - start);
     return token;
 }
@@ -300,79 +350,83 @@ Token Lexer::lexNumericLiteral() {
     token.location.column = this->column;
     const char* start = this->current;
 
-    if (*start == '.') {
-        this->current++;
-        this->column++;
-        token.type = TOKEN_ERROR; // Invalid: cannot start with a dot
-        return token;
-    }
-
+    // 1. Handle Hexadecimal
     bool is_hex = false;
-    if (this->current[0] == '0' && (this->current[1] == 'x' || this->current[1] == 'X')) {
+    if (peek(0) == '0' && (peek(1) == 'x' || peek(1) == 'X')) {
         is_hex = true;
-    }
-
-    if (is_hex) {
+        // Check if it's a HEX FLOAT
         const char* p = start + 2;
-        while (isxdigit(*p)) p++;
+        while (isxdigit(*p) || (*p == '_' && isxdigit(p[1]))) p++; // Allow 1_A
+
         if (*p == '.' || *p == 'p' || *p == 'P') {
             return parseHexFloat();
         }
     }
 
-
-    // Temporarily advance to find the end of the number
+    // 2. Scan Integer Part (Decimal or Hex)
     const char* end_ptr = start;
     if (is_hex) {
-        end_ptr += 2;
-        while (isxdigit(*end_ptr)) end_ptr++;
+        end_ptr += 2; // Skip 0x
+        while (isxdigit(*end_ptr) || (*end_ptr == '_' && isxdigit(end_ptr[1]))) {
+            end_ptr++;
+        }
     } else {
-        while (isdigit(*end_ptr)) end_ptr++;
+        while (isdigit(*end_ptr) || (*end_ptr == '_' && isdigit(end_ptr[1]))) {
+            end_ptr++;
+        }
     }
+
     bool is_float = false;
+
+    // 3. Check for Dot and Range Ambiguity (The 0..10 fix)
     if (*end_ptr == '.') {
-        // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[0] != '\0' && end_ptr[1] == '.') {
-            // This is an integer followed by a '..' operator.
-            // Do not consume the dot; treat the preceding number as an integer.
-        } else if (end_ptr[0] == '\0' || !isdigit(end_ptr[1])) {
-             token.type = TOKEN_ERROR;
-             this->current = end_ptr + 1;
-             this->column += (this->current - start);
-             return token;
-	} else {
-        end_ptr++;
-        is_float = true;
+        if (end_ptr[1] == '.') {
+            is_float = false; // It's 0..10
+        }
+        else if (isdigit(end_ptr[1])) {
+            is_float = true;
+            end_ptr++; // Consume '.'
+            // Scan fractional part allowing underscores
+            while (isdigit(*end_ptr) || (*end_ptr == '_' && isdigit(end_ptr[1]))) {
+                end_ptr++;
+            }
+        }
+        else {
+            // Error: Trailing dot "1."
+            token.type = TOKEN_ERROR;
+            this->current = (char*)end_ptr + 1;
+            this->column += (this->current - start);
+            return token;
         }
     }
-    while (isdigit(*end_ptr)) end_ptr++;
+
+    // 4. Check for Exponent
     if (*end_ptr == 'e' || *end_ptr == 'E') {
-        const char* exp_ptr = end_ptr + 1;
-        if (*exp_ptr == '+' || *exp_ptr == '-') {
-            exp_ptr++;
-        }
-        if (!isdigit(*exp_ptr)) {
+        is_float = true;
+        end_ptr++;
+        if (*end_ptr == '+' || *end_ptr == '-') end_ptr++;
+        if (!isdigit(*end_ptr)) {
             token.type = TOKEN_ERROR;
             return token;
         }
-        is_float = true;
+        // Scan exponent allowing underscores
+        while (isdigit(*end_ptr) || (*end_ptr == '_' && isdigit(end_ptr[1]))) {
+            end_ptr++;
+        }
     }
 
-
+    // ... Dispatch to parsers ...
     if (is_float) {
-        char* end;
-        token.value.floating_point = strtod(start, &end);
-        this->column += (end - start);
-        this->current = end;
+        token.value.floating_point = parseDecimalFloat(start);
         token.type = TOKEN_FLOAT_LITERAL;
     } else {
-        // Use the new custom parser for 64-bit integers
         token.value.integer = parseInteger(start, end_ptr);
-        this->column += (end_ptr - start);
-        this->current = (char*)end_ptr;
         token.type = TOKEN_INTEGER_LITERAL;
     }
 
+    // Update Lexer State
+    this->current = (char*)end_ptr;
+    this->column += (end_ptr - start);
     return token;
 }
 
@@ -400,6 +454,8 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
     }
 
     for (; p < end; ++p) {
+        if (*p == '_') continue;
+
         int digit;
         if (*p >= '0' && *p <= '9') {
             digit = *p - '0';
@@ -408,12 +464,10 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
         } else if (base == 16 && *p >= 'A' && *p <= 'F') {
             digit = *p - 'A' + 10;
         } else {
-            // This should not happen if the caller has correctly identified the end of the number.
             break;
         }
         result = result * base + digit;
     }
-
     return result;
 }
 

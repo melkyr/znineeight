@@ -85,6 +85,7 @@ TEST_FUNC(Lexer_UnterminatedCharHexEscape);
 TEST_FUNC(Lexer_UnterminatedStringHexEscape);
 TEST_FUNC(Lexer_NumericLookaheadSafety);
 TEST_FUNC(Lexer_UnicodeInStringLiteral);
+TEST_FUNC(Lexer_Peek_Safety);
 TEST_FUNC(arena_alloc_out_of_memory);
 TEST_FUNC(arena_alloc_zero_size);
 TEST_FUNC(arena_alloc_aligned_out_of_memory);
@@ -122,18 +123,20 @@ TEST_FUNC(skip_comments);
 TEST_FUNC(nested_block_comments);
 TEST_FUNC(unterminated_block_comment);
 TEST_FUNC(Lexer_FloatSimpleDecimal);
-TEST_FUNC(Lexer_FloatNoFractionalPart);
-TEST_FUNC(Lexer_FloatNoIntegerPart);
 TEST_FUNC(Lexer_FloatWithExponent);
-TEST_FUNC(Lexer_FloatWithNegativeExponent);
-TEST_FUNC(Lexer_FloatExponentNoSign);
-TEST_FUNC(Lexer_FloatIntegerWithExponent);
-TEST_FUNC(Lexer_FloatInvalidExponent);
+TEST_FUNC(Lexer_FloatWithUnderscores);
+TEST_FUNC(Lexer_FloatInvalidSyntax);
+TEST_FUNC(Lexer_FloatInvalidUnderscore_AdjacentToDecimal1);
+TEST_FUNC(Lexer_FloatInvalidUnderscore_AdjacentToDecimal2);
+TEST_FUNC(Lexer_FloatInvalidUnderscore_AdjacentToExponent);
+TEST_FUNC(Lexer_FloatInvalidUnderscore_Consecutive);
+TEST_FUNC(Lexer_FloatInvalidUnderscore_Trailing);
 TEST_FUNC(Lexer_FloatHexSimple);
-TEST_FUNC(Lexer_FloatHexNoFractionalPart);
-TEST_FUNC(Lexer_FloatHexNegativeExponent);
-TEST_FUNC(Lexer_FloatHexInvalidFormat);
 TEST_FUNC(IntegerLiterals);
+TEST_FUNC(Lexer_InvalidInteger_TrailingUnderscore);
+TEST_FUNC(Lexer_InvalidInteger_ConsecutiveUnderscores);
+TEST_FUNC(Lexer_InvalidInteger_UnderscoreAfterPrefix);
+TEST_FUNC(Lexer_InvalidInteger_TrailingUnderscoreHex);
 TEST_FUNC(lex_arithmetic_and_bitwise_operators);
 TEST_FUNC(lex_compound_assignment_operators);
 TEST_FUNC(LexerSpecialOperators);
@@ -314,18 +317,20 @@ int main(int argc, char* argv[]) {
         test_nested_block_comments,
         test_unterminated_block_comment,
         test_Lexer_FloatSimpleDecimal,
-        test_Lexer_FloatNoFractionalPart,
-        test_Lexer_FloatNoIntegerPart,
         test_Lexer_FloatWithExponent,
-        test_Lexer_FloatWithNegativeExponent,
-        test_Lexer_FloatExponentNoSign,
-        test_Lexer_FloatIntegerWithExponent,
-        test_Lexer_FloatInvalidExponent,
+        test_Lexer_FloatWithUnderscores,
+        test_Lexer_FloatInvalidSyntax,
+        test_Lexer_FloatInvalidUnderscore_AdjacentToDecimal1,
+        test_Lexer_FloatInvalidUnderscore_AdjacentToDecimal2,
+        test_Lexer_FloatInvalidUnderscore_AdjacentToExponent,
+        test_Lexer_FloatInvalidUnderscore_Consecutive,
+        test_Lexer_FloatInvalidUnderscore_Trailing,
         test_Lexer_FloatHexSimple,
-        test_Lexer_FloatHexNoFractionalPart,
-        test_Lexer_FloatHexNegativeExponent,
-        test_Lexer_FloatHexInvalidFormat,
         test_IntegerLiterals,
+        test_Lexer_InvalidInteger_TrailingUnderscore,
+        test_Lexer_InvalidInteger_ConsecutiveUnderscores,
+        test_Lexer_InvalidInteger_UnderscoreAfterPrefix,
+        test_Lexer_InvalidInteger_TrailingUnderscoreHex,
         test_lex_arithmetic_and_bitwise_operators,
         test_lex_compound_assignment_operators,
         test_LexerSpecialOperators,
@@ -465,6 +470,7 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
+        test_Lexer_Peek_Safety,
     };
 
     int passed = 0;

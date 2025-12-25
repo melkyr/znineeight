@@ -192,11 +192,11 @@ This section details the currently supported syntax for numeric literals in the 
 
 ### 3.1 Integer Literals
 
-The lexer supports decimal and hexadecimal integer literals.
+The lexer supports decimal and hexadecimal integer literals, including underscore separators for readability.
 
 #### Supported Integer Syntax:
 
-*   **Decimal Literals:** A sequence of digits `0-9`.
+*   **Decimal Literals:** A sequence of digits `0-9`, with optional `_` separators between digits.
     *   `123`
     *   `0`
     *   `42`
@@ -204,16 +204,17 @@ The lexer supports decimal and hexadecimal integer literals.
     *   `0xFF`
     *   `0x1a`
     *   `0XDEADBEEF`
+    *   `1_000_000`
+    *   `0xAB_CD_EF`
 
 #### Unsupported Integer Syntax:
 
 *   **Octal Literals:** Prefixes like `0o` are not supported.
 *   **Binary Literals:** Prefixes like `0b` are not supported.
-*   **Underscore Separators:** Underscores within numbers (e.g., `1_000_000`) are not supported.
 
 ### 3.2 Floating-Point Literals
 
-The lexer supports decimal and hexadecimal floating-point literals.
+The lexer supports decimal and hexadecimal floating-point literals. It also supports underscore separators for readability.
 
 #### Supported Floating-Point Syntax:
 
@@ -236,6 +237,9 @@ The lexer supports decimal and hexadecimal floating-point literals.
         *   `0x1.Ap2`
         *   `0x10p-1`
         *   `0xAB.CDp-4`
+    *   `0x1A_B.C_Dp-2`
+        *   `1_000.0`
+        *   `3.141_59`
 
 #### Unsupported/Invalid Floating-Point Syntax:
 

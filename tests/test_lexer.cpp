@@ -2,6 +2,7 @@
 #include "../src/include/lexer.hpp"
 #include "../src/include/source_manager.hpp"
 #include "../src/include/string_interner.hpp"
+#include "test_utils.hpp"
 
 TEST_FUNC(single_char_tokens) {
     ArenaAllocator arena(1024);
@@ -219,7 +220,7 @@ TEST_FUNC(IntegerLiterals) {
     ArenaAllocator arena(1024);
     StringInterner interner(arena);
     SourceManager sm(arena);
-    const char* test_content = "123 0xFF";
+    const char* test_content = "123 0xFF 1_000 0x1A_BC 123_456 0xDEAD_BEEF";
     sm.addFile("test.zig", test_content, strlen(test_content));
 
     Lexer lexer(sm, interner, arena, 0);
@@ -230,11 +231,87 @@ TEST_FUNC(IntegerLiterals) {
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
-    ASSERT_EQ(255, token.value.integer);
+    ASSERT_EQ(0xFF, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(1000, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(0x1ABC, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(123456, token.value.integer);
+
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(0xDEADBEEF, (u32)token.value.integer);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
+    return true;
+}
+
+TEST_FUNC(Lexer_InvalidInteger_TrailingUnderscore) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "123_", 4);
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(123, token.value.integer);
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
+    ASSERT_STREQ("_", token.value.identifier);
+    return true;
+}
+
+TEST_FUNC(Lexer_InvalidInteger_ConsecutiveUnderscores) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "1__000", 6);
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(1, token.value.integer);
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
+    ASSERT_STREQ("__000", token.value.identifier);
+    return true;
+}
+
+TEST_FUNC(Lexer_InvalidInteger_UnderscoreAfterPrefix) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "0x_FF", 5);
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(0, token.value.integer);
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
+    ASSERT_STREQ("x_FF", token.value.identifier);
+    return true;
+}
+
+TEST_FUNC(Lexer_InvalidInteger_TrailingUnderscoreHex) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    u32 file_id = sm.addFile("test.zig", "0xFF_", 5);
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
+    ASSERT_EQ(0xFF, token.value.integer);
+    token = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
+    ASSERT_STREQ("_", token.value.identifier);
     return true;
 }
 
