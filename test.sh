@@ -74,6 +74,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/lexer_fixes.cpp \
     tests/lexer_utils.cpp \
     tests/lexer_strings.cpp \
+    tests/lexer_safety.cpp \
     -Isrc/include \
     -o test_runner
 

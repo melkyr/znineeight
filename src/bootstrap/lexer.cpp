@@ -77,7 +77,14 @@ static void encode_utf8(DynamicArray<char>& buffer, u32 codepoint) {
     }
 }
 char Lexer::peek(int n) const {
-    return this->current[n];
+    const char* p = this->current;
+    for (int i = 0; i < n; i++) {
+        if (*p == '\0') {
+            return '\0'; // Return null char if out of bounds
+        }
+        p++;
+    }
+    return *p;
 }
 
 void Lexer::advance(int n) {

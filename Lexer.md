@@ -35,6 +35,12 @@ The lexer supports two types of comments, which are consumed and discarded:
 
 If the lexer encounters a character that does not belong to any valid token, it produces a `TOKEN_ERROR` token. This allows the parser to handle lexical errors gracefully.
 
+### 1.4 Internal Safety Mechanisms
+
+The lexer is designed with several internal safety features to ensure robust and predictable behavior, especially when handling edge cases at the end of a file.
+
+*   **Safe Peeking:** The lexer's internal `peek(n)` method, used for lookaheads, is designed to be safe against buffer over-reads. If a lookahead operation requests a character at or beyond the end of the source buffer, the lexer will safely return a null character (`\0`) instead of reading from invalid memory. This prevents crashes and ensures that multi-character token checks (e.g., for `..` or `==`) are handled correctly, even when they appear at the very end of the file.
+
 ## 2. Token Implementation Status
 
 This section tracks the implementation status of all tokens required for the RetroZig compiler. It is based on a gap analysis between the official Zig language specification and the current lexer implementation.
