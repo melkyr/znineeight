@@ -2,6 +2,49 @@
 #include "source_manager.hpp"
 #include "memory.hpp"
 #include <cctype>
+#include <math.h>
+
+double Lexer::parseDecimalFloat(const char* start, const char** end) {
+    double value = 0.0;
+    const char* p = start;
+
+    // 1. Integer Part
+    while (isdigit(*p) || *p == '_') {
+        if (*p == '_') { p++; continue; }
+        value = value * 10.0 + (*p - '0');
+        p++;
+    }
+
+    // 2. Fractional Part
+    if (*p == '.') {
+        p++;
+        double divisor = 10.0;
+        while (isdigit(*p) || *p == '_') {
+            if (*p == '_') { p++; continue; }
+            value += (*p - '0') / divisor;
+            divisor *= 10.0;
+            p++;
+        }
+    }
+
+    // 3. Exponent Part
+    if (*p == 'e' || *p == 'E') {
+        p++;
+        int sign = 1;
+        if (*p == '-') { sign = -1; p++; }
+        else if (*p == '+') { p++; }
+
+        int exponent = 0;
+        while (isdigit(*p) || *p == '_') {
+            if (*p == '_') { p++; continue; }
+            exponent = exponent * 10 + (*p - '0');
+            p++;
+        }
+        value *= pow(10.0, sign * exponent);
+    }
+    *end = p;
+    return value;
+}
 #include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
 #include <cstring> // For memcmp, strncmp
@@ -318,51 +361,38 @@ Token Lexer::lexNumericLiteral() {
         }
     }
 
-
-    // Temporarily advance to find the end of the number
+    // Temporarily advance to find the end of the integer part
     const char* end_ptr = start;
     if (is_hex) {
         end_ptr += 2;
-        while (isxdigit(*end_ptr)) end_ptr++;
+        while (isxdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     } else {
-        while (isdigit(*end_ptr)) end_ptr++;
+        while (isdigit(*end_ptr) || *end_ptr == '_') end_ptr++;
     }
+
     bool is_float = false;
     if (*end_ptr == '.') {
-        // Lookahead to distinguish between float literal and range operator
-        if (end_ptr[0] != '\0' && end_ptr[1] == '.') {
-            // This is an integer followed by a '..' operator.
-            // Do not consume the dot; treat the preceding number as an integer.
-        } else if (end_ptr[0] == '\0' || !isdigit(end_ptr[1])) {
-             token.type = TOKEN_ERROR;
-             this->current = end_ptr + 1;
-             this->column += (this->current - start);
-             return token;
-	} else {
-        end_ptr++;
-        is_float = true;
+        if (peek(end_ptr - this->current + 1) == '.') {
+            // Range operator, not a float
+        } else {
+            is_float = true;
         }
-    }
-    while (isdigit(*end_ptr)) end_ptr++;
-    if (*end_ptr == 'e' || *end_ptr == 'E') {
-        const char* exp_ptr = end_ptr + 1;
-        if (*exp_ptr == '+' || *exp_ptr == '-') {
-            exp_ptr++;
-        }
-        if (!isdigit(*exp_ptr)) {
-            token.type = TOKEN_ERROR;
-            return token;
-        }
+    } else if (*end_ptr == 'e' || *end_ptr == 'E') {
         is_float = true;
     }
-
 
     if (is_float) {
-        char* end;
-        token.value.floating_point = strtod(start, &end);
-        this->column += (end - start);
-        this->current = end;
-        token.type = TOKEN_FLOAT_LITERAL;
+        const char* end;
+        token.value.floating_point = parseDecimalFloat(start, &end);
+
+        if (end > start) {
+            this->column += (end - start);
+            this->current = (char*)end;
+            token.type = TOKEN_FLOAT_LITERAL;
+        } else {
+            token.type = TOKEN_ERROR;
+        }
+
     } else {
         // Use the new custom parser for 64-bit integers
         token.value.integer = parseInteger(start, end_ptr);
@@ -398,6 +428,7 @@ u64 Lexer::parseInteger(const char* start, const char* end) {
     }
 
     for (; p < end; ++p) {
+        if (*p == '_') continue;
         int digit;
         if (*p >= '0' && *p <= '9') {
             digit = *p - '0';
