@@ -179,3 +179,67 @@ The following keywords for compile-time and special functions are also implement
 | `TOKEN_FAT_ARROW` | `=>`   | Yes         | Implemented as part of Task 23. |
 | `TOKEN_ELLIPSIS`  | `...`  | Yes         | Implemented as part of Task 23. |
 | `TOKEN_RANGE`     | `..`   | Yes         | Implemented as part of Task 75. |
+
+## 3. Scope for Floats and Integers
+
+This section details the currently supported syntax for numeric literals in the RetroZig lexer.
+
+### 3.1 Integer Literals
+
+The lexer supports decimal and hexadecimal integer literals.
+
+#### Supported Integer Syntax:
+
+*   **Decimal Literals:** A sequence of digits `0-9`.
+    *   `123`
+    *   `0`
+    *   `42`
+*   **Hexadecimal Literals:** Prefixed with `0x` or `0X`, followed by a sequence of hex digits (`0-9`, `a-f`, `A-F`).
+    *   `0xFF`
+    *   `0x1a`
+    *   `0XDEADBEEF`
+
+#### Unsupported Integer Syntax:
+
+*   **Octal Literals:** Prefixes like `0o` are not supported.
+*   **Binary Literals:** Prefixes like `0b` are not supported.
+*   **Underscore Separators:** Underscores within numbers (e.g., `1_000_000`) are not supported.
+
+### 3.2 Floating-Point Literals
+
+The lexer supports decimal and hexadecimal floating-point literals.
+
+#### Supported Floating-Point Syntax:
+
+*   **Decimal Floats:**
+    *   Must contain a decimal point (`.`).
+    *   Must have digits on both sides of the decimal point.
+    *   Can have an optional exponent part, denoted by `e` or `E`, followed by an optional sign (`+` or `-`) and a sequence of digits.
+    *   An integer followed by an exponent is also a valid float.
+    *   Examples:
+        *   `3.14`
+        *   `1.23e+4`
+        *   `5.67E-8`
+        *   `9.0e10`
+        *   `1e10`
+*   **Hexadecimal Floats:**
+    *   Must be prefixed with `0x` or `0X`.
+    *   Must contain a binary exponent part, denoted by `p` or `P`. The exponent is a decimal integer.
+    *   Can have an integer part and an optional fractional part separated by a decimal point.
+    *   Examples:
+        *   `0x1.Ap2`
+        *   `0x10p-1`
+        *   `0xAB.CDp-4`
+
+#### Unsupported/Invalid Floating-Point Syntax:
+
+*   **Missing digits around decimal point:** A decimal point must be surrounded by digits.
+    *   Invalid: `123.`
+    *   Invalid: `.123`
+*   **Invalid exponent:** The exponent part must have at least one digit.
+    *   Invalid: `1.2e`
+    *   Invalid: `3.4e+`
+*   **Invalid hex float format:** A hex float must have a `p` or `P` exponent.
+    *   Invalid: `0x1.A`
+    *   Invalid: `0x1.Ap`
+    *   Invalid: `0x1.Ap-`
