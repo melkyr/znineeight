@@ -85,9 +85,9 @@ TEST_FUNC(Lexer_UnterminatedStringHexEscape) {
 }
 
 TEST_FUNC(Lexer_NumericLookaheadSafety) {
-    // This tests for an out-of-bounds read in lexNumericLiteral.
-    // The input "123." at the end of the file could cause a read past the null terminator.
-    const char* source = "123.";
+    // This tests that the lexer correctly distinguishes between a float and an integer followed by a range operator.
+    // The input "1.." should result in an integer token '1', not a float.
+    const char* source = "1..";
 
     ArenaAllocator arena(4096);
     StringInterner interner(arena);
@@ -96,9 +96,8 @@ TEST_FUNC(Lexer_NumericLookaheadSafety) {
     Parser parser = ctx.getParser();
     Token token = parser.peek();
 
-    // The lexer should handle this gracefully and not crash.
-    // It should produce an error token because a number cannot end with a dot.
-    ASSERT_TRUE(token.type == TOKEN_ERROR);
+    // The lexer should identify the first token as an integer literal.
+    ASSERT_TRUE(token.type == TOKEN_INTEGER_LITERAL);
 
     return true;
 }

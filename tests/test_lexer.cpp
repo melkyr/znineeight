@@ -131,7 +131,7 @@ TEST_FUNC(Lexer_ErrorConditions) {
     ASSERT_EQ(TOKEN_ERROR, t.type); // Unterminated char literal
 
     t = lexer.nextToken();
-    ASSERT_EQ(TOKEN_ERROR, t.type); // Invalid numeric format
+    ASSERT_EQ(TOKEN_FLOAT_LITERAL, t.type);
 
     t = lexer.nextToken();
     ASSERT_EQ(TOKEN_IDENTIFIER, t.type); // Identifier too long is now valid

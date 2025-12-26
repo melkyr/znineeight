@@ -30,8 +30,8 @@ bool test_Lexer_FloatWithUnderscores_FractionalPart() {
     return test_float_lexing("3.14_159", 3.14159);
 }
 
-TEST_FUNC(Lexer_FloatWithUnderscodes_ExponentPart);
-bool test_Lexer_FloatWithUnderscodes_ExponentPart() {
+TEST_FUNC(Lexer_FloatWithUnderscores_ExponentPart);
+bool test_Lexer_FloatWithUnderscores_ExponentPart() {
     return test_float_lexing("1.2e+1_0", 1.2e+10);
 }
 
