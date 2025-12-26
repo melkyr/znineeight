@@ -42,3 +42,31 @@ TEST_FUNC(lex_arithmetic_and_bitwise_operators) {
 
     return true;
 }
+
+TEST_FUNC(Lexer_RangeExpression) {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    const char* source = "3..7";
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+
+    Lexer lexer(sm, interner, arena, file_id);
+
+    Token t;
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_INTEGER_LITERAL);
+    ASSERT_EQ(t.value.integer, 3);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_RANGE);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_INTEGER_LITERAL);
+    ASSERT_EQ(t.value.integer, 7);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_EOF);
+
+    return true;
+}

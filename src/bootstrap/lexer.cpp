@@ -29,18 +29,32 @@ double Lexer::parseDecimalFloat(const char* start, const char** end) {
 
     // 3. Exponent Part
     if (*p == 'e' || *p == 'E') {
-        p++;
+        const char* exponent_start = p;
+        p++; // Consume 'e' or 'E'
         int sign = 1;
-        if (*p == '-') { sign = -1; p++; }
-        else if (*p == '+') { p++; }
-
-        int exponent = 0;
-        while (isdigit(*p) || *p == '_') {
-            if (*p == '_') { p++; continue; }
-            exponent = exponent * 10 + (*p - '0');
+        if (*p == '-') {
+            sign = -1;
+            p++;
+        } else if (*p == '+') {
             p++;
         }
-        value *= pow(10.0, sign * exponent);
+
+        // Check if there is at least one digit after the exponent marker
+        if (!isdigit(*p)) {
+            // Not a valid exponent, so we backtrack and treat the 'e' as a separate token.
+            p = exponent_start;
+        } else {
+            int exponent = 0;
+            while (isdigit(*p) || *p == '_') {
+                if (*p == '_') {
+                    p++;
+                    continue;
+                }
+                exponent = exponent * 10 + (*p - '0');
+                p++;
+            }
+            value *= pow(10.0, sign * exponent);
+        }
     }
     *end = p;
     return value;
