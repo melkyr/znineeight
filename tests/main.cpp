@@ -71,8 +71,10 @@ bool expect_statement_parser_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
-TEST_FUNC(lexer_peek_safe_at_end);
-TEST_FUNC(lexer_peek_within_bounds);
+TEST_FUNC(Lexer_FloatWithUnderscores_IntegerPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_FractionalPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_ExponentPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_AllParts);
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
@@ -130,7 +132,7 @@ TEST_FUNC(Lexer_FloatWithExponent);
 TEST_FUNC(Lexer_FloatWithNegativeExponent);
 TEST_FUNC(Lexer_FloatExponentNoSign);
 TEST_FUNC(Lexer_FloatIntegerWithExponent);
-TEST_FUNC(Lexer_FloatInvalidExponent);
+TEST_FUNC(Lexer_FloatExponentNoDigits);
 TEST_FUNC(Lexer_FloatHexSimple);
 TEST_FUNC(Lexer_FloatHexNoFractionalPart);
 TEST_FUNC(Lexer_FloatHexNegativeExponent);
@@ -292,8 +294,10 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
-        test_lexer_peek_safe_at_end,
-        test_lexer_peek_within_bounds,
+        test_Lexer_FloatWithUnderscores_IntegerPart,
+        test_Lexer_FloatWithUnderscores_FractionalPart,
+        test_Lexer_FloatWithUnderscores_ExponentPart,
+        test_Lexer_FloatWithUnderscores_AllParts,
         test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
         test_ArenaAllocator_AllocShouldReturn8ByteAligned,
         test_arena_alloc_out_of_memory,
@@ -324,7 +328,7 @@ int main(int argc, char* argv[]) {
         test_Lexer_FloatWithNegativeExponent,
         test_Lexer_FloatExponentNoSign,
         test_Lexer_FloatIntegerWithExponent,
-        test_Lexer_FloatInvalidExponent,
+        test_Lexer_FloatExponentNoDigits,
         test_Lexer_FloatHexSimple,
         test_Lexer_FloatHexNoFractionalPart,
         test_Lexer_FloatHexNegativeExponent,

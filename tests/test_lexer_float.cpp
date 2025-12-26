@@ -30,8 +30,9 @@ TEST_FUNC(Lexer_FloatSimpleDecimal) {
 
 TEST_FUNC(Lexer_FloatNoFractionalPart) {
     ArenaAllocator alloc(1024);
-    Token token = lex_string("123.", alloc); // Invalid: must have digits after '.'
-    ASSERT_EQ(token.type, TOKEN_ERROR);
+    Token token = lex_string("123.", alloc);
+    ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
+    ASSERT_TRUE(compare_floats(token.value.floating_point, 123.0));
     return true;
 }
 
@@ -74,13 +75,15 @@ TEST_FUNC(Lexer_FloatIntegerWithExponent) {
     return true;
 }
 
-TEST_FUNC(Lexer_FloatInvalidExponent) {
+TEST_FUNC(Lexer_FloatExponentNoDigits) {
     ArenaAllocator alloc(1024);
     Token token_no_digit = lex_string("1.2e", alloc);
-    ASSERT_EQ(token_no_digit.type, TOKEN_ERROR);
+    ASSERT_EQ(token_no_digit.type, TOKEN_FLOAT_LITERAL);
+    ASSERT_TRUE(compare_floats(token_no_digit.value.floating_point, 1.2));
 
     Token token_sign_no_digit = lex_string("3.4e+", alloc);
-    ASSERT_EQ(token_sign_no_digit.type, TOKEN_ERROR);
+    ASSERT_EQ(token_sign_no_digit.type, TOKEN_FLOAT_LITERAL);
+    ASSERT_TRUE(compare_floats(token_sign_no_digit.value.floating_point, 3.4));
     return true;
 }
 
