@@ -77,13 +77,18 @@ TEST_FUNC(Lexer_FloatIntegerWithExponent) {
 
 TEST_FUNC(Lexer_FloatExponentNoDigits) {
     ArenaAllocator alloc(1024);
-    Token token_no_digit = lex_string("1.2e", alloc);
-    ASSERT_EQ(token_no_digit.type, TOKEN_FLOAT_LITERAL);
-    ASSERT_TRUE(compare_floats(token_no_digit.value.floating_point, 1.2));
+    SourceManager sm(alloc);
+    StringInterner interner(alloc);
+    u32 file_id = sm.addFile("test.zig", "1.2e", 4);
+    Lexer lexer(sm, interner, alloc, file_id);
 
-    Token token_sign_no_digit = lex_string("3.4e+", alloc);
-    ASSERT_EQ(token_sign_no_digit.type, TOKEN_FLOAT_LITERAL);
-    ASSERT_TRUE(compare_floats(token_sign_no_digit.value.floating_point, 3.4));
+    Token t1 = lexer.nextToken();
+    ASSERT_EQ(t1.type, TOKEN_FLOAT_LITERAL);
+    ASSERT_TRUE(compare_floats(t1.value.floating_point, 1.2));
+
+    Token t2 = lexer.nextToken();
+    ASSERT_EQ(t2.type, TOKEN_IDENTIFIER);
+    ASSERT_STREQ(t2.value.identifier, "e");
     return true;
 }
 
