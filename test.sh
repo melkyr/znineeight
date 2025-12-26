@@ -75,6 +75,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/lexer_utils.cpp \
     tests/lexer_strings.cpp \
     tests/test_lexer_decimal_float.cpp \
+    tests/test_lexer_integration.cpp \
     -Isrc/include \
     -o test_runner
 
