@@ -2,26 +2,62 @@
 #define SYMBOL_TABLE_HPP
 
 #include "common.hpp"
-#include "type_system.hpp"
 #include "ast.hpp"
 #include "memory.hpp"
+#include "source_manager.hpp"
+
+// Forward declaration
+class ArenaAllocator;
+
+enum SymbolType {
+    SYMBOL_VARIABLE,
+    SYMBOL_FUNCTION,
+    SYMBOL_TYPE,
+    SYMBOL_UNION_TYPE,
+};
 
 struct Symbol {
-    enum Kind { VARIABLE, FUNCTION, TYPE } kind;
     const char* name;
-    Type* type;
-    u32 address_offset;
-    ASTNode* definition;
+    SymbolType type;
+    SourceLocation location;
+    void* details;
+    unsigned int scope_level;
+    unsigned int flags;
+};
+
+class SymbolBuilder {
+    ArenaAllocator& arena_;
+    Symbol temp_symbol_;
+
+public:
+    SymbolBuilder(ArenaAllocator& arena);
+    SymbolBuilder& withName(const char* name);
+    SymbolBuilder& ofType(SymbolType type);
+    SymbolBuilder& atLocation(const SourceLocation& loc);
+    SymbolBuilder& definedBy(void* details);
+    SymbolBuilder& inScope(unsigned int level);
+    SymbolBuilder& withFlags(unsigned int flags);
+    Symbol build();
+};
+
+struct Scope {
+    DynamicArray<Symbol> symbols;
+    Scope(ArenaAllocator& arena) : symbols(arena) {}
 };
 
 class SymbolTable {
-    DynamicArray<Symbol>* symbols;
-    ArenaAllocator* arena;
+    ArenaAllocator& arena_;
+    DynamicArray<Scope*> scopes;
+    unsigned int current_scope_level_;
 
 public:
-    SymbolTable(ArenaAllocator* allocator);
+    SymbolTable(ArenaAllocator& arena);
+    void enterScope();
+    void exitScope();
+    bool insert(const Symbol& symbol);
     Symbol* lookup(const char* name);
-    void insert(Symbol& sym);
+    Symbol* lookupInCurrentScope(const char* name);
+    unsigned int getCurrentScopeLevel() const;
 };
 
 #endif // SYMBOL_TABLE_HPP
