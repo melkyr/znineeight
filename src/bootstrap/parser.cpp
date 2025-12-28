@@ -8,6 +8,21 @@
 #include <windows.h> // For OutputDebugStringA
 #endif
 
+/**
+ * @brief Constructs a new Parser instance.
+ */
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena)
+    : tokens_(tokens),
+      token_count_(count),
+      current_index_(0),
+      arena_(arena),
+      recursion_depth_(0) {
+    assert(arena_ != NULL && "ArenaAllocator cannot be null");
+    // Initialize the EOF token.
+    eof_token_.type = TOKEN_EOF;
+    eof_token_.value.identifier = NULL; // Should be zero-initialized anyway
+}
+
 Token Parser::advance() {
     assert(!is_at_end() && "Cannot advance beyond the end of the token stream");
     return tokens_[current_index_++];
@@ -77,6 +92,9 @@ ASTNode* Parser::parseComptimeBlock() {
     comptime_block.expression = expr;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_COMPTIME_BLOCK;
     node->loc = comptime_token.location;
     node->as.comptime_block = comptime_block;
@@ -86,9 +104,7 @@ ASTNode* Parser::parseComptimeBlock() {
 
 const Token& Parser::peekNext() const {
     if (current_index_ + 1 >= token_count_) {
-        static Token eof_token;
-        eof_token.type = TOKEN_EOF;
-        return eof_token;
+        return eof_token_;
     }
     return tokens_[current_index_ + 1];
 }
@@ -112,6 +128,9 @@ const Token& Parser::peekNext() const {
 ASTNode* Parser::parsePrimaryExpr() {
     Token token = peek();
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->loc = token.location;
 
     switch (token.type) {
@@ -175,14 +194,25 @@ ASTNode* Parser::parsePrimaryExpr() {
  *         The node is allocated from the parser's arena.
  */
 ASTNode* Parser::parsePostfixExpression() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Expression too complex, recursion limit reached");
+    }
+
     ASTNode* expr = parsePrimaryExpr();
 
     while (true) {
         if (match(TOKEN_LPAREN)) {
             // Function Call
             ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+            if (!call_node) {
+                error("Out of memory");
+            }
             call_node->callee = expr;
             call_node->args = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+            if (!call_node->args) {
+                error("Out of memory");
+            }
             new (call_node->args) DynamicArray<ASTNode*>(*arena_);
 
             if (!match(TOKEN_RPAREN)) {
@@ -193,6 +223,9 @@ ASTNode* Parser::parsePostfixExpression() {
             }
 
             ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_expr_node) {
+                error("Out of memory");
+            }
             new_expr_node->type = NODE_FUNCTION_CALL;
             new_expr_node->loc = expr->loc; // Use location of the callee
             new_expr_node->as.function_call = call_node;
@@ -203,6 +236,9 @@ ASTNode* Parser::parsePostfixExpression() {
                 (peek().type != TOKEN_RBRACKET && peekNext().type == TOKEN_RANGE)) {
 
                 ASTArraySliceNode* slice_node = (ASTArraySliceNode*)arena_->alloc(sizeof(ASTArraySliceNode));
+                if (!slice_node) {
+                    error("Out of memory");
+                }
                 slice_node->array = expr;
 
                 // Parse start index (if present)
@@ -224,6 +260,9 @@ ASTNode* Parser::parsePostfixExpression() {
                 expect(TOKEN_RBRACKET, "Expected ']' after slice expression");
 
                 ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+                if (!new_expr_node) {
+                    error("Out of memory");
+                }
                 new_expr_node->type = NODE_ARRAY_SLICE;
                 new_expr_node->loc = expr->loc;
                 new_expr_node->as.array_slice = slice_node;
@@ -232,11 +271,17 @@ ASTNode* Parser::parsePostfixExpression() {
             else {
                 // Regular array access [index]
                 ASTArrayAccessNode* access_node = (ASTArrayAccessNode*)arena_->alloc(sizeof(ASTArrayAccessNode));
+                if (!access_node) {
+                    error("Out of memory");
+                }
                 access_node->array = expr;
                 access_node->index = parseExpression();
                 expect(TOKEN_RBRACKET, "Expected ']' after array index");
 
                 ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+                if (!new_expr_node) {
+                    error("Out of memory");
+                }
                 new_expr_node->type = NODE_ARRAY_ACCESS;
                 new_expr_node->loc = expr->loc;
                 new_expr_node->as.array_access = access_node;
@@ -247,6 +292,7 @@ ASTNode* Parser::parsePostfixExpression() {
         }
     }
 
+    recursion_depth_--;
     return expr;
 }
 
@@ -265,6 +311,11 @@ ASTNode* Parser::parsePostfixExpression() {
  *         The node is allocated from the parser's arena.
  */
 ASTNode* Parser::parseUnaryExpr() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Expression too complex, recursion limit reached");
+    }
+
     if (peek().type == TOKEN_TRY) {
         Token try_token = advance();
         ASTNode* expression = parseUnaryExpr(); // Recursively call to handle chained operators e.g. try !foo()
@@ -273,9 +324,13 @@ ASTNode* Parser::parseUnaryExpr() {
         try_expr_node.expression = expression;
 
         ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!node) {
+            error("Out of memory");
+        }
         node->type = NODE_TRY_EXPR;
         node->loc = try_token.location;
         node->as.try_expr = try_expr_node;
+        recursion_depth_--;
         return node;
     }
     DynamicArray<Token> operators(*arena_);
@@ -294,12 +349,16 @@ ASTNode* Parser::parseUnaryExpr() {
         unary_op_node.operand = expr;
 
         ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!new_expr_node) {
+            error("Out of memory");
+        }
         new_expr_node->type = NODE_UNARY_OP;
         new_expr_node->loc = op_token.location;
         new_expr_node->as.unary_op = unary_op_node;
         expr = new_expr_node;
     }
 
+    recursion_depth_--;
     return expr;
 }
 
@@ -398,11 +457,17 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
         ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+        if (!binary_op) {
+            error("Out of memory");
+        }
         binary_op->left = left;
         binary_op->right = right;
         binary_op->op = op_token.type;
 
         ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!new_node) {
+            error("Out of memory");
+        }
         new_node->type = NODE_BINARY_OP;
         new_node->loc = op_token.location;
         new_node->as.binary_op = binary_op;
@@ -425,6 +490,11 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
 ASTNode* Parser::parseExpression() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Expression too complex, recursion limit reached");
+    }
+
     // 1. Parse the first operand, which includes all operators with precedence > 1.
     ASTNode* first_operand = parsePrecedenceExpr(2);
 
@@ -464,22 +534,34 @@ ASTNode* Parser::parseExpression() {
 
         if (op_info.op.type == TOKEN_CATCH) {
             ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
+            if (!catch_node) {
+                error("Out of memory");
+            }
             catch_node->payload = left_node;
             catch_node->error_name = op_info.catch_payload_name;
             catch_node->else_expr = right_node;
 
             ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
             new_node->type = NODE_CATCH_EXPR;
             new_node->loc = op_info.op.location;
             new_node->as.catch_expr = catch_node;
             right_node = new_node;
         } else { // TOKEN_ORELSE
             ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+            if (!binary_op) {
+                error("Out of memory");
+            }
             binary_op->left = left_node;
             binary_op->right = right_node;
             binary_op->op = op_info.op.type;
 
             ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
             new_node->type = NODE_BINARY_OP;
             new_node->loc = op_info.op.location;
             new_node->as.binary_op = binary_op;
@@ -487,6 +569,7 @@ ASTNode* Parser::parseExpression() {
         }
     }
 
+    recursion_depth_--;
     return right_node;
 }
 
@@ -509,8 +592,14 @@ ASTNode* Parser::parseSwitchExpression() {
     expect(TOKEN_LBRACE, "Missing opening brace for prongs");
 
     ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)arena_->alloc(sizeof(ASTSwitchExprNode));
+    if (!switch_node) {
+        error("Out of memory");
+    }
     switch_node->expression = condition;
     switch_node->prongs = (DynamicArray<ASTSwitchProngNode*>*)arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+    if (!switch_node->prongs) {
+        error("Out of memory");
+    }
     new (switch_node->prongs) DynamicArray<ASTSwitchProngNode*>(*arena_);
 
     bool has_else = false;
@@ -522,7 +611,13 @@ ASTNode* Parser::parseSwitchExpression() {
 
     do {
         ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        if (!prong_node) {
+            error("Out of memory");
+        }
         prong_node->cases = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!prong_node->cases) {
+            error("Out of memory");
+        }
         new (prong_node->cases) DynamicArray<ASTNode*>(*arena_);
         prong_node->is_else = false;
 
@@ -554,6 +649,9 @@ ASTNode* Parser::parseSwitchExpression() {
     expect(TOKEN_RBRACE, "Expected '}' to close switch expression");
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_SWITCH_EXPR;
     node->loc = switch_token.location;
     node->as.switch_expr = switch_node;
@@ -589,8 +687,14 @@ ASTNode* Parser::parseEnumDeclaration() {
     expect(TOKEN_LBRACE, "Expected '{' to begin enum declaration");
 
     ASTEnumDeclNode* enum_decl = (ASTEnumDeclNode*)arena_->alloc(sizeof(ASTEnumDeclNode));
+    if (!enum_decl) {
+        error("Out of memory");
+    }
     enum_decl->backing_type = backing_type;
     enum_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!enum_decl->fields) {
+        error("Out of memory");
+    }
     new (enum_decl->fields) DynamicArray<ASTNode*>(*arena_);
 
     // Handle members
@@ -603,6 +707,9 @@ ASTNode* Parser::parseEnumDeclaration() {
         }
 
         ASTVarDeclNode* field_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+        if (!field_data) {
+            error("Out of memory");
+        }
         field_data->name = name_token.value.identifier;
         field_data->type = NULL; // Enums members don't have a type annotation
         field_data->initializer = initializer;
@@ -610,6 +717,9 @@ ASTNode* Parser::parseEnumDeclaration() {
         field_data->is_mut = false;
 
         ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!field_node) {
+            error("Out of memory");
+        }
         field_node->type = NODE_VAR_DECL;
         field_node->loc = name_token.location;
         field_node->as.var_decl = field_data;
@@ -625,6 +735,9 @@ ASTNode* Parser::parseEnumDeclaration() {
     expect(TOKEN_RBRACE, "Expected '}' to end enum declaration");
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_ENUM_DECL;
     node->loc = enum_token.location;
     node->as.enum_decl = enum_decl;
@@ -652,7 +765,13 @@ ASTNode* Parser::parseUnionDeclaration() {
     expect(TOKEN_LBRACE, "Expected '{' to begin union declaration");
 
     ASTUnionDeclNode* union_decl = (ASTUnionDeclNode*)arena_->alloc(sizeof(ASTUnionDeclNode));
+    if (!union_decl) {
+        error("Out of memory");
+    }
     union_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!union_decl->fields) {
+        error("Out of memory");
+    }
     new (union_decl->fields) DynamicArray<ASTNode*>(*arena_);
 
     // Handle fields
@@ -662,10 +781,16 @@ ASTNode* Parser::parseUnionDeclaration() {
         ASTNode* type_node = parseType();
 
         ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        if (!field_data) {
+            error("Out of memory");
+        }
         field_data->name = name_token.value.identifier;
         field_data->type = type_node;
 
         ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!field_node) {
+            error("Out of memory");
+        }
         field_node->type = NODE_STRUCT_FIELD;
         field_node->loc = name_token.location;
         field_node->as.struct_field = field_data;
@@ -681,6 +806,9 @@ ASTNode* Parser::parseUnionDeclaration() {
     expect(TOKEN_RBRACE, "Expected '}' to end union declaration");
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_UNION_DECL;
     node->loc = union_token.location;
     node->as.union_decl = union_decl;
@@ -703,6 +831,9 @@ ASTNode* Parser::parseErrDeferStatement() {
     errdefer_stmt.statement = statement;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_ERRDEFER_STMT;
     node->loc = errdefer_token.location;
     node->as.errdefer_stmt = errdefer_stmt;
@@ -731,7 +862,13 @@ ASTNode* Parser::parseStructDeclaration() {
     expect(TOKEN_LBRACE, "Expected '{' to begin struct declaration");
 
     ASTStructDeclNode* struct_decl = (ASTStructDeclNode*)arena_->alloc(sizeof(ASTStructDeclNode));
+    if (!struct_decl) {
+        error("Out of memory");
+    }
     struct_decl->fields = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!struct_decl->fields) {
+        error("Out of memory");
+    }
     new (struct_decl->fields) DynamicArray<ASTNode*>(*arena_);
 
     // Handle fields
@@ -741,10 +878,16 @@ ASTNode* Parser::parseStructDeclaration() {
         ASTNode* type_node = parseType();
 
         ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
+        if (!field_data) {
+            error("Out of memory");
+        }
         field_data->name = name_token.value.identifier;
         field_data->type = type_node;
 
         ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!field_node) {
+            error("Out of memory");
+        }
         field_node->type = NODE_STRUCT_FIELD;
         field_node->loc = name_token.location;
         field_node->as.struct_field = field_data;
@@ -760,6 +903,9 @@ ASTNode* Parser::parseStructDeclaration() {
     expect(TOKEN_RBRACE, "Expected '}' to end struct declaration");
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_STRUCT_DECL;
     node->loc = struct_token.location;
     node->as.struct_decl = struct_decl;
@@ -788,6 +934,9 @@ ASTNode* Parser::parseVarDecl() {
     expect(TOKEN_SEMICOLON, "Expected ';' after variable declaration");
 
     ASTVarDeclNode* var_decl = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+    if (!var_decl) {
+        error("Out of memory");
+    }
     var_decl->name = name_token.value.identifier;
     var_decl->type = type_node;
     var_decl->initializer = initializer_node;
@@ -795,6 +944,9 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->is_mut = is_mut;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_VAR_DECL;
     node->loc = keyword_token.location;
     node->as.var_decl = var_decl;
@@ -829,12 +981,18 @@ ASTNode* Parser::parseForStatement() {
     ASTNode* body = parseBlockStatement();
 
     ASTForStmtNode* for_stmt_node = (ASTForStmtNode*)arena_->alloc(sizeof(ASTForStmtNode));
+    if (!for_stmt_node) {
+        error("Out of memory");
+    }
     for_stmt_node->iterable_expr = iterable_expr;
     for_stmt_node->item_name = item_name;
     for_stmt_node->index_name = index_name;
     for_stmt_node->body = body;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_FOR_STMT;
     node->loc = for_token.location;
     node->as.for_stmt = for_stmt_node;
@@ -857,6 +1015,9 @@ ASTNode* Parser::parseDeferStatement() {
     defer_stmt.statement = statement;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_DEFER_STMT;
     node->loc = defer_token.location;
     node->as.defer_stmt = defer_stmt;
@@ -897,15 +1058,24 @@ ASTNode* Parser::parseFnDecl() {
 
     // Create the function declaration node
     ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
+    if (!fn_decl) {
+        error("Out of memory");
+    }
     fn_decl->name = name_token.value.identifier;
     fn_decl->return_type = return_type_node;
     fn_decl->body = body_node;
 
     // Initialize the parameters array
     fn_decl->params = (DynamicArray<ASTParamDeclNode*>*)arena_->alloc(sizeof(DynamicArray<ASTParamDeclNode*>));
+    if (!fn_decl->params) {
+        error("Out of memory");
+    }
     new (fn_decl->params) DynamicArray<ASTParamDeclNode*>(*arena_);
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_FN_DECL;
     node->loc = fn_token.location;
     node->as.fn_decl = fn_decl;
@@ -946,6 +1116,9 @@ ASTNode* Parser::parseStatement() {
         case TOKEN_SEMICOLON: {
             Token semi_token = advance(); // Consume ';'
             ASTNode* empty_stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!empty_stmt_node) {
+                error("Out of memory");
+            }
             empty_stmt_node->type = NODE_EMPTY_STMT;
             empty_stmt_node->loc = semi_token.location;
             return empty_stmt_node;
@@ -960,6 +1133,9 @@ ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
     DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!statements) {
+        error("Out of memory");
+    }
     new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
 
     while (!is_at_end() && peek().type != TOKEN_RBRACE) {
@@ -969,6 +1145,9 @@ ASTNode* Parser::parseBlockStatement() {
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
 
     ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!block_node) {
+        error("Out of memory");
+    }
     block_node->type = NODE_BLOCK_STMT;
     block_node->loc = lbrace_token.location;
     block_node->as.block_stmt.statements = statements;
@@ -995,11 +1174,17 @@ ASTNode* Parser::parseIfStatement() {
     }
 
     ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));
+    if (!if_stmt_node) {
+        error("Out of memory");
+    }
     if_stmt_node->condition = condition;
     if_stmt_node->then_block = then_block;
     if_stmt_node->else_block = else_block;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_IF_STMT;
     node->loc = if_token.location;
     node->as.if_stmt = if_stmt_node;
@@ -1025,6 +1210,9 @@ ASTNode* Parser::parseWhileStatement() {
     while_stmt_node.body = body;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_WHILE_STMT;
     node->loc = while_token.location;
     node->as.while_stmt = while_stmt_node;
@@ -1051,6 +1239,9 @@ ASTNode* Parser::parseReturnStatement() {
     return_stmt.expression = expression;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_RETURN_STMT;
     node->loc = return_token.location;
     node->as.return_stmt = return_stmt;
@@ -1068,6 +1259,9 @@ ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_IDENTIFIER) {
         Token type_name_token = advance();
         ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!node) {
+            error("Out of memory");
+        }
         node->type = NODE_TYPE_NAME;
         node->loc = type_name_token.location;
         node->as.type_name.name = type_name_token.value.identifier;
@@ -1082,6 +1276,9 @@ ASTNode* Parser::parsePointerType() {
     ASTNode* base_type = parseType();
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_POINTER_TYPE;
     node->loc = star_token.location;
     node->as.pointer_type.base = base_type;
@@ -1103,6 +1300,9 @@ ASTNode* Parser::parseArrayType() {
     ASTNode* element_type = parseType();
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
     node->type = NODE_ARRAY_TYPE;
     node->loc = lbracket_token.location;
     node->as.array_type.element_type = element_type;

@@ -31,14 +31,7 @@ public:
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena)
-        : tokens_(tokens),
-          token_count_(count),
-          current_index_(0),
-          arena_(arena),
-          recursion_depth_(0) {
-        assert(arena_ != NULL && "ArenaAllocator cannot be null");
-    }
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena);
 
     /**
      * @brief Copy constructor.
@@ -296,6 +289,7 @@ private:
     size_t current_index_;
     ArenaAllocator* arena_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
+    Token eof_token_; ///< A cached EOF token to return from peekNext()
 
 public:
     /**
