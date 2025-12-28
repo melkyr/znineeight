@@ -6,8 +6,9 @@
 #include "memory.hpp"
 #include "source_manager.hpp"
 
-// Forward declaration
+// Forward declarations
 class ArenaAllocator;
+struct Type;
 
 enum SymbolType {
     SYMBOL_VARIABLE,
@@ -18,7 +19,8 @@ enum SymbolType {
 
 struct Symbol {
     const char* name;
-    SymbolType type;
+    SymbolType kind;
+    Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
     void* details;
     unsigned int scope_level;
@@ -33,6 +35,7 @@ public:
     SymbolBuilder(ArenaAllocator& arena);
     SymbolBuilder& withName(const char* name);
     SymbolBuilder& ofType(SymbolType type);
+    SymbolBuilder& withType(Type* symbol_type);
     SymbolBuilder& atLocation(const SourceLocation& loc);
     SymbolBuilder& definedBy(void* details);
     SymbolBuilder& inScope(unsigned int level);

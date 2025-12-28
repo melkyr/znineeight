@@ -8,6 +8,7 @@
 SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     // Zero-initialize the temporary symbol to ensure all fields are set.
     temp_symbol_.name = NULL;
+    temp_symbol_.symbol_type = NULL;
     temp_symbol_.details = NULL;
     temp_symbol_.scope_level = 0;
     temp_symbol_.flags = 0;
@@ -18,8 +19,13 @@ SymbolBuilder& SymbolBuilder::withName(const char* name) {
     return *this;
 }
 
-SymbolBuilder& SymbolBuilder::ofType(SymbolType type) {
-    temp_symbol_.type = type;
+SymbolBuilder& SymbolBuilder::ofType(SymbolType kind) {
+    temp_symbol_.kind = kind;
+    return *this;
+}
+
+SymbolBuilder& SymbolBuilder::withType(Type* symbol_type) {
+    temp_symbol_.symbol_type = symbol_type;
     return *this;
 }
 

@@ -171,3 +171,31 @@ public:
 -   **Arithmetic Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats).
 -   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
 -   **Pointer Arithmetic:** Pointer arithmetic will be restricted to ensure it is C89-compatible.
+
+## 5. Symbol Table and Memory Usage
+
+The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.
+
+### Memory Impact of the Refactored Symbol Table
+
+The foundational refactoring of the `SymbolTable` introduced a more robust, scope-aware architecture. A key consequence of this change is an increase in the baseline memory usage for each `CompilationUnit`.
+
+**Cause of Increased Memory Usage:**
+The `SymbolTable` constructor now immediately performs allocations to set up its foundational data structures:
+1.  It allocates a `DynamicArray` to hold the stack of `Scope` pointers.
+2.  Upon construction, it immediately calls `enterScope()` to create the global scope. This involves allocating a `Scope` object and the `DynamicArray` for symbols within that scope.
+
+This upfront memory cost was not present in the previous, simpler implementation.
+
+**Impact on Performance and Unit Tests:**
+This increased baseline memory usage caused several unit tests with small, hardcoded `ArenaAllocator` sizes (e.g., 1024 bytes) to fail with "Out of memory" errors. These tests were written with the assumption of a very low initial memory footprint and were not prepared for the additional allocations required by the new `SymbolTable`.
+
+The solution was to increase the arena sizes in the affected tests (e.g., to 2048 bytes). This is an acceptable and necessary change.
+
+**Performance Concerns:**
+The increase in baseline memory usage is not considered a significant performance concern for the following reasons:
+- **Necessary Trade-off:** The memory is used to provide essential scoping functionality, which is a core requirement for the compiler.
+- **Fixed Cost:** The initial allocation is a small, fixed cost per compilation unit. It does not grow with the size of the source file being compiled.
+- **Efficient Allocation:** All allocations are still managed by the `ArenaAllocator`, which is extremely fast. The performance impact of the initial allocations is negligible in the context of a full compilation.
+
+In summary, while the new `SymbolTable` has a slightly larger memory footprint, it is a deliberate and necessary architectural improvement. The impact is well-contained and does not compromise the overall performance goals of the compiler.

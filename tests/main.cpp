@@ -266,8 +266,8 @@ TEST_FUNC(Parser_RecursionLimit_Binary);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
-TEST_FUNC(SymbolBuilderTests);
-TEST_FUNC(SymbolTable_Scoping);
+TEST_FUNC(SymbolBuilder_BuildsCorrectly);
+TEST_FUNC(SymbolTable_ScopingAndLookup);
 
 
 // This function is executed in a child process by the error handling test.
@@ -517,8 +517,8 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
-        test_SymbolBuilderTests,
-        test_SymbolTable_Scoping,
+        test_SymbolBuilder_BuildsCorrectly,
+        test_SymbolTable_ScopingAndLookup,
     };
 
     int passed = 0;
