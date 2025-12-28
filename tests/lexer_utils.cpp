@@ -7,7 +7,7 @@
 #include <cstring>
 
 TEST_FUNC(peek_and_advance) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager source_manager(arena);
     const char* test_content = "abc";

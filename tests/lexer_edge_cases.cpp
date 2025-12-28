@@ -16,7 +16,7 @@
  * 4-space tab stop, ensuring accurate error reporting.
  */
 TEST_FUNC(lexer_handles_tab_correctly) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -37,7 +37,7 @@ TEST_FUNC(lexer_handles_tab_correctly) {
  * truncating the value, which was a bug in a previous version.
  */
 TEST_FUNC(lexer_handles_unicode_correctly) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -58,7 +58,7 @@ TEST_FUNC(lexer_handles_unicode_correctly) {
  * the end of the source buffer when parsing a malformed hex escape sequence.
  */
 TEST_FUNC(lexer_handles_unterminated_char_hex_escape) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -78,7 +78,7 @@ TEST_FUNC(lexer_handles_unterminated_char_hex_escape) {
  * the end of the source buffer when parsing a malformed hex escape sequence.
  */
 TEST_FUNC(lexer_handles_unterminated_string_hex_escape) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -123,7 +123,7 @@ TEST_FUNC(lexer_integer_overflow);
 TEST_FUNC(lexer_c_string_literal);
 
 bool test_lexer_integer_overflow() {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -139,7 +139,7 @@ bool test_lexer_integer_overflow() {
 }
 
 bool test_lexer_c_string_literal() {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

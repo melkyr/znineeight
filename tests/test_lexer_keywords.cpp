@@ -13,7 +13,7 @@ TEST_FUNC(keywords_are_sorted) {
 }
 
 TEST_FUNC(lex_keywords) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
 
@@ -41,7 +41,7 @@ TEST_FUNC(lex_keywords) {
 }
 
 TEST_FUNC(lex_miscellaneous_keywords) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
 
@@ -98,7 +98,7 @@ TEST_FUNC(lex_miscellaneous_keywords) {
 }
 
 TEST_FUNC(lex_visibility_and_linkage_keywords) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
 

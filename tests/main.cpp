@@ -274,7 +274,7 @@ TEST_FUNC(SymbolTable_ScopingAndLookup);
 // It sets up the parser and attempts to parse invalid code.
 // The successful outcome is for the program to abort.
 void run_parser_test_and_abort(const char* source_code, bool is_statement_test) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source_code, arena, interner);

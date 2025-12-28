@@ -7,7 +7,7 @@
 
 // Helper function to test a single keyword token
 static bool test_single_keyword(const char* keyword_str, TokenType expected_type) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", keyword_str, strlen(keyword_str));

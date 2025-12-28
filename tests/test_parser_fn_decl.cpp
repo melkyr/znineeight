@@ -7,7 +7,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_FnDecl_ValidEmpty) {
-    ArenaAllocator arena(2048); // Increased arena size
+    ArenaAllocator arena(4096); // Increased arena size
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

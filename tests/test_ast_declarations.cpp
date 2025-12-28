@@ -7,7 +7,7 @@ TEST_FUNC(ASTDeclarations) {
     // It doesn't perform any complex runtime assertions.
 
     // 1. Create a dummy ArenaAllocator for the test.
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
 
     // 2. Test ASTVarDeclNode (faking its creation)
     ASTNode var_node;

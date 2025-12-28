@@ -7,7 +7,7 @@ bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_While_ValidStatement) {
     const char* source = "while (1) {}";
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);

@@ -7,7 +7,7 @@ bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
     const char* source = "for (my_array) |item| {}";
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
@@ -32,7 +32,7 @@ TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
 
 TEST_FUNC(Parser_For_ValidStatement_ItemAndIndex) {
     const char* source = "for (my_array) |item, index| {}";
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
@@ -92,7 +92,7 @@ TEST_FUNC(Parser_For_MissingBody) {
 
 TEST_FUNC(Parser_For_WithComplexIterable) {
     const char* source = "for (get_array(1)) |item| {}";
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);

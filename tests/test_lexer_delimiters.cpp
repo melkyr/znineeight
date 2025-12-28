@@ -4,7 +4,7 @@
 #include "../src/include/string_interner.hpp"
 
 TEST_FUNC(Lexer_Delimiters) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = ": -> =>";
@@ -31,7 +31,7 @@ TEST_FUNC(Lexer_Delimiters) {
 }
 
 TEST_FUNC(Lexer_DotOperators) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = ". .. ... .ident";

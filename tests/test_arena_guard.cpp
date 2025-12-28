@@ -3,7 +3,7 @@
 #include "memory.hpp"
 
 TEST_FUNC(ArenaLifetimeGuard_ResetsArena) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     size_t initial_offset = arena.getOffset();
 
     {

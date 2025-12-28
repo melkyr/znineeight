@@ -4,7 +4,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseConstDecl_Simple) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("const x: i32 = 123;", arena, interner);
@@ -33,7 +33,7 @@ TEST_FUNC(Parser_ParseConstDecl_Simple) {
 }
 
 TEST_FUNC(Parser_ParseVarDecl_Simple) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var y: u8 = 42;", arena, interner);
@@ -62,7 +62,7 @@ TEST_FUNC(Parser_ParseVarDecl_Simple) {
 }
 
 TEST_FUNC(Parser_ParseVarDecl_PointerType) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var p: *i32 = 0;", arena, interner);
@@ -89,7 +89,7 @@ TEST_FUNC(Parser_ParseVarDecl_PointerType) {
 }
 
 TEST_FUNC(Parser_ParseVarDecl_SliceType) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("const s: []u8 = 1;", arena, interner);
@@ -116,7 +116,7 @@ TEST_FUNC(Parser_ParseVarDecl_SliceType) {
 }
 
 TEST_FUNC(Parser_ParseVarDecl_FixedArrayType) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var buf: [1024]u8 = 0;", arena, interner);
