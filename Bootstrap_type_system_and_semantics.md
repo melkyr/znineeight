@@ -188,9 +188,9 @@ The `SymbolTable` constructor now immediately performs allocations to set up its
 This upfront memory cost was not present in the previous, simpler implementation.
 
 **Impact on Performance and Unit Tests:**
-This increased baseline memory usage caused several unit tests with small, hardcoded `ArenaAllocator` sizes (e.g., 1024 bytes) to fail with "Out of memory" errors. These tests were written with the assumption of a very low initial memory footprint and were not prepared for the additional allocations required by the new `SymbolTable`.
+This increased baseline memory usage, combined with the new symbol allocations during parsing, caused several unit tests with small, hardcoded `ArenaAllocator` sizes (e.g., 1024 or 2048 bytes) to fail with "Out of memory" errors. These tests were not provisioned for the additional memory overhead of a fully active symbol table.
 
-The solution was to increase the arena sizes in the affected tests (e.g., to 2048 bytes). This is an acceptable and necessary change.
+The solution was to perform a comprehensive update of the test suite, increasing the arena sizes in all parser-related tests to 4096 bytes. This proactive measure ensures that the test environment is stable and has sufficient capacity for the new functionality, preventing spurious memory-related failures.
 
 **Performance Concerns:**
 The increase in baseline memory usage is not considered a significant performance concern for the following reasons:
@@ -199,3 +199,23 @@ The increase in baseline memory usage is not considered a significant performanc
 - **Efficient Allocation:** All allocations are still managed by the `ArenaAllocator`, which is extremely fast. The performance impact of the initial allocations is negligible in the context of a full compilation.
 
 In summary, while the new `SymbolTable` has a slightly larger memory footprint, it is a deliberate and necessary architectural improvement. The impact is well-contained and does not compromise the overall performance goals of the compiler.
+
+## 6. Parser Integration
+
+To make the symbol table functional, it is integrated directly into the parsing process. This allows the parser to manage scopes and register symbols as it traverses the source code.
+
+### `Parser` and `SymbolTable` Connection
+
+-   **Constructor Injection:** The `CompilationUnit`, which owns both the `ArenaAllocator` and the `SymbolTable`, passes a pointer to the `SymbolTable` to the `Parser`'s constructor. This ensures that the parser has access to the correct symbol table for the current compilation.
+-   **Member Access:** The `Parser` stores this pointer as a member variable (`symbol_table_`), allowing all parsing methods to access and modify the symbol table as needed.
+
+### Scope Management During Parsing
+
+The parser is responsible for signaling the `SymbolTable` to create and destroy scopes as it encounters different language constructs:
+
+-   **`parseFnDecl()`:** When this method is called to parse a function, it immediately calls `symbol_table_->enterScope()` before parsing the function's body. After the body has been parsed, it calls `symbol_table_->exitScope()`. This ensures that all symbols declared within the function (parameters and local variables) are confined to that function's scope.
+-   **`parseBlockStatement()`:** Similarly, this method calls `enterScope()` upon encountering an opening brace (`{`) and `exitScope()` after consuming the closing brace (`}`). This handles nested block scopes correctly.
+
+### Symbol Registration
+
+-   **`parseVarDecl()`:** When a variable declaration is parsed, this method is now responsible for creating a `Symbol` and inserting it into the symbol table using `symbol_table_->insert()`. This action registers the variable in the current scope.
