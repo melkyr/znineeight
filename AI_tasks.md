@@ -194,11 +194,11 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Basic symbol storage for functions, global variables, and local variables
     - Simple name-to-type mapping using C++98 compatible data structures
     - Constraint Check: Standard symbol table implementation works fine
-83. **Task 83:** Implement basic scope management (DONE)
+83. **Task 83:** Implement basic scope management 
     - Risk Level: LOW
     - Only global and function scopes are needed initially
     - Constraint Check: Scope management is language-independent
-84. **Task 84:** Implement symbol insertion and lookup (DONE)
+84. **Task 84:** Implement symbol insertion and lookup 
     - Risk Level: LOW
     - Basic name resolution for variables/functions with simple duplicate detection
     - Constraint Check: Standard hash table/string interning techniques work
