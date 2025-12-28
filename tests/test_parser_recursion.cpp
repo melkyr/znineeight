@@ -23,3 +23,31 @@ TEST_FUNC(Parser_RecursionLimit) {
 
     return true;
 }
+
+TEST_FUNC(Parser_RecursionLimit_Binary) {
+    // Create a deeply nested binary expression: "1 + 1 + 1 + ..."
+    char source[4096] = {0};
+    strcat(source, "var x: i32 = 1");
+    for (int i = 0; i < 300; ++i) {
+        strcat(source, " + 1");
+    }
+    strcat(source, ";");
+
+    ASSERT_TRUE(expect_statement_parser_abort(source));
+
+    return true;
+}
+
+TEST_FUNC(Parser_RecursionLimit_Unary) {
+    // Create a deeply nested unary expression using `try`, which is recursive.
+    char source[4096] = {0};
+    strcat(source, "var x: i32 = ");
+    for (int i = 0; i < 300; ++i) {
+        strcat(source, "try ");
+    }
+    strcat(source, "1;");
+
+    ASSERT_TRUE(expect_statement_parser_abort(source));
+
+    return true;
+}

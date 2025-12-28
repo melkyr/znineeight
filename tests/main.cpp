@@ -66,11 +66,16 @@ bool expect_parser_abort(const char* source_code) {
     return run_test_in_child_process(source_code, "--run-parser-test");
 }
 
+bool expect_parser_oom_abort(const char* source_code) {
+    return run_test_in_child_process(source_code, "--run-parser-oom-test");
+}
+
 bool expect_statement_parser_abort(const char* source_code) {
     return run_test_in_child_process(source_code, "--run-statement-parser-test");
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(Parser_AbortOnAllocationFailure);
 TEST_FUNC(Lexer_FloatWithUnderscores_IntegerPart);
 TEST_FUNC(Lexer_FloatWithUnderscores_FractionalPart);
 TEST_FUNC(Lexer_FloatWithUnderscores_ExponentPart);
@@ -256,6 +261,8 @@ TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
 // TEST_FUNC(ParserIntegration_ComprehensiveFunction);
 TEST_FUNC(ParserBug_LogicalOperatorSymbol);
 TEST_FUNC(Parser_RecursionLimit);
+TEST_FUNC(Parser_RecursionLimit_Unary);
+TEST_FUNC(Parser_RecursionLimit_Binary);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
@@ -282,11 +289,35 @@ void run_parser_test_and_abort(const char* source_code, bool is_statement_test) 
     exit(0);
 }
 
+void run_parser_oom_test_and_abort(const char* source_code) {
+    // An arena that is JUST big enough for tokenization of a simple expression,
+    // but too small for the parser to allocate any AST nodes.
+    // DynamicArray<Token> will request space for 8 tokens (8 * 24 = 192 bytes).
+    // The first ASTNode allocation is 24 bytes.
+    // So, an arena of size 200 should succeed for the token array, but fail
+    // for the AST node.
+    ArenaAllocator arena(200);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx(source_code, arena, interner);
+    Parser parser = ctx.getParser();
+
+    parser.parseExpression();
+
+    // If we reach here, the parser did NOT abort as expected.
+    exit(0);
+}
+
 int main(int argc, char* argv[]) {
     // Check if the test runner is being invoked in the special mode
     // for testing parser errors.
     if (argc == 3 && strcmp(argv[1], "--run-parser-test") == 0) {
         run_parser_test_and_abort(argv[2], false);
+        return 1; // Should be unreachable
+    }
+
+    if (argc == 3 && strcmp(argv[1], "--run-parser-oom-test") == 0) {
+        run_parser_oom_test_and_abort(argv[2]);
         return 1; // Should be unreachable
     }
 
@@ -298,6 +329,7 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_Parser_AbortOnAllocationFailure,
         test_Lexer_FloatWithUnderscores_IntegerPart,
         test_Lexer_FloatWithUnderscores_FractionalPart,
         test_Lexer_FloatWithUnderscores_ExponentPart,
@@ -462,6 +494,8 @@ int main(int argc, char* argv[]) {
         // test_ParserIntegration_ComprehensiveFunction,
         test_ParserBug_LogicalOperatorSymbol,
         test_Parser_RecursionLimit,
+        test_Parser_RecursionLimit_Unary,
+        test_Parser_RecursionLimit_Binary,
         test_IntegerRangeAmbiguity,
         test_Lexer_MultiLineIntegrationTest,
         test_compilation_unit_creation,

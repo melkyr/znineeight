@@ -430,7 +430,7 @@ The `parseSwitchExpression` function handles the `switch` expression. It adheres
 ### Parser Robustness: Recursion Depth Limit
 To prevent stack overflows when parsing deeply nested or complex expressions, the parser implements a recursion depth limit.
 
-- **Mechanism**: A counter, `recursion_depth_`, is incremented at the start of `parsePrecedenceExpr` and decremented at the end.
+- **Mechanism**: A counter, `recursion_depth_`, is incremented at the start of all major recursive parsing functions, including `parsePrecedenceExpr`, `parseExpression`, `parseUnaryExpr`, and `parsePostfixExpression`. It is decremented before each function returns. The check in `parsePrecedenceExpr` is the most critical, as it handles the self-recursive calls that parse chained binary operators.
 - **Limit**: The maximum depth is defined by `MAX_PARSER_RECURSION_DEPTH` (currently 255).
 - **Behavior**: If the depth exceeds the limit, the parser calls `error()` and aborts compilation, preventing a crash.
 
@@ -1120,7 +1120,7 @@ All fatal parsing errors are routed through the `Parser::error(const char* msg)`
 -   **On Windows (`_WIN32`):** It uses the Win32 API call `OutputDebugStringA` to print a "Parser Error: " prefix followed by the specific error message to the debugger's output console.
 -   **On other platforms:** It produces no output.
 
-After printing the message (on Windows), the function **always** calls `abort()`. This terminates the program immediately, preventing any further processing of the invalid source code.
+After printing the message (on Windows), the function **always** calls `abort()`. This terminates the program immediately, preventing any further processing of the invalid source code. This applies to both syntax errors and critical runtime issues like out-of-memory conditions. An out-of-memory condition during AST node allocation is considered a non-recoverable error, and immediate termination via `abort()` is the desired behavior for this bootstrap compiler.
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
 
