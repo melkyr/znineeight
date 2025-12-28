@@ -6,7 +6,7 @@
 
 // Test 1: Basic navigation with a simple token stream.
 TEST_FUNC(Parser_Navigation_Simple) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("var my_var", arena, interner);
@@ -31,7 +31,7 @@ TEST_FUNC(Parser_Navigation_Simple) {
 
 // Test 3: Boundary check right at the end of the stream.
 TEST_FUNC(Parser_Navigation_BoundaryCheck) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("123", arena, interner);

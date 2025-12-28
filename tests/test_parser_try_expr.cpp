@@ -6,7 +6,7 @@
 bool expect_parser_abort(const char* source_code);
 
 TEST_FUNC(Parser_TryExpr_Simple) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -29,7 +29,7 @@ TEST_FUNC(Parser_TryExpr_Simple) {
 }
 
 TEST_FUNC(Parser_TryExpr_Chained) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

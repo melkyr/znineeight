@@ -5,7 +5,7 @@
 // Test to verify the creation and initialization of an Integer Literal AST node.
 TEST_FUNC(ASTNode_IntegerLiteral)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
     node->type = NODE_INTEGER_LITERAL;
@@ -26,7 +26,7 @@ TEST_FUNC(ASTNode_IntegerLiteral)
 // Test to verify the creation and initialization of a Float Literal AST node.
 TEST_FUNC(ASTNode_FloatLiteral)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
     node->type = NODE_FLOAT_LITERAL;
@@ -43,7 +43,7 @@ TEST_FUNC(ASTNode_FloatLiteral)
 // Test to verify the creation and initialization of a Character Literal AST node.
 TEST_FUNC(ASTNode_CharLiteral)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
     node->type = NODE_CHAR_LITERAL;
@@ -60,7 +60,7 @@ TEST_FUNC(ASTNode_CharLiteral)
 // Test to verify the creation and initialization of a String Literal AST node.
 TEST_FUNC(ASTNode_StringLiteral)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
     const char* test_string = "hello world";
@@ -78,7 +78,7 @@ TEST_FUNC(ASTNode_StringLiteral)
 // Test to verify the creation and initialization of an Identifier AST node.
 TEST_FUNC(ASTNode_Identifier)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
     const char* var_name = "my_variable";
@@ -96,7 +96,7 @@ TEST_FUNC(ASTNode_Identifier)
 // Test to verify the structure of a Unary Operation AST node.
 TEST_FUNC(ASTNode_UnaryOp)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* operand = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
@@ -121,7 +121,7 @@ TEST_FUNC(ASTNode_UnaryOp)
 // Test to verify the structure of a Binary Operation AST node.
 TEST_FUNC(ASTNode_BinaryOp)
 {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* left = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* right = (ASTNode*)arena.alloc(sizeof(ASTNode));

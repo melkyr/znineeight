@@ -3,7 +3,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseDeferStatement) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     const char* source = "defer {;}";

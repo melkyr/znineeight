@@ -4,7 +4,7 @@
 #include "compilation_unit.hpp"
 
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
 
@@ -26,7 +26,7 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
 }
 
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
 

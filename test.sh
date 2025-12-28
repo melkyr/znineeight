@@ -86,7 +86,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-./test_runner
+./test_runner -v
 
 if [ $? -ne 0 ]; then
     echo "Tests failed!"

@@ -4,7 +4,7 @@
 #include <cstring> // For strcmp
 
 TEST_FUNC(Parser_ArraySlice_FullRange) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[0..4]", arena, interner);
@@ -31,7 +31,7 @@ TEST_FUNC(Parser_ArraySlice_FullRange) {
 }
 
 TEST_FUNC(Parser_ArraySlice_EndRangeOnly) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[..4]", arena, interner);
@@ -56,7 +56,7 @@ TEST_FUNC(Parser_ArraySlice_EndRangeOnly) {
 }
 
 TEST_FUNC(Parser_ArraySlice_StartRangeOnly) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[0..]", arena, interner);
@@ -81,7 +81,7 @@ TEST_FUNC(Parser_ArraySlice_StartRangeOnly) {
 }
 
 TEST_FUNC(Parser_ArraySlice_NoRange) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[..]", arena, interner);

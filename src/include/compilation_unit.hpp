@@ -32,7 +32,7 @@ public:
                 break;
             }
         }
-        return Parser(tokens.getData(), tokens.length(), &arena_);
+        return Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
     }
 
     /**

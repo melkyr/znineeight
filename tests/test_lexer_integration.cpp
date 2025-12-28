@@ -10,7 +10,7 @@ static bool compare_floats(double a, double b) {
 }
 
 TEST_FUNC(Lexer_MultiLineIntegrationTest) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source =

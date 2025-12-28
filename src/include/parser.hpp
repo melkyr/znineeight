@@ -4,6 +4,7 @@
 #include "lexer.hpp"
 #include "memory.hpp"
 #include "ast.hpp"
+#include "symbol_table.hpp"
 #include <cstddef> // For size_t
 #include <cassert> // For assert()
 
@@ -30,8 +31,9 @@ public:
      * @param tokens A pointer to the array of tokens from the lexer.
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
+     * @param symbol_table A pointer to the SymbolTable for managing scopes.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena);
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table);
 
     /**
      * @brief Copy constructor.
@@ -47,6 +49,7 @@ public:
           token_count_(other.token_count_),
           current_index_(other.current_index_),
           arena_(other.arena_),
+          symbol_table_(other.symbol_table_),
           recursion_depth_(other.recursion_depth_) {
     }
 
@@ -65,6 +68,7 @@ public:
             token_count_ = other.token_count_;
             current_index_ = other.current_index_;
             arena_ = other.arena_;
+            symbol_table_ = other.symbol_table_;
             recursion_depth_ = other.recursion_depth_;
         }
         return *this;
@@ -288,6 +292,7 @@ private:
     size_t token_count_;
     size_t current_index_;
     ArenaAllocator* arena_;
+    SymbolTable* symbol_table_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
     Token eof_token_; ///< A cached EOF token to return from peekNext()
 

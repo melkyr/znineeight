@@ -25,7 +25,7 @@ struct CopyLogger {
 };
 
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(4096);
     ArenaLifetimeGuard guard(arena);
 
     // Reset counters for this test

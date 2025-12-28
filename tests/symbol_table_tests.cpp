@@ -8,7 +8,7 @@
 bool test_SymbolTable_ScopingAndLookup()
 {
     // Setup the compilation unit which owns all the memory
-    ArenaAllocator arena(2048); // Increased arena size
+    ArenaAllocator arena(4096); // Increased arena size
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();

@@ -11,13 +11,15 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
       arena_(arena),
+      symbol_table_(symbol_table),
       recursion_depth_(0) {
     assert(arena_ != NULL && "ArenaAllocator cannot be null");
+    assert(symbol_table_ != NULL && "SymbolTable cannot be null");
     // Initialize the EOF token.
     eof_token_.type = TOKEN_EOF;
     eof_token_.value.identifier = NULL; // Should be zero-initialized anyway
@@ -943,6 +945,17 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->is_const = is_const;
     var_decl->is_mut = is_mut;
 
+    Symbol symbol = SymbolBuilder(*arena_)
+        .withName(name_token.value.identifier)
+        .ofType(SYMBOL_VARIABLE)
+        // .withType(type_node) // TODO: We need a way to get the Type* from the ASTNode*
+        .atLocation(name_token.location)
+        .build();
+
+    if (!symbol_table_->insert(symbol)) {
+        error("Redeclaration of variable");
+    }
+
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     if (!node) {
         error("Out of memory");
@@ -1051,7 +1064,9 @@ ASTNode* Parser::parseFnDecl() {
     expect(TOKEN_ARROW, "Expected '->' for return type in function declaration");
     ASTNode* return_type_node = parseType();
 
+    symbol_table_->enterScope();
     ASTNode* body_node = parseBlockStatement();
+    symbol_table_->exitScope();
     if (body_node == NULL) {
         error("Failed to parse function body");
     }
@@ -1132,6 +1147,8 @@ ASTNode* Parser::parseStatement() {
 ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
+    symbol_table_->enterScope();
+
     DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!statements) {
         error("Out of memory");
@@ -1143,6 +1160,8 @@ ASTNode* Parser::parseBlockStatement() {
     }
 
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
+
+    symbol_table_->exitScope();
 
     ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     if (!block_node) {
