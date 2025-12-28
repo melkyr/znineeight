@@ -78,6 +78,8 @@ TEST_FUNC(Lexer_FloatWithUnderscores_AllParts);
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(lexer_integer_overflow);
+TEST_FUNC(lexer_c_string_literal);
 TEST_FUNC(lexer_handles_tab_correctly);
 TEST_FUNC(lexer_handles_unicode_correctly);
 TEST_FUNC(lexer_handles_unterminated_char_hex_escape);
@@ -466,6 +468,8 @@ int main(int argc, char* argv[]) {
         test_compilation_unit_var_decl,
         test_Parser_CopyIsSafeAndDoesNotDoubleFree,
         test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
+        test_lexer_integer_overflow,
+        test_lexer_c_string_literal,
         test_lexer_handles_tab_correctly,
         test_lexer_handles_unicode_correctly,
         test_lexer_handles_unterminated_char_hex_escape,

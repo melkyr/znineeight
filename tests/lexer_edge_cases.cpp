@@ -5,6 +5,7 @@
 #include "memory.hpp"
 #include "compilation_unit.hpp"
 #include "test_utils.hpp"
+#include <cstring> // For strlen
 
 // Test function implementations will go here.
 
@@ -116,4 +117,45 @@ TEST_FUNC(lexer_handles_long_identifier) {
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
     ASSERT_STREQ(long_identifier, token.value.identifier);
     return 1;
+}
+
+TEST_FUNC(lexer_integer_overflow);
+TEST_FUNC(lexer_c_string_literal);
+
+bool test_lexer_integer_overflow() {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    // u64_max is 18446744073709551615, so this is u64_max + 1
+    const char* source = "18446744073709551616";
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+
+    Lexer lexer(sm, interner, arena, file_id);
+    Token token = lexer.nextToken();
+
+    ASSERT_EQ(TOKEN_ERROR, token.type);
+
+    return true;
+}
+
+bool test_lexer_c_string_literal() {
+    ArenaAllocator arena(1024);
+    StringInterner interner(arena);
+    SourceManager sm(arena);
+    const char* source = "c\"hello\"";
+    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+
+    Lexer lexer(sm, interner, arena, file_id);
+
+    // First token should be the identifier 'c'
+    Token token1 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_IDENTIFIER, token1.type);
+    ASSERT_STREQ("c", token1.value.identifier);
+
+    // Second token should be the string literal "hello"
+    Token token2 = lexer.nextToken();
+    ASSERT_EQ(TOKEN_STRING_LITERAL, token2.type);
+    ASSERT_STREQ("hello", token2.value.identifier);
+
+    return true;
 }

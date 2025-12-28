@@ -44,8 +44,8 @@ This section tracks the implementation status of all tokens required for the Ret
 | Token Type              | Example      | Implemented | Notes                                  |
 | ----------------------- | ------------ | ----------- | -------------------------------------- |
 | `TOKEN_IDENTIFIER`      | `my_var`     | Yes         | Now stores its value in the string interner. No longer has a length limit. |
-| `TOKEN_INTEGER_LITERAL` | `123`, `0xFF`| Yes         | Implemented as part of Task 17.        |
-| `TOKEN_STRING_LITERAL`  | `"hello"`    | Yes         | Now supports escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\xNN`. Also supports C-style strings (c"hello") and multiline strings ("hello\\\nworld"). |
+| `TOKEN_INTEGER_LITERAL` | `123`, `0xFF`| Yes         | Now correctly handles u64 overflow by returning `TOKEN_ERROR`. |
+| `TOKEN_STRING_LITERAL`  | `"hello"`    | Yes         | Supports escape sequences: `\n`, `\r`, `\t`, `\\`, `\"`, `\xNN`, and multiline strings ("hello\\\nworld"). |
 | `TOKEN_CHAR_LITERAL`    | `'a'`        | Yes         | Now supports Unicode escape sequences (e.g., `\u{1F4A9}`) with validation. |
 | `TOKEN_FLOAT_LITERAL`   | `3.14`       | Yes         | Implemented as part of Task 19.        |
 

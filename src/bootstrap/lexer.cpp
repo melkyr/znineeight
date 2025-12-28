@@ -63,6 +63,54 @@ double Lexer::parseDecimalFloat(const char* start, const char** end) {
 #include <cmath>   // For ldexp
 #include <cstring> // For memcmp, strncmp
 
+/**
+ * @brief Parses an integer from a string slice into a u64, with overflow detection.
+ *
+ * This function manually parses a string of digits into a 64-bit unsigned
+ * integer. It supports decimal (base 10) and hexadecimal (base 16) literals.
+ * It includes an overflow check to ensure that the parsed value does not
+ * exceed the maximum value for a u64.
+ *
+ * @param start A pointer to the beginning of the string slice to parse.
+ * @param end A pointer to the end of the string slice to parse.
+ * @param out_value A pointer to a u64 that will be populated with the parsed value.
+ * @return `true` if the integer was parsed successfully, `false` if an overflow occurred.
+ */
+static bool parseInteger(const char* start, const char* end, u64* out_value) {
+    u64 result = 0;
+    int base = 10;
+    const char* p = start;
+    const u64 u64_max = 0xFFFFFFFFFFFFFFFFULL;
+
+    if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        base = 16;
+        p += 2;
+    }
+
+    for (; p < end; ++p) {
+        if (*p == '_') continue;
+        int digit;
+        if (*p >= '0' && *p <= '9') {
+            digit = *p - '0';
+        } else if (base == 16 && *p >= 'a' && *p <= 'f') {
+            digit = *p - 'a' + 10;
+        } else if (base == 16 && *p >= 'A' && *p <= 'F') {
+            digit = *p - 'A' + 10;
+        } else {
+            break;
+        }
+
+        if (result > (u64_max - digit) / base) {
+            return false; // Overflow detected
+        }
+        result = result * base + digit;
+    }
+
+    *out_value = result;
+    return true;
+}
+
+
 // Keyword lookup table.
 // IMPORTANT: This array is sorted ALPHABETICALLY by name.
 const Keyword keywords[] = {
@@ -408,11 +456,15 @@ Token Lexer::lexNumericLiteral() {
         }
 
     } else {
-        // Use the new custom parser for 64-bit integers
-        token.value.integer = parseInteger(start, end_ptr);
+        u64 value;
+        if (parseInteger(start, end_ptr, &value)) {
+            token.value.integer = value;
+            token.type = TOKEN_INTEGER_LITERAL;
+        } else {
+            token.type = TOKEN_ERROR;
+        }
         this->column += (end_ptr - start);
         this->current = (char*)end_ptr;
-        token.type = TOKEN_INTEGER_LITERAL;
     }
 
     return token;
@@ -431,34 +483,6 @@ Token Lexer::lexNumericLiteral() {
  * @param end A pointer to the end of the string slice to parse.
  * @return The parsed `u64` integer value.
  */
-u64 Lexer::parseInteger(const char* start, const char* end) {
-    u64 result = 0;
-    int base = 10;
-    const char* p = start;
-
-    if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        base = 16;
-        p += 2;
-    }
-
-    for (; p < end; ++p) {
-        if (*p == '_') continue;
-        int digit;
-        if (*p >= '0' && *p <= '9') {
-            digit = *p - '0';
-        } else if (base == 16 && *p >= 'a' && *p <= 'f') {
-            digit = *p - 'a' + 10;
-        } else if (base == 16 && *p >= 'A' && *p <= 'F') {
-            digit = *p - 'A' + 10;
-        } else {
-            // This should not happen if the caller has correctly identified the end of the number.
-            break;
-        }
-        result = result * base + digit;
-    }
-
-    return result;
-}
 
 /**
  * @brief Scans and returns the next token from the source code.
@@ -668,11 +692,6 @@ Token Lexer::nextToken() {
             token = lexStringLiteral();
             break;
         default:
-            if (c == 'c' && this->current[0] == '"') {
-                this->current++; // Consume the "
-                this->column++;
-                return lexStringLiteral();
-            }
             if (isIdentifierStart(c)) {
                 this->current--;
                 this->column--;
