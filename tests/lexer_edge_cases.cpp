@@ -124,15 +124,15 @@ TEST_FUNC(lexer_c_string_literal);
 
 bool test_lexer_integer_overflow() {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit comp_unit(arena, interner);
+
     // u64_max is 18446744073709551615, so this is u64_max + 1
-    const char* source = "18446744073709551616";
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+    u32 file_id = comp_unit.addSource("test.zig", "18446744073709551616");
+    Parser parser = comp_unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, file_id);
-    Token token = lexer.nextToken();
-
+    Token token = parser.peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
 
     return true;
@@ -140,20 +140,23 @@ bool test_lexer_integer_overflow() {
 
 bool test_lexer_c_string_literal() {
     ArenaAllocator arena(1024);
+    ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    const char* source = "c\"hello\"";
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
+    CompilationUnit comp_unit(arena, interner);
 
-    Lexer lexer(sm, interner, arena, file_id);
+    u32 file_id = comp_unit.addSource("test.zig", "c\"hello\"");
+    Parser parser = comp_unit.createParser(file_id);
 
     // First token should be the identifier 'c'
-    Token token1 = lexer.nextToken();
+    Token token1 = parser.peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token1.type);
     ASSERT_STREQ("c", token1.value.identifier);
 
+    // Advance the parser to the next token
+    parser.advance();
+
     // Second token should be the string literal "hello"
-    Token token2 = lexer.nextToken();
+    Token token2 = parser.peek();
     ASSERT_EQ(TOKEN_STRING_LITERAL, token2.type);
     ASSERT_STREQ("hello", token2.value.identifier);
 
