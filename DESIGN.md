@@ -243,22 +243,49 @@ struct Type {
   | *T | *const T | ✓ | - |
 
 ### 4.4 Layer 4: Symbol Table (`symbol_table.hpp`)
+**Concept:** A hierarchical table for managing identifiers (variables, functions, types) across different scopes. It is designed to be extensible to support the growing complexity of the language.
+
+**Scoping:** The table uses a stack of `Scope` objects. When the parser enters a new block, it calls `enterScope()`, and when it exits, it calls `exitScope()`. Lookups search from the innermost scope outwards, correctly handling symbol shadowing.
+
+**Symbol Creation:** To manage the creation of increasingly complex `Symbol` structs, a `SymbolBuilder` is used. This follows the Builder pattern, allowing for clear and flexible symbol construction.
+
 ```cpp
+// The core identifier structure, expanded for richer semantics.
 struct Symbol {
-    enum Kind { VARIABLE, FUNCTION, TYPE } kind;
     const char* name;
-    Type* type;
-    u32 address_offset;  // For variables
-    ASTNode* definition;         // Pointer to AST node
+    SymbolType type;
+    SourceLocation location; // Where the symbol was defined
+    void* details;           // Pointer to an ASTNode (e.g., ASTStructDeclNode)
+    unsigned int scope_level;
+    unsigned int flags;      // e.g., MUTABLE, CONST
 };
 
-class SymbolTable {
-    DynamicArray<Symbol>* symbols;
-    ArenaAllocator* arena;
+// Builder for ergonomic Symbol creation.
+class SymbolBuilder {
 public:
-    SymbolTable(ArenaAllocator* allocator);
-    Symbol* lookup(const char* name);
-    void insert(Symbol& sym);
+    SymbolBuilder(ArenaAllocator& arena);
+    SymbolBuilder& withName(const char* name);
+    SymbolBuilder& ofType(SymbolType type);
+    // ... other setters ...
+    Symbol build();
+};
+
+// A single level in the scope stack.
+struct Scope {
+    DynamicArray<Symbol> symbols;
+    Scope(ArenaAllocator& arena);
+};
+
+// The main symbol table class.
+class SymbolTable {
+    ArenaAllocator& arena_;
+    DynamicArray<Scope*> scopes;
+public:
+    SymbolTable(ArenaAllocator& arena);
+    void enterScope();
+    void exitScope();
+    bool insert(const Symbol& symbol); // Inserts into the current scope.
+    Symbol* lookup(const char* name);  // Searches from current scope outwards.
 };
 ```
 

@@ -69,6 +69,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_compilation_unit.cpp \
     tests/type_system_tests.cpp \
     tests/symbol_table_tests.cpp \
+    tests/symbol_builder_tests.cpp \
     tests/test_parser_lifecycle.cpp \
     tests/lexer_edge_cases.cpp \
     tests/lexer_fixes.cpp \

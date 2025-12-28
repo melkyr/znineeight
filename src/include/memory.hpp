@@ -170,6 +170,32 @@ public:
     }
 
     /**
+     * @brief Removes the last element from the array.
+     * Does not call the destructor on the removed element.
+     */
+    void pop_back() {
+        if (len > 0) {
+            --len;
+        }
+    }
+
+    /**
+     * @brief Returns a reference to the last element in the array.
+     */
+    T& back() {
+        assert(len > 0);
+        return data[len - 1];
+    }
+
+    /**
+     * @brief Returns a const reference to the last element in the array.
+     */
+    const T& back() const {
+        assert(len > 0);
+        return data[len - 1];
+    }
+
+    /**
      * @brief Returns the number of elements in the array.
      */
     size_t length() const {

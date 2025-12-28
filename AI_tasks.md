@@ -189,16 +189,16 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Focus only on types that map directly to C89: i8, i16, i32, i64, u8, u16, u32, u64, isize, usize, f32, f64, bool, void, *T
     - No advanced Zig types like slices, error unions, or optionals for now
     - Constraint Check: All these types can map to C89 equivalent types
-82. **Task 82:** Implement minimal Symbol struct and SymbolTable
+82. **Task 82:** Implement minimal Symbol struct and SymbolTable (DONE)
     - Risk Level: LOW
     - Basic symbol storage for functions, global variables, and local variables
     - Simple name-to-type mapping using C++98 compatible data structures
     - Constraint Check: Standard symbol table implementation works fine
-83. **Task 83:** Implement basic scope management
+83. **Task 83:** Implement basic scope management (DONE)
     - Risk Level: LOW
     - Only global and function scopes are needed initially
     - Constraint Check: Scope management is language-independent
-84. **Task 84:** Implement symbol insertion and lookup
+84. **Task 84:** Implement symbol insertion and lookup (DONE)
     - Risk Level: LOW
     - Basic name resolution for variables/functions with simple duplicate detection
     - Constraint Check: Standard hash table/string interning techniques work
