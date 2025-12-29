@@ -3,32 +3,54 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <string.h> // For strcpy, strcat
+#include <string.h> // For strlen
 
-// A simple itoa implementation to avoid sprintf
-static void u32_to_string(u32 value, char* buffer) {
-    char* p = buffer;
+// --- Safe String Building Helpers ---
+
+// Appends a null-terminated C-string to the buffer.
+static void append_string(DynamicArray<char>& buffer, const char* str) {
+    if (!str) return;
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len; ++i) {
+        buffer.append(str[i]);
+    }
+}
+
+// Appends a substring to the buffer.
+static void append_substring(DynamicArray<char>& buffer, const char* start, const char* end) {
+    if (!start || !end || start >= end) return;
+    for (const char* p = start; p < end; ++p) {
+        buffer.append(*p);
+    }
+}
+
+// Appends a sequence of characters to the buffer.
+static void append_chars(DynamicArray<char>& buffer, char c, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        buffer.append(c);
+    }
+}
+
+// Converts a u32 to a string and appends it to the buffer.
+static void append_u32(DynamicArray<char>& buffer, u32 value) {
     if (value == 0) {
-        *p++ = '0';
-        *p = '\0';
+        buffer.append('0');
         return;
     }
 
+    char num_buffer[11]; // Max 10 digits for u32 + null terminator
+    char* p = &num_buffer[10];
+    *p = '\0';
+
     u32 temp = value;
-    int len = 0;
-    while (temp > 0) {
+    do {
+        *--p = '0' + (temp % 10);
         temp /= 10;
-        len++;
-    }
+    } while (temp > 0);
 
-    p += len;
-    *p-- = '\0';
-
-    while (value > 0) {
-        *p-- = '0' + (value % 10);
-        value /= 10;
-    }
+    append_string(buffer, p);
 }
+
 #else
 #include <cstdio> // For fprintf, stderr
 #endif
@@ -44,25 +66,23 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
 
 void ErrorHandler::printErrors() {
 #ifdef _WIN32
+    DynamicArray<char> buffer(arena_);
     for (size_t i = 0; i < errors_.length(); ++i) {
         const ErrorReport& report = errors_[i];
         const SourceFile* file = source_manager.getFile(report.location.file_id);
 
-        char buffer[512];
-        char num_buffer[12];
-
         // Format: filename:line:column: error: message
-        strcpy(buffer, file->filename);
-        strcat(buffer, ":");
-        u32_to_string(report.location.line, num_buffer);
-        strcat(buffer, num_buffer);
-        strcat(buffer, ":");
-        u32_to_string(report.location.column, num_buffer);
-        strcat(buffer, num_buffer);
-        strcat(buffer, ": error: ");
-        strcat(buffer, report.message);
-        strcat(buffer, "\n");
-        OutputDebugStringA(buffer);
+        buffer.clear();
+        append_string(buffer, file->filename);
+        append_string(buffer, ":");
+        append_u32(buffer, report.location.line);
+        append_string(buffer, ":");
+        append_u32(buffer, report.location.column);
+        append_string(buffer, ": error: ");
+        append_string(buffer, report.message);
+        append_string(buffer, "\n");
+        buffer.append('\0'); // Null-terminate
+        OutputDebugStringA(buffer.data());
 
         // Find and print the line of code
         const char* line_start = file->content;
@@ -81,26 +101,28 @@ void ErrorHandler::printErrors() {
         }
 
         // Print the line
-        char line_buffer[512];
-        strcpy(line_buffer, "    ");
-        strncat(line_buffer, line_start, line_end - line_start);
-        strcat(line_buffer, "\n");
-        OutputDebugStringA(line_buffer);
+        buffer.clear();
+        append_string(buffer, "    ");
+        append_substring(buffer, line_start, line_end);
+        append_string(buffer, "\n");
+        buffer.append('\0');
+        OutputDebugStringA(buffer.data());
 
         // Print the caret
-        char caret_buffer[512];
-        strcpy(caret_buffer, "    ");
-        for (u32 col = 1; col < report.location.column; ++col) {
-            strcat(caret_buffer, " ");
-        }
-        strcat(caret_buffer, "^\n");
-        OutputDebugStringA(caret_buffer);
+        buffer.clear();
+        append_string(buffer, "    ");
+        append_chars(buffer, ' ', report.location.column > 0 ? report.location.column - 1 : 0);
+        append_string(buffer, "^\n");
+        buffer.append('\0');
+        OutputDebugStringA(buffer.data());
 
         if (report.hint) {
-            strcpy(buffer, "    hint: ");
-            strcat(buffer, report.hint);
-            strcat(buffer, "\n");
-            OutputDebugStringA(buffer);
+            buffer.clear();
+            append_string(buffer, "    hint: ");
+            append_string(buffer, report.hint);
+            append_string(buffer, "\n");
+            buffer.append('\0');
+            OutputDebugStringA(buffer.data());
         }
     }
 #else

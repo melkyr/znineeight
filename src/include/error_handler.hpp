@@ -66,6 +66,7 @@ struct ErrorReport {
 class ErrorHandler {
 private:
     SourceManager& source_manager;
+    ArenaAllocator& arena_;
     DynamicArray<ErrorReport> errors_;
 
 public:
@@ -75,7 +76,7 @@ public:
      * @param arena The arena allocator to use for the error list.
      */
     ErrorHandler(SourceManager& sm, ArenaAllocator& arena)
-        : source_manager(sm), errors_(arena) {}
+        : source_manager(sm), arena_(arena), errors_(arena) {}
 
     /**
      * @brief Reports a new error.
