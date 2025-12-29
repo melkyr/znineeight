@@ -29,9 +29,10 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EMPTY_STMT:       return visitEmptyStmt(&node->as.empty_stmt);
         case NODE_IF_STMT:          return visitIfStmt(node->as.if_stmt);
         case NODE_WHILE_STMT:       return visitWhileStmt(&node->as.while_stmt);
-        case NODE_RETURN_STMT:      return visitReturnStmt(&node->as.return_stmt);
+        case NODE_RETURN_STMT:      return visitReturnStmt(node, &node->as.return_stmt);
         case NODE_DEFER_STMT:       return visitDeferStmt(&node->as.defer_stmt);
         case NODE_FOR_STMT:         return visitForStmt(node->as.for_stmt);
+        case NODE_EXPRESSION_STMT:  return visitExpressionStmt(&node->as.expression_stmt);
         case NODE_SWITCH_EXPR:      return visitSwitchExpr(node->as.switch_expr);
         case NODE_VAR_DECL:         return visitVarDecl(node->as.var_decl);
         case NODE_FN_DECL:          return visitFnDecl(node->as.fn_decl);
@@ -106,9 +107,8 @@ Type* TypeChecker::visitCharLiteral(ASTCharLiteralNode* node) {
 }
 
 Type* TypeChecker::visitStringLiteral(ASTStringLiteralNode* node) {
-    // In a future step, this would be a slice type, e.g., []const u8.
-    // For now, return a distinct non-null type to allow for mismatch detection.
-    return resolvePrimitiveTypeName("void");
+    Type* char_type = resolvePrimitiveTypeName("u8");
+    return createPointerType(unit.getArena(), char_type);
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
@@ -146,10 +146,14 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitReturnStmt(ASTReturnStmtNode* node) {
-    if (node->expression) {
-        visit(node->expression);
+Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
+    Type* return_type = node->expression ? visit(node->expression) : resolvePrimitiveTypeName("void");
+
+    if (current_fn_return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
+        SourceLocation loc = node->expression ? node->expression->loc : parent->loc;
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Return type mismatch");
     }
+
     return NULL;
 }
 
@@ -182,11 +186,14 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 }
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
+    Type* prev_fn_return_type = current_fn_return_type;
+    current_fn_return_type = node->return_type ? visit(node->return_type) : resolvePrimitiveTypeName("void");
+
     // TODO: Visit params
-    if (node->return_type) {
-        visit(node->return_type);
-    }
+
     visit(node->body);
+
+    current_fn_return_type = prev_fn_return_type;
     return NULL;
 }
 
@@ -241,4 +248,38 @@ Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
 Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
     visit(node->expression);
     return NULL;
+}
+
+Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
+    visit(node->expression);
+    return NULL; // Expression statements don't have a type
+}
+
+bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
+    if (expected == actual) {
+        return true;
+    }
+
+    if (!expected || !actual) {
+        return false;
+    }
+
+    // Widening for signed integers
+    if (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64 &&
+        expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) {
+        return actual->kind <= expected->kind;
+    }
+
+    // Widening for unsigned integers
+    if (actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64 &&
+        expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64) {
+        return actual->kind <= expected->kind;
+    }
+
+    // Widening for floats
+    if (actual->kind == TYPE_F32 && expected->kind == TYPE_F64) {
+        return true;
+    }
+
+    return false;
 }

@@ -281,6 +281,13 @@ TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope);
 TEST_FUNC(TypeCheckerValidDeclarations);
 TEST_FUNC(TypeCheckerInvalidDeclarations);
 TEST_FUNC(TypeCheckerUndeclaredVariable);
+TEST_FUNC(TypeCheckerStringLiteralType);
+TEST_FUNC(TypeCheckerIntegerLiteralType);
+TEST_FUNC(TypeCompatibility_StrictEquality);
+TEST_FUNC(TypeCompatibility_Widening);
+TEST_FUNC(TypeCompatibility_InvalidConversions);
+TEST_FUNC(ReturnTypeValidation_Valid);
+TEST_FUNC(ReturnTypeValidation_Invalid);
 
 
 // This function is executed in a child process by the error handling test.
@@ -545,6 +552,13 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerValidDeclarations,
         test_TypeCheckerInvalidDeclarations,
         test_TypeCheckerUndeclaredVariable,
+        test_TypeCheckerStringLiteralType,
+        test_TypeCheckerIntegerLiteralType,
+        test_TypeCompatibility_StrictEquality,
+        test_TypeCompatibility_Widening,
+        test_TypeCompatibility_InvalidConversions,
+        test_ReturnTypeValidation_Valid,
+        test_ReturnTypeValidation_Invalid,
     };
 
     int passed = 0;

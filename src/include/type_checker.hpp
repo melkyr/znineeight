@@ -10,14 +10,7 @@ public:
     TypeChecker(CompilationUnit& unit);
 
     void check(ASTNode* root);
-
-private:
-    CompilationUnit& unit;
-    Type* current_fn_return_type;
-
     Type* visit(ASTNode* node);
-
-    // Visitor methods for each AST node type
     Type* visitUnaryOp(ASTUnaryOpNode* node);
     Type* visitBinaryOp(ASTBinaryOpNode* node);
     Type* visitFunctionCall(ASTFunctionCallNode* node);
@@ -33,9 +26,10 @@ private:
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
-    Type* visitReturnStmt(ASTReturnStmtNode* node);
+    Type* visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node);
     Type* visitDeferStmt(ASTDeferStmtNode* node);
     Type* visitForStmt(ASTForStmtNode* node);
+    Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
     Type* visitVarDecl(ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
@@ -49,6 +43,11 @@ private:
     Type* visitCatchExpr(ASTCatchExprNode* node);
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
+    bool areTypesCompatible(Type* expected, Type* actual);
+private:
+    CompilationUnit& unit;
+    Type* current_fn_return_type;
+
 };
 
 #endif // TYPE_CHECKER_HPP

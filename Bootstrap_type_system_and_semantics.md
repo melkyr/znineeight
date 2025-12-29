@@ -76,33 +76,37 @@ struct Type {
 
 The bootstrap type checker enforces a set of strict rules for type compatibility to prevent errors and ensure that the generated C89 code is valid.
 
+### `areTypesCompatible` Function
+
+The core of type compatibility is the `areTypesCompatible(Type* expected, Type* actual)` method in the `TypeChecker`. It returns `true` if a value of the `actual` type can be used where a value of the `expected` type is required.
+
 ### Implicit Coercion (Widening)
 
-Implicit type coercion is only allowed for "safe" conversions where no data loss can occur. This is primarily limited to widening integer types.
+The compatibility function allows for "safe" implicit conversions where no data loss can occur. This is primarily limited to widening numeric types.
 
--   A signed integer can be implicitly converted to a signed integer of a larger size (e.g., `i8` -> `i16`, `i16` -> `i32`).
--   An unsigned integer can be implicitly converted to an unsigned integer of a larger size (e.g., `u8` -> `u16`, `u16` -> `u32`).
--   A floating-point number can be implicitly widened (`f32` -> `f64`).
+-   **Integer Widening:** A signed integer can be implicitly converted to a signed integer of a larger or equal size (e.g., `i8` -> `i16`, `i16` -> `i32`). The same applies to unsigned integers.
+-   **Float Widening:** A single-precision float (`f32`) can be implicitly converted to a double-precision float (`f64`).
 
 ### Explicit Coercion (Casting)
 
-All other conversions must be explicit. This includes:
--   Conversions between integer types that may result in data loss (e.g., `i32` -> `i16`).
+All other conversions must be explicit and are not currently supported by the `areTypesCompatible` function. This includes:
+-   Conversions that may result in data loss (e.g., `i32` -> `i16`).
 -   Conversions between signed and unsigned integers.
 -   Conversions between integer and floating-point types.
 -   Conversions between pointer types (e.g., `*i32` to `*u8`).
 
 ### Type Compatibility Matrix
 
-The following table summarizes the allowed implicit and explicit conversions:
+The following table summarizes the allowed implicit conversions:
 
-| From Type | To Type       | Implicit | Explicit | Notes                               |
-|-----------|---------------|----------|----------|-------------------------------------|
-| `i8`      | `i16`, `i32`, `i64` | ✓        | -        | Safe widening conversion.           |
-| `u8`      | `u16`, `u32`, `u64` | ✓        | -        | Safe widening conversion.           |
-| `i32`     | `f32`, `f64`    | -        | ✓        | Requires an explicit cast.          |
-| `f32`     | `f64`         | ✓        | -        | Safe widening conversion.           |
-| `*T`      | `*U`          | -        | ✓        | Requires an explicit cast.          |
+| From Type (`actual`) | To Type (`expected`) | Implicitly Compatible? | Notes                     |
+|----------------------|----------------------|------------------------|---------------------------|
+| `i8`                 | `i16`, `i32`, `i64`    | ✓                      | Safe widening conversion. |
+| `u8`                 | `u16`, `u32`, `u64`    | ✓                      | Safe widening conversion. |
+| `f32`                | `f64`                | ✓                      | Safe widening conversion. |
+| `T`                  | `T`                  | ✓                      | Types are identical.      |
+| Any other combination| -                    | ✗                      | Requires explicit cast.   |
+
 
 ## 4. Semantic Analysis
 
@@ -160,6 +164,23 @@ public:
 
 -   The analyzer will check that the type of the initializer expression is compatible with the declared type of the variable.
 -   It will ensure that a variable is not redefined within the same scope.
+
+### Function Declarations and Return Types
+
+The `TypeChecker` validates that the type of a returned expression is compatible with the function's declared return type.
+-   During the traversal of an `ASTFnDeclNode`, the `TypeChecker` records the function's return type.
+-   When it encounters an `ASTReturnStmtNode`, it compares the type of the return expression (or `void` if there is no expression) with the recorded return type using `areTypesCompatible`.
+-   If the types are not compatible, it reports a `ERR_TYPE_MISMATCH` error.
+
+### Literals
+
+#### Integer Literals
+The type of an integer literal is determined by its value to be C89-compliant.
+- If the value fits within a 32-bit signed integer (`-2147483648` to `2147483647`), its type is `i32`.
+- Otherwise, its type is `i64`.
+
+#### String Literals
+A string literal is given the type "pointer to `u8`", which is represented as `*u8`. This is a simplification for the bootstrap phase; a more advanced compiler would use a slice type like `[]const u8`.
 
 ### Function Calls
 
@@ -234,6 +255,9 @@ A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduce
 
 This mechanism allows the parser to easily obtain a valid `Type*` for a symbol by looking up the type name found in the source code.
 
+### `createPointerType`
+A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type)`, has been added to facilitate the creation of pointer types. It allocates a new `Type` object from the arena, sets its kind to `TYPE_POINTER`, and links it to the provided base type.
+
 ## 7. Parser Integration
 
 To make the symbol table functional, it is integrated directly into the parsing process. This allows the parser to manage scopes and register symbols as it traverses the source code.
@@ -244,6 +268,9 @@ To make the symbol table functional, it is integrated directly into the parsing 
 -   **Scope Handling:** The parser is responsible for signaling the `SymbolTable` to create and destroy scopes.
     -   `parseFnDecl()` calls `enterScope()` before parsing the function body and `exitScope()` after, creating a dedicated scope for the function's contents.
     -   `parseBlockStatement()` does the same upon encountering `{` and `}` respectively, allowing for correct nested block scoping.
+
+### Expression Statements
+The parser now supports "expression statements", which are statements that consist of a single expression followed by a semicolon (e.g., `my_function();` or `"a string";`). This is handled by a new `NODE_EXPRESSION_STMT` in the AST.
 
 ### Symbol Registration During Parsing
 
@@ -286,4 +313,4 @@ The results from both methods were consistent and conclusive:
 
 ### Conclusion
 
-The memory allocation strategy is sound. The compiler components have a minimal and controlled memory footprint, and the arena-based approach is effectively preventing memory leaks. The observed increases in memory usage are a natural result of the project's evolution and do not indicate an underlying issue.
+The memory allocation strategy is sound. The compiler components have a minimal and controlled memory footprint, and the an arena-based approach is effectively preventing memory leaks. The observed increases in memory usage are a natural result of the project's evolution and do not indicate an underlying issue.

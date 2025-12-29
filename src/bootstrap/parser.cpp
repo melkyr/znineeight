@@ -1210,9 +1210,19 @@ ASTNode* Parser::parseStatement() {
             empty_stmt_node->loc = semi_token.location;
             return empty_stmt_node;
         }
-        default:
-            error("Expected a statement");
-            return NULL; // Unreachable
+        default: {
+            ASTNode* expr = parseExpression();
+            expect(TOKEN_SEMICOLON, "Expected ';' after expression statement");
+
+            ASTNode* stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!stmt_node) {
+                error("Out of memory");
+            }
+            stmt_node->type = NODE_EXPRESSION_STMT;
+            stmt_node->loc = expr->loc;
+            stmt_node->as.expression_stmt.expression = expr;
+            return stmt_node;
+        }
     }
 }
 

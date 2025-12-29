@@ -36,10 +36,10 @@ TEST_FUNC(TypeCheckerValidDeclarations) {
     return true;
 }
 
-TEST_FUNC(TypeCheckerUndeclaredVariable) {
+TEST_FUNC(TypeCheckerInvalidDeclarations) {
     ArenaAllocator arena(4096);
     StringInterner interner(arena);
-    const char* source = "var x: i32 = y;";
+    const char* source = "var x: i32 = \"hello\";";
     ParserTestContext context(source, arena, interner);
     Parser parser = context.getParser();
     ASTNode* root = parser.parse();
@@ -50,10 +50,72 @@ TEST_FUNC(TypeCheckerUndeclaredVariable) {
     return true;
 }
 
-TEST_FUNC(TypeCheckerInvalidDeclarations) {
+TEST_FUNC(TypeCheckerStringLiteralType) {
     ArenaAllocator arena(4096);
     StringInterner interner(arena);
-    const char* source = "var x: i32 = \"hello\";";
+    const char* source = "fn my_func() -> void { \"hello world\"; }";
+    ParserTestContext context(source, arena, interner);
+    Parser parser = context.getParser();
+    ASTNode* root = parser.parse();
+
+    // Traverse the AST to find the string literal
+    ASTNode* fn_decl_node = (*root->as.block_stmt.statements)[0];
+    ASTNode* body_node = fn_decl_node->as.fn_decl->body;
+    ASTNode* expr_stmt_node = (*body_node->as.block_stmt.statements)[0];
+    ASTNode* string_literal_node = expr_stmt_node->as.expression_stmt.expression;
+
+    ASSERT_EQ(string_literal_node->type, NODE_STRING_LITERAL);
+
+    TypeChecker checker(context.getCompilationUnit());
+    Type* result_type = checker.visit(string_literal_node);
+
+    ASSERT_TRUE(result_type != NULL);
+    ASSERT_EQ(result_type->kind, TYPE_POINTER);
+    ASSERT_TRUE(result_type->as.pointer.base != NULL);
+    ASSERT_EQ(result_type->as.pointer.base->kind, TYPE_U8);
+
+    return true;
+}
+
+TEST_FUNC(TypeCheckerIntegerLiteralType) {
+    ArenaAllocator arena(4096);
+    StringInterner interner(arena);
+    // Create a dummy context to initialize the CompilationUnit for the TypeChecker
+    ParserTestContext context("", arena, interner);
+    TypeChecker checker(context.getCompilationUnit());
+
+    // Test case for i32 max
+    ASTIntegerLiteralNode node_i32_max;
+    node_i32_max.value = 2147483647;
+    Type* type_i32_max = checker.visitIntegerLiteral(&node_i32_max);
+    ASSERT_EQ(type_i32_max->kind, TYPE_I32);
+
+    // Test case for i32 min
+    ASTIntegerLiteralNode node_i32_min;
+    node_i32_min.value = -2147483648;
+    Type* type_i32_min = checker.visitIntegerLiteral(&node_i32_min);
+    ASSERT_EQ(type_i32_min->kind, TYPE_I32);
+
+    // Test case for value just over i32 max
+    ASTIntegerLiteralNode node_i64_over;
+    node_i64_over.value = 2147483648;
+    Type* type_i64_over = checker.visitIntegerLiteral(&node_i64_over);
+    ASSERT_EQ(type_i64_over->kind, TYPE_I64);
+
+    // Test case for value just under i32 min
+    ASTIntegerLiteralNode node_i64_under;
+    node_i64_under.value = -2147483649LL; // Use LL for long long
+    Type* type_i64_under = checker.visitIntegerLiteral(&node_i64_under);
+    ASSERT_EQ(type_i64_under->kind, TYPE_I64);
+
+    return true;
+}
+
+
+TEST_FUNC(TypeCheckerUndeclaredVariable) {
+    ArenaAllocator arena(4096);
+    StringInterner interner(arena);
+    const char* source = "var x: i32 = y;";
     ParserTestContext context(source, arena, interner);
     Parser parser = context.getParser();
     ASTNode* root = parser.parse();
