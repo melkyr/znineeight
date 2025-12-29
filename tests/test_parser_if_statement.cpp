@@ -6,7 +6,7 @@
 bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_IfStatement_Simple) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("if (1) {}", arena, interner);
@@ -28,7 +28,7 @@ TEST_FUNC(Parser_IfStatement_Simple) {
 }
 
 TEST_FUNC(Parser_IfStatement_WithElse) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("if (1) {} else {}", arena, interner);

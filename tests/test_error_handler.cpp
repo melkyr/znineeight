@@ -17,7 +17,7 @@
 
 bool test_print_error_report() {
     // 1. Setup
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     SourceManager sm(arena);
     ErrorHandler eh(sm);
 

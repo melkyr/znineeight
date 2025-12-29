@@ -266,8 +266,18 @@ TEST_FUNC(Parser_RecursionLimit_Binary);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
+TEST_FUNC(SymbolTable_DuplicateDetection);
+TEST_FUNC(SymbolTable_NestedScopes);
 TEST_FUNC(SymbolBuilder_BuildsCorrectly);
 TEST_FUNC(SymbolTable_ScopingAndLookup);
+TEST_FUNC(TypeResolution_ValidPrimitives);
+TEST_FUNC(TypeResolution_InvalidOrUnsupported);
+TEST_FUNC(TypeResolution_AllPrimitives);
+TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly);
+TEST_FUNC(Parser_VarDecl_DetectsDuplicateSymbol);
+TEST_FUNC(Parser_FnDecl_AndScopeManagement);
+TEST_FUNC(Parser_NestedBlocks_AndShadowing);
+TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope);
 
 
 // This function is executed in a child process by the error handling test.
@@ -517,8 +527,18 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
+        test_SymbolTable_DuplicateDetection,
+        test_SymbolTable_NestedScopes,
         test_SymbolBuilder_BuildsCorrectly,
         test_SymbolTable_ScopingAndLookup,
+        test_TypeResolution_ValidPrimitives,
+        test_TypeResolution_InvalidOrUnsupported,
+        test_TypeResolution_AllPrimitives,
+        test_Parser_VarDecl_InsertsSymbolCorrectly,
+        test_Parser_VarDecl_DetectsDuplicateSymbol,
+        test_Parser_FnDecl_AndScopeManagement,
+        test_Parser_NestedBlocks_AndShadowing,
+        test_Parser_SymbolDoesNotLeakFromInnerScope,
     };
 
     int passed = 0;

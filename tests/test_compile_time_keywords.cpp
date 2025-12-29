@@ -5,7 +5,7 @@
 #include <cstring>
 
 TEST_FUNC(lex_compile_time_and_special_function_keywords) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
 

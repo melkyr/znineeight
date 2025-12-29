@@ -4,7 +4,7 @@
 #include "../src/include/string_interner.hpp"
 
 TEST_FUNC(empty_block_comment) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/**/+";
@@ -24,7 +24,7 @@ TEST_FUNC(empty_block_comment) {
 }
 
 TEST_FUNC(multiline_commented_out_code) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/*\n"
@@ -62,7 +62,7 @@ TEST_FUNC(multiline_commented_out_code) {
 }
 
 TEST_FUNC(line_comment_in_block) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* // this is ignored */+";
@@ -80,7 +80,7 @@ TEST_FUNC(line_comment_in_block) {
 }
 
 TEST_FUNC(block_comment_in_line) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "// /* this is ignored */\n+";
@@ -100,7 +100,7 @@ TEST_FUNC(block_comment_in_line) {
 }
 
 TEST_FUNC(comment_with_keywords) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* if for while var const */ -";
@@ -118,7 +118,7 @@ TEST_FUNC(comment_with_keywords) {
 }
 
 TEST_FUNC(comment_with_operators) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* + - * / () {} [] */=";
@@ -136,7 +136,7 @@ TEST_FUNC(comment_with_operators) {
 }
 
 TEST_FUNC(block_comment_at_eof) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "+/* comment */";
@@ -154,7 +154,7 @@ TEST_FUNC(block_comment_at_eof) {
 }
 
 TEST_FUNC(complex_nesting) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "/* level 1 /* level 2 /* nested */ */ */*";
