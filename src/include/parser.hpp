@@ -298,6 +298,9 @@ private:
     /** @brief Parses a top-level item. Helper for `parse`. */
     ASTNode* parseTopLevelItem();
 
+    // Forward declarations for node types used in the parser
+    struct ASTExpressionStmtNode;
+
     const Token* tokens_;
     size_t token_count_;
     size_t current_index_;

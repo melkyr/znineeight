@@ -48,6 +48,9 @@ public:
         return error_handler_;
     }
 
+    ArenaAllocator& getArena() {
+        return arena_;
+    }
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;

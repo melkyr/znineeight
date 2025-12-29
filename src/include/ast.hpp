@@ -39,6 +39,7 @@ enum NodeType {
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
+    NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -88,6 +89,7 @@ struct ASTWhileStmtNode;
 struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
 struct ASTForStmtNode;
+struct ASTExpressionStmtNode;
 struct ASTSwitchExprNode;
 struct ASTSwitchProngNode;
 struct ASTVarDeclNode;
@@ -299,6 +301,15 @@ struct ASTForStmtNode {
     const char* item_name;
     const char* index_name; // Can be NULL
     ASTNode* body;
+};
+
+/**
+ * @struct ASTExpressionStmtNode
+ * @brief Represents a statement that consists solely of an expression, like a function call.
+ * @var ASTExpressionStmtNode::expression The expression that makes up the statement.
+ */
+struct ASTExpressionStmtNode {
+    ASTNode* expression;
 };
 
 /**
@@ -550,6 +561,7 @@ struct ASTNode {
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
         ASTForStmtNode* for_stmt; // Out-of-line
+        ASTExpressionStmtNode expression_stmt;
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line

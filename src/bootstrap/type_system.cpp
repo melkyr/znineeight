@@ -1,4 +1,5 @@
 #include "type_system.hpp"
+#include "memory.hpp"
 #include <cstring> // For strcmp
 
 // Statically define all the primitive types.
@@ -42,4 +43,13 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (strcmp(name, "f64") == 0) return &g_type_f64;
 
     return NULL; // Not a known primitive type
+}
+
+Type* createPointerType(ArenaAllocator& arena, Type* base_type) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_POINTER;
+    new_type->size = 4; // Assuming 32-bit pointers
+    new_type->alignment = 4; // Assuming 32-bit pointers
+    new_type->as.pointer.base = base_type;
+    return new_type;
 }

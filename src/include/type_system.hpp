@@ -50,4 +50,15 @@ struct Type {
  */
 Type* resolvePrimitiveTypeName(const char* name);
 
+// Forward declaration for ArenaAllocator
+class ArenaAllocator;
+
+/**
+ * @brief Creates a new pointer Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param base_type A pointer to the Type that the new pointer type should point to.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createPointerType(ArenaAllocator& arena, Type* base_type);
+
 #endif // TYPE_SYSTEM_HPP
