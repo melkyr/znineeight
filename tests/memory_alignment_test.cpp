@@ -10,7 +10,7 @@ struct AlignedStruct {
 };
 
 TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
 
     // Make a small allocation to potentially misalign the next one
     arena.alloc(1);

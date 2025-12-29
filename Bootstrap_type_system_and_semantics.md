@@ -200,22 +200,43 @@ The increase in baseline memory usage is not considered a significant performanc
 
 In summary, while the new `SymbolTable` has a slightly larger memory footprint, it is a deliberate and necessary architectural improvement. The impact is well-contained and does not compromise the overall performance goals of the compiler.
 
-## 6. Parser Integration
+## 6. Type Resolution
+
+To bridge the gap between the parser, which sees types as identifiers (e.g., `"i32"`), and the semantic analysis phase, which requires structured `Type` objects, a simple type resolution system has been implemented.
+
+### `resolvePrimitiveTypeName`
+
+A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduced. Its responsibilities are:
+-   It takes a string (an interned identifier name) as input.
+-   It compares this string against a list of known primitive type names (e.g., "void", "bool", "i8", etc.).
+-   If a match is found, it returns a pointer to a pre-defined, static, global `Type` object for that primitive.
+-   If the name does not correspond to a known primitive type, it returns `NULL`.
+
+This mechanism allows the parser to easily obtain a valid `Type*` for a symbol by looking up the type name found in the source code.
+
+## 7. Parser Integration
 
 To make the symbol table functional, it is integrated directly into the parsing process. This allows the parser to manage scopes and register symbols as it traverses the source code.
 
-### `Parser` and `SymbolTable` Connection
+### Connection and Scope Management
 
--   **Constructor Injection:** The `CompilationUnit`, which owns both the `ArenaAllocator` and the `SymbolTable`, passes a pointer to the `SymbolTable` to the `Parser`'s constructor. This ensures that the parser has access to the correct symbol table for the current compilation.
--   **Member Access:** The `Parser` stores this pointer as a member variable (`symbol_table_`), allowing all parsing methods to access and modify the symbol table as needed.
+-   **Constructor Injection:** The `CompilationUnit`, which owns the `SymbolTable`, passes a pointer to it into the `Parser`'s constructor.
+-   **Scope Handling:** The parser is responsible for signaling the `SymbolTable` to create and destroy scopes.
+    -   `parseFnDecl()` calls `enterScope()` before parsing the function body and `exitScope()` after, creating a dedicated scope for the function's contents.
+    -   `parseBlockStatement()` does the same upon encountering `{` and `}` respectively, allowing for correct nested block scoping.
 
-### Scope Management During Parsing
+### Symbol Registration During Parsing
 
-The parser is responsible for signaling the `SymbolTable` to create and destroy scopes as it encounters different language constructs:
+-   **`parseVarDecl()`:** When a variable declaration is parsed, this method:
+    1.  Extracts the type name identifier from the `ASTNode` for the type.
+    2.  Calls `resolvePrimitiveTypeName` to get a `Type*` for the variable. If this fails, it's a fatal error.
+    3.  Constructs a `Symbol` for the variable using the `SymbolBuilder`.
+    4.  Calls `symbol_table_->insert()` to register the symbol in the current scope.
 
--   **`parseFnDecl()`:** When this method is called to parse a function, it immediately calls `symbol_table_->enterScope()` before parsing the function's body. After the body has been parsed, it calls `symbol_table_->exitScope()`. This ensures that all symbols declared within the function (parameters and local variables) are confined to that function's scope.
--   **`parseBlockStatement()`:** Similarly, this method calls `enterScope()` upon encountering an opening brace (`{`) and `exitScope()` after consuming the closing brace (`}`). This handles nested block scopes correctly.
+-   **`parseFnDecl()`:** When a function is parsed, this method:
+    1.  Constructs a `Symbol` for the function itself.
+    2.  Inserts this `Symbol` into the *current* scope (e.g., the global scope for a top-level function). This happens *before* a new scope is entered for the function's body.
 
-### Symbol Registration
+### Error Handling
 
--   **`parseVarDecl()`:** When a variable declaration is parsed, this method is now responsible for creating a `Symbol` and inserting it into the symbol table using `symbol_table_->insert()`. This action registers the variable in the current scope.
+-   **Duplicate Symbols:** If `symbol_table_->insert()` returns `false`, it indicates that a symbol with the same name already exists in the current scope. The parser treats this as a fatal semantic error and immediately calls its `error()` method to abort compilation. This provides simple and effective duplicate detection for both variables and functions.

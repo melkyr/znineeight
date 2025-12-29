@@ -7,7 +7,7 @@
 bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_Enum_Empty) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum {}", arena, interner);
@@ -26,7 +26,7 @@ TEST_FUNC(Parser_Enum_Empty) {
 }
 
 TEST_FUNC(Parser_Enum_SimpleMembers) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { Red, Green, Blue }", arena, interner);
@@ -60,7 +60,7 @@ TEST_FUNC(Parser_Enum_SimpleMembers) {
 }
 
 TEST_FUNC(Parser_Enum_TrailingComma) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A, B, }", arena, interner);
@@ -78,7 +78,7 @@ TEST_FUNC(Parser_Enum_TrailingComma) {
 }
 
 TEST_FUNC(Parser_Enum_WithValues) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A = 1, B = 20 }", arena, interner);
@@ -109,7 +109,7 @@ TEST_FUNC(Parser_Enum_WithValues) {
 }
 
 TEST_FUNC(Parser_Enum_MixedMembers) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A, B = 10, C }", arena, interner);
@@ -141,7 +141,7 @@ TEST_FUNC(Parser_Enum_MixedMembers) {
 }
 
 TEST_FUNC(Parser_Enum_WithBackingType) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum(u8) { A, B }", arena, interner);
@@ -187,7 +187,7 @@ TEST_FUNC(Parser_Enum_SyntaxError_BackingTypeNoParens) {
 }
 
 TEST_FUNC(Parser_Enum_ComplexInitializer) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("enum { A = 1 + 2 }", arena, interner);

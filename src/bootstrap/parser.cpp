@@ -1,5 +1,6 @@
 #include "parser.hpp"
 #include "ast.hpp"
+#include "type_system.hpp"
 #include <cstdlib>   // For abort()
 #include <cstring>   // For strcmp
 #include <new>       // For placement new
@@ -945,10 +946,23 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->is_const = is_const;
     var_decl->is_mut = is_mut;
 
+    // Resolve the type and create the symbol for the symbol table.
+    Type* symbol_type = NULL;
+    if (type_node->type == NODE_TYPE_NAME) {
+        symbol_type = resolvePrimitiveTypeName(type_node->as.type_name.name);
+        if (symbol_type == NULL) {
+            error("Unknown type name in variable declaration");
+        }
+    } else {
+        // For now, we only support primitive types identified by name.
+        // Support for pointers, arrays, etc., will be added later.
+        error("Unsupported type expression in variable declaration");
+    }
+
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .ofType(SYMBOL_VARIABLE)
-        // .withType(type_node) // TODO: We need a way to get the Type* from the ASTNode*
+        .withType(symbol_type)
         .atLocation(name_token.location)
         .build();
 
@@ -1054,6 +1068,18 @@ ASTNode* Parser::parseDeferStatement() {
 ASTNode* Parser::parseFnDecl() {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
+
+    // Create and insert the symbol for the function itself into the current scope.
+    Symbol fn_symbol = SymbolBuilder(*arena_)
+        .withName(name_token.value.identifier)
+        .ofType(SYMBOL_FUNCTION)
+        .withType(NULL) // TODO: Create a function type object
+        .atLocation(name_token.location)
+        .build();
+
+    if (!symbol_table_->insert(fn_symbol)) {
+        error("Redeclaration of symbol");
+    }
 
     expect(TOKEN_LPAREN, "Expected '(' after function name");
     if (peek().type != TOKEN_RPAREN) {

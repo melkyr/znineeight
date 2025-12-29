@@ -42,4 +42,12 @@ struct Type {
     } as;
 };
 
+/**
+ * @brief Resolves a string identifier into a pointer to a primitive Type.
+ * @param name The string name of the type (e.g., "i32", "bool").
+ * @return A pointer to the static Type object, or NULL if the name is not a
+ *         known primitive type.
+ */
+Type* resolvePrimitiveTypeName(const char* name);
+
 #endif // TYPE_SYSTEM_HPP

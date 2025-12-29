@@ -5,7 +5,7 @@
 // Test to verify the structure of a For Statement AST node.
 TEST_FUNC(ASTNode_ForStmt)
 {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* iterable = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* body = (ASTNode*)arena.alloc(sizeof(ASTNode));
@@ -36,7 +36,7 @@ TEST_FUNC(ASTNode_ForStmt)
 // Test to verify the structure of a Switch Expression AST node.
 TEST_FUNC(ASTNode_SwitchExpr)
 {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     ASTNode* switch_expr = (ASTNode*)arena.alloc(sizeof(ASTNode));
 
