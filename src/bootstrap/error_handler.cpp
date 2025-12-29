@@ -1,47 +1,51 @@
 #include "error_handler.hpp"
-#include <iostream>
-#include <string>
-#include <cstring>
+#include "source_manager.hpp"
+#include <cstdio> // For fprintf, stderr
 
-void ErrorHandler::printErrorReport(const ErrorReport& report) {
-    const SourceFile* file = source_manager.getFile(report.location.file_id);
-    if (!file) {
-        std::cerr << "Error: Invalid file ID in error report." << std::endl;
-        return;
-    }
+void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, const char* hint) {
+    ErrorReport new_report;
+    new_report.code = code;
+    new_report.location = location;
+    new_report.message = message;
+    new_report.hint = hint;
+    errors_.append(new_report);
+}
 
-    // Print the main error line, e.g., "test.zig(5:10): error 1000: Unexpected token"
-    std::cerr << file->filename << "(" << report.location.line << ":" << report.location.column << "): error "
-              << report.code << ": " << report.message << std::endl;
+void ErrorHandler::printErrors() {
+    for (size_t i = 0; i < errors_.length(); ++i) {
+        const ErrorReport& report = errors_[i];
+        const SourceFile* file = source_manager.getFile(report.location.file_id);
 
-    // Find the start of the line where the error occurred.
-    const char* line_start = file->content;
-    for (u32 i = 1; i < report.location.line; ++i) {
-        const char* next_line = strchr(line_start, '\n');
-        if (next_line) {
-            line_start = next_line + 1;
-        } else {
-            // Should not happen if location is valid, but as a fallback,
-            // point to the end of the file.
-            line_start = file->content + file->size;
-            break;
+        fprintf(stderr, "%s:%u:%u: error: %s\n",
+                file->filename, report.location.line, report.location.column, report.message);
+
+        // Print the line of code
+        const char* line_start = file->content;
+        for (u32 line = 1; line < report.location.line; ++line) {
+            while (*line_start != '\n' && *line_start != '\0') {
+                line_start++;
+            }
+            if (*line_start == '\n') {
+                line_start++;
+            }
         }
-    }
 
-    // Find the end of the error line.
-    const char* line_end = strchr(line_start, '\n');
-    if (!line_end) {
-        line_end = file->content + file->size;
-    }
+        const char* line_end = line_start;
+        while (*line_end != '\n' && *line_end != '\0') {
+            line_end++;
+        }
 
-    // Print the source line containing the error.
-    std::cerr << "    " << std::string(line_start, line_end - line_start) << std::endl;
+        fprintf(stderr, "    %.*s\n", (int)(line_end - line_start), line_start);
 
-    // Print the caret (^) under the error location.
-    std::cerr << "    " << std::string(report.location.column - 1, ' ') << "^" << std::endl;
+        // Print the caret
+        fprintf(stderr, "    ");
+        for (u32 col = 1; col < report.location.column; ++col) {
+            fprintf(stderr, " ");
+        }
+        fprintf(stderr, "^\n");
 
-    // If a hint is provided, print it.
-    if (report.hint) {
-        std::cerr << "    Hint: " << report.hint << std::endl;
+        if (report.hint) {
+            fprintf(stderr, "    hint: %s\n", report.hint);
+        }
     }
 }

@@ -19,10 +19,12 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_lexer_special_ops.cpp \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/source_manager.cpp \
+    src/bootstrap/error_handler.cpp \
     src/bootstrap/lexer.cpp \
     src/bootstrap/parser.cpp \
     src/bootstrap/symbol_table.cpp \
     src/bootstrap/type_system.cpp \
+    src/bootstrap/type_checker.cpp \
     tests/test_char_literal.cpp \
     tests/test_lexer_delimiters.cpp \
     tests/test_lexer_keywords.cpp \
@@ -80,6 +82,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_lexer_integration.cpp \
     tests/test_parser_memory.cpp \
     tests/parser_symbol_integration_tests.cpp \
+    tests/type_checker_tests.cpp \
     -Isrc/include \
     -o test_runner
 

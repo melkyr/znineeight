@@ -137,6 +137,16 @@ ASTNode* Parser::parsePrimaryExpr() {
     node->loc = token.location;
 
     switch (token.type) {
+        case TOKEN_TRUE:
+            advance();
+            node->type = NODE_BOOL_LITERAL;
+            node->as.bool_literal.value = true;
+            return node;
+        case TOKEN_FALSE:
+            advance();
+            node->type = NODE_BOOL_LITERAL;
+            node->as.bool_literal.value = false;
+            return node;
         case TOKEN_INTEGER_LITERAL:
             advance();
             node->type = NODE_INTEGER_LITERAL;
@@ -842,6 +852,42 @@ ASTNode* Parser::parseErrDeferStatement() {
     node->as.errdefer_stmt = errdefer_stmt;
 
     return node;
+}
+
+ASTNode* Parser::parse() {
+    Token start_token = peek();
+    DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!statements) {
+        error("Out of memory");
+    }
+    new (statements) DynamicArray<ASTNode*>(*arena_);
+
+    while (!is_at_end()) {
+        statements->append(parseTopLevelItem());
+    }
+
+    ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!block_node) {
+        error("Out of memory");
+    }
+    block_node->type = NODE_BLOCK_STMT;
+    block_node->loc = start_token.location;
+    block_node->as.block_stmt.statements = statements;
+
+    return block_node;
+}
+
+ASTNode* Parser::parseTopLevelItem() {
+    switch (peek().type) {
+        case TOKEN_FN:
+            return parseFnDecl();
+        case TOKEN_VAR:
+        case TOKEN_CONST:
+            return parseVarDecl();
+        default:
+            error("Expected a top-level declaration (function, var, or const)");
+            return NULL; // Unreachable
+    }
 }
 
 

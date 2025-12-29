@@ -86,6 +86,14 @@ public:
     }
 
     /**
+     * @brief Resets the allocator to a specific offset.
+     * @param checkpoint The offset to restore the arena to.
+     */
+    void reset(size_t checkpoint) {
+        offset = checkpoint;
+    }
+
+    /**
      * @brief Returns the current memory offset within the arena.
      * @return The number of bytes currently allocated.
      */

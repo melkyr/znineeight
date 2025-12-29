@@ -176,6 +176,26 @@ public:
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.
 
+## 9. Type Checker
+
+The `TypeChecker` is a new component responsible for traversing the AST and verifying that the program adheres to the language's type rules. It is the primary consumer of the `Type` and `Symbol` information described in the previous sections.
+
+### Traversal Strategy
+
+The `TypeChecker` uses the visitor pattern to traverse the AST. It has a `visit` method for each `NodeType`, which allows for modular and extensible type-checking logic. The traversal is a recursive process that walks the tree, checking each node and its children.
+
+### Integration in the Pipeline
+
+The `TypeChecker` is integrated into the main compilation pipeline as a distinct stage that runs immediately after the parser. The process is as follows:
+1. The `Parser` generates the full `AST`.
+2. The `TypeChecker` is initialized with the `CompilationUnit`.
+3. The `check` method of the `TypeChecker` is called with the root of the `AST`.
+4. The `TypeChecker` traverses the tree, and if it finds any type errors, it reports them using the `ErrorHandler` in the `CompilationUnit`.
+
+### Error Handling
+
+The `TypeChecker` uses the existing `ErrorHandler` to report type-related errors. This ensures that type errors are reported in the same format as parsing errors, providing a consistent user experience.
+
 ### Memory Impact of the Refactored Symbol Table
 
 The foundational refactoring of the `SymbolTable` introduced a more robust, scope-aware architecture. A key consequence of this change is an increase in the baseline memory usage for each `CompilationUnit`.

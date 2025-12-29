@@ -136,6 +136,13 @@ public:
     ASTNode* parseFnDecl();
 
     /**
+     * @brief Parses the entire source file as a series of top-level declarations.
+     * @return A pointer to the root ASTNode of the parsed program, which will be
+     *         a block statement containing all top-level declarations.
+     */
+    ASTNode* parse();
+
+    /**
      * @brief Parses a single statement.
      *
      * This function acts as a dispatcher. It looks at the current token and decides
@@ -287,6 +294,9 @@ private:
 
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();
+
+    /** @brief Parses a top-level item. Helper for `parse`. */
+    ASTNode* parseTopLevelItem();
 
     const Token* tokens_;
     size_t token_count_;

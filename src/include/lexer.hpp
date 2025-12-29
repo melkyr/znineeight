@@ -67,6 +67,8 @@ enum TokenType {
     TOKEN_WHILE,            ///< 'while' keyword for loops.
     TOKEN_RETURN,           ///< 'return' keyword for function returns.
     TOKEN_DEFER,            ///< 'defer' keyword for scope-exit actions.
+    TOKEN_TRUE,             ///< 'true' keyword.
+    TOKEN_FALSE,            ///< 'false' keyword.
     TOKEN_BREAK,            ///< 'break' keyword.
     TOKEN_CATCH,            ///< 'catch' keyword.
     TOKEN_CONTINUE,         ///< 'continue' keyword.
