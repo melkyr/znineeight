@@ -278,6 +278,9 @@ TEST_FUNC(Parser_VarDecl_DetectsDuplicateSymbol);
 TEST_FUNC(Parser_FnDecl_AndScopeManagement);
 TEST_FUNC(Parser_NestedBlocks_AndShadowing);
 TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope);
+TEST_FUNC(TypeCheckerValidDeclarations);
+TEST_FUNC(TypeCheckerInvalidDeclarations);
+TEST_FUNC(TypeCheckerUndeclaredVariable);
 
 
 // This function is executed in a child process by the error handling test.
@@ -539,6 +542,9 @@ int main(int argc, char* argv[]) {
         test_Parser_FnDecl_AndScopeManagement,
         test_Parser_NestedBlocks_AndShadowing,
         test_Parser_SymbolDoesNotLeakFromInnerScope,
+        test_TypeCheckerValidDeclarations,
+        test_TypeCheckerInvalidDeclarations,
+        test_TypeCheckerUndeclaredVariable,
     };
 
     int passed = 0;

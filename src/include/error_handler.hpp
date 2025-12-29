@@ -2,6 +2,7 @@
 #define ERROR_HANDLER_HPP
 
 #include "source_manager.hpp"
+#include "memory.hpp"
 
 /**
  * @enum ErrorCode
@@ -65,19 +66,33 @@ struct ErrorReport {
 class ErrorHandler {
 private:
     SourceManager& source_manager;
+    DynamicArray<ErrorReport> errors_;
 
 public:
     /**
      * @brief Constructs an ErrorHandler.
      * @param sm A reference to the SourceManager containing the source files.
+     * @param arena The arena allocator to use for the error list.
      */
-    ErrorHandler(SourceManager& sm) : source_manager(sm) {}
+    ErrorHandler(SourceManager& sm, ArenaAllocator& arena)
+        : source_manager(sm), errors_(arena) {}
 
     /**
-     * @brief Prints a formatted error report to standard error.
-     * @param report The ErrorReport structure to display.
+     * @brief Reports a new error.
      */
-    void printErrorReport(const ErrorReport& report);
+    void report(ErrorCode code, SourceLocation location, const char* message, const char* hint = NULL);
+
+    /**
+     * @brief Checks if any errors have been reported.
+     */
+    bool hasErrors() const {
+        return errors_.length() > 0;
+    }
+
+    /**
+     * @brief Prints all reported errors to standard error.
+     */
+    void printErrors();
 };
 
 #endif // ERROR_HANDLER_HPP

@@ -24,6 +24,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
@@ -74,6 +75,7 @@ enum NodeType {
 // --- Forward declarations for node-specific structs ---
 struct ASTBinaryOpNode;
 struct ASTUnaryOpNode;
+struct ASTBoolLiteralNode;
 struct ASTIntegerLiteralNode;
 struct ASTFloatLiteralNode;
 struct ASTCharLiteralNode;
@@ -134,6 +136,15 @@ struct ASTBinaryOpNode {
 struct ASTUnaryOpNode {
     ASTNode* operand;
     TokenType op;
+};
+
+/**
+ * @struct ASTBoolLiteralNode
+ * @brief Represents a boolean literal (`true` or `false`).
+ * @var ASTBoolLiteralNode::value The boolean value.
+ */
+struct ASTBoolLiteralNode {
+    bool value;
 };
 
 /**
@@ -524,6 +535,7 @@ struct ASTNode {
         ASTArraySliceNode* array_slice; // Out-of-line
 
         // Literals
+        ASTBoolLiteralNode bool_literal;
         ASTIntegerLiteralNode integer_literal;
         ASTFloatLiteralNode float_literal;
         ASTCharLiteralNode char_literal;

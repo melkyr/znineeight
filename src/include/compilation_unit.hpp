@@ -7,7 +7,8 @@
 #include "source_manager.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
-#include "symbol_table.hpp" // Added include
+#include "symbol_table.hpp"
+#include "error_handler.hpp"
 #include <cstring> // For strlen
 
 class CompilationUnit {
@@ -16,7 +17,8 @@ public:
         : arena_(arena),
           interner_(interner),
           source_manager_(arena),
-          symbol_table_(arena) {} // Initialize SymbolTable
+          symbol_table_(arena),
+          error_handler_(source_manager_, arena) {}
 
     u32 addSource(const char* filename, const char* source) {
         return source_manager_.addFile(filename, source, strlen(source));
@@ -42,11 +44,16 @@ public:
         return symbol_table_;
     }
 
+    ErrorHandler& getErrorHandler() {
+        return error_handler_;
+    }
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
     SourceManager source_manager_;
-    SymbolTable symbol_table_; // Added member
+    SymbolTable symbol_table_;
+    ErrorHandler error_handler_;
 };
 
 #endif // COMPILATION_UNIT_HPP
