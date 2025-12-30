@@ -308,6 +308,8 @@ TEST_FUNC(TypeChecker_BinaryOp);
 // C89 Compatibility Tests
 TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
 // TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall);
+TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
+TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
 
 
 // This function is executed in a child process by the error handling test.
@@ -617,6 +619,8 @@ int main(int argc, char* argv[]) {
         // C89 Compatibility Tests
         test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
         // test_TypeCheckerC89Compat_RejectFunctionPointerCall,
+        test_TypeChecker_Call_WrongArgumentCount,
+        test_TypeChecker_Call_IncompatibleArgumentType,
     };
 
     int passed = 0;

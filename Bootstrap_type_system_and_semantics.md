@@ -234,6 +234,18 @@ Function calls are subject to the following strict limitations:
 -   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
 -   **Pointer Arithmetic:** Pointer arithmetic will be restricted to ensure it is C89-compatible.
 
+### Function Calls
+
+When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` performs a series of critical validations to ensure the call is well-formed and adheres to the bootstrap compiler's constraints.
+
+1.  **Callee Type Verification:** The checker first resolves the type of the expression being called. It ensures that the callee is a symbol of kind `FUNCTION` and has a `TYPE_FUNCTION` type. This check is crucial as it prevents attempts to call variables or other non-function entities, which is how calls to function pointers are rejected.
+
+2.  **Argument Count Check:** It verifies that the number of arguments provided in the call exactly matches the number of parameters specified in the function's signature. If the counts mismatch, it reports a fatal error with a message like "wrong number of arguments to function call, expected 2, got 1".
+
+3.  **Argument Type Compatibility:** It iterates through each argument and compares its type to the corresponding parameter's type using the `areTypesCompatible` function. This allows for safe, implicit widening conversions (e.g., passing an `i16` to an `i32` parameter) but rejects incompatible types. A mismatch results in a fatal error detailing the expected and actual types.
+
+4.  **C89 Argument Limit:** To maintain compatibility with legacy C89 compilers and calling conventions, the type checker enforces a hard limit of a maximum of 4 arguments per function call. Any call with five or more arguments will result in a fatal error.
+
 ### Expression Type Checking
 
 When visiting expressions, the `TypeChecker` determines the resulting type of the expression.
