@@ -457,16 +457,18 @@ Represents a type that is specified by a simple name or identifier.
 
 ### `ASTPointerTypeNode`
 Represents a pointer to another type.
-*   **Zig Code:** `*u8`, `*const MyStruct`
+*   **Zig Code:** `*u8`, `const *MyStruct`
 *   **Structure:**
     ```cpp
     /**
      * @struct ASTPointerTypeNode
      * @brief Represents a pointer type.
      * @var ASTPointerTypeNode::base A pointer to the ASTNode for the type being pointed to.
+     * @var ASTPointerTypeNode::is_const True if the pointer type is const-qualified.
      */
     struct ASTPointerTypeNode {
         ASTNode* base;
+        bool is_const;
     };
     ```
 

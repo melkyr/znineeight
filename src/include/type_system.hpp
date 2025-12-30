@@ -38,6 +38,7 @@ struct Type {
     union {
         struct {
             Type* base;
+            bool is_const;
         } pointer;
     } as;
 };
@@ -57,8 +58,9 @@ class ArenaAllocator;
  * @brief Creates a new pointer Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param base_type A pointer to the Type that the new pointer type should point to.
+ * @param is_const True if the pointer type is const-qualified.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createPointerType(ArenaAllocator& arena, Type* base_type);
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
 
 #endif // TYPE_SYSTEM_HPP

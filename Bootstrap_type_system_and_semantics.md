@@ -99,13 +99,16 @@ All other conversions must be explicit and are not currently supported by the `a
 
 The following table summarizes the allowed implicit conversions:
 
-| From Type (`actual`) | To Type (`expected`) | Implicitly Compatible? | Notes                     |
-|----------------------|----------------------|------------------------|---------------------------|
-| `i8`                 | `i16`, `i32`, `i64`    | ✓                      | Safe widening conversion. |
-| `u8`                 | `u16`, `u32`, `u64`    | ✓                      | Safe widening conversion. |
-| `f32`                | `f64`                | ✓                      | Safe widening conversion. |
-| `T`                  | `T`                  | ✓                      | Types are identical.      |
-| Any other combination| -                    | ✗                      | Requires explicit cast.   |
+| From Type (`actual`) | To Type (`expected`) | Implicitly Compatible? | Notes                                            |
+|----------------------|----------------------|------------------------|--------------------------------------------------|
+| `i(N)`               | `i(M)` where M >= N  | ✓                      | Safe integer widening conversion.                |
+| `u(N)`               | `u(M)` where M >= N  | ✓                      | Safe unsigned integer widening conversion.       |
+| `f32`                | `f64`                | ✓                      | Safe float widening conversion.                  |
+| `*T`                 | `*const T`           | ✓                      | Adding const is a safe conversion.               |
+| `T`                  | `T`                  | ✓                      | Types are identical.                             |
+| `*const T`           | `*T`                 | ✗                      | Removing const is not allowed implicitly.        |
+| `*T`                 | `*U`                 | ✗                      | Pointers to different types are incompatible.    |
+| Any other combination| -                    | ✗                      | All other conversions require an explicit cast.  |
 
 
 ## 4. Semantic Analysis

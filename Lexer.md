@@ -117,6 +117,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | --- | --- |
 | `TOKEN_BREAK` | `break` |
 | `TOKEN_CATCH` | `catch` |
+| `TOKEN_CONST` | `const` |
 | `TOKEN_CONTINUE` | `continue` |
 | `TOKEN_ELSE` | `else` |
 | `TOKEN_FOR` | `for` |

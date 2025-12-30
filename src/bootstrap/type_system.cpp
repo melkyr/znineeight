@@ -45,11 +45,12 @@ Type* resolvePrimitiveTypeName(const char* name) {
     return NULL; // Not a known primitive type
 }
 
-Type* createPointerType(ArenaAllocator& arena, Type* base_type) {
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
     new_type->kind = TYPE_POINTER;
     new_type->size = 4; // Assuming 32-bit pointers
     new_type->alignment = 4; // Assuming 32-bit pointers
     new_type->as.pointer.base = base_type;
+    new_type->as.pointer.is_const = is_const;
     return new_type;
 }

@@ -1351,7 +1351,7 @@ ASTNode* Parser::parseReturnStatement() {
 }
 
 ASTNode* Parser::parseType() {
-    if (peek().type == TOKEN_STAR) {
+    if (peek().type == TOKEN_STAR || peek().type == TOKEN_CONST) {
         return parsePointerType();
     }
     if (peek().type == TOKEN_LBRACKET) {
@@ -1373,7 +1373,14 @@ ASTNode* Parser::parseType() {
 }
 
 ASTNode* Parser::parsePointerType() {
-    Token star_token = advance(); // Consume '*'
+    Token start_token = peek();
+    bool is_const = false;
+    if (peek().type == TOKEN_CONST) {
+        is_const = true;
+        advance(); // consume 'const'
+    }
+
+    expect(TOKEN_STAR, "Expected '*' for pointer type");
     ASTNode* base_type = parseType();
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
@@ -1381,8 +1388,9 @@ ASTNode* Parser::parsePointerType() {
         error("Out of memory");
     }
     node->type = NODE_POINTER_TYPE;
-    node->loc = star_token.location;
+    node->loc = start_token.location;
     node->as.pointer_type.base = base_type;
+    node->as.pointer_type.is_const = is_const;
 
     return node;
 }

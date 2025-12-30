@@ -108,7 +108,8 @@ Type* TypeChecker::visitCharLiteral(ASTCharLiteralNode* node) {
 
 Type* TypeChecker::visitStringLiteral(ASTStringLiteralNode* node) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    return createPointerType(unit.getArena(), char_type);
+    // String literals are pointers to constant characters.
+    return createPointerType(unit.getArena(), char_type, true);
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
@@ -217,8 +218,12 @@ Type* TypeChecker::visitTypeName(ASTTypeNameNode* node) {
 }
 
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
-    visit(node->base);
-    return NULL; // Placeholder
+    Type* base_type = visit(node->base);
+    if (!base_type) {
+        // Error already reported by the base type visit
+        return NULL;
+    }
+    return createPointerType(unit.getArena(), base_type, node->is_const);
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
@@ -255,6 +260,22 @@ Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
     return NULL; // Expression statements don't have a type
 }
 
+/**
+ * @brief Checks if two types are compatible for assignment or function arguments.
+ *
+ * This function determines if a value of type `actual` can be safely used where
+ * a value of type `expected` is required. The rules are:
+ * 1.  Identical types are always compatible.
+ * 2.  Numeric types are compatible if the `actual` type can be widened to the
+ *     `expected` type without data loss (e.g., `i16` to `i32`, `f32` to `f64`).
+ * 3.  Pointer types are compatible if they point to the same base type and
+ *     the `expected` type is at least as const-qualified as the `actual` type.
+ *     This allows `*T` to be used as `*const T`, but not vice-versa.
+ *
+ * @param expected The type that is required (e.g., the variable's type).
+ * @param actual The type of the value being assigned or passed.
+ * @return `true` if the types are compatible, `false` otherwise.
+ */
 bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected == actual) {
         return true;
@@ -279,6 +300,19 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     // Widening for floats
     if (actual->kind == TYPE_F32 && expected->kind == TYPE_F64) {
         return true;
+    }
+
+    // Pointer compatibility
+    if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
+        // Must have the same base type
+        if (actual->as.pointer.base != expected->as.pointer.base) {
+            return false;
+        }
+        // A mutable pointer can be assigned to a const pointer,
+        // but not the other way around.
+        // *T -> *const T (OK)
+        // *const T -> *T (Error)
+        return expected->as.pointer.is_const || !actual->as.pointer.is_const;
     }
 
     return false;
