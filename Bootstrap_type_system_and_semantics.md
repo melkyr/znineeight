@@ -214,6 +214,20 @@ A string literal is given the type "pointer to `u8`", which is represented as `*
 -   The analyzer will verify that the number of arguments in a function call matches the number of parameters in the function's declaration.
 -   It will check that the type of each argument is compatible with the type of the corresponding parameter.
 
+#### C89 Compatibility Restrictions
+
+To ensure that the output of the bootstrap compiler is compatible with C89, several restrictions are enforced during semantic analysis. These limitations are designed to prevent the use of modern language features that do not have a direct and simple equivalent in C89.
+
+Function calls are subject to the following strict limitations:
+
+1.  **Maximum Number of Arguments:** A function call cannot have more than four arguments. This is a conservative limit to ensure compatibility with various C89-era calling conventions and stack limitations. Any call with five or more arguments will trigger a fatal compilation error.
+
+2.  **No Function Pointers:** The bootstrap compiler does not support calling functions via pointers. Any attempt to call a variable that holds a function (i.e., a function pointer) will be rejected with a fatal error.
+
+    *Note on testing:* The current parser does not support type inference for variable declarations (e.g., `var func_ptr = my_func;`). As a result, tests for this specific feature currently fail during the parsing phase, preventing the `TypeChecker` from running. The check remains in the `TypeChecker` for correctness and future-proofing.
+
+3.  **No Variadic Functions:** The parser does not support the syntax for declaring or calling variadic functions (e.g., `printf`-style functions with `...`).
+
 ### Operators
 
 -   **Arithmetic Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats).
