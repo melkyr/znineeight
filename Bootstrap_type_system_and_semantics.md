@@ -220,6 +220,22 @@ A string literal is given the type "pointer to `u8`", which is represented as `*
 -   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
 -   **Pointer Arithmetic:** Pointer arithmetic will be restricted to ensure it is C89-compatible.
 
+### Expression Type Checking
+
+When visiting expressions, the `TypeChecker` determines the resulting type of the expression.
+
+-   **Literals:**
+    -   `true`, `false`: `bool`
+    -   Integer literals: `i32` if they fit, otherwise `i64`.
+    -   Character literals: `u8`
+    -   String literals: `*const u8`
+
+-   **Identifiers:** The type of an identifier is determined by looking up its symbol in the `SymbolTable`. If the symbol is not found, an `ERR_UNDEFINED_VARIABLE` error is reported.
+
+-   **Binary Operations:**
+    -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
+    -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
+
 ## 5. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.

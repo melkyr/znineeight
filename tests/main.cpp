@@ -293,6 +293,12 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors);
 TEST_FUNC(TypeToString_Reentrancy);
 TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams);
 TEST_FUNC(TypeCheckerFnDecl_InvalidParamType);
+TEST_FUNC(TypeChecker_BoolLiteral);
+TEST_FUNC(TypeChecker_IntegerLiteral);
+TEST_FUNC(TypeChecker_CharLiteral);
+TEST_FUNC(TypeChecker_StringLiteral);
+TEST_FUNC(TypeChecker_Identifier);
+TEST_FUNC(TypeChecker_BinaryOp);
 
 
 // This function is executed in a child process by the error handling test.
@@ -569,6 +575,12 @@ int main(int argc, char* argv[]) {
         test_TypeToString_Reentrancy,
         test_TypeCheckerFnDecl_ValidSimpleParams,
         test_TypeCheckerFnDecl_InvalidParamType,
+        test_TypeChecker_BoolLiteral,
+        test_TypeChecker_IntegerLiteral,
+        test_TypeChecker_CharLiteral,
+        test_TypeChecker_StringLiteral,
+        test_TypeChecker_Identifier,
+        test_TypeChecker_BinaryOp,
     };
 
     int passed = 0;
