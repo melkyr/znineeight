@@ -56,6 +56,16 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
     return new_type;
 }
 
+Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_FUNCTION;
+    new_type->size = 0; // Functions don't have a size in the same way
+    new_type->alignment = 0;
+    new_type->as.function.params = params;
+    new_type->as.function.return_type = return_type;
+    return new_type;
+}
+
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
     if (!type) {
         snprintf(buffer, buffer_size, "(null)");
@@ -85,6 +95,31 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
                 snprintf(buffer, buffer_size, "*const %s", base_name);
             } else {
                 snprintf(buffer, buffer_size, "*%s", base_name);
+            }
+            return;
+        }
+        case TYPE_FUNCTION: {
+            char return_type_str[64];
+            typeToString(type->as.function.return_type, return_type_str, sizeof(return_type_str));
+
+            size_t offset = snprintf(buffer, buffer_size, "fn(");
+
+            if (type->as.function.params) {
+                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
+                    if (offset >= buffer_size) break;
+                    char param_type_str[64];
+                    typeToString((*type->as.function.params)[i], param_type_str, sizeof(param_type_str));
+                    offset += snprintf(buffer + offset, buffer_size - offset, "%s", param_type_str);
+                    if (i < type->as.function.params->length() - 1) {
+                        if (offset < buffer_size) {
+                            offset += snprintf(buffer + offset, buffer_size - offset, ", ");
+                        }
+                    }
+                }
+            }
+
+            if (offset < buffer_size) {
+                snprintf(buffer + offset, buffer_size - offset, ") -> %s", return_type_str);
             }
             return;
         }

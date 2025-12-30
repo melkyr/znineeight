@@ -12,6 +12,10 @@
 // A value of 255 is a reasonable limit for expressions.
 #define MAX_PARSER_RECURSION_DEPTH 255
 
+// Forward-declarations for core data structures
+struct ASTNode;
+struct Type;
+
 /**
  * @class Parser
  * @brief Consumes a stream of tokens and produces an Abstract Syntax Tree (AST).
@@ -229,6 +233,13 @@ public:
     const Token& peekNext() const;
 
 private:
+    /**
+     * @brief Resolves a type AST node into a `Type*` and reports an error if it fails.
+     * @param type_node The AST node representing the type expression.
+     * @return A pointer to the resolved `Type` object. Aborts on failure.
+     */
+    Type* resolveAndVerifyType(ASTNode* type_node);
+
     // A helper struct for iterative right-associative operator parsing.
     struct OperatorInfo {
         Token op;

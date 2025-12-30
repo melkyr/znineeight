@@ -87,6 +87,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/return_type_validation_tests.cpp \
     tests/type_checker_var_decl.cpp \
     tests/type_to_string_tests.cpp \
+    tests/type_checker_fn_decl.cpp \
     -Isrc/include \
     -o test_runner
 

@@ -1,5 +1,6 @@
 #include "type_checker.hpp"
 #include "type_system.hpp"
+#include "error_handler.hpp"
 #include <cstdio> // For sprintf
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
@@ -40,7 +41,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_STRUCT_DECL:      return visitStructDecl(node->as.struct_decl);
         case NODE_UNION_DECL:       return visitUnionDecl(node->as.union_decl);
         case NODE_ENUM_DECL:        return visitEnumDecl(node->as.enum_decl);
-        case NODE_TYPE_NAME:        return visitTypeName(&node->as.type_name);
+        case NODE_TYPE_NAME:        return visitTypeName(node, &node->as.type_name);
         case NODE_POINTER_TYPE:     return visitPointerType(&node->as.pointer_type);
         case NODE_ARRAY_TYPE:       return visitArrayType(&node->as.array_type);
         case NODE_TRY_EXPR:         return visitTryExpr(&node->as.try_expr);
@@ -59,9 +60,27 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
 }
 
 Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
-    visit(node->left);
-    visit(node->right);
-    return NULL; // Placeholder
+    Type* left_type = visit(node->left);
+    Type* right_type = visit(node->right);
+
+    if (left_type && right_type) {
+        if (left_type->kind == TYPE_I32 && right_type->kind == TYPE_I32) {
+            switch (node->op) {
+                case TOKEN_PLUS:
+                case TOKEN_MINUS:
+                case TOKEN_STAR:
+                case TOKEN_SLASH:
+                    return left_type; // Result of i32 op i32 is i32
+                default:
+                    break;
+            }
+        }
+    }
+
+    // If we get here, the types are incompatible or the operator is not supported
+    // for these types. Report an error.
+    // (For now, we'll just return NULL, as the return type mismatch will be caught later)
+    return NULL;
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
@@ -197,11 +216,59 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Type* prev_fn_return_type = current_fn_return_type;
-    current_fn_return_type = node->return_type ? visit(node->return_type) : resolvePrimitiveTypeName("void");
 
-    // TODO: Visit params
+    // Resolve return type
+    current_fn_return_type = visit(node->return_type);
+    if (!current_fn_return_type) {
+        // If the return type is invalid (e.g., an undefined identifier),
+        // we can't proceed with checking the function body.
+        return NULL;
+    }
+
+    // Resolve parameter types
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
+    DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
+    bool all_params_valid = true;
+    for (size_t i = 0; i < node->params->length(); ++i) {
+        ASTParamDeclNode* param_node = (*node->params)[i];
+        Type* param_type = visit(param_node->type);
+        if (param_type) {
+            param_types->append(param_type);
+        } else {
+            all_params_valid = false;
+        }
+    }
+
+    // If any parameter type was invalid, don't create the function type
+    // or check the body, as it will likely lead to cascading errors.
+    if (!all_params_valid) {
+        current_fn_return_type = prev_fn_return_type;
+        return NULL;
+    }
+
+    // Create the function type and update the symbol
+    Type* function_type = createFunctionType(unit.getArena(), param_types, current_fn_return_type);
+    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    if (fn_symbol) {
+        fn_symbol->symbol_type = function_type;
+    }
+
+    unit.getSymbolTable().enterScope();
+    for (size_t i = 0; i < node->params->length(); ++i) {
+        ASTParamDeclNode* param_node = (*node->params)[i];
+        Type* param_type = (*param_types)[i];
+        Symbol param_symbol = SymbolBuilder(unit.getArena())
+            .withName(param_node->name)
+            .ofType(SYMBOL_VARIABLE)
+            .withType(param_type)
+            .atLocation(param_node->type->loc)
+            .build();
+        unit.getSymbolTable().insert(param_symbol);
+    }
 
     visit(node->body);
+
+    unit.getSymbolTable().exitScope();
 
     current_fn_return_type = prev_fn_return_type;
     return NULL;
@@ -222,8 +289,14 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitTypeName(ASTTypeNameNode* node) {
-    return resolvePrimitiveTypeName(node->name);
+Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
+    Type* resolved_type = resolvePrimitiveTypeName(node->name);
+    if (!resolved_type) {
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "use of undeclared type '%s'", node->name);
+        unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, msg_buffer, unit.getArena());
+    }
+    return resolved_type;
 }
 
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {

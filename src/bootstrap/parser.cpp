@@ -993,17 +993,7 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->is_mut = is_mut;
 
     // Resolve the type and create the symbol for the symbol table.
-    Type* symbol_type = NULL;
-    if (type_node->type == NODE_TYPE_NAME) {
-        symbol_type = resolvePrimitiveTypeName(type_node->as.type_name.name);
-        if (symbol_type == NULL) {
-            error("Unknown type name in variable declaration");
-        }
-    } else {
-        // For now, we only support primitive types identified by name.
-        // Support for pointers, arrays, etc., will be added later.
-        error("Unsupported type expression in variable declaration");
-    }
+    Type* symbol_type = resolveAndVerifyType(type_node);
 
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
@@ -1127,37 +1117,61 @@ ASTNode* Parser::parseFnDecl() {
         error("Redeclaration of symbol");
     }
 
-    expect(TOKEN_LPAREN, "Expected '(' after function name");
-    if (peek().type != TOKEN_RPAREN) {
-        error("Non-empty parameter lists are not yet supported");
-    }
-    expect(TOKEN_RPAREN, "Expected ')' after parameter list");
-
-    expect(TOKEN_ARROW, "Expected '->' for return type in function declaration");
-    ASTNode* return_type_node = parseType();
-
-    symbol_table_->enterScope();
-    ASTNode* body_node = parseBlockStatement();
-    symbol_table_->exitScope();
-    if (body_node == NULL) {
-        error("Failed to parse function body");
-    }
-
-    // Create the function declaration node
+    // Create the function declaration node early to hold the parameters
     ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
     if (!fn_decl) {
         error("Out of memory");
     }
     fn_decl->name = name_token.value.identifier;
-    fn_decl->return_type = return_type_node;
-    fn_decl->body = body_node;
-
-    // Initialize the parameters array
     fn_decl->params = (DynamicArray<ASTParamDeclNode*>*)arena_->alloc(sizeof(DynamicArray<ASTParamDeclNode*>));
     if (!fn_decl->params) {
         error("Out of memory");
     }
     new (fn_decl->params) DynamicArray<ASTParamDeclNode*>(*arena_);
+    fn_decl->return_type = NULL;
+    fn_decl->body = NULL;
+
+
+    expect(TOKEN_LPAREN, "Expected '(' after function name");
+    if (peek().type != TOKEN_RPAREN) {
+        do {
+            Token param_name_token = expect(TOKEN_IDENTIFIER, "Expected parameter name");
+            expect(TOKEN_COLON, "Expected ':' after parameter name");
+            ASTNode* param_type_node = parseType();
+
+            ASTParamDeclNode* param_decl = (ASTParamDeclNode*)arena_->alloc(sizeof(ASTParamDeclNode));
+            if (!param_decl) {
+                error("Out of memory");
+            }
+            param_decl->name = param_name_token.value.identifier;
+            param_decl->type = param_type_node;
+
+            fn_decl->params->append(param_decl);
+        } while (match(TOKEN_COMMA));
+    }
+    expect(TOKEN_RPAREN, "Expected ')' after parameter list");
+
+    ASTNode* return_type_node = NULL;
+    if (match(TOKEN_ARROW)) {
+        return_type_node = parseType();
+    } else {
+        Token current = peek();
+        return_type_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!return_type_node) {
+            error("Out of memory");
+        }
+        return_type_node->type = NODE_TYPE_NAME;
+        return_type_node->loc = current.location;
+        return_type_node->as.type_name.name = "void";
+    }
+
+    ASTNode* body_node = parseBlockStatement();
+    if (body_node == NULL) {
+        error("Failed to parse function body");
+    }
+
+    fn_decl->return_type = return_type_node;
+    fn_decl->body = body_node;
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     if (!node) {
@@ -1179,6 +1193,23 @@ ASTNode* Parser::parseFnDecl() {
  *
  * @return A pointer to the ASTNode representing the parsed statement.
  */
+Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
+    if (type_node->type == NODE_TYPE_NAME) {
+        Type* resolved_type = resolvePrimitiveTypeName(type_node->as.type_name.name);
+        // It's not the parser's job to fail on an unknown type,
+        // but the TypeChecker's. Return NULL and let it handle it.
+        return resolved_type;
+    } else if (type_node->type == NODE_POINTER_TYPE) {
+        Type* base_type = resolveAndVerifyType(type_node->as.pointer_type.base);
+        if (base_type == NULL) {
+            return NULL; // Propagate the failure
+        }
+        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const);
+    }
+    // Let the TypeChecker handle unsupported types.
+    return NULL;
+}
+
 ASTNode* Parser::parseStatement() {
     switch (peek().type) {
         case TOKEN_CONST:

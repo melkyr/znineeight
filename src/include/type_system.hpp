@@ -2,6 +2,7 @@
 #define TYPE_SYSTEM_HPP
 
 #include <cstddef> // For size_t
+#include "memory.hpp" // For DynamicArray
 
 // Forward-declare Type for the pointer union member
 struct Type;
@@ -23,7 +24,8 @@ enum TypeKind {
     TYPE_F32,
     TYPE_F64,
     // Complex Types
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_FUNCTION
 };
 
 /**
@@ -40,6 +42,10 @@ struct Type {
             Type* base;
             bool is_const;
         } pointer;
+        struct {
+            DynamicArray<Type*>* params;
+            Type* return_type;
+        } function;
     } as;
 };
 
@@ -62,6 +68,15 @@ class ArenaAllocator;
  * @return A pointer to the newly allocated Type object.
  */
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
+
+/**
+ * @brief Creates a new function Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param params A dynamic array of pointers to the parameter types.
+ * @param return_type A pointer to the return type.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type);
 
 /**
  * @brief Converts a Type object to its string representation.
