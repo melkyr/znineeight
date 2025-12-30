@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeChecker_VarDecl_Valid_Simple) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
     ParserTestContext ctx(source, arena, interner);
@@ -20,7 +20,7 @@ TEST_FUNC(TypeChecker_VarDecl_Valid_Simple) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     const char* source = "const x: i32 = \"hello\"; const y: f32 = 12;";
     ParserTestContext ctx(source, arena, interner);
@@ -43,7 +43,7 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     const char* source = "const x: i32 = \"hello\";";
     ParserTestContext ctx(source, arena, interner);
@@ -65,7 +65,7 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Valid_Widening) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     StringInterner interner(arena);
     const char* source = "const x: i64 = 42;"; // 42 is an i32 literal
     ParserTestContext ctx(source, arena, interner);
