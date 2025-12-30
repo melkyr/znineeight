@@ -286,6 +286,11 @@ TEST_FUNC(TypeCheckerIntegerLiteralType);
 TEST_FUNC(ReturnTypeValidation_Valid);
 TEST_FUNC(ReturnTypeValidation_Invalid);
 TEST_FUNC(TypeCompatibility);
+TEST_FUNC(TypeChecker_VarDecl_Valid_Simple);
+TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch);
+TEST_FUNC(TypeChecker_VarDecl_Valid_Widening);
+TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors);
+TEST_FUNC(TypeToString_Reentrancy);
 
 
 // This function is executed in a child process by the error handling test.
@@ -555,6 +560,11 @@ int main(int argc, char* argv[]) {
         test_ReturnTypeValidation_Valid,
         test_ReturnTypeValidation_Invalid,
         test_TypeCompatibility,
+        test_TypeChecker_VarDecl_Valid_Simple,
+        test_TypeChecker_VarDecl_Invalid_Mismatch,
+        test_TypeChecker_VarDecl_Valid_Widening,
+        test_TypeChecker_VarDecl_Multiple_Errors,
+        test_TypeToString_Reentrancy,
     };
 
     int passed = 0;

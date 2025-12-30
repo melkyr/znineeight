@@ -1,5 +1,7 @@
 #include "error_handler.hpp"
 #include "source_manager.hpp"
+#include <cstring>
+
 
 #ifdef _WIN32
 #include <windows.h>
@@ -62,6 +64,15 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
     new_report.message = message;
     new_report.hint = hint;
     errors_.append(new_report);
+}
+
+void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint) {
+    size_t msg_len = strlen(message);
+    char* msg_copy = (char*)arena.alloc(msg_len + 1);
+    strcpy(msg_copy, message);
+    msg_copy[msg_len] = '\0';
+
+    report(code, location, msg_copy, hint);
 }
 
 void ErrorHandler::printErrors() {

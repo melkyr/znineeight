@@ -1,5 +1,6 @@
 #include "type_checker.hpp"
 #include "type_system.hpp"
+#include <cstdio> // For sprintf
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
 }
@@ -179,8 +180,16 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
     Type* declared_type = visit(node->type);
     Type* initializer_type = visit(node->initializer);
 
-    if (declared_type && initializer_type && declared_type != initializer_type) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, "Type mismatch in variable declaration");
+    if (declared_type && initializer_type && !areTypesCompatible(declared_type, initializer_type)) {
+        char declared_type_str[64];
+        char initializer_type_str[64];
+        typeToString(declared_type, declared_type_str, sizeof(declared_type_str));
+        typeToString(initializer_type, initializer_type_str, sizeof(initializer_type_str));
+
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "cannot assign type '%s' to variable of type '%s'",
+                 initializer_type_str, declared_type_str);
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
     }
 
     return NULL;

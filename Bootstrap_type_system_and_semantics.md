@@ -165,8 +165,12 @@ public:
 
 ### Variable Declarations
 
--   The analyzer will check that the type of the initializer expression is compatible with the declared type of the variable.
--   It will ensure that a variable is not redefined within the same scope.
+When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` performs the following validation:
+-   It determines the declared type of the variable by visiting the type expression node.
+-   It determines the type of the initializer by visiting the initializer expression node.
+-   It then calls `areTypesCompatible()` to verify that the initializer's type can be safely assigned to the variable's declared type. This check allows for safe, implicit widening conversions (e.g., assigning an `i32` literal to an `i64` variable).
+-   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
+-   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
 
 ### Function Declarations and Return Types
 

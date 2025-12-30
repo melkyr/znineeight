@@ -63,4 +63,12 @@ class ArenaAllocator;
  */
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
 
+/**
+ * @brief Converts a Type object to its string representation.
+ * @param type A pointer to the Type object.
+ * @param buffer The character buffer to write the string into.
+ * @param buffer_size The size of the character buffer.
+ */
+void typeToString(Type* type, char* buffer, size_t buffer_size);
+
 #endif // TYPE_SYSTEM_HPP
