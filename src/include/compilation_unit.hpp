@@ -48,6 +48,10 @@ public:
         return error_handler_;
     }
 
+    SourceManager& getSourceManager() {
+        return source_manager_;
+    }
+
     ArenaAllocator& getArena() {
         return arena_;
     }

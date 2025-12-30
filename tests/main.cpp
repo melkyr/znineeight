@@ -4,6 +4,7 @@
 #include "../src/include/source_manager.hpp"
 #include "../src/include/lexer.hpp"
 #include "../src/include/parser.hpp"
+#include "type_checker.hpp"
 #include "test_utils.hpp"
 #include <cstring>
 #include <cstdio>
@@ -72,6 +73,10 @@ bool expect_parser_oom_abort(const char* source_code) {
 
 bool expect_statement_parser_abort(const char* source_code) {
     return run_test_in_child_process(source_code, "--run-statement-parser-test");
+}
+
+bool expect_type_checker_abort(const char* source_code) {
+    return run_test_in_child_process(source_code, "--run-type-checker-test");
 }
 
 // Forward declarations for all test functions
@@ -300,6 +305,10 @@ TEST_FUNC(TypeChecker_StringLiteral);
 TEST_FUNC(TypeChecker_Identifier);
 TEST_FUNC(TypeChecker_BinaryOp);
 
+// C89 Compatibility Tests
+TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
+// TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -341,6 +350,24 @@ void run_parser_oom_test_and_abort(const char* source_code) {
     exit(0);
 }
 
+void run_type_checker_test_and_abort(const char* source_code) {
+    ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit comp_unit(arena, interner);
+    u32 file_id = comp_unit.addSource("test.zig", source_code);
+    Parser parser = comp_unit.createParser(file_id);
+
+    ASTNode* ast = parser.parse();
+
+    TypeChecker type_checker(comp_unit);
+    type_checker.check(ast);
+
+    // If we reach here, the type checker did NOT abort.
+    exit(0);
+}
+
+
 int main(int argc, char* argv[]) {
     // Check if the test runner is being invoked in the special mode
     // for testing parser errors.
@@ -356,6 +383,11 @@ int main(int argc, char* argv[]) {
 
     if (argc == 3 && strcmp(argv[1], "--run-statement-parser-test") == 0) {
         run_parser_test_and_abort(argv[2], true);
+        return 1; // Should be unreachable
+    }
+
+    if (argc == 3 && strcmp(argv[1], "--run-type-checker-test") == 0) {
+        run_type_checker_test_and_abort(argv[2]);
         return 1; // Should be unreachable
     }
 
@@ -581,6 +613,10 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_StringLiteral,
         test_TypeChecker_Identifier,
         test_TypeChecker_BinaryOp,
+
+        // C89 Compatibility Tests
+        test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
+        // test_TypeCheckerC89Compat_RejectFunctionPointerCall,
     };
 
     int passed = 0;

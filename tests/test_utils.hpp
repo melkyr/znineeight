@@ -43,5 +43,6 @@ private:
 // Forward declarations for test helpers defined in main.cpp
 bool expect_parser_abort(const char* source_code);
 bool expect_statement_parser_abort(const char* source_code);
+bool expect_type_checker_abort(const char* source_code);
 
 #endif // TEST_UTILS_HPP

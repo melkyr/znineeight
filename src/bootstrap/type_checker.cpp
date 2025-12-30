@@ -2,6 +2,7 @@
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include <cstdio> // For sprintf
+#include <cstdlib> // For abort()
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
 }
@@ -104,6 +105,19 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
+    if (node->args->length() > 4) {
+        fatalError(node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
+    }
+
+    // Check for function pointer calls.
+    if (node->callee->type == NODE_IDENTIFIER) {
+        Symbol* callee_symbol = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
+        if (callee_symbol && callee_symbol->kind == SYMBOL_VARIABLE && callee_symbol->symbol_type && callee_symbol->symbol_type->kind == TYPE_FUNCTION) {
+            fatalError(node->callee->loc, "Bootstrap compiler does not support function pointer calls.");
+        }
+    }
+
+
     visit(node->callee);
     for (size_t i = 0; i < node->args->length(); ++i) {
         visit((*node->args)[i]);
@@ -425,4 +439,16 @@ bool TypeChecker::isNumericType(Type* type) {
         return false;
     }
     return type->kind >= TYPE_I8 && type->kind <= TYPE_F64;
+}
+
+void TypeChecker::fatalError(SourceLocation loc, const char* message) {
+    // For now, we'll just print to stderr and abort.
+    // In the future, this could be integrated with the ErrorHandler.
+    const SourceFile* file = unit.getSourceManager().getFile(loc.file_id);
+    fprintf(stderr, "Fatal type error at %s:%d:%d: %s\n",
+            file ? file->filename : "<unknown>",
+            loc.line,
+            loc.column,
+            message);
+    abort();
 }
