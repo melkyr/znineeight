@@ -1,5 +1,6 @@
 #include "type_system.hpp"
 #include "memory.hpp"
+#include <cstdio> // For sprintf
 #include <cstring> // For strcmp
 
 // Statically define all the primitive types.
@@ -53,4 +54,42 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
     new_type->as.pointer.base = base_type;
     new_type->as.pointer.is_const = is_const;
     return new_type;
+}
+
+void typeToString(Type* type, char* buffer, size_t buffer_size) {
+    if (!type) {
+        snprintf(buffer, buffer_size, "(null)");
+        return;
+    }
+
+    const char* primitive_name = NULL;
+    switch (type->kind) {
+        case TYPE_VOID: primitive_name = "void"; break;
+        case TYPE_BOOL: primitive_name = "bool"; break;
+        case TYPE_I8:   primitive_name = "i8";   break;
+        case TYPE_I16:  primitive_name = "i16";  break;
+        case TYPE_I32:  primitive_name = "i32";  break;
+        case TYPE_I64:  primitive_name = "i64";  break;
+        case TYPE_U8:   primitive_name = "u8";   break;
+        case TYPE_U16:  primitive_name = "u16";  break;
+        case TYPE_U32:  primitive_name = "u32";  break;
+        case TYPE_U64:  primitive_name = "u64";  break;
+        case TYPE_ISIZE:primitive_name = "isize";break;
+        case TYPE_USIZE:primitive_name = "usize";break;
+        case TYPE_F32:  primitive_name = "f32";  break;
+        case TYPE_F64:  primitive_name = "f64";  break;
+        case TYPE_POINTER: {
+            char base_name[64];
+            typeToString(type->as.pointer.base, base_name, sizeof(base_name));
+            if (type->as.pointer.is_const) {
+                snprintf(buffer, buffer_size, "*const %s", base_name);
+            } else {
+                snprintf(buffer, buffer_size, "*%s", base_name);
+            }
+            return;
+        }
+        default: primitive_name = "unknown"; break;
+    }
+
+    snprintf(buffer, buffer_size, "%s", primitive_name);
 }

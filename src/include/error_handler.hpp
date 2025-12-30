@@ -84,10 +84,19 @@ public:
     void report(ErrorCode code, SourceLocation location, const char* message, const char* hint = NULL);
 
     /**
+     * @brief Reports a new error with a message that will be copied into the arena.
+     */
+    void report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint = NULL);
+
+    /**
      * @brief Checks if any errors have been reported.
      */
     bool hasErrors() const {
         return errors_.length() > 0;
+    }
+
+    const DynamicArray<ErrorReport>& getErrors() const {
+        return errors_;
     }
 
     /**
