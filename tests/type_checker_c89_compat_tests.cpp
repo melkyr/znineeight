@@ -8,6 +8,8 @@
 // Forward declarations for test functions
 TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
 // TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall);
+TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
+TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
 
 TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs) {
     const char* source =
@@ -30,5 +32,25 @@ TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall) {
     //     "    func_ptr();\n"
     //     "}\n";
     // ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_Call_WrongArgumentCount) {
+    const char* source =
+        "fn two_args(a: i32, b: i32) -> void {}\n"
+        "fn main() -> void {\n"
+        "    two_args(1);\n"
+        "}\n";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType) {
+    const char* source =
+        "fn needs_i32(a: i32) -> void {}\n"
+        "fn main() -> void {\n"
+        "    needs_i32(\"hello\");\n"
+        "}\n";
+    ASSERT_TRUE(expect_type_checker_abort(source));
     return true;
 }

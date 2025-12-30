@@ -109,20 +109,52 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
         fatalError(node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
     }
 
-    // Check for function pointer calls.
-    if (node->callee->type == NODE_IDENTIFIER) {
-        Symbol* callee_symbol = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
-        if (callee_symbol && callee_symbol->kind == SYMBOL_VARIABLE && callee_symbol->symbol_type && callee_symbol->symbol_type->kind == TYPE_FUNCTION) {
-            fatalError(node->callee->loc, "Bootstrap compiler does not support function pointer calls.");
+    Type* callee_type = visit(node->callee);
+    if (!callee_type) {
+        // Error already reported (e.g., undefined function)
+        return NULL;
+    }
+
+    if (callee_type->kind != TYPE_FUNCTION) {
+        // This also handles the function pointer case, as a variable holding a
+        // function would have a symbol kind of VARIABLE, not FUNCTION.
+        fatalError(node->callee->loc, "called object is not a function");
+    }
+
+    size_t expected_args = callee_type->as.function.params->length();
+    size_t actual_args = node->args->length();
+
+    if (actual_args != expected_args) {
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "wrong number of arguments to function call, expected %lu, got %lu",
+                 (unsigned long)expected_args, (unsigned long)actual_args);
+        fatalError(node->callee->loc, msg_buffer);
+    }
+
+    for (size_t i = 0; i < actual_args; ++i) {
+        ASTNode* arg_node = (*node->args)[i];
+        Type* arg_type = visit(arg_node);
+        Type* param_type = (*callee_type->as.function.params)[i];
+
+        if (!arg_type) {
+            // Error in argument expression, already reported.
+            continue;
+        }
+
+        if (!areTypesCompatible(param_type, arg_type)) {
+            char param_type_str[64];
+            char arg_type_str[64];
+            typeToString(param_type, param_type_str, sizeof(param_type_str));
+            typeToString(arg_type, arg_type_str, sizeof(arg_type_str));
+
+            char msg_buffer[256];
+            snprintf(msg_buffer, sizeof(msg_buffer), "incompatible argument type for argument %lu, expected '%s', got '%s'",
+                     (unsigned long)i + 1, param_type_str, arg_type_str);
+            fatalError(arg_node->loc, msg_buffer);
         }
     }
 
-
-    visit(node->callee);
-    for (size_t i = 0; i < node->args->length(); ++i) {
-        visit((*node->args)[i]);
-    }
-    return NULL; // Placeholder
+    return callee_type->as.function.return_type;
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
