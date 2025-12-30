@@ -45,6 +45,7 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
 private:
+    bool isNumericType(Type* type);
     CompilationUnit& unit;
     Type* current_fn_return_type;
 

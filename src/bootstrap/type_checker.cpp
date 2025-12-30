@@ -63,23 +63,43 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
     Type* left_type = visit(node->left);
     Type* right_type = visit(node->right);
 
-    if (left_type && right_type) {
-        if (left_type->kind == TYPE_I32 && right_type->kind == TYPE_I32) {
-            switch (node->op) {
-                case TOKEN_PLUS:
-                case TOKEN_MINUS:
-                case TOKEN_STAR:
-                case TOKEN_SLASH:
-                    return left_type; // Result of i32 op i32 is i32
-                default:
-                    break;
-            }
-        }
+    // If either operand is null, an error has already been reported.
+    if (!left_type || !right_type) {
+        return NULL;
     }
 
-    // If we get here, the types are incompatible or the operator is not supported
-    // for these types. Report an error.
-    // (For now, we'll just return NULL, as the return type mismatch will be caught later)
+    // Check for compatible types based on the operator
+    switch (node->op) {
+        // Arithmetic operators
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:
+        case TOKEN_STAR:
+        case TOKEN_SLASH:
+        case TOKEN_PERCENT:
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+                return left_type; // For now, result type is the same as operands
+            }
+            break;
+
+        // Comparison operators
+        case TOKEN_EQUAL_EQUAL:
+        case TOKEN_BANG_EQUAL:
+        case TOKEN_LESS:
+        case TOKEN_LESS_EQUAL:
+        case TOKEN_GREATER:
+        case TOKEN_GREATER_EQUAL:
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+                return resolvePrimitiveTypeName("bool");
+            }
+            break;
+
+        default:
+            // Operator not supported for binary expressions yet
+            break;
+    }
+
+    // If we fall through, the types were not compatible for the given operator.
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->left->loc, "Invalid operands for binary operator");
     return NULL;
 }
 
@@ -398,4 +418,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     }
 
     return false;
+}
+
+bool TypeChecker::isNumericType(Type* type) {
+    if (!type) {
+        return false;
+    }
+    return type->kind >= TYPE_I8 && type->kind <= TYPE_F64;
 }
