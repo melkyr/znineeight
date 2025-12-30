@@ -56,8 +56,32 @@ Type* TypeChecker::visit(ASTNode* node) {
 }
 
 Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
-    visit(node->operand);
-    return NULL; // Placeholder
+    Type* operand_type = visit(node->operand);
+    if (!operand_type) {
+        return NULL; // Error already reported
+    }
+
+    switch (node->op) {
+        case TOKEN_AMPERSAND:
+            // Taking the address of something gives a pointer to it.
+            return createPointerType(unit.getArena(), operand_type, false);
+        case TOKEN_MINUS:
+            if (isNumericType(operand_type)) {
+                return operand_type; // Negation doesn't change numeric type
+            }
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Unary '-' requires a numeric operand");
+            return NULL;
+        case TOKEN_BANG:
+            // Logical not can be applied to any type that can be a condition.
+            if (operand_type->kind == TYPE_BOOL || isNumericType(operand_type) || operand_type->kind == TYPE_POINTER) {
+                return resolvePrimitiveTypeName("bool");
+            }
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Invalid operand for logical not");
+            return NULL;
+        default:
+            // TODO: Handle other unary operators like dereference (*), bitwise not (~)
+            return NULL;
+    }
 }
 
 Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
@@ -208,9 +232,11 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 }
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
+    unit.getSymbolTable().enterScope();
     for (size_t i = 0; i < node->statements->length(); ++i) {
         visit((*node->statements)[i]);
     }
+    unit.getSymbolTable().exitScope();
     return NULL; // Blocks don't have a type
 }
 
@@ -219,7 +245,17 @@ Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* node) {
 }
 
 Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
-    visit(node->condition);
+    Type* condition_type = visit(node->condition);
+    if (condition_type) {
+        if (condition_type->kind != TYPE_BOOL &&
+            !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+            condition_type->kind != TYPE_POINTER) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "if statement condition must be a bool, integer, or pointer",
+                                           unit.getArena());
+        }
+    }
+
     visit(node->then_block);
     if (node->else_block) {
         visit(node->else_block);
@@ -228,7 +264,17 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
 }
 
 Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
-    visit(node->condition);
+    Type* condition_type = visit(node->condition);
+    if (condition_type) {
+        if (condition_type->kind != TYPE_BOOL &&
+            !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+            condition_type->kind != TYPE_POINTER) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "while statement condition must be a bool, integer, or pointer",
+                                           unit.getArena());
+        }
+    }
+
     visit(node->body);
     return NULL;
 }
@@ -275,6 +321,19 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         snprintf(msg_buffer, sizeof(msg_buffer), "cannot assign type '%s' to variable of type '%s'",
                  initializer_type_str, declared_type_str);
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+    }
+
+    // Insert the symbol into the current scope
+    if (declared_type) {
+        Symbol var_symbol = SymbolBuilder(unit.getArena())
+            .withName(node->name)
+            .ofType(SYMBOL_VARIABLE)
+            .withType(declared_type)
+            .atLocation(node->type->loc)
+            .build();
+        if (!unit.getSymbolTable().insert(var_symbol)) {
+            unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
+        }
     }
 
     return NULL;

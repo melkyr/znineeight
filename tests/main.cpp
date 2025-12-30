@@ -311,12 +311,24 @@ TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
 
+// Control Flow Type Checker Tests
+TEST_FUNC(TypeCheckerControlFlow_IfStatementWithBooleanCondition);
+TEST_FUNC(TypeCheckerControlFlow_IfStatementWithIntegerCondition);
+TEST_FUNC(TypeCheckerControlFlow_IfStatementWithPointerCondition);
+TEST_FUNC(TypeCheckerControlFlow_IfStatementWithFloatCondition);
+TEST_FUNC(TypeCheckerControlFlow_IfStatementWithVoidCondition);
+TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithBooleanCondition);
+TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithIntegerCondition);
+TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithPointerCondition);
+TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithFloatCondition);
+TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithVoidCondition);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
 // The successful outcome is for the program to abort.
 void run_parser_test_and_abort(const char* source_code, bool is_statement_test) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source_code, arena, interner);
@@ -621,6 +633,18 @@ int main(int argc, char* argv[]) {
         // test_TypeCheckerC89Compat_RejectFunctionPointerCall,
         test_TypeChecker_Call_WrongArgumentCount,
         test_TypeChecker_Call_IncompatibleArgumentType,
+
+        // Control Flow Type Checker Tests
+        test_TypeCheckerControlFlow_IfStatementWithBooleanCondition,
+        test_TypeCheckerControlFlow_IfStatementWithIntegerCondition,
+        test_TypeCheckerControlFlow_IfStatementWithPointerCondition,
+        test_TypeCheckerControlFlow_IfStatementWithFloatCondition,
+        test_TypeCheckerControlFlow_IfStatementWithVoidCondition,
+        test_TypeCheckerControlFlow_WhileStatementWithBooleanCondition,
+        test_TypeCheckerControlFlow_WhileStatementWithIntegerCondition,
+        test_TypeCheckerControlFlow_WhileStatementWithPointerCondition,
+        test_TypeCheckerControlFlow_WhileStatementWithFloatCondition,
+        test_TypeCheckerControlFlow_WhileStatementWithVoidCondition,
     };
 
     int passed = 0;

@@ -262,6 +262,14 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
     -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
     -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
 
+### Control Flow Statements
+
+-   **`if` and `while` Statements:** The condition of an `if` or `while` statement is expected to be a type that can be evaluated in a boolean context. To align with C89-style behavior, the `TypeChecker` accepts conditions of the following types:
+    -   `bool`
+    -   Any integer type (`i8` through `u64`, `isize`, `usize`)
+    -   Any pointer type (`*T`)
+    If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
+
 ## 5. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.
