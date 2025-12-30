@@ -37,7 +37,8 @@ enum TypeKind {
     TYPE_F32,
     TYPE_F64,
     // Complex Types
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_FUNCTION
 };
 ```
 
@@ -65,7 +66,17 @@ struct Type {
          */
         struct PointerDetails {
             Type* base; // The type that the pointer points to.
+            bool is_const;
         } pointer;
+
+        /**
+         * @struct FunctionDetails
+         * @brief Details specific to function types.
+         */
+        struct FunctionDetails {
+            DynamicArray<Type*>* params;
+            Type* return_type;
+        } function;
     } as;
 };
 ```
@@ -172,12 +183,21 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 -   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
 -   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
 
-### Function Declarations and Return Types
+### Function Declarations and Signatures
 
-The `TypeChecker` validates that the type of a returned expression is compatible with the function's declared return type.
--   During the traversal of an `ASTFnDeclNode`, the `TypeChecker` records the function's return type.
--   When it encounters an `ASTReturnStmtNode`, it compares the type of the return expression (or `void` if there is no expression) with the recorded return type using `areTypesCompatible`.
--   If the types are not compatible, it reports a `ERR_TYPE_MISMATCH` error.
+When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` performs a comprehensive validation of the entire function signature:
+
+1.  **Parameter Type Resolution:** It iterates through each parameter in the function's declaration. For each parameter, it visits the corresponding type node (e.g., `ASTTypeNameNode`, `ASTPointerTypeNode`).
+    -   If a parameter's type name cannot be resolved to a known type (e.g., `fn my_func(a: NotARealType)`), it reports an `ERR_UNDECLARED_TYPE` error.
+    -   This validation prevents further errors that would arise from using an invalid type within the function body.
+
+2.  **Return Type Resolution:** It resolves the function's return type by visiting its type node. If the return type is invalid, it also reports an `ERR_UNDECLARED_TYPE` error.
+
+3.  **Function Type Creation:** If all parameter and return types are valid, it constructs a new `Type` object with the kind `TYPE_FUNCTION`. This `Type` object stores a `DynamicArray` of the parameter types and a pointer to the return type.
+
+4.  **Symbol Update:** The `TypeChecker` then updates the function's `Symbol` in the `SymbolTable` to point to this newly created function type. This makes the full signature available for future use, such as in type-checking function calls.
+
+5.  **Return Statement Validation:** After processing the signature, it proceeds to visit the function's body. When it encounters a `return` statement, it compares the type of the returned expression against the `current_fn_return_type` it recorded while visiting the signature, ensuring that the return value is compatible with the function's declared return type.
 
 ### Literals
 
@@ -263,7 +283,10 @@ A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduce
 This mechanism allows the parser to easily obtain a valid `Type*` for a symbol by looking up the type name found in the source code.
 
 ### `createPointerType`
-A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type)`, has been added to facilitate the creation of pointer types. It allocates a new `Type` object from the arena, sets its kind to `TYPE_POINTER`, and links it to the provided base type.
+A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const)`, has been added to facilitate the creation of pointer types. It allocates a new `Type` object from the arena, sets its kind to `TYPE_POINTER`, and links it to the provided base type, respecting the `const` qualifier.
+
+### `createFunctionType`
+A new helper function, `createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type)`, has been added to create `TYPE_FUNCTION` objects. It allocates a new `Type` and populates it with the list of parameter types and the return type.
 
 ## 7. Parser Integration
 

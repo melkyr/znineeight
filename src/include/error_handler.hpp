@@ -25,6 +25,7 @@ enum ErrorCode {
 
     // Semantic Errors (3000-3999)
     ERR_UNDEFINED_VARIABLE = 3000,
+    ERR_UNDECLARED_TYPE = 3001,
 
     // Operational Errors (4000-4999)
     ERR_INVALID_OPERATION = 4000,

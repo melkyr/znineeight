@@ -291,6 +291,8 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch);
 TEST_FUNC(TypeChecker_VarDecl_Valid_Widening);
 TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors);
 TEST_FUNC(TypeToString_Reentrancy);
+TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams);
+TEST_FUNC(TypeCheckerFnDecl_InvalidParamType);
 
 
 // This function is executed in a child process by the error handling test.
@@ -565,6 +567,8 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_VarDecl_Valid_Widening,
         test_TypeChecker_VarDecl_Multiple_Errors,
         test_TypeToString_Reentrancy,
+        test_TypeCheckerFnDecl_ValidSimpleParams,
+        test_TypeCheckerFnDecl_InvalidParamType,
     };
 
     int passed = 0;

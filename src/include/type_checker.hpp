@@ -36,7 +36,7 @@ public:
     Type* visitStructDecl(ASTStructDeclNode* node);
     Type* visitUnionDecl(ASTUnionDeclNode* node);
     Type* visitEnumDecl(ASTEnumDeclNode* node);
-    Type* visitTypeName(ASTTypeNameNode* node);
+    Type* visitTypeName(ASTNode* parent, ASTTypeNameNode* node);
     Type* visitPointerType(ASTPointerTypeNode* node);
     Type* visitArrayType(ASTArrayTypeNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
