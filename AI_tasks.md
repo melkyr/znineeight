@@ -271,11 +271,12 @@ Given memory constraints, allocate:
         Output: Call validation in TypeChecker
 92. **Task 92:** Implement basic control flow checking
     - Risk Level: LOW
-    - Ensure if and while statements have boolean conditions
+    - Ensure control flow conditions are C-style compatible (boolean, integer, or pointer)
     - Constraint Check: C89 control flow is supported
-93. **Task 93:** Implement basic pointer operation checking (DONE)
+93. **Task 93:** Implement basic pointer operation checking (Partially Implemented)
     - Risk Level: MEDIUM
-    - Check address-of (&) and dereference (*) operators
+    - Check address-of (&) and dereference (*) operators (DONE)
+    - Check for pointer arithmetic (TODO)
     - Constraint Risk: Must ensure no unsafe pointer arithmetic beyond C89 capabilities
 94. **Task 94:** PRIMITIVE TYPE MAPPING TABLE SETUP (LOW)
 
