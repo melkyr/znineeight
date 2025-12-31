@@ -308,7 +308,7 @@ This upfront memory cost was not present in the previous, simpler implementation
 **Impact on Performance and Unit Tests:**
 This increased baseline memory usage, combined with the new symbol allocations during parsing, caused several unit tests with small, hardcoded `ArenaAllocator` sizes (e.g., 1024 or 2048 bytes) to fail with "Out of memory" errors. These tests were not provisioned for the additional memory overhead of a fully active symbol table.
 
-The solution was to perform a comprehensive update of the test suite, increasing the arena sizes in all parser-related tests to 4096 bytes. This proactive measure ensures that the test environment is stable and has sufficient capacity for the new functionality, preventing spurious memory-related failures.
+The solution was to perform a comprehensive update of the test suite, increasing the arena sizes in all parser-related tests from 4096 to 8192 bytes. This proactive measure ensures that the test environment is stable and has sufficient capacity for the new functionality, preventing spurious memory-related failures.
 
 **Performance Concerns:**
 The increase in baseline memory usage is not considered a significant performance concern for the following reasons:
