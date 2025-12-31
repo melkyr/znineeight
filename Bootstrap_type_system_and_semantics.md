@@ -262,6 +262,15 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
     -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
     -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
 
+-   **Pointer Operations:**
+    -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:
+        -   Variables (e.g., `&my_var`).
+        -   Array accesses (e.g., `&my_array[i]`).
+        -   Pointer dereferences (e.g., `&*my_ptr`).
+        Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_TYPE_MISMATCH`. The resulting type of `&x` where `x` has type `T` is `*T`.
+    -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
+        -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
+
 ### Control Flow Statements
 
 -   **`if` and `while` Statements:** The condition of an `if` or `while` statement is expected to be a type that can be evaluated in a boolean context. To align with C89-style behavior, the `TypeChecker` accepts conditions of the following types:

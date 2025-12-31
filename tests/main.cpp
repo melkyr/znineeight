@@ -323,6 +323,13 @@ TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithPointerCondition);
 TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithFloatCondition);
 TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithVoidCondition);
 
+// Forward declarations for pointer type checker tests
+TEST_FUNC(TypeChecker_Dereference_ValidPointer);
+TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
+TEST_FUNC(TypeChecker_Dereference_ConstPointer);
+TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
+TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
+
 
 // This function is executed in a child process by the error handling test.
 // It sets up the parser and attempts to parse invalid code.
@@ -645,6 +652,11 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerControlFlow_WhileStatementWithPointerCondition,
         test_TypeCheckerControlFlow_WhileStatementWithFloatCondition,
         test_TypeCheckerControlFlow_WhileStatementWithVoidCondition,
+        test_TypeChecker_Dereference_ValidPointer,
+        test_TypeChecker_Dereference_Invalid_NonPointer,
+        test_TypeChecker_Dereference_ConstPointer,
+        test_TypeChecker_AddressOf_Invalid_RValue,
+        test_TypeChecker_AddressOf_Valid_LValues,
     };
 
     int passed = 0;

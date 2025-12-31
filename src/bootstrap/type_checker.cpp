@@ -62,9 +62,29 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
     }
 
     switch (node->op) {
-        case TOKEN_AMPERSAND:
-            // Taking the address of something gives a pointer to it.
-            return createPointerType(unit.getArena(), operand_type, false);
+        case TOKEN_STAR:
+            if (operand_type->kind == TYPE_POINTER) {
+                return operand_type->as.pointer.base;
+            }
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a non-pointer type");
+            return NULL;
+        case TOKEN_AMPERSAND: {
+            // The operand of '&' must be an l-value.
+            // We consider identifiers, array accesses, and dereferences to be l-values.
+            bool is_lvalue = false;
+            if (node->operand->type == NODE_IDENTIFIER || node->operand->type == NODE_ARRAY_ACCESS) {
+                is_lvalue = true;
+            } else if (node->operand->type == NODE_UNARY_OP && node->operand->as.unary_op.op == TOKEN_STAR) {
+                is_lvalue = true;
+            }
+
+            if (is_lvalue) {
+                return createPointerType(unit.getArena(), operand_type, false);
+            } else {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot take the address of an r-value");
+                return NULL;
+            }
+        }
         case TOKEN_MINUS:
             if (isNumericType(operand_type)) {
                 return operand_type; // Negation doesn't change numeric type
