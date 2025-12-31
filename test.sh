@@ -91,6 +91,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_expressions.cpp \
     tests/type_checker_c89_compat_tests.cpp \
     tests/type_checker_control_flow.cpp \
+    tests/type_checker_pointers.cpp \
     -Isrc/include \
     -o test_runner
 
