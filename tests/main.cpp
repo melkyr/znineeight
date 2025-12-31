@@ -271,10 +271,7 @@ TEST_FUNC(Parser_RecursionLimit_Binary);
 TEST_FUNC(compilation_unit_creation);
 TEST_FUNC(compilation_unit_var_decl);
 TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
-TEST_FUNC(SymbolTable_DuplicateDetection);
-TEST_FUNC(SymbolTable_NestedScopes);
 TEST_FUNC(SymbolBuilder_BuildsCorrectly);
-TEST_FUNC(SymbolTable_ScopingAndLookup);
 TEST_FUNC(TypeResolution_ValidPrimitives);
 TEST_FUNC(TypeResolution_InvalidOrUnsupported);
 TEST_FUNC(TypeResolution_AllPrimitives);
@@ -329,6 +326,14 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
 TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
+TEST_FUNC(TypeChecker_PointerArithmetic_PointerPlusInt);
+TEST_FUNC(TypeChecker_PointerArithmetic_IntPlusPointer);
+TEST_FUNC(TypeChecker_PointerArithmetic_PointerMinusInt);
+TEST_FUNC(TypeChecker_PointerArithmetic_PointerMinusPointer);
+TEST_FUNC(TypeChecker_PointerArithmetic_Invalid_PointerPlusPointer);
+TEST_FUNC(TypeChecker_PointerArithmetic_Invalid_PointerMinusPointer_DifferentTypes);
+TEST_FUNC(SymbolTable_InsertAndLookup);
+TEST_FUNC(SymbolTable_Growth);
 
 
 // This function is executed in a child process by the error handling test.
@@ -601,10 +606,7 @@ int main(int argc, char* argv[]) {
         test_Lexer_UnterminatedStringHexEscape,
         test_Lexer_NumericLookaheadSafety,
         test_Lexer_UnicodeInStringLiteral,
-        test_SymbolTable_DuplicateDetection,
-        test_SymbolTable_NestedScopes,
         test_SymbolBuilder_BuildsCorrectly,
-        test_SymbolTable_ScopingAndLookup,
         test_TypeResolution_ValidPrimitives,
         test_TypeResolution_InvalidOrUnsupported,
         test_TypeResolution_AllPrimitives,
@@ -657,6 +659,14 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Dereference_ConstPointer,
         test_TypeChecker_AddressOf_Invalid_RValue,
         test_TypeChecker_AddressOf_Valid_LValues,
+        test_TypeChecker_PointerArithmetic_PointerPlusInt,
+        test_TypeChecker_PointerArithmetic_IntPlusPointer,
+        test_TypeChecker_PointerArithmetic_PointerMinusInt,
+        test_TypeChecker_PointerArithmetic_PointerMinusPointer,
+        test_TypeChecker_PointerArithmetic_Invalid_PointerPlusPointer,
+        test_TypeChecker_PointerArithmetic_Invalid_PointerMinusPointer_DifferentTypes,
+        test_SymbolTable_InsertAndLookup,
+        test_SymbolTable_Growth,
     };
 
     int passed = 0;

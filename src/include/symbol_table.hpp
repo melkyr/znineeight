@@ -5,6 +5,7 @@
 #include "ast.hpp"
 #include "memory.hpp"
 #include "source_manager.hpp"
+#include "hash.hpp"
 
 // Forward declarations
 class ArenaAllocator;
@@ -15,6 +16,14 @@ enum SymbolType {
     SYMBOL_FUNCTION,
     SYMBOL_TYPE,
     SYMBOL_UNION_TYPE,
+};
+
+struct Symbol; // Forward declaration
+
+// A simple hash map entry for collision chaining
+struct SymbolEntry {
+    Symbol* symbol;
+    SymbolEntry* next;
 };
 
 struct Symbol {
@@ -44,8 +53,15 @@ public:
 };
 
 struct Scope {
-    DynamicArray<Symbol> symbols;
-    Scope(ArenaAllocator& arena) : symbols(arena) {}
+    ArenaAllocator& arena;
+    DynamicArray<SymbolEntry*> buckets;
+    size_t count;
+    size_t capacity;
+
+    Scope(ArenaAllocator& allocator);
+    Symbol* find(const char* name);
+    bool insert(Symbol* symbol);
+    void grow();
 };
 
 class SymbolTable {
