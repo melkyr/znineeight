@@ -234,6 +234,14 @@ Function calls are subject to the following strict limitations:
 -   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
 -   **Pointer Arithmetic:** Pointer arithmetic will be restricted to ensure it is C89-compatible.
 
+### Control Flow Statements
+
+-   **`if` and `while` Statements:** The condition of an `if` or `while` statement is expected to be a type that can be evaluated in a boolean context. To align with C89-style behavior, the `TypeChecker` accepts conditions of the following types:
+    -   `bool`
+    -   Any integer type (`i8` through `u64`, `isize`, `usize`)
+    -   Any pointer type (`*T`)
+    If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
+
 ### Function Calls
 
 When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` performs a series of critical validations to ensure the call is well-formed and adheres to the bootstrap compiler's constraints.
