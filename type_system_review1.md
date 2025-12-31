@@ -89,3 +89,144 @@ This document contains a detailed review of the Milestone 4 tasks related to the
 ## 4. C89 Compatibility Enforcement
 
 The `TypeChecker` is effectively enforcing C89 limitations. The current gaps in enforcement are primarily due to the parser not yet supporting more advanced Zig features (like slices, error unions, etc.). As the parser becomes more capable, the `TypeChecker` will need corresponding rules to reject non-C89-compatible constructs. The current foundation is strong.
+
+## 5. Action Plan
+
+This section proposes concrete implementation steps to address the primary gaps identified in this review.
+
+### 5.1. Optimize Symbol Table Lookup
+
+**Problem:** The current `SymbolTable::lookup` uses a linear scan, which has O(n) complexity and will become a performance bottleneck as scopes grow larger.
+
+**Solution:** Implement a simple hash table within each `Scope` to provide average O(1) lookup. This can be done within C++98 constraints using the existing `ArenaAllocator`.
+
+**Pseudocode:**
+
+```cpp
+// In symbol_table.hpp, the Scope struct could be enhanced:
+
+struct Scope {
+    // A simple hash map entry for collision chaining
+    struct SymbolEntry {
+        Symbol symbol;
+        SymbolEntry* next;
+    };
+
+    DynamicArray<SymbolEntry*> buckets; // The hash table buckets
+    size_t bucket_count;
+    ArenaAllocator& arena; // Arena for allocating SymbolEntry nodes
+
+    Scope(ArenaAllocator& allocator, size_t initial_size = 16)
+        : arena(allocator), buckets(allocator), bucket_count(initial_size)
+    {
+        // Initialize all buckets to NULL
+        buckets.resize(bucket_count);
+        for (size_t i = 0; i < bucket_count; ++i) {
+            buckets[i] = NULL;
+        }
+    }
+
+    Symbol* find(const char* name) {
+        unsigned long hash = hash_string(name); // e.g., FNV-1a
+        size_t index = hash % bucket_count;
+
+        for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
+            if (strcmp(entry->symbol.name, name) == 0) {
+                return &entry->symbol;
+            }
+        }
+        return NULL;
+    }
+
+    bool insert(const Symbol& symbol) {
+        if (find(symbol.name)) {
+            return false; // Redeclaration
+        }
+
+        unsigned long hash = hash_string(symbol.name);
+        size_t index = hash % bucket_count;
+
+        // Allocate a new entry from the arena
+        SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
+        new_entry->symbol = symbol;
+
+        // Insert at the head of the bucket's linked list
+        new_entry->next = buckets[index];
+        buckets[index] = new_entry;
+        return true;
+    }
+};
+```
+
+### 5.2. Implement Pointer Arithmetic Type Checking
+
+**Problem:** The `TypeChecker` does not currently validate pointer arithmetic, which is a key part of Task 93.
+
+**Solution:** Extend the `visitBinaryOp` function in `type_checker.cpp` to handle pointer-integer and pointer-pointer operations according to C89 rules.
+
+**Proposed C++ Snippet for `visitBinaryOp`:**
+
+```cpp
+// A new helper function to be added to the TypeChecker class
+bool TypeChecker::isIntegerType(Type* type) {
+    if (!type) return false;
+    return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE);
+}
+
+Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
+    Type* left_type = visit(node->left);
+    Type* right_type = visit(node->right);
+
+    if (!left_type || !right_type) {
+        return NULL; // An error was already reported
+    }
+
+    // --- Begin Pointer Arithmetic Logic ---
+    bool left_is_ptr = (left_type->kind == TYPE_POINTER);
+    bool right_is_ptr = (right_type->kind == TYPE_POINTER);
+    bool left_is_int = isIntegerType(left_type);
+    bool right_is_int = isIntegerType(right_type);
+
+    // Case 1: pointer + integer OR integer + pointer
+    if (node->op == TOKEN_PLUS) {
+        if (left_is_ptr && right_is_int) {
+            return left_type; // Result is a pointer of the same type
+        }
+        if (left_is_int && right_is_ptr) {
+            return right_type; // Result is a pointer of the same type
+        }
+    }
+
+    // Case 2: pointer - integer
+    if (node->op == TOKEN_MINUS) {
+        if (left_is_ptr && right_is_int) {
+            return left_type; // Result is a pointer of the same type
+        }
+        // Case 3: pointer - pointer
+        if (left_is_ptr && right_is_ptr) {
+            // Per C89, pointers must be compatible (same base type)
+            if (areTypesCompatible(left_type, right_type)) {
+                // The result of pointer subtraction is a signed integer type
+                return resolvePrimitiveTypeName("isize");
+            }
+        }
+    }
+    // --- End Pointer Arithmetic Logic ---
+
+    // Existing logic for numeric types...
+    if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+        switch (node->op) {
+            case TOKEN_PLUS:
+            case TOKEN_MINUS:
+            // ... (rest of the arithmetic operators)
+                return left_type;
+            case TOKEN_EQUAL_EQUAL:
+            // ... (rest of the comparison operators)
+                return resolvePrimitiveTypeName("bool");
+        }
+    }
+
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->left->loc, "Invalid operands for binary operator");
+    return NULL;
+}
+```
