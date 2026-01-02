@@ -309,6 +309,13 @@ private:
     /** @brief Parses a top-level item. Helper for `parse`. */
     ASTNode* parseTopLevelItem();
 
+    /**
+     * @brief Allocates and initializes a new ASTNode.
+     * @param type The NodeType for the new node.
+     * @return A pointer to the newly created node.
+     */
+    ASTNode* createNode(NodeType type);
+
     // Forward declarations for node types used in the parser
     struct ASTExpressionStmtNode;
 

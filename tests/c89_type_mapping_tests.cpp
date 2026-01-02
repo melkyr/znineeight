@@ -33,35 +33,35 @@ TEST_FUNC(C89TypeMapping_Validation) {
     ArenaLifetimeGuard guard(arena);
 
     // 3. Verify all whitelisted primitive types are compatible
-    ASSERT_TRUE(is_c89_compatible(&g_type_void));
-    ASSERT_TRUE(is_c89_compatible(&g_type_bool));
-    ASSERT_TRUE(is_c89_compatible(&g_type_i8));
-    ASSERT_TRUE(is_c89_compatible(&g_type_i16));
-    ASSERT_TRUE(is_c89_compatible(&g_type_i32));
-    ASSERT_TRUE(is_c89_compatible(&g_type_i64));
-    ASSERT_TRUE(is_c89_compatible(&g_type_u8));
-    ASSERT_TRUE(is_c89_compatible(&g_type_u16));
-    ASSERT_TRUE(is_c89_compatible(&g_type_u32));
-    ASSERT_TRUE(is_c89_compatible(&g_type_u64));
-    ASSERT_TRUE(is_c89_compatible(&g_type_f32));
-    ASSERT_TRUE(is_c89_compatible(&g_type_f64));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_void()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_bool()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_i8()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_i16()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_i32()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_i64()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_u8()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_u16()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_u32()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_u64()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_f32()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_f64()));
 
     // 4. Verify that single-level pointers to whitelisted types are compatible
-    Type* ptr_to_i32 = createTestPointerType(arena, &g_type_i32, false);
+    Type* ptr_to_i32 = createTestPointerType(arena, get_g_type_i32(), false);
     ASSERT_TRUE(is_c89_compatible(ptr_to_i32));
 
-    Type* const_ptr_to_u8 = createTestPointerType(arena, &g_type_u8, true);
+    Type* const_ptr_to_u8 = createTestPointerType(arena, get_g_type_u8(), true);
     ASSERT_TRUE(is_c89_compatible(const_ptr_to_u8));
 
-    Type* ptr_to_void = createTestPointerType(arena, &g_type_void, false);
+    Type* ptr_to_void = createTestPointerType(arena, get_g_type_void(), false);
     ASSERT_TRUE(is_c89_compatible(ptr_to_void));
 
     // 5. Verify that invalid or unsupported types are NOT compatible
     ASSERT_FALSE(is_c89_compatible(NULL));
 
     // isize and usize are not in the C89 map
-    ASSERT_FALSE(is_c89_compatible(&g_type_isize));
-    ASSERT_FALSE(is_c89_compatible(&g_type_usize));
+    ASSERT_FALSE(is_c89_compatible(get_g_type_isize()));
+    ASSERT_FALSE(is_c89_compatible(get_g_type_usize()));
 
     // Function types are not C89 compatible in this context
     Type func_type;

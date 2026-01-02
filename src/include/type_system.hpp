@@ -86,20 +86,20 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  */
 void typeToString(Type* type, char* buffer, size_t buffer_size);
 
-// Global instances of primitive types, defined in type_system.cpp
-extern Type g_type_void;
-extern Type g_type_bool;
-extern Type g_type_i8;
-extern Type g_type_i16;
-extern Type g_type_i32;
-extern Type g_type_i64;
-extern Type g_type_u8;
-extern Type g_type_u16;
-extern Type g_type_u32;
-extern Type g_type_u64;
-extern Type g_type_isize;
-extern Type g_type_usize;
-extern Type g_type_f32;
-extern Type g_type_f64;
+// Accessor functions for global primitive types to prevent static init order fiasco.
+Type* get_g_type_void();
+Type* get_g_type_bool();
+Type* get_g_type_i8();
+Type* get_g_type_i16();
+Type* get_g_type_i32();
+Type* get_g_type_i64();
+Type* get_g_type_u8();
+Type* get_g_type_u16();
+Type* get_g_type_u32();
+Type* get_g_type_u64();
+Type* get_g_type_isize();
+Type* get_g_type_usize();
+Type* get_g_type_f32();
+Type* get_g_type_f64();
 
 #endif // TYPE_SYSTEM_HPP
