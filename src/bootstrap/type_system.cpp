@@ -65,6 +65,16 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
     return new_type;
 }
 
+Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ARRAY;
+    new_type->size = element_type->size * size;
+    new_type->alignment = element_type->alignment;
+    new_type->as.array.element_type = element_type;
+    new_type->as.array.size = size;
+    return new_type;
+}
+
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
     if (!type) {
         snprintf(buffer, buffer_size, "(null)");
@@ -95,6 +105,12 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             } else {
                 snprintf(buffer, buffer_size, "*%s", base_name);
             }
+            return;
+        }
+        case TYPE_ARRAY: {
+            char element_type_str[64];
+            typeToString(type->as.array.element_type, element_type_str, sizeof(element_type_str));
+            snprintf(buffer, buffer_size, "[%llu]%s", (unsigned long long)type->as.array.size, element_type_str);
             return;
         }
         case TYPE_FUNCTION: {

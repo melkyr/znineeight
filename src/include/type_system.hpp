@@ -25,6 +25,7 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_ARRAY,
     TYPE_FUNCTION
 };
 
@@ -46,6 +47,10 @@ struct Type {
             DynamicArray<Type*>* params;
             Type* return_type;
         } function;
+        struct ArrayDetails {
+            Type* element_type;
+            u64 size;
+        } array;
     } as;
 };
 
@@ -77,6 +82,15 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
  * @return A pointer to the newly allocated Type object.
  */
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type);
+
+/**
+ * @brief Creates a new array Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param element_type A pointer to the Type of the array elements.
+ * @param size The number of elements in the array.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
 
 /**
  * @brief Converts a Type object to its string representation.
