@@ -3,6 +3,16 @@
 #include <new>
 #include "memory.hpp"
 
+// 32-bit FNV-1a hash function
+static u32 hash_string(const char* str) {
+    u32 hash = 2166136261u; // FNV_offset_basis
+    for (const char* p = str; *p; p++) {
+        hash ^= (u8)*p;
+        hash *= 16777619u; // FNV_prime
+    }
+    return hash;
+}
+
 // --- SymbolBuilder Implementation ---
 
 SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
@@ -54,6 +64,77 @@ Symbol SymbolBuilder::build() {
 }
 
 
+// --- Scope Implementation ---
+
+Scope::Scope(ArenaAllocator& arena, size_t initial_bucket_count)
+    : buckets(arena), symbol_count(0), bucket_count(initial_bucket_count), arena(arena)
+{
+    for (size_t i = 0; i < bucket_count; ++i) {
+        buckets.append(NULL);
+    }
+}
+
+void Scope::insert(const Symbol& symbol) {
+    // Resize if load factor exceeds 0.75
+    if (symbol_count + 1 > bucket_count * 0.75) {
+        resize();
+    }
+
+    u32 hash = hash_string(symbol.name);
+    size_t index = hash % bucket_count;
+
+    // Allocate a new entry from the arena
+    SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
+    new_entry->symbol = symbol;
+
+    // Insert at the head of the bucket's linked list
+    new_entry->next = buckets[index];
+    buckets[index] = new_entry;
+    symbol_count++;
+}
+
+Symbol* Scope::find(const char* name) {
+    u32 hash = hash_string(name);
+    size_t index = hash % bucket_count;
+
+    for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
+        if (strcmp(entry->symbol.name, name) == 0) {
+            return &entry->symbol;
+        }
+    }
+    return NULL;
+}
+
+void Scope::resize() {
+    size_t new_bucket_count = bucket_count * 2;
+    DynamicArray<SymbolEntry*> new_buckets(arena);
+    for (size_t i = 0; i < new_bucket_count; ++i) {
+        new_buckets.append(NULL);
+    }
+
+    // Re-hash and insert all existing symbols into the new buckets
+    for (size_t i = 0; i < bucket_count; ++i) {
+        SymbolEntry* entry = buckets[i];
+        while (entry != NULL) {
+            SymbolEntry* next = entry->next; // Save next entry
+
+            u32 hash = hash_string(entry->symbol.name);
+            size_t new_index = hash % new_bucket_count;
+
+            // Insert into the new bucket
+            entry->next = new_buckets[new_index];
+            new_buckets[new_index] = entry;
+
+            entry = next;
+        }
+    }
+
+    // Replace old buckets with the new ones
+    buckets = new_buckets;
+    bucket_count = new_bucket_count;
+}
+
+
 // --- SymbolTable Implementation ---
 
 SymbolTable::SymbolTable(ArenaAllocator& arena)
@@ -84,18 +165,16 @@ bool SymbolTable::insert(const Symbol& symbol) {
         return false; // Symbol already exists.
     }
     // Add the symbol to the current scope.
-    scopes.back()->symbols.append(symbol);
+    scopes.back()->insert(symbol);
     return true;
 }
 
 Symbol* SymbolTable::lookup(const char* name) {
     // Search from the innermost scope to the outermost.
     for (int i = scopes.length() - 1; i >= 0; --i) {
-        DynamicArray<Symbol>& symbols = scopes[i]->symbols;
-        for (size_t j = 0; j < symbols.length(); ++j) {
-            if (strcmp(symbols[j].name, name) == 0) {
-                return &symbols[j];
-            }
+        Symbol* symbol = scopes[i]->find(name);
+        if (symbol) {
+            return symbol;
         }
     }
     return NULL; // Not found in any scope.
@@ -105,13 +184,7 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     if (scopes.length() == 0) {
         return NULL;
     }
-    DynamicArray<Symbol>& current_symbols = scopes.back()->symbols;
-    for (size_t i = 0; i < current_symbols.length(); ++i) {
-        if (strcmp(current_symbols[i].name, name) == 0) {
-            return &current_symbols[i];
-        }
-    }
-    return NULL;
+    return scopes.back()->find(name);
 }
 
 unsigned int SymbolTable::getCurrentScopeLevel() const {

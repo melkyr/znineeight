@@ -44,8 +44,20 @@ public:
 };
 
 struct Scope {
-    DynamicArray<Symbol> symbols;
-    Scope(ArenaAllocator& arena) : symbols(arena) {}
+    struct SymbolEntry {
+        Symbol symbol;
+        SymbolEntry* next;
+    };
+
+    DynamicArray<SymbolEntry*> buckets;
+    size_t symbol_count;
+    size_t bucket_count;
+    ArenaAllocator& arena;
+
+    Scope(ArenaAllocator& arena, size_t initial_bucket_count = 16);
+    void insert(const Symbol& symbol);
+    Symbol* find(const char* name);
+    void resize();
 };
 
 class SymbolTable {

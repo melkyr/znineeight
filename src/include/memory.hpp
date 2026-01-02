@@ -222,6 +222,18 @@ public:
         return data[index];
     }
 
+    // Public assignment operator for shallow copying.
+    // This is safe because memory is managed by the ArenaAllocator, not the array object itself.
+    DynamicArray& operator=(const DynamicArray& other) {
+        if (this != &other) {
+            data = other.data;
+            len = other.len;
+            cap = other.cap;
+            // The allocator reference is intentionally not copied.
+        }
+        return *this;
+    }
+
     /**
      * @brief Provides const access to an element by its index.
      */
