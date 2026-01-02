@@ -348,6 +348,9 @@ TEST_FUNC(SymbolTable_HashTableResize);
 TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix);
 TEST_FUNC(IntegerLiteralParsing_LongSuffix);
 TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix);
+TEST_FUNC(TypeChecker_Bool_Literals);
+TEST_FUNC(TypeChecker_Bool_ComparisonOps);
+TEST_FUNC(TypeChecker_Bool_LogicalOps);
 
 
 // This function is executed in a child process by the error handling test.
@@ -691,6 +694,9 @@ int main(int argc, char* argv[]) {
         test_IntegerLiteralParsing_UnsignedSuffix,
         test_IntegerLiteralParsing_LongSuffix,
         test_IntegerLiteralParsing_UnsignedLongSuffix,
+        test_TypeChecker_Bool_Literals,
+        test_TypeChecker_Bool_ComparisonOps,
+        test_TypeChecker_Bool_LogicalOps,
     };
 
     int passed = 0;

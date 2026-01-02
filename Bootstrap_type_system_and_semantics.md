@@ -315,18 +315,18 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 | RetroZig TypeKind | C89 Equivalent         | Notes                          |
 |-------------------|------------------------|--------------------------------|
-| `TYPE_VOID`       | `"void"`               |                                |
-| `TYPE_BOOL`       | `"int"`                | C89 has no native `_Bool` type |
-| `TYPE_I8`         | `"signed char"`        |                                |
-| `TYPE_I16`        | `"short"`              |                                |
-| `TYPE_I32`        | `"int"`                |                                |
-| `TYPE_I64`        | `"__int64"`            | For MSVC 6.0 compatibility   |
-| `TYPE_U8`         | `"unsigned char"`      |                                |
-| `TYPE_U16`        | `"unsigned short"`     |                                |
-| `TYPE_U32`        | `"unsigned int"`       |                                |
-| `TYPE_U64`        | `"unsigned __int64"`   | For MSVC 6.0 compatibility   |
-| `TYPE_F32`        | `"float"`              |                                |
-| `TYPE_F64`        | `"double"`             |                                |
+| `TYPE_VOID`       | `"void"`               | Size: 0, Align: 0              |
+| `TYPE_BOOL`       | `"int"`                | Size: 4, Align: 4. C89 has no native `_Bool`. |
+| `TYPE_I8`         | `"signed char"`        | Size: 1, Align: 1              |
+| `TYPE_I16`        | `"short"`              | Size: 2, Align: 2              |
+| `TYPE_I32`        | `"int"`                | Size: 4, Align: 4              |
+| `TYPE_I64`        | `"__int64"`            | Size: 8, Align: 8. For MSVC 6.0 compatibility. |
+| `TYPE_U8`         | `"unsigned char"`      | Size: 1, Align: 1              |
+| `TYPE_U16`        | `"unsigned short"`     | Size: 2, Align: 2              |
+| `TYPE_U32`        | `"unsigned int"`       | Size: 4, Align: 4              |
+| `TYPE_U64`        | `"unsigned __int64"`   | Size: 8, Align: 8. For MSVC 6.0 compatibility. |
+| `TYPE_F32`        | `"float"`              | Size: 4, Align: 4              |
+| `TYPE_F64`        | `"double"`             | Size: 8, Align: 8              |
 
 *Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
 

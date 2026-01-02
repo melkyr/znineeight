@@ -73,6 +73,17 @@ void Parser::error(const char* msg) {
     abort();
 }
 
+ASTNode* Parser::createNode(NodeType type) {
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
+    node->type = type;
+    node->resolved_type = NULL;
+    node->loc = peek().location;
+    return node;
+}
+
 /**
  * @brief Parses a comptime block.
  * @return A pointer to the ASTNode representing the comptime block.
@@ -130,50 +141,52 @@ const Token& Parser::peekNext() const {
  */
 ASTNode* Parser::parsePrimaryExpr() {
     Token token = peek();
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    if (!node) {
-        error("Out of memory");
-    }
-    node->loc = token.location;
 
     switch (token.type) {
-        case TOKEN_TRUE:
+        case TOKEN_TRUE: {
+            ASTNode* node = createNode(NODE_BOOL_LITERAL);
             advance();
-            node->type = NODE_BOOL_LITERAL;
             node->as.bool_literal.value = true;
             return node;
-        case TOKEN_FALSE:
+        }
+        case TOKEN_FALSE: {
+            ASTNode* node = createNode(NODE_BOOL_LITERAL);
             advance();
-            node->type = NODE_BOOL_LITERAL;
             node->as.bool_literal.value = false;
             return node;
-        case TOKEN_INTEGER_LITERAL:
+        }
+        case TOKEN_INTEGER_LITERAL: {
+            ASTNode* node = createNode(NODE_INTEGER_LITERAL);
             advance();
-            node->type = NODE_INTEGER_LITERAL;
             node->as.integer_literal.value = token.value.integer_literal.value;
             node->as.integer_literal.is_unsigned = token.value.integer_literal.is_unsigned;
             node->as.integer_literal.is_long = token.value.integer_literal.is_long;
             return node;
-        case TOKEN_FLOAT_LITERAL:
+        }
+        case TOKEN_FLOAT_LITERAL: {
+            ASTNode* node = createNode(NODE_FLOAT_LITERAL);
             advance();
-            node->type = NODE_FLOAT_LITERAL;
             node->as.float_literal.value = token.value.floating_point;
             return node;
-        case TOKEN_CHAR_LITERAL:
+        }
+        case TOKEN_CHAR_LITERAL: {
+            ASTNode* node = createNode(NODE_CHAR_LITERAL);
             advance();
-            node->type = NODE_CHAR_LITERAL;
             node->as.char_literal.value = token.value.character;
             return node;
-        case TOKEN_STRING_LITERAL:
+        }
+        case TOKEN_STRING_LITERAL: {
+            ASTNode* node = createNode(NODE_STRING_LITERAL);
             advance();
-            node->type = NODE_STRING_LITERAL;
             node->as.string_literal.value = token.value.identifier;
             return node;
-        case TOKEN_IDENTIFIER:
+        }
+        case TOKEN_IDENTIFIER: {
+            ASTNode* node = createNode(NODE_IDENTIFIER);
             advance();
-            node->type = NODE_IDENTIFIER;
             node->as.identifier.name = token.value.identifier;
             return node;
+        }
         case TOKEN_LPAREN: {
             advance(); // consume '('
             ASTNode* expr_node = parseExpression();
@@ -868,11 +881,7 @@ ASTNode* Parser::parse() {
         statements->append(parseTopLevelItem());
     }
 
-    ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    if (!block_node) {
-        error("Out of memory");
-    }
-    block_node->type = NODE_BLOCK_STMT;
+    ASTNode* block_node = createNode(NODE_BLOCK_STMT);
     block_node->loc = start_token.location;
     block_node->as.block_stmt.statements = statements;
 
@@ -1157,13 +1166,7 @@ ASTNode* Parser::parseFnDecl() {
     if (match(TOKEN_ARROW)) {
         return_type_node = parseType();
     } else {
-        Token current = peek();
-        return_type_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!return_type_node) {
-            error("Out of memory");
-        }
-        return_type_node->type = NODE_TYPE_NAME;
-        return_type_node->loc = current.location;
+        return_type_node = createNode(NODE_TYPE_NAME);
         return_type_node->as.type_name.name = "void";
     }
 
@@ -1175,11 +1178,7 @@ ASTNode* Parser::parseFnDecl() {
     fn_decl->return_type = return_type_node;
     fn_decl->body = body_node;
 
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    if (!node) {
-        error("Out of memory");
-    }
-    node->type = NODE_FN_DECL;
+    ASTNode* node = createNode(NODE_FN_DECL);
     node->loc = fn_token.location;
     node->as.fn_decl = fn_decl;
 
@@ -1247,11 +1246,7 @@ ASTNode* Parser::parseStatement() {
             ASTNode* expr = parseExpression();
             expect(TOKEN_SEMICOLON, "Expected ';' after expression statement");
 
-            ASTNode* stmt_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-            if (!stmt_node) {
-                error("Out of memory");
-            }
-            stmt_node->type = NODE_EXPRESSION_STMT;
+            ASTNode* stmt_node = createNode(NODE_EXPRESSION_STMT);
             stmt_node->loc = expr->loc;
             stmt_node->as.expression_stmt.expression = expr;
             return stmt_node;
@@ -1273,16 +1268,11 @@ ASTNode* Parser::parseBlockStatement() {
     while (!is_at_end() && peek().type != TOKEN_RBRACE) {
         statements->append(parseStatement());
     }
-
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
 
     symbol_table_->exitScope();
 
-    ASTNode* block_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    if (!block_node) {
-        error("Out of memory");
-    }
-    block_node->type = NODE_BLOCK_STMT;
+    ASTNode* block_node = createNode(NODE_BLOCK_STMT);
     block_node->loc = lbrace_token.location;
     block_node->as.block_stmt.statements = statements;
 

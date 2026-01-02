@@ -16,47 +16,53 @@ Type* TypeChecker::visit(ASTNode* node) {
         return NULL;
     }
 
+    Type* resolved_type = NULL;
     switch (node->type) {
-        case NODE_UNARY_OP:         return visitUnaryOp(&node->as.unary_op);
-        case NODE_BINARY_OP:        return visitBinaryOp(node->as.binary_op);
-        case NODE_FUNCTION_CALL:    return visitFunctionCall(node->as.function_call);
-        case NODE_ARRAY_ACCESS:     return visitArrayAccess(node->as.array_access);
-        case NODE_ARRAY_SLICE:      return visitArraySlice(node->as.array_slice);
-        case NODE_BOOL_LITERAL:     return visitBoolLiteral(&node->as.bool_literal);
-        case NODE_INTEGER_LITERAL:  return visitIntegerLiteral(&node->as.integer_literal);
-        case NODE_FLOAT_LITERAL:    return visitFloatLiteral(&node->as.float_literal);
-        case NODE_CHAR_LITERAL:     return visitCharLiteral(&node->as.char_literal);
-        case NODE_STRING_LITERAL:   return visitStringLiteral(&node->as.string_literal);
-        case NODE_IDENTIFIER:       return visitIdentifier(node);
-        case NODE_BLOCK_STMT:       return visitBlockStmt(&node->as.block_stmt);
-        case NODE_EMPTY_STMT:       return visitEmptyStmt(&node->as.empty_stmt);
-        case NODE_IF_STMT:          return visitIfStmt(node->as.if_stmt);
-        case NODE_WHILE_STMT:       return visitWhileStmt(&node->as.while_stmt);
-        case NODE_RETURN_STMT:      return visitReturnStmt(node, &node->as.return_stmt);
-        case NODE_DEFER_STMT:       return visitDeferStmt(&node->as.defer_stmt);
-        case NODE_FOR_STMT:         return visitForStmt(node->as.for_stmt);
-        case NODE_EXPRESSION_STMT:  return visitExpressionStmt(&node->as.expression_stmt);
-        case NODE_SWITCH_EXPR:      return visitSwitchExpr(node->as.switch_expr);
-        case NODE_VAR_DECL:         return visitVarDecl(node->as.var_decl);
-        case NODE_FN_DECL:          return visitFnDecl(node->as.fn_decl);
-        case NODE_STRUCT_DECL:      return visitStructDecl(node->as.struct_decl);
-        case NODE_UNION_DECL:       return visitUnionDecl(node->as.union_decl);
-        case NODE_ENUM_DECL:        return visitEnumDecl(node->as.enum_decl);
-        case NODE_TYPE_NAME:        return visitTypeName(node, &node->as.type_name);
-        case NODE_POINTER_TYPE:     return visitPointerType(&node->as.pointer_type);
-        case NODE_ARRAY_TYPE:       return visitArrayType(&node->as.array_type);
-        case NODE_TRY_EXPR:         return visitTryExpr(&node->as.try_expr);
-        case NODE_CATCH_EXPR:       return visitCatchExpr(node->as.catch_expr);
-        case NODE_ERRDEFER_STMT:    return visitErrdeferStmt(&node->as.errdefer_stmt);
-        case NODE_COMPTIME_BLOCK:   return visitComptimeBlock(&node->as.comptime_block);
+        case NODE_UNARY_OP:         resolved_type = visitUnaryOp(&node->as.unary_op); break;
+        case NODE_BINARY_OP:        resolved_type = visitBinaryOp(node->as.binary_op); break;
+        case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
+        case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
+        case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
+        case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(&node->as.bool_literal); break;
+        case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(&node->as.integer_literal); break;
+        case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(&node->as.float_literal); break;
+        case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(&node->as.char_literal); break;
+        case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(&node->as.string_literal); break;
+        case NODE_IDENTIFIER:       resolved_type = visitIdentifier(node); break;
+        case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
+        case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
+        case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
+        case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(&node->as.while_stmt); break;
+        case NODE_RETURN_STMT:      resolved_type = visitReturnStmt(node, &node->as.return_stmt); break;
+        case NODE_DEFER_STMT:       resolved_type = visitDeferStmt(&node->as.defer_stmt); break;
+        case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
+        case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
+        case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
+        case NODE_VAR_DECL:         resolved_type = visitVarDecl(node->as.var_decl); break;
+        case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
+        case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node->as.struct_decl); break;
+        case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node->as.union_decl); break;
+        case NODE_ENUM_DECL:        resolved_type = visitEnumDecl(node->as.enum_decl); break;
+        case NODE_TYPE_NAME:        resolved_type = visitTypeName(node, &node->as.type_name); break;
+        case NODE_POINTER_TYPE:     resolved_type = visitPointerType(&node->as.pointer_type); break;
+        case NODE_ARRAY_TYPE:       resolved_type = visitArrayType(&node->as.array_type); break;
+        case NODE_TRY_EXPR:         resolved_type = visitTryExpr(&node->as.try_expr); break;
+        case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node->as.catch_expr); break;
+        case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
+        case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
         default:
             // TODO: Add error handling for unhandled node types.
-            return NULL;
+            resolved_type = NULL;
+            break;
     }
+
+    node->resolved_type = resolved_type;
+    return resolved_type;
 }
 
 Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
-    Type* operand_type = visit(node->operand);
+    // In a unit test, the operand's type might already be resolved.
+    Type* operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
     if (!operand_type) {
         return NULL; // Error already reported
     }
@@ -94,7 +100,7 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
         case TOKEN_BANG:
             // Logical not can be applied to any type that can be a condition.
             if (operand_type->kind == TYPE_BOOL || isNumericType(operand_type) || operand_type->kind == TYPE_POINTER) {
-                return resolvePrimitiveTypeName("bool");
+                return get_g_type_bool();
             }
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Invalid operand for logical not");
             return NULL;
@@ -105,8 +111,8 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
 }
 
 Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
-    Type* left_type = visit(node->left);
-    Type* right_type = visit(node->right);
+    Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
+    Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
     // If either operand is null, an error has already been reported.
     if (!left_type || !right_type) {
@@ -162,7 +168,7 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
             if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return resolvePrimitiveTypeName("bool");
+                return get_g_type_bool();
             }
             break;
 

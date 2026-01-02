@@ -11,8 +11,8 @@ TEST_FUNC(TypeResolution_ValidPrimitives) {
     Type* t_bool = resolvePrimitiveTypeName("bool");
     ASSERT_TRUE(t_bool != NULL);
     ASSERT_EQ(t_bool->kind, TYPE_BOOL);
-    ASSERT_EQ(t_bool->size, 1);
-    ASSERT_EQ(t_bool->alignment, 1);
+    ASSERT_EQ(t_bool->size, 4);
+    ASSERT_EQ(t_bool->alignment, 4);
 
     Type* t_f64 = resolvePrimitiveTypeName("f64");
     ASSERT_TRUE(t_f64 != NULL);

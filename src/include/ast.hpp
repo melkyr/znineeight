@@ -7,6 +7,7 @@
 
 // Forward-declare the main ASTNode struct so it can be used in the specific node structs.
 struct ASTNode;
+struct Type;
 
 /**
  * @enum NodeType
@@ -539,6 +540,7 @@ struct ASTArrayTypeNode {
 struct ASTNode {
     NodeType type;
     SourceLocation loc;
+    Type* resolved_type;
 
     union {
         // Expressions
