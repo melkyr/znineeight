@@ -45,7 +45,7 @@ TEST_FUNC(Lexer_HandlesU64Integer) {
     // The token's value field is i64, but we will treat it as u64 for the comparison.
     // The custom parser should handle this correctly.
     // We use a hex literal for the expected value to avoid compiler warnings about large integer constants.
-    ASSERT_TRUE((u64)token.value.integer == 0xFFFFFFFFFFFFFFFAULL);
+    ASSERT_TRUE(token.value.integer_literal.value == 0xFFFFFFFFFFFFFFFAULL);
 
     return true;
 }

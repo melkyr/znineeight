@@ -285,6 +285,7 @@ TEST_FUNC(TypeCheckerInvalidDeclarations);
 TEST_FUNC(TypeCheckerUndeclaredVariable);
 TEST_FUNC(TypeCheckerStringLiteralType);
 TEST_FUNC(TypeCheckerIntegerLiteralType);
+TEST_FUNC(TypeChecker_C89IntegerCompatibility);
 TEST_FUNC(ReturnTypeValidation_Valid);
 TEST_FUNC(ReturnTypeValidation_Invalid);
 TEST_FUNC(TypeCompatibility);
@@ -341,6 +342,11 @@ TEST_FUNC(C89TypeMapping_Validation);
 TEST_FUNC(SymbolTable_DuplicateDetection);
 TEST_FUNC(SymbolTable_NestedScopes_And_Lookup);
 TEST_FUNC(SymbolTable_HashTableResize);
+
+// Integer Literal Suffix Parsing Tests
+TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix);
+TEST_FUNC(IntegerLiteralParsing_LongSuffix);
+TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix);
 
 
 // This function is executed in a child process by the error handling test.
@@ -627,6 +633,7 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerUndeclaredVariable,
         test_TypeCheckerStringLiteralType,
         test_TypeCheckerIntegerLiteralType,
+        test_TypeChecker_C89IntegerCompatibility,
         test_ReturnTypeValidation_Valid,
         test_ReturnTypeValidation_Invalid,
         test_TypeCompatibility,
@@ -679,6 +686,9 @@ int main(int argc, char* argv[]) {
         test_SymbolTable_NestedScopes_And_Lookup,
         test_SymbolTable_HashTableResize,
         test_C89TypeMapping_Validation,
+        test_IntegerLiteralParsing_UnsignedSuffix,
+        test_IntegerLiteralParsing_LongSuffix,
+        test_IntegerLiteralParsing_UnsignedLongSuffix,
     };
 
     int passed = 0;

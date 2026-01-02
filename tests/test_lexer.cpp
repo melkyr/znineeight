@@ -89,14 +89,14 @@ TEST_FUNC(IntegerRangeAmbiguity) {
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
-    ASSERT_EQ(0, token.value.integer);
+    ASSERT_EQ(0, token.value.integer_literal.value);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_RANGE, token.type);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
-    ASSERT_EQ(10, token.value.integer);
+    ASSERT_EQ(10, token.value.integer_literal.value);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);
@@ -112,7 +112,7 @@ TEST_FUNC(token_fields_are_initialized) {
     Lexer lexer(sm, interner, arena, file_id);
     Token token = lexer.nextToken();
     ASSERT_EQ(token.type, TOKEN_FN);
-    ASSERT_TRUE(token.value.integer == 0);
+    ASSERT_TRUE(token.value.integer_literal.value == 0);
     return true;
 }
 
@@ -226,11 +226,11 @@ TEST_FUNC(IntegerLiterals) {
 
     Token token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
-    ASSERT_EQ(123, token.value.integer);
+    ASSERT_EQ(123, token.value.integer_literal.value);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
-    ASSERT_EQ(255, token.value.integer);
+    ASSERT_EQ(255, token.value.integer_literal.value);
 
     token = lexer.nextToken();
     ASSERT_EQ(TOKEN_EOF, token.type);

@@ -81,7 +81,7 @@ TEST_FUNC(Lexer_MultiLineIntegrationTest) {
         } else if (e.type == TOKEN_FLOAT_LITERAL) {
             ASSERT_TRUE(compare_floats(e.float_val, t.value.floating_point));
         } else if (e.type == TOKEN_INTEGER_LITERAL) {
-             ASSERT_EQ((i64)atoi(e.value), t.value.integer);
+             ASSERT_EQ((u64)atoi(e.value), t.value.integer_literal.value);
         }
     }
 

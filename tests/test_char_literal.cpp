@@ -15,19 +15,19 @@ TEST_FUNC(Lexer_CharLiteralHappyPath) {
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, 'a');
+    ASSERT_EQ(t.value.character, 'a');
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, 'Z');
+    ASSERT_EQ(t.value.character, 'Z');
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, '\n');
+    ASSERT_EQ(t.value.character, '\n');
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, '\'');
+    ASSERT_EQ(t.value.character, '\'');
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_EOF);
@@ -45,11 +45,11 @@ TEST_FUNC(Lexer_CharLiteralHex) {
 
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, 0x41);
+    ASSERT_EQ(t.value.character, 0x41);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, 0x6F);
+    ASSERT_EQ(t.value.character, 0x6F);
 
     return 0;
 }
@@ -64,7 +64,7 @@ TEST_FUNC(Lexer_CharLiteralUnicode) {
     Lexer lexer(sm, interner, arena, file_id);
     Token t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_CHAR_LITERAL);
-    ASSERT_EQ(t.value.integer, 0x1f4a9);
+    ASSERT_EQ(t.value.character, 0x1f4a9);
 
     return 0;
 }
