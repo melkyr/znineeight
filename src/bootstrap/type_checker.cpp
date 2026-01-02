@@ -565,11 +565,27 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
-    visit(node->element_type);
-    if (node->size) {
-        visit(node->size);
+    // 1. Reject slices
+    if (!node->size) {
+        fatalError(node->element_type->loc, "Slices are not supported in C89 mode");
+        return NULL; // fatalError aborts, but return for clarity
     }
-    return NULL; // Placeholder
+
+    // 2. Ensure size is a constant integer literal
+    if (node->size->type != NODE_INTEGER_LITERAL) {
+        fatalError(node->size->loc, "Array size must be a constant integer literal");
+        return NULL;
+    }
+
+    // 3. Resolve element type
+    Type* element_type = visit(node->element_type);
+    if (!element_type) {
+        return NULL; // Error already reported
+    }
+
+    // 4. Create and return the new array type
+    u64 array_size = node->size->as.integer_literal.value;
+    return createArrayType(unit.getArena(), element_type, array_size);
 }
 
 Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {

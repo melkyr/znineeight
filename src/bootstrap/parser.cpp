@@ -989,8 +989,13 @@ ASTNode* Parser::parseVarDecl() {
     expect(TOKEN_COLON, "Expected ':' after identifier in variable declaration");
 
     ASTNode* type_node = parseType();
-    expect(TOKEN_EQUAL, "Expected '=' after type in variable declaration");
-    ASTNode* initializer_node = parseExpression();
+
+    // Parse optional initializer
+    ASTNode* initializer_node = NULL;
+    if (match(TOKEN_EQUAL)) {
+        initializer_node = parseExpression();
+    }
+
     expect(TOKEN_SEMICOLON, "Expected ';' after variable declaration");
 
     ASTVarDeclNode* var_decl = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));

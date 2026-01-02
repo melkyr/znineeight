@@ -80,6 +80,9 @@ bool expect_type_checker_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(TypeChecker_RejectSlice);
+TEST_FUNC(TypeChecker_RejectNonConstantArraySize);
+TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
 TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration);
 TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction);
 TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction);
@@ -452,6 +455,9 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_TypeChecker_RejectSlice,
+        test_TypeChecker_RejectNonConstantArraySize,
+        test_TypeChecker_AcceptsValidArrayDeclaration,
         test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
         test_TypeCheckerVoidTests_ImplicitReturnInVoidFunction,
         test_TypeCheckerVoidTests_ExplicitReturnInVoidFunction,

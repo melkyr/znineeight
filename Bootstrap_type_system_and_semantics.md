@@ -38,6 +38,7 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_ARRAY,
     TYPE_FUNCTION
 };
 ```
@@ -77,6 +78,15 @@ struct Type {
             DynamicArray<Type*>* params;
             Type* return_type;
         } function;
+
+        /**
+         * @struct ArrayDetails
+         * @brief Details specific to array types.
+         */
+        struct ArrayDetails {
+            Type* element_type; // The type of the elements in the array.
+            u64 size;           // The number of elements in the array.
+        } array;
     } as;
 };
 ```
@@ -185,6 +195,16 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 -   It then calls `areTypesCompatible()` to verify that the initializer's type can be safely assigned to the variable's declared type. This check allows for safe, implicit widening conversions (e.g., assigning an `i32` literal to an `i64` variable).
 -   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
 -   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
+
+### Array Type Declarations
+
+When visiting an array type declaration (`ASTArrayTypeNode`), the `TypeChecker` enforces strict C89 compatibility rules:
+
+1.  **Slice Rejection:** Slices (e.g., `[]u8`) are not supported in C89. The `TypeChecker` identifies a slice by checking if the `size` expression in the `ASTArrayTypeNode` is `NULL`. If it is, compilation is aborted with a fatal error: "Slices are not supported in C89 mode".
+
+2.  **Constant Size Enforcement:** C89 requires that array sizes be compile-time constants. The bootstrap compiler enforces a strict version of this rule: the size expression must be a single integer literal (e.g., `[8]i32`). If the size expression is any other kind of node (e.g., an identifier, a binary operation), compilation is aborted with a fatal error: "Array size must be a constant integer literal".
+
+If both checks pass, a new `Type` of kind `TYPE_ARRAY` is created. Its `size` field is calculated from the element type's size and the array's length, and its `as.array` details are populated accordingly.
 
 ### Function Declarations and Signatures
 

@@ -743,12 +743,13 @@ Represents a `var` or `const` declaration.
     ```
 
 #### Parsing Logic (`parseVarDecl`)
-The `parseVarDecl` function is responsible for parsing variable and constant declarations. It strictly follows the grammar:
-`('var'|'const') IDENT ':' type_expr '=' expr ';'`
+The `parseVarDecl` function is responsible for parsing variable and constant declarations. It follows the grammar:
+`('var'|'const') IDENT ':' type_expr ('=' expr)? ';'`
 
 - It consumes a `var` or `const` token.
-- It expects an identifier, a colon, a type expression (parsed via `parseType`), an equals sign, and an initializer expression.
-- The initializer expression is currently handled by a minimal `parseExpression` function that **only supports integer literals**.
+- It expects an identifier, a colon, and a type expression (parsed via `parseType`).
+- It then checks for an optional initializer, which starts with an equals sign.
+- If an initializer is present, it is parsed by `parseExpression`.
 - The function constructs and returns a `NODE_VAR_DECL` AST node.
 - Any deviation from this grammar results in a fatal error.
 
