@@ -13,7 +13,6 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
 
     {
         Parser parser2 = ctx.getParser();
-        (void)parser2;
         // parser2 is destroyed at the end of this scope.
         // With the fix, this should have no effect on the token stream owned by the context.
     }

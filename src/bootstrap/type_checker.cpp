@@ -7,39 +7,8 @@
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
 }
 
-// Forward declaration for the pre-pass
-static void findAndRegisterFunctions(ASTNode* node, CompilationUnit& unit);
-
 void TypeChecker::check(ASTNode* root) {
-    // Pre-pass to register all function symbols
-    findAndRegisterFunctions(root, unit);
     visit(root);
-}
-
-// Helper function to traverse the AST and register function symbols.
-static void findAndRegisterFunctions(ASTNode* node, CompilationUnit& unit) {
-    if (!node) return;
-
-    if (node->type == NODE_FN_DECL) {
-        ASTFnDeclNode* fn_decl = node->as.fn_decl;
-        Symbol fn_symbol = SymbolBuilder(unit.getArena())
-            .withName(fn_decl->name)
-            .ofType(SYMBOL_FUNCTION)
-            .withType(NULL) // Type will be resolved during the main pass
-            .atLocation(node->loc)
-            .build();
-        if (!unit.getSymbolTable().insert(fn_symbol)) {
-            // Handle redefinition error if necessary
-        }
-    }
-
-    // Traverse children
-    if (node->type == NODE_BLOCK_STMT) {
-        ASTBlockStmtNode* block = &node->as.block_stmt;
-        for (size_t i = 0; i < block->statements->length(); ++i) {
-            findAndRegisterFunctions((*block->statements)[i], unit);
-        }
-    }
 }
 
 Type* TypeChecker::visit(ASTNode* node) {
@@ -142,37 +111,6 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
     // If either operand is null, an error has already been reported.
     if (!left_type || !right_type) {
         return NULL;
-    }
-
-    // --- Pointer Arithmetic Logic ---
-    bool left_is_ptr = (left_type->kind == TYPE_POINTER);
-    bool right_is_ptr = (right_type->kind == TYPE_POINTER);
-    bool left_is_int = isNumericType(left_type);
-    bool right_is_int = isNumericType(right_type);
-
-    // Case 1: pointer + integer OR integer + pointer
-    if (node->op == TOKEN_PLUS) {
-        if (left_is_ptr && right_is_int) {
-            return left_type; // Result is a pointer of the same type
-        }
-        if (left_is_int && right_is_ptr) {
-            return right_type; // Result is a pointer of the same type
-        }
-    }
-
-    // Case 2: pointer - integer
-    if (node->op == TOKEN_MINUS) {
-        if (left_is_ptr && right_is_int) {
-            return left_type; // Result is a pointer of the same type
-        }
-        // Case 3: pointer - pointer
-        if (left_is_ptr && right_is_ptr) {
-            // Per C89, pointers must be compatible (same base type)
-            if (areTypesCompatible(left_type, right_type)) {
-                // The result of pointer subtraction is a signed integer type
-                return resolvePrimitiveTypeName("isize");
-            }
-        }
     }
 
     // Check for compatible types based on the operator
