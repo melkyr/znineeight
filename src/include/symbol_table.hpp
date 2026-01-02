@@ -23,7 +23,7 @@ struct Symbol {
     Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
     void* details;
-    unsigned int scope_level;
+    unsigned int scope_level; // Set by SymbolTable on insertion
     unsigned int flags;
 };
 
@@ -55,7 +55,7 @@ struct Scope {
     ArenaAllocator& arena;
 
     Scope(ArenaAllocator& arena, size_t initial_bucket_count = 16);
-    void insert(const Symbol& symbol);
+    void insert(Symbol& symbol);
     Symbol* find(const char* name);
     void resize();
 };
@@ -69,7 +69,7 @@ public:
     SymbolTable(ArenaAllocator& arena);
     void enterScope();
     void exitScope();
-    bool insert(const Symbol& symbol);
+    bool insert(Symbol& symbol);
     Symbol* lookup(const char* name);
     Symbol* lookupInCurrentScope(const char* name);
     unsigned int getCurrentScopeLevel() const;
