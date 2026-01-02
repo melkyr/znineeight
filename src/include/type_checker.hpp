@@ -11,8 +11,8 @@ public:
 
     void check(ASTNode* root);
     Type* visit(ASTNode* node);
-    Type* visitUnaryOp(ASTUnaryOpNode* node);
-    Type* visitBinaryOp(ASTBinaryOpNode* node);
+    Type* visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node);
+    Type* visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node);
     Type* visitFunctionCall(ASTFunctionCallNode* node);
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);

@@ -106,6 +106,13 @@ public:
     }
 
     /**
+     * @brief Clears all reported errors.
+     */
+    void reset() {
+        errors_.clear();
+    }
+
+    /**
      * @brief Prints all reported errors to standard error.
      */
     void printErrors();

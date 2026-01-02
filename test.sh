@@ -98,6 +98,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_float_c89_compat_tests.cpp \
     tests/type_checker_bool_tests.cpp \
     tests/type_checker_void_tests.cpp \
+    tests/type_checker_pointer_operations.cpp \
     -Isrc/include \
     -o test_runner
 

@@ -359,6 +359,13 @@ TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix);
 TEST_FUNC(TypeChecker_Bool_Literals);
 TEST_FUNC(TypeChecker_Bool_ComparisonOps);
 TEST_FUNC(TypeChecker_Bool_LogicalOps);
+TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue);
+TEST_FUNC(TypeCheckerPointerOps_AddressOf_InvalidRValue);
+TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer);
+TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
+TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger);
+TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer);
+TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations);
 
 
 // This function is executed in a child process by the error handling test.
@@ -713,6 +720,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Bool_Literals,
         test_TypeChecker_Bool_ComparisonOps,
         test_TypeChecker_Bool_LogicalOps,
+        test_TypeCheckerPointerOps_AddressOf_ValidLValue,
+        test_TypeCheckerPointerOps_AddressOf_InvalidRValue,
+        test_TypeCheckerPointerOps_Dereference_ValidPointer,
+        test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
+        test_TypeCheckerPointerOps_Arithmetic_PointerInteger,
+        test_TypeCheckerPointerOps_Arithmetic_PointerPointer,
+        test_TypeCheckerPointerOps_Arithmetic_InvalidOperations,
     };
 
     int passed = 0;

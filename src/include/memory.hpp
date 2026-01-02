@@ -210,6 +210,14 @@ public:
         return len;
     }
 
+    /**
+     * @brief Clears the array by resetting its length to zero.
+     * Does not deallocate memory, which is managed by the arena.
+     */
+    void clear() {
+        len = 0;
+    }
+
     size_t getCapacity() const {
         return cap;
     }
