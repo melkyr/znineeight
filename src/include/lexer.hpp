@@ -227,8 +227,12 @@ struct Token {
     union {
         /** @brief Pointer to an interned string for identifiers. */
         const char* identifier;
-        /** @brief 64-bit signed integer for integer literals. */
-        i64 integer;
+        /** @brief Struct for integer literals. */
+        struct {
+            u64 value;
+            bool is_unsigned;
+            bool is_long;
+        } integer_literal;
         /** @brief 64-bit floating-point for float literals. */
         double floating_point;
         /** @brief Character for char literals. */
@@ -236,7 +240,9 @@ struct Token {
     } value;
 
     Token() : type(TOKEN_ERROR), location() {
-        value.integer = 0;
+        value.integer_literal.value = 0;
+        value.integer_literal.is_unsigned = false;
+        value.integer_literal.is_long = false;
     }
 };
 

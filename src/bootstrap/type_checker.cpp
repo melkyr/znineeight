@@ -247,13 +247,19 @@ Type* TypeChecker::visitBoolLiteral(ASTBoolLiteralNode* node) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTIntegerLiteralNode* node) {
-    // This is a simplification. A real type checker would have more sophisticated
-    // rules for integer literal types. For now, we'll assume i32 unless the
-    // value is too large, in which case we'll assume i64.
-    if (node->value > 2147483647 || node->value < -2147483648) {
+    if (node->is_unsigned) {
+        if (node->value <= 255) return resolvePrimitiveTypeName("u8");
+        if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
+        if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
+        return resolvePrimitiveTypeName("u64");
+    } else {
+        // Since node->value is u64, we need to cast to i64 for signed comparison.
+        i64 signed_value = (i64)node->value;
+        if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
+        if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
+        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) return resolvePrimitiveTypeName("i32");
         return resolvePrimitiveTypeName("i64");
     }
-    return resolvePrimitiveTypeName("i32");
 }
 
 Type* TypeChecker::visitFloatLiteral(ASTFloatLiteralNode* node) {

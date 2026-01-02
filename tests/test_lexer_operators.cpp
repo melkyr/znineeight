@@ -56,14 +56,14 @@ TEST_FUNC(Lexer_RangeExpression) {
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_INTEGER_LITERAL);
-    ASSERT_EQ(t.value.integer, 3);
+    ASSERT_EQ(t.value.integer_literal.value, 3);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_RANGE);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_INTEGER_LITERAL);
-    ASSERT_EQ(t.value.integer, 7);
+    ASSERT_EQ(t.value.integer_literal.value, 7);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_EOF);

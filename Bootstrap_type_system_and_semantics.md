@@ -204,9 +204,18 @@ When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` perfor
 ### Literals
 
 #### Integer Literals
-The type of an integer literal is determined by its value to be C89-compliant.
-- If the value fits within a 32-bit signed integer (`-2147483648` to `2147483647`), its type is `i32`.
-- Otherwise, its type is `i64`.
+The type of an integer literal is determined by its value and suffix to be C89-compliant. The compiler chooses the smallest possible C89-compatible type that can hold the value.
+- **Unsigned Literals (e.g., `123u`):**
+    - `0` to `255`: `u8`
+    - `256` to `65535`: `u16`
+    - `65536` to `4294967295`: `u32`
+    - Larger values: `u64`
+- **Signed Literals (e.g., `123`, `-45`):**
+    - `-128` to `127`: `i8`
+    - `-32768` to `32767`: `i16`
+    - `-2147483648` to `2147483647`: `i32`
+    - Larger values: `i64`
+The `L` suffix is parsed but does not currently affect the type inference, as the logic already selects the smallest possible type.
 
 #### String Literals
 A string literal is given the type "pointer to `u8`", which is represented as `*u8`. This is a simplification for the bootstrap phase; a more advanced compiler would use a slice type like `[]const u8`.

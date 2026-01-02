@@ -460,13 +460,38 @@ Token Lexer::lexNumericLiteral() {
     } else {
         u64 value;
         if (parseInteger(start, end_ptr, &value)) {
-            token.value.integer = value;
+            token.value.integer_literal.value = value;
             token.type = TOKEN_INTEGER_LITERAL;
         } else {
             token.type = TOKEN_ERROR;
         }
         this->column += (end_ptr - start);
         this->current = (char*)end_ptr;
+
+        // Check for suffixes
+        bool has_u = false;
+        bool has_l = false;
+        if (tolower(*this->current) == 'u') {
+            has_u = true;
+            this->current++;
+            this->column++;
+            if (tolower(*this->current) == 'l') {
+                has_l = true;
+                this->current++;
+                this->column++;
+            }
+        } else if (tolower(*this->current) == 'l') {
+            has_l = true;
+            this->current++;
+            this->column++;
+            if (tolower(*this->current) == 'u') {
+                has_u = true;
+                this->current++;
+                this->column++;
+            }
+        }
+        token.value.integer_literal.is_unsigned = has_u;
+        token.value.integer_literal.is_long = has_l;
     }
 
     return token;

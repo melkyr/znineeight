@@ -155,7 +155,9 @@ struct ASTBoolLiteralNode {
  * @var ASTIntegerLiteralNode::value The 64-bit integer value.
  */
 struct ASTIntegerLiteralNode {
-    i64 value;
+    u64 value;
+    bool is_unsigned;
+    bool is_long;
 };
 
 /**

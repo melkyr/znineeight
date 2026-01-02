@@ -36,6 +36,47 @@ TEST_FUNC(TypeCheckerValidDeclarations) {
     return true;
 }
 
+TEST_FUNC(TypeChecker_C89IntegerCompatibility) {
+    ArenaAllocator arena(8192);
+    StringInterner interner(arena);
+    ParserTestContext context("", arena, interner);
+    TypeChecker checker(context.getCompilationUnit());
+
+    // Test cases for signed integers
+    ASTIntegerLiteralNode node1;
+    node1.value = 127;
+    node1.is_unsigned = false;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node1)->kind, TYPE_I8);
+
+    ASTIntegerLiteralNode node2;
+    node2.value = 32767;
+    node2.is_unsigned = false;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node2)->kind, TYPE_I16);
+
+    ASTIntegerLiteralNode node3;
+    node3.value = 2147483647;
+    node3.is_unsigned = false;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node3)->kind, TYPE_I32);
+
+    // Test cases for unsigned integers
+    ASTIntegerLiteralNode node4;
+    node4.value = 255;
+    node4.is_unsigned = true;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node4)->kind, TYPE_U8);
+
+    ASTIntegerLiteralNode node5;
+    node5.value = 65535;
+    node5.is_unsigned = true;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node5)->kind, TYPE_U16);
+
+    ASTIntegerLiteralNode node6;
+    node6.value = 4294967295;
+    node6.is_unsigned = true;
+    ASSERT_EQ(checker.visitIntegerLiteral(&node6)->kind, TYPE_U32);
+
+    return true;
+}
+
 TEST_FUNC(TypeCheckerInvalidDeclarations) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
