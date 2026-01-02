@@ -326,6 +326,13 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
 TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
+TEST_FUNC(TypeChecker_PointerIntegerAddition);
+TEST_FUNC(TypeChecker_IntegerPointerAddition);
+TEST_FUNC(TypeChecker_PointerIntegerSubtraction);
+TEST_FUNC(TypeChecker_PointerPointerSubtraction);
+TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition);
+TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes);
+TEST_FUNC(TypeChecker_Invalid_PointerMultiplication);
 
 // Symbol Table Tests
 TEST_FUNC(SymbolTable_DuplicateDetection);
@@ -656,6 +663,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Dereference_ConstPointer,
         test_TypeChecker_AddressOf_Invalid_RValue,
         test_TypeChecker_AddressOf_Valid_LValues,
+        test_TypeChecker_PointerIntegerAddition,
+        test_TypeChecker_IntegerPointerAddition,
+        test_TypeChecker_PointerIntegerSubtraction,
+        test_TypeChecker_PointerPointerSubtraction,
+        test_TypeChecker_Invalid_PointerPointerAddition,
+        test_TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes,
+        test_TypeChecker_Invalid_PointerMultiplication,
 
         // Symbol Table Tests
         test_SymbolTable_DuplicateDetection,

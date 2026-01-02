@@ -47,6 +47,7 @@ public:
 private:
     void fatalError(SourceLocation loc, const char* message);
     bool isNumericType(Type* type);
+    bool isIntegerType(Type* type);
     CompilationUnit& unit;
     Type* current_fn_return_type;
 

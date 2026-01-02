@@ -117,7 +117,35 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
     switch (node->op) {
         // Arithmetic operators
         case TOKEN_PLUS:
+            // Pointer + Integer
+            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
+                return left_type;
+            }
+            // Integer + Pointer
+            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) {
+                return right_type;
+            }
+            // Numeric + Numeric
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+                return left_type;
+            }
+            break;
         case TOKEN_MINUS:
+            // Pointer - Integer
+            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
+                return left_type;
+            }
+            // Pointer - Pointer
+            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
+                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+                    return resolvePrimitiveTypeName("isize");
+                }
+            }
+            // Numeric - Numeric
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+                return left_type;
+            }
+            break;
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
@@ -550,6 +578,13 @@ bool TypeChecker::isNumericType(Type* type) {
         return false;
     }
     return type->kind >= TYPE_I8 && type->kind <= TYPE_F64;
+}
+
+bool TypeChecker::isIntegerType(Type* type) {
+    if (!type) {
+        return false;
+    }
+    return type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE;
 }
 
 void TypeChecker::fatalError(SourceLocation loc, const char* message) {
