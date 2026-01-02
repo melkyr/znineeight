@@ -48,6 +48,7 @@ private:
     void fatalError(SourceLocation loc, const char* message);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
+    bool all_paths_return(ASTNode* node);
     CompilationUnit& unit;
     Type* current_fn_return_type;
 
