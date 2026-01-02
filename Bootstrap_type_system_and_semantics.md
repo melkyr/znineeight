@@ -115,6 +115,7 @@ The following table summarizes the allowed implicit conversions:
 | `i(N)`               | `i(M)` where M >= N  | ✓                      | Safe integer widening conversion.                |
 | `u(N)`               | `u(M)` where M >= N  | ✓                      | Safe unsigned integer widening conversion.       |
 | `f32`                | `f64`                | ✓                      | Safe float widening conversion.                  |
+| `f64`                | `f32`                | ✗                      | Narrowing conversion is not allowed implicitly.  |
 | `*T`                 | `*const T`           | ✓                      | Adding const is a safe conversion.               |
 | `T`                  | `T`                  | ✓                      | Types are identical.                             |
 | `*const T`           | `*T`                 | ✗                      | Removing const is not allowed implicitly.        |
