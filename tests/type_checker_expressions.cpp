@@ -120,13 +120,13 @@ TEST_FUNC(TypeChecker_IntegerLiteral) {
     CompilationUnit unit(arena, interner);
     TypeChecker checker(unit);
 
-    // Test i32
+    // Test i8
     {
         ParserTestContext ctx("123", arena, interner);
         ASTNode* expr = ctx.getParser().parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_I32);
+        ASSERT_EQ(type->kind, TYPE_I8);
     }
 
     // Test i64
@@ -153,7 +153,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         ASTNode* expr = ctx.getParser().parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_I32);
+        ASSERT_EQ(type->kind, TYPE_I8);
         ASSERT_FALSE(unit.getErrorHandler().hasErrors());
     }
 

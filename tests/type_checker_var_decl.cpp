@@ -37,7 +37,7 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
     const DynamicArray<ErrorReport>& errors = eh.getErrors();
     ASSERT_TRUE(errors.length() == 2);
     ASSERT_TRUE(strcmp(errors[0].message, "cannot assign type '*const u8' to variable of type 'i32'") == 0);
-    ASSERT_TRUE(strcmp(errors[1].message, "cannot assign type 'i32' to variable of type 'f32'") == 0);
+    ASSERT_TRUE(strcmp(errors[1].message, "cannot assign type 'i8' to variable of type 'f32'") == 0);
 
     return true;
 }
