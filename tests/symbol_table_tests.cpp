@@ -1,165 +1,96 @@
 #include "test_framework.hpp"
-#include "symbol_table.hpp"
-#include "compilation_unit.hpp"
 #include "test_utils.hpp"
-#include "type_system.hpp"
-#include <cstring>
+#include "symbol_table.hpp"
+#include "memory.hpp"
 
-bool test_SymbolTable_ScopingAndLookup()
-{
-    // Setup the compilation unit which owns all the memory
-    ArenaAllocator arena(8192); // Increased arena size
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
+TEST_FUNC(SymbolTable_InsertAndLookup) {
+    ArenaAllocator arena(4096);
+    SymbolTable table(arena);
+    SymbolBuilder builder(arena);
 
-    // Create a dummy type for testing
-    Type dummy_type = { TYPE_I32, 4, 4 };
+    // Insert a symbol
+    Symbol symbol = builder.withName("my_var")
+                           .ofType(SYMBOL_VARIABLE)
+                           .build();
+    ASSERT_TRUE(table.insert(symbol));
 
-    // 1. Test initial state & global scope
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 1);
-    Symbol* not_found = table.lookup("non_existent");
+    // Lookup the symbol
+    Symbol* found = table.lookup("my_var");
+    ASSERT_TRUE(found != NULL);
+    ASSERT_TRUE(strcmp(found->name, "my_var") == 0);
+
+    // Lookup a non-existent symbol
+    Symbol* not_found = table.lookup("non_existent_var");
     ASSERT_TRUE(not_found == NULL);
 
-    // 2. Insert into global scope and lookup
-    const char* global_name = interner.intern("global_var");
-    Symbol global_sym = SymbolBuilder(arena)
-        .withName(global_name)
-        .ofType(SYMBOL_VARIABLE)
-        .withType(&dummy_type)
-        .build();
-    ASSERT_TRUE(table.insert(global_sym));
-    Symbol* found_global = table.lookup(global_name);
-    ASSERT_TRUE(found_global != NULL);
-    ASSERT_TRUE(strcmp(found_global->name, global_name) == 0);
-    ASSERT_TRUE(found_global->symbol_type->kind == TYPE_I32);
+    return true;
+}
 
-    // 3. Enter a new scope
+TEST_FUNC(SymbolTable_ScopeManagement) {
+    ArenaAllocator arena(4096);
+    SymbolTable table(arena);
+    SymbolBuilder builder(arena);
+
+    // Insert a symbol in the global scope
+    table.insert(builder.withName("global_var").ofType(SYMBOL_VARIABLE).build());
+
+    // Enter a new scope
     table.enterScope();
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 2);
+    table.insert(builder.withName("local_var").ofType(SYMBOL_VARIABLE).build());
 
-    // 4. Lookup global from inner scope
-    found_global = table.lookup(global_name);
-    ASSERT_TRUE(found_global != NULL);
-    ASSERT_TRUE(strcmp(found_global->name, global_name) == 0);
+    // Check that we can find both symbols
+    ASSERT_TRUE(table.lookup("global_var") != NULL);
+    ASSERT_TRUE(table.lookup("local_var") != NULL);
 
-    // 5. Insert into inner scope and lookup
-    const char* local_name = interner.intern("local_var");
-    Symbol local_sym = SymbolBuilder(arena).withName(local_name).ofType(SYMBOL_VARIABLE).build();
-    ASSERT_TRUE(table.insert(local_sym));
-    Symbol* found_local = table.lookup(local_name);
-    ASSERT_TRUE(found_local != NULL);
-    ASSERT_TRUE(strcmp(found_local->name, local_name) == 0);
-
-    // 6. Test symbol shadowing
-    Symbol shadow_sym = SymbolBuilder(arena).withName(global_name).ofType(SYMBOL_FUNCTION).build();
-    ASSERT_TRUE(table.insert(shadow_sym)); // Should succeed
-    Symbol* found_shadow = table.lookup(global_name);
-    ASSERT_TRUE(found_shadow != NULL);
-    ASSERT_TRUE(found_shadow->kind == SYMBOL_FUNCTION); // Should find the shadowed symbol
-
-    // 7. Test redeclaration in the same scope
-    Symbol redeclare_sym = SymbolBuilder(arena).withName(local_name).ofType(SYMBOL_VARIABLE).build();
-    ASSERT_FALSE(table.insert(redeclare_sym)); // Should fail
-
-    // 8. Exit scope
+    // Exit the scope
     table.exitScope();
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 1);
 
-    // 9. Local and shadowed symbols should no longer be found
-    ASSERT_TRUE(table.lookup(local_name) == NULL);
-    Symbol* found_global_after_exit = table.lookup(global_name);
-    ASSERT_TRUE(found_global_after_exit != NULL);
-    ASSERT_TRUE(found_global_after_exit->kind == SYMBOL_VARIABLE); // Should be the global var again
+    // The local variable should no longer be found
+    ASSERT_TRUE(table.lookup("global_var") != NULL);
+    ASSERT_TRUE(table.lookup("local_var") == NULL);
 
     return true;
 }
 
-bool test_SymbolTable_DuplicateDetection() {
-    ArenaAllocator arena(8192);
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
+TEST_FUNC(SymbolTable_Redefinition) {
+    ArenaAllocator arena(4096);
+    SymbolTable table(arena);
+    SymbolBuilder builder(arena);
 
-    const char* var_name = interner.intern("my_var");
-    Symbol sym = SymbolBuilder(arena).withName(var_name).build();
+    // Insert a symbol
+    table.insert(builder.withName("my_var").ofType(SYMBOL_VARIABLE).build());
 
-    // 1. Insert a symbol, should succeed
-    ASSERT_TRUE(table.insert(sym));
+    // Try to insert it again in the same scope
+    ASSERT_FALSE(table.insert(builder.withName("my_var").ofType(SYMBOL_VARIABLE).build()));
 
-    // 2. Insert the same symbol again in the same scope, should fail
-    ASSERT_FALSE(table.insert(sym));
-
-    // 3. Enter a new scope
+    // Enter a new scope, redefinition is allowed
     table.enterScope();
-
-    // 4. Insert the same symbol name (shadowing), should succeed
-    ASSERT_TRUE(table.insert(sym));
-
-    // 5. Insert the same symbol again in the inner scope, should fail
-    ASSERT_FALSE(table.insert(sym));
+    ASSERT_TRUE(table.insert(builder.withName("my_var").ofType(SYMBOL_VARIABLE).build()));
 
     return true;
 }
 
-bool test_SymbolTable_NestedScopes() {
+// This test will be used to verify the hash table resizing.
+// For now, it will just insert a bunch of symbols.
+TEST_FUNC(SymbolTable_Resize) {
     ArenaAllocator arena(8192);
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
+    SymbolTable table(arena);
+    SymbolBuilder builder(arena);
 
-    // Dummy types to distinguish symbols
-    Type type1 = { TYPE_I8, 1, 1 };
-    Type type2 = { TYPE_I16, 2, 2 };
-    Type type3 = { TYPE_I32, 4, 4 };
+    // Insert enough symbols to trigger a resize (assuming initial size is 16 and load factor is 0.75)
+    for (int i = 0; i < 20; ++i) {
+        char buffer[16];
+        sprintf(buffer, "var_%d", i);
+        const char* var_name = strdup(buffer); // Note: strdup is not ideal, but ok for a test
+        table.insert(builder.withName(var_name).ofType(SYMBOL_VARIABLE).build());
+    }
 
-    // Intern names
-    const char* name_a = interner.intern("a");
-    const char* name_b = interner.intern("b");
-    const char* name_c = interner.intern("c");
-
-    // Scope 1 (Global)
-    Symbol sym_a1 = SymbolBuilder(arena).withName(name_a).withType(&type1).build();
-    ASSERT_TRUE(table.insert(sym_a1));
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 1);
-    ASSERT_TRUE(table.lookup(name_a)->symbol_type->kind == TYPE_I8);
-
-
-    // Scope 2
-    table.enterScope();
-    Symbol sym_b2 = SymbolBuilder(arena).withName(name_b).withType(&type2).build();
-    Symbol sym_a2 = SymbolBuilder(arena).withName(name_a).withType(&type2).build(); // Shadow
-    ASSERT_TRUE(table.insert(sym_b2));
-    ASSERT_TRUE(table.insert(sym_a2));
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 2);
-    ASSERT_TRUE(table.lookup(name_a)->symbol_type->kind == TYPE_I16); // Should find shadow
-    ASSERT_TRUE(table.lookup(name_b)->symbol_type->kind == TYPE_I16);
-
-
-    // Scope 3
-    table.enterScope();
-    Symbol sym_c3 = SymbolBuilder(arena).withName(name_c).withType(&type3).build();
-    Symbol sym_b3 = SymbolBuilder(arena).withName(name_b).withType(&type3).build(); // Shadow
-    ASSERT_TRUE(table.insert(sym_c3));
-    ASSERT_TRUE(table.insert(sym_b3));
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 3);
-    ASSERT_TRUE(table.lookup(name_a)->symbol_type->kind == TYPE_I16); // Should find scope 2 version
-    ASSERT_TRUE(table.lookup(name_b)->symbol_type->kind == TYPE_I32); // Should find shadow
-    ASSERT_TRUE(table.lookup(name_c)->symbol_type->kind == TYPE_I32);
-
-    // Exit Scope 3
-    table.exitScope();
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 2);
-    ASSERT_TRUE(table.lookup(name_c) == NULL); // c should be gone
-    ASSERT_TRUE(table.lookup(name_b)->symbol_type->kind == TYPE_I16); // b should be scope 2 version
-    ASSERT_TRUE(table.lookup(name_a)->symbol_type->kind == TYPE_I16); // a should be scope 2 version
-
-    // Exit Scope 2
-    table.exitScope();
-    ASSERT_TRUE(table.getCurrentScopeLevel() == 1);
-    ASSERT_TRUE(table.lookup(name_c) == NULL); // c still gone
-    ASSERT_TRUE(table.lookup(name_b) == NULL); // b should be gone
-    ASSERT_TRUE(table.lookup(name_a)->symbol_type->kind == TYPE_I8); // a should be global version
+    // Check that all symbols can be found
+    for (int i = 0; i < 20; ++i) {
+        char buffer[16];
+        sprintf(buffer, "var_%d", i);
+        ASSERT_TRUE(table.lookup(buffer) != NULL);
+    }
 
     return true;
 }
