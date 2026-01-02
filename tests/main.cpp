@@ -80,6 +80,14 @@ bool expect_type_checker_abort(const char* source_code) {
 }
 
 // Forward declarations for all test functions
+TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration);
+TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_PointerAddition);
+TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction);
 TEST_FUNC(Parser_AbortOnAllocationFailure);
 TEST_FUNC(Lexer_FloatWithUnderscores_IntegerPart);
 TEST_FUNC(Lexer_FloatWithUnderscores_FractionalPart);
@@ -437,6 +445,14 @@ int main(int argc, char* argv[]) {
 
     // Normal test suite execution
     bool (*tests[])() = {
+        test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
+        test_TypeCheckerVoidTests_ImplicitReturnInVoidFunction,
+        test_TypeCheckerVoidTests_ExplicitReturnInVoidFunction,
+        test_TypeCheckerVoidTests_ReturnValueInVoidFunction,
+        test_TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction,
+        test_TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction,
+        test_TypeCheckerVoidTests_PointerAddition,
+        test_TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction,
         test_Parser_AbortOnAllocationFailure,
         test_Lexer_FloatWithUnderscores_IntegerPart,
         test_Lexer_FloatWithUnderscores_FractionalPart,

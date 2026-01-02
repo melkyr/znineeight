@@ -305,6 +305,19 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
+### `void` Type Validation
+
+To ensure C89 compatibility, the `TypeChecker` enforces several strict rules regarding the use of the `void` type:
+
+-   **Variable Declarations:** Variables cannot be declared with the type `void`. An attempt to do so (e.g., `var x: void;`) will result in an `ERR_VARIABLE_CANNOT_BE_VOID` error.
+
+-   **Function Returns:**
+    -   A function declared with a `void` return type can have an empty `return;` statement or no `return` statement at all (an implicit return).
+    -   Attempting to return a value from a `void` function (e.g., `return 123;`) will result in an `ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION` error.
+    -   A non-`void` function must have a `return` statement with a value of a compatible type. A `return;` statement without a value, or an implicit return by falling off the end of the function, will result in an `ERR_MISSING_RETURN_VALUE` error.
+
+-   **Pointer Arithmetic:** Pointer arithmetic is not permitted on pointers of type `*void`. Attempting to perform addition or subtraction on a `void*` will result in an `ERR_INVALID_VOID_POINTER_ARITHMETIC` error.
+
 ## 5. C89 Type Compatibility
 
 To ensure the bootstrap compiler produces valid C89 code, a formal system for mapping and validating types has been implemented. This system is defined in the `src/include/c89_type_mapping.hpp` header.

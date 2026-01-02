@@ -119,6 +119,20 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
         return NULL;
     }
 
+    // Check for void pointer arithmetic, which is not allowed.
+    if (left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) {
+        if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, node->left->loc, "pointer arithmetic on 'void*' is not allowed");
+            return NULL;
+        }
+    }
+    if (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID) {
+        if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, node->right->loc, "pointer arithmetic on 'void*' is not allowed");
+            return NULL;
+        }
+    }
+
     // Check for compatible types based on the operator
     switch (node->op) {
         // Arithmetic operators
@@ -307,9 +321,13 @@ Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* node) {
 Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
     Type* condition_type = visit(node->condition);
     if (condition_type) {
-        if (condition_type->kind != TYPE_BOOL &&
-            !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-            condition_type->kind != TYPE_POINTER) {
+        if (condition_type->kind == TYPE_VOID) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "if statement condition cannot be void",
+                                           unit.getArena());
+        } else if (condition_type->kind != TYPE_BOOL &&
+                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+                   condition_type->kind != TYPE_POINTER) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
                                            "if statement condition must be a bool, integer, or pointer",
                                            unit.getArena());
@@ -326,9 +344,13 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
 Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     Type* condition_type = visit(node->condition);
     if (condition_type) {
-        if (condition_type->kind != TYPE_BOOL &&
-            !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-            condition_type->kind != TYPE_POINTER) {
+        if (condition_type->kind == TYPE_VOID) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "while statement condition cannot be void",
+                                           unit.getArena());
+        } else if (condition_type->kind != TYPE_BOOL &&
+                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+                   condition_type->kind != TYPE_POINTER) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
                                            "while statement condition must be a bool, integer, or pointer",
                                            unit.getArena());
@@ -340,11 +362,30 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
 }
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
-    Type* return_type = node->expression ? visit(node->expression) : resolvePrimitiveTypeName("void");
+    Type* return_type = node->expression ? visit(node->expression) : get_g_type_void();
 
-    if (current_fn_return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
-        SourceLocation loc = node->expression ? node->expression->loc : parent->loc;
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Return type mismatch");
+    if (!current_fn_return_type) {
+        // This can happen if we are parsing a return outside of a function,
+        // which should be caught by the parser, but we check here for safety.
+        return NULL;
+    }
+
+    // Case 1: Function is void
+    if (current_fn_return_type->kind == TYPE_VOID) {
+        if (node->expression) {
+            // Error: void function returning a value
+            unit.getErrorHandler().report(ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION, node->expression->loc, "void function should not return a value");
+        }
+    }
+    // Case 2: Function is non-void
+    else {
+        if (!node->expression) {
+            // Error: non-void function must return a value
+            unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, "non-void function must return a value");
+        } else if (return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
+            // Error: return type mismatch
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, "return type mismatch");
+        }
     }
 
     return NULL;
@@ -369,6 +410,12 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 
 Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
     Type* declared_type = visit(node->type);
+
+    if (declared_type && declared_type->kind == TYPE_VOID) {
+        unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type->loc, "variables cannot be declared as 'void'");
+        return NULL; // Stop processing this declaration
+    }
+
     Type* initializer_type = visit(node->initializer);
 
     if (declared_type && initializer_type && !areTypesCompatible(declared_type, initializer_type)) {
@@ -452,6 +499,12 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     }
 
     visit(node->body);
+
+    if (current_fn_return_type->kind != TYPE_VOID) {
+        if (!all_paths_return(node->body)) {
+            unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, node->return_type->loc, "not all control paths return a value");
+        }
+    }
 
     unit.getSymbolTable().exitScope();
 
@@ -609,4 +662,31 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
             loc.column,
             message);
     abort();
+}
+
+bool TypeChecker::all_paths_return(ASTNode* node) {
+    if (!node) {
+        return false;
+    }
+
+    switch (node->type) {
+        case NODE_RETURN_STMT:
+            return true;
+        case NODE_BLOCK_STMT: {
+            DynamicArray<ASTNode*>* statements = node->as.block_stmt.statements;
+            if (statements->length() > 0) {
+                return all_paths_return((*statements)[statements->length() - 1]);
+            }
+            return false;
+        }
+        case NODE_IF_STMT: {
+            ASTIfStmtNode* if_stmt = node->as.if_stmt;
+            if (if_stmt->else_block) {
+                return all_paths_return(if_stmt->then_block) && all_paths_return(if_stmt->else_block);
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
 }
