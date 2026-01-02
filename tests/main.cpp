@@ -328,10 +328,9 @@ TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
 
 // Symbol Table Tests
-TEST_FUNC(SymbolTable_InsertAndLookup);
-TEST_FUNC(SymbolTable_ScopeManagement);
-TEST_FUNC(SymbolTable_Redefinition);
-TEST_FUNC(SymbolTable_Resize);
+TEST_FUNC(SymbolTable_DuplicateDetection);
+TEST_FUNC(SymbolTable_NestedScopes_And_Lookup);
+TEST_FUNC(SymbolTable_HashTableResize);
 
 
 // This function is executed in a child process by the error handling test.
@@ -659,10 +658,9 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_AddressOf_Valid_LValues,
 
         // Symbol Table Tests
-        test_SymbolTable_InsertAndLookup,
-        test_SymbolTable_ScopeManagement,
-        test_SymbolTable_Redefinition,
-        test_SymbolTable_Resize,
+        test_SymbolTable_DuplicateDetection,
+        test_SymbolTable_NestedScopes_And_Lookup,
+        test_SymbolTable_HashTableResize,
     };
 
     int passed = 0;

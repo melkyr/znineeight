@@ -74,7 +74,7 @@ Scope::Scope(ArenaAllocator& arena, size_t initial_bucket_count)
     }
 }
 
-void Scope::insert(const Symbol& symbol) {
+void Scope::insert(Symbol& symbol) {
     // Resize if load factor exceeds 0.75
     if (symbol_count + 1 > bucket_count * 0.75) {
         resize();
@@ -159,11 +159,13 @@ void SymbolTable::exitScope() {
     }
 }
 
-bool SymbolTable::insert(const Symbol& symbol) {
+bool SymbolTable::insert(Symbol& symbol) {
     // Check for redeclaration in the current scope.
     if (lookupInCurrentScope(symbol.name)) {
         return false; // Symbol already exists.
     }
+    // Assign the current scope level to the symbol.
+    symbol.scope_level = getCurrentScopeLevel();
     // Add the symbol to the current scope.
     scopes.back()->insert(symbol);
     return true;
