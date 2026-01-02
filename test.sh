@@ -93,6 +93,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_control_flow.cpp \
     tests/type_checker_pointer_arithmetic.cpp \
     tests/type_checker_pointers.cpp \
+    tests/c89_type_mapping_tests.cpp \
     -Isrc/include \
     -o test_runner
 
