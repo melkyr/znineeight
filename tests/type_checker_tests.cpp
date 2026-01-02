@@ -128,24 +128,32 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
     // Test case for i32 max
     ASTIntegerLiteralNode node_i32_max;
     node_i32_max.value = 2147483647;
+    node_i32_max.is_unsigned = false;
+    node_i32_max.is_long = false;
     Type* type_i32_max = checker.visitIntegerLiteral(&node_i32_max);
     ASSERT_EQ(type_i32_max->kind, TYPE_I32);
 
     // Test case for i32 min
     ASTIntegerLiteralNode node_i32_min;
     node_i32_min.value = -2147483648;
+    node_i32_min.is_unsigned = false;
+    node_i32_min.is_long = false;
     Type* type_i32_min = checker.visitIntegerLiteral(&node_i32_min);
     ASSERT_EQ(type_i32_min->kind, TYPE_I32);
 
     // Test case for value just over i32 max
     ASTIntegerLiteralNode node_i64_over;
     node_i64_over.value = 2147483648;
+    node_i64_over.is_unsigned = false;
+    node_i64_over.is_long = false;
     Type* type_i64_over = checker.visitIntegerLiteral(&node_i64_over);
     ASSERT_EQ(type_i64_over->kind, TYPE_I64);
 
     // Test case for value just under i32 min
     ASTIntegerLiteralNode node_i64_under;
     node_i64_under.value = -2147483649LL; // Use LL for long long
+    node_i64_under.is_unsigned = false;
+    node_i64_under.is_long = false;
     Type* type_i64_under = checker.visitIntegerLiteral(&node_i64_under);
     ASSERT_EQ(type_i64_under->kind, TYPE_I64);
 
