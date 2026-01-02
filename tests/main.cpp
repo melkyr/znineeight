@@ -308,6 +308,7 @@ TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
 // TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
+TEST_FUNC(TypeCheckerC89Compat_FloatWidening);
 
 // Control Flow Type Checker Tests
 TEST_FUNC(TypeCheckerControlFlow_IfStatementWithBooleanCondition);
@@ -656,6 +657,7 @@ int main(int argc, char* argv[]) {
         // test_TypeCheckerC89Compat_RejectFunctionPointerCall,
         test_TypeChecker_Call_WrongArgumentCount,
         test_TypeChecker_Call_IncompatibleArgumentType,
+        test_TypeCheckerC89Compat_FloatWidening,
 
         // Control Flow Type Checker Tests
         test_TypeCheckerControlFlow_IfStatementWithBooleanCondition,

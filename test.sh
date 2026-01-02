@@ -95,6 +95,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_pointers.cpp \
     tests/c89_type_mapping_tests.cpp \
     tests/integer_literal_parsing.cpp \
+    tests/type_checker_float_c89_compat_tests.cpp \
     -Isrc/include \
     -o test_runner
 
