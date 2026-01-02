@@ -7,24 +7,24 @@
 // This ensures that we only have one instance of each primitive type,
 // saving memory and allowing for simple pointer comparisons.
 
-static Type g_type_void = { TYPE_VOID, 0, 0 };
-static Type g_type_bool = { TYPE_BOOL, 1, 1 };
+Type g_type_void = { TYPE_VOID, 0, 0 };
+Type g_type_bool = { TYPE_BOOL, 1, 1 };
 
-static Type g_type_i8  = { TYPE_I8,  1, 1 };
-static Type g_type_i16 = { TYPE_I16, 2, 2 };
-static Type g_type_i32 = { TYPE_I32, 4, 4 };
-static Type g_type_i64 = { TYPE_I64, 8, 8 };
+Type g_type_i8  = { TYPE_I8,  1, 1 };
+Type g_type_i16 = { TYPE_I16, 2, 2 };
+Type g_type_i32 = { TYPE_I32, 4, 4 };
+Type g_type_i64 = { TYPE_I64, 8, 8 };
 
-static Type g_type_u8  = { TYPE_U8,  1, 1 };
-static Type g_type_u16 = { TYPE_U16, 2, 2 };
-static Type g_type_u32 = { TYPE_U32, 4, 4 };
-static Type g_type_u64 = { TYPE_U64, 8, 8 };
+Type g_type_u8  = { TYPE_U8,  1, 1 };
+Type g_type_u16 = { TYPE_U16, 2, 2 };
+Type g_type_u32 = { TYPE_U32, 4, 4 };
+Type g_type_u64 = { TYPE_U64, 8, 8 };
 
-static Type g_type_isize = { TYPE_ISIZE, 4, 4 }; // Assuming 32-bit target
-static Type g_type_usize = { TYPE_USIZE, 4, 4 }; // Assuming 32-bit target
+Type g_type_isize = { TYPE_ISIZE, 4, 4 }; // Assuming 32-bit target
+Type g_type_usize = { TYPE_USIZE, 4, 4 }; // Assuming 32-bit target
 
-static Type g_type_f32 = { TYPE_F32, 4, 4 };
-static Type g_type_f64 = { TYPE_F64, 8, 8 };
+Type g_type_f32 = { TYPE_F32, 4, 4 };
+Type g_type_f64 = { TYPE_F64, 8, 8 };
 
 
 Type* resolvePrimitiveTypeName(const char* name) {

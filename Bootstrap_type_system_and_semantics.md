@@ -295,7 +295,44 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
-## 5. Symbol Table and Memory Usage
+## 5. C89 Type Compatibility
+
+To ensure the bootstrap compiler produces valid C89 code, a formal system for mapping and validating types has been implemented. This system is defined in the `src/include/c89_type_mapping.hpp` header.
+
+### C89 Primitive Type Mapping Table
+
+A static mapping table, `c89_type_map`, defines the direct correspondence between the RetroZig compiler's primitive `TypeKind`s and their C89 string equivalents. This table is the single source of truth for C89 type compatibility.
+
+| RetroZig TypeKind | C89 Equivalent         | Notes                          |
+|-------------------|------------------------|--------------------------------|
+| `TYPE_VOID`       | `"void"`               |                                |
+| `TYPE_BOOL`       | `"int"`                | C89 has no native `_Bool` type |
+| `TYPE_I8`         | `"signed char"`        |                                |
+| `TYPE_I16`        | `"short"`              |                                |
+| `TYPE_I32`        | `"int"`                |                                |
+| `TYPE_I64`        | `"__int64"`            | For MSVC 6.0 compatibility   |
+| `TYPE_U8`         | `"unsigned char"`      |                                |
+| `TYPE_U16`        | `"unsigned short"`     |                                |
+| `TYPE_U32`        | `"unsigned int"`       |                                |
+| `TYPE_U64`        | `"unsigned __int64"`   | For MSVC 6.0 compatibility   |
+| `TYPE_F32`        | `"float"`              |                                |
+| `TYPE_F64`        | `"double"`             |                                |
+
+*Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
+
+### The `is_c89_compatible` Function
+
+A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. Its behavior is as follows:
+
+-   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
+-   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
+-   **Returns `false`** for `NULL` types.
+-   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`, `TYPE_FUNCTION`).
+-   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).
+
+This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` to reject unsupported Zig features early in the compilation process.
+
+## 6. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.
 
