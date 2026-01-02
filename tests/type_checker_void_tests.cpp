@@ -172,12 +172,16 @@ TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
     ASTNode right_node;
     right_node.resolved_type = get_g_type_i32();
 
-    ASTBinaryOpNode bin_op;
-    bin_op.left = &left_node;
-    bin_op.right = &right_node;
-    bin_op.op = TOKEN_PLUS;
+    ASTBinaryOpNode bin_op_node;
+    bin_op_node.left = &left_node;
+    bin_op_node.right = &right_node;
+    bin_op_node.op = TOKEN_PLUS;
 
-    type_checker.visitBinaryOp(&bin_op);
+    ASTNode root_node;
+    root_node.type = NODE_BINARY_OP;
+    root_node.as.binary_op = &bin_op_node;
+
+    type_checker.visit(&root_node);
 
     ErrorHandler& error_handler = comp_unit.getErrorHandler();
     ASSERT_TRUE(error_handler.hasErrors());

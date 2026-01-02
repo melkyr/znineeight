@@ -18,8 +18,8 @@ Type* TypeChecker::visit(ASTNode* node) {
 
     Type* resolved_type = NULL;
     switch (node->type) {
-        case NODE_UNARY_OP:         resolved_type = visitUnaryOp(&node->as.unary_op); break;
-        case NODE_BINARY_OP:        resolved_type = visitBinaryOp(node->as.binary_op); break;
+        case NODE_UNARY_OP:         resolved_type = visitUnaryOp(node, &node->as.unary_op); break;
+        case NODE_BINARY_OP:        resolved_type = visitBinaryOp(node, node->as.binary_op); break;
         case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
@@ -60,7 +60,7 @@ Type* TypeChecker::visit(ASTNode* node) {
     return resolved_type;
 }
 
-Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
+Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     // In a unit test, the operand's type might already be resolved.
     Type* operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
     if (!operand_type) {
@@ -68,28 +68,33 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
     }
 
     switch (node->op) {
-        case TOKEN_STAR:
+        case TOKEN_STAR: // Dereference operator (*)
             if (operand_type->kind == TYPE_POINTER) {
                 return operand_type->as.pointer.base;
             }
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a non-pointer type");
             return NULL;
-        case TOKEN_AMPERSAND: {
+
+        case TOKEN_AMPERSAND: { // Address-of operator (&)
             // The operand of '&' must be an l-value.
-            // We consider identifiers, array accesses, and dereferences to be l-values.
             bool is_lvalue = false;
-            if (node->operand->type == NODE_IDENTIFIER || node->operand->type == NODE_ARRAY_ACCESS) {
+            if (node->operand->type == NODE_IDENTIFIER) {
+                is_lvalue = true;
+            } else if (node->operand->type == NODE_ARRAY_ACCESS) {
                 is_lvalue = true;
             } else if (node->operand->type == NODE_UNARY_OP && node->operand->as.unary_op.op == TOKEN_STAR) {
-                is_lvalue = true;
+                 Type* inner_op_type = node->operand->as.unary_op.operand->resolved_type ? node->operand->as.unary_op.operand->resolved_type : visit(node->operand->as.unary_op.operand);
+                 if (inner_op_type && inner_op_type->kind == TYPE_POINTER) {
+                     is_lvalue = true;
+                 }
             }
 
             if (is_lvalue) {
                 return createPointerType(unit.getArena(), operand_type, false);
-            } else {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot take the address of an r-value");
-                return NULL;
             }
+
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot take the address of an r-value");
+            return NULL;
         }
         case TOKEN_MINUS:
             if (isNumericType(operand_type)) {
@@ -105,12 +110,11 @@ Type* TypeChecker::visitUnaryOp(ASTUnaryOpNode* node) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Invalid operand for logical not");
             return NULL;
         default:
-            // TODO: Handle other unary operators like dereference (*), bitwise not (~)
             return NULL;
     }
 }
 
-Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
+Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
     Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
@@ -119,53 +123,61 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
         return NULL;
     }
 
-    // Check for void pointer arithmetic, which is not allowed.
-    if (left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) {
-        if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, node->left->loc, "pointer arithmetic on 'void*' is not allowed");
-            return NULL;
+    // --- NEW: Check for void pointer arithmetic ---
+    // C89 does not allow arithmetic on void pointers.
+    if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+        if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
+            (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
+            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
+            return NULL; // Return error type
         }
     }
-    if (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID) {
-        if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, node->right->loc, "pointer arithmetic on 'void*' is not allowed");
-            return NULL;
-        }
-    }
+
 
     // Check for compatible types based on the operator
     switch (node->op) {
         // Arithmetic operators
         case TOKEN_PLUS:
-            // Pointer + Integer
+            // Pointer + Integer -> Pointer
             if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type;
+                return left_type; // Result type is the pointer type
             }
-            // Integer + Pointer
+            // Integer + Pointer -> Pointer
             if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) {
-                return right_type;
+                return right_type; // Result type is the pointer type
             }
-            // Numeric + Numeric
+            // Numeric + Numeric (existing logic)
             if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type;
+                return left_type; // For now, result type is the same as operands
             }
-            break;
+            // If none of the above match, it's an error for + (unless handled by generic error below)
+            break; // Fall through to generic error
+
         case TOKEN_MINUS:
-            // Pointer - Integer
+            // Pointer - Integer -> Pointer
             if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type;
+                return left_type; // Result type is the pointer type
             }
-            // Pointer - Pointer
+            // Pointer - Pointer -> isize (if compatible base types)
             if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
                 if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                    return resolvePrimitiveTypeName("isize");
+                    Type* isize_type = resolvePrimitiveTypeName("isize");
+                    if (!isize_type) {
+                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference");
+                         return NULL;
+                    }
+                    return isize_type; // Result type is isize
+                } else {
+                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types");
+                     return NULL; // Return error type
                 }
             }
-            // Numeric - Numeric
+            // Numeric - Numeric (existing logic)
             if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type;
+                return left_type; // For now, result type is the same as operands
             }
-            break;
+            // If none of the above match, it's an error for - (unless handled by generic error below)
+            break; // Fall through to generic error
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
@@ -192,7 +204,13 @@ Type* TypeChecker::visitBinaryOp(ASTBinaryOpNode* node) {
     }
 
     // If we fall through, the types were not compatible for the given operator.
-    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->left->loc, "Invalid operands for binary operator");
+    char left_type_str[64];
+    char right_type_str[64];
+    typeToString(left_type, left_type_str, sizeof(left_type_str));
+    typeToString(right_type, right_type_str, sizeof(right_type_str));
+    char msg_buffer[256];
+    snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for binary operator: '%s' and '%s'", left_type_str, right_type_str);
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
     return NULL;
 }
 

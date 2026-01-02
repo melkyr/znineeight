@@ -59,12 +59,16 @@ TEST_FUNC(TypeChecker_Bool_ComparisonOps) {
     size_t num_ops = sizeof(comparison_ops) / sizeof(comparison_ops[0]);
 
     for (size_t i = 0; i < num_ops; ++i) {
-        ASTBinaryOpNode op_node;
-        op_node.left = &left_operand;
-        op_node.right = &right_operand;
-        op_node.op = comparison_ops[i];
+        ASTBinaryOpNode op_node_data;
+        op_node_data.left = &left_operand;
+        op_node_data.right = &right_operand;
+        op_node_data.op = comparison_ops[i];
 
-        Type* result_type = checker.visitBinaryOp(&op_node);
+        ASTNode root_node;
+        root_node.type = NODE_BINARY_OP;
+        root_node.as.binary_op = &op_node_data;
+
+        Type* result_type = checker.visit(&root_node);
         ASSERT_TRUE(result_type != NULL);
         ASSERT_EQ(result_type->kind, TYPE_BOOL);
     }
@@ -86,11 +90,15 @@ TEST_FUNC(TypeChecker_Bool_LogicalOps) {
     operand.resolved_type = get_g_type_bool();
 
     // Test the logical NOT operator
-    ASTUnaryOpNode not_op_node;
-    not_op_node.operand = &operand;
-    not_op_node.op = TOKEN_BANG;
+    ASTUnaryOpNode not_op_node_data;
+    not_op_node_data.operand = &operand;
+    not_op_node_data.op = TOKEN_BANG;
 
-    Type* result_type = checker.visitUnaryOp(&not_op_node);
+    ASTNode root_node;
+    root_node.type = NODE_UNARY_OP;
+    root_node.as.unary_op = not_op_node_data;
+
+    Type* result_type = checker.visit(&root_node);
     ASSERT_TRUE(result_type != NULL);
     ASSERT_EQ(result_type->kind, TYPE_BOOL);
 
