@@ -172,15 +172,7 @@ public:
 ```
 
 -   **`lookup(const char* name)`:** Searches the table for a symbol with a matching (interned) name. Returns a pointer to the `Symbol` if found, or `NULL` otherwise.
--   **`insert(Symbol& sym)`:** Adds a new `Symbol` to the table. It now checks for duplicates within the current scope and returns `false` if a redefinition is detected.
-
-#### Hash Table Implementation
-To optimize performance, the `SymbolTable`'s scopes no longer use a linear scan for lookups. Instead, each `Scope` now contains a simple, open-addressing hash table with chaining for collision resolution.
-
--   **Structure:** Each `Scope` manages a `DynamicArray` of `SymbolEntry*` pointers, which serve as the buckets for the hash table.
--   **Hashing:** Symbol names are hashed using the FNV-1a algorithm to determine their bucket index.
--   **Dynamic Growth:** To maintain an efficient lookup time, the hash table automatically resizes itself. When the number of symbols in a scope exceeds a load factor of 0.75, the table's capacity is doubled, and all existing symbols are rehashed into the new, larger set of buckets.
--   **Memory:** All allocations for the hash table buckets, `SymbolEntry` chains, and the symbols themselves are managed by the `ArenaAllocator`, ensuring that the symbol table's memory is reclaimed along with the rest of the compilation unit.
+-   **`insert(Symbol& sym)`:** Adds a new `Symbol` to the table. It does not check for duplicates; this responsibility is left to the semantic analyzer.
 
 ### Variable Declarations
 
@@ -240,11 +232,7 @@ Function calls are subject to the following strict limitations:
 
 -   **Arithmetic Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats).
 -   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
-    -   **Pointer Arithmetic:** The type checker now correctly validates pointer arithmetic according to C89 rules:
-        -   **`pointer + integer` / `integer + pointer`:** This operation is valid. The resulting type is the same pointer type as the pointer operand.
-        -   **`pointer - integer`:** This operation is valid. The resulting type is the same pointer type as the pointer operand.
-        -   **`pointer - pointer`:** This operation is valid only if both pointers are of a compatible type. The resulting type is `isize` (a signed integer).
-        -   All other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered type errors.
+-   **Pointer Arithmetic:** Pointer arithmetic will be restricted to ensure it is C89-compatible.
 
 ### Control Flow Statements
 

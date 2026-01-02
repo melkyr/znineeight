@@ -204,30 +204,6 @@ public:
     }
 
     /**
-     * @brief Resizes the array to a new length.
-     *
-     * If the new length is greater than the current capacity, the array will
-     * be reallocated. If it's smaller, the length is simply adjusted downwards.
-     * This does not call destructors on any truncated elements.
-     *
-     * @param new_len The new number of elements in the array.
-     */
-    void resize(size_t new_len) {
-        if (new_len > cap) {
-            ensure_capacity(new_len);
-        }
-        len = new_len;
-    }
-
-    /**
-     * @brief Clears the array, setting its length to zero.
-     * This does not free the underlying memory, which can be reused.
-     */
-    void clear() {
-        len = 0;
-    }
-
-    /**
      * @brief Returns the number of elements in the array.
      */
     size_t length() const {
@@ -260,29 +236,6 @@ public:
     T* getData() {
         return data;
     }
-
-    DynamicArray& operator=(const DynamicArray& other) {
-        // This is a simplified assignment operator. A real implementation
-        // would need to handle self-assignment and memory deallocation,
-        // but for an arena allocator, we can just copy the data.
-        if (this != &other) {
-            // Do not copy the allocator, as it's a reference.
-            // The new array should use the same allocator as the old one.
-            len = other.len;
-            cap = other.cap;
-            data = static_cast<T*>(allocator.alloc(cap * sizeof(T)));
-            assert(data);
-            for (size_t i = 0; i < len; ++i) {
-                new (&data[i]) T(other.data[i]);
-            }
-        }
-        return *this;
-    }
-
-private:
-    // Making the copy constructor private by default
-    // to prevent accidental shallow copies.
-    DynamicArray(const DynamicArray& other);
 };
 
 #endif // MEMORY_HPP

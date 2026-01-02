@@ -25,7 +25,6 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/symbol_table.cpp \
     src/bootstrap/type_system.cpp \
     src/bootstrap/type_checker.cpp \
-    src/bootstrap/hash.cpp \
     tests/test_char_literal.cpp \
     tests/test_lexer_delimiters.cpp \
     tests/test_lexer_keywords.cpp \
@@ -93,7 +92,6 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_c89_compat_tests.cpp \
     tests/type_checker_control_flow.cpp \
     tests/type_checker_pointers.cpp \
-    tests/type_checker_pointer_tests.cpp \
     -Isrc/include \
     -o test_runner
 
