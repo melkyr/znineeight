@@ -882,7 +882,7 @@ Represents a `struct` definition. The declaration node contains a list of field 
     ```cpp
     /**
      * @struct ASTStructFieldNode
-     * @brief Represents a single field within a struct declaration.
+ * @brief Represents a single field within a struct or union declaration.
      * @var ASTStructFieldNode::name The name of the field (interned string).
      * @var ASTStructFieldNode::type A pointer to an ASTNode representing the field's type.
      */
@@ -902,7 +902,7 @@ Represents a `struct` definition. The declaration node contains a list of field 
     ```
 
 #### Parsing Logic (`parseStructDeclaration`)
-The `parseStructDeclaration` function is responsible for parsing anonymous struct literals. It is invoked from `parsePrimaryExpr` when a `struct` keyword is found. The function adheres to the grammar:
+The `parseStructDeclaration` function is responsible for parsing struct declarations. It can be invoked from `parsePrimaryExpr` to handle anonymous struct literals (e.g., in a variable assignment) or from `parseTopLevelItem` to handle top-level struct declarations. The function adheres to the grammar:
 `'struct' '{' (field (',' field)* ','?)? '}'`
 `field ::= IDENTIFIER ':' type`
 
@@ -930,7 +930,7 @@ Represents a `union` definition.
     ```
 
 #### Parsing Logic (`parseUnionDeclaration`)
-The `parseUnionDeclaration` function is responsible for parsing anonymous union literals, which are treated as type expressions. It is invoked from `parsePrimaryExpr` when a `union` keyword is found. The function's logic is nearly identical to that of `parseStructDeclaration`. It adheres to the grammar:
+The `parseUnionDeclaration` function is responsible for parsing union declarations. It can be invoked from `parsePrimaryExpr` to handle anonymous union literals or from `parseTopLevelItem` to handle top-level declarations. The function's logic is nearly identical to that of `parseStructDeclaration`. It adheres to the grammar:
 `'union' '{' (field (',' field)* ','?)? '}'`
 `field ::= IDENTIFIER ':' type`
 
