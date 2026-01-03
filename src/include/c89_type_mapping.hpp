@@ -34,9 +34,13 @@ static const TypeMapping c89_type_map[] = {
 /**
  * @brief Checks if a given type is compatible with the C89 subset.
  *
- * This function validates that a type is either a whitelisted primitive type
- * (as defined in c89_type_map) or a single-level pointer to one of those
- * primitive types. It rejects multi-level pointers and other complex types.
+ * This function validates that a type adheres to C89 constraints. It accepts:
+ * - Whitelisted primitive types (as defined in c89_type_map).
+ * - Single-level pointers to whitelisted primitive types.
+ * - Function types, provided their parameters and return types are also C89-compatible.
+ *
+ * It rejects multi-level pointers, function pointers, functions with more than 4
+ * parameters, and any types not in the primitive whitelist (e.g., isize).
  *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.
@@ -46,30 +50,59 @@ static inline bool is_c89_compatible(Type* type) {
         return false;
     }
 
-    // Handle pointers: must be a single-level pointer to a whitelisted primitive.
-    if (type->kind == TYPE_POINTER) {
-        Type* base_type = type->as.pointer.base;
-        if (!base_type) {
-            return false; // Invalid pointer to nothing.
+    switch (type->kind) {
+        case TYPE_POINTER: {
+            Type* base_type = type->as.pointer.base;
+            // Reject null base, multi-level pointers, and function pointers.
+            if (!base_type || base_type->kind == TYPE_POINTER || base_type->kind == TYPE_FUNCTION) {
+                return false;
+            }
+            // A pointer is compatible only if its base type is a compatible primitive.
+            // We check this by recursively calling is_c89_compatible, which will handle
+            // the primitive type check in the default case.
+            return is_c89_compatible(base_type);
         }
-        // Reject multi-level pointers (e.g., **i32).
-        if (base_type->kind == TYPE_POINTER) {
-            return false;
-        }
-        // The base type must be a whitelisted primitive.
-        // Fall through to the primitive check below.
-        type = base_type;
-    }
 
-    // Check for whitelisted primitive types.
-    const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);
-    for (size_t i = 0; i < map_size; ++i) {
-        if (type->kind == c89_type_map[i].zig_type_kind) {
+        case TYPE_FUNCTION: {
+            // Check for uninitialized union members.
+            if (!type->as.function.params || !type->as.function.return_type) {
+                return false;
+            }
+
+            // Rule: Must not have more than 4 parameters.
+            if (type->as.function.params->length() > 4) {
+                return false;
+            }
+
+            // Rule: Return type must be valid, C89-compatible, and not a function itself.
+            Type* return_type = type->as.function.return_type;
+            if (return_type->kind == TYPE_FUNCTION || !is_c89_compatible(return_type)) {
+                return false;
+            }
+
+            // Rule: All parameter types must be valid, C89-compatible, and not functions themselves.
+            for (size_t i = 0; i < type->as.function.params->length(); ++i) {
+                Type* param_type = (*type->as.function.params)[i];
+                if (!param_type || param_type->kind == TYPE_FUNCTION || !is_c89_compatible(param_type)) {
+                    return false;
+                }
+            }
+
             return true;
         }
-    }
 
-    return false;
+        default: {
+            // Check for whitelisted primitive types.
+            const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);
+            for (size_t i = 0; i < map_size; ++i) {
+                if (type->kind == c89_type_map[i].zig_type_kind) {
+                    return true;
+                }
+            }
+            // All other types (e.g., isize, array, etc.) are not compatible by default.
+            return false;
+        }
+    }
 }
 
 #endif // C89_TYPE_MAPPING_HPP

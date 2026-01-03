@@ -349,6 +349,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerMultiplication);
 
 // C89 Type Mapping Tests
 TEST_FUNC(C89TypeMapping_Validation);
+TEST_FUNC(C89Compat_FunctionTypeValidation);
 
 // Symbol Table Tests
 TEST_FUNC(SymbolTable_DuplicateDetection);
@@ -720,6 +721,7 @@ int main(int argc, char* argv[]) {
         test_SymbolTable_NestedScopes_And_Lookup,
         test_SymbolTable_HashTableResize,
         test_C89TypeMapping_Validation,
+        test_C89Compat_FunctionTypeValidation,
         test_IntegerLiteralParsing_UnsignedSuffix,
         test_IntegerLiteralParsing_LongSuffix,
         test_IntegerLiteralParsing_UnsignedLongSuffix,

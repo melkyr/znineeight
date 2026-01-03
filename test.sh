@@ -94,6 +94,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_pointer_arithmetic.cpp \
     tests/type_checker_pointers.cpp \
     tests/c89_type_mapping_tests.cpp \
+    tests/c89_type_compat_tests.cpp \
     tests/integer_literal_parsing.cpp \
     tests/type_checker_float_c89_compat_tests.cpp \
     tests/type_checker_bool_tests.cpp \

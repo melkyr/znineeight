@@ -382,8 +382,13 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 
 -   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
 -   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
+-   **Returns `true`** for a function type, but only if it meets the following strict criteria:
+    -   The function must not have more than 4 parameters.
+    -   The return type must be C89-compatible.
+    -   All parameter types must be C89-compatible.
+    -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
 -   **Returns `false`** for `NULL` types.
--   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`, `TYPE_FUNCTION`).
+-   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`).
 -   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).
 
 This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` to reject unsupported Zig features early in the compilation process.
