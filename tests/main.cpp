@@ -373,6 +373,10 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations);
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice);
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer);
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray);
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields);
 
 
 // This function is executed in a child process by the error handling test.
@@ -741,6 +745,10 @@ int main(int argc, char* argv[]) {
         test_ParserBug_TopLevelUnion,
         test_ParserBug_TopLevelStruct,
         test_ParserBug_UnionFieldNodeType,
+        test_TypeChecker_C89_StructFieldValidation_Slice,
+        test_TypeChecker_C89_UnionFieldValidation_MultiLevelPointer,
+        test_TypeChecker_C89_StructFieldValidation_ValidArray,
+        test_TypeChecker_C89_UnionFieldValidation_ValidFields,
     };
 
     int passed = 0;

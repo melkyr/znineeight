@@ -33,8 +33,8 @@ public:
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
     Type* visitVarDecl(ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
-    Type* visitStructDecl(ASTStructDeclNode* node);
-    Type* visitUnionDecl(ASTUnionDeclNode* node);
+    Type* visitStructDecl(ASTNode* parent, ASTStructDeclNode* node);
+    Type* visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node);
     Type* visitEnumDecl(ASTEnumDeclNode* node);
     Type* visitTypeName(ASTNode* parent, ASTTypeNameNode* node);
     Type* visitPointerType(ASTPointerTypeNode* node);
@@ -46,6 +46,7 @@ public:
     bool areTypesCompatible(Type* expected, Type* actual);
 private:
     void fatalError(SourceLocation loc, const char* message);
+    void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
     bool all_paths_return(ASTNode* node);

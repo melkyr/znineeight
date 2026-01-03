@@ -1,7 +1,9 @@
 #include "type_checker.hpp"
+#include "c89_type_mapping.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include <cstdio> // For sprintf
+
 #include <cstdlib> // For abort()
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
@@ -40,8 +42,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
-        case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node->as.struct_decl); break;
-        case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node->as.union_decl); break;
+        case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
+        case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node, node->as.union_decl); break;
         case NODE_ENUM_DECL:        resolved_type = visitEnumDecl(node->as.enum_decl); break;
         case NODE_TYPE_NAME:        resolved_type = visitTypeName(node, &node->as.type_name); break;
         case NODE_POINTER_TYPE:     resolved_type = visitPointerType(&node->as.pointer_type); break;
@@ -530,13 +532,16 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitStructDecl(ASTStructDeclNode* node) {
-    // TODO: Visit fields
+Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
+    validateStructOrUnionFields(parent);
+    // TODO: The rest of the struct type checking logic will go here.
+    // For now, we return NULL as no actual type is created yet.
     return NULL;
 }
 
-Type* TypeChecker::visitUnionDecl(ASTUnionDeclNode* node) {
-    // TODO: Visit fields
+Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
+    validateStructOrUnionFields(parent);
+    // TODO: The rest of the union type checking logic will go here.
     return NULL;
 }
 
@@ -722,5 +727,46 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
         }
         default:
             return false;
+    }
+}
+
+void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
+    if (!decl_node) {
+        return;
+    }
+
+    DynamicArray<ASTNode*>* fields = NULL;
+    const char* container_type_str = "";
+
+    if (decl_node->type == NODE_STRUCT_DECL) {
+        fields = decl_node->as.struct_decl->fields;
+        container_type_str = "Struct";
+    } else if (decl_node->type == NODE_UNION_DECL) {
+        fields = decl_node->as.union_decl->fields;
+        container_type_str = "Union";
+    } else {
+        return; // Should not happen if called correctly
+    }
+
+    if (!fields) {
+        return;
+    }
+
+    for (size_t i = 0; i < fields->length(); ++i) {
+        ASTNode* field_node = (*fields)[i];
+        if (field_node->type != NODE_STRUCT_FIELD) {
+            continue; // Should not happen, but defensive check
+        }
+
+        ASTStructFieldNode* field = field_node->as.struct_field;
+        // Resolve the field's type by visiting its type node.
+        Type* field_type = visit(field->type);
+
+        // If the type was resolved, check if it's C89 compatible.
+        if (field_type && !is_c89_compatible(field_type)) {
+            char msg_buffer[256];
+            snprintf(msg_buffer, sizeof(msg_buffer), "%s field type is not C89 compatible.", container_type_str);
+            fatalError(field->type->loc, msg_buffer);
+        }
     }
 }

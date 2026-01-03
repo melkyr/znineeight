@@ -744,11 +744,7 @@ ASTNode* Parser::parseEnumDeclaration() {
         field_data->is_const = true; // Enum members are constants
         field_data->is_mut = false;
 
-        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!field_node) {
-            error("Out of memory");
-        }
-        field_node->type = NODE_VAR_DECL;
+        ASTNode* field_node = createNode(NODE_VAR_DECL);
         field_node->loc = name_token.location;
         field_node->as.var_decl = field_data;
 
@@ -815,11 +811,7 @@ ASTNode* Parser::parseUnionDeclaration() {
         field_data->name = name_token.value.identifier;
         field_data->type = type_node;
 
-        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!field_node) {
-            error("Out of memory");
-        }
-        field_node->type = NODE_STRUCT_FIELD;
+        ASTNode* field_node = createNode(NODE_STRUCT_FIELD);
         field_node->loc = name_token.location;
         field_node->as.struct_field = field_data;
 
@@ -954,11 +946,7 @@ ASTNode* Parser::parseStructDeclaration() {
         field_data->name = name_token.value.identifier;
         field_data->type = type_node;
 
-        ASTNode* field_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!field_node) {
-            error("Out of memory");
-        }
-        field_node->type = NODE_STRUCT_FIELD;
+        ASTNode* field_node = createNode(NODE_STRUCT_FIELD);
         field_node->loc = name_token.location;
         field_node->as.struct_field = field_data;
 
@@ -998,7 +986,15 @@ ASTNode* Parser::parseVarDecl() {
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected an identifier after 'var' or 'const'");
     expect(TOKEN_COLON, "Expected ':' after identifier in variable declaration");
 
-    ASTNode* type_node = parseType();
+    // The type can be a simple type name or a container declaration.
+    ASTNode* type_node;
+    if (peek().type == TOKEN_STRUCT || peek().type == TOKEN_UNION || peek().type == TOKEN_ENUM) {
+        // Let parsePrimaryExpr handle the container declaration, as it knows how.
+        type_node = parsePrimaryExpr();
+    } else {
+        // Otherwise, parse it as a standard type expression (pointer, array, simple name).
+        type_node = parseType();
+    }
 
     // Parse optional initializer
     ASTNode* initializer_node = NULL;
