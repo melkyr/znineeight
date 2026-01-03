@@ -54,3 +54,47 @@ TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType) {
     ASSERT_TRUE(expect_type_checker_abort(source));
     return true;
 }
+
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice) {
+    const char* source = "var s: struct { field: []u8 };";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer) {
+    const char* source = "var u: union { field: **i32 };";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray) {
+    const char* source = "var s: struct { field: [8]u8 };";
+    // This should not abort
+    ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser parser = unit.createParser(file_id);
+    ASTNode* root = parser.parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors()); // Ensure no non-fatal errors either
+    return true;
+}
+
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields) {
+    const char* source = "var u: union { a: i32, b: *u8, c: [4]f64 };";
+    // This should not abort
+    ArenaAllocator arena(8192);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser parser = unit.createParser(file_id);
+    ASTNode* root = parser.parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
+    return true;
+}

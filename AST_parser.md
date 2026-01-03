@@ -909,7 +909,7 @@ The `parseStructDeclaration` function is responsible for parsing struct declarat
 - It consumes the `struct` and `{` tokens.
 - It then enters a loop that continues as long as the next token is not `}`.
 - Inside the loop, it parses a single field by expecting an identifier, a colon, and a type expression (parsed via `parseType`).
-- It constructs an `ASTStructFieldNode` for each field and appends it to the `DynamicArray` in the `ASTStructDeclNode`.
+- It constructs an `ASTStructFieldNode` for each field, which is then wrapped in an `ASTNode` of type `NODE_STRUCT_FIELD`. This `ASTNode` is then appended to the `DynamicArray` in the `ASTStructDeclNode`.
 - The loop correctly handles an optional trailing comma by checking for a comma after each field, but only if the next token is not the closing brace.
 - It correctly handles empty structs (`{}`).
 - Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
@@ -937,7 +937,7 @@ The `parseUnionDeclaration` function is responsible for parsing union declaratio
 - It consumes the `union` and `{` tokens.
 - It then enters a loop that continues as long as the next token is not `}`.
 - Inside the loop, it parses a single field by expecting an identifier, a colon, and a type expression (parsed via `parseType`).
-- It constructs an `ASTStructFieldNode` for each field and appends it to the `DynamicArray` in the `ASTUnionDeclNode`. This is the same node type used for struct fields, as the syntax is identical.
+- It constructs an `ASTStructFieldNode` for each field, which is then wrapped in an `ASTNode` of type `NODE_STRUCT_FIELD`. This `ASTNode` is then appended to the `DynamicArray` in the `ASTUnionDeclNode`. This is the same node type used for struct fields, as the syntax is identical.
 - The loop correctly handles an optional trailing comma.
 - It correctly handles empty unions (`{}`).
 - Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.

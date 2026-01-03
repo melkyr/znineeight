@@ -206,6 +206,16 @@ When visiting an array type declaration (`ASTArrayTypeNode`), the `TypeChecker` 
 
 If both checks pass, a new `Type` of kind `TYPE_ARRAY` is created. Its `size` field is calculated from the element type's size and the array's length, and its `as.array` details are populated accordingly.
 
+### Struct and Union Field Validation
+
+When visiting a struct or union declaration (`ASTStructDeclNode` or `ASTUnionDeclNode`), the `TypeChecker` iterates through all of the container's fields to ensure they are C89-compatible.
+
+1.  **Field Type Resolution:** For each field, the `TypeChecker` first visits the field's type node to resolve it into a `Type*`.
+
+2.  **C89 Compatibility Check:** It then calls the `is_c89_compatible()` function on the resolved field type.
+
+3.  **Fatal Error on Incompatible Field:** If `is_c89_compatible()` returns `false`, it signifies that the field's type is not supported in the C89 subset (e.g., a slice `[]u8`, a multi-level pointer `**i32`, or an `isize`). This is treated as a fatal error, and the `TypeChecker` immediately calls its `fatalError` method to abort compilation. This strict approach prevents any non-C89 types from being included in struct or union definitions.
+
 ### Function Declarations and Signatures
 
 When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` performs a comprehensive validation of the entire function signature:
@@ -382,6 +392,7 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 
 -   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
 -   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
+-   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
     -   The function must not have more than 4 parameters.
     -   The return type must be C89-compatible.

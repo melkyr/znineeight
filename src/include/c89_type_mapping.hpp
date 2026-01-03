@@ -91,6 +91,17 @@ static inline bool is_c89_compatible(Type* type) {
             return true;
         }
 
+        case TYPE_ARRAY: {
+            // An array is compatible if its element type is compatible.
+            // Use an iterative approach to find the base primitive type.
+            Type* current_type = type;
+            while (current_type && current_type->kind == TYPE_ARRAY) {
+                current_type = current_type->as.array.element_type;
+            }
+            // After the loop, check the final non-array base type.
+            return is_c89_compatible(current_type);
+        }
+
         default: {
             // Check for whitelisted primitive types.
             const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);
