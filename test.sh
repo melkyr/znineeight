@@ -1,7 +1,7 @@
 #!/bin/bash
 echo "Compiling and running all tests..."
 
-g++ -std=c++98 -g -Wall -Isrc/include \
+g++ -std=c++98 -Wall -Isrc/include \
     tests/main.cpp \
     tests/memory_alignment_test.cpp \
     tests/dynamic_array_copy_test.cpp \
@@ -109,7 +109,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-gdb -ex run -ex "bt" --batch ./test_runner
+./test_runner -v
 
 if [ $? -ne 0 ]; then
     echo "Tests failed!"
