@@ -334,6 +334,9 @@ TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithFloatCondition);
 TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithVoidCondition);
 
 // Forward declarations for pointer type checker tests
+TEST_FUNC(ParserBug_TopLevelUnion);
+TEST_FUNC(ParserBug_TopLevelStruct);
+TEST_FUNC(ParserBug_UnionFieldNodeType);
 TEST_FUNC(TypeChecker_Dereference_ValidPointer);
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
@@ -735,6 +738,9 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerPointerOps_Arithmetic_PointerInteger,
         test_TypeCheckerPointerOps_Arithmetic_PointerPointer,
         test_TypeCheckerPointerOps_Arithmetic_InvalidOperations,
+        test_ParserBug_TopLevelUnion,
+        test_ParserBug_TopLevelStruct,
+        test_ParserBug_UnionFieldNodeType,
     };
 
     int passed = 0;

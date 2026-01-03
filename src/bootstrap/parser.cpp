@@ -895,6 +895,16 @@ ASTNode* Parser::parseTopLevelItem() {
         case TOKEN_VAR:
         case TOKEN_CONST:
             return parseVarDecl();
+        case TOKEN_STRUCT: {
+            ASTNode* struct_decl = parseStructDeclaration();
+            expect(TOKEN_SEMICOLON, "Expected ';' after top-level struct declaration");
+            return struct_decl;
+        }
+        case TOKEN_UNION: {
+            ASTNode* union_decl = parseUnionDeclaration();
+            expect(TOKEN_SEMICOLON, "Expected ';' after top-level union declaration");
+            return union_decl;
+        }
         default:
             error("Expected a top-level declaration (function, var, or const)");
             return NULL; // Unreachable
