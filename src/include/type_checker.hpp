@@ -49,6 +49,7 @@ private:
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
+    bool checkIntegerLiteralFit(i64 value, Type* int_type);
     bool all_paths_return(ASTNode* node);
     CompilationUnit& unit;
     Type* current_fn_return_type;

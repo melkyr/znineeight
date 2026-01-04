@@ -26,7 +26,17 @@ enum TypeKind {
     // Complex Types
     TYPE_POINTER,
     TYPE_ARRAY,
-    TYPE_FUNCTION
+    TYPE_FUNCTION,
+    TYPE_ENUM
+};
+
+/**
+ * @struct EnumMember
+ * @brief Represents a single member of an enum.
+ */
+struct EnumMember {
+    const char* name;
+    i64 value;
 };
 
 /**
@@ -51,6 +61,10 @@ struct Type {
             Type* element_type;
             u64 size;
         } array;
+        struct {
+            Type* backing_type;
+            DynamicArray<EnumMember>* members;
+        } enum_details;
     } as;
 };
 
@@ -91,6 +105,15 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  * @return A pointer to the newly allocated Type object.
  */
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
+
+/**
+ * @brief Creates a new enum Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param backing_type A pointer to the enum's backing type.
+ * @param members A dynamic array of the enum's members.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members);
 
 /**
  * @brief Converts a Type object to its string representation.
