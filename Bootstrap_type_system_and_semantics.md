@@ -234,9 +234,9 @@ When visiting an enum declaration (`ASTEnumDeclNode`), the `TypeChecker` creates
 
 2.  **Integer Backing Type:** The backing type must be a C89-compatible integer. Any other type (e.g., `f32`, a pointer, or a struct) will result in a fatal error.
 
-3.  **Constant Initializers:** Any explicit value assigned to an enum member (e.g., `A = 10`) must be a constant integer literal. The use of variables or complex expressions as initializers is a fatal error.
+3.  **Constant Initializers:** Any explicit value assigned to an enum member (e.g., `A = 10`, `B = -1`) must be a constant integer literal. The `TypeChecker` correctly handles both positive and negative integer literals by accounting for the `NODE_UNARY_OP` (with `TOKEN_MINUS`) that represents a negative number in the AST. The use of variables or complex expressions as initializers is a fatal error.
 
-4.  **Auto-increment Logic:** The `TypeChecker` correctly implements Zig-style auto-incrementing. If a member has no explicit initializer, its value is automatically assigned as `previous_member_value + 1`. The first member defaults to `0`.
+4.  **Auto-increment Logic:** The `TypeChecker` correctly implements Zig-style auto-incrementing. If a member has no explicit initializer, its value is automatically assigned as `previous_member_value + 1`. The first member defaults to `0`. This logic correctly follows from both explicit and other auto-incremented values.
 
 5.  **Value Range Validation:** The final value of every enum member (whether explicit or auto-incremented) is rigorously checked to ensure it fits within the valid range of the enum's backing type. For example, a value of `256` in an `enum(u8)` will trigger a fatal overflow error.
 

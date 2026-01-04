@@ -577,24 +577,37 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         ASTNode* member_node_wrapper = (*node->fields)[i];
         ASTVarDeclNode* member_node = member_node_wrapper->as.var_decl;
 
+        i64 member_value = 0;
+
         if (member_node->initializer) {
-            if (member_node->initializer->type != NODE_INTEGER_LITERAL) {
-                fatalError(member_node->initializer->loc, "Enum member initializer must be a constant integer.");
+            ASTNode* init = member_node->initializer;
+            if (init->type == NODE_INTEGER_LITERAL) {
+                member_value = (i64)init->as.integer_literal.value;
+            } else if (init->type == NODE_UNARY_OP && init->as.unary_op.op == TOKEN_MINUS) {
+                ASTNode* operand = init->as.unary_op.operand;
+                if (operand->type == NODE_INTEGER_LITERAL) {
+                    member_value = -((i64)operand->as.integer_literal.value);
+                } else {
+                    fatalError(init->loc, "Enum member initializer must be a constant integer.");
+                }
+            } else {
+                fatalError(init->loc, "Enum member initializer must be a constant integer.");
             }
-            // The value is stored as u64, cast it to i64 for our use.
-            current_value = (i64)member_node->initializer->as.integer_literal.value;
+            current_value = member_value;
+        } else {
+            member_value = current_value;
         }
 
-        if (!checkIntegerLiteralFit(current_value, backing_type)) {
+        if (!checkIntegerLiteralFit(member_value, backing_type)) {
             fatalError(member_node_wrapper->loc, "Enum member value overflows its backing type.");
         }
 
         EnumMember member;
         member.name = member_node->name;
-        member.value = current_value;
+        member.value = member_value;
         members->append(member);
 
-        current_value++;
+        current_value = member_value + 1;
     }
 
     // 4. Create and return the new enum type.

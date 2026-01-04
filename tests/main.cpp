@@ -377,9 +377,13 @@ TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice);
 TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer);
 TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray);
 TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields);
-TEST_FUNC(TypeChecker_ValidEnumDeclaration);
-TEST_FUNC(TypeChecker_EnumValidation);
-TEST_FUNC(TypeChecker_EnumAutoIncrement);
+TEST_FUNC(TypeCheckerEnumTests_SignedIntegerOverflow);
+TEST_FUNC(TypeCheckerEnumTests_SignedIntegerUnderflow);
+TEST_FUNC(TypeCheckerEnumTests_UnsignedIntegerOverflow);
+TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
+TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
+TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
+TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 
 
 // This function is executed in a child process by the error handling test.
@@ -752,9 +756,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_C89_UnionFieldValidation_MultiLevelPointer,
         test_TypeChecker_C89_StructFieldValidation_ValidArray,
         test_TypeChecker_C89_UnionFieldValidation_ValidFields,
-        test_TypeChecker_ValidEnumDeclaration,
-        test_TypeChecker_EnumValidation,
-        test_TypeChecker_EnumAutoIncrement,
+        test_TypeCheckerEnumTests_SignedIntegerOverflow,
+        test_TypeCheckerEnumTests_SignedIntegerUnderflow,
+        test_TypeCheckerEnumTests_UnsignedIntegerOverflow,
+        test_TypeCheckerEnumTests_NegativeValueInUnsignedEnum,
+        test_TypeCheckerEnumTests_AutoIncrementOverflow,
+        test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
+        test_TypeCheckerEnumTests_ValidValues,
     };
 
     int passed = 0;
