@@ -39,7 +39,8 @@ enum TypeKind {
     // Complex Types
     TYPE_POINTER,
     TYPE_ARRAY,
-    TYPE_FUNCTION
+    TYPE_FUNCTION,
+    TYPE_ENUM
 };
 ```
 
@@ -87,6 +88,15 @@ struct Type {
             Type* element_type; // The type of the elements in the array.
             u64 size;           // The number of elements in the array.
         } array;
+
+        /**
+         * @struct EnumDetails
+         * @brief Details specific to enum types.
+         */
+        struct EnumDetails {
+            Type* backing_type;
+            DynamicArray<EnumMember>* members;
+        } enum_details;
     } as;
 };
 ```
@@ -215,6 +225,22 @@ When visiting a struct or union declaration (`ASTStructDeclNode` or `ASTUnionDec
 2.  **C89 Compatibility Check:** It then calls the `is_c89_compatible()` function on the resolved field type.
 
 3.  **Fatal Error on Incompatible Field:** If `is_c89_compatible()` returns `false`, it signifies that the field's type is not supported in the C89 subset (e.g., a slice `[]u8`, a multi-level pointer `**i32`, or an `isize`). This is treated as a fatal error, and the `TypeChecker` immediately calls its `fatalError` method to abort compilation. This strict approach prevents any non-C89 types from being included in struct or union definitions.
+
+### Enum Type Declarations
+
+When visiting an enum declaration (`ASTEnumDeclNode`), the `TypeChecker` creates a new `TYPE_ENUM` and enforces several C89-centric validation rules:
+
+1.  **Backing Type Resolution:** It resolves the enum's backing type. If no explicit backing type is provided (e.g., `enum { A, B }`), it defaults to `i32` to ensure compatibility with standard C enums.
+
+2.  **Integer Backing Type:** The backing type must be a C89-compatible integer. Any other type (e.g., `f32`, a pointer, or a struct) will result in a fatal error.
+
+3.  **Constant Initializers:** Any explicit value assigned to an enum member (e.g., `A = 10`) must be a constant integer literal. The use of variables or complex expressions as initializers is a fatal error.
+
+4.  **Auto-increment Logic:** The `TypeChecker` correctly implements Zig-style auto-incrementing. If a member has no explicit initializer, its value is automatically assigned as `previous_member_value + 1`. The first member defaults to `0`.
+
+5.  **Value Range Validation:** The final value of every enum member (whether explicit or auto-incremented) is rigorously checked to ensure it fits within the valid range of the enum's backing type. For example, a value of `256` in an `enum(u8)` will trigger a fatal overflow error.
+
+This set of rules ensures that every enum processed by the bootstrap compiler is a distinct type that can be safely and correctly represented as a C89 `enum`.
 
 ### Function Declarations and Signatures
 

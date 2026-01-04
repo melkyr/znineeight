@@ -75,6 +75,16 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
     return new_type;
 }
 
+Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ENUM;
+    new_type->size = backing_type->size;
+    new_type->alignment = backing_type->alignment;
+    new_type->as.enum_details.backing_type = backing_type;
+    new_type->as.enum_details.members = members;
+    return new_type;
+}
+
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
     if (!type) {
         snprintf(buffer, buffer_size, "(null)");
@@ -138,6 +148,9 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             }
             return;
         }
+        case TYPE_ENUM:
+            primitive_name = "enum";
+            break;
         default: primitive_name = "unknown"; break;
     }
 

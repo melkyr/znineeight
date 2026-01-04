@@ -546,8 +546,59 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
-    // TODO: Visit fields
-    return NULL;
+    // 1. Determine the backing type.
+    Type* backing_type = NULL;
+    if (node->backing_type) {
+        backing_type = visit(node->backing_type);
+    } else {
+        // Default backing type is i32, to be compatible with C enums.
+        backing_type = resolvePrimitiveTypeName("i32");
+    }
+
+    if (!backing_type) {
+        // This can happen if the backing type is an undeclared identifier.
+        // The error would have been reported during visit(node->backing_type).
+        return NULL;
+    }
+
+    // 2. Validate that the backing type is an integer.
+    if (!isIntegerType(backing_type)) {
+        fatalError(node->backing_type ? node->backing_type->loc : node->fields->length() > 0 ? (*node->fields)[0]->loc : SourceLocation(),
+                   "Enum backing type must be an integer.");
+        return NULL; // Unreachable
+    }
+
+    // 3. Process enum members.
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<EnumMember>));
+    DynamicArray<EnumMember>* members = new (mem) DynamicArray<EnumMember>(unit.getArena());
+
+    i64 current_value = 0;
+    for (size_t i = 0; i < node->fields->length(); ++i) {
+        ASTNode* member_node_wrapper = (*node->fields)[i];
+        ASTVarDeclNode* member_node = member_node_wrapper->as.var_decl;
+
+        if (member_node->initializer) {
+            if (member_node->initializer->type != NODE_INTEGER_LITERAL) {
+                fatalError(member_node->initializer->loc, "Enum member initializer must be a constant integer.");
+            }
+            // The value is stored as u64, cast it to i64 for our use.
+            current_value = (i64)member_node->initializer->as.integer_literal.value;
+        }
+
+        if (!checkIntegerLiteralFit(current_value, backing_type)) {
+            fatalError(member_node_wrapper->loc, "Enum member value overflows its backing type.");
+        }
+
+        EnumMember member;
+        member.name = member_node->name;
+        member.value = current_value;
+        members->append(member);
+
+        current_value++;
+    }
+
+    // 4. Create and return the new enum type.
+    return createEnumType(unit.getArena(), backing_type, members);
 }
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
@@ -690,6 +741,29 @@ bool TypeChecker::isIntegerType(Type* type) {
     }
     return type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE;
 }
+
+bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
+    if (!isIntegerType(int_type)) {
+        return false; // Should not happen with enums
+    }
+
+    switch (int_type->kind) {
+        case TYPE_I8:   return value >= -128 && value <= 127;
+        case TYPE_U8:   return value >= 0 && value <= 255;
+        case TYPE_I16:  return value >= -32768 && value <= 32767;
+        case TYPE_U16:  return value >= 0 && value <= 65535;
+        case TYPE_I32:  return value >= -2147483648LL && value <= 2147483647LL;
+        case TYPE_U32:  return value >= 0 && (u64)value <= 4294967295ULL;
+        // For 64-bit types, i64 can hold all values, so we only check unsigned.
+        case TYPE_I64:  return true;
+        case TYPE_U64:  return value >= 0;
+        // For isize/usize, we assume 32-bit for the bootstrap compiler.
+        case TYPE_ISIZE: return value >= -2147483648LL && value <= 2147483647LL;
+        case TYPE_USIZE: return value >= 0 && (u64)value <= 4294967295ULL;
+        default: return false; // Not an integer type
+    }
+}
+
 
 void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     // For now, we'll just print to stderr and abort.
