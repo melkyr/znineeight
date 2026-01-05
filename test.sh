@@ -103,6 +103,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_pointer_operations.cpp \
     tests/type_checker_array_tests.cpp \
     tests/type_checker_enum_tests.cpp \
+    tests/type_checker_binary_op_tests.cpp \
     -Isrc/include \
     -o test_runner
 

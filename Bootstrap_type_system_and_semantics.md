@@ -322,9 +322,10 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
 
 -   **Identifiers:** The type of an identifier is determined by looking up its symbol in the `SymbolTable`. If the symbol is not found, an `ERR_UNDEFINED_VARIABLE` error is reported.
 
--   **Binary Operations:**
-    -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
-    -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
+-   **Binary Operations:** To maintain C89 compatibility and simplicity, the bootstrap compiler enforces strict type rules for all binary operators. Unlike modern languages, there is no implicit type promotion or widening in binary expressions (e.g., adding an `i16` to an `i32` is a type error).
+    -   **Arithmetic (`+`, `-`, `*`, `/`, `%`) and Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the exact same numeric type (integer or float). Mixing types, even if compatible for assignment (e.g., `i16` and `i32`), is a fatal error. The result of an arithmetic operation is the same type as the operands. The result of a comparison is always `bool`.
+    -   **Bitwise (`&`, `|`, `^`, `<<`, `>>`):** Both operands must be of the exact same integer type. Applying bitwise operators to floats or other types is a fatal error. The resulting type is the same as the operand types.
+    -   **Logical (`&&`, `||`):** Both operands must be of type `bool`. No other types are permitted. The resulting type is `bool`.
 
 -   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:

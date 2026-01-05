@@ -1,10 +1,35 @@
 #include "type_checker.hpp"
+#include "lexer.hpp"
 #include "c89_type_mapping.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include <cstdio> // For sprintf
 
 #include <cstdlib> // For abort()
+
+static const char* getTokenSpelling(TokenType kind) {
+    switch (kind) {
+        case TOKEN_PLUS: return "+";
+        case TOKEN_MINUS: return "-";
+        case TOKEN_STAR: return "*";
+        case TOKEN_SLASH: return "/";
+        case TOKEN_PERCENT: return "%";
+        case TOKEN_PIPE2: return "||";
+        case TOKEN_AMPERSAND2: return "&&";
+        case TOKEN_AMPERSAND: return "&";
+        case TOKEN_PIPE: return "|";
+        case TOKEN_CARET: return "^";
+        case TOKEN_LARROW2: return "<<";
+        case TOKEN_RARROW2: return ">>";
+        case TOKEN_EQUAL_EQUAL: return "==";
+        case TOKEN_BANG_EQUAL: return "!=";
+        case TOKEN_LESS: return "<";
+        case TOKEN_LESS_EQUAL: return "<=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_GREATER_EQUAL: return ">=";
+        default: return "unknown_op";
+    }
+}
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
 }
@@ -120,100 +145,109 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
     Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
-    // If either operand is null, an error has already been reported.
     if (!left_type || !right_type) {
         return NULL;
     }
 
-    // --- NEW: Check for void pointer arithmetic ---
-    // C89 does not allow arithmetic on void pointers.
-    if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
-        if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
-            (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
-            return NULL; // Return error type
-        }
-    }
+    const char* op_str = getTokenSpelling(node->op);
 
-
-    // Check for compatible types based on the operator
     switch (node->op) {
-        // Arithmetic operators
         case TOKEN_PLUS:
-            // Pointer + Integer -> Pointer
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
-            }
-            // Integer + Pointer -> Pointer
-            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) {
-                return right_type; // Result type is the pointer type
-            }
-            // Numeric + Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for + (unless handled by generic error below)
-            break; // Fall through to generic error
-
         case TOKEN_MINUS:
-            // Pointer - Integer -> Pointer
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
-            }
-            // Pointer - Pointer -> isize (if compatible base types)
-            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
-                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                    Type* isize_type = resolvePrimitiveTypeName("isize");
-                    if (!isize_type) {
-                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference");
-                         return NULL;
-                    }
-                    return isize_type; // Result type is isize
-                } else {
-                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types");
-                     return NULL; // Return error type
-                }
-            }
-            // Numeric - Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for - (unless handled by generic error below)
-            break; // Fall through to generic error
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
+            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type) && (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS)) {
+                if (left_type->as.pointer.base->kind == TYPE_VOID) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
+                    return NULL;
+                }
+                return left_type;
             }
-            break;
+            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER && node->op == TOKEN_PLUS) {
+                if (right_type->as.pointer.base->kind == TYPE_VOID) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
+                    return NULL;
+                }
+                return right_type;
+            }
+            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER && node->op == TOKEN_MINUS) {
+                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+                    return resolvePrimitiveTypeName("isize");
+                }
+            }
 
-        // Comparison operators
+            if (isNumericType(left_type) && left_type == right_type) {
+                return left_type;
+            } else {
+                char l_str[64], r_str[64], msg[256];
+                typeToString(left_type, l_str, sizeof(l_str));
+                typeToString(right_type, r_str, sizeof(r_str));
+                snprintf(msg, sizeof(msg), "arithmetic operation '%s' requires operands of the same type. Got '%s' and '%s'.", op_str, l_str, r_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg, unit.getArena());
+                return NULL;
+            }
+
+        case TOKEN_PIPE2:
+        case TOKEN_AMPERSAND2:
+            if (left_type->kind == TYPE_BOOL && right_type->kind == TYPE_BOOL) {
+                return get_g_type_bool();
+            } else {
+                char l_str[64], r_str[64], msg[256];
+                typeToString(left_type, l_str, sizeof(l_str));
+                typeToString(right_type, r_str, sizeof(r_str));
+                snprintf(msg, sizeof(msg), "logical operator '%s' requires boolean operands. Got '%s' and '%s'", op_str, l_str, r_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg, unit.getArena());
+                return NULL;
+            }
+
+        case TOKEN_AMPERSAND:
+        case TOKEN_PIPE:
+        case TOKEN_CARET:
+        case TOKEN_LARROW2:
+        case TOKEN_RARROW2:
+            if (!isIntegerType(left_type) || !isIntegerType(right_type)) {
+                char l_str[64], r_str[64], msg[256];
+                typeToString(left_type, l_str, sizeof(l_str));
+                typeToString(right_type, r_str, sizeof(r_str));
+                snprintf(msg, sizeof(msg), "invalid operands for bitwise operator '%s'. Operands must be integer types. Got '%s' and '%s'", op_str, l_str, r_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg, unit.getArena());
+                return NULL;
+            }
+            if (left_type != right_type) {
+                char l_str[64], r_str[64], msg[256];
+                typeToString(left_type, l_str, sizeof(l_str));
+                typeToString(right_type, r_str, sizeof(r_str));
+                snprintf(msg, sizeof(msg), "bitwise operation '%s' requires operands of the same type. Got '%s' and '%s'.", op_str, l_str, r_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg, unit.getArena());
+                return NULL;
+            }
+            return left_type;
+
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return get_g_type_bool();
-            }
-            break;
+             if (isNumericType(left_type) && left_type == right_type) {
+                 return get_g_type_bool();
+             }
+             if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER && (areTypesCompatible(left_type, right_type) || areTypesCompatible(right_type, left_type))) {
+                 return get_g_type_bool();
+             }
+             // If we reach here, the types are not compatible for comparison.
+            char l_str[64], r_str[64], msg[256];
+            typeToString(left_type, l_str, sizeof(l_str));
+            typeToString(right_type, r_str, sizeof(r_str));
+            snprintf(msg, sizeof(msg), "comparison requires operands of the same type for operator '%s'. Got '%s' and '%s'.", op_str, l_str, r_str);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg, unit.getArena());
+            return NULL;
 
         default:
-            // Operator not supported for binary expressions yet
-            break;
+            fatalError(parent->loc, "Unhandled binary operator in type checker");
+            return NULL; // Unreachable
     }
-
-    // If we fall through, the types were not compatible for the given operator.
-    char left_type_str[64];
-    char right_type_str[64];
-    typeToString(left_type, left_type_str, sizeof(left_type_str));
-    typeToString(right_type, right_type_str, sizeof(right_type_str));
-    char msg_buffer[256];
-    snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for binary operator: '%s' and '%s'", left_type_str, right_type_str);
-    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
-    return NULL;
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {

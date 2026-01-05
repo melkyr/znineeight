@@ -388,6 +388,12 @@ TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
+TEST_FUNC(binary_op_arithmetic_valid_cases);
+TEST_FUNC(binary_op_arithmetic_invalid_cases);
+TEST_FUNC(binary_op_bitwise_invalid_non_integer);
+TEST_FUNC(binary_op_bitwise_invalid_mismatched_integers);
+TEST_FUNC(binary_op_logical_invalid_non_boolean);
+TEST_FUNC(binary_op_comparison_invalid_mismatched_numerics);
 
 
 // This function is executed in a child process by the error handling test.
@@ -771,6 +777,12 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementOverflow,
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
+        test_binary_op_arithmetic_valid_cases,
+        test_binary_op_arithmetic_invalid_cases,
+        test_binary_op_bitwise_invalid_non_integer,
+        test_binary_op_bitwise_invalid_mismatched_integers,
+        test_binary_op_logical_invalid_non_boolean,
+        test_binary_op_comparison_invalid_mismatched_numerics,
     };
 
     int passed = 0;
