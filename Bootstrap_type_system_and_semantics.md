@@ -326,6 +326,31 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
     -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
     -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
 
+#### Binary Operator Implementation Status
+
+To clarify the current capabilities of the type checker and guide future development, the following table outlines the implementation status of all binary operators within the `visitBinaryOp` method.
+
+| Operator | Category      | Implemented? | Notes                                                              |
+|----------|---------------|--------------|--------------------------------------------------------------------|
+| `+`      | Arithmetic    | **Yes**      | Supports numeric types and pointer/integer addition.               |
+| `-`      | Arithmetic    | **Yes**      | Supports numeric types and pointer/integer/pointer subtraction.    |
+| `*`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
+| `/`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
+| `%`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
+| `==`     | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `!=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `<`      | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `<=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `>`      | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `>=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
+| `&`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
+| `|`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
+| `^`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
+| `<<`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
+| `>>`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
+| `&&`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
+| `||`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
+
 -   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:
         -   Variables (e.g., `&my_var`).

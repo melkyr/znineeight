@@ -6,6 +6,31 @@
 
 #include <cstdlib> // For abort()
 
+// Helper to get the string representation of a binary operator token.
+static const char* getTokenSpelling(TokenType op) {
+    switch (op) {
+        case TOKEN_PLUS: return "+";
+        case TOKEN_MINUS: return "-";
+        case TOKEN_STAR: return "*";
+        case TOKEN_SLASH: return "/";
+        case TOKEN_PERCENT: return "%";
+        case TOKEN_EQUAL_EQUAL: return "==";
+        case TOKEN_BANG_EQUAL: return "!=";
+        case TOKEN_LESS: return "<";
+        case TOKEN_LESS_EQUAL: return "<=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_GREATER_EQUAL: return ">=";
+        case TOKEN_AMPERSAND: return "&";
+        case TOKEN_PIPE: return "|";
+        case TOKEN_CARET: return "^";
+        case TOKEN_LARROW2: return "<<";
+        case TOKEN_RARROW2: return ">>";
+        case TOKEN_AMPERSAND2: return "&&";
+        case TOKEN_PIPE2: return "||";
+        default: return "unknown";
+    }
+}
+
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
 }
 
@@ -125,70 +150,48 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         return NULL;
     }
 
-    // --- NEW: Check for void pointer arithmetic ---
-    // C89 does not allow arithmetic on void pointers.
+    // --- Check for void pointer arithmetic ---
     if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
         if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
             (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
-            return NULL; // Return error type
+            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
+            return NULL;
         }
     }
 
-
-    // Check for compatible types based on the operator
     switch (node->op) {
-        // Arithmetic operators
+        // --- Implemented Arithmetic Operators ---
         case TOKEN_PLUS:
-            // Pointer + Integer -> Pointer
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
-            }
-            // Integer + Pointer -> Pointer
-            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) {
-                return right_type; // Result type is the pointer type
-            }
-            // Numeric + Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for + (unless handled by generic error below)
-            break; // Fall through to generic error
+            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
+            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
+            break;
 
         case TOKEN_MINUS:
-            // Pointer - Integer -> Pointer
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
-            }
-            // Pointer - Pointer -> isize (if compatible base types)
+            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
             if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
                 if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
                     Type* isize_type = resolvePrimitiveTypeName("isize");
                     if (!isize_type) {
-                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference");
+                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
                          return NULL;
                     }
-                    return isize_type; // Result type is isize
+                    return isize_type;
                 } else {
-                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types");
-                     return NULL; // Return error type
+                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                     return NULL;
                 }
             }
-            // Numeric - Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for - (unless handled by generic error below)
-            break; // Fall through to generic error
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
+            break;
+
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
             break;
 
-        // Comparison operators
+        // --- Implemented Comparison Operators ---
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
@@ -200,18 +203,35 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
             }
             break;
 
-        default:
-            // Operator not supported for binary expressions yet
-            break;
+        // --- Unimplemented Logical and Bitwise Operators ---
+        case TOKEN_AMPERSAND:
+        case TOKEN_PIPE:
+        case TOKEN_CARET:
+        case TOKEN_LARROW2:
+        case TOKEN_RARROW2:
+        case TOKEN_AMPERSAND2:
+        case TOKEN_PIPE2: {
+            char msg_buffer[256];
+            snprintf(msg_buffer, sizeof(msg_buffer), "Operator '%s' is not implemented yet.", getTokenSpelling(node->op));
+            unit.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, msg_buffer, unit.getArena());
+            return NULL;
+        }
+
+        default: {
+            char msg_buffer[256];
+            snprintf(msg_buffer, sizeof(msg_buffer), "Unsupported binary operator in type checker: %s", getTokenSpelling(node->op));
+            unit.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, msg_buffer, unit.getArena());
+            return NULL;
+        }
     }
 
-    // If we fall through, the types were not compatible for the given operator.
+    // If we fall through, it means the operator was valid, but the operands were not.
     char left_type_str[64];
     char right_type_str[64];
     typeToString(left_type, left_type_str, sizeof(left_type_str));
     typeToString(right_type, right_type_str, sizeof(right_type_str));
     char msg_buffer[256];
-    snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for binary operator: '%s' and '%s'", left_type_str, right_type_str);
+    snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands to binary operator: '%s' and '%s'", left_type_str, right_type_str);
     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
     return NULL;
 }
