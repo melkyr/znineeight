@@ -342,8 +342,19 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
         -   Any other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered a type error.
 
 -   **Literals:**
-    -   **`true`, `false`:** `bool`
-    -   **Integer Literals:** The type of an integer literal is determined by its value and suffix to be C89-compliant. The `TypeChecker` chooses the smallest C89-compatible type that can hold the value. For example, `10` is inferred as `i8`, `300` as `i16`, and `255u` as `u8`.
+    -   **`true`, `false`:** Inferred as type `bool`.
+    -   **Integer Literals:** The type is determined by the literal's value and suffix to be the smallest possible C89-compatible type that can hold the value.
+        -   **Unsigned Literals (e.g., `123u`):**
+            -   `0` to `255`: `u8`
+            -   `256` to `65535`: `u16`
+            -   `65536` to `4294967295`: `u32`
+            -   Larger values: `u64`
+        -   **Signed Literals (e.g., `123`, `-45`):**
+            -   `-128` to `127`: `i8`
+            -   `-32768` to `32767`: `i16`
+            -   `-2147483648` to `2147483647`: `i32`
+            -   Larger values: `i64`
+        -   The `L` suffix is parsed by the lexer for C89 compatibility but does not currently affect the type inference logic, as the system already selects the smallest possible type.
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
     -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
     -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters).
