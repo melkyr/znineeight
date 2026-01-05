@@ -322,9 +322,14 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
 
 -   **Identifiers:** The type of an identifier is determined by looking up its symbol in the `SymbolTable`. If the symbol is not found, an `ERR_UNDEFINED_VARIABLE` error is reported.
 
--   **Binary Operations:**
-    -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
-    -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
+-   **Binary Operations:** The `TypeChecker` now enforces strict C89-style type compatibility for all binary operators.
+    -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the exact same numeric type (e.g., `i32 + i32`). Any mixing of types (e.g., `i16 + i32`, `f32 * f64`) is a type error. Pointer arithmetic is handled separately.
+    -   **Bitwise (`&`, `|`, `^`, `<<`, `>>`):** Both operands must be of the exact same integer type. These operators are not valid for floats or booleans.
+    -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):**
+        -   For numeric types, both operands must be of the exact same type.
+        -   For pointer types, only equality operators (`==`, `!=`) are permitted, and the pointers must be of compatible types. Ordering comparisons (`<`, `>`, etc.) are a type error for pointers.
+    -   **Logical (`&&`, `||`):** Both operands must be of type `bool`. No other types are permitted.
+    -   The result of all comparison and logical operations is always `bool`.
 
 #### Binary Operator Implementation Status
 
@@ -332,24 +337,24 @@ To clarify the current capabilities of the type checker and guide future develop
 
 | Operator | Category      | Implemented? | Notes                                                              |
 |----------|---------------|--------------|--------------------------------------------------------------------|
-| `+`      | Arithmetic    | **Yes**      | Supports numeric types and pointer/integer addition.               |
-| `-`      | Arithmetic    | **Yes**      | Supports numeric types and pointer/integer/pointer subtraction.    |
-| `*`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
-| `/`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
-| `%`      | Arithmetic    | **Yes**      | Supports numeric types only.                                       |
-| `==`     | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `!=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `<`      | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `<=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `>`      | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `>=`     | Comparison    | **Yes**      | Supports numeric types.                                            |
-| `&`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `|`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `^`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `<<`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `>>`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `&&`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
-| `||`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
+| `+`      | Arithmetic    | **Yes**      | Enforces strict same-type numeric rule and pointer/integer addition. |
+| `-`      | Arithmetic    | **Yes**      | Enforces strict same-type numeric rule and pointer/integer/pointer subtraction. |
+| `*`      | Arithmetic    | **Yes**      | Enforces strict same-type numeric rule.                             |
+| `/`      | Arithmetic    | **Yes**      | Enforces strict same-type numeric rule.                             |
+| `%`      | Arithmetic    | **Yes**      | Enforces strict same-type numeric rule.                             |
+| `==`     | Comparison    | **Yes**      | Supports same-type numerics, booleans, and compatible pointers.     |
+| `!=`     | Comparison    | **Yes**      | Supports same-type numerics, booleans, and compatible pointers.     |
+| `<`      | Comparison    | **Yes**      | Supports same-type numerics and booleans only.                      |
+| `<=`     | Comparison    | **Yes**      | Supports same-type numerics and booleans only.                      |
+| `>`      | Comparison    | **Yes**      | Supports same-type numerics and booleans only.                      |
+| `>=`     | Comparison    | **Yes**      | Supports same-type numerics and booleans only.                      |
+| `&`      | Bitwise       | **Yes**      | Requires same-type integers.                                       |
+| `|`      | Bitwise       | **Yes**      | Requires same-type integers.                                       |
+| `^`      | Bitwise       | **Yes**      | Requires same-type integers.                                       |
+| `<<`     | Bitwise       | **Yes**      | Requires same-type integers.                                       |
+| `>>`     | Bitwise       | **Yes**      | Requires same-type integers.                                       |
+| `&&`     | Logical       | **Yes**      | Requires `bool` operands only.                                     |
+| `||`     | Logical       | **Yes**      | Requires `bool` operands only.                                     |
 
 -   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:
