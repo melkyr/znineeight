@@ -104,6 +104,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/type_checker_array_tests.cpp \
     tests/type_checker_enum_tests.cpp \
     tests/type_checker_unimplemented_operators.cpp \
+    tests/type_checker_arithmetic_ops.cpp \
     -Isrc/include \
     -o test_runner
 

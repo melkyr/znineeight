@@ -1,0 +1,104 @@
+tests/test_parser_lifecycle.cpp: In function ‘bool test_Parser_TokenStreamLifetimeIsIndependentOfParserObject()’:
+tests/test_parser_lifecycle.cpp:15:16: warning: variable ‘parser2’ set but not used [-Wunused-but-set-variable]
+   15 |         Parser parser2 = ctx.getParser();
+      |                ^~~~~~~
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *void, Right type: i32
+  --> Entering pointer arithmetic block.
+    --> Detected void pointer arithmetic. Reporting error.
+[DEBUG] visitBinaryOp: op=>
+  --> Left type: i32, Right type: i8
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i32, Right type: i32
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i8, Right type: i8
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op===
+  --> Left type: i8, Right type: i8
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i8, Right type: bool
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op=>
+  --> Left type: i8, Right type: bool
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i8, Right type: f64
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op=+
+  --> One or both operands are null, aborting.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *i32, Right type: i8
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer +/- Integer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i8, Right type: *i32
+  --> Entering pointer arithmetic block.
+    --> Matched Integer + Pointer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: i8
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer +/- Integer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: *i32
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer - Pointer.
+      --> Base types are compatible. Returning isize.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *i32, Right type: *i32
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: *f64
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer - Pointer.
+      --> Base types are incompatible. Reporting error.
+[DEBUG] visitBinaryOp: op=*
+  --> Left type: *i32, Right type: i8
+[DEBUG] visitBinaryOp: op===
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=!=
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=<
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=>
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=<=
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=>=
+  --> Left type: i32, Right type: i32
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *i32, Right type: i32
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer +/- Integer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: i32, Right type: *i32
+  --> Entering pointer arithmetic block.
+    --> Matched Integer + Pointer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: i32
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer +/- Integer. Returning pointer type.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: *i32
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer - Pointer.
+      --> Base types are compatible. Returning isize.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *i32, Right type: *i32
+  --> Entering pointer arithmetic block.
+  --> Entering numeric arithmetic block.
+[DEBUG] visitBinaryOp: op=-
+  --> Left type: *i32, Right type: *u8
+  --> Entering pointer arithmetic block.
+    --> Matched Pointer - Pointer.
+      --> Base types are incompatible. Reporting error.
+[DEBUG] visitBinaryOp: op=+
+  --> Left type: *void, Right type: i32
+  --> Entering pointer arithmetic block.
+    --> Detected void pointer arithmetic. Reporting error.
+[DEBUG] visitBinaryOp: op=&
+  --> Left type: i8, Right type: i8

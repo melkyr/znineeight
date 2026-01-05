@@ -150,45 +150,54 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         return NULL;
     }
 
-    // --- Check for void pointer arithmetic ---
+    // --- Pointer Arithmetic Cases ---
     if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+        // --- Check for void pointer arithmetic ---
         if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
             (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
             unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
             return NULL;
+        }
+
+        // Pointer +/- Integer
+        if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
+            return left_type;
+        }
+        if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER && node->op == TOKEN_PLUS) {
+            return right_type;
+        }
+
+        // Pointer - Pointer
+        if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER && node->op == TOKEN_MINUS) {
+            if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+                Type* isize_type = resolvePrimitiveTypeName("isize");
+                if (!isize_type) {
+                     unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
+                     return NULL;
+                }
+                return isize_type;
+            } else {
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                 return NULL;
+            }
         }
     }
 
     switch (node->op) {
         // --- Implemented Arithmetic Operators ---
         case TOKEN_PLUS:
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
-            break;
-
         case TOKEN_MINUS:
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
-                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                    Type* isize_type = resolvePrimitiveTypeName("isize");
-                    if (!isize_type) {
-                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
-                         return NULL;
-                    }
-                    return isize_type;
-                } else {
-                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
-                     return NULL;
-                }
+            if (isNumericType(left_type) && left_type == right_type) { // Strict equality check
+                return left_type;
             }
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
             break;
 
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
+            if (isNumericType(left_type) && left_type == right_type) { // Strict equality check
+                return left_type;
+            }
             break;
 
         // --- Implemented Comparison Operators ---
@@ -457,6 +466,10 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
     }
 
     Type* initializer_type = visit(node->initializer);
+
+    if (node->initializer && !initializer_type) {
+        return NULL; // Error already reported in initializer expression.
+    }
 
     if (declared_type && initializer_type && !areTypesCompatible(declared_type, initializer_type)) {
         char declared_type_str[64];

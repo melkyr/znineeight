@@ -389,6 +389,11 @@ TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 TEST_FUNC(TypeChecker_UnimplementedBitwiseOperator);
+TEST_FUNC(Arithmetic_Addition_RequiresSameType);
+TEST_FUNC(Arithmetic_Subtraction_RequiresSameType);
+TEST_FUNC(Arithmetic_Multiplication_RequiresSameType);
+TEST_FUNC(Arithmetic_Division_RequiresSameType);
+TEST_FUNC(Arithmetic_Modulus_RequiresSameType);
 
 
 // This function is executed in a child process by the error handling test.
@@ -773,6 +778,11 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
         test_TypeChecker_UnimplementedBitwiseOperator,
+        test_Arithmetic_Addition_RequiresSameType,
+        test_Arithmetic_Subtraction_RequiresSameType,
+        test_Arithmetic_Multiplication_RequiresSameType,
+        test_Arithmetic_Division_RequiresSameType,
+        test_Arithmetic_Modulus_RequiresSameType,
     };
 
     int passed = 0;
