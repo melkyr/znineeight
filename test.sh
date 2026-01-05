@@ -83,6 +83,7 @@ g++ -std=c++98 -Wall -Isrc/include \
     tests/test_parser_memory.cpp \
     tests/parser_symbol_integration_tests.cpp \
     tests/type_checker_tests.cpp \
+    tests/type_checker_literals.cpp \
     tests/type_compatibility_tests.cpp \
     tests/return_type_validation_tests.cpp \
     tests/type_checker_var_decl.cpp \

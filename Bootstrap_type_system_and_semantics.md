@@ -258,25 +258,6 @@ When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` perfor
 
 5.  **Return Statement Validation:** After processing the signature, it proceeds to visit the function's body. When it encounters a `return` statement, it compares the type of the returned expression against the `current_fn_return_type` it recorded while visiting the signature, ensuring that the return value is compatible with the function's declared return type.
 
-### Literals
-
-#### Integer Literals
-The type of an integer literal is determined by its value and suffix to be C89-compliant. The compiler chooses the smallest possible C89-compatible type that can hold the value.
-- **Unsigned Literals (e.g., `123u`):**
-    - `0` to `255`: `u8`
-    - `256` to `65535`: `u16`
-    - `65536` to `4294967295`: `u32`
-    - Larger values: `u64`
-- **Signed Literals (e.g., `123`, `-45`):**
-    - `-128` to `127`: `i8`
-    - `-32768` to `32767`: `i16`
-    - `-2147483648` to `2147483647`: `i32`
-    - Larger values: `i64`
-The `L` suffix is parsed but does not currently affect the type inference, as the logic already selects the smallest possible type.
-
-#### String Literals
-A string literal is given the type "pointer to `u8`", which is represented as `*u8`. This is a simplification for the bootstrap phase; a more advanced compiler would use a slice type like `[]const u8`.
-
 ### Function Calls
 
 -   The analyzer will verify that the number of arguments in a function call matches the number of parameters in the function's declaration.
@@ -339,12 +320,6 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 
 When visiting expressions, the `TypeChecker` determines the resulting type of the expression.
 
--   **Literals:**
-    -   `true`, `false`: `bool`
-    -   Integer literals: `i32` if they fit, otherwise `i64`.
-    -   Character literals: `u8`
-    -   String literals: `*const u8`
-
 -   **Identifiers:** The type of an identifier is determined by looking up its symbol in the `SymbolTable`. If the symbol is not found, an `ERR_UNDEFINED_VARIABLE` error is reported.
 
 -   **Binary Operations:**
@@ -365,6 +340,14 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
         -   `pointer - integer` -> `pointer`: The result is a pointer of the same type.
         -   `pointer - pointer` -> `isize`: The result is a signed integer of type `isize`. This is only valid if both pointers are of the same type (e.g., `*i32` and `*i32`).
         -   Any other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered a type error.
+
+-   **Literals:**
+    -   **`true`, `false`:** `bool`
+    -   **Integer Literals:** The type of an integer literal is determined by its value and suffix to be C89-compliant. The `TypeChecker` chooses the smallest C89-compatible type that can hold the value. For example, `10` is inferred as `i8`, `300` as `i16`, and `255u` as `u8`.
+    -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
+    -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
+    -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters).
+    -   **Memory Overhead:** The validation of literal types is a stateless process within the `TypeChecker`. It is based on the value and syntax of the literal itself and does not require the creation of any new, persistent data structures or heap allocations, thus adhering to the project's strict memory constraints.
 
 ### Control Flow Statements
 
