@@ -53,7 +53,6 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
         case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
         default:
-            // TODO: Add error handling for unhandled node types.
             resolved_type = NULL;
             break;
     }
@@ -62,33 +61,26 @@ Type* TypeChecker::visit(ASTNode* node) {
     return resolved_type;
 }
 
-Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
-    // In a unit test, the operand's type might already be resolved.
+Type* TypeChecker::visitUnaryOp(ASTNode* , ASTUnaryOpNode* node) {
     Type* operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
     if (!operand_type) {
-        return NULL; // Error already reported
+        return NULL;
     }
 
     switch (node->op) {
-        case TOKEN_STAR: // Dereference operator (*)
+        case TOKEN_STAR:
             if (operand_type->kind == TYPE_POINTER) {
                 return operand_type->as.pointer.base;
             }
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a non-pointer type");
             return NULL;
 
-        case TOKEN_AMPERSAND: { // Address-of operator (&)
-            // The operand of '&' must be an l-value.
+        case TOKEN_AMPERSAND: {
             bool is_lvalue = false;
-            if (node->operand->type == NODE_IDENTIFIER) {
-                is_lvalue = true;
-            } else if (node->operand->type == NODE_ARRAY_ACCESS) {
+            if (node->operand->type == NODE_IDENTIFIER || node->operand->type == NODE_ARRAY_ACCESS) {
                 is_lvalue = true;
             } else if (node->operand->type == NODE_UNARY_OP && node->operand->as.unary_op.op == TOKEN_STAR) {
-                 Type* inner_op_type = node->operand->as.unary_op.operand->resolved_type ? node->operand->as.unary_op.operand->resolved_type : visit(node->operand->as.unary_op.operand);
-                 if (inner_op_type && inner_op_type->kind == TYPE_POINTER) {
-                     is_lvalue = true;
-                 }
+                 is_lvalue = true;
             }
 
             if (is_lvalue) {
@@ -100,12 +92,11 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
         }
         case TOKEN_MINUS:
             if (isNumericType(operand_type)) {
-                return operand_type; // Negation doesn't change numeric type
+                return operand_type;
             }
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Unary '-' requires a numeric operand");
             return NULL;
         case TOKEN_BANG:
-            // Logical not can be applied to any type that can be a condition.
             if (operand_type->kind == TYPE_BOOL || isNumericType(operand_type) || operand_type->kind == TYPE_POINTER) {
                 return get_g_type_bool();
             }
@@ -120,92 +111,71 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
     Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
-    // If either operand is null, an error has already been reported.
     if (!left_type || !right_type) {
         return NULL;
     }
 
-    // --- NEW: Check for void pointer arithmetic ---
-    // C89 does not allow arithmetic on void pointers.
-    if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
-        if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
-            (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed");
-            return NULL; // Return error type
-        }
-    }
-
-
-    // Check for compatible types based on the operator
     switch (node->op) {
-        // Arithmetic operators
         case TOKEN_PLUS:
-            // Pointer + Integer -> Pointer
             if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
+                if (left_type->as.pointer.base->kind == TYPE_VOID) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "cannot perform arithmetic on a 'void' pointer", unit.getArena());
+                    return NULL;
+                }
+                return left_type;
             }
-            // Integer + Pointer -> Pointer
             if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) {
-                return right_type; // Result type is the pointer type
+                if (right_type->as.pointer.base->kind == TYPE_VOID) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "cannot perform arithmetic on a 'void' pointer", unit.getArena());
+                    return NULL;
+                }
+                return right_type;
             }
-            // Numeric + Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for + (unless handled by generic error below)
-            break; // Fall through to generic error
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
+            break;
 
         case TOKEN_MINUS:
-            // Pointer - Integer -> Pointer
             if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) {
-                return left_type; // Result type is the pointer type
+                if (left_type->as.pointer.base->kind == TYPE_VOID) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "cannot perform arithmetic on a 'void' pointer", unit.getArena());
+                    return NULL;
+                }
+                return left_type;
             }
-            // Pointer - Pointer -> isize (if compatible base types)
             if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
                 if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                    Type* isize_type = resolvePrimitiveTypeName("isize");
-                    if (!isize_type) {
-                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference");
-                         return NULL;
-                    }
-                    return isize_type; // Result type is isize
-                } else {
-                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types");
-                     return NULL; // Return error type
+                    return resolvePrimitiveTypeName("isize");
                 }
             }
-            // Numeric - Numeric (existing logic)
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
-            // If none of the above match, it's an error for - (unless handled by generic error below)
-            break; // Fall through to generic error
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
+            break;
+
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return left_type; // For now, result type is the same as operands
-            }
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
             break;
 
-        // Comparison operators
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
+            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return get_g_type_bool();
+            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) return get_g_type_bool();
+            break;
+
+        case TOKEN_PIPE2:
+        case TOKEN_AMPERSAND2:
+            if (left_type->kind == TYPE_BOOL && areTypesCompatible(left_type, right_type)) {
                 return get_g_type_bool();
             }
             break;
-
         default:
-            // Operator not supported for binary expressions yet
             break;
     }
 
-    // If we fall through, the types were not compatible for the given operator.
     char left_type_str[64];
     char right_type_str[64];
     typeToString(left_type, left_type_str, sizeof(left_type_str));
@@ -223,13 +193,10 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
 
     Type* callee_type = visit(node->callee);
     if (!callee_type) {
-        // Error already reported (e.g., undefined function)
         return NULL;
     }
 
     if (callee_type->kind != TYPE_FUNCTION) {
-        // This also handles the function pointer case, as a variable holding a
-        // function would have a symbol kind of VARIABLE, not FUNCTION.
         fatalError(node->callee->loc, "called object is not a function");
     }
 
@@ -249,7 +216,6 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
         Type* param_type = (*callee_type->as.function.params)[i];
 
         if (!arg_type) {
-            // Error in argument expression, already reported.
             continue;
         }
 
@@ -272,17 +238,17 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     visit(node->array);
     visit(node->index);
-    return NULL; // Placeholder
+    return NULL;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     visit(node->array);
     if (node->start) visit(node->start);
     if (node->end) visit(node->end);
-    return NULL; // Placeholder
+    return NULL;
 }
 
-Type* TypeChecker::visitBoolLiteral(ASTBoolLiteralNode* node) {
+Type* TypeChecker::visitBoolLiteral(ASTBoolLiteralNode*) {
     return resolvePrimitiveTypeName("bool");
 }
 
@@ -293,7 +259,6 @@ Type* TypeChecker::visitIntegerLiteral(ASTIntegerLiteralNode* node) {
         if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
         return resolvePrimitiveTypeName("u64");
     } else {
-        // Since node->value is u64, we need to cast to i64 for signed comparison.
         i64 signed_value = (i64)node->value;
         if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
         if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
@@ -302,17 +267,16 @@ Type* TypeChecker::visitIntegerLiteral(ASTIntegerLiteralNode* node) {
     }
 }
 
-Type* TypeChecker::visitFloatLiteral(ASTFloatLiteralNode* node) {
+Type* TypeChecker::visitFloatLiteral(ASTFloatLiteralNode*) {
     return resolvePrimitiveTypeName("f64");
 }
 
-Type* TypeChecker::visitCharLiteral(ASTCharLiteralNode* node) {
+Type* TypeChecker::visitCharLiteral(ASTCharLiteralNode*) {
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTStringLiteralNode* node) {
+Type* TypeChecker::visitStringLiteral(ASTStringLiteralNode*) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    // String literals are pointers to constant characters.
     return createPointerType(unit.getArena(), char_type, true);
 }
 
@@ -331,10 +295,10 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
         visit((*node->statements)[i]);
     }
     unit.getSymbolTable().exitScope();
-    return NULL; // Blocks don't have a type
+    return NULL;
 }
 
-Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* node) {
+Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode*) {
     return NULL;
 }
 
@@ -385,25 +349,18 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
     Type* return_type = node->expression ? visit(node->expression) : get_g_type_void();
 
     if (!current_fn_return_type) {
-        // This can happen if we are parsing a return outside of a function,
-        // which should be caught by the parser, but we check here for safety.
         return NULL;
     }
 
-    // Case 1: Function is void
     if (current_fn_return_type->kind == TYPE_VOID) {
         if (node->expression) {
-            // Error: void function returning a value
             unit.getErrorHandler().report(ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION, node->expression->loc, "void function should not return a value");
         }
     }
-    // Case 2: Function is non-void
     else {
         if (!node->expression) {
-            // Error: non-void function must return a value
             unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, "non-void function must return a value");
         } else if (return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
-            // Error: return type mismatch
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, "return type mismatch");
         }
     }
@@ -424,7 +381,6 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     visit(node->expression);
-    // TODO: Visit prongs
     return NULL;
 }
 
@@ -433,7 +389,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
         unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type->loc, "variables cannot be declared as 'void'");
-        return NULL; // Stop processing this declaration
+        return NULL;
     }
 
     Type* initializer_type = visit(node->initializer);
@@ -450,7 +406,6 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
     }
 
-    // Insert the symbol into the current scope
     if (declared_type) {
         Symbol var_symbol = SymbolBuilder(unit.getArena())
             .withName(node->name)
@@ -469,15 +424,11 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Type* prev_fn_return_type = current_fn_return_type;
 
-    // Resolve return type
     current_fn_return_type = visit(node->return_type);
     if (!current_fn_return_type) {
-        // If the return type is invalid (e.g., an undefined identifier),
-        // we can't proceed with checking the function body.
         return NULL;
     }
 
-    // Resolve parameter types
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
     bool all_params_valid = true;
@@ -491,14 +442,11 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
         }
     }
 
-    // If any parameter type was invalid, don't create the function type
-    // or check the body, as it will likely lead to cascading errors.
     if (!all_params_valid) {
         current_fn_return_type = prev_fn_return_type;
         return NULL;
     }
 
-    // Create the function type and update the symbol
     Type* function_type = createFunctionType(unit.getArena(), param_types, current_fn_return_type);
     Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
     if (fn_symbol) {
@@ -532,43 +480,34 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
+Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode*) {
     validateStructOrUnionFields(parent);
-    // TODO: The rest of the struct type checking logic will go here.
-    // For now, we return NULL as no actual type is created yet.
     return NULL;
 }
 
-Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
+Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode*) {
     validateStructOrUnionFields(parent);
-    // TODO: The rest of the union type checking logic will go here.
     return NULL;
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
-    // 1. Determine the backing type.
     Type* backing_type = NULL;
     if (node->backing_type) {
         backing_type = visit(node->backing_type);
     } else {
-        // Default backing type is i32, to be compatible with C enums.
         backing_type = resolvePrimitiveTypeName("i32");
     }
 
     if (!backing_type) {
-        // This can happen if the backing type is an undeclared identifier.
-        // The error would have been reported during visit(node->backing_type).
         return NULL;
     }
 
-    // 2. Validate that the backing type is an integer.
     if (!isIntegerType(backing_type)) {
         fatalError(node->backing_type ? node->backing_type->loc : node->fields->length() > 0 ? (*node->fields)[0]->loc : SourceLocation(),
                    "Enum backing type must be an integer.");
-        return NULL; // Unreachable
+        return NULL;
     }
 
-    // 3. Process enum members.
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<EnumMember>));
     DynamicArray<EnumMember>* members = new (mem) DynamicArray<EnumMember>(unit.getArena());
 
@@ -610,7 +549,6 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         current_value = member_value + 1;
     }
 
-    // 4. Create and return the new enum type.
     return createEnumType(unit.getArena(), backing_type, members);
 }
 
@@ -627,45 +565,40 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
     Type* base_type = visit(node->base);
     if (!base_type) {
-        // Error already reported by the base type visit
         return NULL;
     }
     return createPointerType(unit.getArena(), base_type, node->is_const);
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
-    // 1. Reject slices
     if (!node->size) {
         fatalError(node->element_type->loc, "Slices are not supported in C89 mode");
-        return NULL; // fatalError aborts, but return for clarity
+        return NULL;
     }
 
-    // 2. Ensure size is a constant integer literal
     if (node->size->type != NODE_INTEGER_LITERAL) {
         fatalError(node->size->loc, "Array size must be a constant integer literal");
         return NULL;
     }
 
-    // 3. Resolve element type
     Type* element_type = visit(node->element_type);
     if (!element_type) {
-        return NULL; // Error already reported
+        return NULL;
     }
 
-    // 4. Create and return the new array type
     u64 array_size = node->size->as.integer_literal.value;
     return createArrayType(unit.getArena(), element_type, array_size);
 }
 
 Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {
     visit(node->expression);
-    return NULL; // Placeholder
+    return NULL;
 }
 
 Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {
     visit(node->payload);
     visit(node->else_expr);
-    return NULL; // Placeholder
+    return NULL;
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
@@ -680,25 +613,9 @@ Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
 
 Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
     visit(node->expression);
-    return NULL; // Expression statements don't have a type
+    return NULL;
 }
 
-/**
- * @brief Checks if two types are compatible for assignment or function arguments.
- *
- * This function determines if a value of type `actual` can be safely used where
- * a value of type `expected` is required. The rules are:
- * 1.  Identical types are always compatible.
- * 2.  Numeric types are compatible if the `actual` type can be widened to the
- *     `expected` type without data loss (e.g., `i16` to `i32`, `f32` to `f64`).
- * 3.  Pointer types are compatible if they point to the same base type and
- *     the `expected` type is at least as const-qualified as the `actual` type.
- *     This allows `*T` to be used as `*const T`, but not vice-versa.
- *
- * @param expected The type that is required (e.g., the variable's type).
- * @param actual The type of the value being assigned or passed.
- * @return `true` if the types are compatible, `false` otherwise.
- */
 bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected == actual) {
         return true;
@@ -708,33 +625,24 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return false;
     }
 
-    // Widening for signed integers
     if (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64 &&
         expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) {
         return actual->kind <= expected->kind;
     }
 
-    // Widening for unsigned integers
     if (actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64 &&
         expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64) {
         return actual->kind <= expected->kind;
     }
 
-    // Widening for floats
     if (actual->kind == TYPE_F32 && expected->kind == TYPE_F64) {
         return true;
     }
 
-    // Pointer compatibility
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
-        // Must have the same base type
         if (actual->as.pointer.base != expected->as.pointer.base) {
             return false;
         }
-        // A mutable pointer can be assigned to a const pointer,
-        // but not the other way around.
-        // *T -> *const T (OK)
-        // *const T -> *T (Error)
         return expected->as.pointer.is_const || !actual->as.pointer.is_const;
     }
 
@@ -757,7 +665,7 @@ bool TypeChecker::isIntegerType(Type* type) {
 
 bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
     if (!isIntegerType(int_type)) {
-        return false; // Should not happen with enums
+        return false;
     }
 
     switch (int_type->kind) {
@@ -767,20 +675,16 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
         case TYPE_U16:  return value >= 0 && value <= 65535;
         case TYPE_I32:  return value >= -2147483648LL && value <= 2147483647LL;
         case TYPE_U32:  return value >= 0 && (u64)value <= 4294967295ULL;
-        // For 64-bit types, i64 can hold all values, so we only check unsigned.
         case TYPE_I64:  return true;
         case TYPE_U64:  return value >= 0;
-        // For isize/usize, we assume 32-bit for the bootstrap compiler.
         case TYPE_ISIZE: return value >= -2147483648LL && value <= 2147483647LL;
         case TYPE_USIZE: return value >= 0 && (u64)value <= 4294967295ULL;
-        default: return false; // Not an integer type
+        default: return false;
     }
 }
 
 
 void TypeChecker::fatalError(SourceLocation loc, const char* message) {
-    // For now, we'll just print to stderr and abort.
-    // In the future, this could be integrated with the ErrorHandler.
     const SourceFile* file = unit.getSourceManager().getFile(loc.file_id);
     fprintf(stderr, "Fatal type error at %s:%d:%d: %s\n",
             file ? file->filename : "<unknown>",
@@ -832,7 +736,7 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
         fields = decl_node->as.union_decl->fields;
         container_type_str = "Union";
     } else {
-        return; // Should not happen if called correctly
+        return;
     }
 
     if (!fields) {
@@ -842,14 +746,12 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
     for (size_t i = 0; i < fields->length(); ++i) {
         ASTNode* field_node = (*fields)[i];
         if (field_node->type != NODE_STRUCT_FIELD) {
-            continue; // Should not happen, but defensive check
+            continue;
         }
 
         ASTStructFieldNode* field = field_node->as.struct_field;
-        // Resolve the field's type by visiting its type node.
         Type* field_type = visit(field->type);
 
-        // If the type was resolved, check if it's C89 compatible.
         if (field_type && !is_c89_compatible(field_type)) {
             char msg_buffer[256];
             snprintf(msg_buffer, sizeof(msg_buffer), "%s field type is not C89 compatible.", container_type_str);

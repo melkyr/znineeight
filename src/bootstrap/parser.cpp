@@ -61,6 +61,7 @@ Token Parser::expect(TokenType type, const char* msg) {
 }
 
 void Parser::error(const char* msg) {
+    (void)msg; // Suppress unused parameter warning
 #ifdef _WIN32
     // On Windows, use the debug output string function.
     OutputDebugStringA("Parser Error: ");
@@ -418,7 +419,7 @@ static int get_token_precedence(TokenType type) {
         case TOKEN_CARET:
             return 6;
         case TOKEN_PIPE:
-            return 5;
+            return 2;
 
         // Comparison operators
         case TOKEN_EQUAL_EQUAL:

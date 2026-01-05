@@ -11,7 +11,7 @@ bool test_SymbolBuilder_BuildsCorrectly()
     StringInterner interner(arena);
 
     const char* symbol_name = interner.intern("my_test_symbol");
-    Type dummy_type = { TYPE_F64, 8, 8 };
+    Type dummy_type = { TYPE_F64, 8, 8, {} };
     SymbolType symbol_kind = SYMBOL_VARIABLE;
     SourceLocation loc(1, 10, 5);
     void* details_ptr = &arena; // Just a dummy pointer

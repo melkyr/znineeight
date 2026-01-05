@@ -1,30 +1,26 @@
 #include "type_system.hpp"
-#include "memory.hpp"
-#include <cstdio> // For sprintf
-#include <cstring> // For strcmp
+#include <cstdio>
 
-// Using functions with static locals to avoid the static initialization order fiasco.
-// This ensures that the type objects are created when they are first needed.
 #define DEFINE_GET_TYPE_FUNC(name, type_kind, sz, align_val) \
     Type* get_##name() { \
-        static Type t = { type_kind, sz, align_val }; \
+        static Type t = { type_kind, sz, align_val, {}}; \
         return &t; \
     }
 
-DEFINE_GET_TYPE_FUNC(g_type_void, TYPE_VOID, 0, 0)
-DEFINE_GET_TYPE_FUNC(g_type_bool, TYPE_BOOL, 4, 4)
-DEFINE_GET_TYPE_FUNC(g_type_i8,   TYPE_I8,   1, 1)
-DEFINE_GET_TYPE_FUNC(g_type_i16,  TYPE_I16,  2, 2)
-DEFINE_GET_TYPE_FUNC(g_type_i32,  TYPE_I32,  4, 4)
-DEFINE_GET_TYPE_FUNC(g_type_i64,  TYPE_I64,  8, 8)
-DEFINE_GET_TYPE_FUNC(g_type_u8,   TYPE_U8,   1, 1)
-DEFINE_GET_TYPE_FUNC(g_type_u16,  TYPE_U16,  2, 2)
-DEFINE_GET_TYPE_FUNC(g_type_u32,  TYPE_U32,  4, 4)
-DEFINE_GET_TYPE_FUNC(g_type_u64,  TYPE_U64,  8, 8)
-DEFINE_GET_TYPE_FUNC(g_type_isize,TYPE_ISIZE,4, 4) // Assuming 32-bit target
-DEFINE_GET_TYPE_FUNC(g_type_usize,TYPE_USIZE,4, 4) // Assuming 32-bit target
-DEFINE_GET_TYPE_FUNC(g_type_f32,  TYPE_F32,  4, 4)
-DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
+DEFINE_GET_TYPE_FUNC(g_type_void,  TYPE_VOID, 0, 0)
+DEFINE_GET_TYPE_FUNC(g_type_bool,  TYPE_BOOL, 4, 4)
+DEFINE_GET_TYPE_FUNC(g_type_i8,    TYPE_I8,   1, 1)
+DEFINE_GET_TYPE_FUNC(g_type_i16,   TYPE_I16,  2, 2)
+DEFINE_GET_TYPE_FUNC(g_type_i32,   TYPE_I32,  4, 4)
+DEFINE_GET_TYPE_FUNC(g_type_i64,   TYPE_I64,  8, 8)
+DEFINE_GET_TYPE_FUNC(g_type_u8,    TYPE_U8,   1, 1)
+DEFINE_GET_TYPE_FUNC(g_type_u16,   TYPE_U16,  2, 2)
+DEFINE_GET_TYPE_FUNC(g_type_u32,   TYPE_U32,  4, 4)
+DEFINE_GET_TYPE_FUNC(g_type_u64,   TYPE_U64,  8, 8)
+DEFINE_GET_TYPE_FUNC(g_type_isize, TYPE_ISIZE,4, 4) // Assuming 32-bit target
+DEFINE_GET_TYPE_FUNC(g_type_usize, TYPE_USIZE,4, 4) // Assuming 32-bit target
+DEFINE_GET_TYPE_FUNC(g_type_f32,   TYPE_F32,  4, 4)
+DEFINE_GET_TYPE_FUNC(g_type_f64,   TYPE_F64,  8, 8)
 
 Type* resolvePrimitiveTypeName(const char* name) {
     if (strcmp(name, "void") == 0) return get_g_type_void();
@@ -41,48 +37,47 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (strcmp(name, "usize") == 0) return get_g_type_usize();
     if (strcmp(name, "f32") == 0) return get_g_type_f32();
     if (strcmp(name, "f64") == 0) return get_g_type_f64();
-
-    return NULL; // Not a known primitive type
+    return NULL;
 }
 
-Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-    new_type->kind = TYPE_POINTER;
-    new_type->size = 4; // Assuming 32-bit pointers
-    new_type->alignment = 4; // Assuming 32-bit pointers
-    new_type->as.pointer.base = base_type;
-    new_type->as.pointer.is_const = is_const;
-    return new_type;
-}
-
-Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-    new_type->kind = TYPE_FUNCTION;
-    new_type->size = 0; // Functions don't have a size in the same way
-    new_type->alignment = 0;
-    new_type->as.function.params = params;
-    new_type->as.function.return_type = return_type;
-    return new_type;
+Type* createPointerType(ArenaAllocator& arena, Type* base, bool is_const) {
+    Type* ptr_type = (Type*)arena.alloc(sizeof(Type));
+    ptr_type->kind = TYPE_POINTER;
+    ptr_type->size = 4; // Assuming 32-bit target
+    ptr_type->alignment = 4;
+    ptr_type->as.pointer.base = base;
+    ptr_type->as.pointer.is_const = is_const;
+    return ptr_type;
 }
 
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-    new_type->kind = TYPE_ARRAY;
-    new_type->size = element_type->size * size;
-    new_type->alignment = element_type->alignment;
-    new_type->as.array.element_type = element_type;
-    new_type->as.array.size = size;
-    return new_type;
+    Type* array_type = (Type*)arena.alloc(sizeof(Type));
+    array_type->kind = TYPE_ARRAY;
+    array_type->size = element_type->size * size;
+    array_type->alignment = element_type->alignment;
+    array_type->as.array.element_type = element_type;
+    array_type->as.array.size = size;
+    return array_type;
 }
 
 Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members) {
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-    new_type->kind = TYPE_ENUM;
-    new_type->size = backing_type->size;
-    new_type->alignment = backing_type->alignment;
-    new_type->as.enum_details.backing_type = backing_type;
-    new_type->as.enum_details.members = members;
-    return new_type;
+    Type* enum_type = (Type*)arena.alloc(sizeof(Type));
+    enum_type->kind = TYPE_ENUM;
+    enum_type->size = backing_type->size;
+    enum_type->alignment = backing_type->alignment;
+    enum_type->as.enum_details.backing_type = backing_type;
+    enum_type->as.enum_details.members = members;
+    return enum_type;
+}
+
+Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+    Type* func_type = (Type*)arena.alloc(sizeof(Type));
+    func_type->kind = TYPE_FUNCTION;
+    func_type->size = 0; // Functions don't have a size in this context
+    func_type->alignment = 0;
+    func_type->as.function.params = params;
+    func_type->as.function.return_type = return_type;
+    return func_type;
 }
 
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
@@ -91,68 +86,39 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         return;
     }
 
-    const char* primitive_name = NULL;
     switch (type->kind) {
-        case TYPE_VOID: primitive_name = "void"; break;
-        case TYPE_BOOL: primitive_name = "bool"; break;
-        case TYPE_I8:   primitive_name = "i8";   break;
-        case TYPE_I16:  primitive_name = "i16";  break;
-        case TYPE_I32:  primitive_name = "i32";  break;
-        case TYPE_I64:  primitive_name = "i64";  break;
-        case TYPE_U8:   primitive_name = "u8";   break;
-        case TYPE_U16:  primitive_name = "u16";  break;
-        case TYPE_U32:  primitive_name = "u32";  break;
-        case TYPE_U64:  primitive_name = "u64";  break;
-        case TYPE_ISIZE:primitive_name = "isize";break;
-        case TYPE_USIZE:primitive_name = "usize";break;
-        case TYPE_F32:  primitive_name = "f32";  break;
-        case TYPE_F64:  primitive_name = "f64";  break;
+        case TYPE_VOID: snprintf(buffer, buffer_size, "void"); break;
+        case TYPE_BOOL: snprintf(buffer, buffer_size, "bool"); break;
+        case TYPE_I8:   snprintf(buffer, buffer_size, "i8"); break;
+        case TYPE_I16:  snprintf(buffer, buffer_size, "i16"); break;
+        case TYPE_I32:  snprintf(buffer, buffer_size, "i32"); break;
+        case TYPE_I64:  snprintf(buffer, buffer_size, "i64"); break;
+        case TYPE_U8:   snprintf(buffer, buffer_size, "u8"); break;
+        case TYPE_U16:  snprintf(buffer, buffer_size, "u16"); break;
+        case TYPE_U32:  snprintf(buffer, buffer_size, "u32"); break;
+        case TYPE_U64:  snprintf(buffer, buffer_size, "u64"); break;
+        case TYPE_ISIZE: snprintf(buffer, buffer_size, "isize"); break;
+        case TYPE_USIZE: snprintf(buffer, buffer_size, "usize"); break;
+        case TYPE_F32:  snprintf(buffer, buffer_size, "f32"); break;
+        case TYPE_F64:  snprintf(buffer, buffer_size, "f64"); break;
         case TYPE_POINTER: {
-            char base_name[64];
-            typeToString(type->as.pointer.base, base_name, sizeof(base_name));
+            char base_type_str[64];
+            typeToString(type->as.pointer.base, base_type_str, sizeof(base_type_str));
             if (type->as.pointer.is_const) {
-                snprintf(buffer, buffer_size, "*const %s", base_name);
+                snprintf(buffer, buffer_size, "*const %s", base_type_str);
             } else {
-                snprintf(buffer, buffer_size, "*%s", base_name);
+                snprintf(buffer, buffer_size, "*%s", base_type_str);
             }
-            return;
+            break;
         }
         case TYPE_ARRAY: {
             char element_type_str[64];
             typeToString(type->as.array.element_type, element_type_str, sizeof(element_type_str));
             snprintf(buffer, buffer_size, "[%llu]%s", (unsigned long long)type->as.array.size, element_type_str);
-            return;
-        }
-        case TYPE_FUNCTION: {
-            char return_type_str[64];
-            typeToString(type->as.function.return_type, return_type_str, sizeof(return_type_str));
-
-            size_t offset = snprintf(buffer, buffer_size, "fn(");
-
-            if (type->as.function.params) {
-                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    if (offset >= buffer_size) break;
-                    char param_type_str[64];
-                    typeToString((*type->as.function.params)[i], param_type_str, sizeof(param_type_str));
-                    offset += snprintf(buffer + offset, buffer_size - offset, "%s", param_type_str);
-                    if (i < type->as.function.params->length() - 1) {
-                        if (offset < buffer_size) {
-                            offset += snprintf(buffer + offset, buffer_size - offset, ", ");
-                        }
-                    }
-                }
-            }
-
-            if (offset < buffer_size) {
-                snprintf(buffer + offset, buffer_size - offset, ") -> %s", return_type_str);
-            }
-            return;
-        }
-        case TYPE_ENUM:
-            primitive_name = "enum";
             break;
-        default: primitive_name = "unknown"; break;
+        }
+        case TYPE_ENUM: snprintf(buffer, buffer_size, "enum"); break;
+        case TYPE_FUNCTION: snprintf(buffer, buffer_size, "function"); break;
+        default: snprintf(buffer, buffer_size, "unknown_type"); break;
     }
-
-    snprintf(buffer, buffer_size, "%s", primitive_name);
 }
