@@ -144,14 +144,9 @@ public:
 * **Token Precedence Table:**
 ```cpp
 const int PRECEDENCE_TABLE[] = {
-    [OPERATOR_ASSIGN] = 1,
-    [OPERATOR_OR] = 2,
-    [OPERATOR_AND] = 3,
-    [OPERATOR_EQUAL, OPERATOR_NOT_EQUAL] = 4,
-    [OPERATOR_LESS, OPERATOR_GREATER, OPERATOR_LESS_EQUAL, OPERATOR_GREATER_EQUAL] = 5,
-    [OPERATOR_PLUS, OPERATOR_MINUS] = 6,
-    [OPERATOR_STAR, OPERATOR_SLASH, OPERATOR_PERCENT] = 7,
-    [OPERATOR_BANG] = 8  // Unary operators highest
+    // Example precedence, actual implementation is in the parser.
+    // [KEYWORD_OR] = 2,
+    // [KEYWORD_AND] = 3,
 };
 ```
 

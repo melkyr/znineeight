@@ -25,8 +25,6 @@ static const char* getTokenSpelling(TokenType op) {
         case TOKEN_CARET: return "^";
         case TOKEN_LARROW2: return "<<";
         case TOKEN_RARROW2: return ">>";
-        case TOKEN_AMPERSAND2: return "&&";
-        case TOKEN_PIPE2: return "||";
         default: return "unknown";
     }
 }
@@ -209,8 +207,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         case TOKEN_CARET:
         case TOKEN_LARROW2:
         case TOKEN_RARROW2:
-        case TOKEN_AMPERSAND2:
-        case TOKEN_PIPE2: {
+        case TOKEN_AND:
+        case TOKEN_OR: {
             char msg_buffer[256];
             snprintf(msg_buffer, sizeof(msg_buffer), "Operator '%s' is not implemented yet.", getTokenSpelling(node->op));
             unit.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, msg_buffer, unit.getArena());

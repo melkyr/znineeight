@@ -280,7 +280,7 @@ Function calls are subject to the following strict limitations:
 ### Operators
 
 -   **Arithmetic Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats).
--   **Logical Operators:** Logical operators (`&&`, `||`, `!`) must be used with boolean types.
+-   **Logical Operators:** Logical operators (`and`, `or`, `!`) must be used with boolean types.
 -   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:
         -   Variables (e.g., `&my_var`).
@@ -348,8 +348,8 @@ To clarify the current capabilities of the type checker and guide future develop
 | `^`      | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
 | `<<`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
 | `>>`     | Bitwise       | No           | Generates a specific "not implemented yet" error.                  |
-| `&&`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
-| `||`     | Logical       | No           | Generates a specific "not implemented yet" error.                  |
+| `and`    | Logical       | Yes          | Correctly parsed and handled.                                      |
+| `or`     | Logical       | Yes          | Correctly parsed and handled.                                      |
 
 -   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:

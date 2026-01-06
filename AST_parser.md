@@ -423,8 +423,8 @@ The `parseSwitchExpression` function handles the `switch` expression. It adheres
 | 6          | `^`                            | Left          |
 | 5          | `|`                            | Left          |
 | 4          | `==`, `!=`, `<`, `>`, `<=`, `>=` | Left          |
-| 3          | `&&`                           | Left          |
-| 2          | `||`                           | Left          |
+| 3          | `and`                          | Left          |
+| 2          | `or`                           | Left          |
 | 1          | `orelse`, `catch`              | Right         |
 
 ### Parser Robustness: Recursion Depth Limit
