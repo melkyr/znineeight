@@ -200,7 +200,7 @@ TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
 }
 
 TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction) {
-    const char* source = "fn main(a: i32) -> i32 { if (a > 0) { return 1; } else { return 0; } }";
+    const char* source = "fn main(a: i32) -> i32 { const zero: i32 = 0; if (a > zero) { return 1; } else { return 0; } }";
     ArenaAllocator arena(8192);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);

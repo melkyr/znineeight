@@ -16,11 +16,11 @@ public:
     Type* visitFunctionCall(ASTFunctionCallNode* node);
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
-    Type* visitBoolLiteral(ASTBoolLiteralNode* node);
-    Type* visitIntegerLiteral(ASTIntegerLiteralNode* node);
-    Type* visitFloatLiteral(ASTFloatLiteralNode* node);
-    Type* visitCharLiteral(ASTCharLiteralNode* node);
-    Type* visitStringLiteral(ASTStringLiteralNode* node);
+    Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
+    Type* visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node);
+    Type* visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node);
+    Type* visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node);
+    Type* visitStringLiteral(ASTNode* parent, ASTStringLiteralNode* node);
     Type* visitIdentifier(ASTNode* node);
     Type* visitBlockStmt(ASTBlockStmtNode* node);
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
