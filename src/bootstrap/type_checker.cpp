@@ -131,20 +131,33 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             return NULL;
         }
         case TOKEN_MINUS:
+            // C89 Unary '-' is only valid for numeric types.
             if (isNumericType(operand_type)) {
-                return operand_type; // Negation doesn't change numeric type
+                return operand_type; // Negation doesn't change numeric type.
             }
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Unary '-' requires a numeric operand");
-            return NULL;
+            fatalError(parent->loc, "Unary '-' operator cannot be applied to non-numeric types.");
+            return NULL; // Unreachable
+
         case TOKEN_BANG:
-            // Logical not can be applied to any type that can be a condition.
-            if (operand_type->kind == TYPE_BOOL || isNumericType(operand_type) || operand_type->kind == TYPE_POINTER) {
+            // Logical NOT is valid for bools, integers, and pointers.
+            if (operand_type->kind == TYPE_BOOL || isIntegerType(operand_type) || operand_type->kind == TYPE_POINTER) {
                 return get_g_type_bool();
             }
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Invalid operand for logical not");
-            return NULL;
+            fatalError(parent->loc, "Logical NOT operator '!' can only be applied to bools, integers, or pointers.");
+            return NULL; // Unreachable
+
+        case TOKEN_TILDE:
+            // Bitwise NOT is only valid for integer types in C89.
+            if (isIntegerType(operand_type)) {
+                return operand_type; // Bitwise NOT doesn't change the type.
+            }
+            fatalError(parent->loc, "Bitwise NOT operator '~' can only be applied to integer types.");
+            return NULL; // Unreachable
+
         default:
-            return NULL;
+            // Should not happen if parser is correct.
+            fatalError(parent->loc, "Unsupported unary operator.");
+            return NULL; // Unreachable
     }
 }
 
