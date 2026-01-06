@@ -56,20 +56,17 @@ TEST_FUNC(ParserIntegration_LogicalAnd) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    // Test with '&&'
+    // Test with 'and'
     {
-        const char* source = "if (a && b) {}";
+        const char* source = "if (a and b) {}";
         ParserTestContext ctx(source, arena, interner);
         Parser parser = ctx.getParser();
         ASTNode* node = parser.parseIfStatement();
         ASSERT_TRUE(node != NULL);
         ASTIfStmtNode* if_stmt = node->as.if_stmt;
         ASSERT_TRUE(if_stmt->condition->type == NODE_BINARY_OP);
-        ASSERT_TRUE(if_stmt->condition->as.binary_op->op == TOKEN_AMPERSAND2);
+        ASSERT_TRUE(if_stmt->condition->as.binary_op->op == TOKEN_AND);
     }
-
-    // Test that 'and' is not a valid logical operator and causes a parser error.
-    ASSERT_TRUE(expect_parser_abort("a and b"));
 
     return true;
 }
@@ -347,7 +344,7 @@ TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    const char* source = "if (a && (b || c)) {}";
+    const char* source = "if (a and (b or c)) {}";
     ParserTestContext ctx(source, arena, interner);
     Parser parser = ctx.getParser();
 
@@ -363,31 +360,31 @@ TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
     ASSERT_TRUE(if_stmt->then_block != NULL);
     ASSERT_TRUE(if_stmt->else_block == NULL);
 
-    // 3. Check condition is a binary expression (&&)
+    // 3. Check condition is a binary expression (and)
     ASTNode* condition = if_stmt->condition;
     ASSERT_TRUE(condition != NULL);
     ASSERT_TRUE(condition->type == NODE_BINARY_OP);
 
-    // 4. Check the '&&' expression details
+    // 4. Check the 'and' expression details
     ASTBinaryOpNode* and_op = condition->as.binary_op;
     ASSERT_TRUE(and_op->op == TOKEN_AND);
 
-    // 5. Check left operand of '&&' is identifier 'a'
+    // 5. Check left operand of 'and' is identifier 'a'
     ASTNode* and_left = and_op->left;
     ASSERT_TRUE(and_left != NULL);
     ASSERT_TRUE(and_left->type == NODE_IDENTIFIER);
     ASSERT_STREQ(and_left->as.identifier.name, "a");
 
-    // 6. Check right operand of '&&' is another binary op (||)
+    // 6. Check right operand of 'and' is another binary op (or)
     ASTNode* and_right = and_op->right;
     ASSERT_TRUE(and_right != NULL);
     ASSERT_TRUE(and_right->type == NODE_BINARY_OP);
 
-    // 7. Check the '||' expression details
+    // 7. Check the 'or' expression details
     ASTBinaryOpNode* or_op = and_right->as.binary_op;
     ASSERT_TRUE(or_op->op == TOKEN_OR);
 
-    // 8. Check operands of '||' are identifiers 'b' and 'c'
+    // 8. Check operands of 'or' are identifiers 'b' and 'c'
     ASTNode* or_left = or_op->left;
     ASTNode* or_right = or_op->right;
     ASSERT_TRUE(or_left != NULL);

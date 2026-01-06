@@ -10,7 +10,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
-    const char* source = "const x: bool = a && b;";
+    const char* source = "const x: bool = a and b;";
     ParserTestContext ctx(source, arena, interner);
     Parser parser = ctx.getParser();
 

@@ -28,7 +28,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 19. **Task 19:** Implement lexing for `TOKEN_FLOAT_LITERAL` (e.g., `3.14`). (DONE)
 20. **Task 20:** Implement lexing for remaining arithmetic and bitwise operators (`%`, `~`, `&`, `|`, `^`, `<<`, `>>`). (DONE)
 21. **Task 21:** Implement lexing for compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`). (DONE)
-22. **Task 22:** Implement lexing for special and wrapping operators (`.`, `.*`, `.?`, `?`, `++`, `**`, `||`, `+%`, `-%`, `*%`). (DONE)
+22. **Task 22:** Implement lexing for special and wrapping operators (`.`, `.*`, `.?`, `?`, `++`, `**`, `+%`, `-%`, `*%`). (DONE - Note: `||` was removed as it is not the correct Zig operator).
 23. **Task 23:** Implement lexing for remaining delimiters (`:`, `->`, `=>`, `...`). (DONE)
 24. **Task 24:** Implement keyword recognition for control flow (`break`, `catch`, `continue`, `else`, `for`, `if`, `orelse`, `resume`, `suspend`, `switch`, `try`, `while`). (DONE)
 25. **Task 25:** Implement keyword recognition for type declarations (`enum`, `error`, `struct`, `union`, `opaque`). (DONE)
@@ -40,7 +40,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 31. **Task 31:** Implement lexing for `TOKEN_STRING_LITERAL` and properly handle `TOKEN_IDENTIFIER` values. This includes storing the string content (for string literals) and the identifier name, likely using the string interner. (DONE)
 32. **Task 32:** Extend the lexer to handle escaped characters in string literals (e.g., `\n`, `\t`, `\\`, `\"`). (DONE)
 33. **Task 33:** Implement lexing for crucial missing keywords (`fn`, `var`, `defer`). (DONE)
-34. **Task 34:** Implement lexing for missing operators (`--`, `&&`).
+34. **Task 34:** Implement lexing for missing operators (`--`). (Note: `&&` was removed as it is not the correct Zig operator; the correct operator is the `and` keyword, which is already implemented).
 
 ### Milestone 3: Parser & AST (COMPLETE)
 35. **Task 35:** Define foundational AST structures and nodes for Expressions (Literals, Unary, Binary). (DONE)
@@ -70,7 +70,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 59. **Task 59:** Implement `parseUnaryExpr` for unary operators. (DONE)
 60. **Task 60:** Implement `parseBinaryExpr` for Core Binary Operators. (DONE)
 61. **Task 61:** Extend `parseBinaryExpr` for Bitwise Operators. (DONE)
-62. **Task 62:** Extend `parseBinaryExpr` for Logical Operators. (DONE)
+62. **Task 62:** Extend `parseBinaryExpr` for Logical Operators (`and`, `or`). (DONE)
 63. **Task 63:** Implement `parseForStatement`.
     - Implement the parsing logic for `for` loops.
     - Update `parseStatement` to dispatch to the new function.
@@ -117,7 +117,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Recommendation: This is essential for completing the integration test. The function declaration parser needs to delegate to the general statement parser for the body.
 77. **Task 77:** Enhance Expression Parsing State Management
     - Review and fix the Pratt parser (parsePrecedenceExpr) in src/bootstrap/parser.cpp to ensure correct token consumption, especially after parsing parenthesized expressions
-    - Add debug logging or assertions to verify parser position advancement during complex nested expressions like a && (b || c)
+    - Add debug logging or assertions to verify parser position advancement during complex nested expressions like `a and (b or c)`
     - Consider adding a maximum recursion depth check to prevent stack overflows during expression parsing
     - Recommendation: This addresses the potential infinite loop/memory corruption issue in complex boolean expressions. Proper state management is crucial for parser stability.
 78. **Task 78:** Implement Array Slice Expression Parsing
@@ -409,7 +409,7 @@ Given memory constraints, allocate:
     Validation: Ensure all literals compile correctly in C89
     Success criteria: All literal expressions translate to valid C89 syntax
 
-105. **Task 105:** BINARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM)
+105. **Task 105:** BINARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM) - (Note: This task was unblocked by a refactor to replace incorrect `&&`/`||` operators with the correct `and`/`or` keywords).
 
     What to implement: Validate binary operators map to C89
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"

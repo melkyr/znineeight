@@ -678,22 +678,10 @@ Token Lexer::nextToken() {
         case '%': token.type = match('=') ? TOKEN_PERCENT_EQUAL : TOKEN_PERCENT; break;
         case '~': token.type = TOKEN_TILDE; break;
         case '&':
-            if (match('&')) {
-                token.type = TOKEN_AND;
-            } else if (match('=')) {
-                token.type = TOKEN_AMPERSAND_EQUAL;
-            } else {
-                token.type = TOKEN_AMPERSAND;
-            }
+            token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND;
             break;
         case '|':
-            if (match('|')) {
-                token.type = TOKEN_OR;
-            } else if (match('=')) {
-                token.type = TOKEN_PIPE_EQUAL;
-            } else {
-                token.type = TOKEN_PIPE;
-            }
+            token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE;
             break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
         case '.': // Handles '.', '..', '...', '.*', '.?'

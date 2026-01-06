@@ -175,8 +175,6 @@ enum TokenType {
     TOKEN_PLUS2,            ///< '++' operator.
     TOKEN_MINUS2,           ///< '--' operator.
     TOKEN_STAR2,            ///< '**' operator.
-    TOKEN_PIPE2,            ///< '||' operator.
-    TOKEN_AMPERSAND2,       ///< '&&' operator.
     TOKEN_PLUSPERCENT,      ///< '+%' operator.
     TOKEN_MINUSPERCENT,     ///< '-%' operator.
     TOKEN_STARPERCENT,      ///< '*%' operator.
