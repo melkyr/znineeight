@@ -316,7 +316,13 @@ TEST_FUNC(TypeChecker_IntegerLiteral);
 TEST_FUNC(TypeChecker_CharLiteral);
 TEST_FUNC(TypeChecker_StringLiteral);
 TEST_FUNC(TypeChecker_Identifier);
-TEST_FUNC(TypeChecker_BinaryOp);
+
+// Binary Operator Type Checker Tests
+TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic);
+TEST_FUNC(TypeCheckerBinaryOps_NumericArithmetic);
+TEST_FUNC(TypeCheckerBinaryOps_Comparison);
+TEST_FUNC(TypeCheckerBinaryOps_Bitwise);
+TEST_FUNC(TypeCheckerBinaryOps_Logical);
 
 // C89 Compatibility Tests
 TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
@@ -388,7 +394,6 @@ TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
-TEST_FUNC(TypeChecker_UnimplementedBitwiseOperator);
 
 
 // This function is executed in a child process by the error handling test.
@@ -706,7 +711,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_CharLiteral,
         test_TypeChecker_StringLiteral,
         test_TypeChecker_Identifier,
-        test_TypeChecker_BinaryOp,
+
+        // Binary Operator Type Checker Tests
+        test_TypeCheckerBinaryOps_PointerArithmetic,
+        test_TypeCheckerBinaryOps_NumericArithmetic,
+        test_TypeCheckerBinaryOps_Comparison,
+        test_TypeCheckerBinaryOps_Bitwise,
+        test_TypeCheckerBinaryOps_Logical,
 
         // C89 Compatibility Tests
         test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
@@ -772,7 +783,6 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementOverflow,
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
-        test_TypeChecker_UnimplementedBitwiseOperator,
     };
 
     int passed = 0;
