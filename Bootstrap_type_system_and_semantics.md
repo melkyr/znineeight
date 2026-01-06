@@ -279,10 +279,10 @@ Function calls are subject to the following strict limitations:
 
 ### Operators
 
--   **Unary Operators:**
-    -   **Negation (`-`):** This operator can only be applied to numeric types (integers and floats). Applying it to any other type (e.g., a pointer or a boolean) is a fatal C89 compatibility error.
-    -   **Logical NOT (`!`):** This operator can be applied to booleans, integers, and pointers, aligning with C-style boolean contexts. The resulting type of the expression is always `bool`. Applying it to any other type is a fatal C89 compatibility error.
-    -   **Bitwise NOT (`~`):** This operator can only be applied to integer types. Applying it to any other type (e.g., a float or a boolean) is a fatal C89 compatibility error.
+-   **Arithmetic Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats). The unary negation operator (`-`) is also restricted to numeric types; applying it to any other type is a fatal C89 compatibility error.
+-   **Logical Operators:** Logical operators (`and`, `or`, `!`) must be used with boolean types. However, to align with C-style contexts, the unary logical NOT (`!`) can be applied to booleans, integers, and pointers, and its result is always `bool`. Applying `!` to any other type is a fatal error.
+-   **Bitwise NOT (`~`):** The bitwise NOT operator can only be applied to integer types. Applying it to any other type (e.g., a float or a boolean) is a fatal C89 compatibility error.
+-   **Pointer Operations:**
     -   **Address-of (`&`):** This operator can only be applied to l-values. An l-value is a memory location that can be assigned to. In the bootstrap compiler, the following are considered l-values:
         -   Variables (e.g., `&my_var`).
         -   Array accesses (e.g., `&my_array[i]`).
@@ -290,9 +290,7 @@ Function calls are subject to the following strict limitations:
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_TYPE_MISMATCH`. The resulting type of `&x` where `x` has type `T` is `*T`.
     -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
--   **Binary Operators:** The analyzer will ensure that arithmetic operators (`+`, `-`, `*`, `/`) are only used with numeric types (integers and floats).
--   **Logical Operators:** Logical operators (`and`, `or`) must be used with boolean types.
--   **Pointer Arithmetic:** To ensure C89 compatibility, the type checker enforces the following rules for pointer arithmetic:
+    -   **Pointer Arithmetic:** To ensure C89 compatibility, the type checker enforces the following rules for pointer arithmetic:
         -   `pointer + integer` -> `pointer`: The result is a pointer of the same type.
         -   `integer + pointer` -> `pointer`: The result is a pointer of the same type.
         -   `pointer - integer` -> `pointer`: The result is a pointer of the same type.
