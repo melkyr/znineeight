@@ -1385,7 +1385,7 @@ ASTNode* Parser::parseReturnStatement() {
 }
 
 ASTNode* Parser::parseType() {
-    if (peek().type == TOKEN_STAR || peek().type == TOKEN_CONST) {
+    if (peek().type == TOKEN_STAR) {
         return parsePointerType();
     }
     if (peek().type == TOKEN_LBRACKET) {
@@ -1407,14 +1407,8 @@ ASTNode* Parser::parseType() {
 }
 
 ASTNode* Parser::parsePointerType() {
-    Token start_token = peek();
-    bool is_const = false;
-    if (peek().type == TOKEN_CONST) {
-        is_const = true;
-        advance(); // consume 'const'
-    }
-
-    expect(TOKEN_STAR, "Expected '*' for pointer type");
+    Token start_token = expect(TOKEN_STAR, "Expected '*' for pointer type");
+    bool is_const = match(TOKEN_CONST);
     ASTNode* base_type = parseType();
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
