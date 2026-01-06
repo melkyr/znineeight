@@ -33,6 +33,15 @@ TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_
 }
 
 void TypeChecker::check(ASTNode* root) {
+    if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
+        for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
+            ASTNode* top_level_node = (*root->as.block_stmt.statements)[i];
+            if (top_level_node && top_level_node->type == NODE_FN_DECL) {
+                // This is a simplified version of the original pre-pass.
+                // It doesn't do anything yet, but it's here to match the structure.
+            }
+        }
+    }
     visit(root);
 }
 
@@ -48,11 +57,11 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
-        case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(&node->as.bool_literal); break;
-        case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(&node->as.integer_literal); break;
-        case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(&node->as.float_literal); break;
-        case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(&node->as.char_literal); break;
-        case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(&node->as.string_literal); break;
+        case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
+        case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(node, &node->as.integer_literal); break;
+        case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
+        case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
+        case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(node, &node->as.string_literal); break;
         case NODE_IDENTIFIER:       resolved_type = visitIdentifier(node); break;
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
@@ -148,56 +157,77 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         return NULL;
     }
 
-    // --- Check for void pointer arithmetic ---
-    if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
-        if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
-            (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
-            unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
-            return NULL;
-        }
-    }
-
     switch (node->op) {
-        // --- Implemented Arithmetic Operators ---
+        // --- Arithmetic Operators ---
         case TOKEN_PLUS:
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-            if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
-            break;
-
         case TOKEN_MINUS:
-            if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-            if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
-                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                    Type* isize_type = resolvePrimitiveTypeName("isize");
-                    if (!isize_type) {
-                         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
-                         return NULL;
-                    }
-                    return isize_type;
-                } else {
-                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
-                     return NULL;
-                }
-            }
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
-            break;
-
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) return left_type;
-            break;
+        {
+            // First, check for void pointer arithmetic (must be rejected)
+            if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+                if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
+                    (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
+                    return NULL;
+                }
+            }
 
-        // --- Implemented Comparison Operators ---
+            // Handle pointer arithmetic
+            if (node->op == TOKEN_PLUS) {
+                if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
+                if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
+            }
+
+            if (node->op == TOKEN_MINUS) {
+                if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
+                if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
+                    // Note: areTypesCompatible allows *T -> *const T, which is fine for subtraction.
+                    if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base) || areTypesCompatible(right_type->as.pointer.base, left_type->as.pointer.base)) {
+                        Type* isize_type = resolvePrimitiveTypeName("isize");
+                        if (!isize_type) {
+                             unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
+                             return NULL;
+                        }
+                        return isize_type;
+                    } else {
+                         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                         return NULL;
+                    }
+                }
+            }
+
+            // Handle regular numeric arithmetic
+            if (isNumericType(left_type) && isNumericType(right_type)) {
+                if (left_type == right_type) {
+                    return left_type; // Result type is same as operands
+                }
+            }
+
+            // If we reach here, it's an invalid combination for an arithmetic op
+            char left_type_str[64];
+            char right_type_str[64];
+            typeToString(left_type, left_type_str, sizeof(left_type_str));
+            typeToString(right_type, right_type_str, sizeof(right_type_str));
+            char msg_buffer[256];
+            snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for arithmetic operator '%s': '%s' and '%s'",
+                     getTokenSpelling(node->op), left_type_str, right_type_str);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+            return NULL;
+        }
+
+        // --- Comparison Operators ---
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
         case TOKEN_LESS:
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
-            if (isNumericType(left_type) && areTypesCompatible(left_type, right_type)) {
-                return get_g_type_bool();
+            if (isNumericType(left_type) && isNumericType(right_type)) {
+                if (left_type == right_type) {
+                    return get_g_type_bool();
+                }
             }
             break;
 
@@ -300,11 +330,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     return NULL; // Placeholder
 }
 
-Type* TypeChecker::visitBoolLiteral(ASTBoolLiteralNode* node) {
+Type* TypeChecker::visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node) {
     return resolvePrimitiveTypeName("bool");
 }
 
-Type* TypeChecker::visitIntegerLiteral(ASTIntegerLiteralNode* node) {
+Type* TypeChecker::visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node) {
     if (node->is_unsigned) {
         if (node->value <= 255) return resolvePrimitiveTypeName("u8");
         if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
@@ -320,15 +350,15 @@ Type* TypeChecker::visitIntegerLiteral(ASTIntegerLiteralNode* node) {
     }
 }
 
-Type* TypeChecker::visitFloatLiteral(ASTFloatLiteralNode* node) {
+Type* TypeChecker::visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node) {
     return resolvePrimitiveTypeName("f64");
 }
 
-Type* TypeChecker::visitCharLiteral(ASTCharLiteralNode* node) {
+Type* TypeChecker::visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node) {
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTStringLiteralNode* node) {
+Type* TypeChecker::visitStringLiteral(ASTNode* parent, ASTStringLiteralNode* node) {
     Type* char_type = resolvePrimitiveTypeName("u8");
     // String literals are pointers to constant characters.
     return createPointerType(unit.getArena(), char_type, true);

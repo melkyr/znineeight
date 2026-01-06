@@ -46,33 +46,33 @@ TEST_FUNC(TypeChecker_C89IntegerCompatibility) {
     ASTIntegerLiteralNode node1;
     node1.value = 127;
     node1.is_unsigned = false;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node1)->kind, TYPE_I8);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node1)->kind, TYPE_I8);
 
     ASTIntegerLiteralNode node2;
     node2.value = 32767;
     node2.is_unsigned = false;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node2)->kind, TYPE_I16);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node2)->kind, TYPE_I16);
 
     ASTIntegerLiteralNode node3;
     node3.value = 2147483647;
     node3.is_unsigned = false;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node3)->kind, TYPE_I32);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node3)->kind, TYPE_I32);
 
     // Test cases for unsigned integers
     ASTIntegerLiteralNode node4;
     node4.value = 255;
     node4.is_unsigned = true;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node4)->kind, TYPE_U8);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node4)->kind, TYPE_U8);
 
     ASTIntegerLiteralNode node5;
     node5.value = 65535;
     node5.is_unsigned = true;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node5)->kind, TYPE_U16);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node5)->kind, TYPE_U16);
 
     ASTIntegerLiteralNode node6;
     node6.value = 4294967295;
     node6.is_unsigned = true;
-    ASSERT_EQ(checker.visitIntegerLiteral(&node6)->kind, TYPE_U32);
+    ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node6)->kind, TYPE_U32);
 
     return true;
 }
@@ -130,7 +130,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
     node_i32_max.value = 2147483647;
     node_i32_max.is_unsigned = false;
     node_i32_max.is_long = false;
-    Type* type_i32_max = checker.visitIntegerLiteral(&node_i32_max);
+    Type* type_i32_max = checker.visitIntegerLiteral(NULL, &node_i32_max);
     ASSERT_EQ(type_i32_max->kind, TYPE_I32);
 
     // Test case for i32 min
@@ -138,7 +138,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
     node_i32_min.value = -2147483648;
     node_i32_min.is_unsigned = false;
     node_i32_min.is_long = false;
-    Type* type_i32_min = checker.visitIntegerLiteral(&node_i32_min);
+    Type* type_i32_min = checker.visitIntegerLiteral(NULL, &node_i32_min);
     ASSERT_EQ(type_i32_min->kind, TYPE_I32);
 
     // Test case for value just over i32 max
@@ -146,7 +146,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
     node_i64_over.value = 2147483648;
     node_i64_over.is_unsigned = false;
     node_i64_over.is_long = false;
-    Type* type_i64_over = checker.visitIntegerLiteral(&node_i64_over);
+    Type* type_i64_over = checker.visitIntegerLiteral(NULL, &node_i64_over);
     ASSERT_EQ(type_i64_over->kind, TYPE_I64);
 
     // Test case for value just under i32 min
@@ -154,7 +154,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
     node_i64_under.value = -2147483649LL; // Use LL for long long
     node_i64_under.is_unsigned = false;
     node_i64_under.is_long = false;
-    Type* type_i64_under = checker.visitIntegerLiteral(&node_i64_under);
+    Type* type_i64_under = checker.visitIntegerLiteral(NULL, &node_i64_under);
     ASSERT_EQ(type_i64_under->kind, TYPE_I64);
 
     return true;
