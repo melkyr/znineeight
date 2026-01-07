@@ -1118,7 +1118,7 @@ ASTNode* Parser::parseDeferStatement() {
  * parameters (currently unsupported), return type, and body.
  *
  * Grammar:
- * `fn IDENT '(' ')' '->' type_expr block_statement`
+ * `fn IDENT '(' ')' ('->' type_expr)? block_statement`
  *
  * @note This parser currently enforces that the parameter list is empty.
  * @return A pointer to the ASTNode representing the function declaration.
@@ -1174,10 +1174,20 @@ ASTNode* Parser::parseFnDecl() {
     expect(TOKEN_RPAREN, "Expected ')' after parameter list");
 
     ASTNode* return_type_node = NULL;
-    if (match(TOKEN_ARROW)) {
+    // A return type is optional. If the next token is not a '{',
+    // we assume it's a type expression. It might have `->` or not.
+    if (peek().type != TOKEN_LBRACE) {
+        if(peek().type == TOKEN_ARROW) {
+            match(TOKEN_ARROW);
+        }
         return_type_node = parseType();
     } else {
+        // If there's no type, it defaults to void.
         return_type_node = createNode(NODE_TYPE_NAME);
+        // We need to set the location for this implicit node.
+        // Let's use the location of the preceding ')'
+        SourceLocation loc = tokens_[current_index_ - 1].location;
+        return_type_node->loc = loc;
         return_type_node->as.type_name.name = "void";
     }
 
@@ -1255,12 +1265,17 @@ ASTNode* Parser::parseStatement() {
         }
         default: {
             ASTNode* expr = parseExpression();
-            expect(TOKEN_SEMICOLON, "Expected ';' after expression statement");
+            if (expr != NULL) {
+                expect(TOKEN_SEMICOLON, "Expected ';' after expression statement");
 
-            ASTNode* stmt_node = createNode(NODE_EXPRESSION_STMT);
-            stmt_node->loc = expr->loc;
-            stmt_node->as.expression_stmt.expression = expr;
-            return stmt_node;
+                ASTNode* stmt_node = createNode(NODE_EXPRESSION_STMT);
+                stmt_node->loc = expr->loc;
+                stmt_node->as.expression_stmt.expression = expr;
+                return stmt_node;
+            } else {
+                error("Expected a statement");
+                return NULL; // Unreachable
+            }
         }
     }
 }
