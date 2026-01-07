@@ -224,362 +224,405 @@ This guide provides a structured approach to refactoring the test suite. The tes
 
 ## Group 1: Core Compiler Infrastructure & Memory
 
-These tests cover fundamental components like the `ArenaAllocator`, `DynamicArray`, `StringInterner`, `SymbolTable`, and `CompilationUnit`.
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 1A: Memory Management (`ArenaAllocator`, `DynamicArray`)
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
-    // test_ArenaAllocator_AllocShouldReturn8ByteAligned,
-    // test_arena_alloc_out_of_memory,
-    // test_arena_alloc_zero_size,
-    // test_arena_alloc_aligned_out_of_memory,
-    // test_arena_alloc_aligned_overflow_check,
-    // test_basic_allocation,
-    // test_multiple_allocations,
-    // test_allocation_failure,
-    // test_reset,
-    // test_aligned_allocation,
-    // test_string_interning,
-    // test_dynamic_array_append,
-    // test_dynamic_array_growth,
-    // test_dynamic_array_growth_from_zero,
-    // test_dynamic_array_non_pod_reallocation,
-    // test_compilation_unit_creation,
-    // test_compilation_unit_var_decl,
-    // test_SymbolBuilder_BuildsCorrectly,
-    // test_SymbolTable_DuplicateDetection,
-    // test_SymbolTable_NestedScopes_And_Lookup,
-    // test_SymbolTable_HashTableResize,
-    // ...
-// };
+// test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
+// test_ArenaAllocator_AllocShouldReturn8ByteAligned,
+// test_arena_alloc_out_of_memory,
+// test_arena_alloc_zero_size,
+// test_arena_alloc_aligned_out_of_memory,
+// test_arena_alloc_aligned_overflow_check,
+// test_basic_allocation,
+// test_multiple_allocations,
+// test_allocation_failure,
+// test_reset,
+// test_aligned_allocation,
+// test_dynamic_array_append,
+// test_dynamic_array_growth,
+// test_dynamic_array_growth_from_zero,
+// test_dynamic_array_non_pod_reallocation,
 ```
 
+### Group 1B: Core Components (`StringInterner`, `SymbolTable`, `CompilationUnit`)
+**To disable, comment out:**
+```cpp
+// test_string_interning,
+// test_compilation_unit_creation,
+// test_compilation_unit_var_decl,
+// test_SymbolBuilder_BuildsCorrectly,
+// test_SymbolTable_DuplicateDetection,
+// test_SymbolTable_NestedScopes_And_Lookup,
+// test_SymbolTable_HashTableResize,
+```
+---
 ## Group 2: Lexer
 
-These tests validate the tokenization of the source code, covering everything from simple operators to complex string and numeric literals.
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 2A: Float Literals
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_Lexer_FloatWithUnderscores_IntegerPart,
-    // test_Lexer_FloatWithUnderscores_FractionalPart,
-    // test_Lexer_FloatWithUnderscores_ExponentPart,
-    // test_Lexer_FloatWithUnderscores_AllParts,
-    // test_lexer_integer_overflow,
-    // test_lexer_c_string_literal,
-    // test_lexer_handles_tab_correctly,
-    // test_lexer_handles_unicode_correctly,
-    // test_lexer_handles_unterminated_char_hex_escape,
-    // test_lexer_handles_unterminated_string_hex_escape,
-    // test_lexer_handles_long_identifier,
-    // test_Lexer_HandlesLongIdentifier,
-    // test_Lexer_HandlesU64Integer,
-    // test_Lexer_UnterminatedCharHexEscape,
-    // test_Lexer_UnterminatedStringHexEscape,
-    // test_Lexer_NumericLookaheadSafety,
-    // test_Lexer_UnicodeInStringLiteral,
-    // test_single_char_tokens,
-    // test_multi_char_tokens,
-    // test_token_fields_are_initialized,
-    // test_assignment_vs_equality,
-    // test_skip_comments,
-    // test_nested_block_comments,
-    // test_unterminated_block_comment,
-    // test_Lexer_FloatSimpleDecimal,
-    // test_Lexer_FloatNoFractionalPart,
-    // test_Lexer_FloatNoIntegerPart,
-    // test_Lexer_FloatWithExponent,
-    // test_Lexer_FloatWithNegativeExponent,
-    // test_Lexer_FloatExponentNoSign,
-    // test_Lexer_FloatIntegerWithExponent,
-    // test_Lexer_FloatExponentNoDigits,
-    // test_Lexer_FloatHexSimple,
-    // test_Lexer_FloatHexNoFractionalPart,
-    // test_Lexer_FloatHexNegativeExponent,
-    // test_Lexer_FloatHexInvalidFormat,
-    // test_IntegerLiterals,
-    // test_lex_arithmetic_and_bitwise_operators,
-    // test_Lexer_RangeExpression,
-    // test_lex_compound_assignment_operators,
-    // test_LexerSpecialOperators,
-    // test_LexerSpecialOperatorsMixed,
-    // test_Lexer_Delimiters,
-    // test_Lexer_DotOperators,
-    // test_lex_visibility_and_linkage_keywords,
-    // test_lex_compile_time_and_special_function_keywords,
-    // test_lex_miscellaneous_keywords,
-    // test_Lexer_ComprehensiveCrossGroup,
-    // test_Lexer_IdentifiersAndStrings,
-    // test_Lexer_ErrorConditions,
-    // test_Lexer_StringLiteral_EscapedCharacters,
-    // test_Lexer_StringLiteral_LongString,
-    // test_lex_missing_keywords,
-    // test_IntegerRangeAmbiguity,
-    // test_Lexer_MultiLineIntegrationTest,
-    // test_IntegerLiteralParsing_UnsignedSuffix,
-    // test_IntegerLiteralParsing_LongSuffix,
-    // test_IntegerLiteralParsing_UnsignedLongSuffix,
-    // ...
-// };
+// test_Lexer_FloatWithUnderscores_IntegerPart,
+// test_Lexer_FloatWithUnderscores_FractionalPart,
+// test_Lexer_FloatWithUnderscores_ExponentPart,
+// test_Lexer_FloatWithUnderscores_AllParts,
+// test_Lexer_FloatSimpleDecimal,
+// test_Lexer_FloatNoFractionalPart,
+// test_Lexer_FloatNoIntegerPart,
+// test_Lexer_FloatWithExponent,
+// test_Lexer_FloatWithNegativeExponent,
+// test_Lexer_FloatExponentNoSign,
+// test_Lexer_FloatIntegerWithExponent,
+// test_Lexer_FloatExponentNoDigits,
+// test_Lexer_FloatHexSimple,
+// test_Lexer_FloatHexNoFractionalPart,
+// test_Lexer_FloatHexNegativeExponent,
+// test_Lexer_FloatHexInvalidFormat,
 ```
 
+### Group 2B: Integer & String Literals
+**To disable, comment out:**
+```cpp
+// test_lexer_integer_overflow,
+// test_lexer_c_string_literal,
+// test_lexer_handles_unicode_correctly,
+// test_lexer_handles_unterminated_char_hex_escape,
+// test_lexer_handles_unterminated_string_hex_escape,
+// test_Lexer_HandlesU64Integer,
+// test_Lexer_UnterminatedCharHexEscape,
+// test_Lexer_UnterminatedStringHexEscape,
+// test_Lexer_UnicodeInStringLiteral,
+// test_IntegerLiterals,
+// test_Lexer_StringLiteral_EscapedCharacters,
+// test_Lexer_StringLiteral_LongString,
+// test_IntegerLiteralParsing_UnsignedSuffix,
+// test_IntegerLiteralParsing_LongSuffix,
+// test_IntegerLiteralParsing_UnsignedLongSuffix,
+```
+
+### Group 2C: Operators & Delimiters
+**To disable, comment out:**
+```cpp
+// test_single_char_tokens,
+// test_multi_char_tokens,
+// test_assignment_vs_equality,
+// test_lex_arithmetic_and_bitwise_operators,
+// test_Lexer_RangeExpression,
+// test_lex_compound_assignment_operators,
+// test_LexerSpecialOperators,
+// test_LexerSpecialOperatorsMixed,
+// test_Lexer_Delimiters,
+// test_Lexer_DotOperators,
+```
+
+### Group 2D: Keywords & Comments
+**To disable, comment out:**
+```cpp
+// test_skip_comments,
+// test_nested_block_comments,
+// test_unterminated_block_comment,
+// test_lex_visibility_and_linkage_keywords,
+// test_lex_compile_time_and_special_function_keywords,
+// test_lex_miscellaneous_keywords,
+// test_lex_missing_keywords,
+```
+
+### Group 2E: Identifiers, Integration & Edge Cases
+**To disable, comment out:**
+```cpp
+// test_lexer_handles_tab_correctly,
+// test_lexer_handles_long_identifier,
+// test_Lexer_HandlesLongIdentifier,
+// test_Lexer_NumericLookaheadSafety,
+// test_token_fields_are_initialized,
+// test_Lexer_ComprehensiveCrossGroup,
+// test_Lexer_IdentifiersAndStrings,
+// test_Lexer_ErrorConditions,
+// test_IntegerRangeAmbiguity,
+// test_Lexer_MultiLineIntegrationTest,
+```
+
+---
 ## Group 3: Parser & AST
 
-These tests cover the construction of the Abstract Syntax Tree from tokens. They are subdivided for a more granular approach.
-
-### Group 3A: Basic AST & Expression Parsing
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 3A: Basic AST Nodes & Primary Expressions
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_ASTNode_IntegerLiteral,
-    // test_ASTNode_FloatLiteral,
-    // test_ASTNode_CharLiteral,
-    // test_ASTNode_StringLiteral,
-    // test_ASTNode_Identifier,
-    // test_ASTNode_UnaryOp,
-    // test_ASTNode_BinaryOp,
-    // test_ASTNode_ContainerDeclarations,
-    // test_ASTNode_ForStmt,
-    // test_ASTNode_SwitchExpr,
-    // test_Parser_ParsePrimaryExpr_IntegerLiteral,
-    // test_Parser_ParsePrimaryExpr_FloatLiteral,
-    // test_Parser_ParsePrimaryExpr_CharLiteral,
-    // test_Parser_ParsePrimaryExpr_StringLiteral,
-    // test_Parser_ParsePrimaryExpr_Identifier,
-    // test_Parser_ParsePrimaryExpr_ParenthesizedExpression,
-    // test_Parser_Error_OnUnexpectedToken,
-    // test_Parser_FunctionCall_NoArgs,
-    // test_Parser_FunctionCall_WithArgs,
-    // test_Parser_FunctionCall_WithTrailingComma,
-    // test_Parser_ArrayAccess,
-    // test_Parser_ChainedPostfixOps,
-    // test_Parser_BinaryExpr_SimplePrecedence,
-    // test_Parser_BinaryExpr_LeftAssociativity,
-    // test_Parser_BinaryExpr_Error_MissingRHS,
-    // test_Parser_TryExpr_Simple,
-    // test_Parser_TryExpr_Chained,
-    // test_Parser_TryExpr_InvalidSyntax,
-    // test_Parser_CatchExpression_Simple,
-    // test_Parser_CatchExpression_WithPayload,
-    // test_Parser_CatchExpression_RightAssociativity,
-    // test_Parser_CatchExpression_Error_MissingElseExpr,
-    // test_Parser_CatchExpression_Error_IncompletePayload,
-    // test_Parser_CatchExpression_Error_MissingPipe,
-    // ...
-// };
+// test_ASTNode_IntegerLiteral,
+// test_ASTNode_FloatLiteral,
+// test_ASTNode_CharLiteral,
+// test_ASTNode_StringLiteral,
+// test_ASTNode_Identifier,
+// test_ASTNode_UnaryOp,
+// test_ASTNode_BinaryOp,
+// test_Parser_ParsePrimaryExpr_IntegerLiteral,
+// test_Parser_ParsePrimaryExpr_FloatLiteral,
+// test_Parser_ParsePrimaryExpr_CharLiteral,
+// test_Parser_ParsePrimaryExpr_StringLiteral,
+// test_Parser_ParsePrimaryExpr_Identifier,
+// test_Parser_ParsePrimaryExpr_ParenthesizedExpression,
 ```
 
-### Group 3B: Declarations (Struct, Enum, Function, Var)
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 3B: Postfix, Binary & Advanced Expressions
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_Parser_Error_OnMissingColon,
-    // test_Parser_Struct_Error_MissingLBrace,
-    // test_Parser_Struct_Error_MissingRBrace,
-    // test_Parser_Struct_Error_MissingColon,
-    // test_Parser_Struct_Error_MissingType,
-    // test_Parser_Struct_Error_InvalidField,
-    // test_Parser_FnDecl_ValidEmpty,
-    // test_Parser_FnDecl_Error_NonEmptyParams,
-    // test_Parser_FnDecl_Error_NonEmptyBody,
-    // test_Parser_FnDecl_Error_MissingArrow,
-    // test_Parser_FnDecl_Error_MissingReturnType,
-    // test_Parser_FnDecl_Error_MissingParens,
-    // test_Parser_StructDeclaration_Simple,
-    // test_Parser_StructDeclaration_Empty,
-    // test_Parser_StructDeclaration_MultipleFields,
-    // test_Parser_StructDeclaration_WithTrailingComma,
-    // test_Parser_StructDeclaration_ComplexFieldType,
-    // test_Parser_Enum_Empty,
-    // test_Parser_Enum_SimpleMembers,
-    // test_Parser_Enum_TrailingComma,
-    // test_Parser_Enum_WithValues,
-    // test_Parser_Enum_MixedMembers,
-    // test_Parser_Enum_WithBackingType,
-    // test_Parser_Enum_SyntaxError_MissingOpeningBrace,
-    // test_Parser_Enum_SyntaxError_MissingClosingBrace,
-    // test_Parser_Enum_SyntaxError_NoComma,
-    // test_Parser_Enum_SyntaxError_InvalidMember,
-    // test_Parser_Enum_SyntaxError_MissingInitializer,
-    // test_Parser_Enum_SyntaxError_BackingTypeNoParens,
-    // test_Parser_Enum_ComplexInitializer,
-    // test_Parser_NonEmptyFunctionBody,
-    // test_Parser_VarDecl_InsertsSymbolCorrectly,
-    // test_Parser_VarDecl_DetectsDuplicateSymbol,
-    // test_Parser_FnDecl_AndScopeManagement,
-    // ...
-// };
+// test_Parser_FunctionCall_NoArgs,
+// test_Parser_FunctionCall_WithArgs,
+// test_Parser_FunctionCall_WithTrailingComma,
+// test_Parser_ArrayAccess,
+// test_Parser_ChainedPostfixOps,
+// test_Parser_BinaryExpr_SimplePrecedence,
+// test_Parser_BinaryExpr_LeftAssociativity,
+// test_Parser_TryExpr_Simple,
+// test_Parser_TryExpr_Chained,
+// test_Parser_CatchExpression_Simple,
+// test_Parser_CatchExpression_WithPayload,
+// test_Parser_CatchExpression_RightAssociativity,
 ```
 
-### Group 3C: Control Flow & Blocks
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 3C: Struct & Union Declarations
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_Parser_IfStatement_Simple,
-    // test_Parser_IfStatement_WithElse,
-    // test_Parser_IfStatement_Error_MissingLParen,
-    // test_Parser_IfStatement_Error_MissingRParen,
-    // test_Parser_IfStatement_Error_MissingThenBlock,
-    // test_Parser_IfStatement_Error_MissingElseBlock,
-    // test_Parser_ParseEmptyBlock,
-    // test_Parser_ParseBlockWithEmptyStatement,
-    // test_Parser_ParseBlockWithMultipleEmptyStatements,
-    // test_Parser_ParseBlockWithNestedEmptyBlock,
-    // test_Parser_ParseBlockWithMultipleNestedEmptyBlocks,
-    // test_Parser_ParseBlockWithNestedBlockAndEmptyStatement,
-    // test_Parser_ErrDeferStatement_Simple,
-    // test_Parser_ErrDeferStatement_Error_MissingBlock,
-    // test_Parser_ComptimeBlock_Valid,
-    // test_Parser_ComptimeBlock_Error_MissingExpression,
-    // test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
-    // test_Parser_ComptimeBlock_Error_MissingClosingBrace,
-    // test_Parser_NestedBlocks_AndShadowing,
-    // test_Parser_SymbolDoesNotLeakFromInnerScope,
-    // ...
-// };
+// test_ASTNode_ContainerDeclarations,
+// test_Parser_Struct_Error_MissingLBrace,
+// test_Parser_Struct_Error_MissingRBrace,
+// test_Parser_Struct_Error_MissingColon,
+// test_Parser_Struct_Error_MissingType,
+// test_Parser_Struct_Error_InvalidField,
+// test_Parser_StructDeclaration_Simple,
+// test_Parser_StructDeclaration_Empty,
+// test_Parser_StructDeclaration_MultipleFields,
+// test_Parser_StructDeclaration_WithTrailingComma,
+// test_Parser_StructDeclaration_ComplexFieldType,
+// test_ParserBug_TopLevelUnion,
+// test_ParserBug_TopLevelStruct,
+// test_ParserBug_UnionFieldNodeType,
 ```
 
-### Group 3D: Integration, Bugs, and Edge Cases
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 3D: Enum Declarations
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_Parser_AbortOnAllocationFailure,
-    // test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
-    // test_ParserIntegration_VarDeclWithBinaryExpr,
-    // test_ParserIntegration_IfWithComplexCondition,
-    // test_ParserIntegration_WhileWithFunctionCall,
-    // test_ParserBug_LogicalOperatorSymbol,
-    // test_Parser_RecursionLimit,
-    // test_Parser_RecursionLimit_Unary,
-    // test_Parser_RecursionLimit_Binary,
-    // test_Parser_CopyIsSafeAndDoesNotDoubleFree,
-    // test_ParserBug_TopLevelUnion,
-    // test_ParserBug_TopLevelStruct,
-    // test_ParserBug_UnionFieldNodeType,
-    // test_Parser_Bugfix_HandlesExpressionStatement,
-    // ...
-// };
+// test_Parser_Enum_Empty,
+// test_Parser_Enum_SimpleMembers,
+// test_Parser_Enum_TrailingComma,
+// test_Parser_Enum_WithValues,
+// test_Parser_Enum_MixedMembers,
+// test_Parser_Enum_WithBackingType,
+// test_Parser_Enum_SyntaxError_MissingOpeningBrace,
+// test_Parser_Enum_SyntaxError_MissingClosingBrace,
+// test_Parser_Enum_SyntaxError_NoComma,
+// test_Parser_Enum_SyntaxError_InvalidMember,
+// test_Parser_Enum_SyntaxError_MissingInitializer,
+// test_Parser_Enum_SyntaxError_BackingTypeNoParens,
+// test_Parser_Enum_ComplexInitializer,
 ```
 
+### Group 3E: Function & Variable Declarations
+**To disable, comment out:**
+```cpp
+// test_Parser_FnDecl_ValidEmpty,
+// test_Parser_FnDecl_Error_NonEmptyParams,
+// test_Parser_FnDecl_Error_NonEmptyBody,
+// test_Parser_FnDecl_Error_MissingArrow,
+// test_Parser_FnDecl_Error_MissingReturnType,
+// test_Parser_FnDecl_Error_MissingParens,
+// test_Parser_NonEmptyFunctionBody,
+// test_Parser_VarDecl_InsertsSymbolCorrectly,
+// test_Parser_VarDecl_DetectsDuplicateSymbol,
+// test_Parser_FnDecl_AndScopeManagement,
+```
+
+### Group 3F: Control Flow & Blocks
+**To disable, comment out:**
+```cpp
+// test_ASTNode_ForStmt,
+// test_ASTNode_SwitchExpr,
+// test_Parser_IfStatement_Simple,
+// test_Parser_IfStatement_WithElse,
+// test_Parser_ParseEmptyBlock,
+// test_Parser_ParseBlockWithEmptyStatement,
+// test_Parser_ParseBlockWithMultipleEmptyStatements,
+// test_Parser_ParseBlockWithNestedEmptyBlock,
+// test_Parser_ParseBlockWithMultipleNestedEmptyBlocks,
+// test_Parser_ParseBlockWithNestedBlockAndEmptyStatement,
+// test_Parser_ErrDeferStatement_Simple,
+// test_Parser_ComptimeBlock_Valid,
+// test_Parser_NestedBlocks_AndShadowing,
+// test_Parser_SymbolDoesNotLeakFromInnerScope,
+```
+
+### Group 3G: Parser Error Handling
+**To disable, comment out:**
+```cpp
+// test_Parser_Error_OnUnexpectedToken,
+// test_Parser_Error_OnMissingColon,
+// test_Parser_IfStatement_Error_MissingLParen,
+// test_Parser_IfStatement_Error_MissingRParen,
+// test_Parser_IfStatement_Error_MissingThenBlock,
+// test_Parser_IfStatement_Error_MissingElseBlock,
+// test_Parser_BinaryExpr_Error_MissingRHS,
+// test_Parser_TryExpr_InvalidSyntax,
+// test_Parser_CatchExpression_Error_MissingElseExpr,
+// test_Parser_CatchExpression_Error_IncompletePayload,
+// test_Parser_CatchExpression_Error_MissingPipe,
+// test_Parser_ErrDeferStatement_Error_MissingBlock,
+// test_Parser_ComptimeBlock_Error_MissingExpression,
+// test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
+// test_Parser_ComptimeBlock_Error_MissingClosingBrace,
+```
+
+### Group 3H: Integration, Bugs, and Edge Cases
+**To disable, comment out:**
+```cpp
+// test_Parser_AbortOnAllocationFailure,
+// test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
+// test_ParserIntegration_VarDeclWithBinaryExpr,
+// test_ParserIntegration_IfWithComplexCondition,
+// test_ParserIntegration_WhileWithFunctionCall,
+// test_ParserBug_LogicalOperatorSymbol,
+// test_Parser_RecursionLimit,
+// test_Parser_RecursionLimit_Unary,
+// test_Parser_RecursionLimit_Binary,
+// test_Parser_CopyIsSafeAndDoesNotDoubleFree,
+// test_Parser_Bugfix_HandlesExpressionStatement,
+```
+
+---
 ## Group 4: Type Checker & C89 Compatibility
 
-These tests cover semantic analysis, type inference, and validation against C89 constraints.
-
-**To disable, comment out the following lines in `tests/main.cpp`:**
-
+### Group 4A: Literal & Primitive Type Inference
+**To disable, comment out:**
 ```cpp
-// bool (*tests[])() = {
-    // ...
-    // test_TypeChecker_IntegerLiteralInference,
-    // test_TypeChecker_FloatLiteralInference,
-    // test_TypeChecker_CharLiteralInference,
-    // test_TypeChecker_StringLiteralInference,
-    // test_TypeChecker_RejectSlice,
-    // test_TypeChecker_RejectNonConstantArraySize,
-    // test_TypeChecker_AcceptsValidArrayDeclaration,
-    // test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
-    // test_TypeCheckerVoidTests_ImplicitReturnInVoidFunction,
-    // test_TypeCheckerVoidTests_ExplicitReturnInVoidFunction,
-    // test_TypeCheckerVoidTests_ReturnValueInVoidFunction,
-    // test_TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction,
-    // test_TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction,
-    // test_TypeCheckerVoidTests_PointerAddition,
-    // test_TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction,
-    // test_TypeResolution_ValidPrimitives,
-    // test_TypeResolution_InvalidOrUnsupported,
-    // test_TypeResolution_AllPrimitives,
-    // test_TypeCheckerValidDeclarations,
-    // test_TypeCheckerInvalidDeclarations,
-    // test_TypeCheckerUndeclaredVariable,
-    // test_TypeCheckerStringLiteralType,
-    // test_TypeCheckerIntegerLiteralType,
-    // test_TypeChecker_C89IntegerCompatibility,
-    // test_ReturnTypeValidation_Valid,
-    // test_ReturnTypeValidation_Invalid,
-    // test_TypeCompatibility,
-    // test_TypeChecker_VarDecl_Valid_Simple,
-    // test_TypeChecker_VarDecl_Invalid_Mismatch,
-    // test_TypeChecker_VarDecl_Valid_Widening,
-    // test_TypeChecker_VarDecl_Multiple_Errors,
-    // test_TypeToString_Reentrancy,
-    // test_TypeCheckerFnDecl_ValidSimpleParams,
-    // test_TypeCheckerFnDecl_InvalidParamType,
-    // test_TypeChecker_BoolLiteral,
-    // test_TypeChecker_IntegerLiteral,
-    // test_TypeChecker_CharLiteral,
-    // test_TypeChecker_StringLiteral,
-    // test_TypeChecker_Identifier,
-    // test_TypeCheckerBinaryOps_PointerArithmetic,
-    // test_TypeCheckerBinaryOps_NumericArithmetic,
-    // test_TypeCheckerBinaryOps_Comparison,
-    // test_TypeCheckerBinaryOps_Bitwise,
-    // test_TypeCheckerBinaryOps_Logical,
-    // test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
-    // test_TypeChecker_Call_WrongArgumentCount,
-    // test_TypeChecker_Call_IncompatibleArgumentType,
-    // test_TypeCheckerC89Compat_FloatWidening,
-    // test_TypeCheckerControlFlow_IfStatementWithBooleanCondition,
-    // test_TypeCheckerControlFlow_IfStatementWithIntegerCondition,
-    // test_TypeCheckerControlFlow_IfStatementWithPointerCondition,
-    // test_TypeCheckerControlFlow_IfStatementWithFloatCondition,
-    // test_TypeCheckerControlFlow_IfStatementWithVoidCondition,
-    // test_TypeCheckerControlFlow_WhileStatementWithBooleanCondition,
-    // test_TypeCheckerControlFlow_WhileStatementWithIntegerCondition,
-    // test_TypeCheckerControlFlow_WhileStatementWithPointerCondition,
-    // test_TypeCheckerControlFlow_WhileStatementWithFloatCondition,
-    // test_TypeCheckerControlFlow_WhileStatementWithVoidCondition,
-    // test_TypeChecker_Dereference_ValidPointer,
-    // test_TypeChecker_Dereference_Invalid_NonPointer,
-    // test_TypeChecker_Dereference_ConstPointer,
-    // test_TypeChecker_AddressOf_Invalid_RValue,
-    // test_TypeChecker_AddressOf_Valid_LValues,
-    // test_TypeChecker_PointerIntegerAddition,
-    // test_TypeChecker_IntegerPointerAddition,
-    // test_TypeChecker_PointerIntegerSubtraction,
-    // test_TypeChecker_PointerPointerSubtraction,
-    // test_TypeChecker_Invalid_PointerPointerAddition,
-    // test_TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes,
-    // test_TypeChecker_Invalid_PointerMultiplication,
-    // test_C89TypeMapping_Validation,
-    // test_C89Compat_FunctionTypeValidation,
-    // test_TypeChecker_Bool_Literals,
-    // test_TypeChecker_Bool_ComparisonOps,
-    // test_TypeChecker_Bool_LogicalOps,
-    // test_TypeCheckerPointerOps_AddressOf_ValidLValue,
-    // test_TypeCheckerPointerOps_AddressOf_InvalidRValue,
-    // test_TypeCheckerPointerOps_Dereference_ValidPointer,
-    // test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
-    // test_TypeCheckerPointerOps_Arithmetic_PointerInteger,
-    // test_TypeCheckerPointerOps_Arithmetic_PointerPointer,
-    // test_TypeCheckerPointerOps_Arithmetic_InvalidOperations,
-    // test_TypeChecker_C89_StructFieldValidation_Slice,
-    // test_TypeChecker_C89_UnionFieldValidation_MultiLevelPointer,
-    // test_TypeChecker_C89_StructFieldValidation_ValidArray,
-    // test_TypeChecker_C89_UnionFieldValidation_ValidFields,
-    // test_TypeCheckerEnumTests_SignedIntegerOverflow,
-    // test_TypeCheckerEnumTests_SignedIntegerUnderflow,
-    // test_TypeCheckerEnumTests_UnsignedIntegerOverflow,
-    // test_TypeCheckerEnumTests_NegativeValueInUnsignedEnum,
-    // test_TypeCheckerEnumTests_AutoIncrementOverflow,
-    // test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
-    // test_TypeCheckerEnumTests_ValidValues,
-    // ...
-// };
+// test_TypeChecker_IntegerLiteralInference,
+// test_TypeChecker_FloatLiteralInference,
+// test_TypeChecker_CharLiteralInference,
+// test_TypeChecker_StringLiteralInference,
+// test_TypeCheckerStringLiteralType,
+// test_TypeCheckerIntegerLiteralType,
+// test_TypeChecker_C89IntegerCompatibility,
+// test_TypeResolution_ValidPrimitives,
+// test_TypeResolution_InvalidOrUnsupported,
+// test_TypeResolution_AllPrimitives,
+// test_TypeChecker_BoolLiteral,
+// test_TypeChecker_IntegerLiteral,
+// test_TypeChecker_CharLiteral,
+// test_TypeChecker_StringLiteral,
+// test_TypeChecker_Identifier,
+```
+
+### Group 4B: Variable Declaration & Scope
+**To disable, comment out:**
+```cpp
+// test_TypeCheckerValidDeclarations,
+// test_TypeCheckerInvalidDeclarations,
+// test_TypeCheckerUndeclaredVariable,
+// test_TypeChecker_VarDecl_Valid_Simple,
+// test_TypeChecker_VarDecl_Invalid_Mismatch,
+// test_TypeChecker_VarDecl_Valid_Widening,
+// test_TypeChecker_VarDecl_Multiple_Errors,
+```
+
+### Group 4C: Function Declarations & Return Validation
+**To disable, comment out:**
+```cpp
+// test_ReturnTypeValidation_Valid,
+// test_ReturnTypeValidation_Invalid,
+// test_TypeCheckerFnDecl_ValidSimpleParams,
+// test_TypeCheckerFnDecl_InvalidParamType,
+// test_TypeCheckerVoidTests_ImplicitReturnInVoidFunction,
+// test_TypeCheckerVoidTests_ExplicitReturnInVoidFunction,
+// test_TypeCheckerVoidTests_ReturnValueInVoidFunction,
+// test_TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction,
+// test_TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction,
+// test_TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction,
+```
+
+### Group 4D: Pointer Operations
+**To disable, comment out:**
+```cpp
+// test_TypeChecker_Dereference_ValidPointer,
+// test_TypeChecker_Dereference_Invalid_NonPointer,
+// test_TypeChecker_Dereference_ConstPointer,
+// test_TypeChecker_AddressOf_Invalid_RValue,
+// test_TypeChecker_AddressOf_Valid_LValues,
+// test_TypeCheckerPointerOps_AddressOf_ValidLValue,
+// test_TypeCheckerPointerOps_AddressOf_InvalidRValue,
+// test_TypeCheckerPointerOps_Dereference_ValidPointer,
+// test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
+```
+
+### Group 4E: Pointer Arithmetic
+**To disable, comment out:**
+```cpp
+// test_TypeCheckerVoidTests_PointerAddition,
+// test_TypeChecker_PointerIntegerAddition,
+// test_TypeChecker_IntegerPointerAddition,
+// test_TypeChecker_PointerIntegerSubtraction,
+// test_TypeChecker_PointerPointerSubtraction,
+// test_TypeChecker_Invalid_PointerPointerAddition,
+// test_TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes,
+// test_TypeChecker_Invalid_PointerMultiplication,
+// test_TypeCheckerPointerOps_Arithmetic_PointerInteger,
+// test_TypeCheckerPointerOps_Arithmetic_PointerPointer,
+// test_TypeCheckerPointerOps_Arithmetic_InvalidOperations,
+```
+
+### Group 4F: Binary & Logical Operations
+**To disable, comment out:**
+```cpp
+// test_TypeCheckerBinaryOps_PointerArithmetic,
+// test_TypeCheckerBinaryOps_NumericArithmetic,
+// test_TypeCheckerBinaryOps_Comparison,
+// test_TypeCheckerBinaryOps_Bitwise,
+// test_TypeCheckerBinaryOps_Logical,
+// test_TypeChecker_Bool_ComparisonOps,
+// test_TypeChecker_Bool_LogicalOps,
+```
+
+### Group 4G: Control Flow (`if`, `while`)
+**To disable, comment out:**
+```cpp
+// test_TypeCheckerControlFlow_IfStatementWithBooleanCondition,
+// test_TypeCheckerControlFlow_IfStatementWithIntegerCondition,
+// test_TypeCheckerControlFlow_IfStatementWithPointerCondition,
+// test_TypeCheckerControlFlow_IfStatementWithFloatCondition,
+// test_TypeCheckerControlFlow_IfStatementWithVoidCondition,
+// test_TypeCheckerControlFlow_WhileStatementWithBooleanCondition,
+// test_TypeCheckerControlFlow_WhileStatementWithIntegerCondition,
+// test_TypeCheckerControlFlow_WhileStatementWithPointerCondition,
+// test_TypeCheckerControlFlow_WhileStatementWithFloatCondition,
+// test_TypeCheckerControlFlow_WhileStatementWithVoidCondition,
+```
+
+### Group 4H: Container & Enum Validation
+**To disable, comment out:**
+```cpp
+// test_TypeChecker_C89_StructFieldValidation_Slice,
+// test_TypeChecker_C89_UnionFieldValidation_MultiLevelPointer,
+// test_TypeChecker_C89_StructFieldValidation_ValidArray,
+// test_TypeChecker_C89_UnionFieldValidation_ValidFields,
+// test_TypeCheckerEnumTests_SignedIntegerOverflow,
+// test_TypeCheckerEnumTests_SignedIntegerUnderflow,
+// test_TypeCheckerEnumTests_UnsignedIntegerOverflow,
+// test_TypeCheckerEnumTests_NegativeValueInUnsignedEnum,
+// test_TypeCheckerEnumTests_AutoIncrementOverflow,
+// test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
+// test_TypeCheckerEnumTests_ValidValues,
+```
+
+### Group 4I: C89 Compatibility & Misc
+**To disable, comment out:**
+```cpp
+// test_TypeChecker_RejectSlice,
+// test_TypeChecker_RejectNonConstantArraySize,
+// test_TypeChecker_AcceptsValidArrayDeclaration,
+// test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
+// test_TypeCompatibility,
+// test_TypeToString_Reentrancy,
+// test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
+// test_TypeChecker_Call_WrongArgumentCount,
+// test_TypeChecker_Call_IncompatibleArgumentType,
+// test_TypeCheckerC89Compat_FloatWidening,
+// test_C89TypeMapping_Validation,
+// test_C89Compat_FunctionTypeValidation,
+// test_TypeChecker_Bool_Literals,
 ```
