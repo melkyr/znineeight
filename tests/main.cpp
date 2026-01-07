@@ -394,6 +394,7 @@ TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
+TEST_FUNC(Parser_Bugfix_HandlesExpressionStatement);
 
 
 // This function is executed in a child process by the error handling test.
@@ -783,6 +784,7 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementOverflow,
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
+        test_Parser_Bugfix_HandlesExpressionStatement,
     };
 
     int passed = 0;

@@ -46,6 +46,7 @@ enum NodeType {
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
+    NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -114,6 +115,7 @@ struct ASTNode {
         ASTWhileStmtNode while_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
+        ASTExpressionStmtNode expression_stmt;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
@@ -520,8 +522,7 @@ The `parseBlockStatement` function is responsible for parsing a block of stateme
 - A block with one or more empty statements: `{;}` or `{; ;}`
 - A block with nested empty blocks: `{{}}`
 - A mix of the above.
-
-At this stage, it only recognizes other blocks and empty statements. Any other type of statement will result in a fatal error.
+- A block with expression statements: `{ my_func(); 42; }`
 
 ### `ASTEmptyStmtNode`
 Represents an empty statement, which is just a semicolon.
@@ -536,6 +537,24 @@ Represents an empty statement, which is just a semicolon.
         // No data needed.
     };
     ```
+
+### `ASTExpressionStmtNode`
+Represents a statement that consists of a single expression followed by a semicolon. This is common for function calls made for their side effects.
+*   **Zig Code:** `do_something();`, `_ = my_func();`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTExpressionStmtNode
+     * @brief Represents a statement consisting of a single expression.
+     * @var ASTExpressionStmtNode::expression The expression that forms the statement.
+     */
+    struct ASTExpressionStmtNode {
+        ASTNode* expression;
+    };
+    ```
+
+#### Parsing Logic (`parseStatement`)
+The `parseStatement` function acts as a dispatcher. When it does not find a keyword that starts a specific statement (like `if`, `while`, `return`, etc.), it falls back to a default case where it attempts to parse an expression. If an expression is successfully parsed, it then requires a terminating semicolon. The resulting expression is then wrapped in an `ASTExpressionStmtNode` to represent it as a statement in the AST.
 
 ### `ASTIfStmtNode`
 Represents an `if` statement with an optional `else` clause.
@@ -784,13 +803,12 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
 
 #### Parsing Logic (`parseFnDecl`)
 The `parseFnDecl` function is responsible for parsing function declarations. It follows the grammar:
-`'fn' IDENT '(' ')' '->' type_expr block_statement`
+`'fn' IDENT '(' param_list ')' (type_expr | '->' type_expr)? block_statement`
 
-- It consumes the `fn` keyword, the function's identifier, an opening and closing parenthesis, an arrow `->`, and a type expression.
-- After parsing the function signature, it calls `parseBlockStatement` to parse the function's body. This allows function bodies to contain any valid sequence of statements that the parser supports.
-- **Parameter lists must be empty.** Any tokens between the parentheses will result in a fatal error. This functionality will be expanded in a future task.
-- The return type is mandatory.
-- Any deviation from this grammar results in a fatal error, adhering to the parser's no-recovery policy.
+- It consumes the `fn` keyword and the function's identifier.
+- It parses the parameter list inside `()`.
+- It then checks for a return type. The return type can be specified with an optional `->` or just by the type name. If no return type is present before the opening `{` of the body, it defaults to `void`.
+- After parsing the function signature, it calls `parseBlockStatement` to parse the function's body.
 
 ### `ASTParamDeclNode`
 Represents a single parameter within a function's parameter list. This node is not directly used in the main `ASTNode` union but is a component of `ASTFnDeclNode`.
