@@ -7,6 +7,10 @@
 
 class TypeChecker {
 public:
+    /**
+     * @brief Constructs a new TypeChecker.
+     * @param unit The CompilationUnit that owns this TypeChecker and its resources.
+     */
     TypeChecker(CompilationUnit& unit);
 
     void check(ASTNode* root);
