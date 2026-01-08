@@ -18,6 +18,8 @@ struct Type;
  */
 enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~
+    NODE_ASSIGNMENT,
+    NODE_COMPOUND_ASSIGNMENT,
     NODE_UNARY_OP,        ///< A unary operation (e.g., `-x`, `!y`).
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
@@ -75,6 +77,8 @@ enum NodeType {
 };
 
 // --- Forward declarations for node-specific structs ---
+struct ASTAssignmentNode;
+struct ASTCompoundAssignmentNode;
 struct ASTBinaryOpNode;
 struct ASTUnaryOpNode;
 struct ASTBoolLiteralNode;
@@ -116,6 +120,30 @@ struct ASTArraySliceNode;
 
 // --- Node-specific data structs ---
 // These structs are stored within the ASTNode's union.
+
+/**
+ * @struct ASTAssignmentNode
+ * @brief Represents a simple assignment expression (e.g., `x = y`).
+ * @var ASTAssignmentNode::lvalue The left-hand side of the assignment.
+ * @var ASTAssignmentNode::rvalue The right-hand side of the assignment.
+ */
+struct ASTAssignmentNode {
+    ASTNode* lvalue;
+    ASTNode* rvalue;
+};
+
+/**
+ * @struct ASTCompoundAssignmentNode
+ * @brief Represents a compound assignment expression (e.g., `x += y`).
+ * @var ASTCompoundAssignmentNode::lvalue The left-hand side of the assignment.
+ * @var ASTCompoundAssignmentNode::rvalue The right-hand side of the assignment.
+ * @var ASTCompoundAssignmentNode::op The token representing the operator (e.g., TOKEN_PLUS_EQUAL).
+ */
+struct ASTCompoundAssignmentNode {
+    ASTNode* lvalue;
+    ASTNode* rvalue;
+    TokenType op;
+};
 
 /**
  * @struct ASTBinaryOpNode
@@ -544,6 +572,8 @@ struct ASTNode {
 
     union {
         // Expressions
+        ASTAssignmentNode* assignment; // Out-of-line
+        ASTCompoundAssignmentNode* compound_assignment; // Out-of-line
         ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
         ASTFunctionCallNode* function_call; // Out-of-line
