@@ -11,7 +11,7 @@ TEST_FUNC(Parser_TryExpr_Simple) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("try foo()", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -34,7 +34,7 @@ TEST_FUNC(Parser_TryExpr_Chained) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("try !foo()", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);

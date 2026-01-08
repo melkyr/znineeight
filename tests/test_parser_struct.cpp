@@ -9,7 +9,7 @@ TEST_FUNC(Parser_StructDeclaration_Simple) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("struct { x: i32 }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -38,7 +38,7 @@ TEST_FUNC(Parser_StructDeclaration_Empty) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("struct {}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -57,7 +57,7 @@ TEST_FUNC(Parser_StructDeclaration_MultipleFields) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("struct { a: i32, b: bool, c: *u8 }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -102,7 +102,7 @@ TEST_FUNC(Parser_StructDeclaration_WithTrailingComma) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("struct { x: i32, }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
@@ -120,7 +120,7 @@ TEST_FUNC(Parser_StructDeclaration_ComplexFieldType) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("struct { ptr: *[8]u8 }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);

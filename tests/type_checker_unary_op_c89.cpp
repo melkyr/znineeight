@@ -41,7 +41,7 @@ TEST_FUNC(TypeCheckerUnaryOp_LogicalNotResultType_ShouldBeBool) {
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);
-    Parser parser = unit.createParser(file_id);
+    Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser.parse();
 
     TypeChecker checker(unit);

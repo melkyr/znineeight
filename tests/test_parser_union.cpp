@@ -12,7 +12,7 @@ TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("union {}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 
@@ -31,7 +31,7 @@ TEST_FUNC(Parser_ParseUnionDeclaration_WithFields) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("union { a: i32, b: bool }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parsePrimaryExpr();
 

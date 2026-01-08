@@ -7,7 +7,7 @@ TEST_FUNC(ReturnTypeValidation_Valid) {
     StringInterner interner(arena);
     const char* source = "fn test_fn() -> i32 { return 10; }";
     ParserTestContext context(source, arena, interner);
-    Parser parser = context.getParser();
+    Parser* parser = context.getParser();
     ASTNode* root = parser.parse();
     TypeChecker checker(context.getCompilationUnit());
     checker.check(root);
@@ -21,7 +21,7 @@ TEST_FUNC(ReturnTypeValidation_Invalid) {
     StringInterner interner(arena);
     const char* source = "fn test_fn() -> i32 { return true; }";
     ParserTestContext context(source, arena, interner);
-    Parser parser = context.getParser();
+    Parser* parser = context.getParser();
     ASTNode* root = parser.parse();
     TypeChecker checker(context.getCompilationUnit());
     checker.check(root);

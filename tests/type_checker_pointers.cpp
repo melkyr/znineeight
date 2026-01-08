@@ -11,7 +11,7 @@ TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
     ASSERT_TRUE(ast != NULL);
 
@@ -56,7 +56,7 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
     ASSERT_TRUE(ast != NULL);
 

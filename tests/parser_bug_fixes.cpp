@@ -9,10 +9,10 @@ TEST_FUNC(Parser_Bugfix_HandlesExpressionStatement) {
     // This code uses the simplest possible expression statement.
     // The parser should handle it without crashing.
     ParserTestContext ctx("fn my_func() void { 42; }", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     // The bug causes the parser to abort here.
-    ASTNode* node = parser.parse();
+    ASTNode* node = parser->parse();
 
     // Basic validation to ensure the AST looks correct.
     ASSERT_TRUE(node != NULL);

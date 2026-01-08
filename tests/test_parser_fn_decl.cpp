@@ -13,7 +13,7 @@ TEST_FUNC(Parser_FnDecl_ValidEmpty) {
 
     const char* source = "fn my_func() -> i32 {}";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* fn_decl_node = parser.parseFnDecl();
 

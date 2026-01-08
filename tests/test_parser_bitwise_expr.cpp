@@ -8,7 +8,7 @@ TEST_FUNC(Parser_BitwiseExpr_SimpleAnd) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -27,7 +27,7 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a + b & c", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -56,7 +56,7 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_BitwiseAndAndShift) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b << c", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -85,7 +85,7 @@ TEST_FUNC(Parser_BitwiseExpr_Associativity_Xor) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a ^ b ^ c", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -114,7 +114,7 @@ TEST_FUNC(Parser_BitwiseExpr_ComplexExpression) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a | b & c ^ d << 1", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     // Expected structure: (a | (b & (c ^ (d << 1))))
@@ -151,7 +151,7 @@ TEST_FUNC(Parser_BitwiseExpr_ComparisonPrecedence) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b == 0", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     // Expected structure: ((a & b) == 0)

@@ -9,7 +9,7 @@ TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams) {
     const char* source = "fn add(a: i32, b: i32) -> i32 { return a + b; }";
     ParserTestContext context(source, arena, interner);
 
-    Parser parser = context.getParser();
+    Parser* parser = context.getParser();
     ASTNode* root = parser.parse();
     ASSERT_TRUE(root != NULL);
 
@@ -26,7 +26,7 @@ TEST_FUNC(TypeCheckerFnDecl_InvalidParamType) {
     const char* source = "fn sub(a: NotARealType, b: i32) -> i32 { return a - b; }";
     ParserTestContext context(source, arena, interner);
 
-    Parser parser = context.getParser();
+    Parser* parser = context.getParser();
     ASTNode* root = parser.parse();
     ASSERT_TRUE(root != NULL);
 

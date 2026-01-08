@@ -7,7 +7,7 @@ TEST_FUNC(Parser_ParseEmptyBlock) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -23,7 +23,7 @@ TEST_FUNC(Parser_ParseBlockWithIfStatement) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{if (1) {}}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -42,7 +42,7 @@ TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{while (1) {}}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -61,7 +61,7 @@ TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{if (1) {} while (1) {}}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -83,7 +83,7 @@ TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{;}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -102,7 +102,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{;;}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -124,7 +124,7 @@ TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{}}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -144,7 +144,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{}{}}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 
@@ -168,7 +168,7 @@ TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{};}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseBlockStatement();
 

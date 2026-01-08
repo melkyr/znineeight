@@ -10,6 +10,7 @@
 #include "symbol_table.hpp"
 #include "error_handler.hpp"
 #include <cstring> // For strlen
+#include <new>     // For placement new
 
 class CompilationUnit {
 public:
@@ -24,7 +25,7 @@ public:
         return source_manager_.addFile(filename, source, strlen(source));
     }
 
-    Parser createParser(u32 file_id) {
+    Parser* createParser(u32 file_id) {
         Lexer lexer(source_manager_, interner_, arena_, file_id);
         DynamicArray<Token> tokens(arena_);
         while (true) {
@@ -34,7 +35,8 @@ public:
                 break;
             }
         }
-        return Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
+        void* mem = arena_.alloc(sizeof(Parser));
+        return new (mem) Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
     }
 
     /**

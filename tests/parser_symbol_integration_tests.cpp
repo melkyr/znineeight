@@ -13,7 +13,7 @@ TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
 
     const char* source = "var my_var: i32 = 123;";
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* decl_node = parser.parseVarDecl();
     ASSERT_TRUE(decl_node != NULL);
@@ -37,7 +37,7 @@ TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
     // In this source, the inner 'x' (bool) shadows the outer 'x' (i32).
     const char* source = "{ var x: i32 = 1; { var x: bool = false; } }";
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* block_node = parser.parseStatement();
     ASSERT_TRUE(block_node != NULL);
@@ -58,7 +58,7 @@ TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
 
     const char* source = "{ var a: i32 = 1; { var b: bool = true; } }";
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* block_node = parser.parseStatement();
     ASSERT_TRUE(block_node != NULL);
@@ -78,7 +78,7 @@ TEST_FUNC(Parser_FnDecl_AndScopeManagement) {
 
     const char* source = "fn my_func() -> void { var local: i32 = 1; }";
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     // The global scope should be level 1.
     ASSERT_EQ(table.getCurrentScopeLevel(), 1);

@@ -11,7 +11,7 @@ TEST_FUNC(compilation_unit_creation) {
     const char* source = "const x: i32 = 42;";
     u32 file_id = unit.addSource("test.zig", source);
 
-    Parser parser = unit.createParser(file_id);
+    Parser* parser = unit.createParser(file_id);
 
     ASSERT_TRUE(!parser.is_at_end());
     ASSERT_TRUE(parser.peek().type == TOKEN_CONST);
@@ -24,7 +24,7 @@ TEST_FUNC(compilation_unit_var_decl) {
     const char* source = "const x: i32 = 42;";
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
     ASSERT_TRUE(node != NULL);
