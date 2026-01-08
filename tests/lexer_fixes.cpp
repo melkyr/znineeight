@@ -18,8 +18,8 @@ TEST_FUNC(Lexer_HandlesLongIdentifier) {
 
     // Use the test context to lex the long identifier
     ParserTestContext ctx(long_identifier, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     // Assert that the token is an identifier and its value matches
     ASSERT_TRUE(token.type == TOKEN_IDENTIFIER);
@@ -37,8 +37,8 @@ TEST_FUNC(Lexer_HandlesU64Integer) {
     StringInterner interner(arena);
 
     ParserTestContext ctx(large_uint_str, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     ASSERT_TRUE(token.type == TOKEN_INTEGER_LITERAL);
 
@@ -59,8 +59,8 @@ TEST_FUNC(Lexer_UnterminatedCharHexEscape) {
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     ASSERT_TRUE(token.type == TOKEN_ERROR);
 
@@ -76,8 +76,8 @@ TEST_FUNC(Lexer_UnterminatedStringHexEscape) {
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     ASSERT_TRUE(token.type == TOKEN_ERROR);
 
@@ -93,8 +93,8 @@ TEST_FUNC(Lexer_NumericLookaheadSafety) {
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     // The lexer should identify the first token as an integer literal.
     ASSERT_TRUE(token.type == TOKEN_INTEGER_LITERAL);
@@ -112,8 +112,8 @@ TEST_FUNC(Lexer_UnicodeInStringLiteral) {
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
-    Token token = parser.peek();
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     ASSERT_TRUE(token.type == TOKEN_STRING_LITERAL);
     ASSERT_TRUE(strcmp(token.value.identifier, expected_utf8) == 0);
