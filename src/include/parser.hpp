@@ -39,14 +39,6 @@ public:
      */
     Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table);
 
-private:
-    // Make the Parser non-copyable to prevent accidental shallow copies
-    // that could lead to multiple parsers corrupting the same symbol table.
-    Parser(const Parser& other);
-    Parser& operator=(const Parser& other);
-
-public:
-
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
      * @return A pointer to the root ASTNode of the parsed type. The node is allocated
@@ -306,7 +298,13 @@ public:
     }
 
 private:
-
+    // The copy constructor and assignment operator are declared as private to
+    // prevent shallow copies of the Parser. Shallow copies would lead to memory
+    // corruption, as multiple Parser instances would share the same pointers to
+    // the arena and symbol table without a clear ownership model. Making the
+    // class non-copyable enforces a safer usage pattern.
+    Parser(const Parser& other);
+    Parser& operator=(const Parser& other);
 };
 
 #endif // PARSER_HPP

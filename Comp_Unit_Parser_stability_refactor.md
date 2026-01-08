@@ -1,224 +1,282 @@
-# Compiler Bugfix Report: Parser & CompilationUnit Stability
+Technical Action Plan: Refactoring for Task 107 & Memory Safety
 
-Adhering to 1998-era constraints (C++98, <16MB memory, Win32 API only)
+This document outlines the systematic approach to resolving the Parser shallow-copy memory corruption and implementing strict C89 assignment validation for Milestone 4 (Task 107).
+1. Executive Summary
 
-## Context
+The current architecture suffers from memory corruption because CompilationUnit::createParser() returns a Parser by value, creating shallow copies that share Arena and SymbolTable pointers. The solution transitions the TypeChecker to a Resource-Observer model, where it references the CompilationUnit directly rather than owning a Parser.
+2. Technical Constraints & Context
 
-Per Design.md §3 (Arena Allocation Architecture) and Bootstrap_type_system_and_semantics.md, the compiler uses stateful parsers sharing arena-allocated resources. Two critical bugs prevent Task 105 (Milestone 4) execution:
+    Standard: C++98 (Strict).
 
-1.  **SymbolTable corruption** when parser states are copied
-2.  **Memory exhaustion** from duplicate lexing in `CompilationUnit`
+    Memory: < 16MB Peak.
 
-Both violate memory constraints and crash on low-RAM systems. TDD methodology applies: tests first, then fixes.
+    Allocation: Arena-based (no malloc/free in hot paths).
 
-## Issue 1: Parser State Copying Corrupts SymbolTable
+    Environment: MSVC 6.0 compatibility (Win32 API only).
 
-**Root Cause:** Default copy constructor created shallow copies of `Parser` instances. Copied parsers shared mutable `SymbolTable*` and `ArenaAllocator*` pointers. When multiple parsers modified the same symbol table (e.g., during `parseVarDecl`), arena memory was exhausted or corrupted.
+3. The Implementation Plan
+Phase 1: AST & Infrastructure Setup
 
-**Reproduction Test (parser_tests.cpp):**
+    Task 1.1: Update ast.hpp with assignment node types.
 
-```cpp
-TEST_FUNC(Parser_CopiedState_DoesNotCorruptSymbolTable) {
-    // This test is designed to reproduce the SymbolTable memory exhaustion bug.
-    // The arena is small, and the test mimics the unsafe use of a copied parser
-    // that modifies the shared symbol table.
-    ArenaAllocator arena(8192);
-    StringInterner interner(arena);
-    const char* source = "var x: i32 = 42;";
+    Task 1.2: Update Parser.h to make the class non-copyable.
 
-    ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();  // UNSAFE COPY OCCURS HERE
+    Task 1.3: Modify CompilationUnit to return Parser* from createParser().
 
-    // Calling the top-level parse() method ensures that the global scope is
-    // managed correctly by the parser, preventing the symbol table corruption.
-    ASTNode* root = parser.parse();
+Required AST Additions (ast.hpp)
+C++
 
-    // The test now passes if it completes without crashing.
-    ASSERT_TRUE(root != NULL);
-    return true;
-}
-```
+// Add to NodeType enum
+NODE_ASSIGNMENT,
+NODE_COMPOUND_ASSIGNMENT,
 
-**Failure Mode:** Test crashes with `ArenaAllocator` exhaustion on Win98-class hardware (8MB RAM).
+// Struct definitions
+typedef struct {
+    struct ASTNode* lvalue;
+    struct ASTNode* rvalue;
+} ASTAssignmentNode;
 
-## Issue 2: CompilationUnit Re-Lexes Source Files
+typedef struct {
+    struct ASTNode* lvalue;
+    struct ASTNode* rvalue;
+    TokenKind op; 
+} ASTCompoundAssignmentNode;
 
-**Root Cause:** `CompilationUnit::createParser()` lexed source files on every call, ignoring prior tokenization. This duplicated token arrays in the arena, exhausting memory before semantic analysis.
+// Add to ASTNode union
+union {
+    // ... existing ...
+    ASTAssignmentNode assignment;
+    ASTCompoundAssignmentNode compound_assignment;
+} as;
 
-**Reproduction Test (compilation_unit_tests.cpp):**
+Phase 2: Logic Implementation (TypeChecker)
 
-```cpp
-bool test_CompilationUnit_CreateParser_DoesNotReLex() {
-    // This test is designed to fail due to memory exhaustion if CompilationUnit
-    // re-lexes the source file every time createParser is called.
-    // The arena is sized to be just barely large enough for one tokenization pass, but not two.
-    ArenaAllocator arena(256);
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
+The following code must be implemented in type_checker.hpp and type_checker.cpp.
+TypeChecker.h
+C++
 
-    const char* source = "var my_variable: i32 = 12345 + 67890;";
-    u32 file_id = comp_unit.addSource("test.zig", source);
+#include "compilation_unit.hpp"
 
-    // The first call should succeed.
-    Parser parser1 = comp_unit.createParser(file_id);
-    (void)parser1; // Suppress unused variable warning
-
-    // The second call should also succeed IF tokens are cached.
-    // If they are not, it will re-lex and exhaust the arena.
-    // We don't need an assertion; the test will crash if the bug exists.
-    Parser parser2 = comp_unit.createParser(file_id);
-    (void)parser2; // Suppress unused variable warning
-
-    return true;
-}
-```
-
-**Failure Mode:** Fatal `ArenaAllocator` failure on second `createParser()` call.
-
-## Suggested Fixes
-
-### Fix 1: Disable Parser Copying (C++98 Compliant)
-
-**Implementation (parser.hpp):**
-
-```cpp
-class Parser {
-private:
-    // ... existing members ...
-
-    // Prevent copying per C++98 standard (MSVC 6.0 compatible)
-    Parser(const Parser&);
-    Parser& operator=(const Parser&);
-
+class TypeChecker {
 public:
-    // ... existing public interface ...
-};
-```
+    TypeChecker(CompilationUnit& unit) : unit(unit) {}
+    void check(ASTNode* root);
 
-**Rationale:**
+private:
+    CompilationUnit& unit;
 
-*   Eliminates shared `SymbolTable` state by making copying impossible
-*   Zero runtime overhead (compile-time enforcement)
-*   Aligns with `Design.md` §3: "Parsers own exclusive arena slices"
+    Type* visit(ASTNode* node);
+    Type* visitAssignment(ASTAssignmentNode* node);
+    Type* visitCompoundAssignment(ASTCompoundAssignmentNode* node);
+    Type* visitIdentifier(ASTIdentifierNode* node);
+    Type* visitBinaryOp(ASTBinaryOpNode* node);
+    Type* visitUnaryOp(ASTUnaryOpNode* node);
+    Type* visitArrayAccess(ASTArrayAccessNode* node);
+    Type* visitFieldAccess(ASTFieldAccessNode* node);
 
-### Fix 2: Token Caching in CompilationUnit
-
-**Implementation (compilation_unit.hpp):**
-
-```cpp
-struct FileTokenCache {
-    u32 file_id;
-    Token* tokens;
-    u32 token_count;
-
-    FileTokenCache(u32 fid, ArenaAllocator& arena)
-        : file_id(fid), tokens(NULL), token_count(0) {}
+    bool isLValueConst(ASTNode* node);
+    Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenKind op, SourceLocation loc);
+    bool areTypesCompatible(Type* left, Type* right);
+    void fatalError(const char* msg);
+    Type* findStructField(Type* struct_type, const char* field_name);
 };
 
-class CompilationUnit {
-private:
-    DynamicArray<FileTokenCache> token_cache_;
-    // ... other members
+TypeChecker.cpp
 
-public:
-    CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
-        : /* ... */, token_cache_(arena) {} // Initialize cache
+    Note: This implementation adheres to the provided specification, ensuring fatalError is used for Task 107 strict C89 compliance.
 
-    Parser createParser(u32 file_id) {
-        // Check cache FIRST
-        for (u32 i = 0; i < token_cache_.length(); ++i) {
-            if (token_cache_[i].file_id == file_id) {
-                return Parser(
-                    token_cache_[i].tokens,
-                    token_cache_[i].token_count,
-                    &arena_,
-                    &symbol_table_
-                );
-            }
-        }
+C++
 
-        // Lex ONLY if uncached (original logic)
-        Lexer lexer(source_manager_, interner_, arena_, file_id);
-        DynamicArray<Token> tokens(arena_);
-        // ... lexing loop ...
+#include "type_checker.hpp"
+#include "ast.hpp"
+#include "type_system.hpp"
+#include <cstring>
 
-        // Cache tokens in arena-persistent memory
-        FileTokenCache entry(file_id, arena_);
-        entry.tokens = arena_.allocArray<Token>(tokens.length());
-        memcpy(entry.tokens, tokens.getData(), sizeof(Token) * tokens.length());
-        entry.token_count = tokens.length();
-        token_cache_.append(entry);
+void TypeChecker::check(ASTNode* root) {
+    visit(root);
+}
 
-        return Parser(entry.tokens, entry.token_count, &arena_, &symbol_table_);
+Type* TypeChecker::visit(ASTNode* node) {
+    if (!node) return NULL;
+    if (node->resolved_type) return node->resolved_type;
+
+    Type* resolved_type = NULL;
+    switch (node->type) {
+        case NODE_ASSIGNMENT:
+            resolved_type = visitAssignment(&node->as.assignment);
+            break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            resolved_type = visitCompoundAssignment(&node->as.compound_assignment);
+            break;
+        case NODE_IDENTIFIER:
+            resolved_type = visitIdentifier(&node->as.identifier);
+            break;
+        case NODE_BINARY_OP:
+            resolved_type = visitBinaryOp(&node->as.binary_op);
+            break;
+        case NODE_UNARY_OP:
+            resolved_type = visitUnaryOp(&node->as.unary_op);
+            break;
+        case NODE_ARRAY_ACCESS:
+            resolved_type = visitArrayAccess(&node->as.array_access);
+            break;
+        default: break;
     }
-};
-```
 
-**Rationale:**
+    node->resolved_type = resolved_type;
+    return resolved_type;
+}
 
-*   Tokens persist for `CompilationUnit` lifetime (no dangling pointers)
-*   Uses `memcpy` for MSVC 6.0 compatibility (no STL algorithms)
-*   Peak memory reduced by 62% in low-memory tests (8MB target)
+Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
+    Type* lvalue_type = visit(node->lvalue);
+    if (!lvalue_type) return NULL;
 
-## Documentation Updates
+    if (isLValueConst(node->lvalue)) {
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "Cannot assign to const location");
+        unit.getErrorHandler().report(ERR_INVALID_OPERATION, node->lvalue->loc, msg_buffer, &unit.getArena());
+        fatalError("Assignment validation failed");
+        return NULL;
+    }
 
-**Bootstrap_type_system_and_semantics.md:**
+    Type* rvalue_type = visit(node->rvalue);
+    if (!rvalue_type) return NULL;
 
-```markdown
-## Memory Safety Updates (Milestone 4)
-- **Parser instances are non-copyable** (compile-time enforcement). Always pass by reference.
-- **Token caching**: `CompilationUnit` stores tokens per-file in arena memory.
-  *Lifetime guarantee:* Tokens valid until `CompilationUnit` destruction.
-- **Arena impact:** Prevents duplicate allocations for identical source files.
-```
+    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
+        char msg_buffer[256];
+        const char* ltype_str = lvalue_type->name ? lvalue_type->name : "unknown";
+        const char* rtype_str = rvalue_type->name ? rvalue_type->name : "unknown";
+        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->rvalue->loc, msg_buffer, &unit.getArena());
+        fatalError("Assignment validation failed");
+        return NULL;
+    }
+    return lvalue_type;
+}
 
-**AST_parser.md:**
+Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
+    Type* lvalue_type = visit(node->lvalue);
+    if (!lvalue_type || isLValueConst(node->lvalue)) {
+        fatalError("Assignment validation failed");
+        return NULL;
+    }
 
-```markdown
-### Critical Constraint (C++98)
-> NEVER create copies of `Parser` objects. Use references exclusively:
-> ```cpp
-> Parser& safe_parser = ctx.getParser(); // CORRECT
-> Parser bad_copy = ctx.getParser();    // LINK ERROR
-> ```
-```
+    Type* rvalue_type = visit(node->rvalue);
+    if (!rvalue_type) return NULL;
 
-## Methodology
+    TokenKind binary_op;
+    switch (node->op) {
+        case TOKEN_PLUS_EQUAL: binary_op = TOKEN_PLUS; break;
+        case TOKEN_MINUS_EQUAL: binary_op = TOKEN_MINUS; break;
+        case TOKEN_STAR_EQUAL: binary_op = TOKEN_STAR; break;
+        case TOKEN_SLASH_EQUAL: binary_op = TOKEN_SLASH; break;
+        case TOKEN_PERCENT_EQUAL: binary_op = TOKEN_PERCENT; break;
+        default: fatalError("Unknown compound assignment operator"); return NULL;
+    }
 
-**TDD Workflow:**
+    Type* result_of_op_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->rvalue->loc);
+    if (!result_of_op_type || !areTypesCompatible(lvalue_type, result_of_op_type)) {
+        fatalError("Assignment validation failed");
+        return NULL;
+    }
+    return lvalue_type;
+}
 
-1.  Wrote failing tests first (reproduced exact crash conditions)
-2.  Verified fixes against original tests (no memory exhaustion)
-3.  Added negative test: `test_Parser_IsNotCopyable()` (compile-time check)
+Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
+    Type* array_type = visit(node->array);
+    Type* index_type = visit(node->index);
 
-**Constraint Adherence:**
+    if (!array_type || !index_type) return NULL;
+    if (array_type->kind != TYPE_ARRAY && array_type->kind != TYPE_POINTER) return NULL;
+    if (index_type->kind < TYPE_I8 || index_type->kind > TYPE_USIZE) return NULL;
 
-*   **Memory:** Cached tokens share arena space; peak usage <14.2MB verified
-*   **C++98:**
-    *   No `long long` (used `__int64` where needed)
-    *   Manual `memcpy` instead of `<algorithm>`
-    *   No templates beyond `DynamicArray` (per approved design)
-*   **Win32:** Zero third-party dependencies; `kernel32.dll` only
+    return (array_type->kind == TYPE_ARRAY) ? array_type->as.array.element_type : array_type->as.pointer.base;
+}
 
-**Architecture Alignment:**
+Type* TypeChecker::visitFieldAccess(ASTFieldAccessNode* node) {
+    Type* container_type = visit(node->container);
+    if (!container_type || (container_type->kind != TYPE_STRUCT && container_type->kind != TYPE_UNION)) return NULL;
 
-*   Fixes preserve arena allocation strategy (`Design.md` §3)
-*   Symbol table integrity restored via parser state ownership
-*   Token caching respects "single allocation per logical unit" principle
+    Type* field_type = findStructField(container_type, node->field_name);
+    if (!field_type) return NULL;
 
-**Verification Command:**
+    return field_type;
+}
 
-```bash
-msvc60_compile.bat --test --memory-limit=16384
-```
+Type* TypeChecker::visitIdentifier(ASTIdentifierNode* node) {
+    Symbol* symbol = unit.getSymbolTable().lookup(node->name);
+    if (!symbol) return NULL;
+    return symbol->symbol_type;
+}
 
-**Result:** All parser/lexer tests pass on emulated Win98 (8MB RAM).
+bool TypeChecker::isLValueConst(ASTNode* node) {
+    if (!node) return false;
+    switch (node->type) {
+        case NODE_IDENTIFIER: {
+            Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
+            return (symbol && symbol->details && ((ASTVarDeclNode*)symbol->details)->is_const);
+        }
+        case NODE_UNARY_OP:
+            if (node->as.unary_op.op == TOKEN_STAR) {
+                Type* ptr_type = visit(node->as.unary_op.operand);
+                return (ptr_type && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
+            }
+            return false;
+        default: return false;
+    }
+}
 
-Documentation updated per `lexer.md` and `AST_parser.md` requirements. No future reverse-engineering needed.
+Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenKind op, SourceLocation loc) {
+    if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
+        return left; // Simplified promotion
+    }
+    return NULL;
+}
 
----
+bool TypeChecker::areTypesCompatible(Type* left, Type* right) {
+    if (!left || !right) return false;
+    return left->kind == right->kind; 
+}
 
-# Test Refactoring Guide
+void TypeChecker::fatalError(const char* msg) {
+#ifdef _WIN32
+    OutputDebugStringA("TypeChecker Fatal Error: ");
+    OutputDebugStringA(msg);
+    OutputDebugStringA("\n");
+#endif
+    abort();
+}
+
+Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
+    if (struct_type->kind != TYPE_STRUCT) return NULL;
+    // Placeholder for field lookup logic
+    return NULL;
+}
+
+4. Test Refactoring Roadmap
+
+To resolve the 300+ non-compiling tests, follow this grouped action plan. Each group represents a set of tests that must be updated to the new TypeChecker(CompilationUnit&) constructor and Parser* return type.
+Group 1: Core Infrastructure (Highest Priority)
+
+    Infrastructure: Update test_DynamicArray, test_ArenaAllocator, and test_SymbolTable.
+
+    Action: Ensure memory safety is confirmed before proceeding to logic.
+
+Group 2: Lexer Logic
+
+    Float/Integer/String Literals: Refactor all test_Lexer_... to utilize the CompilationUnit for source management.
+
+    Action: Update setup methods to create a CompilationUnit instance first.
+
+Group 3: Parser & AST (Bulk Work)
+
+    Postfix/Binary/Unary: Update tests in Group 3A and 3B.
+
+    Declarations: Refactor Group 3C (Structs/Unions), 3D (Enums), and 3E (Functions).
+
+    Control Flow: Fix Group 3F (If, For, Blocks).
+
+# Tests Guide
 
 This guide provides a structured approach to refactoring the test suite. The tests are grouped by functionality to allow for incremental updates. To disable a group, comment out the corresponding test functions in the `tests` array within `tests/main.cpp`.
 
@@ -626,3 +684,77 @@ This guide provides a structured approach to refactoring the test suite. The tes
 // test_C89Compat_FunctionTypeValidation,
 // test_TypeChecker_Bool_Literals,
 ```
+
+Phase 1: AST & Infrastructure Foundations
+
+Goal: Prepare the data structures and prevent further memory corruption by enforcing the "No-Copy" rule.
+
+    [ ] Task 1.1: Add NODE_ASSIGNMENT and NODE_COMPOUND_ASSIGNMENT to the NodeType enum in ast.hpp.
+
+    [ ] Task 1.2: Define ASTAssignmentNode and ASTCompoundAssignmentNode structs in ast.hpp.
+
+    [ ] Task 1.3: Update the ASTNode union in ast.hpp to include the two new assignment nodes.
+
+    [ ] Task 1.4: In parser.hpp, move the Parser copy constructor and assignment operator to the private section to trigger compiler errors wherever copying occurs.
+
+    [ ] Task 1.5: Change the return type of CompilationUnit::createParser() from Parser to Parser*.
+
+    [ ] Task 1.6: Update createParser() implementation to allocate the Parser instance using the arena_.
+
+Phase 2: TypeChecker Architecture Migration
+
+Goal: Transition the TypeChecker from owning a parser to observing the CompilationUnit.
+
+    [ ] Task 2.1: Modify the TypeChecker constructor in type_checker.hpp to accept CompilationUnit& unit.
+
+    [ ] Task 2.2: Update the TypeChecker private member from Parser parser_ to CompilationUnit& unit.
+
+    [ ] Task 2.3: Update the TypeChecker::visit dispatcher switch-case to include routes for NODE_ASSIGNMENT and NODE_COMPOUND_ASSIGNMENT.
+
+    [ ] Task 2.4: Implement the fatalError wrapper using OutputDebugStringA and abort() for strict C89 compliance.
+
+Phase 3: Assignment & L-Value Logic
+
+Goal: Implement the specific semantic rules for Milestone 4 / Task 107.
+
+    [ ] Task 3.1: Implement isLValueConst to check the is_const flag on Symbol metadata.
+
+    [ ] Task 3.2: Implement visitAssignment with the 3-step check:
+
+        Is L-value valid?
+
+        Is it non-const?
+
+        Are types compatible?
+
+    [ ] Task 3.3: Implement visitCompoundAssignment with operator mapping (e.g., += → +).
+
+    [ ] Task 3.4: Implement checkBinaryOpCompatibility for basic numeric types (I8 through F64).
+
+    [ ] Task 3.5: Implement findStructField placeholder to allow the compiler to build (stubbed for now).
+
+Phase 4: Incremental Test Refactoring (The 300+ Fix)
+
+Goal: Restore the test suite by updating setup logic to the new pointer-based model.
+
+    [ ] Task 4.1: Global Search & Replace: Identify all instances of TypeChecker tc(parser) and prepare to update them to TypeChecker tc(unit).
+
+    [ ] Task 4.2: Group 1 Fix: Update all tests in Group 1A and 1B (Core Infrastructure). Verify they compile and pass.
+
+    [ ] Task 4.3: Group 2 Fix: Update all Lexer tests. Since Lexers often don't need TypeChecker, ensure the Parser* update is applied correctly.
+
+    [ ] Task 4.4: Group 3 Fix (Batch A): Update Group 3A (Basic AST) and 3B (Expressions).
+
+    [ ] Task 4.5: Group 3 Fix (Batch B): Update Group 3C through 3G (Declarations and Control Flow).
+
+    [ ] Task 4.6: Run the full suite and ensure 0 compilation errors remain.
+
+Phase 5: Documentation & Handover
+
+Goal: Seal the task so the next AI agent or developer has full context.
+
+    [ ] Task 5.1: Update AST_parser.md with the new node diagrams and struct layouts.
+
+    [ ] Task 5.2: Add the "L-Value & Assignment" section to Bootstrap_type_system_and_semantics.md.
+
+    [ ] Task 5.3: Update AI_tasks.md: Mark Task 107 as "Completed" and note the shift to the CompilationUnit reference model.
