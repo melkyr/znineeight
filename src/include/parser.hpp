@@ -40,45 +40,6 @@ public:
     Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table);
 
     /**
-     * @brief Copy constructor.
-     *
-     * Creates a new Parser that views the same token stream but has an
-     * independent parsing state (e.g., its own current position). This is a
-     * safe and cheap shallow copy.
-     *
-     * @param other The Parser instance to copy from.
-     */
-    Parser(const Parser& other)
-        : tokens_(other.tokens_),
-          token_count_(other.token_count_),
-          current_index_(other.current_index_),
-          arena_(other.arena_),
-          symbol_table_(other.symbol_table_),
-          recursion_depth_(other.recursion_depth_) {
-    }
-
-    /**
-     * @brief Assignment operator.
-     *
-     * Assigns this Parser to be a copy of another, viewing the same token
-     * stream but with an independent parsing state.
-     *
-     * @param other The Parser instance to assign from.
-     * @return A reference to this Parser instance.
-     */
-    Parser& operator=(const Parser& other) {
-        if (this != &other) { // Self-assignment check
-            tokens_ = other.tokens_;
-            token_count_ = other.token_count_;
-            current_index_ = other.current_index_;
-            arena_ = other.arena_;
-            symbol_table_ = other.symbol_table_;
-            recursion_depth_ = other.recursion_depth_;
-        }
-        return *this;
-    }
-
-    /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
      * @return A pointer to the root ASTNode of the parsed type. The node is allocated
      *         from the parser's ArenaAllocator.
@@ -337,7 +298,13 @@ public:
     }
 
 private:
-
+    // The copy constructor and assignment operator are declared as private to
+    // prevent shallow copies of the Parser. Shallow copies would lead to memory
+    // corruption, as multiple Parser instances would share the same pointers to
+    // the arena and symbol table without a clear ownership model. Making the
+    // class non-copyable enforces a safer usage pattern.
+    Parser(const Parser& other);
+    Parser& operator=(const Parser& other);
 };
 
 #endif // PARSER_HPP
