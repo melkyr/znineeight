@@ -34,8 +34,6 @@ public:
                 break;
             }
         }
-        // The Parser is now allocated on the arena to tie its lifetime to the
-        // CompilationUnit and avoid shallow-copy memory corruption.
         void* mem = arena_.alloc(sizeof(Parser));
         return new (mem) Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
     }
