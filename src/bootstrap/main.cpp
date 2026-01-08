@@ -14,8 +14,8 @@ int main(int argc, char* argv[]) {
         CompilationUnit unit(arena, interner);
         u32 file_id = unit.addSource("test.zig", source);
 
-        Parser parser = unit.createParser(file_id);
-        ASTNode* root = parser.parse();
+        Parser* parser = unit.createParser(file_id);
+        ASTNode* root = parser->parse();
 
         TypeChecker checker(unit);
         checker.check(root);

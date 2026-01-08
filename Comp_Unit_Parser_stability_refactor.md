@@ -19,9 +19,9 @@ Phase 1: AST & Infrastructure Setup
 
     Task 1.1: Update ast.hpp with assignment node types.
 
-    Task 1.2: Update Parser.h to make the class non-copyable.
+    Task 1.2: Update Parser.h to make the class non-copyable. [DONE]
 
-    Task 1.3: Modify CompilationUnit to return Parser* from createParser().
+    Task 1.3: Modify CompilationUnit to return Parser* from createParser(). [DONE]
 
 Required AST Additions (ast.hpp)
 C++
@@ -695,11 +695,11 @@ Goal: Prepare the data structures and prevent further memory corruption by enfor
 
     [ ] Task 1.3: Update the ASTNode union in ast.hpp to include the two new assignment nodes.
 
-    [ ] Task 1.4: In parser.hpp, move the Parser copy constructor and assignment operator to the private section to trigger compiler errors wherever copying occurs.
+    [x] Task 1.4: In parser.hpp, move the Parser copy constructor and assignment operator to the private section to trigger compiler errors wherever copying occurs.
 
-    [ ] Task 1.5: Change the return type of CompilationUnit::createParser() from Parser to Parser*.
+    [x] Task 1.5: Change the return type of CompilationUnit::createParser() from Parser to Parser*.
 
-    [ ] Task 1.6: Update createParser() implementation to allocate the Parser instance using the arena_.
+    [x] Task 1.6: Update createParser() implementation to allocate the Parser instance using the arena_.
 
 Phase 2: TypeChecker Architecture Migration
 

@@ -24,7 +24,7 @@ public:
         return source_manager_.addFile(filename, source, strlen(source));
     }
 
-    Parser createParser(u32 file_id) {
+    Parser* createParser(u32 file_id) {
         Lexer lexer(source_manager_, interner_, arena_, file_id);
         DynamicArray<Token> tokens(arena_);
         while (true) {
@@ -34,7 +34,10 @@ public:
                 break;
             }
         }
-        return Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
+        // The Parser is now allocated on the arena to tie its lifetime to the
+        // CompilationUnit and avoid shallow-copy memory corruption.
+        void* mem = arena_.alloc(sizeof(Parser));
+        return new (mem) Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
     }
 
     /**
