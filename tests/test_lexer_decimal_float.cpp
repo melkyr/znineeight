@@ -1,6 +1,5 @@
 #include "test_utils.hpp"
 #include "lexer.hpp"
-#include "source_manager.hpp"
 #include "string_interner.hpp"
 #include "memory.hpp"
 #include "test_framework.hpp"
@@ -9,10 +8,9 @@
 static bool test_float_lexing(const char* source, double expected_value) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
-    Token token = lexer.nextToken();
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    Token token = parser->peek();
 
     ASSERT_TRUE(token.type == TOKEN_FLOAT_LITERAL);
     // Using a small epsilon for float comparison

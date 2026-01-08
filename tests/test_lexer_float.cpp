@@ -1,6 +1,6 @@
 #include "test_framework.hpp"
+#include "test_utils.hpp"
 #include "lexer.hpp"
-#include "source_manager.hpp"
 #include "memory.hpp"
 #include "string_interner.hpp"
 
@@ -8,11 +8,9 @@
 
 // Helper function to initialize lexer and get the first token
 static Token lex_string(const char* source, ArenaAllocator& alloc) {
-    SourceManager sm(alloc);
     StringInterner interner(alloc);
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, alloc, file_id);
-    return lexer.nextToken();
+    ParserTestContext ctx(source, alloc, interner);
+    return ctx.getParser()->peek();
 }
 
 // Helper for comparing floats
@@ -21,7 +19,7 @@ static bool compare_floats(double a, double b) {
 }
 
 TEST_FUNC(Lexer_FloatSimpleDecimal) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("3.14", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 3.14));
@@ -29,7 +27,7 @@ TEST_FUNC(Lexer_FloatSimpleDecimal) {
 }
 
 TEST_FUNC(Lexer_FloatNoFractionalPart) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("123.", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 123.0));
@@ -37,14 +35,14 @@ TEST_FUNC(Lexer_FloatNoFractionalPart) {
 }
 
 TEST_FUNC(Lexer_FloatNoIntegerPart) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string(".123", alloc); // Invalid: must have digits before '.'
     ASSERT_EQ(token.type, TOKEN_ERROR);
     return true;
 }
 
 TEST_FUNC(Lexer_FloatWithExponent) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("1.23e+4", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 1.23e+4));
@@ -52,7 +50,7 @@ TEST_FUNC(Lexer_FloatWithExponent) {
 }
 
 TEST_FUNC(Lexer_FloatWithNegativeExponent) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("5.67E-8", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 5.67E-8));
@@ -60,7 +58,7 @@ TEST_FUNC(Lexer_FloatWithNegativeExponent) {
 }
 
 TEST_FUNC(Lexer_FloatExponentNoSign) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("9.0e10", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 9.0e10));
@@ -68,7 +66,7 @@ TEST_FUNC(Lexer_FloatExponentNoSign) {
 }
 
 TEST_FUNC(Lexer_FloatIntegerWithExponent) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("1e10", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 1e10));
@@ -76,17 +74,16 @@ TEST_FUNC(Lexer_FloatIntegerWithExponent) {
 }
 
 TEST_FUNC(Lexer_FloatExponentNoDigits) {
-    ArenaAllocator alloc(1024);
-    SourceManager sm(alloc);
+    ArenaAllocator alloc(8192);
     StringInterner interner(alloc);
-    u32 file_id = sm.addFile("test.zig", "1.2e", 4);
-    Lexer lexer(sm, interner, alloc, file_id);
+    ParserTestContext ctx("1.2e", alloc, interner);
+    Parser* parser = ctx.getParser();
 
-    Token t1 = lexer.nextToken();
+    Token t1 = parser->advance();
     ASSERT_EQ(t1.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(t1.value.floating_point, 1.2));
 
-    Token t2 = lexer.nextToken();
+    Token t2 = parser->advance();
     ASSERT_EQ(t2.type, TOKEN_IDENTIFIER);
     ASSERT_STREQ(t2.value.identifier, "e");
     return true;
@@ -94,7 +91,7 @@ TEST_FUNC(Lexer_FloatExponentNoDigits) {
 
 
 TEST_FUNC(Lexer_FloatHexSimple) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("0x1.Ap2", alloc); // 1.625 * 2^2 = 6.5
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 6.5));
@@ -102,7 +99,7 @@ TEST_FUNC(Lexer_FloatHexSimple) {
 }
 
 TEST_FUNC(Lexer_FloatHexNoFractionalPart) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("0x10p-1", alloc); // 16 * 2^-1 = 8.0
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 8.0));
@@ -110,7 +107,7 @@ TEST_FUNC(Lexer_FloatHexNoFractionalPart) {
 }
 
 TEST_FUNC(Lexer_FloatHexNegativeExponent) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     Token token = lex_string("0xAB.CDp-4", alloc);
     ASSERT_EQ(token.type, TOKEN_FLOAT_LITERAL);
     ASSERT_TRUE(compare_floats(token.value.floating_point, 10.737548828125));
@@ -118,7 +115,7 @@ TEST_FUNC(Lexer_FloatHexNegativeExponent) {
 }
 
 TEST_FUNC(Lexer_FloatHexInvalidFormat) {
-    ArenaAllocator alloc(1024);
+    ArenaAllocator alloc(8192);
     // Missing 'p' or 'P'
     Token token1 = lex_string("0x1.A", alloc);
     ASSERT_EQ(token1.type, TOKEN_ERROR);
