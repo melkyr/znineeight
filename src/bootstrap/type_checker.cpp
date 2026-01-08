@@ -2,9 +2,12 @@
 #include "c89_type_mapping.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
-#include <cstdio> // For sprintf
-
+#include <cstdio> // For snprintf
 #include <cstdlib> // For abort()
+
+#if defined(_WIN32)
+#include <windows.h> // For OutputDebugStringA
+#endif
 
 // Helper to get the string representation of a binary operator token.
 static const char* getTokenSpelling(TokenType op) {
@@ -52,6 +55,8 @@ Type* TypeChecker::visit(ASTNode* node) {
 
     Type* resolved_type = NULL;
     switch (node->type) {
+        case NODE_ASSIGNMENT:       resolved_type = visitAssignment(node->as.assignment); break;
+        case NODE_COMPOUND_ASSIGNMENT: resolved_type = visitCompoundAssignment(node->as.compound_assignment); break;
         case NODE_UNARY_OP:         resolved_type = visitUnaryOp(node, &node->as.unary_op); break;
         case NODE_BINARY_OP:        resolved_type = visitBinaryOp(node, node->as.binary_op); break;
         case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
@@ -440,6 +445,16 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
     }
 
     return callee_type->as.function.return_type;
+}
+
+Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
+    fatalError(node->lvalue->loc, "Assignment expressions are not yet supported by the type checker.");
+    return NULL; // Unreachable
+}
+
+Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
+    fatalError(node->lvalue->loc, "Compound assignment expressions are not yet supported by the type checker.");
+    return NULL; // Unreachable
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
@@ -952,14 +967,20 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
 
 
 void TypeChecker::fatalError(SourceLocation loc, const char* message) {
-    // For now, we'll just print to stderr and abort.
-    // In the future, this could be integrated with the ErrorHandler.
+    char buffer[512];
     const SourceFile* file = unit.getSourceManager().getFile(loc.file_id);
-    fprintf(stderr, "Fatal type error at %s:%d:%d: %s\n",
-            file ? file->filename : "<unknown>",
-            loc.line,
-            loc.column,
-            message);
+    snprintf(buffer, sizeof(buffer), "Fatal type error at %s:%d:%d: %s\n",
+             file ? file->filename : "<unknown>",
+             loc.line,
+             loc.column,
+             message);
+
+#if defined(_WIN32)
+    OutputDebugStringA(buffer);
+#else
+    fprintf(stderr, "%s", buffer);
+#endif
+
     abort();
 }
 

@@ -17,6 +17,8 @@ public:
     Type* visit(ASTNode* node);
     Type* visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node);
     Type* visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node);
+    Type* visitAssignment(ASTAssignmentNode* node);
+    Type* visitCompoundAssignment(ASTCompoundAssignmentNode* node);
     Type* visitFunctionCall(ASTFunctionCallNode* node);
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
