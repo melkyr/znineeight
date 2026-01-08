@@ -13,7 +13,7 @@ TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr) {
 
     const char* source = "var x: i32 = 10 + 20;";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -60,7 +60,7 @@ TEST_FUNC(ParserIntegration_LogicalAnd) {
     {
         const char* source = "if (a and b) {}";
         ParserTestContext ctx(source, arena, interner);
-        Parser parser = ctx.getParser();
+        Parser* parser = ctx.getParser();
         ASTNode* node = parser.parseIfStatement();
         ASSERT_TRUE(node != NULL);
         ASTIfStmtNode* if_stmt = node->as.if_stmt;
@@ -78,7 +78,7 @@ TEST_FUNC(ParserIntegration_DeferStatement) {
 
     const char* source = "defer file.close();";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseDeferStatement();
 
@@ -110,7 +110,7 @@ TEST_FUNC(ParserIntegration_StructDeclaration) {
 
     const char* source = "const MyStruct = struct { a: i32, b: bool, };";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -158,7 +158,7 @@ TEST_FUNC(ParserIntegration_SwitchExpression) {
         "    else => 30,\n"
         "};\n";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -214,7 +214,7 @@ TEST_FUNC(ParserIntegration_ForLoopOverSlice) {
     // This is a guess at the slice syntax, as it's not fully documented.
     const char* source = "for (my_slice[0..4]) |item| {}";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseForStatement();
 
@@ -283,7 +283,7 @@ TEST_FUNC(ParserIntegration_ComprehensiveFunction) {
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* node = parser.parseFnDecl();
 
     // High-level checks: Just ensure it parses and has the basic structure.
@@ -310,7 +310,7 @@ TEST_FUNC(ParserIntegration_WhileWithFunctionCall) {
 
     const char* source = "while (should_continue()) {}";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseWhileStatement();
 
@@ -346,7 +346,7 @@ TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
 
     const char* source = "if (a and (b or c)) {}";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseIfStatement();
 

@@ -39,44 +39,13 @@ public:
      */
     Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table);
 
-    /**
-     * @brief Copy constructor.
-     *
-     * Creates a new Parser that views the same token stream but has an
-     * independent parsing state (e.g., its own current position). This is a
-     * safe and cheap shallow copy.
-     *
-     * @param other The Parser instance to copy from.
-     */
-    Parser(const Parser& other)
-        : tokens_(other.tokens_),
-          token_count_(other.token_count_),
-          current_index_(other.current_index_),
-          arena_(other.arena_),
-          symbol_table_(other.symbol_table_),
-          recursion_depth_(other.recursion_depth_) {
-    }
+private:
+    // Make the Parser non-copyable to prevent accidental shallow copies
+    // that could lead to multiple parsers corrupting the same symbol table.
+    Parser(const Parser& other);
+    Parser& operator=(const Parser& other);
 
-    /**
-     * @brief Assignment operator.
-     *
-     * Assigns this Parser to be a copy of another, viewing the same token
-     * stream but with an independent parsing state.
-     *
-     * @param other The Parser instance to assign from.
-     * @return A reference to this Parser instance.
-     */
-    Parser& operator=(const Parser& other) {
-        if (this != &other) { // Self-assignment check
-            tokens_ = other.tokens_;
-            token_count_ = other.token_count_;
-            current_index_ = other.current_index_;
-            arena_ = other.arena_;
-            symbol_table_ = other.symbol_table_;
-            recursion_depth_ = other.recursion_depth_;
-        }
-        return *this;
-    }
+public:
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).

@@ -12,7 +12,7 @@ TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -41,7 +41,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -59,7 +59,7 @@ TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -77,7 +77,7 @@ TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -106,7 +106,7 @@ TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -135,7 +135,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);
@@ -206,7 +206,7 @@ TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
     ASTNode* ast = parser.parse();
 
     TypeChecker type_checker(comp_unit);

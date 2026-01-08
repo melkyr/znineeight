@@ -12,7 +12,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
 
     const char* source = "const x: bool = a and b;";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseVarDecl();
 
@@ -38,7 +38,7 @@ TEST_FUNC(ParserBug_TopLevelStruct) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parse();
 
@@ -61,7 +61,7 @@ TEST_FUNC(ParserBug_UnionFieldNodeType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parse();
     ASTBlockStmtNode* block = &node->as.block_stmt;
@@ -81,7 +81,7 @@ TEST_FUNC(ParserBug_TopLevelUnion) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parse();
 

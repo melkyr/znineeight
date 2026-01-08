@@ -10,7 +10,7 @@ TEST_FUNC(Parser_IfStatement_Simple) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("if (1) {}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* if_stmt_node = parser.parseIfStatement();
 
@@ -32,7 +32,7 @@ TEST_FUNC(Parser_IfStatement_WithElse) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("if (1) {} else {}", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* if_stmt_node = parser.parseIfStatement();
 

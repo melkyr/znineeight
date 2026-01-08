@@ -22,7 +22,7 @@ TEST_FUNC(lexer_handles_tab_correctly) {
     CompilationUnit comp_unit(arena, interner);
 
     u32 file_id = comp_unit.addSource("test.zig", "\tident");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
@@ -43,7 +43,7 @@ TEST_FUNC(lexer_handles_unicode_correctly) {
     CompilationUnit comp_unit(arena, interner);
 
     u32 file_id = comp_unit.addSource("test.zig", "'\\u{1F4A9}'");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_CHAR_LITERAL, token.type);
@@ -64,7 +64,7 @@ TEST_FUNC(lexer_handles_unterminated_char_hex_escape) {
     CompilationUnit comp_unit(arena, interner);
 
     u32 file_id = comp_unit.addSource("test.zig", "'\\x");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
@@ -84,7 +84,7 @@ TEST_FUNC(lexer_handles_unterminated_string_hex_escape) {
     CompilationUnit comp_unit(arena, interner);
 
     u32 file_id = comp_unit.addSource("test.zig", "\"\\x");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
@@ -111,7 +111,7 @@ TEST_FUNC(lexer_handles_long_identifier) {
     long_identifier[299] = '\0';
 
     u32 file_id = comp_unit.addSource("test.zig", long_identifier);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
@@ -130,7 +130,7 @@ bool test_lexer_integer_overflow() {
 
     // u64_max is 18446744073709551615, so this is u64_max + 1
     u32 file_id = comp_unit.addSource("test.zig", "18446744073709551616");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     Token token = parser.peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
@@ -145,7 +145,7 @@ bool test_lexer_c_string_literal() {
     CompilationUnit comp_unit(arena, interner);
 
     u32 file_id = comp_unit.addSource("test.zig", "c\"hello\"");
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     // First token should be the identifier 'c'
     Token token1 = parser.peek();

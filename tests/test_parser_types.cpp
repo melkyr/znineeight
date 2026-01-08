@@ -7,7 +7,7 @@ TEST_FUNC(Parser_ParsePrimitiveType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("i32", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -23,7 +23,7 @@ TEST_FUNC(Parser_ParsePointerType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("*u8", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -43,7 +43,7 @@ TEST_FUNC(Parser_ParseSliceType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[]bool", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -64,7 +64,7 @@ TEST_FUNC(Parser_ParseNestedPointerType) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("**i32", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -88,7 +88,7 @@ TEST_FUNC(Parser_ParseSliceOfPointers) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[]*i32", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 
@@ -113,7 +113,7 @@ TEST_FUNC(Parser_ParseFixedSizeArray) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[8]u8", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* type_node = parser.parseType();
 

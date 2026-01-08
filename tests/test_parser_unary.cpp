@@ -8,7 +8,7 @@ TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("-123", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -31,7 +31,7 @@ TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("--123", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -61,7 +61,7 @@ TEST_FUNC(Parser_UnaryOp_MixedOperators) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("!~-&foo", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);
@@ -97,7 +97,7 @@ TEST_FUNC(Parser_UnaryOp_WithPostfix) {
     StringInterner interner(arena);
 
     ParserTestContext ctx("-foo()", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
     ASTNode* expr = parser.parseExpression();
 
     ASSERT_TRUE(expr != NULL);

@@ -13,7 +13,7 @@ TEST_FUNC(Parser_ErrDeferStatement_Simple) {
 
     const char* source = "errdefer {; }";
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* stmt_node = parser.parseStatement();
     ASSERT_TRUE(stmt_node != NULL);

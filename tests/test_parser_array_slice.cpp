@@ -8,7 +8,7 @@ TEST_FUNC(Parser_ArraySlice_FullRange) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[0..4]", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -35,7 +35,7 @@ TEST_FUNC(Parser_ArraySlice_EndRangeOnly) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[..4]", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -60,7 +60,7 @@ TEST_FUNC(Parser_ArraySlice_StartRangeOnly) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[0..]", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 
@@ -85,7 +85,7 @@ TEST_FUNC(Parser_ArraySlice_NoRange) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_slice[..]", arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* node = parser.parseExpression();
 

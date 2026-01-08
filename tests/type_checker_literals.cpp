@@ -13,7 +13,7 @@ static Type* get_resolved_type_of_literal(const char* literal_str, ArenaAllocato
     // Create a new context for each literal. This creates a new CompilationUnit
     // and SourceManager, ensuring a clean state.
     ParserTestContext context(source_buffer, arena, interner);
-    Parser parser = context.getParser();
+    Parser* parser = context.getParser();
     ASTNode* root = parser.parse();
 
     // The parser should succeed for this simple structure.

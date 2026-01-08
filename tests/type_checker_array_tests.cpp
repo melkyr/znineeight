@@ -16,7 +16,7 @@ TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration) {
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
-    Parser parser = comp_unit.createParser(file_id);
+    Parser* parser = comp_unit.createParser(file_id);
 
     // The root node from parse() is a NODE_BLOCK_STMT containing the var decl
     ASTNode* ast = parser.parse();

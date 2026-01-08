@@ -11,7 +11,7 @@ TEST_FUNC(Parser_While_ValidStatement) {
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
     ASTNode* stmt = parser.parseWhileStatement();
 
