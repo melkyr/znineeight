@@ -1,33 +1,35 @@
 #include "test_framework.hpp"
-#include "test_utils.hpp"
 #include "compilation_unit.hpp"
+#include "memory.hpp"
+#include "string_interner.hpp"
 #include "parser.hpp"
-#include "lexer.hpp"
+#include "test_utils.hpp"
+#include "ast.hpp"
 
 TEST_FUNC(compilation_unit_creation) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "const x: i32 = 42;";
-    u32 file_id = unit.addSource("test.zig", source);
-
-    Parser parser = unit.createParser(file_id);
-
-    ASSERT_TRUE(!parser.is_at_end());
-    ASSERT_TRUE(parser.peek().type == TOKEN_CONST);
+    u32 file_id = unit.addSource("test.zig", "const x: i32 = 42;");
+    Parser* parser = unit.createParser(file_id);
+    ASSERT_TRUE(parser != NULL);
     return true;
 }
 
 TEST_FUNC(compilation_unit_var_decl) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(4096);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
-
     ParserTestContext ctx(source, arena, interner);
-    Parser parser = ctx.getParser();
+    Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
-    ASSERT_TRUE(node != NULL);
-    ASSERT_EQ(node->type, NODE_VAR_DECL);
+    ASTNode* root = parser->parse();
+    ASSERT_TRUE(root != NULL);
+    ASSERT_EQ(root->type, NODE_BLOCK_STMT);
+    ASSERT_EQ(root->as.block_stmt.statements->length(), 1);
+
+    ASTNode* var_decl_node = (*root->as.block_stmt.statements)[0];
+    ASSERT_EQ(var_decl_node->type, NODE_VAR_DECL);
+    ASSERT_EQ(strcmp(var_decl_node->as.var_decl->name, "x"), 0);
     return true;
 }

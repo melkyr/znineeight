@@ -101,6 +101,17 @@ public:
         return offset;
     }
 
+    /**
+     * @brief Allocates an array of a specific type.
+     * @tparam T The type of the elements in the array.
+     * @param count The number of elements to allocate.
+     * @return A pointer to the allocated array, or nullptr if allocation fails.
+     */
+    template <typename T>
+    T* allocArray(size_t count) {
+        return static_cast<T*>(alloc(count * sizeof(T)));
+    }
+
 private:
     // Make the class non-copyable to prevent accidental copies of the buffer.
     ArenaAllocator(const ArenaAllocator&);

@@ -27,7 +27,7 @@ public:
         file_id_ = unit_.addSource("test.zig", source);
     }
 
-    Parser getParser() {
+    Parser* getParser() {
         return unit_.createParser(file_id_);
     }
 
