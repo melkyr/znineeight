@@ -15,7 +15,7 @@ TEST_FUNC(Parser_ErrDeferStatement_Simple) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt_node = parser.parseStatement();
+    ASTNode* stmt_node = parser->parseStatement();
     ASSERT_TRUE(stmt_node != NULL);
     ASSERT_EQ(stmt_node->type, NODE_ERRDEFER_STMT);
 
@@ -29,7 +29,7 @@ TEST_FUNC(Parser_ErrDeferStatement_Simple) {
     ASSERT_EQ(body.statements->length(), 1);
     ASSERT_EQ((*body.statements)[0]->type, NODE_EMPTY_STMT);
 
-    ASSERT_TRUE(parser.is_at_end());
+    ASSERT_TRUE(parser->is_at_end());
 
     return true;
 }

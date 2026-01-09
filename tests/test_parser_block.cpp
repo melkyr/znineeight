@@ -9,7 +9,7 @@ TEST_FUNC(Parser_ParseEmptyBlock) {
     ParserTestContext ctx("{}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);

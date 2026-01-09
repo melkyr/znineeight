@@ -14,7 +14,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     // The parser should crash before this point, but if it doesn't, these assertions will fail.
     ASSERT_TRUE(node != NULL);
