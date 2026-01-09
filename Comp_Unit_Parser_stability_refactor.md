@@ -746,6 +746,8 @@ Goal: Restore the test suite by updating setup logic to the new pointer-based mo
     [ ] Task 4.4: Group 3 Fix (Batch A): Update Group 3A (Basic AST) and 3B (Expressions).
 
     [ ] Task 4.5: Group 3 Fix (Batch B): Update Group 3C through 3G (Declarations and Control Flow).
+    
+    [ ] Task 4.6: Group 3 Fix (Batch B): Update Group 3H Integration, Bugs, and Edge Cases
 
     [ ] Task 4.6: Run the full suite and ensure 0 compilation errors remain.
 
