@@ -12,7 +12,7 @@ TEST_FUNC(Parser_IfStatement_Simple) {
     ParserTestContext ctx("if (1) {}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* if_stmt_node = parser.parseIfStatement();
+    ASTNode* if_stmt_node = parser->parseIfStatement();
 
     ASSERT_TRUE(if_stmt_node != NULL);
     ASSERT_EQ(if_stmt_node->type, NODE_IF_STMT);
@@ -34,7 +34,7 @@ TEST_FUNC(Parser_IfStatement_WithElse) {
     ParserTestContext ctx("if (1) {} else {}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* if_stmt_node = parser.parseIfStatement();
+    ASTNode* if_stmt_node = parser->parseIfStatement();
 
     ASSERT_TRUE(if_stmt_node != NULL);
     ASSERT_EQ(if_stmt_node->type, NODE_IF_STMT);

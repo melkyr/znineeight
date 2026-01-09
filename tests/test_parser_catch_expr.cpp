@@ -11,7 +11,7 @@ TEST_FUNC(Parser_CatchExpression_Simple) {
     ParserTestContext ctx("a catch b", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* root = parser.parseExpression();
+    ASTNode* root = parser->parseExpression();
 
     ASSERT_EQ(root->type, NODE_CATCH_EXPR);
     ASTCatchExprNode* catch_node = root->as.catch_expr;
