@@ -15,7 +15,7 @@ TEST_FUNC(Parser_FnDecl_ValidEmpty) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* fn_decl_node = parser.parseFnDecl();
+    ASTNode* fn_decl_node = parser->parseFnDecl();
 
     ASSERT_TRUE(fn_decl_node != NULL);
     ASSERT_EQ(fn_decl_node->type, NODE_FN_DECL);

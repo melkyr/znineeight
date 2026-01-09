@@ -18,7 +18,7 @@ TEST_FUNC(Parser_NonEmptyFunctionBody) {
 
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* decl = parser.parseFnDecl();
+    ASTNode* decl = parser->parseFnDecl();
 
     // Verify the function declaration itself
     ASSERT_TRUE(decl != NULL);

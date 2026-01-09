@@ -15,7 +15,7 @@ TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
 
-    ASTNode* decl_node = parser.parseVarDecl();
+    ASTNode* decl_node = parser->parseVarDecl();
     ASSERT_TRUE(decl_node != NULL);
 
     // After parsing, the symbol should exist in the table.
@@ -39,7 +39,7 @@ TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
 
-    ASTNode* block_node = parser.parseStatement();
+    ASTNode* block_node = parser->parseStatement();
     ASSERT_TRUE(block_node != NULL);
 
     // After parsing the entire block, we should be back in the global scope,
@@ -60,7 +60,7 @@ TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
 
-    ASTNode* block_node = parser.parseStatement();
+    ASTNode* block_node = parser->parseStatement();
     ASSERT_TRUE(block_node != NULL);
 
     // After parsing, 'a' and 'b' should not be in the global scope.
@@ -83,7 +83,7 @@ TEST_FUNC(Parser_FnDecl_AndScopeManagement) {
     // The global scope should be level 1.
     ASSERT_EQ(table.getCurrentScopeLevel(), 1);
 
-    ASTNode* decl_node = parser.parseFnDecl();
+    ASTNode* decl_node = parser->parseFnDecl();
     ASSERT_TRUE(decl_node != NULL);
 
     // After parsing, the scope level should have returned to global.
