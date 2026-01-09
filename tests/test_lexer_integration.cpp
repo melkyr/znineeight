@@ -1,6 +1,7 @@
 #include "test_framework.hpp"
 #include "lexer.hpp"
-#include "source_manager.hpp"
+#include "compilation_unit.hpp"
+#include "parser.hpp"
 #include "memory.hpp"
 #include "string_interner.hpp"
 #include <cmath> // For fabs
@@ -12,7 +13,7 @@ static bool compare_floats(double a, double b) {
 TEST_FUNC(Lexer_MultiLineIntegrationTest) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* source =
         "const pi = 3.14_159;\n"
         "const limit = 100.;\n"
@@ -20,8 +21,8 @@ TEST_FUNC(Lexer_MultiLineIntegrationTest) {
         "    const val = 1.2e+g;\n"
         "}\n";
 
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
 
     struct ExpectedToken {
         TokenType type;
@@ -69,7 +70,7 @@ TEST_FUNC(Lexer_MultiLineIntegrationTest) {
 
     int num_tokens = sizeof(expected_tokens) / sizeof(ExpectedToken);
     for (int i = 0; i < num_tokens; ++i) {
-        Token t = lexer.nextToken();
+        Token t = (expected_tokens[i].type == TOKEN_EOF) ? parser->peek() : parser->advance();
         ExpectedToken e = expected_tokens[i];
 
         ASSERT_EQ(e.type, t.type);
