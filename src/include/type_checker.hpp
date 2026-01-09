@@ -50,8 +50,13 @@ public:
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
-private:
+
+    // Public for TDD
     Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
+    Type* findStructField(Type* struct_type, const char* field_name);
+    void fatalError(const char* msg);
+    Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
+private:
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);

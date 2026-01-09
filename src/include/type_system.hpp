@@ -27,7 +27,8 @@ enum TypeKind {
     TYPE_POINTER,
     TYPE_ARRAY,
     TYPE_FUNCTION,
-    TYPE_ENUM
+    TYPE_ENUM,
+    TYPE_STRUCT
 };
 
 /**

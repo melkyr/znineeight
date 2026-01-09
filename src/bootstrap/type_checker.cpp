@@ -528,7 +528,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     }
 
     // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    Type* result_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
     if (!result_type) {
         // Error already reported by checkBinaryOperation. We can just return.
         return NULL;
@@ -551,6 +551,42 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
 
     // The type of a compound assignment expression is the type of the l-value.
     return lvalue_type;
+}
+
+/**
+ * @brief Checks if a binary operation is compatible with the types of its operands.
+ *
+ * This is a simplified check focusing on basic numeric types as per the bootstrap requirements.
+ *
+ * @param left The type of the left operand.
+ * @param right The type of the right operand.
+ * @param op The token type of the binary operator.
+ * @param loc The source location for error reporting.
+ * @return The resulting type of the operation, or NULL if incompatible.
+ */
+Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc) {
+    if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
+        return left; // Simplified promotion
+    }
+    return NULL;
+}
+
+/**
+ * @brief Finds a field within a struct type.
+ *
+ * This is a placeholder implementation to allow the compiler to build.
+ * It does not yet perform a real field lookup.
+ *
+ * @param struct_type The struct type to search within.
+ * @param field_name The name of the field to find.
+ * @return Returns NULL as it is a placeholder.
+ */
+Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
+    if (struct_type->kind != TYPE_STRUCT) {
+        return NULL;
+    }
+    // Placeholder for field lookup logic as per Task 3.5
+    return NULL;
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
