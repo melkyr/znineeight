@@ -19,7 +19,7 @@ TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration) {
     Parser* parser = comp_unit.createParser(file_id);
 
     // The root node from parse() is a NODE_BLOCK_STMT containing the var decl
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
     ASSERT_EQ(ast->type, NODE_BLOCK_STMT);
     ASSERT_EQ(ast->as.block_stmt.statements->length(), 1);
     ASTNode* var_decl_node = (*ast->as.block_stmt.statements)[0];

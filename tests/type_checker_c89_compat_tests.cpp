@@ -76,7 +76,7 @@ TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray) {
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     TypeChecker checker(unit);
     checker.check(root);
     ASSERT_FALSE(unit.getErrorHandler().hasErrors()); // Ensure no non-fatal errors either
@@ -92,7 +92,7 @@ TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields) {
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     TypeChecker checker(unit);
     checker.check(root);
     ASSERT_FALSE(unit.getErrorHandler().hasErrors());
