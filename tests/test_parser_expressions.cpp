@@ -14,7 +14,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
     ParserTestContext ctx("123", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_INTEGER_LITERAL);
@@ -30,7 +30,7 @@ TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
     ParserTestContext ctx("2 + 3 * 4", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -63,7 +63,7 @@ TEST_FUNC(Parser_BinaryExpr_LeftAssociativity) {
     ParserTestContext ctx("10 - 4 - 2", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_BINARY_OP);
@@ -100,7 +100,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
     ParserTestContext ctx("3.14", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_FLOAT_LITERAL);
@@ -116,7 +116,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
     ParserTestContext ctx("'a'", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_CHAR_LITERAL);
@@ -132,7 +132,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
     ParserTestContext ctx("\"hello\"", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_STRING_LITERAL);
@@ -148,7 +148,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
     ParserTestContext ctx("my_var", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_IDENTIFIER);
@@ -164,7 +164,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
     ParserTestContext ctx("(42)", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_INTEGER_LITERAL);
@@ -186,7 +186,7 @@ TEST_FUNC(Parser_FunctionCall_NoArgs) {
     ParserTestContext ctx("my_func()", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_EQ(node->type, NODE_FUNCTION_CALL);
     ASSERT_EQ(node->as.function_call->callee->type, NODE_IDENTIFIER);
@@ -203,7 +203,7 @@ TEST_FUNC(Parser_FunctionCall_WithArgs) {
     ParserTestContext ctx("add(1, 2)", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_EQ(node->type, NODE_FUNCTION_CALL);
     ASSERT_EQ(node->as.function_call->callee->type, NODE_IDENTIFIER);
@@ -224,7 +224,7 @@ TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
     ParserTestContext ctx("add(1, 2,)", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_EQ(node->type, NODE_FUNCTION_CALL);
     ASSERT_EQ(node->as.function_call->args->length(), 2);
@@ -241,7 +241,7 @@ TEST_FUNC(Parser_ArrayAccess) {
     ParserTestContext ctx("my_array[0]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_EQ(node->type, NODE_ARRAY_ACCESS);
     ASSERT_EQ(node->as.array_access->array->type, NODE_IDENTIFIER);
@@ -259,7 +259,7 @@ TEST_FUNC(Parser_ChainedPostfixOps) {
     ParserTestContext ctx("get_func()[0]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_EQ(node->type, NODE_ARRAY_ACCESS);
     ASTNode* callee = node->as.array_access->array;
