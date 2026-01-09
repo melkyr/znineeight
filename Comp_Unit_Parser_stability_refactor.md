@@ -748,8 +748,18 @@ Goal: Restore the test suite by updating setup logic to the new pointer-based mo
     [ ] Task 4.5: Group 3 Fix (Batch B): Update Group 3C through 3G (Declarations and Control Flow).
     
     [ ] Task 4.6: Group 3 Fix (Batch B): Update Group 3H Integration, Bugs, and Edge Cases
+    
+    [ ] Task 4.7: Group 4 Fix (Batch A): Update Group 4A through 4D
+    
+    [ ] Task 4.8: Group 4 Fix (Batch B): Update Group 4E through 4G
+    
+    [ ] Task 4.9: Group 4 Fix (Batch B): Update Group 4H and 4I
+    
+    [ ] Task 4.10: Check if the full suite yet has errors and document which tests are remaining for fixes
 
-    [ ] Task 4.6: Run the full suite and ensure 0 compilation errors remain.
+    [ ] Task 4.11: Fix Remaining tests (yet in isolation)
+
+    [ ] Task 4.12: Run the full suite and ensure 0 compilation errors remain.
 
 Phase 5: Documentation & Handover
 
