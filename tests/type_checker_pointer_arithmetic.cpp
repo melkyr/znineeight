@@ -29,7 +29,7 @@ TEST_FUNC(TypeChecker_PointerIntegerAddition) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("p + 1", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type != NULL);
@@ -50,7 +50,7 @@ TEST_FUNC(TypeChecker_IntegerPointerAddition) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("1 + p", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type != NULL);
@@ -71,7 +71,7 @@ TEST_FUNC(TypeChecker_PointerIntegerSubtraction) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("p - 1", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type != NULL);
@@ -93,7 +93,7 @@ TEST_FUNC(TypeChecker_PointerPointerSubtraction) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p2", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("p1 - p2", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type != NULL);
@@ -114,7 +114,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p2", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("p1 + p2", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type == NULL);
@@ -135,7 +135,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p2", resolvePrimitiveTypeName("f64"));
 
     ParserTestContext ctx("p1 - p2", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type == NULL);
@@ -155,7 +155,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerMultiplication) {
     setup_pointer_arithmetic_test(arena, interner, unit, "p", resolvePrimitiveTypeName("i32"));
 
     ParserTestContext ctx("p * 2", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
 
     ASSERT_TRUE(type == NULL);

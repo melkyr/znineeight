@@ -17,7 +17,7 @@ static Type* get_binary_op_type(const char* source_code, ArenaAllocator& arena, 
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source_buffer);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
 
     TypeChecker checker(comp_unit);
     checker.check(root);
@@ -52,7 +52,7 @@ static bool check_binary_op_error(const char* source_code, const char* inner_exp
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source_buffer);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
 
     TypeChecker checker(comp_unit);
     checker.check(root);

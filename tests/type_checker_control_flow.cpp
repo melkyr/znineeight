@@ -8,7 +8,7 @@ static bool typeCheckTest(const char* source) {
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
-    ASTNode* root = ctx.getParser().parse();
+    ASTNode* root = ctx.getParser()->parse();
     if (!root) {
         return false; // Parser error
     }
