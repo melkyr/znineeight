@@ -1,5 +1,7 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
+#include "../src/include/compilation_unit.hpp"
+#include "../src/include/parser.hpp"
 #include "../src/include/source_manager.hpp"
 #include "../src/include/string_interner.hpp"
 
@@ -81,24 +83,23 @@ TEST_FUNC(single_char_tokens) {
 TEST_FUNC(IntegerRangeAmbiguity) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* test_content = "0..10";
-    sm.addFile("test.zig", test_content, strlen(test_content));
+    u32 file_id = unit.addSource("test.zig", test_content);
+    Parser* parser = unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, 0);
-
-    Token token = lexer.nextToken();
+    Token token = parser->advance();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
     ASSERT_EQ(0, token.value.integer_literal.value);
 
-    token = lexer.nextToken();
+    token = parser->advance();
     ASSERT_EQ(TOKEN_RANGE, token.type);
 
-    token = lexer.nextToken();
+    token = parser->advance();
     ASSERT_EQ(TOKEN_INTEGER_LITERAL, token.type);
     ASSERT_EQ(10, token.value.integer_literal.value);
 
-    token = lexer.nextToken();
+    token = parser->peek();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
     return true;
@@ -107,10 +108,10 @@ TEST_FUNC(IntegerRangeAmbiguity) {
 TEST_FUNC(token_fields_are_initialized) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
-    u32 file_id = sm.addFile("test.zig", "fn", 2);
-    Lexer lexer(sm, interner, arena, file_id);
-    Token token = lexer.nextToken();
+    CompilationUnit unit(arena, interner);
+    u32 file_id = unit.addSource("test.zig", "fn");
+    Parser* parser = unit.createParser(file_id);
+    Token token = parser->peek();
     ASSERT_EQ(token.type, TOKEN_FN);
     ASSERT_TRUE(token.value.integer_literal.value == 0);
     return true;
@@ -119,27 +120,27 @@ TEST_FUNC(token_fields_are_initialized) {
 TEST_FUNC(Lexer_ErrorConditions) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* source = "'a "  // 1. Unterminated char literal
                          "123. " // 2. Invalid numeric format
                          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa " // 3. Identifier too long
                          "@";    // 4. Unrecognized character
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
 
-    Token t = lexer.nextToken();
+    Token t = parser->advance();
     ASSERT_EQ(TOKEN_ERROR, t.type); // Unterminated char literal
 
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_FLOAT_LITERAL, t.type);
 
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_IDENTIFIER, t.type); // Identifier too long is now valid
 
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_ERROR, t.type); // Unrecognized character
 
-    t = lexer.nextToken();
+    t = parser->peek();
     ASSERT_EQ(TOKEN_EOF, t.type);
 
     return true;
@@ -148,32 +149,32 @@ TEST_FUNC(Lexer_ErrorConditions) {
 TEST_FUNC(Lexer_IdentifiersAndStrings) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* source = "my_var \"hello world\" _another_var \"\"";
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
 
     // Test my_var
-    Token t = lexer.nextToken();
+    Token t = parser->advance();
     ASSERT_EQ(TOKEN_IDENTIFIER, t.type);
     ASSERT_STREQ("my_var", t.value.identifier);
 
     // Test "hello world"
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_STRING_LITERAL, t.type);
     ASSERT_STREQ("hello world", t.value.identifier);
 
     // Test _another_var
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_IDENTIFIER, t.type);
     ASSERT_STREQ("_another_var", t.value.identifier);
 
     // Test ""
-    t = lexer.nextToken();
+    t = parser->advance();
     ASSERT_EQ(TOKEN_STRING_LITERAL, t.type);
     ASSERT_STREQ("", t.value.identifier);
 
-    t = lexer.nextToken();
+    t = parser->peek();
     ASSERT_EQ(TOKEN_EOF, t.type);
 
     return true;
@@ -182,7 +183,7 @@ TEST_FUNC(Lexer_IdentifiersAndStrings) {
 TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* source = "if (x > 10) {\n"
                          "  return 0xFF;\n"
                          "} else {\n"
@@ -192,8 +193,8 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
                          "}\n"
                          "const pi = 3.14;\n";
 
-    u32 file_id = sm.addFile("test.zig", source, strlen(source));
-    Lexer lexer(sm, interner, arena, file_id);
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
 
     TokenType expected_tokens[] = {
         TOKEN_IF, TOKEN_LPAREN, TOKEN_IDENTIFIER, TOKEN_GREATER, TOKEN_INTEGER_LITERAL, TOKEN_RPAREN, TOKEN_LBRACE,
@@ -208,8 +209,13 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
     };
 
     for (int i = 0; i < static_cast<int>(sizeof(expected_tokens) / sizeof(TokenType)); ++i) {
-        Token t = lexer.nextToken();
-        ASSERT_EQ(expected_tokens[i], t.type);
+        if (expected_tokens[i] == TOKEN_EOF) {
+            Token t = parser->peek();
+            ASSERT_EQ(expected_tokens[i], t.type);
+        } else {
+            Token t = parser->advance();
+            ASSERT_EQ(expected_tokens[i], t.type);
+        }
     }
 
     return true;
@@ -241,27 +247,26 @@ TEST_FUNC(IntegerLiterals) {
 TEST_FUNC(skip_comments) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* test_content = "// this is a line comment\n"
                                "+\n"
                                "/* this is a block comment */\n"
                                "-\n"
                                "// another line comment at EOF";
-    sm.addFile("test.zig", test_content, strlen(test_content));
+    u32 file_id = unit.addSource("test.zig", test_content);
+    Parser* parser = unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, 0);
-
-    Token token = lexer.nextToken();
+    Token token = parser->advance();
     ASSERT_EQ(TOKEN_PLUS, token.type);
     ASSERT_EQ(2, token.location.line);
     ASSERT_EQ(1, token.location.column);
 
-    token = lexer.nextToken();
+    token = parser->advance();
     ASSERT_EQ(TOKEN_MINUS, token.type);
     ASSERT_EQ(4, token.location.line);
     ASSERT_EQ(1, token.location.column);
 
-    token = lexer.nextToken();
+    token = parser->peek();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
     return true;
@@ -270,18 +275,17 @@ TEST_FUNC(skip_comments) {
 TEST_FUNC(nested_block_comments) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* test_content = "/* start /* nested */ end */+";
-    sm.addFile("test.zig", test_content, strlen(test_content));
+    u32 file_id = unit.addSource("test.zig", test_content);
+    Parser* parser = unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, 0);
-
-    Token token = lexer.nextToken();
+    Token token = parser->advance();
     ASSERT_EQ(TOKEN_PLUS, token.type);
     ASSERT_EQ(1, token.location.line);
     ASSERT_EQ(29, token.location.column);
 
-    token = lexer.nextToken();
+    token = parser->peek();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
     return true;
@@ -290,13 +294,12 @@ TEST_FUNC(nested_block_comments) {
 TEST_FUNC(unterminated_block_comment) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
     const char* test_content = "/* this comment is not closed";
-    sm.addFile("test.zig", test_content, strlen(test_content));
+    u32 file_id = unit.addSource("test.zig", test_content);
+    Parser* parser = unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, 0);
-
-    Token token = lexer.nextToken();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_EOF, token.type);
 
     return true;

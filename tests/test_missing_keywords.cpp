@@ -1,32 +1,23 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/lexer.hpp"
-#include "../src/include/source_manager.hpp"
+#include "../src/include/compilation_unit.hpp"
+#include "../src/include/parser.hpp"
 #include "../src/include/string_interner.hpp"
 #include <cstring>
 
 TEST_FUNC(lex_missing_keywords) {
     ArenaAllocator arena(8192);
     StringInterner interner(arena);
-    SourceManager sm(arena);
+    CompilationUnit unit(arena, interner);
 
     const char* content = "defer fn var";
-    sm.addFile("test.zig", content, strlen(content));
+    u32 file_id = unit.addSource("test.zig", content);
+    Parser* parser = unit.createParser(file_id);
 
-    Lexer lexer(sm, interner, arena, 0);
-
-    Token token;
-
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_DEFER, token.type);
-
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_FN, token.type);
-
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_VAR, token.type);
-
-    token = lexer.nextToken();
-    ASSERT_EQ(TOKEN_EOF, token.type);
+    ASSERT_EQ(TOKEN_DEFER, parser->advance().type);
+    ASSERT_EQ(TOKEN_FN, parser->advance().type);
+    ASSERT_EQ(TOKEN_VAR, parser->advance().type);
+    ASSERT_EQ(TOKEN_EOF, parser->peek().type);
 
     return true;
 }
