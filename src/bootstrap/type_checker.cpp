@@ -448,8 +448,45 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
 }
 
 Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
-    fatalError(node->lvalue->loc, "Assignment expressions are not yet supported by the type checker.");
-    return NULL; // Unreachable
+    // Step 0: Ensure the l-value is a valid l-value.
+    // This check is implicitly handled by isLValueConst and the type checks below.
+    // Identifiers, array accesses, and pointer dereferences are the main valid l-values.
+
+    // First, resolve the type of the left-hand side.
+    Type* lvalue_type = visit(node->lvalue);
+    if (!lvalue_type) {
+        return NULL; // Error already reported (e.g., undeclared variable)
+    }
+
+    // Step 1: Check if the l-value is const.
+    if (isLValueConst(node->lvalue)) {
+        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
+        return NULL; // Unreachable
+    }
+
+    // Step 2: Resolve the type of the right-hand side.
+    Type* rvalue_type = visit(node->rvalue);
+    if (!rvalue_type) {
+        return NULL; // Error already reported.
+    }
+
+    // Step 3: Check if the r-value type is compatible with the l-value type.
+    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
+        char ltype_str[64];
+        char rtype_str[64];
+        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
+        typeToString(rvalue_type, rtype_str, sizeof(rtype_str));
+
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
+
+        // Use fatalError as per the spec for strict C89 assignment validation
+        fatalError(node->rvalue->loc, msg_buffer);
+        return NULL; // Unreachable
+    }
+
+    // The type of an assignment expression is the type of the l-value.
+    return lvalue_type;
 }
 
 Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
@@ -869,6 +906,31 @@ Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
 Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
     visit(node->expression);
     return NULL; // Expression statements don't have a type
+}
+
+bool TypeChecker::isLValueConst(ASTNode* node) {
+    if (!node) {
+        return false;
+    }
+    switch (node->type) {
+        case NODE_IDENTIFIER: {
+            Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
+            // The symbol->details points to the ASTVarDeclNode which holds the const flag.
+            return (symbol && symbol->details && ((ASTVarDeclNode*)symbol->details)->is_const);
+        }
+        case NODE_UNARY_OP:
+            // Check for dereferencing a const pointer, e.g. *const u8
+            if (node->as.unary_op.op == TOKEN_STAR) {
+                Type* ptr_type = visit(node->as.unary_op.operand);
+                return (ptr_type && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
+            }
+            return false;
+        case NODE_ARRAY_ACCESS:
+            // An array access is const if the array itself is const.
+            return isLValueConst(node->as.array_access->array);
+        default:
+            return false;
+    }
 }
 
 /**

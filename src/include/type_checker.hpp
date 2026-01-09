@@ -51,6 +51,7 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
 private:
+    bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
