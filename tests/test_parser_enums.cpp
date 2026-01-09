@@ -13,7 +13,7 @@ TEST_FUNC(Parser_Enum_Empty) {
     ParserTestContext ctx("enum {}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
@@ -32,7 +32,7 @@ TEST_FUNC(Parser_Enum_SimpleMembers) {
     ParserTestContext ctx("enum { Red, Green, Blue }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
@@ -66,7 +66,7 @@ TEST_FUNC(Parser_Enum_TrailingComma) {
     ParserTestContext ctx("enum { A, B, }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
     ASTEnumDeclNode* enum_decl = node->as.enum_decl;
@@ -84,7 +84,7 @@ TEST_FUNC(Parser_Enum_WithValues) {
     ParserTestContext ctx("enum { A = 1, B = 20 }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
@@ -115,7 +115,7 @@ TEST_FUNC(Parser_Enum_MixedMembers) {
     ParserTestContext ctx("enum { A, B = 10, C }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
@@ -147,7 +147,7 @@ TEST_FUNC(Parser_Enum_WithBackingType) {
     ParserTestContext ctx("enum(u8) { A, B }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
@@ -193,7 +193,7 @@ TEST_FUNC(Parser_Enum_ComplexInitializer) {
     ParserTestContext ctx("enum { A = 1 + 2 }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ENUM_DECL);
