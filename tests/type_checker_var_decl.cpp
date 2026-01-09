@@ -9,7 +9,7 @@ TEST_FUNC(TypeChecker_VarDecl_Valid_Simple) {
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
-    ASTNode* root = ctx.getParser().parse();
+    ASTNode* root = ctx.getParser()->parse();
     ASSERT_TRUE(root != NULL);
 
     type_checker.check(root);
@@ -26,7 +26,7 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
-    ASTNode* root = ctx.getParser().parse();
+    ASTNode* root = ctx.getParser()->parse();
     ASSERT_TRUE(root != NULL);
 
     type_checker.check(root);
@@ -49,7 +49,7 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
-    ASTNode* root = ctx.getParser().parse();
+    ASTNode* root = ctx.getParser()->parse();
     ASSERT_TRUE(root != NULL);
 
     type_checker.check(root);
@@ -71,7 +71,7 @@ TEST_FUNC(TypeChecker_VarDecl_Valid_Widening) {
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
-    ASTNode* root = ctx.getParser().parse();
+    ASTNode* root = ctx.getParser()->parse();
     ASSERT_TRUE(root != NULL);
 
     type_checker.check(root);

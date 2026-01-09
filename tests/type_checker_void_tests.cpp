@@ -13,7 +13,7 @@ TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -42,7 +42,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -60,7 +60,7 @@ TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -78,7 +78,7 @@ TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -107,7 +107,7 @@ TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -136,7 +136,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction) {
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
@@ -201,13 +201,13 @@ TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
 
 TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction) {
     const char* source = "fn main(a: i32) -> i32 { const zero: i32 = 0; if (a > zero) { return 1; } else { return 0; } }";
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* parser = comp_unit.createParser(file_id);
-    ASTNode* ast = parser.parse();
+    ASTNode* ast = parser->parse();
 
     TypeChecker type_checker(comp_unit);
     type_checker.check(ast);
