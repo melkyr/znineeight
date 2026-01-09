@@ -170,12 +170,15 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
     Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
-// If either operand is null, an error has already been reported.
     if (!left_type || !right_type) {
-        return NULL;
+        return NULL; // Error already reported
     }
 
-    switch (node->op) {
+    return checkBinaryOperation(left_type, right_type, node->op, parent->loc);
+}
+
+Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+    switch (op) {
 // --- Arithmetic Operators ---
         case TOKEN_PLUS:
         case TOKEN_MINUS:
@@ -183,32 +186,32 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         case TOKEN_SLASH:
         case TOKEN_PERCENT: {
             // First, check for void pointer arithmetic (must be rejected)
-            if (node->op == TOKEN_PLUS || node->op == TOKEN_MINUS) {
+            if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
                 if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
                     (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
-                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, parent->loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
+                    unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, loc, "pointer arithmetic on 'void*' is not allowed", unit.getArena());
                     return NULL;
                 }
             }
 
             // Handle pointer arithmetic
-            if (node->op == TOKEN_PLUS) {
+            if (op == TOKEN_PLUS) {
                 if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
                 if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
             }
 
-            if (node->op == TOKEN_MINUS) {
+            if (op == TOKEN_MINUS) {
                 if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
                 if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
                     if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
                         Type* isize_type = resolvePrimitiveTypeName("isize");
                         if (!isize_type) {
-                            unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
+                            unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
                             return NULL;
                         }
                         return isize_type;
                     } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to incompatible types", unit.getArena());
                         return NULL;
                     }
                 }
@@ -227,8 +230,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                     typeToString(right_type, right_type_str, sizeof(right_type_str));
                     char msg_buffer[256];
                     snprintf(msg_buffer, sizeof(msg_buffer), "arithmetic operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                             getTokenSpelling(node->op), left_type_str, right_type_str);
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                             getTokenSpelling(op), left_type_str, right_type_str);
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                     return NULL;
                 }
             }
@@ -240,8 +243,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
             typeToString(right_type, right_type_str, sizeof(right_type_str));
             char msg_buffer[256];
             snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for arithmetic operator '%s': '%s' and '%s'",
-                     getTokenSpelling(node->op), left_type_str, right_type_str);
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                     getTokenSpelling(op), left_type_str, right_type_str);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
             return NULL;
         }
 
@@ -264,21 +267,21 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                     typeToString(right_type, right_type_str, sizeof(right_type_str));
                     char msg_buffer[256];
                     snprintf(msg_buffer, sizeof(msg_buffer), "comparison operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                             getTokenSpelling(node->op), left_type_str, right_type_str);
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                             getTokenSpelling(op), left_type_str, right_type_str);
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                     return NULL;
                 }
             }
                 // Pointer comparisons (equality only for ordering operators)
             else if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
                 // Equality operators can work with any compatible pointer types
-                if (node->op == TOKEN_EQUAL_EQUAL || node->op == TOKEN_BANG_EQUAL) {
+                if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
                     if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base) ||
                         (left_type->as.pointer.base->kind == TYPE_VOID) ||
                         (right_type->as.pointer.base->kind == TYPE_VOID)) {
                         return get_g_type_bool(); // Result is always bool
                     } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot compare pointers to incompatible types");
+                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot compare pointers to incompatible types");
                         return NULL;
                     }
                 }
@@ -287,7 +290,7 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                     if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
                         return get_g_type_bool(); // Result is always bool
                     } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, "cannot compare pointers to incompatible types for ordering");
+                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot compare pointers to incompatible types for ordering");
                         return NULL;
                     }
                 }
@@ -304,8 +307,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
                 snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for comparison operator '%s': '%s' and '%s'",
-                         getTokenSpelling(node->op), left_type_str, right_type_str);
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                         getTokenSpelling(op), left_type_str, right_type_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
         }
@@ -320,7 +323,7 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
             // Both operands must be integer types for bitwise operations
             if (isIntegerType(left_type) && isIntegerType(right_type)) {
                 // For <<, >>: Result type is the type of the left operand (the one being shifted)
-                if (node->op == TOKEN_LARROW2 || node->op == TOKEN_RARROW2) {
+                if (op == TOKEN_LARROW2 || op == TOKEN_RARROW2) {
                     if (left_type == right_type) {
                         return left_type; // Result is the type of the value being shifted
                     } else {
@@ -330,8 +333,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                         typeToString(right_type, right_type_str, sizeof(right_type_str));
                         char msg_buffer[256];
                         snprintf(msg_buffer, sizeof(msg_buffer), "bitwise shift operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                                 getTokenSpelling(node->op), left_type_str, right_type_str);
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                                 getTokenSpelling(op), left_type_str, right_type_str);
+                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                         return NULL;
                     }
                 } else { // &, |, ^
@@ -345,8 +348,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                         typeToString(right_type, right_type_str, sizeof(right_type_str));
                         char msg_buffer[256];
                         snprintf(msg_buffer, sizeof(msg_buffer), "bitwise operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                                 getTokenSpelling(node->op), left_type_str, right_type_str);
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                                 getTokenSpelling(op), left_type_str, right_type_str);
+                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                         return NULL;
                     }
                 }
@@ -357,8 +360,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
                 snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for bitwise operator '%s': '%s' and '%s'. Operands must be integer types.",
-                         getTokenSpelling(node->op), left_type_str, right_type_str);
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                         getTokenSpelling(op), left_type_str, right_type_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
         }
@@ -377,21 +380,19 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
                 snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for logical operator '%s': '%s' and '%s'. Operands must be bool types.",
-                         getTokenSpelling(node->op), left_type_str, right_type_str);
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, msg_buffer, unit.getArena());
+                         getTokenSpelling(op), left_type_str, right_type_str);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
         }
 
         default: {
             char msg_buffer[256];
-            snprintf(msg_buffer, sizeof(msg_buffer), "Unsupported binary operator in type checker: %s", getTokenSpelling(node->op));
-            unit.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, msg_buffer, unit.getArena());
+            snprintf(msg_buffer, sizeof(msg_buffer), "Unsupported binary operator in type checker: %s", getTokenSpelling(op));
+            unit.getErrorHandler().report(ERR_INVALID_OPERATION, loc, msg_buffer, unit.getArena());
             return NULL;
         }
-
     }
-
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
@@ -490,8 +491,66 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 }
 
 Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
-    fatalError(node->lvalue->loc, "Compound assignment expressions are not yet supported by the type checker.");
-    return NULL; // Unreachable
+    // First, resolve the type of the left-hand side.
+    Type* lvalue_type = visit(node->lvalue);
+    if (!lvalue_type) {
+        return NULL; // Error already reported.
+    }
+
+    // Step 1: Check if the l-value is const.
+    if (isLValueConst(node->lvalue)) {
+        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
+        return NULL; // Unreachable
+    }
+
+    // Step 2: Resolve the type of the right-hand side.
+    Type* rvalue_type = visit(node->rvalue);
+    if (!rvalue_type) {
+        return NULL; // Error already reported.
+    }
+
+    // Step 3: Map the compound operator to a binary operator.
+    TokenType binary_op;
+    switch (node->op) {
+        case TOKEN_PLUS_EQUAL:      binary_op = TOKEN_PLUS; break;
+        case TOKEN_MINUS_EQUAL:     binary_op = TOKEN_MINUS; break;
+        case TOKEN_STAR_EQUAL:      binary_op = TOKEN_STAR; break;
+        case TOKEN_SLASH_EQUAL:     binary_op = TOKEN_SLASH; break;
+        case TOKEN_PERCENT_EQUAL:   binary_op = TOKEN_PERCENT; break;
+        case TOKEN_AMPERSAND_EQUAL: binary_op = TOKEN_AMPERSAND; break;
+        case TOKEN_PIPE_EQUAL:      binary_op = TOKEN_PIPE; break;
+        case TOKEN_CARET_EQUAL:     binary_op = TOKEN_CARET; break;
+        case TOKEN_LARROW2_EQUAL:   binary_op = TOKEN_LARROW2; break;
+        case TOKEN_RARROW2_EQUAL:   binary_op = TOKEN_RARROW2; break;
+        default:
+            fatalError(node->lvalue->loc, "Unsupported compound assignment operator.");
+            return NULL; // Unreachable
+    }
+
+    // Step 4: Check if the underlying binary operation is valid.
+    Type* result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    if (!result_type) {
+        // Error already reported by checkBinaryOperation. We can just return.
+        return NULL;
+    }
+
+    // Step 5: Ensure the result of the operation can be assigned back to the l-value.
+    if (!areTypesCompatible(lvalue_type, result_type)) {
+        char ltype_str[64];
+        char result_type_str[64];
+        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
+        typeToString(result_type, result_type_str, sizeof(result_type_str));
+
+        char msg_buffer[256];
+        snprintf(msg_buffer, sizeof(msg_buffer), "result of operator '%s' is '%s', which cannot be assigned to type '%s'",
+                 getTokenSpelling(binary_op), result_type_str, ltype_str);
+
+        fatalError(node->lvalue->loc, msg_buffer);
+        return NULL; // Unreachable
+    }
+
+    // The type of a compound assignment expression is the type of the l-value.
+    return lvalue_type;
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
