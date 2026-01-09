@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Compiling and running ISOLATED test..."
+echo "Compiling and running tests..."
 
 g++ -std=c++98 -Wall -Isrc/include \
     tests/main.cpp \
@@ -12,6 +12,12 @@ g++ -std=c++98 -Wall -Isrc/include \
     src/bootstrap/type_system.cpp \
     src/bootstrap/type_checker.cpp \
     tests/parser_bug_fixes.cpp \
+    tests/type_checker_void_tests.cpp \
+    tests/type_checker_pointer_operations.cpp \
+    tests/type_checker_pointer_arithmetic.cpp \
+    tests/type_checker_binary_ops.cpp \
+    tests/type_checker_bool_tests.cpp \
+    tests/type_checker_control_flow.cpp \
     -Isrc/include \
     -o test_runner
 
