@@ -14,7 +14,7 @@ static Type* get_resolved_type_of_literal(const char* literal_str, ArenaAllocato
     // and SourceManager, ensuring a clean state.
     ParserTestContext context(source_buffer, arena, interner);
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
 
     // The parser should succeed for this simple structure.
     if (!root || context.getCompilationUnit().getErrorHandler().hasErrors()) {

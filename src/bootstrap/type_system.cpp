@@ -7,7 +7,7 @@
 // This ensures that the type objects are created when they are first needed.
 #define DEFINE_GET_TYPE_FUNC(name, type_kind, sz, align_val) \
     Type* get_##name() { \
-        static Type t = { type_kind, sz, align_val }; \
+        static Type t = { type_kind, sz, align_val, {} }; \
         return &t; \
     }
 

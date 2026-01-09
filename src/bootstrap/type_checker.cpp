@@ -564,7 +564,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
  * @param loc The source location for error reporting.
  * @return The resulting type of the operation, or NULL if incompatible.
  */
-Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc) {
+Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType /*op*/, SourceLocation /*loc*/) {
     if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
         return left; // Simplified promotion
     }
@@ -581,7 +581,7 @@ Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType
  * @param field_name The name of the field to find.
  * @return Returns NULL as it is a placeholder.
  */
-Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
+Type* TypeChecker::findStructField(Type* struct_type, const char* /*field_name*/) {
     if (struct_type->kind != TYPE_STRUCT) {
         return NULL;
     }
@@ -602,11 +602,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     return NULL; // Placeholder
 }
 
-Type* TypeChecker::visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node) {
+Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
     return resolvePrimitiveTypeName("bool");
 }
 
-Type* TypeChecker::visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node) {
+Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
     if (node->is_unsigned) {
         if (node->value <= 255) return resolvePrimitiveTypeName("u8");
         if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
@@ -622,15 +622,15 @@ Type* TypeChecker::visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* n
     }
 }
 
-Type* TypeChecker::visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node) {
+Type* TypeChecker::visitFloatLiteral(ASTNode* /*parent*/, ASTFloatLiteralNode* /*node*/) {
     return resolvePrimitiveTypeName("f64");
 }
 
-Type* TypeChecker::visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node) {
+Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*node*/) {
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTNode* parent, ASTStringLiteralNode* node) {
+Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
     Type* char_type = resolvePrimitiveTypeName("u8");
     // String literals are pointers to constant characters.
     return createPointerType(unit.getArena(), char_type, true);
@@ -654,7 +654,7 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     return NULL; // Blocks don't have a type
 }
 
-Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* node) {
+Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
     return NULL;
 }
 
@@ -852,14 +852,14 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
+Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* /*node*/) {
     validateStructOrUnionFields(parent);
     // TODO: The rest of the struct type checking logic will go here.
     // For now, we return NULL as no actual type is created yet.
     return NULL;
 }
 
-Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
+Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* /*node*/) {
     validateStructOrUnionFields(parent);
     // TODO: The rest of the union type checking logic will go here.
     return NULL;

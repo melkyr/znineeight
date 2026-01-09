@@ -60,7 +60,7 @@ Token Parser::expect(TokenType type, const char* msg) {
     return advance();
 }
 
-void Parser::error(const char* msg) {
+void Parser::error(const char* /*msg*/) {
 #ifdef _WIN32
     // On Windows, use the debug output string function.
     OutputDebugStringA("Parser Error: ");

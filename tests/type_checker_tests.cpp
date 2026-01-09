@@ -83,7 +83,7 @@ TEST_FUNC(TypeCheckerInvalidDeclarations) {
     const char* source = "var x: i32 = \"hello\";";
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     TypeChecker checker(context.getCompilationUnit());
     checker.check(root);
     ASSERT_TRUE(context.getCompilationUnit().getErrorHandler().hasErrors());
@@ -97,7 +97,7 @@ TEST_FUNC(TypeCheckerStringLiteralType) {
     const char* source = "fn my_func() -> void { \"hello world\"; }";
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
 
     // Traverse the AST to find the string literal
     ASTNode* fn_decl_node = (*root->as.block_stmt.statements)[0];
@@ -167,7 +167,7 @@ TEST_FUNC(TypeCheckerUndeclaredVariable) {
     const char* source = "var x: i32 = y;";
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     TypeChecker checker(context.getCompilationUnit());
     checker.check(root);
     ASSERT_TRUE(context.getCompilationUnit().getErrorHandler().hasErrors());
