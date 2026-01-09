@@ -13,8 +13,8 @@ TEST_FUNC(compilation_unit_creation) {
 
     Parser* parser = unit.createParser(file_id);
 
-    ASSERT_TRUE(!parser.is_at_end());
-    ASSERT_TRUE(parser.peek().type == TOKEN_CONST);
+    ASSERT_TRUE(!parser->is_at_end());
+    ASSERT_TRUE(parser->peek().type == TOKEN_CONST);
     return true;
 }
 
@@ -26,7 +26,7 @@ TEST_FUNC(compilation_unit_var_decl) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
     return true;
