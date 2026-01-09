@@ -9,7 +9,7 @@ TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix) {
     StringInterner interner(arena);
     const char* source = "const x: u32 = 123u;";
     ParserTestContext context(source, arena, interner);
-    ASTNode* node = context.getParser().parseVarDecl();
+    ASTNode* node = context.getParser()->parseVarDecl();
 
     ASSERT_TRUE(node != (ASTNode*)NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
@@ -32,7 +32,7 @@ TEST_FUNC(IntegerLiteralParsing_LongSuffix) {
     StringInterner interner(arena);
     const char* source = "const x: i64 = 456L;";
     ParserTestContext context(source, arena, interner);
-    ASTNode* node = context.getParser().parseVarDecl();
+    ASTNode* node = context.getParser()->parseVarDecl();
 
     ASSERT_TRUE(node != (ASTNode*)NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
@@ -55,7 +55,7 @@ TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix) {
     StringInterner interner(arena);
     const char* source = "const x: u64 = 789UL;";
     ParserTestContext context(source, arena, interner);
-    ASTNode* node = context.getParser().parseVarDecl();
+    ASTNode* node = context.getParser()->parseVarDecl();
 
     ASSERT_TRUE(node != (ASTNode*)NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
