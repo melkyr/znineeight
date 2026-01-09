@@ -24,7 +24,7 @@ TEST_FUNC(lexer_handles_tab_correctly) {
     u32 file_id = comp_unit.addSource("test.zig", "\tident");
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
     ASSERT_EQ(5, token.location.column);
     return 1;
@@ -45,7 +45,7 @@ TEST_FUNC(lexer_handles_unicode_correctly) {
     u32 file_id = comp_unit.addSource("test.zig", "'\\u{1F4A9}'");
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_CHAR_LITERAL, token.type);
     ASSERT_EQ(0x1F4A9, token.value.character);
     return 1;
@@ -66,7 +66,7 @@ TEST_FUNC(lexer_handles_unterminated_char_hex_escape) {
     u32 file_id = comp_unit.addSource("test.zig", "'\\x");
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
     return 1;
 }
@@ -86,7 +86,7 @@ TEST_FUNC(lexer_handles_unterminated_string_hex_escape) {
     u32 file_id = comp_unit.addSource("test.zig", "\"\\x");
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
     return 1;
 }
@@ -113,7 +113,7 @@ TEST_FUNC(lexer_handles_long_identifier) {
     u32 file_id = comp_unit.addSource("test.zig", long_identifier);
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token.type);
     ASSERT_STREQ(long_identifier, token.value.identifier);
     return 1;
@@ -132,7 +132,7 @@ bool test_lexer_integer_overflow() {
     u32 file_id = comp_unit.addSource("test.zig", "18446744073709551616");
     Parser* parser = comp_unit.createParser(file_id);
 
-    Token token = parser.peek();
+    Token token = parser->peek();
     ASSERT_EQ(TOKEN_ERROR, token.type);
 
     return true;
@@ -148,15 +148,15 @@ bool test_lexer_c_string_literal() {
     Parser* parser = comp_unit.createParser(file_id);
 
     // First token should be the identifier 'c'
-    Token token1 = parser.peek();
+    Token token1 = parser->peek();
     ASSERT_EQ(TOKEN_IDENTIFIER, token1.type);
     ASSERT_STREQ("c", token1.value.identifier);
 
     // Advance the parser to the next token
-    parser.advance();
+    parser->advance();
 
     // Second token should be the string literal "hello"
-    Token token2 = parser.peek();
+    Token token2 = parser->peek();
     ASSERT_EQ(TOKEN_STRING_LITERAL, token2.type);
     ASSERT_STREQ("hello", token2.value.identifier);
 
