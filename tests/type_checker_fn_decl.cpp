@@ -10,7 +10,7 @@ TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams) {
     ParserTestContext context(source, arena, interner);
 
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     ASSERT_TRUE(root != NULL);
 
     TypeChecker checker(context.getCompilationUnit());
@@ -27,7 +27,7 @@ TEST_FUNC(TypeCheckerFnDecl_InvalidParamType) {
     ParserTestContext context(source, arena, interner);
 
     Parser* parser = context.getParser();
-    ASTNode* root = parser.parse();
+    ASTNode* root = parser->parse();
     ASSERT_TRUE(root != NULL);
 
     TypeChecker checker(context.getCompilationUnit());

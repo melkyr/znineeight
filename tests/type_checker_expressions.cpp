@@ -12,8 +12,13 @@ TEST_FUNC(TypeChecker_BoolLiteral) {
 
     // Test 'true'
     {
+        // NOTE: The test pattern has been updated.
+        // 1. A single CompilationUnit now owns all resources (arena, interner).
+        // 2. The TypeChecker is initialized with a reference to the CompilationUnit.
+        // 3. The Parser is retrieved as a pointer (Parser*) via getParser().
+        //    Therefore, method calls must use the '->' operator.
         ParserTestContext ctx("true", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_BOOL);
@@ -22,7 +27,7 @@ TEST_FUNC(TypeChecker_BoolLiteral) {
     // Test 'false'
     {
         ParserTestContext ctx("false", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_BOOL);
@@ -51,7 +56,7 @@ TEST_FUNC(TypeChecker_Identifier) {
         sym_table.insert(symbol);
 
         ParserTestContext ctx("x", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
 
         ASSERT_TRUE(type != NULL);
@@ -68,7 +73,7 @@ TEST_FUNC(TypeChecker_Identifier) {
         TypeChecker checker(unit);
 
         ParserTestContext ctx("y", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
 
         ASSERT_TRUE(type == NULL);
@@ -87,7 +92,7 @@ TEST_FUNC(TypeChecker_CharLiteral) {
     TypeChecker checker(unit);
 
     ParserTestContext ctx("'a'", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
     ASSERT_TRUE(type != NULL);
     ASSERT_EQ(type->kind, TYPE_U8);
@@ -103,7 +108,7 @@ TEST_FUNC(TypeChecker_StringLiteral) {
     TypeChecker checker(unit);
 
     ParserTestContext ctx("\"hello\"", arena, interner);
-    ASTNode* expr = ctx.getParser().parseExpression();
+    ASTNode* expr = ctx.getParser()->parseExpression();
     Type* type = checker.visit(expr);
     ASSERT_TRUE(type != NULL);
     ASSERT_EQ(type->kind, TYPE_POINTER);
@@ -123,7 +128,7 @@ TEST_FUNC(TypeChecker_IntegerLiteral) {
     // Test i8
     {
         ParserTestContext ctx("123", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I8);
@@ -132,7 +137,7 @@ TEST_FUNC(TypeChecker_IntegerLiteral) {
     // Test i64
     {
         ParserTestContext ctx("3000000000", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I64);
@@ -150,7 +155,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("1 + 2", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I8);
@@ -165,7 +170,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("1 == 2", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_BOOL);
@@ -180,7 +185,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("1 + true", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type == NULL);
         ASSERT_TRUE(unit.getErrorHandler().hasErrors());
@@ -195,7 +200,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("1 > true", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type == NULL);
         ASSERT_TRUE(unit.getErrorHandler().hasErrors());
@@ -210,7 +215,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("1 + 1.0", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type == NULL);
         ASSERT_TRUE(unit.getErrorHandler().hasErrors());
@@ -225,7 +230,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
         CompilationUnit unit(arena, interner);
         TypeChecker checker(unit);
         ParserTestContext ctx("undeclared + 1", arena, interner);
-        ASTNode* expr = ctx.getParser().parseExpression();
+        ASTNode* expr = ctx.getParser()->parseExpression();
         Type* type = checker.visit(expr);
         ASSERT_TRUE(type == NULL);
         ASSERT_TRUE(unit.getErrorHandler().hasErrors());
