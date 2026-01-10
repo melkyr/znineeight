@@ -119,8 +119,8 @@ ArenaAllocator arena(1024);
 StringInterner interner(arena);
 CompilationUnit unit(arena, interner);
 u32 file_id = unit.addSource("test.zig", "const x: i32 = 42;");
-Parser parser = unit.createParser(file_id);
-// ... proceed with parsing ...
+Parser* parser = unit.createParser(file_id);
+// ... proceed with parsing using parser->parse()...
 ```
 
 This abstraction is critical for future work, as it will simplify the management of multiple files, diagnostic reporting, and the overall compilation state.

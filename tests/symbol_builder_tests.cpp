@@ -7,7 +7,7 @@
 
 bool test_SymbolBuilder_BuildsCorrectly()
 {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
 
     const char* symbol_name = interner.intern("my_test_symbol");

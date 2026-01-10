@@ -6,7 +6,7 @@
 #include <cstring> // For strlen
 
 TEST_FUNC(lex_arithmetic_and_bitwise_operators) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "% ~ & | ^ << >>";
@@ -44,7 +44,7 @@ TEST_FUNC(lex_arithmetic_and_bitwise_operators) {
 }
 
 TEST_FUNC(Lexer_RangeExpression) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "3..7";

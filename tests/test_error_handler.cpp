@@ -17,28 +17,21 @@
 
 bool test_print_error_report() {
     // 1. Setup
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     SourceManager sm(arena);
-    ErrorHandler eh(sm);
+    ErrorHandler eh(sm, arena);
 
     const char* test_filename = "test.zig";
     const char* test_content = "var x: i32 = \"hello\";\n";
     u32 file_id = sm.addFile(test_filename, test_content, strlen(test_content));
-
-    ErrorReport report;
-    report.code = ERR_TYPE_MISMATCH;
-    report.location.file_id = file_id;
-    report.location.line = 1;
-    report.location.column = 15;
-    report.message = "Cannot assign 'string' to 'i32'";
-    report.hint = "Use an integer literal instead.";
 
     // 2. Redirect stderr
     std::stringstream buffer;
     std::streambuf* old_stderr = std::cerr.rdbuf(buffer.rdbuf());
 
     // 3. Action
-    eh.printErrorReport(report);
+    eh.report(ERR_TYPE_MISMATCH, SourceLocation{file_id, 1, 15}, "Cannot assign 'string' to 'i32'", "Use an integer literal instead.");
+    eh.printErrors();
 
     // 4. Restore stderr and assert
     std::cerr.rdbuf(old_stderr);
@@ -51,26 +44,18 @@ bool test_print_error_report() {
 
     std::string actual_output = buffer.str();
 
-    // Trim trailing newlines from both strings
-    while (!actual_output.empty() && actual_output.back() == '\n') {
-        actual_output.pop_back();
+    // Trim trailing newlines from both strings for C++98 compatibility
+    while (!actual_output.empty() && actual_output[actual_output.length() - 1] == '\n') {
+        actual_output.erase(actual_output.length() - 1);
     }
-    while (!expected_output.empty() && expected_output.back() == '\n') {
-        expected_output.pop_back();
+    while (!expected_output.empty() && expected_output[expected_output.length() - 1] == '\n') {
+        expected_output.erase(expected_output.length() - 1);
     }
-
 
     ASSERT_EQ(expected_output, actual_output);
 
     return true;
 }
 
-int main() {
-    if (test_print_error_report()) {
-        printf("test_error_handler passed.\n");
-        return 0;
-    } else {
-        printf("test_error_handler failed.\n");
-        return 1;
-    }
-}
+// Note: main function removed to avoid multiple definition errors.
+// The primary test runner is in tests/main.cpp.

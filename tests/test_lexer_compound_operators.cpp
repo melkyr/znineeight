@@ -6,7 +6,7 @@
 #include <cstring> // For strlen
 
 TEST_FUNC(lex_compound_assignment_operators) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "+= -= *= /= %= &= |= ^= <<= >>=";

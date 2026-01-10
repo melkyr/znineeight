@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 static bool typeCheckTest(const char* source) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());

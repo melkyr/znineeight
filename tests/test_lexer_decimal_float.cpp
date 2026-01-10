@@ -7,7 +7,7 @@
 #include <cmath>
 
 static bool test_float_lexing(const char* source, double expected_value) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     SourceManager sm(arena);
     u32 file_id = sm.addFile("test.zig", source, strlen(source));

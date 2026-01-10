@@ -11,7 +11,7 @@ TEST_FUNC(TypeChecker_RejectSlice) {
 
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration) {
     const char* source = "var my_array: [16]i32;";
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
