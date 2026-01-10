@@ -770,3 +770,29 @@ Goal: Seal the task so the next AI agent or developer has full context.
     [ ] Task 5.2: Add the "L-Value & Assignment" section to Bootstrap_type_system_and_semantics.md.
 
     [ ] Task 5.3: Update AI_tasks.md: Mark Task 107 as "Completed" and note the shift to the CompilationUnit reference model.
+
+## Postfix Issues
+
+After the refactoring described in this document, a number of issues were identified in the test suite output. This section details the investigation and resolution of these issues.
+
+### 1. Critical Memory Exhaustion Bug (`Assertion 'new_data' failed`)
+
+**Symptom:** The test suite would crash with an assertion failure in `DynamicArray::ensure_capacity`, indicating that the `ArenaAllocator` had run out of memory. This was most prominent in `tests/test_parser_lifecycle.cpp`.
+
+**Root Cause:** The `CompilationUnit::createParser` method was re-tokenizing the source file every time it was called. In tests where `createParser` was called multiple times, this led to the token stream being appended to the arena repeatedly, quickly exhausting its memory.
+
+**Resolution:** The `CompilationUnit` was modified to cache the token stream for each source file. A `DynamicArray<DynamicArray<Token>*>` is now used to store pointers to the token streams, which are allocated in the arena. When `createParser` is called, it first checks if a cached token stream exists for the given file ID. If it does, the cached stream is used; otherwise, the file is tokenized, and the resulting stream is cached for future use. This pointer-based caching mechanism is critical for safety, as it prevents the memory corruption that can occur when `DynamicArray`s of `DynamicArray`s are reallocated.
+
+### 2. "Fatal type error" Messages
+
+**Symptom:** The test suite output included a number of "Fatal type error" messages, such as "Slices are not supported in C89 mode" and "Enum member value overflows its backing type."
+
+**Investigation:** An analysis of the test suite confirmed that these messages are the *expected* and *correct* behavior. Tests such as `test_TypeChecker_RejectSlice` and `test_TypeCheckerEnumTests_SignedIntegerOverflow` are negative tests, designed to validate the compiler's error-detection capabilities. They use an `expect_type_checker_abort` helper function, which asserts that the type checker *should* abort when processing the invalid code.
+
+**Conclusion:** These messages are not indicative of a bug. They confirm that the type checker is correctly enforcing the language rules and C89 compatibility constraints.
+
+### 3. Compiler Warnings
+
+**Symptom:** The test suite compilation produced warnings for `-Wc++11-extensions` and `-Wunused-variable`.
+
+**Conclusion:** These warnings were deemed low-priority and have not been addressed at this time. They do not affect the correctness of the compiler or the test suite.

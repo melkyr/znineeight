@@ -9,6 +9,7 @@
 #include "parser.hpp"
 #include "symbol_table.hpp"
 #include "error_handler.hpp"
+#include "lexer.hpp"
 #include <cstring> // For strlen
 #include <new>     // For placement new
 
@@ -19,24 +20,37 @@ public:
           interner_(interner),
           source_manager_(arena),
           symbol_table_(arena),
-          error_handler_(source_manager_, arena) {}
+          error_handler_(source_manager_, arena),
+          token_cache_(arena) {}
 
     u32 addSource(const char* filename, const char* source) {
-        return source_manager_.addFile(filename, source, strlen(source));
+        u32 file_id = source_manager_.addFile(filename, source, strlen(source));
+        while (token_cache_.length() <= file_id) {
+            void* mem = arena_.alloc(sizeof(DynamicArray<Token>));
+            token_cache_.append(new (mem) DynamicArray<Token>(arena_));
+        }
+        return file_id;
     }
 
     Parser* createParser(u32 file_id) {
-        Lexer lexer(source_manager_, interner_, arena_, file_id);
-        DynamicArray<Token> tokens(arena_);
-        while (true) {
-            Token token = lexer.nextToken();
-            tokens.append(token);
-            if (token.type == TOKEN_EOF) {
-                break;
+        if (file_id >= token_cache_.length()) {
+            return NULL;
+        }
+
+        DynamicArray<Token>* tokens = token_cache_[file_id];
+        if (tokens->length() == 0) {
+            Lexer lexer(source_manager_, interner_, arena_, file_id);
+            while (true) {
+                Token token = lexer.nextToken();
+                tokens->append(token);
+                if (token.type == TOKEN_EOF) {
+                    break;
+                }
             }
         }
+
         void* mem = arena_.alloc(sizeof(Parser));
-        return new (mem) Parser(tokens.getData(), tokens.length(), &arena_, &symbol_table_);
+        return new (mem) Parser(tokens->getData(), tokens->length(), &arena_, &symbol_table_);
     }
 
     /**
@@ -63,6 +77,7 @@ private:
     SourceManager source_manager_;
     SymbolTable symbol_table_;
     ErrorHandler error_handler_;
+    DynamicArray<DynamicArray<Token>*> token_cache_;
 };
 
 #endif // COMPILATION_UNIT_HPP
