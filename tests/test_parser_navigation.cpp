@@ -15,13 +15,13 @@ TEST_FUNC(Parser_Navigation_Simple) {
     ASSERT_TRUE(!p->is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_VAR);
 
-    Token t1 = p.advance();
+    Token t1 = p->advance();
     ASSERT_EQ(t1.type, TOKEN_VAR);
 
     ASSERT_TRUE(!p->is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_IDENTIFIER);
 
-    Token t2 = p.advance();
+    Token t2 = p->advance();
     ASSERT_EQ(t2.type, TOKEN_IDENTIFIER);
 
     ASSERT_TRUE(p->is_at_end());
@@ -37,7 +37,7 @@ TEST_FUNC(Parser_Navigation_BoundaryCheck) {
     ParserTestContext ctx("123", arena, interner);
     Parser p = ctx.getParser();
 
-    p.advance(); // Consumes the integer literal
+    p->advance(); // Consumes the integer literal
     ASSERT_TRUE(p->is_at_end());
 
     return true;
