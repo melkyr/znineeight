@@ -40,9 +40,15 @@ private:
     u32 file_id_;
 };
 
-// Forward declarations for test helpers defined in main.cpp
+// Forward declarations for test helpers
 bool expect_parser_abort(const char* source_code);
 bool expect_statement_parser_abort(const char* source_code);
 bool expect_type_checker_abort(const char* source_code);
+bool expect_parser_oom_abort(const char* source);
+
+
+// These are called by main() when running as a child process for a test
+void run_parser_test_in_child(const char* source);
+void run_type_checker_test_in_child(const char* source);
 
 #endif // TEST_UTILS_HPP
