@@ -11,6 +11,8 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Isrc/include \
     src/bootstrap/symbol_table.cpp \
     src/bootstrap/type_system.cpp \
     src/bootstrap/type_checker.cpp \
+    src/bootstrap/token_supplier.cpp \
+    src/bootstrap/compilation_unit.cpp \
     tests/c89_type_compat_tests.cpp \
     tests/c89_type_mapping_tests.cpp \
     tests/dynamic_array_copy_test.cpp \
