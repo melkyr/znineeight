@@ -12,19 +12,19 @@ TEST_FUNC(Parser_Navigation_Simple) {
     ParserTestContext ctx("var my_var", arena, interner);
     Parser p = ctx.getParser();
 
-    ASSERT_TRUE(!p.is_at_end());
+    ASSERT_TRUE(!p->is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_VAR);
 
     Token t1 = p.advance();
     ASSERT_EQ(t1.type, TOKEN_VAR);
 
-    ASSERT_TRUE(!p.is_at_end());
+    ASSERT_TRUE(!p->is_at_end());
     ASSERT_EQ(p.peek().type, TOKEN_IDENTIFIER);
 
     Token t2 = p.advance();
     ASSERT_EQ(t2.type, TOKEN_IDENTIFIER);
 
-    ASSERT_TRUE(p.is_at_end());
+    ASSERT_TRUE(p->is_at_end());
 
     return true;
 }
@@ -38,7 +38,7 @@ TEST_FUNC(Parser_Navigation_BoundaryCheck) {
     Parser p = ctx.getParser();
 
     p.advance(); // Consumes the integer literal
-    ASSERT_TRUE(p.is_at_end());
+    ASSERT_TRUE(p->is_at_end());
 
     return true;
 }
