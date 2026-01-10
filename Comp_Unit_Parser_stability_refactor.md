@@ -756,10 +756,20 @@ Goal: Restore the test suite by updating setup logic to the new pointer-based mo
     [ ] Task 4.9: Group 4 Fix (Batch B): Update Group 4H and 4I
     
     [ ] Task 4.10: Check if the full suite yet has errors and document which tests are remaining for fixes
+    - **Blocked:** The test suite currently fails to compile, preventing a full run. The following tasks must be completed before this task can be executed.
+        - The following test files failed to compile:
+            - `tests/type_checker_tests.cpp`
+            - `tests/type_checker_enum_tests.cpp`
 
-    [ ] Task 4.11: Fix Remaining tests (yet in isolation)
+    [ ] Task 4.11: Fix compilation errors in `tests/type_checker_tests.cpp`
+    - This test file is failing to compile due to linker errors related to `test_framework` and `test_utils`.
 
-    [ ] Task 4.12: Run the full suite and ensure 0 compilation errors remain.
+    [ ] Task 4.12: Fix compilation errors in `tests/type_checker_enum_tests.cpp`
+    - This test file is failing to compile due to an undefined reference to `expect_type_checker_abort`.
+
+    [ ] Task 4.13: Fix Remaining tests (yet in isolation)
+
+    [ ] Task 4.14: Run the full suite and ensure 0 compilation errors remain.
 
 Phase 5: Documentation & Handover
 
