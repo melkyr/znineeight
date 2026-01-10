@@ -9,7 +9,7 @@ TEST_FUNC(Parser_ParsePrimitiveType) {
     ParserTestContext ctx("i32", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_TYPE_NAME);
@@ -25,7 +25,7 @@ TEST_FUNC(Parser_ParsePointerType) {
     ParserTestContext ctx("*u8", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_POINTER_TYPE);
@@ -45,7 +45,7 @@ TEST_FUNC(Parser_ParseSliceType) {
     ParserTestContext ctx("[]bool", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_ARRAY_TYPE);
@@ -66,7 +66,7 @@ TEST_FUNC(Parser_ParseNestedPointerType) {
     ParserTestContext ctx("**i32", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_POINTER_TYPE);
@@ -90,7 +90,7 @@ TEST_FUNC(Parser_ParseSliceOfPointers) {
     ParserTestContext ctx("[]*i32", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_ARRAY_TYPE);
@@ -115,7 +115,7 @@ TEST_FUNC(Parser_ParseFixedSizeArray) {
     ParserTestContext ctx("[8]u8", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* type_node = parser.parseType();
+    ASTNode* type_node = parser->parseType();
 
     ASSERT_TRUE(type_node != NULL);
     ASSERT_EQ(type_node->type, NODE_ARRAY_TYPE);

@@ -10,7 +10,7 @@ TEST_FUNC(Parser_ParseConstDecl_Simple) {
     ParserTestContext ctx("const x: i32 = 123;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
@@ -39,7 +39,7 @@ TEST_FUNC(Parser_ParseVarDecl_Simple) {
     ParserTestContext ctx("var y: u8 = 42;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
@@ -68,7 +68,7 @@ TEST_FUNC(Parser_ParseVarDecl_PointerType) {
     ParserTestContext ctx("var p: *i32 = 0;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
@@ -95,7 +95,7 @@ TEST_FUNC(Parser_ParseVarDecl_SliceType) {
     ParserTestContext ctx("const s: []u8 = 1;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
 
@@ -122,7 +122,7 @@ TEST_FUNC(Parser_ParseVarDecl_FixedArrayType) {
     ParserTestContext ctx("var buf: [1024]u8 = 0;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_VAR_DECL);
 

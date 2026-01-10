@@ -13,7 +13,7 @@ TEST_FUNC(Parser_For_ValidStatement_ItemOnly) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
 
     ASSERT_TRUE(stmt != NULL);
     ASSERT_TRUE(stmt->type == NODE_FOR_STMT);
@@ -38,7 +38,7 @@ TEST_FUNC(Parser_For_ValidStatement_ItemAndIndex) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
 
     ASSERT_TRUE(stmt != NULL);
     ASSERT_TRUE(stmt->type == NODE_FOR_STMT);
@@ -98,7 +98,7 @@ TEST_FUNC(Parser_For_WithComplexIterable) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
 
     ASSERT_TRUE(stmt != NULL);
     ASSERT_TRUE(stmt->type == NODE_FOR_STMT);

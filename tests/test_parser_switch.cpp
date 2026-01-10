@@ -13,7 +13,7 @@ TEST_FUNC(Parser_SwitchExpression_Basic) {
     ParserTestContext ctx("switch (x) { 1 => 10, else => 20 }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_SWITCH_EXPR);
 
@@ -47,7 +47,7 @@ TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
     ParserTestContext ctx("switch (y) { 1, 2, 3 => 42, else => 0 }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_SWITCH_EXPR);
 
@@ -74,7 +74,7 @@ TEST_FUNC(Parser_SwitchExpression_Nested) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_SWITCH_EXPR);
 

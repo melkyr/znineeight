@@ -9,7 +9,7 @@ TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
 
     ParserTestContext ctx("-123", arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_UNARY_OP);
@@ -32,7 +32,7 @@ TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
 
     ParserTestContext ctx("--123", arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_UNARY_OP);
@@ -62,7 +62,7 @@ TEST_FUNC(Parser_UnaryOp_MixedOperators) {
 
     ParserTestContext ctx("!~-&foo", arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_UNARY_OP); // !
@@ -98,7 +98,7 @@ TEST_FUNC(Parser_UnaryOp_WithPostfix) {
 
     ParserTestContext ctx("-foo()", arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_UNARY_OP);

@@ -14,7 +14,7 @@ TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
     ParserTestContext ctx("union {}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_UNION_DECL);
@@ -33,7 +33,7 @@ TEST_FUNC(Parser_ParseUnionDeclaration_WithFields) {
     ParserTestContext ctx("union { a: i32, b: bool }", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parsePrimaryExpr();
+    ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_UNION_DECL);
