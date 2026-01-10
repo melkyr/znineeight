@@ -1,6 +1,27 @@
 #include "../src/include/test_framework.hpp"
 #include "test_utils.hpp"
 #include <cstdio>
+#include <cstring>
+#include <cstdlib>
+
+// Helper function to read source from a temporary file for child process
+static char* read_source_from_file(const char* path) {
+    FILE* file = fopen(path, "rb");
+    if (!file) return NULL;
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char* buffer = (char*)malloc(length + 1);
+    if (!buffer) {
+        fclose(file);
+        return NULL;
+    }
+    fread(buffer, 1, length, file);
+    buffer[length] = '\0';
+    fclose(file);
+    return buffer;
+}
+
 
 // Forward declarations for Group 1A: Memory Management
 TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
@@ -158,9 +179,7 @@ TEST_FUNC(Parser_Enum_ComplexInitializer);
 
 // Forward declarations for Group 3E: Function & Variable Declarations
 TEST_FUNC(Parser_FnDecl_ValidEmpty);
-// TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
-// TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
-// TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
+TEST_FUNC(Parser_FnDecl_Valid_NoArrow);
 TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
 TEST_FUNC(Parser_FnDecl_Error_MissingParens);
 TEST_FUNC(Parser_NonEmptyFunctionBody);
@@ -327,6 +346,26 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 
 
 int main(int argc, char* argv[]) {
+    if (argc == 3) {
+        const char* flag = argv[1];
+        const char* filepath = argv[2];
+        char* source = read_source_from_file(filepath);
+        if (!source) {
+            fprintf(stderr, "Failed to read source file in child process: %s\n", filepath);
+            return 1;
+        }
+
+        if (strcmp(flag, "--run_parser_test") == 0) {
+            run_parser_test_in_child(source);
+        } else if (strcmp(flag, "--run_type_checker_test") == 0) {
+            run_type_checker_test_in_child(source);
+        }
+
+        free(source);
+        return 0; // Child process should exit after running the test
+    }
+
+
     bool (*tests[])() = {
         // Group 1A
         test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
@@ -473,9 +512,7 @@ int main(int argc, char* argv[]) {
         test_Parser_Enum_ComplexInitializer,
         // Group 3E
         test_Parser_FnDecl_ValidEmpty,
-        // test_Parser_FnDecl_Error_NonEmptyParams,
-        // test_Parser_FnDecl_Error_NonEmptyBody,
-        // test_Parser_FnDecl_Error_MissingArrow,
+        test_Parser_FnDecl_Valid_NoArrow,
         test_Parser_FnDecl_Error_MissingReturnType,
         test_Parser_FnDecl_Error_MissingParens,
         test_Parser_NonEmptyFunctionBody,

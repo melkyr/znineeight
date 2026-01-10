@@ -46,25 +46,30 @@ TEST_FUNC(Parser_FnDecl_ValidEmpty) {
 // in a separate process to verify the behavior without crashing the test runner.
 // This is handled by the `expect_parser_abort` helper.
 
-// TODO: These tests are disabled because the function parser currently only supports
-// empty parameter lists and empty function bodies. Proper implementation is required.
-// TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams) {
-//     const char* source = "fn my_func(a: i32) -> i32 {}";
-//     ASSERT_TRUE(expect_parser_abort(source));
-//     return true;
-// }
+TEST_FUNC(Parser_FnDecl_Valid_NoArrow) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
 
-// TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody) {
-//     const char* source = "fn my_func() -> i32 { var x = 1; }";
-//     ASSERT_TRUE(expect_parser_abort(source));
-//     return true;
-// }
+    const char* source = "fn my_func() i32 {}";
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
 
-// TEST_FUNC(Parser_FnDecl_Error_MissingArrow) {
-//     const char* source = "fn my_func() i32 {}";
-//     ASSERT_TRUE(expect_parser_abort(source));
-//     return true;
-// }
+    ASTNode* fn_decl_node = parser->parseFnDecl();
+
+    ASSERT_TRUE(fn_decl_node != NULL);
+    ASSERT_EQ(fn_decl_node->type, NODE_FN_DECL);
+
+    ASTFnDeclNode* fn_decl = fn_decl_node->as.fn_decl;
+    ASSERT_STREQ(fn_decl->name, "my_func");
+
+    // Check return type
+    ASSERT_TRUE(fn_decl->return_type != NULL);
+    ASSERT_EQ(fn_decl->return_type->type, NODE_TYPE_NAME);
+    ASSERT_STREQ(fn_decl->return_type->as.type_name.name, "i32");
+
+    return true;
+}
 
 TEST_FUNC(Parser_FnDecl_Error_MissingReturnType) {
     const char* source = "fn my_func() -> {}";

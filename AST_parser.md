@@ -807,7 +807,7 @@ The `parseFnDecl` function is responsible for parsing function declarations. It 
 
 - It consumes the `fn` keyword and the function's identifier.
 - It parses the parameter list inside `()`.
-- It then checks for a return type. The return type can be specified with an optional `->` or just by the type name. If no return type is present before the opening `{` of the body, it defaults to `void`.
+- It then checks for a return type. The return type can be specified with an optional `->` token followed by a type expression, or just the type expression itself. If no return type is present before the opening `{` of the body, it defaults to `void`.
 - After parsing the function signature, it calls `parseBlockStatement` to parse the function's body.
 
 ### `ASTParamDeclNode`
