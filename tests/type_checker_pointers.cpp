@@ -6,7 +6,7 @@
 TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     const char* source = "const x: i32 = 0; const p: *i32 = &x;";
 
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -51,7 +51,7 @@ TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     const char* source = "const x: i32 = 42;";
 
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -94,7 +94,7 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
 }
 
 TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -133,7 +133,7 @@ TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
 }
 
 TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -161,7 +161,7 @@ TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue) {
 }
 
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

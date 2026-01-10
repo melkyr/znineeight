@@ -22,7 +22,7 @@ static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name,
 // --- Test Cases ---
 
 TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a and b or c", arena, interner);
@@ -44,7 +44,7 @@ TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
 }
 
 TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a or b and c", arena, interner);
@@ -66,7 +66,7 @@ TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
 }
 
 TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("x orelse y or z", arena, interner);
@@ -88,7 +88,7 @@ TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
 }
 
 TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a and b and c", arena, interner);
@@ -110,7 +110,7 @@ TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
 }
 
 TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a orelse b orelse c", arena, interner);
@@ -132,7 +132,7 @@ TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
 }
 
 TEST_FUNC(Parser_Logical_ComplexPrecedence) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("flag and val orelse default", arena, interner);

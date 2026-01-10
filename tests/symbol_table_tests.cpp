@@ -4,7 +4,7 @@
 #include "compilation_unit.hpp"
 
 TEST_FUNC(SymbolTable_DuplicateDetection) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();
@@ -28,7 +28,7 @@ TEST_FUNC(SymbolTable_DuplicateDetection) {
 }
 
 TEST_FUNC(SymbolTable_NestedScopes_And_Lookup) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();

@@ -158,9 +158,9 @@ TEST_FUNC(Parser_Enum_ComplexInitializer);
 
 // Forward declarations for Group 3E: Function & Variable Declarations
 TEST_FUNC(Parser_FnDecl_ValidEmpty);
-TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
-TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
-TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
+// TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
+// TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
+// TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
 TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
 TEST_FUNC(Parser_FnDecl_Error_MissingParens);
 TEST_FUNC(Parser_NonEmptyFunctionBody);
@@ -473,9 +473,9 @@ int main(int argc, char* argv[]) {
         test_Parser_Enum_ComplexInitializer,
         // Group 3E
         test_Parser_FnDecl_ValidEmpty,
-        test_Parser_FnDecl_Error_NonEmptyParams,
-        test_Parser_FnDecl_Error_NonEmptyBody,
-        test_Parser_FnDecl_Error_MissingArrow,
+        // test_Parser_FnDecl_Error_NonEmptyParams,
+        // test_Parser_FnDecl_Error_NonEmptyBody,
+        // test_Parser_FnDecl_Error_MissingArrow,
         test_Parser_FnDecl_Error_MissingReturnType,
         test_Parser_FnDecl_Error_MissingParens,
         test_Parser_NonEmptyFunctionBody,

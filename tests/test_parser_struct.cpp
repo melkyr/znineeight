@@ -4,7 +4,7 @@
 #include <cstring> // For strlen in the helper
 
 TEST_FUNC(Parser_StructDeclaration_Simple) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -33,7 +33,7 @@ TEST_FUNC(Parser_StructDeclaration_Simple) {
 }
 
 TEST_FUNC(Parser_StructDeclaration_Empty) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -52,7 +52,7 @@ TEST_FUNC(Parser_StructDeclaration_Empty) {
 }
 
 TEST_FUNC(Parser_StructDeclaration_MultipleFields) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -97,7 +97,7 @@ TEST_FUNC(Parser_StructDeclaration_MultipleFields) {
 }
 
 TEST_FUNC(Parser_StructDeclaration_WithTrailingComma) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -115,7 +115,7 @@ TEST_FUNC(Parser_StructDeclaration_WithTrailingComma) {
 }
 
 TEST_FUNC(Parser_StructDeclaration_ComplexFieldType) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

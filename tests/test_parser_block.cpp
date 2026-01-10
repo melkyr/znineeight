@@ -3,7 +3,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParseEmptyBlock) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{}", arena, interner);
@@ -19,7 +19,7 @@ TEST_FUNC(Parser_ParseEmptyBlock) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithIfStatement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{if (1) {}}", arena, interner);
@@ -38,7 +38,7 @@ TEST_FUNC(Parser_ParseBlockWithIfStatement) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{while (1) {}}", arena, interner);
@@ -57,7 +57,7 @@ TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{if (1) {} while (1) {}}", arena, interner);
@@ -79,7 +79,7 @@ TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{;}", arena, interner);
@@ -98,7 +98,7 @@ TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{;;}", arena, interner);
@@ -120,7 +120,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{}}", arena, interner);
@@ -140,7 +140,7 @@ TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{}{}}", arena, interner);
@@ -164,7 +164,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
 }
 
 TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("{{};}", arena, interner);

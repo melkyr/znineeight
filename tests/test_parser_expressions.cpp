@@ -8,7 +8,7 @@
 bool expect_parser_abort(const char* source_code);
 
 TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("123", arena, interner);
@@ -24,7 +24,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
 }
 
 TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("2 + 3 * 4", arena, interner);
@@ -57,7 +57,7 @@ TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
 }
 
 TEST_FUNC(Parser_BinaryExpr_LeftAssociativity) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("10 - 4 - 2", arena, interner);
@@ -94,7 +94,7 @@ TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS) {
 }
 
 TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("3.14", arena, interner);
@@ -110,7 +110,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
 }
 
 TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("'a'", arena, interner);
@@ -126,7 +126,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral) {
 }
 
 TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("\"hello\"", arena, interner);
@@ -142,7 +142,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral) {
 }
 
 TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_var", arena, interner);
@@ -158,7 +158,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_Identifier) {
 }
 
 TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("(42)", arena, interner);
@@ -180,7 +180,7 @@ TEST_FUNC(Parser_Error_OnUnexpectedToken) {
 }
 
 TEST_FUNC(Parser_FunctionCall_NoArgs) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_func()", arena, interner);
@@ -197,7 +197,7 @@ TEST_FUNC(Parser_FunctionCall_NoArgs) {
 }
 
 TEST_FUNC(Parser_FunctionCall_WithArgs) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("add(1, 2)", arena, interner);
@@ -218,7 +218,7 @@ TEST_FUNC(Parser_FunctionCall_WithArgs) {
 }
 
 TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("add(1, 2,)", arena, interner);
@@ -235,7 +235,7 @@ TEST_FUNC(Parser_FunctionCall_WithTrailingComma) {
 }
 
 TEST_FUNC(Parser_ArrayAccess) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("my_array[0]", arena, interner);
@@ -253,7 +253,7 @@ TEST_FUNC(Parser_ArrayAccess) {
 }
 
 TEST_FUNC(Parser_ChainedPostfixOps) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("get_func()[0]", arena, interner);

@@ -9,7 +9,7 @@ bool expect_parser_abort(const char* source);
 
 // Test parsing a valid comptime block
 TEST_FUNC(Parser_ComptimeBlock_Valid) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     const char* source = "comptime { 123 }";

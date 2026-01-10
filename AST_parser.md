@@ -1153,6 +1153,8 @@ The `Parser` is designed with clear ownership semantics to ensure memory safety 
 
 -   **AST Node Ownership:** The `Parser` does **not** own the AST nodes it creates. All `ASTNode` objects are allocated from an `ArenaAllocator` that is passed into the parser's constructor. The arena's owner is responsible for managing its lifetime and freeing the memory when the AST is no longer needed, typically by using an `ArenaLifetimeGuard` in test scenarios.
 
+-   **Non-Copyable by Design:** The `Parser`'s copy constructor and assignment operator are private. This is a deliberate design choice to prevent shallow copies. A shallow copy would result in multiple `Parser` instances sharing pointers to the same token stream, arena, and symbol table, leading to memory corruption and double-free errors. By making the class non-copyable, the compiler enforces a clear ownership model where the `CompilationUnit` exclusively manages the `Parser`'s lifetime. The `createParser()` method returns a `Parser*` to the arena-allocated object, ensuring that its lifetime is tied to the compilation session.
+
 This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
 
 ---

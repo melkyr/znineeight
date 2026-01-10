@@ -4,7 +4,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(TypeCompatibility) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);

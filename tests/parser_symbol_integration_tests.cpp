@@ -6,7 +6,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();
@@ -29,7 +29,7 @@ TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
 }
 
 TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();
@@ -51,7 +51,7 @@ TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
 }
 
 TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();
@@ -71,7 +71,7 @@ TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
 }
 
 TEST_FUNC(Parser_FnDecl_AndScopeManagement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     SymbolTable& table = comp_unit.getSymbolTable();

@@ -4,7 +4,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(C89Compat_FunctionTypeValidation) {
-    ArenaAllocator arena(8192); // Increased arena size for more complex types
+    ArenaAllocator arena(16384); // Increased arena size for more complex types
     ArenaLifetimeGuard guard(arena);
 
     // Test Case 1: Simple valid function type fn() -> void

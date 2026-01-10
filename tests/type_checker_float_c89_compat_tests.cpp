@@ -12,7 +12,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
     // We use a function context to get a variable of type f32, since float
     // literals are always inferred as f64.
     {
-        ArenaAllocator arena(8192);
+        ArenaAllocator arena(16384);
         StringInterner interner(arena);
         const char* source =
             "fn test_fn(x: f32) -> void {\n"
@@ -27,7 +27,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
 
     // Test case 2: Unsafe narrowing from f64 to f32 should be rejected.
     {
-        ArenaAllocator arena(8192);
+        ArenaAllocator arena(16384);
         StringInterner interner(arena);
         const char* source =
             "fn test_fn(x: f64) -> void {\n"

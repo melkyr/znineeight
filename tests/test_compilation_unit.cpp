@@ -5,7 +5,7 @@
 #include "lexer.hpp"
 
 TEST_FUNC(compilation_unit_creation) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* source = "const x: i32 = 42;";
@@ -19,7 +19,7 @@ TEST_FUNC(compilation_unit_creation) {
 }
 
 TEST_FUNC(compilation_unit_var_decl) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
 

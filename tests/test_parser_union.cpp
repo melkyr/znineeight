@@ -8,7 +8,7 @@
 bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("union {}", arena, interner);
@@ -27,7 +27,7 @@ TEST_FUNC(Parser_ParseUnionDeclaration_Empty) {
 }
 
 TEST_FUNC(Parser_ParseUnionDeclaration_WithFields) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("union { a: i32, b: bool }", arena, interner);

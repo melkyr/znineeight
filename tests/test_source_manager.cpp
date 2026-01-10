@@ -3,7 +3,7 @@
 #include <cassert>
 
 void test_source_manager_add_file() {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     SourceManager sm(arena);
     const char* content = "line 1\nline 2";
     u32 file_id = sm.addFile("test.zig", content, 13);
@@ -12,7 +12,7 @@ void test_source_manager_add_file() {
 }
 
 void test_source_manager_get_location() {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     SourceManager sm(arena);
     const char* content = "line 1\nline 2\n  line 3";
     u32 file_id = sm.addFile("test.zig", content, 23);
@@ -32,9 +32,5 @@ void test_source_manager_get_location() {
     printf("test_source_manager_get_location: PASS\n");
 }
 
-int main() {
-    test_source_manager_add_file();
-    test_source_manager_get_location();
-    printf("All SourceManager tests passed!\n");
-    return 0;
-}
+// Note: main function removed to avoid multiple definition errors.
+// The primary test runner is in tests/main.cpp.

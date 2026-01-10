@@ -3,7 +3,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_Bugfix_HandlesExpressionStatement) {
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     // This code uses the simplest possible expression statement.

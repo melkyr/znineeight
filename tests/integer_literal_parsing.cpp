@@ -4,7 +4,7 @@
 #include "ast.hpp"
 
 TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     const char* source = "const x: u32 = 123u;";
@@ -27,7 +27,7 @@ TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix) {
 }
 
 TEST_FUNC(IntegerLiteralParsing_LongSuffix) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     const char* source = "const x: i64 = 456L;";
@@ -50,7 +50,7 @@ TEST_FUNC(IntegerLiteralParsing_LongSuffix) {
 }
 
 TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     const char* source = "const x: u64 = 789UL;";
