@@ -2,6 +2,267 @@
 #include "test_utils.hpp"
 #include <cstdio>
 
+// Forward declarations for Group 1A: Memory Management
+TEST_FUNC(DynamicArray_ShouldUseCopyConstructionOnReallocation);
+TEST_FUNC(ArenaAllocator_AllocShouldReturn8ByteAligned);
+TEST_FUNC(arena_alloc_out_of_memory);
+TEST_FUNC(arena_alloc_zero_size);
+TEST_FUNC(arena_alloc_aligned_out_of_memory);
+TEST_FUNC(arena_alloc_aligned_overflow_check);
+TEST_FUNC(basic_allocation);
+TEST_FUNC(multiple_allocations);
+TEST_FUNC(allocation_failure);
+TEST_FUNC(reset);
+TEST_FUNC(aligned_allocation);
+TEST_FUNC(dynamic_array_append);
+TEST_FUNC(dynamic_array_growth);
+TEST_FUNC(dynamic_array_growth_from_zero);
+TEST_FUNC(dynamic_array_non_pod_reallocation);
+
+// Forward declarations for Group 1B: Core Components
+TEST_FUNC(string_interning);
+TEST_FUNC(compilation_unit_creation);
+TEST_FUNC(compilation_unit_var_decl);
+TEST_FUNC(SymbolBuilder_BuildsCorrectly);
+TEST_FUNC(SymbolTable_DuplicateDetection);
+TEST_FUNC(SymbolTable_NestedScopes_And_Lookup);
+TEST_FUNC(SymbolTable_HashTableResize);
+
+// Forward declarations for Group 2A: Float Literals
+TEST_FUNC(Lexer_FloatWithUnderscores_IntegerPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_FractionalPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_ExponentPart);
+TEST_FUNC(Lexer_FloatWithUnderscores_AllParts);
+TEST_FUNC(Lexer_FloatSimpleDecimal);
+TEST_FUNC(Lexer_FloatNoFractionalPart);
+TEST_FUNC(Lexer_FloatNoIntegerPart);
+TEST_FUNC(Lexer_FloatWithExponent);
+TEST_FUNC(Lexer_FloatWithNegativeExponent);
+TEST_FUNC(Lexer_FloatExponentNoSign);
+TEST_FUNC(Lexer_FloatIntegerWithExponent);
+TEST_FUNC(Lexer_FloatExponentNoDigits);
+TEST_FUNC(Lexer_FloatHexSimple);
+TEST_FUNC(Lexer_FloatHexNoFractionalPart);
+TEST_FUNC(Lexer_FloatHexNegativeExponent);
+TEST_FUNC(Lexer_FloatHexInvalidFormat);
+
+// Forward declarations for Group 2B: Integer & String Literals
+TEST_FUNC(lexer_integer_overflow);
+TEST_FUNC(lexer_c_string_literal);
+TEST_FUNC(lexer_handles_unicode_correctly);
+TEST_FUNC(lexer_handles_unterminated_char_hex_escape);
+TEST_FUNC(lexer_handles_unterminated_string_hex_escape);
+TEST_FUNC(Lexer_HandlesU64Integer);
+TEST_FUNC(Lexer_UnterminatedCharHexEscape);
+TEST_FUNC(Lexer_UnterminatedStringHexEscape);
+TEST_FUNC(Lexer_UnicodeInStringLiteral);
+TEST_FUNC(IntegerLiterals);
+TEST_FUNC(Lexer_StringLiteral_EscapedCharacters);
+TEST_FUNC(Lexer_StringLiteral_LongString);
+TEST_FUNC(IntegerLiteralParsing_UnsignedSuffix);
+TEST_FUNC(IntegerLiteralParsing_LongSuffix);
+TEST_FUNC(IntegerLiteralParsing_UnsignedLongSuffix);
+
+// Forward declarations for Group 2C: Operators & Delimiters
+TEST_FUNC(single_char_tokens);
+TEST_FUNC(multi_char_tokens);
+TEST_FUNC(assignment_vs_equality);
+TEST_FUNC(lex_arithmetic_and_bitwise_operators);
+TEST_FUNC(Lexer_RangeExpression);
+TEST_FUNC(lex_compound_assignment_operators);
+TEST_FUNC(LexerSpecialOperators);
+TEST_FUNC(LexerSpecialOperatorsMixed);
+TEST_FUNC(Lexer_Delimiters);
+TEST_FUNC(Lexer_DotOperators);
+
+// Forward declarations for Group 2D: Keywords & Comments
+TEST_FUNC(skip_comments);
+TEST_FUNC(nested_block_comments);
+TEST_FUNC(unterminated_block_comment);
+TEST_FUNC(lex_visibility_and_linkage_keywords);
+TEST_FUNC(lex_compile_time_and_special_function_keywords);
+TEST_FUNC(lex_miscellaneous_keywords);
+TEST_FUNC(lex_missing_keywords);
+
+// Forward declarations for Group 2E: Identifiers, Integration & Edge Cases
+TEST_FUNC(lexer_handles_tab_correctly);
+TEST_FUNC(lexer_handles_long_identifier);
+TEST_FUNC(Lexer_HandlesLongIdentifier);
+TEST_FUNC(Lexer_NumericLookaheadSafety);
+TEST_FUNC(token_fields_are_initialized);
+TEST_FUNC(Lexer_ComprehensiveCrossGroup);
+TEST_FUNC(Lexer_IdentifiersAndStrings);
+TEST_FUNC(Lexer_ErrorConditions);
+TEST_FUNC(IntegerRangeAmbiguity);
+TEST_FUNC(Lexer_MultiLineIntegrationTest);
+
+// Forward declarations for Group 3A: Basic AST Nodes & Primary Expressions
+TEST_FUNC(ASTNode_IntegerLiteral);
+TEST_FUNC(ASTNode_FloatLiteral);
+TEST_FUNC(ASTNode_CharLiteral);
+TEST_FUNC(ASTNode_StringLiteral);
+TEST_FUNC(ASTNode_Identifier);
+TEST_FUNC(ASTNode_UnaryOp);
+TEST_FUNC(ASTNode_BinaryOp);
+TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_CharLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_StringLiteral);
+TEST_FUNC(Parser_ParsePrimaryExpr_Identifier);
+TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression);
+
+// Forward declarations for Group 3B: Postfix, Binary & Advanced Expressions
+TEST_FUNC(Parser_FunctionCall_NoArgs);
+TEST_FUNC(Parser_FunctionCall_WithArgs);
+TEST_FUNC(Parser_FunctionCall_WithTrailingComma);
+TEST_FUNC(Parser_ArrayAccess);
+TEST_FUNC(Parser_ChainedPostfixOps);
+TEST_FUNC(Parser_BinaryExpr_SimplePrecedence);
+TEST_FUNC(Parser_BinaryExpr_LeftAssociativity);
+TEST_FUNC(Parser_TryExpr_Simple);
+TEST_FUNC(Parser_TryExpr_Chained);
+TEST_FUNC(Parser_CatchExpression_Simple);
+TEST_FUNC(Parser_CatchExpression_WithPayload);
+TEST_FUNC(Parser_CatchExpression_RightAssociativity);
+
+// Forward declarations for Group 3C: Struct & Union Declarations
+TEST_FUNC(ASTNode_ContainerDeclarations);
+TEST_FUNC(Parser_Struct_Error_MissingLBrace);
+TEST_FUNC(Parser_Struct_Error_MissingRBrace);
+TEST_FUNC(Parser_Struct_Error_MissingColon);
+TEST_FUNC(Parser_Struct_Error_MissingType);
+TEST_FUNC(Parser_Struct_Error_InvalidField);
+TEST_FUNC(Parser_StructDeclaration_Simple);
+TEST_FUNC(Parser_StructDeclaration_Empty);
+TEST_FUNC(Parser_StructDeclaration_MultipleFields);
+TEST_FUNC(Parser_StructDeclaration_WithTrailingComma);
+TEST_FUNC(Parser_StructDeclaration_ComplexFieldType);
+TEST_FUNC(ParserBug_TopLevelUnion);
+TEST_FUNC(ParserBug_TopLevelStruct);
+TEST_FUNC(ParserBug_UnionFieldNodeType);
+
+// Forward declarations for Group 3D: Enum Declarations
+TEST_FUNC(Parser_Enum_Empty);
+TEST_FUNC(Parser_Enum_SimpleMembers);
+TEST_FUNC(Parser_Enum_TrailingComma);
+TEST_FUNC(Parser_Enum_WithValues);
+TEST_FUNC(Parser_Enum_MixedMembers);
+TEST_FUNC(Parser_Enum_WithBackingType);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingOpeningBrace);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingClosingBrace);
+TEST_FUNC(Parser_Enum_SyntaxError_NoComma);
+TEST_FUNC(Parser_Enum_SyntaxError_InvalidMember);
+TEST_FUNC(Parser_Enum_SyntaxError_MissingInitializer);
+TEST_FUNC(Parser_Enum_SyntaxError_BackingTypeNoParens);
+TEST_FUNC(Parser_Enum_ComplexInitializer);
+
+// Forward declarations for Group 3E: Function & Variable Declarations
+TEST_FUNC(Parser_FnDecl_ValidEmpty);
+TEST_FUNC(Parser_FnDecl_Error_NonEmptyParams);
+TEST_FUNC(Parser_FnDecl_Error_NonEmptyBody);
+TEST_FUNC(Parser_FnDecl_Error_MissingArrow);
+TEST_FUNC(Parser_FnDecl_Error_MissingReturnType);
+TEST_FUNC(Parser_FnDecl_Error_MissingParens);
+TEST_FUNC(Parser_NonEmptyFunctionBody);
+TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly);
+TEST_FUNC(Parser_VarDecl_DetectsDuplicateSymbol);
+TEST_FUNC(Parser_FnDecl_AndScopeManagement);
+
+// Forward declarations for Group 3F: Control Flow & Blocks
+TEST_FUNC(ASTNode_ForStmt);
+TEST_FUNC(ASTNode_SwitchExpr);
+TEST_FUNC(Parser_IfStatement_Simple);
+TEST_FUNC(Parser_IfStatement_WithElse);
+TEST_FUNC(Parser_ParseEmptyBlock);
+TEST_FUNC(Parser_ParseBlockWithEmptyStatement);
+TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements);
+TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock);
+TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks);
+TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement);
+TEST_FUNC(Parser_ErrDeferStatement_Simple);
+TEST_FUNC(Parser_ComptimeBlock_Valid);
+TEST_FUNC(Parser_NestedBlocks_AndShadowing);
+TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope);
+
+// Forward declarations for Group 3G: Parser Error Handling
+TEST_FUNC(Parser_Error_OnUnexpectedToken);
+TEST_FUNC(Parser_Error_OnMissingColon);
+TEST_FUNC(Parser_IfStatement_Error_MissingLParen);
+TEST_FUNC(Parser_IfStatement_Error_MissingRParen);
+TEST_FUNC(Parser_IfStatement_Error_MissingThenBlock);
+TEST_FUNC(Parser_IfStatement_Error_MissingElseBlock);
+TEST_FUNC(Parser_BinaryExpr_Error_MissingRHS);
+TEST_FUNC(Parser_TryExpr_InvalidSyntax);
+TEST_FUNC(Parser_CatchExpression_Error_MissingElseExpr);
+TEST_FUNC(Parser_CatchExpression_Error_IncompletePayload);
+TEST_FUNC(Parser_CatchExpression_Error_MissingPipe);
+TEST_FUNC(Parser_ErrDeferStatement_Error_MissingBlock);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingExpression);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingOpeningBrace);
+TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
+
+// Forward declarations for Group 3H: Integration, Bugs, and Edge Cases
+TEST_FUNC(Parser_AbortOnAllocationFailure);
+TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
+TEST_FUNC(ParserIntegration_IfWithComplexCondition);
+TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
+TEST_FUNC(ParserBug_LogicalOperatorSymbol);
+TEST_FUNC(Parser_RecursionLimit);
+TEST_FUNC(Parser_RecursionLimit_Unary);
+TEST_FUNC(Parser_RecursionLimit_Binary);
+TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree);
+TEST_FUNC(Parser_Bugfix_HandlesExpressionStatement);
+
+// Forward declarations for Group 4A: Literal & Primitive Type Inference
+TEST_FUNC(TypeChecker_IntegerLiteralInference);
+TEST_FUNC(TypeChecker_FloatLiteralInference);
+TEST_FUNC(TypeChecker_CharLiteralInference);
+TEST_FUNC(TypeChecker_StringLiteralInference);
+TEST_FUNC(TypeCheckerStringLiteralType);
+TEST_FUNC(TypeCheckerIntegerLiteralType);
+TEST_FUNC(TypeChecker_C89IntegerCompatibility);
+TEST_FUNC(TypeResolution_ValidPrimitives);
+TEST_FUNC(TypeResolution_InvalidOrUnsupported);
+TEST_FUNC(TypeResolution_AllPrimitives);
+TEST_FUNC(TypeChecker_BoolLiteral);
+TEST_FUNC(TypeChecker_IntegerLiteral);
+TEST_FUNC(TypeChecker_CharLiteral);
+TEST_FUNC(TypeChecker_StringLiteral);
+TEST_FUNC(TypeChecker_Identifier);
+
+// Forward declarations for Group 4B: Variable Declaration & Scope
+TEST_FUNC(TypeCheckerValidDeclarations);
+TEST_FUNC(TypeCheckerInvalidDeclarations);
+TEST_FUNC(TypeCheckerUndeclaredVariable);
+TEST_FUNC(TypeChecker_VarDecl_Valid_Simple);
+TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch);
+TEST_FUNC(TypeChecker_VarDecl_Valid_Widening);
+TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors);
+
+// Forward declarations for Group 4C: Function Declarations & Return Validation
+TEST_FUNC(ReturnTypeValidation_Valid);
+TEST_FUNC(ReturnTypeValidation_Invalid);
+TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams);
+TEST_FUNC(TypeCheckerFnDecl_InvalidParamType);
+TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction);
+TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction);
+
+// Forward declarations for Group 4D: Pointer Operations
+TEST_FUNC(TypeChecker_Dereference_ValidPointer);
+TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
+TEST_FUNC(TypeChecker_Dereference_ConstPointer);
+TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
+TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
+TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue);
+TEST_FUNC(TypeCheckerPointerOps_AddressOf_InvalidRValue);
+TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer);
+TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
+
 // Forward declarations for Group 4E: Pointer Arithmetic
 TEST_FUNC(TypeCheckerVoidTests_PointerAddition);
 TEST_FUNC(TypeChecker_PointerIntegerAddition);
@@ -36,13 +297,279 @@ TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithPointerCondition);
 TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithFloatCondition);
 TEST_FUNC(TypeCheckerControlFlow_WhileStatementWithVoidCondition);
 
-// Forward declarations for the single test
-TEST_FUNC(Parser_Bugfix_HandlesExpressionStatement);
+// Forward declarations for Group 4H: Container & Enum Validation
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice);
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer);
+TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray);
+TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields);
+TEST_FUNC(TypeCheckerEnumTests_SignedIntegerOverflow);
+TEST_FUNC(TypeCheckerEnumTests_SignedIntegerUnderflow);
+TEST_FUNC(TypeCheckerEnumTests_UnsignedIntegerOverflow);
+TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
+TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
+TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
+TEST_FUNC(TypeCheckerEnumTests_ValidValues);
+
+// Forward declarations for Group 4I: C89 Compatibility & Misc
+TEST_FUNC(TypeChecker_RejectSlice);
+TEST_FUNC(TypeChecker_RejectNonConstantArraySize);
+TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
+TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration);
+TEST_FUNC(TypeCompatibility);
+TEST_FUNC(TypeToString_Reentrancy);
+TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
+TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
+TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
+TEST_FUNC(TypeCheckerC89Compat_FloatWidening);
+TEST_FUNC(C89TypeMapping_Validation);
+TEST_FUNC(C89Compat_FunctionTypeValidation);
+TEST_FUNC(TypeChecker_Bool_Literals);
+
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
+        // Group 1A
+        test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
+        test_ArenaAllocator_AllocShouldReturn8ByteAligned,
+        test_arena_alloc_out_of_memory,
+        test_arena_alloc_zero_size,
+        test_arena_alloc_aligned_out_of_memory,
+        test_arena_alloc_aligned_overflow_check,
+        test_basic_allocation,
+        test_multiple_allocations,
+        test_allocation_failure,
+        test_reset,
+        test_aligned_allocation,
+        test_dynamic_array_append,
+        test_dynamic_array_growth,
+        test_dynamic_array_growth_from_zero,
+        test_dynamic_array_non_pod_reallocation,
+        // Group 1B
+        test_string_interning,
+        test_compilation_unit_creation,
+        test_compilation_unit_var_decl,
+        test_SymbolBuilder_BuildsCorrectly,
+        test_SymbolTable_DuplicateDetection,
+        test_SymbolTable_NestedScopes_And_Lookup,
+        test_SymbolTable_HashTableResize,
+        // Group 2A
+        test_Lexer_FloatWithUnderscores_IntegerPart,
+        test_Lexer_FloatWithUnderscores_FractionalPart,
+        test_Lexer_FloatWithUnderscores_ExponentPart,
+        test_Lexer_FloatWithUnderscores_AllParts,
+        test_Lexer_FloatSimpleDecimal,
+        test_Lexer_FloatNoFractionalPart,
+        test_Lexer_FloatNoIntegerPart,
+        test_Lexer_FloatWithExponent,
+        test_Lexer_FloatWithNegativeExponent,
+        test_Lexer_FloatExponentNoSign,
+        test_Lexer_FloatIntegerWithExponent,
+        test_Lexer_FloatExponentNoDigits,
+        test_Lexer_FloatHexSimple,
+        test_Lexer_FloatHexNoFractionalPart,
+        test_Lexer_FloatHexNegativeExponent,
+        test_Lexer_FloatHexInvalidFormat,
+        // Group 2B
+        test_lexer_integer_overflow,
+        test_lexer_c_string_literal,
+        test_lexer_handles_unicode_correctly,
+        test_lexer_handles_unterminated_char_hex_escape,
+        test_lexer_handles_unterminated_string_hex_escape,
+        test_Lexer_HandlesU64Integer,
+        test_Lexer_UnterminatedCharHexEscape,
+        test_Lexer_UnterminatedStringHexEscape,
+        test_Lexer_UnicodeInStringLiteral,
+        test_IntegerLiterals,
+        test_Lexer_StringLiteral_EscapedCharacters,
+        test_Lexer_StringLiteral_LongString,
+        test_IntegerLiteralParsing_UnsignedSuffix,
+        test_IntegerLiteralParsing_LongSuffix,
+        test_IntegerLiteralParsing_UnsignedLongSuffix,
+        // Group 2C
+        test_single_char_tokens,
+        test_multi_char_tokens,
+        test_assignment_vs_equality,
+        test_lex_arithmetic_and_bitwise_operators,
+        test_Lexer_RangeExpression,
+        test_lex_compound_assignment_operators,
+        test_LexerSpecialOperators,
+        test_LexerSpecialOperatorsMixed,
+        test_Lexer_Delimiters,
+        test_Lexer_DotOperators,
+        // Group 2D
+        test_skip_comments,
+        test_nested_block_comments,
+        test_unterminated_block_comment,
+        test_lex_visibility_and_linkage_keywords,
+        test_lex_compile_time_and_special_function_keywords,
+        test_lex_miscellaneous_keywords,
+        test_lex_missing_keywords,
+        // Group 2E
+        test_lexer_handles_tab_correctly,
+        test_lexer_handles_long_identifier,
+        test_Lexer_HandlesLongIdentifier,
+        test_Lexer_NumericLookaheadSafety,
+        test_token_fields_are_initialized,
+        test_Lexer_ComprehensiveCrossGroup,
+        test_Lexer_IdentifiersAndStrings,
+        test_Lexer_ErrorConditions,
+        test_IntegerRangeAmbiguity,
+        test_Lexer_MultiLineIntegrationTest,
+        // Group 3A
+        test_ASTNode_IntegerLiteral,
+        test_ASTNode_FloatLiteral,
+        test_ASTNode_CharLiteral,
+        test_ASTNode_StringLiteral,
+        test_ASTNode_Identifier,
+        test_ASTNode_UnaryOp,
+        test_ASTNode_BinaryOp,
+        test_Parser_ParsePrimaryExpr_IntegerLiteral,
+        test_Parser_ParsePrimaryExpr_FloatLiteral,
+        test_Parser_ParsePrimaryExpr_CharLiteral,
+        test_Parser_ParsePrimaryExpr_StringLiteral,
+        test_Parser_ParsePrimaryExpr_Identifier,
+        test_Parser_ParsePrimaryExpr_ParenthesizedExpression,
+        // Group 3B
+        test_Parser_FunctionCall_NoArgs,
+        test_Parser_FunctionCall_WithArgs,
+        test_Parser_FunctionCall_WithTrailingComma,
+        test_Parser_ArrayAccess,
+        test_Parser_ChainedPostfixOps,
+        test_Parser_BinaryExpr_SimplePrecedence,
+        test_Parser_BinaryExpr_LeftAssociativity,
+        test_Parser_TryExpr_Simple,
+        test_Parser_TryExpr_Chained,
+        test_Parser_CatchExpression_Simple,
+        test_Parser_CatchExpression_WithPayload,
+        test_Parser_CatchExpression_RightAssociativity,
+        // Group 3C
+        test_ASTNode_ContainerDeclarations,
+        test_Parser_Struct_Error_MissingLBrace,
+        test_Parser_Struct_Error_MissingRBrace,
+        test_Parser_Struct_Error_MissingColon,
+        test_Parser_Struct_Error_MissingType,
+        test_Parser_Struct_Error_InvalidField,
+        test_Parser_StructDeclaration_Simple,
+        test_Parser_StructDeclaration_Empty,
+        test_Parser_StructDeclaration_MultipleFields,
+        test_Parser_StructDeclaration_WithTrailingComma,
+        test_Parser_StructDeclaration_ComplexFieldType,
+        test_ParserBug_TopLevelUnion,
+        test_ParserBug_TopLevelStruct,
+        test_ParserBug_UnionFieldNodeType,
+        // Group 3D
+        test_Parser_Enum_Empty,
+        test_Parser_Enum_SimpleMembers,
+        test_Parser_Enum_TrailingComma,
+        test_Parser_Enum_WithValues,
+        test_Parser_Enum_MixedMembers,
+        test_Parser_Enum_WithBackingType,
+        test_Parser_Enum_SyntaxError_MissingOpeningBrace,
+        test_Parser_Enum_SyntaxError_MissingClosingBrace,
+        test_Parser_Enum_SyntaxError_NoComma,
+        test_Parser_Enum_SyntaxError_InvalidMember,
+        test_Parser_Enum_SyntaxError_MissingInitializer,
+        test_Parser_Enum_SyntaxError_BackingTypeNoParens,
+        test_Parser_Enum_ComplexInitializer,
+        // Group 3E
+        test_Parser_FnDecl_ValidEmpty,
+        test_Parser_FnDecl_Error_NonEmptyParams,
+        test_Parser_FnDecl_Error_NonEmptyBody,
+        test_Parser_FnDecl_Error_MissingArrow,
+        test_Parser_FnDecl_Error_MissingReturnType,
+        test_Parser_FnDecl_Error_MissingParens,
+        test_Parser_NonEmptyFunctionBody,
+        test_Parser_VarDecl_InsertsSymbolCorrectly,
+        test_Parser_VarDecl_DetectsDuplicateSymbol,
+        test_Parser_FnDecl_AndScopeManagement,
+        // Group 3F
+        test_ASTNode_ForStmt,
+        test_ASTNode_SwitchExpr,
+        test_Parser_IfStatement_Simple,
+        test_Parser_IfStatement_WithElse,
+        test_Parser_ParseEmptyBlock,
+        test_Parser_ParseBlockWithEmptyStatement,
+        test_Parser_ParseBlockWithMultipleEmptyStatements,
+        test_Parser_ParseBlockWithNestedEmptyBlock,
+        test_Parser_ParseBlockWithMultipleNestedEmptyBlocks,
+        test_Parser_ParseBlockWithNestedBlockAndEmptyStatement,
+        test_Parser_ErrDeferStatement_Simple,
+        test_Parser_ComptimeBlock_Valid,
+        test_Parser_NestedBlocks_AndShadowing,
+        test_Parser_SymbolDoesNotLeakFromInnerScope,
+        // Group 3G
+        test_Parser_Error_OnUnexpectedToken,
+        test_Parser_Error_OnMissingColon,
+        test_Parser_IfStatement_Error_MissingLParen,
+        test_Parser_IfStatement_Error_MissingRParen,
+        test_Parser_IfStatement_Error_MissingThenBlock,
+        test_Parser_IfStatement_Error_MissingElseBlock,
+        test_Parser_BinaryExpr_Error_MissingRHS,
+        test_Parser_TryExpr_InvalidSyntax,
+        test_Parser_CatchExpression_Error_MissingElseExpr,
+        test_Parser_CatchExpression_Error_IncompletePayload,
+        test_Parser_CatchExpression_Error_MissingPipe,
+        test_Parser_ErrDeferStatement_Error_MissingBlock,
+        test_Parser_ComptimeBlock_Error_MissingExpression,
+        test_Parser_ComptimeBlock_Error_MissingOpeningBrace,
+        test_Parser_ComptimeBlock_Error_MissingClosingBrace,
+        // Group 3H
+        test_Parser_AbortOnAllocationFailure,
+        test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
+        test_ParserIntegration_VarDeclWithBinaryExpr,
+        test_ParserIntegration_IfWithComplexCondition,
+        test_ParserIntegration_WhileWithFunctionCall,
+        test_ParserBug_LogicalOperatorSymbol,
+        test_Parser_RecursionLimit,
+        test_Parser_RecursionLimit_Unary,
+        test_Parser_RecursionLimit_Binary,
+        test_Parser_CopyIsSafeAndDoesNotDoubleFree,
         test_Parser_Bugfix_HandlesExpressionStatement,
-
+        // Group 4A
+        test_TypeChecker_IntegerLiteralInference,
+        test_TypeChecker_FloatLiteralInference,
+        test_TypeChecker_CharLiteralInference,
+        test_TypeChecker_StringLiteralInference,
+        test_TypeCheckerStringLiteralType,
+        test_TypeCheckerIntegerLiteralType,
+        test_TypeChecker_C89IntegerCompatibility,
+        test_TypeResolution_ValidPrimitives,
+        test_TypeResolution_InvalidOrUnsupported,
+        test_TypeResolution_AllPrimitives,
+        test_TypeChecker_BoolLiteral,
+        test_TypeChecker_IntegerLiteral,
+        test_TypeChecker_CharLiteral,
+        test_TypeChecker_StringLiteral,
+        test_TypeChecker_Identifier,
+        // Group 4B
+        test_TypeCheckerValidDeclarations,
+        test_TypeCheckerInvalidDeclarations,
+        test_TypeCheckerUndeclaredVariable,
+        test_TypeChecker_VarDecl_Valid_Simple,
+        test_TypeChecker_VarDecl_Invalid_Mismatch,
+        test_TypeChecker_VarDecl_Valid_Widening,
+        test_TypeChecker_VarDecl_Multiple_Errors,
+        // Group 4C
+        test_ReturnTypeValidation_Valid,
+        test_ReturnTypeValidation_Invalid,
+        test_TypeCheckerFnDecl_ValidSimpleParams,
+        test_TypeCheckerFnDecl_InvalidParamType,
+        test_TypeCheckerVoidTests_ImplicitReturnInVoidFunction,
+        test_TypeCheckerVoidTests_ExplicitReturnInVoidFunction,
+        test_TypeCheckerVoidTests_ReturnValueInVoidFunction,
+        test_TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction,
+        test_TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction,
+        test_TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction,
+        // Group 4D
+        test_TypeChecker_Dereference_ValidPointer,
+        test_TypeChecker_Dereference_Invalid_NonPointer,
+        test_TypeChecker_Dereference_ConstPointer,
+        test_TypeChecker_AddressOf_Invalid_RValue,
+        test_TypeChecker_AddressOf_Valid_LValues,
+        test_TypeCheckerPointerOps_AddressOf_ValidLValue,
+        test_TypeCheckerPointerOps_AddressOf_InvalidRValue,
+        test_TypeCheckerPointerOps_Dereference_ValidPointer,
+        test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
         // Group 4E
         test_TypeCheckerVoidTests_PointerAddition,
         test_TypeChecker_PointerIntegerAddition,
@@ -55,7 +582,6 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerPointerOps_Arithmetic_PointerInteger,
         test_TypeCheckerPointerOps_Arithmetic_PointerPointer,
         test_TypeCheckerPointerOps_Arithmetic_InvalidOperations,
-
         // Group 4F
         test_TypeCheckerBinaryOps_PointerArithmetic,
         test_TypeCheckerBinaryOps_NumericArithmetic,
@@ -64,7 +590,6 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerBinaryOps_Logical,
         test_TypeChecker_Bool_ComparisonOps,
         test_TypeChecker_Bool_LogicalOps,
-
         // Group 4G
         test_TypeCheckerControlFlow_IfStatementWithBooleanCondition,
         test_TypeCheckerControlFlow_IfStatementWithIntegerCondition,
@@ -76,6 +601,32 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerControlFlow_WhileStatementWithPointerCondition,
         test_TypeCheckerControlFlow_WhileStatementWithFloatCondition,
         test_TypeCheckerControlFlow_WhileStatementWithVoidCondition,
+        // Group 4H
+        test_TypeChecker_C89_StructFieldValidation_Slice,
+        test_TypeChecker_C89_UnionFieldValidation_MultiLevelPointer,
+        test_TypeChecker_C89_StructFieldValidation_ValidArray,
+        test_TypeChecker_C89_UnionFieldValidation_ValidFields,
+        test_TypeCheckerEnumTests_SignedIntegerOverflow,
+        test_TypeCheckerEnumTests_SignedIntegerUnderflow,
+        test_TypeCheckerEnumTests_UnsignedIntegerOverflow,
+        test_TypeCheckerEnumTests_NegativeValueInUnsignedEnum,
+        test_TypeCheckerEnumTests_AutoIncrementOverflow,
+        test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
+        test_TypeCheckerEnumTests_ValidValues,
+        // Group 4I
+        test_TypeChecker_RejectSlice,
+        test_TypeChecker_RejectNonConstantArraySize,
+        test_TypeChecker_AcceptsValidArrayDeclaration,
+        test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
+        test_TypeCompatibility,
+        test_TypeToString_Reentrancy,
+        test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
+        test_TypeChecker_Call_WrongArgumentCount,
+        test_TypeChecker_Call_IncompatibleArgumentType,
+        test_TypeCheckerC89Compat_FloatWidening,
+        test_C89TypeMapping_Validation,
+        test_C89Compat_FunctionTypeValidation,
+        test_TypeChecker_Bool_Literals,
     };
 
     int passed = 0;
