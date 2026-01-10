@@ -20,7 +20,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
             "}\n";
         ParserTestContext ctx(source, arena, interner);
         TypeChecker type_checker(ctx.getCompilationUnit());
-        ASTNode* root = ctx.getParser().parse();
+        ASTNode* root = ctx.getParser()->parse();
         type_checker.check(root);
         ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
     }
@@ -35,7 +35,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
             "}\n";
         ParserTestContext ctx(source, arena, interner);
         TypeChecker type_checker(ctx.getCompilationUnit());
-        ASTNode* root = ctx.getParser().parse();
+        ASTNode* root = ctx.getParser()->parse();
         type_checker.check(root);
         ErrorHandler& eh = ctx.getCompilationUnit().getErrorHandler();
         ASSERT_TRUE(eh.hasErrors());
