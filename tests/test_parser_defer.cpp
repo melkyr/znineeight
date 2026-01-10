@@ -9,7 +9,7 @@ TEST_FUNC(Parser_ParseDeferStatement) {
     const char* source = "defer {;}";
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
 
     ASSERT_TRUE(stmt != NULL);
     ASSERT_EQ(stmt->type, NODE_DEFER_STMT);

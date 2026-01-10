@@ -28,7 +28,7 @@ TEST_FUNC(Parser_Logical_AndHasHigherPrecedenceThanOr) {
     ParserTestContext ctx("a and b or c", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: (a and b) or c
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);
@@ -50,7 +50,7 @@ TEST_FUNC(Parser_Logical_AndBindsTighterThanOr) {
     ParserTestContext ctx("a or b and c", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: a or (b and c)
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);
@@ -72,7 +72,7 @@ TEST_FUNC(Parser_Logical_OrHasHigherPrecedenceThanOrElse) {
     ParserTestContext ctx("x orelse y or z", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: x orelse (y or z)
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);
@@ -94,7 +94,7 @@ TEST_FUNC(Parser_Logical_AndIsLeftAssociative) {
     ParserTestContext ctx("a and b and c", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: ((a and b) and c)
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);
@@ -116,7 +116,7 @@ TEST_FUNC(Parser_Logical_OrElseIsRightAssociative) {
     ParserTestContext ctx("a orelse b orelse c", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: (a orelse (b orelse c))
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);
@@ -138,7 +138,7 @@ TEST_FUNC(Parser_Logical_ComplexPrecedence) {
     ParserTestContext ctx("flag and val orelse default", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* expr = parser.parseExpression();
+    ASTNode* expr = parser->parseExpression();
 
     // Expected: (flag and val) orelse default
     ASSERT_TRUE(expr->type == NODE_BINARY_OP);

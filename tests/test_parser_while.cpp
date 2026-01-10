@@ -13,7 +13,7 @@ TEST_FUNC(Parser_While_ValidStatement) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseWhileStatement();
+    ASTNode* stmt = parser->parseWhileStatement();
 
     ASSERT_TRUE(stmt != NULL);
     ASSERT_TRUE(stmt->type == NODE_WHILE_STMT);

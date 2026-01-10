@@ -40,7 +40,7 @@ TEST_FUNC(ParserBug_TopLevelStruct) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parse();
+    ASTNode* node = parser->parse();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_TRUE(node->type == NODE_BLOCK_STMT);
@@ -63,7 +63,7 @@ TEST_FUNC(ParserBug_UnionFieldNodeType) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parse();
+    ASTNode* node = parser->parse();
     ASTBlockStmtNode* block = &node->as.block_stmt;
     ASTNode* union_node = (*block->statements)[0];
     ASTUnionDeclNode* union_decl = union_node->as.union_decl;
@@ -83,7 +83,7 @@ TEST_FUNC(ParserBug_TopLevelUnion) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parse();
+    ASTNode* node = parser->parse();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_TRUE(node->type == NODE_BLOCK_STMT);

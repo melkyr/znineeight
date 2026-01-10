@@ -25,7 +25,7 @@ TEST_FUNC(Parser_ParseBlockWithIfStatement) {
     ParserTestContext ctx("{if (1) {}}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -44,7 +44,7 @@ TEST_FUNC(Parser_ParseBlockWithWhileStatement) {
     ParserTestContext ctx("{while (1) {}}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -63,7 +63,7 @@ TEST_FUNC(Parser_ParseBlockWithMixedStatements) {
     ParserTestContext ctx("{if (1) {} while (1) {}}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -85,7 +85,7 @@ TEST_FUNC(Parser_ParseBlockWithEmptyStatement) {
     ParserTestContext ctx("{;}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -104,7 +104,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleEmptyStatements) {
     ParserTestContext ctx("{;;}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -126,7 +126,7 @@ TEST_FUNC(Parser_ParseBlockWithNestedEmptyBlock) {
     ParserTestContext ctx("{{}}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -146,7 +146,7 @@ TEST_FUNC(Parser_ParseBlockWithMultipleNestedEmptyBlocks) {
     ParserTestContext ctx("{{}{}}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);
@@ -170,7 +170,7 @@ TEST_FUNC(Parser_ParseBlockWithNestedBlockAndEmptyStatement) {
     ParserTestContext ctx("{{};}", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseBlockStatement();
+    ASTNode* node = parser->parseBlockStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_BLOCK_STMT);

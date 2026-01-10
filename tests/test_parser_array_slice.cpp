@@ -10,7 +10,7 @@ TEST_FUNC(Parser_ArraySlice_FullRange) {
     ParserTestContext ctx("my_slice[0..4]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ARRAY_SLICE);
@@ -37,7 +37,7 @@ TEST_FUNC(Parser_ArraySlice_EndRangeOnly) {
     ParserTestContext ctx("my_slice[..4]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ARRAY_SLICE);
@@ -62,7 +62,7 @@ TEST_FUNC(Parser_ArraySlice_StartRangeOnly) {
     ParserTestContext ctx("my_slice[0..]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ARRAY_SLICE);
@@ -87,7 +87,7 @@ TEST_FUNC(Parser_ArraySlice_NoRange) {
     ParserTestContext ctx("my_slice[..]", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseExpression();
+    ASTNode* node = parser->parseExpression();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_ARRAY_SLICE);

@@ -10,7 +10,7 @@ TEST_FUNC(Parser_ReturnStatement_NoValue) {
     ParserTestContext ctx("return;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
     ASSERT_TRUE(stmt != NULL);
     ASSERT_EQ(stmt->type, NODE_RETURN_STMT);
 
@@ -27,7 +27,7 @@ TEST_FUNC(Parser_ReturnStatement_WithValue) {
     ParserTestContext ctx("return 42;", arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* stmt = parser.parseStatement();
+    ASTNode* stmt = parser->parseStatement();
     ASSERT_TRUE(stmt != NULL);
     ASSERT_EQ(stmt->type, NODE_RETURN_STMT);
 

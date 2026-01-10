@@ -15,7 +15,7 @@ TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     // 1. Check top-level node
     ASSERT_TRUE(node != NULL);
@@ -61,7 +61,7 @@ TEST_FUNC(ParserIntegration_LogicalAnd) {
         const char* source = "if (a and b) {}";
         ParserTestContext ctx(source, arena, interner);
         Parser* parser = ctx.getParser();
-        ASTNode* node = parser.parseIfStatement();
+        ASTNode* node = parser->parseIfStatement();
         ASSERT_TRUE(node != NULL);
         ASTIfStmtNode* if_stmt = node->as.if_stmt;
         ASSERT_TRUE(if_stmt->condition->type == NODE_BINARY_OP);
@@ -80,7 +80,7 @@ TEST_FUNC(ParserIntegration_DeferStatement) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseDeferStatement();
+    ASTNode* node = parser->parseDeferStatement();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_TRUE(node->type == NODE_DEFER_STMT);
@@ -112,7 +112,7 @@ TEST_FUNC(ParserIntegration_StructDeclaration) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_TRUE(node->type == NODE_VAR_DECL);
@@ -160,7 +160,7 @@ TEST_FUNC(ParserIntegration_SwitchExpression) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseVarDecl();
+    ASTNode* node = parser->parseVarDecl();
 
     ASSERT_TRUE(node != NULL);
     ASSERT_TRUE(node->type == NODE_VAR_DECL);
@@ -216,7 +216,7 @@ TEST_FUNC(ParserIntegration_ForLoopOverSlice) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseForStatement();
+    ASTNode* node = parser->parseForStatement();
 
     // 1. Check top-level node
     ASSERT_TRUE(node != NULL);
@@ -284,7 +284,7 @@ TEST_FUNC(ParserIntegration_ComprehensiveFunction) {
 
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
-    ASTNode* node = parser.parseFnDecl();
+    ASTNode* node = parser->parseFnDecl();
 
     // High-level checks: Just ensure it parses and has the basic structure.
     ASSERT_TRUE(node != NULL);
@@ -312,7 +312,7 @@ TEST_FUNC(ParserIntegration_WhileWithFunctionCall) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseWhileStatement();
+    ASTNode* node = parser->parseWhileStatement();
 
     // 1. Check top-level node
     ASSERT_TRUE(node != NULL);
@@ -348,7 +348,7 @@ TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser = ctx.getParser();
 
-    ASTNode* node = parser.parseIfStatement();
+    ASTNode* node = parser->parseIfStatement();
 
     // 1. Check top-level node
     ASSERT_TRUE(node != NULL);
