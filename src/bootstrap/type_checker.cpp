@@ -462,8 +462,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_CANNOT_ASSIGN_TO_CONST, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).", unit.getArena());
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -482,9 +482,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         char msg_buffer[256];
         snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
 
-        // Use fatalError as per the spec for strict C89 assignment validation
-        fatalError(node->rvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->rvalue->loc, msg_buffer, unit.getArena());
+        return NULL;
     }
 
     // The type of an assignment expression is the type of the l-value.

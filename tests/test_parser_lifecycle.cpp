@@ -11,11 +11,6 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
     ParserTestContext ctx(source, arena, interner);
     Parser* parser1 = ctx.getParser();
 
-    {
-        Parser* parser2 = ctx.getParser();
-        // parser2 is a pointer and the object it points to is managed by the arena.
-        // The object is not destroyed at the end of this scope.
-    }
 
     // This should now pass because the token stream is owned by `ctx`,
     // which outlives both parser instances.

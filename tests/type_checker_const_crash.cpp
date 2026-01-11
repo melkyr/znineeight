@@ -9,7 +9,19 @@ TEST_FUNC(TypeChecker_ConstAssignment) {
         "    x = 20;\n"
         "}\n";
 
-    expect_type_checker_abort(source);
+    ArenaAllocator arena(1024 * 4);
+    StringInterner interner(arena);
+    ParserTestContext context(source, arena, interner);
+    Parser* parser = context.getParser();
+    ASTNode* root = parser->parse();
+
+    TypeChecker checker(context.getCompilationUnit());
+    checker.check(root);
+
+    ASSERT_TRUE(context.getCompilationUnit().getErrorHandler().hasErrors());
+    const DynamicArray<ErrorReport>& errors = context.getCompilationUnit().getErrorHandler().getErrors();
+    ASSERT_EQ(errors.length(), 1);
+    ASSERT_EQ(errors[0].code, ERR_CANNOT_ASSIGN_TO_CONST);
 
     return true;
 }

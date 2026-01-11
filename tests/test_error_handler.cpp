@@ -30,7 +30,7 @@ bool test_print_error_report() {
     std::streambuf* old_stderr = std::cerr.rdbuf(buffer.rdbuf());
 
     // 3. Action
-    eh.report(ERR_TYPE_MISMATCH, SourceLocation{file_id, 1, 15}, "Cannot assign 'string' to 'i32'", "Use an integer literal instead.");
+    eh.report(ERR_TYPE_MISMATCH, SourceLocation(file_id, 1, 15), "Cannot assign 'string' to 'i32'", "Use an integer literal instead.");
     eh.printErrors();
 
     // 4. Restore stderr and assert
