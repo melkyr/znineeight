@@ -113,6 +113,7 @@ enum TokenType {
     TOKEN_NOALIAS,          ///< 'noalias' keyword.
     TOKEN_NOSUSPEND,        ///< 'nosuspend' keyword.
     TOKEN_OR,               ///< 'or' keyword.
+    TOKEN_NULL,             ///< 'null' keyword.
     TOKEN_PACKED,           ///< 'packed' keyword.
     TOKEN_THREADLOCAL,      ///< 'threadlocal' keyword.
     TOKEN_VOLATILE,         ///< 'volatile' keyword.

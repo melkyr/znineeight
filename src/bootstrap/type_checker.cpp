@@ -67,6 +67,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
         case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
         case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(node, &node->as.string_literal); break;
+        case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
         case NODE_IDENTIFIER:       resolved_type = visitIdentifier(node); break;
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
@@ -244,8 +245,8 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             char msg_buffer[256];
             snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for arithmetic operator '%s': '%s' and '%s'",
                      getTokenSpelling(op), left_type_str, right_type_str);
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
-            return NULL;
+            fatalError(loc, msg_buffer);
+            return NULL; // Unreachable
         }
 
 // --- Comparison Operators ---
@@ -636,6 +637,10 @@ Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode*
     return createPointerType(unit.getArena(), char_type, true);
 }
 
+Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
+    return get_g_type_null();
+}
+
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
     Symbol* sym = unit.getSymbolTable().lookup(node->as.identifier.name);
     if (!sym) {
@@ -776,6 +781,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
             .withName(node->name)
             .ofType(SYMBOL_VARIABLE)
             .withType(declared_type)
+            .definedBy(node) // Link back to the AST node for const check
             .atLocation(node->type->loc)
             .build();
         if (!unit.getSymbolTable().insert(var_symbol)) {
@@ -1051,6 +1057,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     if (!expected || !actual) {
         return false;
+    }
+
+    // Allow assigning `null` to any pointer type.
+    if (expected->kind == TYPE_POINTER && actual->kind == TYPE_NULL) {
+        return true;
     }
 
     // Widening for signed integers

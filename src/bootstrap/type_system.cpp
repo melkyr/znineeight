@@ -25,6 +25,7 @@ DEFINE_GET_TYPE_FUNC(g_type_isize,TYPE_ISIZE,4, 4) // Assuming 32-bit target
 DEFINE_GET_TYPE_FUNC(g_type_usize,TYPE_USIZE,4, 4) // Assuming 32-bit target
 DEFINE_GET_TYPE_FUNC(g_type_f32,  TYPE_F32,  4, 4)
 DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
+DEFINE_GET_TYPE_FUNC(g_type_null, TYPE_NULL, 4, 4) // Same size as a pointer
 
 Type* resolvePrimitiveTypeName(const char* name) {
     if (strcmp(name, "void") == 0) return get_g_type_void();

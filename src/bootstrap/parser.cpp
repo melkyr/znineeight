@@ -181,6 +181,11 @@ ASTNode* Parser::parsePrimaryExpr() {
             node->as.string_literal.value = token.value.identifier;
             return node;
         }
+        case TOKEN_NULL: {
+            ASTNode* node = createNode(NODE_NULL_LITERAL);
+            advance();
+            return node;
+        }
         case TOKEN_IDENTIFIER: {
             ASTNode* node = createNode(NODE_IDENTIFIER);
             advance();

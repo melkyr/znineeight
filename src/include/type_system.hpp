@@ -27,6 +27,7 @@ enum TypeKind {
     TYPE_POINTER,
     TYPE_ARRAY,
     TYPE_FUNCTION,
+    TYPE_NULL,
     TYPE_ENUM,
     TYPE_STRUCT
 };
@@ -139,5 +140,6 @@ Type* get_g_type_isize();
 Type* get_g_type_usize();
 Type* get_g_type_f32();
 Type* get_g_type_f64();
+Type* get_g_type_null();
 
 #endif // TYPE_SYSTEM_HPP

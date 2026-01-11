@@ -142,6 +142,7 @@ const Keyword keywords[] = {
     {"linksection", 11, TOKEN_LINKSECTION},
     {"noalias", 7, TOKEN_NOALIAS},
     {"noinline", 8, TOKEN_NOINLINE},
+    {"null", 4, TOKEN_NULL},
     {"nosuspend", 9, TOKEN_NOSUSPEND},
     {"opaque", 6, TOKEN_OPAQUE},
     {"or", 2, TOKEN_OR},

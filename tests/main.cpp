@@ -343,6 +343,10 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening);
 TEST_FUNC(C89TypeMapping_Validation);
 TEST_FUNC(C89Compat_FunctionTypeValidation);
 TEST_FUNC(TypeChecker_Bool_Literals);
+TEST_FUNC(TypeChecker_ConstAssignment);
+TEST_FUNC(TypeChecker_ConstAssignmentUndeclared);
+TEST_FUNC(TypeChecker_NullLiteral_ValidAssignment);
+TEST_FUNC(TypeChecker_NullLiteral_InvalidAssignment);
 
 
 int main(int argc, char* argv[]) {
@@ -664,6 +668,10 @@ int main(int argc, char* argv[]) {
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
+        test_TypeChecker_ConstAssignment,
+        test_TypeChecker_ConstAssignmentUndeclared,
+        test_TypeChecker_NullLiteral_ValidAssignment,
+        test_TypeChecker_NullLiteral_InvalidAssignment,
     };
 
     int passed = 0;

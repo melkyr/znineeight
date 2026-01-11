@@ -32,6 +32,7 @@ enum NodeType {
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
     NODE_STRING_LITERAL,  ///< A string literal (e.g., `"hello"`).
+    NODE_NULL_LITERAL,    ///< A null literal.
     NODE_IDENTIFIER,      ///< An identifier (e.g., a variable name `my_var`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
