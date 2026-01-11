@@ -9,7 +9,7 @@ TEST_FUNC(TypeChecker_ConstAssignment) {
         "    x = 20;\n"
         "}\n";
 
-    ArenaAllocator arena(1024 * 4);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
@@ -32,7 +32,7 @@ TEST_FUNC(TypeChecker_ConstAssignmentUndeclared) {
         "    y = 20;\n"
         "}\n";
 
-    ArenaAllocator arena(1024 * 4);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();

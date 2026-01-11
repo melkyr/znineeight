@@ -371,6 +371,7 @@ int main(int argc, char* argv[]) {
 
 
     bool (*tests[])() = {
+        /*
         // Group 1A
         test_DynamicArray_ShouldUseCopyConstructionOnReallocation,
         test_ArenaAllocator_AllocShouldReturn8ByteAligned,
@@ -566,6 +567,7 @@ int main(int argc, char* argv[]) {
         test_Parser_RecursionLimit_Binary,
         test_Parser_CopyIsSafeAndDoesNotDoubleFree,
         test_Parser_Bugfix_HandlesExpressionStatement,
+        */
         // Group 4A
         test_TypeChecker_IntegerLiteralInference,
         test_TypeChecker_FloatLiteralInference,

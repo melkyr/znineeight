@@ -8,7 +8,7 @@ TEST_FUNC(TypeChecker_NullLiteral_ValidAssignment) {
         "    var p: *i32 = null;\n"
         "}\n";
 
-    ArenaAllocator arena(1024 * 4);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
@@ -28,7 +28,7 @@ TEST_FUNC(TypeChecker_NullLiteral_InvalidAssignment) {
         "    var x: i32 = null;\n"
         "}\n";
 
-    ArenaAllocator arena(1024 * 4);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
