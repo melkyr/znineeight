@@ -245,8 +245,8 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             char msg_buffer[256];
             snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for arithmetic operator '%s': '%s' and '%s'",
                      getTokenSpelling(op), left_type_str, right_type_str);
-            fatalError(loc, msg_buffer);
-            return NULL; // Unreachable
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
+            return NULL;
         }
 
 // --- Comparison Operators ---

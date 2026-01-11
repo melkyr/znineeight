@@ -104,38 +104,63 @@ TEST_FUNC(TypeChecker_PointerPointerSubtraction) {
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition) {
-    const char* source =
-        "fn test_fn() {\n"
-        "    var x: i32 = 0;\n"
-        "    var y: i32 = 0;\n"
-        "    var p1: *i32 = &x;\n"
-        "    var p2: *i32 = &y;\n"
-        "    var result = p1 + p2;\n"
-        "}\n";
-    expect_type_checker_abort(source);
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    TypeChecker checker(unit);
+
+    setup_pointer_arithmetic_test(arena, interner, unit, "p1", resolvePrimitiveTypeName("i32"));
+    setup_pointer_arithmetic_test(arena, interner, unit, "p2", resolvePrimitiveTypeName("i32"));
+
+    ParserTestContext ctx("p1 + p2", arena, interner);
+    ASTNode* expr = ctx.getParser()->parseExpression();
+    Type* type = checker.visit(expr);
+
+    ASSERT_TRUE(type == NULL);
+    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
+    ASSERT_EQ(unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+
     return true;
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes) {
-    const char* source =
-        "fn test_fn() {\n"
-        "    var x: i32 = 0;\n"
-        "    var y: f64 = 0.0;\n"
-        "    var p1: *i32 = &x;\n"
-        "    var p2: *f64 = &y;\n"
-        "    var result = p1 - p2;\n"
-        "}\n";
-    expect_type_checker_abort(source);
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    TypeChecker checker(unit);
+
+    setup_pointer_arithmetic_test(arena, interner, unit, "p1", resolvePrimitiveTypeName("i32"));
+    setup_pointer_arithmetic_test(arena, interner, unit, "p2", resolvePrimitiveTypeName("f64"));
+
+    ParserTestContext ctx("p1 - p2", arena, interner);
+    ASTNode* expr = ctx.getParser()->parseExpression();
+    Type* type = checker.visit(expr);
+
+    ASSERT_TRUE(type == NULL);
+    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
+    ASSERT_EQ(unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+
     return true;
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerMultiplication) {
-    const char* source =
-        "fn test_fn() {\n"
-        "    var x: i32 = 0;\n"
-        "    var p: *i32 = &x;\n"
-        "    var result = p * 2;\n"
-        "}\n";
-    expect_type_checker_abort(source);
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    TypeChecker checker(unit);
+
+    setup_pointer_arithmetic_test(arena, interner, unit, "p", resolvePrimitiveTypeName("i32"));
+
+    ParserTestContext ctx("p * 2", arena, interner);
+    ASTNode* expr = ctx.getParser()->parseExpression();
+    Type* type = checker.visit(expr);
+
+    ASSERT_TRUE(type == NULL);
+    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
+    ASSERT_EQ(unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+
     return true;
 }
