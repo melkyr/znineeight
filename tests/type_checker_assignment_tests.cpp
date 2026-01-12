@@ -13,17 +13,19 @@ TEST_FUNC(TypeChecker_Assignment_ValidCases) {
         ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
     }
     {
-        ArenaAllocator arena(4096);
+        ArenaAllocator arena(8192);
         StringInterner interner(arena);
-        ParserTestContext ctx("fn test() { var x: *const u8 = null; var y: *const u8 = null; y = x; }", arena, interner);
+        const char* source = "fn test() { var dummy: u8 = 0; var x: *const u8 = &dummy; var y: *const u8 = &dummy; y = x; }";
+        ParserTestContext ctx(source, arena, interner);
         TypeChecker checker(ctx.getCompilationUnit());
         checker.check(ctx.getParser()->parse());
         ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
     }
     {
-        ArenaAllocator arena(4096);
+        ArenaAllocator arena(8192);
         StringInterner interner(arena);
-        ParserTestContext ctx("fn test() { var x: *u8 = null; var y: *const u8 = null; y = x; }", arena, interner);
+        const char* source = "fn test() { var dummy: u8 = 0; var x: *u8 = &dummy; var y: *const u8 = &dummy; y = x; }";
+        ParserTestContext ctx(source, arena, interner);
         TypeChecker checker(ctx.getCompilationUnit());
         checker.check(ctx.getParser()->parse());
         ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
@@ -46,9 +48,10 @@ TEST_FUNC(TypeChecker_Assignment_InvalidNumericAssignment) {
 
 TEST_FUNC(TypeChecker_Assignment_InvalidPointerAssignment) {
     {
-        ArenaAllocator arena(4096);
+        ArenaAllocator arena(8192);
         StringInterner interner(arena);
-        ParserTestContext ctx("fn test() { var x: *const u8 = null; var y: *u8 = null; y = x; }", arena, interner);
+        const char* source = "fn test() { var dummy: u8 = 0; var x: *const u8 = &dummy; var y: *u8 = &dummy; y = x; }";
+        ParserTestContext ctx(source, arena, interner);
         TypeChecker checker(ctx.getCompilationUnit());
         checker.check(ctx.getParser()->parse());
         ASSERT_TRUE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
@@ -57,9 +60,10 @@ TEST_FUNC(TypeChecker_Assignment_InvalidPointerAssignment) {
         ASSERT_TRUE(strstr(error->message, "Cannot assign const pointer to mutable pointer") != NULL);
     }
     {
-        ArenaAllocator arena(4096);
+        ArenaAllocator arena(8192);
         StringInterner interner(arena);
-        ParserTestContext ctx("fn test() { var x: *i32 = null; var y: *u8 = null; y = x; }", arena, interner);
+        const char* source = "fn test() { var dummy_i32: i32 = 0; var dummy_u8: u8 = 0; var x: *i32 = &dummy_i32; var y: *u8 = &dummy_u8; y = x; }";
+        ParserTestContext ctx(source, arena, interner);
         TypeChecker checker(ctx.getCompilationUnit());
         checker.check(ctx.getParser()->parse());
         ASSERT_TRUE(ctx.getCompilationUnit().getErrorHandler().hasErrors());

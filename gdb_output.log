@@ -1,0 +1,78 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[Detaching after fork from child process 10467]
+[Detaching after fork from child process 10468]
+[Detaching after fork from child process 10470]
+[Detaching after fork from child process 10471]
+[Detaching after fork from child process 10472]
+[Detaching after fork from child process 10473]
+[Detaching after fork from child process 10474]
+[Detaching after fork from child process 10475]
+[Detaching after fork from child process 10476]
+[Detaching after fork from child process 10477]
+[Detaching after fork from child process 10478]
+[Detaching after fork from child process 10479]
+[Detaching after fork from child process 10480]
+[Detaching after fork from child process 10481]
+[Detaching after fork from child process 10482]
+[Detaching after fork from child process 10483]
+[Detaching after fork from child process 10484]
+[Detaching after fork from child process 10485]
+[Detaching after fork from child process 10486]
+[Detaching after fork from child process 10487]
+[Detaching after fork from child process 10488]
+[Detaching after fork from child process 10489]
+[Detaching after fork from child process 10490]
+[Detaching after fork from child process 10491]
+[Detaching after fork from child process 10492]
+[Detaching after fork from child process 10493]
+[Detaching after fork from child process 10494]
+[Detaching after fork from child process 10495]
+[Detaching after fork from child process 10496]
+[Detaching after fork from child process 10497]
+[Detaching after fork from child process 10498]
+[Detaching after fork from child process 10499]
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+[Detaching after fork from child process 10500]
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+[Detaching after fork from child process 10501]
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+[Detaching after fork from child process 10502]
+Fatal type error at test.zig:1:26: Slices are not supported in C89 mode
+[Detaching after fork from child process 10503]
+[Detaching after fork from child process 10504]
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+[Detaching after fork from child process 10505]
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+[Detaching after fork from child process 10506]
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+[Detaching after fork from child process 10507]
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+[Detaching after fork from child process 10508]
+Fatal type error at test.zig:1:33: Enum member value overflows its backing type.
+[Detaching after fork from child process 10509]
+Fatal type error at test.zig:1:33: Enum member value overflows its backing type.
+[Detaching after fork from child process 10510]
+RUNNING: Parser_AbortOnAllocationFailure
+
+Program received signal SIGABRT, Aborted.
+__pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+warning: 44	./nptl/pthread_kill.c: No such file or directory
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+#3  0x00007ffff7a5427e in __GI_raise (sig=sig@entry=6) at ../sysdeps/posix/raise.c:26
+#4  0x00007ffff7a378ff in __GI_abort () at ./stdlib/abort.c:79
+#5  0x000055555555c239 in Parser::error (this=0x5555555df130) at src/bootstrap/parser.cpp:73
+#6  0x000055555555c1f2 in Parser::expect (this=0x5555555df130, type=TOKEN_IDENTIFIER, msg=0x5555555ae6a8 "Expected function name after 'fn'") at src/bootstrap/parser.cpp:58
+#7  0x000055555555f1cb in Parser::parseFnDecl (this=0x5555555df130) at src/bootstrap/parser.cpp:1129
+#8  0x000055555555e665 in Parser::parseTopLevelItem (this=0x5555555df130) at src/bootstrap/parser.cpp:886
+#9  0x000055555555e579 in Parser::parse (this=0x5555555df130) at src/bootstrap/parser.cpp:873
+#10 0x000055555559bf74 in test_TypeChecker_Assignment_ValidCases () at tests/type_checker_assignment_tests.cpp:12
+#11 0x00005555555589d3 in main (argc=1, argv=0x7fffffffe1c8) at tests/main.cpp:685
