@@ -26,6 +26,8 @@ DEFINE_GET_TYPE_FUNC(g_type_usize,TYPE_USIZE,4, 4) // Assuming 32-bit target
 DEFINE_GET_TYPE_FUNC(g_type_f32,  TYPE_F32,  4, 4)
 DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
 
+DEFINE_GET_TYPE_FUNC(g_type_null, TYPE_NULL, 0, 0)
+
 Type* resolvePrimitiveTypeName(const char* name) {
     if (strcmp(name, "void") == 0) return get_g_type_void();
     if (strcmp(name, "bool") == 0) return get_g_type_bool();
@@ -107,6 +109,7 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         case TYPE_USIZE:primitive_name = "usize";break;
         case TYPE_F32:  primitive_name = "f32";  break;
         case TYPE_F64:  primitive_name = "f64";  break;
+        case TYPE_NULL: primitive_name = "null"; break;
         case TYPE_POINTER: {
             char base_name[64];
             typeToString(type->as.pointer.base, base_name, sizeof(base_name));

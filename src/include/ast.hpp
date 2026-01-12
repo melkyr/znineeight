@@ -28,6 +28,7 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
+    NODE_NULL_LITERAL,    ///< A `null` literal.
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).

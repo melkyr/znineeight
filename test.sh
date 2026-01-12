@@ -15,6 +15,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Isrc/include \
     src/bootstrap/compilation_unit.cpp \
     tests/c89_type_compat_tests.cpp \
     tests/c89_type_mapping_tests.cpp \
+    tests/const_var_crash_test.cpp \
     tests/dynamic_array_copy_test.cpp \
     tests/integer_literal_parsing.cpp \
     tests/lexer_edge_cases.cpp \

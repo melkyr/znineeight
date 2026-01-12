@@ -63,6 +63,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
+        case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
         case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(node, &node->as.integer_literal); break;
         case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
         case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
@@ -606,6 +607,10 @@ Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*n
     return resolvePrimitiveTypeName("bool");
 }
 
+Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
+    return get_g_type_null();
+}
+
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
     if (node->is_unsigned) {
         if (node->value <= 255) return resolvePrimitiveTypeName("u8");
@@ -1010,8 +1015,11 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
     switch (node->type) {
         case NODE_IDENTIFIER: {
             Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
-            // The symbol->details points to the ASTVarDeclNode which holds the const flag.
-            return (symbol && symbol->details && ((ASTVarDeclNode*)symbol->details)->is_const);
+            if (symbol && symbol->details) {
+                ASTVarDeclNode* decl = (ASTVarDeclNode*)symbol->details;
+                return decl->is_const;
+            }
+            return false;
         }
         case NODE_UNARY_OP:
             // Check for dereferencing a const pointer, e.g. *const u8
@@ -1046,6 +1054,11 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
  */
 bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected == actual) {
+        return true;
+    }
+
+    // Handle null assignment to any pointer
+    if (actual->kind == TYPE_NULL && expected->kind == TYPE_POINTER) {
         return true;
     }
 
