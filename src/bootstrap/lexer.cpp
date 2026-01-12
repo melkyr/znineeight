@@ -143,6 +143,7 @@ const Keyword keywords[] = {
     {"noalias", 7, TOKEN_NOALIAS},
     {"noinline", 8, TOKEN_NOINLINE},
     {"nosuspend", 9, TOKEN_NOSUSPEND},
+    {"null", 4, TOKEN_NULL},
     {"opaque", 6, TOKEN_OPAQUE},
     {"or", 2, TOKEN_OR},
     {"orelse", 6, TOKEN_ORELSE},

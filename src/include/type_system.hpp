@@ -25,6 +25,7 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_NULL,
     TYPE_ARRAY,
     TYPE_FUNCTION,
     TYPE_ENUM,
@@ -139,5 +140,6 @@ Type* get_g_type_isize();
 Type* get_g_type_usize();
 Type* get_g_type_f32();
 Type* get_g_type_f64();
+Type* get_g_type_null();
 
 #endif // TYPE_SYSTEM_HPP

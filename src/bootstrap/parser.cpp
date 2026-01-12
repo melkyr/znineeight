@@ -143,6 +143,11 @@ ASTNode* Parser::parsePrimaryExpr() {
     Token token = peek();
 
     switch (token.type) {
+        case TOKEN_NULL: {
+            ASTNode* node = createNode(NODE_NULL_LITERAL);
+            advance();
+            return node;
+        }
         case TOKEN_TRUE: {
             ASTNode* node = createNode(NODE_BOOL_LITERAL);
             advance();
@@ -1014,6 +1019,12 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->is_const = is_const;
     var_decl->is_mut = is_mut;
 
+    // Create the top-level ASTNode for the declaration *before* creating the symbol,
+    // so we can link the symbol to its declaration node.
+    ASTNode* node = createNode(NODE_VAR_DECL);
+    node->loc = keyword_token.location;
+    node->as.var_decl = var_decl;
+
     // Resolve the type and create the symbol for the symbol table.
     Type* symbol_type = resolveAndVerifyType(type_node);
 
@@ -1022,19 +1033,12 @@ ASTNode* Parser::parseVarDecl() {
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)
+        .definedBy(node->as.var_decl) // Link the symbol to its declaration details
         .build();
 
     if (!symbol_table_->insert(symbol)) {
         error("Redeclaration of variable");
     }
-
-    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    if (!node) {
-        error("Out of memory");
-    }
-    node->type = NODE_VAR_DECL;
-    node->loc = keyword_token.location;
-    node->as.var_decl = var_decl;
 
     return node;
 }

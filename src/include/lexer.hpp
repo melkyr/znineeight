@@ -69,6 +69,7 @@ enum TokenType {
     TOKEN_DEFER,            ///< 'defer' keyword for scope-exit actions.
     TOKEN_TRUE,             ///< 'true' keyword.
     TOKEN_FALSE,            ///< 'false' keyword.
+    TOKEN_NULL,             ///< 'null' keyword.
     TOKEN_BREAK,            ///< 'break' keyword.
     TOKEN_CATCH,            ///< 'catch' keyword.
     TOKEN_CONTINUE,         ///< 'continue' keyword.

@@ -23,6 +23,7 @@ public:
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
     Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
+    Type* visitNullLiteral(ASTNode* node);
     Type* visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node);
     Type* visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node);
     Type* visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node);
