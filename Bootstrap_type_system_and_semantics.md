@@ -206,6 +206,22 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 -   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
 -   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
 
+### Assignment Expressions
+
+When visiting an assignment expression (`ASTAssignmentNode` or `ASTCompoundAssignmentNode`), the `TypeChecker` enforces a set of strict, C89-compliant validation rules to ensure type safety and correctness.
+
+1.  **L-Value Check:** The left-hand side of an assignment must be a valid l-value (a memory location that can be assigned to). This is checked by `isLValueConst`, which also verifies that the l-value is not `const`. Attempting to assign to a `const` variable is a fatal error.
+
+2.  **Strict Type Compatibility:** Unlike other contexts that may allow for safe type widening (e.g., function call arguments), assignments follow a strict 'identical types only' rule for numeric types. This is handled by a dedicated `isTypeAssignableTo` function.
+    -   **Numeric Types:** The type of the right-hand side (r-value) must be *exactly the same* as the type of the left-hand side (l-value). For example, assigning an `i16` to an `i32` is a type mismatch error.
+    -   **Pointer Types:** Pointer assignments are allowed if the base types are identical and the assignment does not discard a `const` qualifier. A mutable pointer (`*T`) can be assigned to a constant pointer (`*const T`), but a constant pointer cannot be assigned to a mutable pointer.
+
+3.  **Compound Assignments:** For compound assignments (e.g., `+=`, `-=`), the `TypeChecker` performs a two-step validation:
+    -   First, it checks if the underlying binary operation is valid between the l-value and r-value types using the same strict rules as `visitBinaryOp`. For example, for `x += y`, it checks if `x + y` is a valid operation.
+    -   Second, it ensures that the result of this operation is legally assignable back to the l-value, following the strict assignment rules described above.
+
+This rigorous validation strategy ensures that all assignment operations in the bootstrap compiler adhere to the strict semantics of C89, preventing common sources of bugs and ensuring predictable behavior.
+
 ### Array Type Declarations
 
 When visiting an array type declaration (`ASTArrayTypeNode`), the `TypeChecker` enforces strict C89 compatibility rules:

@@ -37,7 +37,7 @@ public:
     Type* visitForStmt(ASTForStmtNode* node);
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
-    Type* visitVarDecl(ASTVarDeclNode* node);
+    Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
     Type* visitStructDecl(ASTNode* parent, ASTStructDeclNode* node);
     Type* visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node);
@@ -57,7 +57,22 @@ public:
     void fatalError(const char* msg);
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
 private:
+    /**
+     * @brief Checks if a type can be assigned to another, enforcing strict C89 rules.
+     * @param actual The type of the value being assigned (R-value).
+     * @param expected The type of the location being assigned to (L-value).
+     * @param loc The source location for error reporting.
+     * @return True if the assignment is valid, false otherwise.
+     */
+    bool isTypeAssignableTo(Type* actual, Type* expected, SourceLocation loc);
+
+    /**
+     * @brief Recursively checks if an l-value expression refers to a constant.
+     * @param node The AST node of the l-value.
+     * @return True if the l-value is const, false otherwise.
+     */
     bool isLValueConst(ASTNode* node);
+
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);

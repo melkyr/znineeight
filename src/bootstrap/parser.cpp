@@ -1022,6 +1022,7 @@ ASTNode* Parser::parseVarDecl() {
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)
+        .definedBy(var_decl)
         .build();
 
     if (!symbol_table_->insert(symbol)) {

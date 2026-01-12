@@ -77,7 +77,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
-        case NODE_VAR_DECL:         resolved_type = visitVarDecl(node->as.var_decl); break;
+        case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
         case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node, node->as.union_decl); break;
@@ -471,19 +471,10 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         return NULL; // Error already reported.
     }
 
-    // Step 3: Check if the r-value type is compatible with the l-value type.
-    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
-        char ltype_str[64];
-        char rtype_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(rvalue_type, rtype_str, sizeof(rtype_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
-
-        // Use fatalError as per the spec for strict C89 assignment validation
-        fatalError(node->rvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    // Step 3: Check if the r-value type is assignable to the l-value type using the strict C89 rules.
+    if (!isTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
+        // Error is reported by isTypeAssignableTo.
+        return NULL;
     }
 
     // The type of an assignment expression is the type of the l-value.
@@ -527,26 +518,17 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
             return NULL; // Unreachable
     }
 
-    // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
-    if (!result_type) {
-        // Error already reported by checkBinaryOperation. We can just return.
+    // Step 4: Check if the underlying binary operation is valid using the main C89 checker.
+    Type* operation_result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    if (!operation_result_type) {
+        // Error already reported by checkBinaryOperation
         return NULL;
     }
 
     // Step 5: Ensure the result of the operation can be assigned back to the l-value.
-    if (!areTypesCompatible(lvalue_type, result_type)) {
-        char ltype_str[64];
-        char result_type_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(result_type, result_type_str, sizeof(result_type_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "result of operator '%s' is '%s', which cannot be assigned to type '%s'",
-                 getTokenSpelling(binary_op), result_type_str, ltype_str);
-
-        fatalError(node->lvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    if (!isTypeAssignableTo(operation_result_type, lvalue_type, node->lvalue->loc)) {
+        // Error already reported by isTypeAssignableTo
+        return NULL;
     }
 
     // The type of a compound assignment expression is the type of the l-value.
@@ -748,7 +730,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
+Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     Type* declared_type = visit(node->type);
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
@@ -777,6 +759,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
             .ofType(SYMBOL_VARIABLE)
             .withType(declared_type)
             .atLocation(node->type->loc)
+            .definedBy(parent)
             .build();
         if (!unit.getSymbolTable().insert(var_symbol)) {
             unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
@@ -1010,8 +993,14 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
     switch (node->type) {
         case NODE_IDENTIFIER: {
             Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
-            // The symbol->details points to the ASTVarDeclNode which holds the const flag.
-            return (symbol && symbol->details && ((ASTVarDeclNode*)symbol->details)->is_const);
+            if (symbol && symbol->details) {
+                // The symbol's 'details' field points to the parent ASTNode wrapper.
+                ASTNode* decl_node = (ASTNode*)symbol->details;
+                if (decl_node->type == NODE_VAR_DECL) {
+                    return decl_node->as.var_decl->is_const;
+                }
+            }
+            return false;
         }
         case NODE_UNARY_OP:
             // Check for dereferencing a const pointer, e.g. *const u8
@@ -1207,4 +1196,63 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
             fatalError(field->type->loc, msg_buffer);
         }
     }
+}
+
+bool TypeChecker::isTypeAssignableTo(Type* actual, Type* expected, SourceLocation loc) {
+    if (!actual || !expected) {
+        return false; // Cannot assign if types are unresolved.
+    }
+
+    // Rule 1: Exactly the same type is always assignable.
+    if (actual == expected) {
+        return true;
+    }
+
+    // Rule 2: Strict C89 numeric assignment.
+    if (isNumericType(actual) && isNumericType(expected)) {
+        // Strict C89: Types must be identical for assignment.
+        char actual_str[64];
+        char expected_str[64];
+        typeToString(actual, actual_str, sizeof(actual_str));
+        typeToString(expected, expected_str, sizeof(expected_str));
+        char msg[256];
+        snprintf(msg, sizeof(msg), "C89 assignment requires identical types. Cannot assign '%s' to '%s'.", actual_str, expected_str);
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+        return false;
+    }
+
+    // Rule 3: Pointer assignment compatibility.
+    if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
+        if (actual->as.pointer.base == expected->as.pointer.base) {
+            // Allow mutable to be assigned to const, but not vice-versa.
+            // *T can be assigned to *T or *const T
+            // *const T can only be assigned to *const T
+            if (expected->as.pointer.is_const || !actual->as.pointer.is_const) {
+                 return true;
+            } else {
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to mutable pointer.", unit.getArena());
+                 return false;
+            }
+        } else {
+             // Base types differ
+             char actual_base_str[64];
+             char expected_base_str[64];
+             typeToString(actual->as.pointer.base, actual_base_str, sizeof(actual_base_str));
+             typeToString(expected->as.pointer.base, expected_base_str, sizeof(expected_base_str));
+             char msg[256];
+             snprintf(msg, sizeof(msg), "Cannot assign pointer to '%s' to pointer to '%s'.", actual_base_str, expected_base_str);
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+             return false;
+        }
+    }
+
+    // If no specific rule allows it, it's not assignable under strict C89.
+    char actual_str[64];
+    char expected_str[64];
+    typeToString(actual, actual_str, sizeof(actual_str));
+    typeToString(expected, expected_str, sizeof(expected_str));
+    char msg[256];
+    snprintf(msg, sizeof(msg), "C89 assignment not allowed: Cannot assign '%s' to '%s'.", actual_str, expected_str);
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+    return false;
 }

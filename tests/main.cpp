@@ -330,6 +330,12 @@ TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 
 // Forward declarations for Group 4I: C89 Compatibility & Misc
+TEST_FUNC(TypeChecker_Assignment_ValidCases);
+TEST_FUNC(TypeChecker_Assignment_InvalidNumericAssignment);
+TEST_FUNC(TypeChecker_Assignment_InvalidPointerAssignment);
+TEST_FUNC(TypeChecker_Assignment_AssignToConstError);
+TEST_FUNC(TypeChecker_CompoundAssignment_ValidCases);
+TEST_FUNC(TypeChecker_CompoundAssignment_InvalidCases);
 TEST_FUNC(TypeChecker_RejectSlice);
 TEST_FUNC(TypeChecker_RejectNonConstantArraySize);
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
@@ -651,6 +657,12 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
         // Group 4I
+        test_TypeChecker_Assignment_ValidCases,
+        test_TypeChecker_Assignment_InvalidNumericAssignment,
+        test_TypeChecker_Assignment_InvalidPointerAssignment,
+        test_TypeChecker_Assignment_AssignToConstError,
+        test_TypeChecker_CompoundAssignment_ValidCases,
+        test_TypeChecker_CompoundAssignment_InvalidCases,
         test_TypeChecker_RejectSlice,
         test_TypeChecker_RejectNonConstantArraySize,
         test_TypeChecker_AcceptsValidArrayDeclaration,
