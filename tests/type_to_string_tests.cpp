@@ -6,7 +6,7 @@
 #include <cstring>
 
 TEST_FUNC(TypeToString_Reentrancy) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(16384);
     Type* i32_type = resolvePrimitiveTypeName("i32");
     Type* i64_type = resolvePrimitiveTypeName("i64");
 
