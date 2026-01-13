@@ -23,6 +23,7 @@
  * @param buffer A character buffer to store the resulting string.
  * @param buffer_size The size of the buffer.
  */
+#ifdef DEBUG
 static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
     buffer[--buffer_size] = '\0'; // Null-terminate
@@ -45,6 +46,7 @@ static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
     size_t len = buffer_size - i;
     memmove(buffer, buffer + i, len + 1);
 }
+#endif // DEBUG
 
 
 /**
@@ -73,6 +75,7 @@ static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
  * @param remaining A reference to the remaining size of the buffer.
  * @param src The null-terminated string to append.
  */
+#ifdef DEBUG
 static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
     if (remaining <= 1) return; // Not enough space for content + null terminator
     size_t len = strlen(src);
@@ -121,6 +124,7 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
 static void report_out_of_memory() {
     report_out_of_memory("Unknown", 0, 0, 0, 0);
 }
+#endif // DEBUG
 
 
 /**
@@ -184,7 +188,9 @@ public:
 
         // Check overflow and capacity
         if (new_offset < offset || new_offset > capacity - size) {
+#ifdef DEBUG
             report_out_of_memory("ArenaAllocator::alloc_aligned", size, new_offset, offset, capacity);
+#endif
             return NULL;
         }
 

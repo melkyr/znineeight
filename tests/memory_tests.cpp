@@ -37,6 +37,7 @@ TEST_FUNC(dynamic_array_non_pod_reallocation) {
     return true;
 }
 
+#ifdef DEBUG
 TEST_FUNC(simple_itoa_conversion) {
     char buffer[21]; // Sufficient for 64-bit size_t
 
@@ -70,3 +71,4 @@ TEST_FUNC(simple_itoa_conversion) {
 
     return true;
 }
+#endif // DEBUG

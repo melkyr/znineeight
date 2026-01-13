@@ -39,8 +39,9 @@ TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
 TEST_FUNC(dynamic_array_non_pod_reallocation);
+#ifdef DEBUG
 TEST_FUNC(simple_itoa_conversion);
-
+#endif
 // Forward declarations for Group 1B: Core Components
 TEST_FUNC(string_interning);
 TEST_FUNC(compilation_unit_creation);
@@ -396,7 +397,9 @@ int main(int argc, char* argv[]) {
         test_dynamic_array_growth,
         test_dynamic_array_growth_from_zero,
         test_dynamic_array_non_pod_reallocation,
+#ifdef DEBUG
         test_simple_itoa_conversion,
+#endif
         // Group 1B
         test_string_interning,
         test_compilation_unit_creation,

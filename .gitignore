@@ -43,3 +43,6 @@
 # Test executables
 test_runner
 test_runner.exe
+
+# Log files
+*.log
