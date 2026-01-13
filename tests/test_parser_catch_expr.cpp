@@ -55,35 +55,44 @@ TEST_FUNC(Parser_CatchExpression_WithPayload) {
     return true;
 }
 
-TEST_FUNC(Parser_CatchExpression_RightAssociativity) {
+TEST_FUNC(Parser_CatchExpression_MixedAssociativity) {
     ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
+    // This expression should parse as `(a catch b) orelse c`
+    // because `catch` and `orelse` have the same precedence and are left-associative.
     ParserTestContext ctx("a catch b orelse c", arena, interner);
     Parser* parser = ctx.getParser();
 
     ASTNode* root = parser->parseExpression();
 
-    ASSERT_EQ(root->type, NODE_CATCH_EXPR);
-    ASTCatchExprNode* catch_node = root->as.catch_expr;
+    // Expected structure for left-associativity: ((a catch b) orelse c)
+    //                orelse
+    //               /      \
+    //           catch       c
+    //          /     \
+    //         a       b
 
-    ASSERT_TRUE(catch_node->payload != NULL);
+    ASSERT_EQ(root->type, NODE_BINARY_OP);
+    ASTBinaryOpNode* orelse_node = root->as.binary_op;
+    ASSERT_EQ(orelse_node->op, TOKEN_ORELSE);
+
+    // Right side should be the identifier 'c'
+    ASSERT_TRUE(orelse_node->right != NULL);
+    ASSERT_EQ(orelse_node->right->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(orelse_node->right->as.identifier.name, "c");
+
+    // Left side should be the 'catch' expression
+    ASTNode* left = orelse_node->left;
+    ASSERT_TRUE(left != NULL);
+    ASSERT_EQ(left->type, NODE_CATCH_EXPR);
+    ASTCatchExprNode* catch_node = left->as.catch_expr;
+
     ASSERT_EQ(catch_node->payload->type, NODE_IDENTIFIER);
     ASSERT_STREQ(catch_node->payload->as.identifier.name, "a");
 
-    // The right-hand side should be the 'orelse' expression
-    ASTNode* right = catch_node->else_expr;
-    ASSERT_TRUE(right != NULL);
-    ASSERT_EQ(right->type, NODE_BINARY_OP);
-    ASTBinaryOpNode* orelse_node = right->as.binary_op;
-
-    ASSERT_EQ(orelse_node->op, TOKEN_ORELSE);
-
-    ASSERT_EQ(orelse_node->left->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(orelse_node->left->as.identifier.name, "b");
-
-    ASSERT_EQ(orelse_node->right->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(orelse_node->right->as.identifier.name, "c");
+    ASSERT_EQ(catch_node->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(catch_node->else_expr->as.identifier.name, "b");
 
     return true;
 }

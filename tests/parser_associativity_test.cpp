@@ -1,71 +1,71 @@
-#include "test_framework.hpp"
+#include "../src/include/test_framework.hpp"
+#include "../src/include/parser.hpp"
 #include "test_utils.hpp"
-#include "parser.hpp"
 
-TEST_FUNC(Parser_OrelseAssociativity) {
+static bool is_binary_op(ASTNode* node, TokenType op) {
+    return node != NULL && node->type == NODE_BINARY_OP && node->as.binary_op->op == op;
+}
+
+static bool is_catch_expr(ASTNode* node) {
+    return node != NULL && node->type == NODE_CATCH_EXPR;
+}
+
+static bool is_identifier(ASTNode* node, const char* name) {
+    return node != NULL && node->type == NODE_IDENTIFIER && strcmp(node->as.identifier.name, name) == 0;
+}
+
+// This test checks for (a orelse b) orelse c
+TEST_FUNC(Parser_Orelse_IsLeftAssociative) {
+    const char* source = "a orelse b orelse c";
     ArenaAllocator arena(4096);
     StringInterner interner(arena);
-    const char* source = "a orelse b orelse c";
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
 
-    ASTNode* result = parser->parseExpression();
+    ASTNode* root = parser->parseExpression();
 
-    ASSERT_TRUE(result != NULL);
-    ASSERT_TRUE(result->type == NODE_BINARY_OP);
+    // Expected structure for left-associativity: ((a orelse b) orelse c)
+    //              orelse
+    //             /      \
+    //        orelse       c
+    //       /      \
+    //      a        b
 
-    ASTBinaryOpNode* root = result->as.binary_op;
-    ASSERT_TRUE(root->op == TOKEN_ORELSE);
+    ASSERT_TRUE(is_binary_op(root, TOKEN_ORELSE));
+    ASSERT_TRUE(is_identifier(root->as.binary_op->right, "c"));
 
-    // Check left operand
-    ASSERT_TRUE(root->left->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(root->left->as.identifier.name, "a") == 0);
-
-    // Check right operand is a nested binary op
-    ASSERT_TRUE(root->right->type == NODE_BINARY_OP);
-    ASTBinaryOpNode* right_op = root->right->as.binary_op;
-    ASSERT_TRUE(right_op->op == TOKEN_ORELSE);
-
-    // Check left of nested op
-    ASSERT_TRUE(right_op->left->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(right_op->left->as.identifier.name, "b") == 0);
-
-    // Check right of nested op
-    ASSERT_TRUE(right_op->right->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(right_op->right->as.identifier.name, "c") == 0);
+    ASTNode* left_node = root->as.binary_op->left;
+    ASSERT_TRUE(is_binary_op(left_node, TOKEN_ORELSE));
+    ASSERT_TRUE(is_identifier(left_node->as.binary_op->left, "a"));
+    ASSERT_TRUE(is_identifier(left_node->as.binary_op->right, "b"));
 
     return true;
 }
 
-TEST_FUNC(Parser_CatchAssociativity) {
+// This test checks for (a catch b) catch c
+TEST_FUNC(Parser_Catch_IsLeftAssociative) {
+    const char* source = "a catch b catch c";
     ArenaAllocator arena(4096);
     StringInterner interner(arena);
-    const char* source = "a catch b catch c";
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
 
-    ASTNode* result = parser->parseExpression();
+    ASTNode* root = parser->parseExpression();
 
-    ASSERT_TRUE(result != NULL);
-    ASSERT_TRUE(result->type == NODE_CATCH_EXPR);
+    // Expected structure for left-associativity: ((a catch b) catch c)
+    //                catch
+    //               /     \
+    //           catch      c
+    //          /     \
+    //         a       b
 
-    ASTCatchExprNode* root = result->as.catch_expr;
+    ASSERT_TRUE(is_catch_expr(root));
+    ASSERT_TRUE(is_identifier(root->as.catch_expr->else_expr, "c"));
 
-    // Check left operand (payload)
-    ASSERT_TRUE(root->payload->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(root->payload->as.identifier.name, "a") == 0);
-
-    // Check right operand (else_expr) is a nested catch expression
-    ASSERT_TRUE(root->else_expr->type == NODE_CATCH_EXPR);
-    ASTCatchExprNode* right_op = root->else_expr->as.catch_expr;
-
-    // Check payload of nested op
-    ASSERT_TRUE(right_op->payload->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(right_op->payload->as.identifier.name, "b") == 0);
-
-    // Check else_expr of nested op
-    ASSERT_TRUE(right_op->else_expr->type == NODE_IDENTIFIER);
-    ASSERT_TRUE(strcmp(right_op->else_expr->as.identifier.name, "c") == 0);
+    ASTNode* left_node = root->as.catch_expr->payload;
+    ASSERT_TRUE(is_catch_expr(left_node));
+    ASSERT_TRUE(is_identifier(left_node->as.catch_expr->payload, "a"));
+    ASSERT_TRUE(is_identifier(left_node->as.catch_expr->else_expr, "b"));
 
     return true;
 }
