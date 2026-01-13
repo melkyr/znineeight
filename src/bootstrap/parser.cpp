@@ -522,7 +522,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
  *
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
-ASTNode* Parser::parseExpression() {
+ASTNode* Parser::parseOrelseCatchExpression() {
     recursion_depth_++;
     if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
         error("Expression too complex, recursion limit reached");
@@ -605,6 +605,48 @@ ASTNode* Parser::parseExpression() {
     recursion_depth_--;
     return right_node;
 }
+
+ASTNode* Parser::parseExpression() {
+    return parseAssignmentExpression();
+}
+
+ASTNode* Parser::parseAssignmentExpression() {
+    ASTNode* left = parseOrelseCatchExpression();
+
+    Token op_token = peek();
+    if (op_token.type == TOKEN_EQUAL ||
+        op_token.type == TOKEN_PLUS_EQUAL || op_token.type == TOKEN_MINUS_EQUAL ||
+        op_token.type == TOKEN_STAR_EQUAL || op_token.type == TOKEN_SLASH_EQUAL ||
+        op_token.type == TOKEN_PERCENT_EQUAL || op_token.type == TOKEN_AMPERSAND_EQUAL ||
+        op_token.type == TOKEN_PIPE_EQUAL || op_token.type == TOKEN_CARET_EQUAL ||
+        op_token.type == TOKEN_LARROW2_EQUAL || op_token.type == TOKEN_RARROW2_EQUAL)
+    {
+        advance(); // Consume the assignment operator
+
+        // Assignment is right-associative, so we recursively call ourselves.
+        ASTNode* right = parseAssignmentExpression();
+
+        if (op_token.type == TOKEN_EQUAL) {
+            ASTAssignmentNode* assignment_node = (ASTAssignmentNode*)arena_->alloc(sizeof(ASTAssignmentNode));
+            assignment_node->lvalue = left;
+            assignment_node->rvalue = right;
+            ASTNode* node = createNode(NODE_ASSIGNMENT);
+            node->as.assignment = assignment_node;
+            return node;
+        } else {
+            ASTCompoundAssignmentNode* compound_node = (ASTCompoundAssignmentNode*)arena_->alloc(sizeof(ASTCompoundAssignmentNode));
+            compound_node->lvalue = left;
+            compound_node->rvalue = right;
+            compound_node->op = op_token.type;
+            ASTNode* node = createNode(NODE_COMPOUND_ASSIGNMENT);
+            node->as.compound_assignment = compound_node;
+            return node;
+        }
+    }
+
+    return left;
+}
+
 
 /**
  * @brief Parses a switch expression.

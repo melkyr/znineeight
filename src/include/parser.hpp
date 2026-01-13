@@ -59,6 +59,8 @@ public:
      * @return A pointer to the ASTNode representing the expression.
      */
     ASTNode* parseExpression();
+    ASTNode* parseAssignmentExpression();
+    ASTNode* parseOrelseCatchExpression();
 
     /**
      * @brief Parses a primary expression.

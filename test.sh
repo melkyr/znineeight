@@ -109,6 +109,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Isrc/include \
     tests/type_checker_unary_op_c89.cpp \
     tests/type_checker_var_decl.cpp \
     tests/type_checker_void_tests.cpp \
+    tests/type_checker_assignment_tests.cpp \
     tests/type_compatibility_tests.cpp \
     tests/type_system_tests.cpp \
     tests/type_to_string_tests.cpp \

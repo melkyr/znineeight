@@ -462,8 +462,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).", unit.getArena());
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -472,19 +472,10 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         return NULL; // Error already reported.
     }
 
-    // Step 3: Check if the r-value type is compatible with the l-value type.
-    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
-        char ltype_str[64];
-        char rtype_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(rvalue_type, rtype_str, sizeof(rtype_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
-
-        // Use fatalError as per the spec for strict C89 assignment validation
-        fatalError(node->rvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    // Step 3: Check if the r-value type is compatible with the l-value type using the strict C89 rules.
+    if (!isTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
+        // Error is reported by isTypeAssignableTo.
+        return NULL;
     }
 
     // The type of an assignment expression is the type of the l-value.
@@ -500,8 +491,8 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).", unit.getArena());
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -528,26 +519,17 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
             return NULL; // Unreachable
     }
 
-    // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
-    if (!result_type) {
-        // Error already reported by checkBinaryOperation. We can just return.
+    // Step 4: Use the main binary operation checker which enforces C89 rules.
+    Type* operation_result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    if (!operation_result_type) {
+        // Error already reported by checkBinaryOperation
         return NULL;
     }
 
     // Step 5: Ensure the result of the operation can be assigned back to the l-value.
-    if (!areTypesCompatible(lvalue_type, result_type)) {
-        char ltype_str[64];
-        char result_type_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(result_type, result_type_str, sizeof(result_type_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "result of operator '%s' is '%s', which cannot be assigned to type '%s'",
-                 getTokenSpelling(binary_op), result_type_str, ltype_str);
-
-        fatalError(node->lvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    if (!isTypeAssignableTo(operation_result_type, lvalue_type, node->lvalue->loc)) {
+        // Error already reported by isTypeAssignableTo
+        return NULL;
     }
 
     // The type of a compound assignment expression is the type of the l-value.
@@ -612,17 +594,24 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
+    // C-style integer promotion: default to i32 if it fits.
+    if (!node->is_unsigned) {
+        i64 signed_value = (i64)node->value;
+        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
+            return resolvePrimitiveTypeName("i32");
+        }
+    }
+    // Fallback to the smallest possible type if it doesn't fit in i32
+    // or if it's unsigned.
     if (node->is_unsigned) {
         if (node->value <= 255) return resolvePrimitiveTypeName("u8");
         if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
         if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
         return resolvePrimitiveTypeName("u64");
     } else {
-        // Since node->value is u64, we need to cast to i64 for signed comparison.
         i64 signed_value = (i64)node->value;
         if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
         if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
-        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) return resolvePrimitiveTypeName("i32");
         return resolvePrimitiveTypeName("i64");
     }
 }
@@ -763,7 +752,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
     Type* initializer_type = visit(node->initializer);
 
-    if (declared_type && initializer_type && !areTypesCompatible(declared_type, initializer_type)) {
+    if (declared_type && initializer_type && !isTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
         char declared_type_str[64];
         char initializer_type_str[64];
         typeToString(declared_type, declared_type_str, sizeof(declared_type_str));
@@ -1096,6 +1085,65 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return expected->as.pointer.is_const || !actual->as.pointer.is_const;
     }
 
+    return false;
+}
+
+bool TypeChecker::isTypeAssignableTo(Type* source_type, Type* target_type, SourceLocation loc) {
+    if (!source_type || !target_type) {
+        return false; // Error likely already reported by visit() calls
+    }
+
+    // Rule 1: Identical types are always assignable
+    if (source_type == target_type) {
+        return true;
+    }
+
+    // Rule 2: 'null' can be assigned to any pointer type
+    if (source_type->kind == TYPE_NULL && target_type->kind == TYPE_POINTER) {
+        return true;
+    }
+
+    // Rule 3: Pointer-specific rules
+    if (target_type->kind == TYPE_POINTER) {
+        // Allow assignment of any pointer to 'void*'
+        if (target_type->as.pointer.base->kind == TYPE_VOID && source_type->kind == TYPE_POINTER) {
+            return true;
+        }
+
+        // Check pointer-to-pointer assignment
+        if (source_type->kind == TYPE_POINTER) {
+            Type* src_base = source_type->as.pointer.base;
+            Type* tgt_base = target_type->as.pointer.base;
+
+            // Base types must be identical
+            if (src_base == tgt_base) {
+                // Allow *T -> *const T, but not *const T -> *T
+                if (target_type->as.pointer.is_const || !source_type->as.pointer.is_const) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Rule 4: Numeric types must be identical (no implicit widening)
+    if (isNumericType(source_type) && isNumericType(target_type)) {
+        // This check runs only if they are not identical (checked at the top)
+        char src_str[64], tgt_str[64];
+        typeToString(source_type, src_str, sizeof(src_str));
+        typeToString(target_type, tgt_str, sizeof(tgt_str));
+        char msg[256];
+        snprintf(msg, sizeof(msg), "C89 assignment requires identical types. Cannot assign '%s' to '%s'.", src_str, tgt_str);
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+        return false;
+    }
+
+    // Default: Types are not assignable
+    char src_str[64], tgt_str[64];
+    typeToString(source_type, src_str, sizeof(src_str));
+    typeToString(target_type, tgt_str, sizeof(tgt_str));
+    char msg[256];
+    snprintf(msg, sizeof(msg), "Cannot assign type '%s' to '%s'.", src_str, tgt_str);
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
     return false;
 }
 

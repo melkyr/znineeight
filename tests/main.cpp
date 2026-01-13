@@ -330,6 +330,34 @@ TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 
 // Forward declarations for Group 4I: C89 Compatibility & Misc
+TEST_FUNC(TypeCheckerAssignment_Valid_IdenticalNumeric);
+TEST_FUNC(TypeCheckerAssignment_Invalid_NumericMismatch);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_Identical);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_NullAssignment);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_ToConst);
+TEST_FUNC(TypeCheckerAssignment_Invalid_Pointer_FromConst);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_ToVoid);
+TEST_FUNC(TypeCheckerAssignment_Invalid_Pointer_FromVoid);
+TEST_FUNC(TypeCheckerAssignment_Invalid_AssignToConstVar);
+TEST_FUNC(TypeCheckerAssignment_Compound_Valid);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_Op);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_AssignBack);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_AssignToConst);
+
+TEST_FUNC(TypeCheckerAssignment_Valid_IdenticalNumeric);
+TEST_FUNC(TypeCheckerAssignment_Invalid_NumericMismatch);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_Identical);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_NullAssignment);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_ToConst);
+TEST_FUNC(TypeCheckerAssignment_Invalid_Pointer_FromConst);
+TEST_FUNC(TypeCheckerAssignment_Valid_Pointer_ToVoid);
+TEST_FUNC(TypeCheckerAssignment_Invalid_Pointer_FromVoid);
+TEST_FUNC(TypeCheckerAssignment_Invalid_AssignToConstVar);
+TEST_FUNC(TypeCheckerAssignment_Compound_Valid);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_Op);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_AssignBack);
+TEST_FUNC(TypeCheckerAssignment_Compound_Invalid_AssignToConst);
+
 TEST_FUNC(TypeChecker_RejectSlice);
 TEST_FUNC(TypeChecker_RejectNonConstantArraySize);
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
@@ -664,6 +692,34 @@ int main(int argc, char* argv[]) {
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
+        test_TypeCheckerAssignment_Valid_IdenticalNumeric,
+        test_TypeCheckerAssignment_Invalid_NumericMismatch,
+        test_TypeCheckerAssignment_Valid_Pointer_Identical,
+        test_TypeCheckerAssignment_Valid_Pointer_NullAssignment,
+        test_TypeCheckerAssignment_Valid_Pointer_ToConst,
+        test_TypeCheckerAssignment_Invalid_Pointer_FromConst,
+        test_TypeCheckerAssignment_Valid_Pointer_ToVoid,
+        test_TypeCheckerAssignment_Invalid_Pointer_FromVoid,
+        test_TypeCheckerAssignment_Invalid_AssignToConstVar,
+        test_TypeCheckerAssignment_Compound_Valid,
+        test_TypeCheckerAssignment_Compound_Invalid_Op,
+        test_TypeCheckerAssignment_Compound_Invalid_AssignBack,
+        test_TypeCheckerAssignment_Compound_Invalid_AssignToConst,
+
+        test_TypeCheckerAssignment_Valid_IdenticalNumeric,
+        test_TypeCheckerAssignment_Invalid_NumericMismatch,
+        test_TypeCheckerAssignment_Valid_Pointer_Identical,
+        test_TypeCheckerAssignment_Valid_Pointer_NullAssignment,
+        test_TypeCheckerAssignment_Valid_Pointer_ToConst,
+        test_TypeCheckerAssignment_Invalid_Pointer_FromConst,
+        test_TypeCheckerAssignment_Valid_Pointer_ToVoid,
+        test_TypeCheckerAssignment_Invalid_Pointer_FromVoid,
+        test_TypeCheckerAssignment_Invalid_AssignToConstVar,
+        test_TypeCheckerAssignment_Compound_Valid,
+        test_TypeCheckerAssignment_Compound_Invalid_Op,
+        test_TypeCheckerAssignment_Compound_Invalid_AssignBack,
+        test_TypeCheckerAssignment_Compound_Invalid_AssignToConst,
+
     };
 
     int passed = 0;

@@ -197,14 +197,27 @@ public:
 -   **`lookup(const char* name)`:** Searches for a symbol starting from the current (innermost) scope and proceeding outwards to the global scope. Returns the first match found.
 -   **`insert(const Symbol& symbol)`:** Inserts a symbol into the current scope's hash table. It first checks for redefinitions within the current scope and returns `false` if a symbol with the same name already exists.
 
-### Variable Declarations
+### Assignment and Initialization
 
-When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` performs the following validation:
--   It determines the declared type of the variable by visiting the type expression node.
--   It determines the type of the initializer by visiting the initializer expression node.
--   It then calls `areTypesCompatible()` to verify that the initializer's type can be safely assigned to the variable's declared type. This check allows for safe, implicit widening conversions (e.g., assigning an `i32` literal to an `i64` variable).
--   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
--   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
+To ensure strict C89 compliance, the `TypeChecker` uses a dedicated function, `isTypeAssignableTo`, for all assignment and initialization operations. This provides stricter validation than the more general `areTypesCompatible` function.
+
+#### `isTypeAssignableTo` Validation Rules
+
+-   **Identical Types:** Any type is assignable to an identical type.
+-   **Numeric Types:** Numeric types (`i8`-`f64`) must be **identical**. No implicit widening or narrowing is allowed (e.g., assigning an `i16` to an `i32` is a type error).
+-   **`null`:** The `null` literal can be assigned to any pointer type.
+-   **Pointers:**
+    -   A typed pointer (`*T`) can be assigned to a `void` pointer (`*void`).
+    -   A `void` pointer (`*void`) **cannot** be assigned to a typed pointer (`*T`).
+    -   A mutable pointer (`*T`) can be assigned to a `const` pointer (`*const T`).
+    -   A `const` pointer (`*const T`) **cannot** be assigned to a mutable pointer (`*T`).
+-   **Other Types:** All other types (`bool`, `enum`, etc.) must be identical for assignment.
+
+#### `visitVarDecl()`
+When visiting a variable declaration, the `TypeChecker` uses `isTypeAssignableTo` to validate that the initializer's type can be assigned to the variable's declared type.
+
+#### `visitAssignment()` and `visitCompoundAssignment()`
+For simple assignment (`=`), `visitAssignment` uses `isTypeAssignableTo`. For compound assignments (`+=`, etc.), `visitCompoundAssignment` first validates the binary operation with the strict `checkBinaryOperation` function, and then uses `isTypeAssignableTo` to ensure the result can be assigned back to the l-value. In both cases, assignment to a `const` l-value is reported as an error.
 
 ### Array Type Declarations
 
