@@ -594,24 +594,17 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
-    // C-style integer promotion: default to i32 if it fits.
-    if (!node->is_unsigned) {
-        i64 signed_value = (i64)node->value;
-        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
-            return resolvePrimitiveTypeName("i32");
-        }
-    }
-    // Fallback to the smallest possible type if it doesn't fit in i32
-    // or if it's unsigned.
     if (node->is_unsigned) {
         if (node->value <= 255) return resolvePrimitiveTypeName("u8");
         if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
         if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
         return resolvePrimitiveTypeName("u64");
     } else {
+        // Since node->value is u64, we need to cast to i64 for signed comparison.
         i64 signed_value = (i64)node->value;
         if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
         if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
+        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) return resolvePrimitiveTypeName("i32");
         return resolvePrimitiveTypeName("i64");
     }
 }
@@ -752,16 +745,12 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
     Type* initializer_type = visit(node->initializer);
 
-    if (declared_type && initializer_type && !isTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
-        char declared_type_str[64];
-        char initializer_type_str[64];
-        typeToString(declared_type, declared_type_str, sizeof(declared_type_str));
-        typeToString(initializer_type, initializer_type_str, sizeof(initializer_type_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "cannot assign type '%s' to variable of type '%s'",
-                 initializer_type_str, declared_type_str);
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+    if (declared_type && initializer_type) {
+        if (!isTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+            // Error is already reported by isTypeAssignableTo.
+            // We don't return null here because a var decl is a statement, not an expression.
+            // But we should stop processing to avoid cascading errors.
+        }
     }
 
     // Insert the symbol into the current scope
@@ -1114,6 +1103,11 @@ bool TypeChecker::isTypeAssignableTo(Type* source_type, Type* target_type, Sourc
         if (source_type->kind == TYPE_POINTER) {
             Type* src_base = source_type->as.pointer.base;
             Type* tgt_base = target_type->as.pointer.base;
+
+            if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign 'void*' to a typed pointer.", unit.getArena());
+                return false;
+            }
 
             // Base types must be identical
             if (src_base == tgt_base) {
