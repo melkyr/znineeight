@@ -69,6 +69,7 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
     NODE_CATCH_EXPR,      ///< A catch expression.
+    NODE_ORELSE_EXPR,     ///< An orelse expression.
     NODE_ERRDEFER_STMT,   ///< An errdefer statement.
 
     // ~~~~~~~~~~~~~~~~ Async Operations ~~~~~~~~~~~~~~~~~
@@ -1058,6 +1059,23 @@ Represents a `catch` expression, providing a fallback value in case of an error.
     struct ASTCatchExprNode {
         ASTNode* payload;
         const char* error_name; // Can be NULL
+        ASTNode* else_expr;
+    };
+    ```
+
+### `ASTOrelseExprNode`
+Represents an `orelse` expression, providing a fallback value in case of an error or optional type.
+*   **Zig Code:** `my_value orelse default_value`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTOrelseExprNode
+     * @brief Represents an `orelse` expression. Allocated out-of-line.
+     * @var ASTOrelseExprNode::payload The expression that may produce an error or be optional.
+     * @var ASTOrelseExprNode::else_expr The expression to evaluate if the payload is an error or null.
+     */
+    struct ASTOrelseExprNode {
+        ASTNode* payload;
         ASTNode* else_expr;
     };
     ```

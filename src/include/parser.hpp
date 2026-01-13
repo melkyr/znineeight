@@ -54,11 +54,23 @@ public:
     ASTNode* parseVarDecl();
 
     /**
-     * @brief Parses an expression.
-     * @note For the initial implementation, this is a stub that only supports integer literals.
+     * @brief Parses an assignment expression.
+     *        Grammar: `orelse_catch_expr ( ASSIGN_OP assignment_expr )?`
+     * @return A pointer to the ASTNode representing the assignment expression.
+     */
+    ASTNode* parseAssignmentExpression();
+
+    /**
+     * @brief Parses an expression, starting from the lowest precedence.
      * @return A pointer to the ASTNode representing the expression.
      */
     ASTNode* parseExpression();
+
+    /**
+     * @brief Parses an orelse or catch expression.
+     * @return A pointer to the ASTNode representing the expression.
+     */
+    ASTNode* parseOrelseCatchExpression();
 
     /**
      * @brief Parses a primary expression.

@@ -23,6 +23,167 @@ TEST_FUNC(Parser_ParsePrimaryExpr_IntegerLiteral) {
     return true;
 }
 
+TEST_FUNC(Parser_CatchExpr_Simple) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a catch b", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_CATCH_EXPR);
+
+    ASTCatchExprNode* root = expr->as.catch_expr;
+    ASSERT_EQ(root->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->payload->as.identifier.name, "a");
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "b");
+    ASSERT_TRUE(root->error_name == NULL);
+
+    return true;
+}
+
+TEST_FUNC(Parser_CatchExpr_LeftAssociativity) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a catch b catch c", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_CATCH_EXPR);
+
+    // Root should be the second 'catch'
+    ASTCatchExprNode* root = expr->as.catch_expr;
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+    ASSERT_TRUE(root->error_name == NULL);
+
+    // Payload should be 'a catch b'
+    ASTNode* payload = root->payload;
+    ASSERT_EQ(payload->type, NODE_CATCH_EXPR);
+    ASTCatchExprNode* payload_op = payload->as.catch_expr;
+    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
+    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
+    ASSERT_TRUE(payload_op->error_name == NULL);
+
+    return true;
+}
+
+TEST_FUNC(Parser_CatchExpr_MixedAssociativity) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a orelse b catch c", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_CATCH_EXPR);
+
+    ASTCatchExprNode* root = expr->as.catch_expr;
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+    ASSERT_TRUE(root->error_name == NULL);
+
+    // Payload should be 'a orelse b'
+    ASTNode* payload = root->payload;
+    ASSERT_EQ(payload->type, NODE_ORELSE_EXPR);
+    ASTOrelseExprNode* payload_op = payload->as.orelse_expr;
+    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
+    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
+
+    return true;
+}
+
+TEST_FUNC(Parser_OrelseExpr_LeftAssociativity) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a orelse b orelse c", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_ORELSE_EXPR);
+
+    // Root should be the second 'orelse'
+    ASTOrelseExprNode* root = expr->as.orelse_expr;
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+
+    // Payload should be 'a orelse b'
+    ASTNode* payload = root->payload;
+    ASSERT_EQ(payload->type, NODE_ORELSE_EXPR);
+    ASTOrelseExprNode* payload_op = payload->as.orelse_expr;
+    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
+    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
+
+    return true;
+}
+
+TEST_FUNC(Parser_OrelseExpr_Precedence) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a and b orelse c", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_ORELSE_EXPR);
+
+    ASTOrelseExprNode* root = expr->as.orelse_expr;
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+
+    // Payload should be 'a and b'
+    ASTNode* payload = root->payload;
+    ASSERT_EQ(payload->type, NODE_BINARY_OP);
+    ASTBinaryOpNode* payload_op = payload->as.binary_op;
+    ASSERT_EQ(payload_op->op, TOKEN_AND);
+    ASSERT_EQ(payload_op->left->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->left->as.identifier.name, "a");
+    ASSERT_EQ(payload_op->right->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(payload_op->right->as.identifier.name, "b");
+
+    return true;
+}
+
+TEST_FUNC(Parser_OrelseExpr_Simple) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    ParserTestContext ctx("a orelse b", arena, interner);
+    Parser* parser = ctx.getParser();
+
+    ASTNode* expr = parser->parseExpression();
+
+    ASSERT_TRUE(expr != NULL);
+    ASSERT_EQ(expr->type, NODE_ORELSE_EXPR);
+
+    ASTOrelseExprNode* root = expr->as.orelse_expr;
+    ASSERT_EQ(root->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->payload->as.identifier.name, "a");
+    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->else_expr->as.identifier.name, "b");
+
+    return true;
+}
+
 TEST_FUNC(Parser_BinaryExpr_SimplePrecedence) {
     ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
