@@ -36,3 +36,37 @@ TEST_FUNC(dynamic_array_non_pod_reallocation) {
 
     return true;
 }
+
+TEST_FUNC(simple_itoa_conversion) {
+    char buffer[21]; // Sufficient for 64-bit size_t
+
+    // Test zero
+    simple_itoa(0, buffer, sizeof(buffer));
+    ASSERT_TRUE(strcmp(buffer, "0") == 0);
+
+    // Test single digit
+    simple_itoa(5, buffer, sizeof(buffer));
+    ASSERT_TRUE(strcmp(buffer, "5") == 0);
+
+    // Test multi-digit
+    simple_itoa(12345, buffer, sizeof(buffer));
+    ASSERT_TRUE(strcmp(buffer, "12345") == 0);
+
+    // Test a larger number
+    simple_itoa(987654321, buffer, sizeof(buffer));
+    ASSERT_TRUE(strcmp(buffer, "987654321") == 0);
+
+    // Test max size_t value (assuming 32-bit for this test)
+    // MSVC 6.0 might not have stdint.h, so use unsigned long
+    size_t max_val = (size_t)-1;
+    if (sizeof(size_t) == 4) {
+        simple_itoa(4294967295UL, buffer, sizeof(buffer));
+        ASSERT_TRUE(strcmp(buffer, "4294967295") == 0);
+    } else if (sizeof(size_t) == 8) {
+        // This will be a large number, let's just test a boundary case
+        simple_itoa(18446744073709551615ULL, buffer, sizeof(buffer));
+        ASSERT_TRUE(strcmp(buffer, "18446744073709551615") == 0);
+    }
+
+    return true;
+}
