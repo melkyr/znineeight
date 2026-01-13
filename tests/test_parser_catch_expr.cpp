@@ -73,17 +73,16 @@ TEST_FUNC(Parser_CatchExpression_MixedAssociativity) {
     //          /     \
     //         a       b
 
-    ASSERT_EQ(root->type, NODE_BINARY_OP);
-    ASTBinaryOpNode* orelse_node = root->as.binary_op;
-    ASSERT_EQ(orelse_node->op, TOKEN_ORELSE);
+    ASSERT_EQ(root->type, NODE_ORELSE_EXPR);
+    ASTOrelseExprNode* orelse_node = root->as.orelse_expr;
 
     // Right side should be the identifier 'c'
-    ASSERT_TRUE(orelse_node->right != NULL);
-    ASSERT_EQ(orelse_node->right->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(orelse_node->right->as.identifier.name, "c");
+    ASSERT_TRUE(orelse_node->else_expr != NULL);
+    ASSERT_EQ(orelse_node->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(orelse_node->else_expr->as.identifier.name, "c");
 
     // Left side should be the 'catch' expression
-    ASTNode* left = orelse_node->left;
+    ASTNode* left = orelse_node->payload;
     ASSERT_TRUE(left != NULL);
     ASSERT_EQ(left->type, NODE_CATCH_EXPR);
     ASTCatchExprNode* catch_node = left->as.catch_expr;
