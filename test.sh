@@ -93,6 +93,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Isrc/include \
     tests/test_string_literal.cpp \
     tests/test_utils.cpp \
     tests/type_checker_array_tests.cpp \
+    tests/type_checker_assignment_tests.cpp \
     tests/type_checker_binary_ops.cpp \
     tests/type_checker_bool_tests.cpp \
     tests/type_checker_c89_compat_tests.cpp \

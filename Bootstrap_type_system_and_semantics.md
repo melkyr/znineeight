@@ -305,6 +305,19 @@ Function calls are subject to the following strict limitations:
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
+### Assignment Validation
+
+To adhere to strict C89 rules, the `TypeChecker` uses a dedicated function, `isTypeAssignableTo`, to validate all assignment operations (`=` and compound assignments like `+=`). This function is intentionally stricter than the general-purpose `areTypesCompatible` function.
+
+-   **Stricter Rules:** Unlike `areTypesCompatible`, which allows for safe implicit widening of numeric types (e.g., `i16` to `i32`), `isTypeAssignableTo` requires numeric types to be **identical**. Any mismatch, even a safe one, is reported as a non-fatal `ERR_TYPE_MISMATCH`.
+-   **Pointer Rules:**
+    -   Base types must be identical (e.g., `*i32` cannot be assigned to `*u32`).
+    -   `*T` can be assigned to `*const T`.
+    -   `*const T` **cannot** be assigned to `*T`.
+    -   `void*` **cannot** be assigned to a typed pointer (e.g., `*i32`). This is a key difference from standard C, enforced for stricter C89 compliance.
+-   **Null Literal:** The `null` literal is permitted to be assigned to any pointer type.
+-   **Error Handling:** All assignment-related type errors are reported as non-fatal `ERR_TYPE_MISMATCH` errors, allowing the `TypeChecker` to continue analyzing the rest of the source file.
+
 ### Function Calls
 
 When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` performs a series of critical validations to ensure the call is well-formed and adheres to the bootstrap compiler's constraints.

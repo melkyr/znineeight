@@ -511,6 +511,65 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
     return left;
 }
 
+static bool is_assignment_operator(TokenType type) {
+    return type == TOKEN_EQUAL ||
+           type == TOKEN_PLUS_EQUAL ||
+           type == TOKEN_MINUS_EQUAL ||
+           type == TOKEN_STAR_EQUAL ||
+           type == TOKEN_SLASH_EQUAL ||
+           type == TOKEN_PERCENT_EQUAL ||
+           type == TOKEN_AMPERSAND_EQUAL ||
+           type == TOKEN_PIPE_EQUAL ||
+           type == TOKEN_CARET_EQUAL ||
+           type == TOKEN_LARROW2_EQUAL ||
+           type == TOKEN_RARROW2_EQUAL;
+}
+
+ASTNode* Parser::parseAssignmentExpression() {
+    ASTNode* left = parseOrelseCatchExpression();
+
+    if (is_assignment_operator(peek().type)) {
+        Token op_token = advance();
+        ASTNode* right = parseAssignmentExpression(); // Recurse for right-associativity
+
+        // l-value check
+        if (left->type != NODE_IDENTIFIER && left->type != NODE_ARRAY_ACCESS &&
+            (left->type != NODE_UNARY_OP || left->as.unary_op.op != TOKEN_STAR)) {
+            error("Invalid target for assignment.");
+        }
+
+        if (op_token.type == TOKEN_EQUAL) {
+            ASTAssignmentNode* assign_node = (ASTAssignmentNode*)arena_->alloc(sizeof(ASTAssignmentNode));
+             if (!assign_node) {
+                error("Out of memory");
+            }
+            assign_node->lvalue = left;
+            assign_node->rvalue = right;
+
+            ASTNode* new_node = createNode(NODE_ASSIGNMENT);
+            new_node->loc = op_token.location;
+            new_node->as.assignment = assign_node;
+            return new_node;
+        } else {
+            ASTCompoundAssignmentNode* compound_node = (ASTCompoundAssignmentNode*)arena_->alloc(sizeof(ASTCompoundAssignmentNode));
+            if (!compound_node) {
+                error("Out of memory");
+            }
+            compound_node->lvalue = left;
+            compound_node->rvalue = right;
+            compound_node->op = op_token.type;
+
+            ASTNode* new_node = createNode(NODE_COMPOUND_ASSIGNMENT);
+            new_node->loc = op_token.location;
+            new_node->as.compound_assignment = compound_node;
+            return new_node;
+        }
+    }
+
+    return left;
+}
+
+
 /**
  * @brief Parses an expression, handling right-associative operators iteratively.
  *
@@ -522,7 +581,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
  *
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
-ASTNode* Parser::parseExpression() {
+ASTNode* Parser::parseOrelseCatchExpression() {
     recursion_depth_++;
     if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
         error("Expression too complex, recursion limit reached");
@@ -533,6 +592,7 @@ ASTNode* Parser::parseExpression() {
 
     // 2. If there are no low-precedence operators, we're done.
     if (peek().type != TOKEN_ORELSE && peek().type != TOKEN_CATCH) {
+        recursion_depth_--;
         return first_operand;
     }
 
@@ -604,6 +664,10 @@ ASTNode* Parser::parseExpression() {
 
     recursion_depth_--;
     return right_node;
+}
+
+ASTNode* Parser::parseExpression() {
+    return parseAssignmentExpression();
 }
 
 /**

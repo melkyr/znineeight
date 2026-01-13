@@ -462,8 +462,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).", unit.getArena());
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -472,19 +472,9 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         return NULL; // Error already reported.
     }
 
-    // Step 3: Check if the r-value type is compatible with the l-value type.
-    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
-        char ltype_str[64];
-        char rtype_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(rvalue_type, rtype_str, sizeof(rtype_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
-
-        // Use fatalError as per the spec for strict C89 assignment validation
-        fatalError(node->rvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    // Step 3: Check if the r-value type is assignable to the l-value type using strict rules.
+    if (!isTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
+        return NULL; // Error already reported by isTypeAssignableTo
     }
 
     // The type of an assignment expression is the type of the l-value.
@@ -500,8 +490,8 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).", unit.getArena());
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -529,25 +519,16 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     }
 
     // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    Type* result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
     if (!result_type) {
         // Error already reported by checkBinaryOperation. We can just return.
         return NULL;
     }
 
     // Step 5: Ensure the result of the operation can be assigned back to the l-value.
-    if (!areTypesCompatible(lvalue_type, result_type)) {
-        char ltype_str[64];
-        char result_type_str[64];
-        typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
-        typeToString(result_type, result_type_str, sizeof(result_type_str));
-
-        char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "result of operator '%s' is '%s', which cannot be assigned to type '%s'",
-                 getTokenSpelling(binary_op), result_type_str, ltype_str);
-
-        fatalError(node->lvalue->loc, msg_buffer);
-        return NULL; // Unreachable
+    if (!isTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
+        // Error already reported by isTypeAssignableTo
+        return NULL;
     }
 
     // The type of a compound assignment expression is the type of the l-value.
@@ -1096,6 +1077,70 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return expected->as.pointer.is_const || !actual->as.pointer.is_const;
     }
 
+    return false;
+}
+
+bool TypeChecker::isTypeAssignableTo(Type* source_type, Type* target_type, SourceLocation loc) {
+    if (!source_type || !target_type) {
+        return false;
+    }
+
+    if (source_type == target_type) {
+        return true;
+    }
+
+    if (source_type->kind == TYPE_NULL && target_type->kind == TYPE_POINTER) {
+        return true;
+    }
+
+    if (isNumericType(source_type) && isNumericType(target_type)) {
+        char src_str[64], tgt_str[64];
+        typeToString(source_type, src_str, sizeof(src_str));
+        typeToString(target_type, tgt_str, sizeof(tgt_str));
+        char msg[256];
+        snprintf(msg, sizeof(msg), "C89 assignment requires identical types. Cannot assign '%s' to '%s'.", src_str, tgt_str);
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+        return false;
+    }
+
+    if (source_type->kind == TYPE_POINTER && target_type->kind == TYPE_POINTER) {
+        Type* src_base = source_type->as.pointer.base;
+        Type* tgt_base = target_type->as.pointer.base;
+
+        if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {
+             char src_str[64], tgt_str[64];
+             typeToString(source_type, src_str, sizeof(src_str));
+             typeToString(target_type, tgt_str, sizeof(tgt_str));
+             char msg[256];
+             snprintf(msg, sizeof(msg), "C89: Cannot assign '%s' to '%s'. Cast required.", src_str, tgt_str);
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+             return false;
+        }
+
+        if (src_base == tgt_base) {
+            if (target_type->as.pointer.is_const || !source_type->as.pointer.is_const) {
+                return true;
+            } else {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to mutable pointer.", unit.getArena());
+                return false;
+            }
+        } else {
+             char src_base_str[64], tgt_base_str[64];
+             typeToString(src_base, src_base_str, sizeof(src_base_str));
+             typeToString(tgt_base, tgt_base_str, sizeof(tgt_base_str));
+             char msg[256];
+             snprintf(msg, sizeof(msg), "Cannot assign pointer to '%s' to pointer to '%s'.", src_base_str, tgt_base_str);
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
+             return false;
+        }
+    }
+
+    char src_str[64], tgt_str[64];
+    typeToString(source_type, src_str, sizeof(src_str));
+    typeToString(target_type, tgt_str, sizeof(tgt_str));
+    char msg[256];
+    snprintf(msg, sizeof(msg), "C89 assignment not allowed: Cannot assign '%s' to '%s'.", src_str, tgt_str);
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg, unit.getArena());
     return false;
 }
 

@@ -58,6 +58,15 @@ public:
      * @note For the initial implementation, this is a stub that only supports integer literals.
      * @return A pointer to the ASTNode representing the expression.
      */
+    ASTNode* parseOrelseCatchExpression();
+
+    /**
+     * @brief Parses an assignment expression.
+     *        Grammar: `orelse_catch_expr ( ASSIGN_OP assignment_expr )?`
+     * @return A pointer to the ASTNode representing the assignment expression.
+     */
+    ASTNode* parseAssignmentExpression();
+
     ASTNode* parseExpression();
 
     /**

@@ -58,6 +58,7 @@ public:
     void fatalError(const char* msg);
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
 private:
+    bool isTypeAssignableTo(Type* source_type, Type* target_type, SourceLocation loc);
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
