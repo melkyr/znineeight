@@ -61,27 +61,55 @@ static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
  * @param p2 Optional parameter 2 for context.
  * @param p3 Optional parameter 3 for context.
  */
+/**
+ * @brief Safely appends a source string to a destination buffer.
+ *
+ * This function appends `src` to the buffer pointed to by `dest_ptr`,
+ * ensuring that it does not write past the buffer's boundary. It updates
+ * `dest_ptr` to point to the new null terminator and decrements `remaining`
+ * by the number of characters written.
+ *
+ * @param dest_ptr A reference to a pointer to the current position in the buffer.
+ * @param remaining A reference to the remaining size of the buffer.
+ * @param src The null-terminated string to append.
+ */
+static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
+    if (remaining <= 1) return; // Not enough space for content + null terminator
+    size_t len = strlen(src);
+    size_t to_copy = len;
+    if (to_copy >= remaining) {
+        to_copy = remaining - 1;
+    }
+    memcpy(dest_ptr, src, to_copy);
+    dest_ptr += to_copy;
+    remaining -= to_copy;
+    *dest_ptr = '\0'; // Always keep the buffer null-terminated
+}
+
 static void report_out_of_memory(const char* context, size_t requested, size_t p1, size_t p2, size_t p3) {
 #ifdef _WIN32
     char buffer[256];
-    char n_requested[21], n_p1[21], n_p2[21], n_p3[21];
+    char* current = buffer;
+    size_t remaining = sizeof(buffer);
+    buffer[0] = '\0';
 
+    char n_requested[21], n_p1[21], n_p2[21], n_p3[21];
     simple_itoa(requested, n_requested, sizeof(n_requested));
     simple_itoa(p1, n_p1, sizeof(n_p1));
     simple_itoa(p2, n_p2, sizeof(n_p2));
     simple_itoa(p3, n_p3, sizeof(n_p3));
 
-    strcpy(buffer, "Out of memory in ");
-    strcat(buffer, context);
-    strcat(buffer, ". Requested: ");
-    strcat(buffer, n_requested);
-    strcat(buffer, ", P1: ");
-    strcat(buffer, n_p1);
-    strcat(buffer, ", P2: ");
-    strcat(buffer, n_p2);
-    strcat(buffer, ", P3: ");
-    strcat(buffer, n_p3);
-    strcat(buffer, "\n");
+    safe_append(current, remaining, "Out of memory in ");
+    safe_append(current, remaining, context);
+    safe_append(current, remaining, ". Requested: ");
+    safe_append(current, remaining, n_requested);
+    safe_append(current, remaining, ", P1: ");
+    safe_append(current, remaining, n_p1);
+    safe_append(current, remaining, ", P2: ");
+    safe_append(current, remaining, n_p2);
+    safe_append(current, remaining, ", P3: ");
+    safe_append(current, remaining, n_p3);
+    safe_append(current, remaining, "\n");
 
     OutputDebugStringA(buffer);
 #endif
@@ -242,13 +270,11 @@ public:
             new_cap = min_cap;
         }
 
-        // Use the default-aligned alloc. The 8-byte alignment is sufficient.
-        void* new_mem = allocator.alloc(new_cap * sizeof(T));
-        if (!new_mem) {
+        T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
+        if (!new_data) {
             // The allocator has already reported the error, so we just abort.
             abort();
         }
-        T* new_data = static_cast<T*>(new_mem);
 
         // Use placement new to copy-construct elements into the new buffer
         for (size_t i = 0; i < len; ++i) {

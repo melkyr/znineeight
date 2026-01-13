@@ -25,6 +25,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/memory_alignment_test.cpp \
     tests/memory_stability_tests.cpp \
     tests/memory_tests.cpp \
+    tests/parser_associativity_test.cpp \
     tests/parser_bug_fixes.cpp \
     tests/parser_symbol_integration_tests.cpp \
     tests/return_type_validation_tests.cpp \

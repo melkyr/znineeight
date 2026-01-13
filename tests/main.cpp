@@ -39,6 +39,7 @@ TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
 TEST_FUNC(dynamic_array_non_pod_reallocation);
+TEST_FUNC(simple_itoa_conversion);
 
 // Forward declarations for Group 1B: Core Components
 TEST_FUNC(string_interning);
@@ -144,7 +145,10 @@ TEST_FUNC(Parser_TryExpr_Simple);
 TEST_FUNC(Parser_TryExpr_Chained);
 TEST_FUNC(Parser_CatchExpression_Simple);
 TEST_FUNC(Parser_CatchExpression_WithPayload);
-TEST_FUNC(Parser_CatchExpression_RightAssociativity);
+TEST_FUNC(Parser_CatchExpression_MixedAssociativity);
+TEST_FUNC(Parser_Orelse_IsLeftAssociative);
+TEST_FUNC(Parser_Catch_IsLeftAssociative);
+
 
 // Forward declarations for Group 3C: Struct & Union Declarations
 TEST_FUNC(ASTNode_ContainerDeclarations);
@@ -346,7 +350,6 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 
 // Forward declarations for Memory Stability Tests
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
-TEST_FUNC(simple_itoa_conversion);
 
 
 int main(int argc, char* argv[]) {
@@ -387,6 +390,7 @@ int main(int argc, char* argv[]) {
         test_dynamic_array_growth,
         test_dynamic_array_growth_from_zero,
         test_dynamic_array_non_pod_reallocation,
+        test_simple_itoa_conversion,
         // Group 1B
         test_string_interning,
         test_compilation_unit_creation,
@@ -484,7 +488,9 @@ int main(int argc, char* argv[]) {
         test_Parser_TryExpr_Chained,
         test_Parser_CatchExpression_Simple,
         test_Parser_CatchExpression_WithPayload,
-        test_Parser_CatchExpression_RightAssociativity,
+        test_Parser_CatchExpression_MixedAssociativity,
+        test_Parser_Orelse_IsLeftAssociative,
+        test_Parser_Catch_IsLeftAssociative,
         // Group 3C
         test_ASTNode_ContainerDeclarations,
         test_Parser_Struct_Error_MissingLBrace,
@@ -670,7 +676,6 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Bool_Literals,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
-        test_simple_itoa_conversion,
     };
 
     int passed = 0;

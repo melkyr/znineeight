@@ -439,7 +439,10 @@ static int get_token_precedence(TokenType type) {
             return 3;
         case TOKEN_OR:
             return 2;
+
+        // Error handling and optional unwrapping (lowest precedence)
         case TOKEN_ORELSE:
+        case TOKEN_CATCH:
             return 1;
 
         default:
@@ -487,24 +490,52 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
 
         advance(); // Consume the operator
 
-        ASTNode* right = parsePrecedenceExpr(precedence + 1);
+        if (op_token.type == TOKEN_CATCH) {
+            const char* payload_name = NULL;
+            if (match(TOKEN_PIPE)) {
+                Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier for error capture payload");
+                payload_name = id_token.value.identifier;
+                expect(TOKEN_PIPE, "Expected closing '|' after error capture payload");
+            }
 
-        ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
-        if (!binary_op) {
-            error("Out of memory");
-        }
-        binary_op->left = left;
-        binary_op->right = right;
-        binary_op->op = op_token.type;
+            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
 
-        ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!new_node) {
-            error("Out of memory");
+            ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
+             if (!catch_node) {
+                error("Out of memory");
+            }
+            catch_node->payload = left;
+            catch_node->error_name = payload_name;
+            catch_node->else_expr = else_expr;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
+            new_node->type = NODE_CATCH_EXPR;
+            new_node->loc = op_token.location;
+            new_node->as.catch_expr = catch_node;
+            left = new_node;
+        } else {
+            ASTNode* right = parsePrecedenceExpr(precedence + 1);
+
+            ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
+            if (!binary_op) {
+                error("Out of memory");
+            }
+            binary_op->left = left;
+            binary_op->right = right;
+            binary_op->op = op_token.type;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
+            new_node->type = NODE_BINARY_OP;
+            new_node->loc = op_token.location;
+            new_node->as.binary_op = binary_op;
+            left = new_node;
         }
-        new_node->type = NODE_BINARY_OP;
-        new_node->loc = op_token.location;
-        new_node->as.binary_op = binary_op;
-        left = new_node;
     }
 
     recursion_depth_--;
@@ -523,87 +554,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
 ASTNode* Parser::parseExpression() {
-    recursion_depth_++;
-    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
-        error("Expression too complex, recursion limit reached");
-    }
-
-    // 1. Parse the first operand, which includes all operators with precedence > 1.
-    ASTNode* first_operand = parsePrecedenceExpr(2);
-
-    // 2. If there are no low-precedence operators, we're done.
-    if (peek().type != TOKEN_ORELSE && peek().type != TOKEN_CATCH) {
-        return first_operand;
-    }
-
-    // 3. Collect all subsequent operands and right-associative operators.
-    DynamicArray<Parser::OperatorInfo> operators(*arena_);
-    DynamicArray<ASTNode*> operands(*arena_);
-    operands.append(first_operand);
-
-    while (peek().type == TOKEN_ORELSE || peek().type == TOKEN_CATCH) {
-        Token op_token = advance();
-        const char* payload_name = NULL;
-
-        if (op_token.type == TOKEN_CATCH) {
-            if (match(TOKEN_PIPE)) {
-                Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier for error capture payload");
-                payload_name = id_token.value.identifier;
-                expect(TOKEN_PIPE, "Expected closing '|' after error capture payload");
-            }
-        }
-
-        Parser::OperatorInfo op_info = {op_token, payload_name};
-        operators.append(op_info);
-        operands.append(parsePrecedenceExpr(2));
-    }
-
-    // 4. Build the AST from right to left to ensure right-associativity.
-    ASTNode* right_node = operands[operands.length() - 1];
-
-    for (int i = operators.length() - 1; i >= 0; --i) {
-        Parser::OperatorInfo op_info = operators[i];
-        ASTNode* left_node = operands[i];
-
-        if (op_info.op.type == TOKEN_CATCH) {
-            ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
-            if (!catch_node) {
-                error("Out of memory");
-            }
-            catch_node->payload = left_node;
-            catch_node->error_name = op_info.catch_payload_name;
-            catch_node->else_expr = right_node;
-
-            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-            if (!new_node) {
-                error("Out of memory");
-            }
-            new_node->type = NODE_CATCH_EXPR;
-            new_node->loc = op_info.op.location;
-            new_node->as.catch_expr = catch_node;
-            right_node = new_node;
-        } else { // TOKEN_ORELSE
-            ASTBinaryOpNode* binary_op = (ASTBinaryOpNode*)arena_->alloc(sizeof(ASTBinaryOpNode));
-            if (!binary_op) {
-                error("Out of memory");
-            }
-            binary_op->left = left_node;
-            binary_op->right = right_node;
-            binary_op->op = op_info.op.type;
-
-            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-            if (!new_node) {
-                error("Out of memory");
-            }
-            new_node->type = NODE_BINARY_OP;
-            new_node->loc = op_info.op.location;
-            new_node->as.binary_op = binary_op;
-            right_node = new_node;
-        }
-    }
-
-    recursion_depth_--;
-    return right_node;
+    return parsePrecedenceExpr(1); // Start with the lowest precedence
 }
 
 /**
