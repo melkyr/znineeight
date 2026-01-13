@@ -8,6 +8,28 @@
 #include <cstring> // For memcpy
 #include <new>     // For placement new
 
+#ifdef _WIN32
+#include <windows.h> // For OutputDebugStringA
+#endif
+
+/**
+ * @brief Reports an out-of-memory error before aborting.
+ *
+ * This function provides a centralized way to report memory exhaustion.
+ * On Windows, it uses the Win32 API to output a message to the debugger.
+ * On other platforms, it produces no output to adhere to the project's
+ * strict dependency constraints (no <cstdio>).
+ *
+ * @note For developers on non-Windows platforms: If you wish to see this
+ *       message, you can modify this function to include <cstdio> and
+ *       use `fprintf(stderr, "Out of memory\n");` before the abort().
+ */
+static void report_out_of_memory() {
+#ifdef _WIN32
+    OutputDebugStringA("Out of memory\n");
+#endif
+}
+
 /**
  * @class ArenaAllocator
  * @brief A simple bump allocator for fast, region-based memory management.
@@ -69,6 +91,7 @@ public:
 
         // Check overflow and capacity
         if (new_offset < offset || new_offset > capacity - size) {
+            report_out_of_memory();
             return NULL;
         }
 
@@ -155,7 +178,10 @@ public:
         }
 
         T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
-        assert(new_data);
+        if (!new_data) {
+            report_out_of_memory();
+            abort();
+        }
 
         // Use placement new to copy-construct elements into the new buffer
         for (size_t i = 0; i < len; ++i) {

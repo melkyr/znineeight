@@ -1,316 +1,43 @@
 Compiling and running tests...
 tests/test_error_handler.cpp: In function ‘bool test_print_error_report()’:
-tests/test_error_handler.cpp:22:23: error: no matching function for call to ‘ErrorHandler::ErrorHandler(SourceManager&)’
-   22 |     ErrorHandler eh(sm);
-      |                       ^
-In file included from tests/test_error_handler.cpp:1:
-src/include/error_handler.hpp:84:5: note: candidate: ‘ErrorHandler::ErrorHandler(SourceManager&, ArenaAllocator&)’
-   84 |     ErrorHandler(SourceManager& sm, ArenaAllocator& arena)
-      |     ^~~~~~~~~~~~
-src/include/error_handler.hpp:84:5: note:   candidate expects 2 arguments, 1 provided
-src/include/error_handler.hpp:72:7: note: candidate: ‘ErrorHandler::ErrorHandler(const ErrorHandler&)’
-   72 | class ErrorHandler {
-      |       ^~~~~~~~~~~~
-src/include/error_handler.hpp:72:7: note:   no known conversion for argument 1 from ‘SourceManager’ to ‘const ErrorHandler&’
-tests/test_error_handler.cpp:41:8: error: ‘class ErrorHandler’ has no member named ‘printErrorReport’; did you mean ‘printErrors’?
-   41 |     eh.printErrorReport(report);
-      |        ^~~~~~~~~~~~~~~~
-      |        printErrors
-tests/test_error_handler.cpp:55:52: error: ‘std::string’ {aka ‘class std::__cxx11::basic_string<char>’} has no member named ‘back’
-   55 |     while (!actual_output.empty() && actual_output.back() == '\n') {
-      |                                                    ^~~~
-tests/test_error_handler.cpp:56:23: error: ‘std::string’ {aka ‘class std::__cxx11::basic_string<char>’} has no member named ‘pop_back’; did you mean ‘push_back’?
-   56 |         actual_output.pop_back();
-      |                       ^~~~~~~~
-      |                       push_back
-tests/test_error_handler.cpp:58:56: error: ‘std::string’ {aka ‘class std::__cxx11::basic_string<char>’} has no member named ‘back’
-   58 |     while (!expected_output.empty() && expected_output.back() == '\n') {
-      |                                                        ^~~~
-tests/test_error_handler.cpp:59:25: error: ‘std::string’ {aka ‘class std::__cxx11::basic_string<char>’} has no member named ‘pop_back’; did you mean ‘push_back’?
-   59 |         expected_output.pop_back();
-      |                         ^~~~~~~~
-      |                         push_back
-tests/test_parser_array_slice.cpp: In function ‘bool test_Parser_ArraySlice_FullRange()’:
-tests/test_parser_array_slice.cpp:13:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   13 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_array_slice.cpp: In function ‘bool test_Parser_ArraySlice_EndRangeOnly()’:
-tests/test_parser_array_slice.cpp:40:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   40 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_array_slice.cpp: In function ‘bool test_Parser_ArraySlice_StartRangeOnly()’:
-tests/test_parser_array_slice.cpp:65:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   65 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_array_slice.cpp: In function ‘bool test_Parser_ArraySlice_NoRange()’:
-tests/test_parser_array_slice.cpp:90:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   90 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_SimpleAnd()’:
-tests/test_parser_bitwise_expr.cpp:12:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   12 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd()’:
-tests/test_parser_bitwise_expr.cpp:31:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   31 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_Precedence_BitwiseAndAndShift()’:
-tests/test_parser_bitwise_expr.cpp:60:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   60 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_Associativity_Xor()’:
-tests/test_parser_bitwise_expr.cpp:89:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   89 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_ComplexExpression()’:
-tests/test_parser_bitwise_expr.cpp:118:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  118 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_bitwise_expr.cpp: In function ‘bool test_Parser_BitwiseExpr_ComparisonPrecedence()’:
-tests/test_parser_bitwise_expr.cpp:155:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  155 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithIfStatement()’:
-tests/test_parser_block.cpp:28:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   28 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithWhileStatement()’:
-tests/test_parser_block.cpp:47:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   47 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithMixedStatements()’:
-tests/test_parser_block.cpp:66:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   66 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithEmptyStatement()’:
-tests/test_parser_block.cpp:88:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   88 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithMultipleEmptyStatements()’:
-tests/test_parser_block.cpp:107:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  107 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithNestedEmptyBlock()’:
-tests/test_parser_block.cpp:129:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  129 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithMultipleNestedEmptyBlocks()’:
-tests/test_parser_block.cpp:149:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  149 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_block.cpp: In function ‘bool test_Parser_ParseBlockWithNestedBlockAndEmptyStatement()’:
-tests/test_parser_block.cpp:173:28: error: request for member ‘parseBlockStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  173 |     ASTNode* node = parser.parseBlockStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_bug.cpp: In function ‘bool test_ParserBug_TopLevelStruct()’:
-tests/test_parser_bug.cpp:43:28: error: request for member ‘parse’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   43 |     ASTNode* node = parser.parse();
-      |                            ^~~~~
-tests/test_parser_bug.cpp: In function ‘bool test_ParserBug_UnionFieldNodeType()’:
-tests/test_parser_bug.cpp:66:28: error: request for member ‘parse’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   66 |     ASTNode* node = parser.parse();
-      |                            ^~~~~
-tests/test_parser_bug.cpp: In function ‘bool test_ParserBug_TopLevelUnion()’:
-tests/test_parser_bug.cpp:86:28: error: request for member ‘parse’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   86 |     ASTNode* node = parser.parse();
-      |                            ^~~~~
-tests/test_parser_catch_expr.cpp: In function ‘bool test_Parser_CatchExpression_WithPayload()’:
-tests/test_parser_catch_expr.cpp:39:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   39 |     ASTNode* root = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_catch_expr.cpp: In function ‘bool test_Parser_CatchExpression_RightAssociativity()’:
-tests/test_parser_catch_expr.cpp:65:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   65 |     ASTNode* root = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_defer.cpp: In function ‘bool test_Parser_ParseDeferStatement()’:
-tests/test_parser_defer.cpp:12:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   12 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_for_statement.cpp: In function ‘bool test_Parser_For_ValidStatement_ItemOnly()’:
-tests/test_parser_for_statement.cpp:16:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   16 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_for_statement.cpp: In function ‘bool test_Parser_For_ValidStatement_ItemAndIndex()’:
-tests/test_parser_for_statement.cpp:41:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   41 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_for_statement.cpp: In function ‘bool test_Parser_For_WithComplexIterable()’:
-tests/test_parser_for_statement.cpp:101:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  101 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_VarDeclWithBinaryExpr()’:
-tests/test_parser_integration.cpp:18:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   18 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_LogicalAnd()’:
-tests/test_parser_integration.cpp:64:32: error: request for member ‘parseIfStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   64 |         ASTNode* node = parser.parseIfStatement();
-      |                                ^~~~~~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_DeferStatement()’:
-tests/test_parser_integration.cpp:83:28: error: request for member ‘parseDeferStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   83 |     ASTNode* node = parser.parseDeferStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_StructDeclaration()’:
-tests/test_parser_integration.cpp:115:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  115 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_SwitchExpression()’:
-tests/test_parser_integration.cpp:163:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  163 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_ForLoopOverSlice()’:
-tests/test_parser_integration.cpp:219:28: error: request for member ‘parseForStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  219 |     ASTNode* node = parser.parseForStatement();
-      |                            ^~~~~~~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_ComprehensiveFunction()’:
-tests/test_parser_integration.cpp:287:28: error: request for member ‘parseFnDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  287 |     ASTNode* node = parser.parseFnDecl();
-      |                            ^~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_WhileWithFunctionCall()’:
-tests/test_parser_integration.cpp:315:28: error: request for member ‘parseWhileStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  315 |     ASTNode* node = parser.parseWhileStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/test_parser_integration.cpp: In function ‘bool test_ParserIntegration_IfWithComplexCondition()’:
-tests/test_parser_integration.cpp:351:28: error: request for member ‘parseIfStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  351 |     ASTNode* node = parser.parseIfStatement();
-      |                            ^~~~~~~~~~~~~~~~
+tests/test_error_handler.cpp:33:48: warning: extended initializer lists only available with ‘-std=c++11’ or ‘-std=gnu++11’ [-Wc++11-extensions]
+   33 |     eh.report(ERR_TYPE_MISMATCH, SourceLocation{file_id, 1, 15}, "Cannot assign 'string' to 'i32'", "Use an integer literal instead.");
+      |                                                ^
 tests/test_parser_lifecycle.cpp: In function ‘bool test_Parser_TokenStreamLifetimeIsIndependentOfParserObject()’:
 tests/test_parser_lifecycle.cpp:15:17: warning: unused variable ‘parser2’ [-Wunused-variable]
    15 |         Parser* parser2 = ctx.getParser();
       |                 ^~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_AndHasHigherPrecedenceThanOr()’:
-tests/test_parser_logical_operators.cpp:31:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   31 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_AndBindsTighterThanOr()’:
-tests/test_parser_logical_operators.cpp:53:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   53 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_OrHasHigherPrecedenceThanOrElse()’:
-tests/test_parser_logical_operators.cpp:75:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   75 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_AndIsLeftAssociative()’:
-tests/test_parser_logical_operators.cpp:97:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   97 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_OrElseIsRightAssociative()’:
-tests/test_parser_logical_operators.cpp:119:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  119 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_logical_operators.cpp: In function ‘bool test_Parser_Logical_ComplexPrecedence()’:
-tests/test_parser_logical_operators.cpp:141:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  141 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_navigation.cpp: In function ‘bool test_Parser_Navigation_Simple()’:
-tests/test_parser_navigation.cpp:13:29: error: conversion from ‘Parser*’ to non-scalar type ‘Parser’ requested
-   13 |     Parser p = ctx.getParser();
-      |                ~~~~~~~~~~~~~^~
-tests/test_parser_navigation.cpp: In function ‘bool test_Parser_Navigation_BoundaryCheck()’:
-tests/test_parser_navigation.cpp:38:29: error: conversion from ‘Parser*’ to non-scalar type ‘Parser’ requested
-   38 |     Parser p = ctx.getParser();
-      |                ~~~~~~~~~~~~~^~
-tests/test_parser_return.cpp: In function ‘bool test_Parser_ReturnStatement_NoValue()’:
-tests/test_parser_return.cpp:13:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   13 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_return.cpp: In function ‘bool test_Parser_ReturnStatement_WithValue()’:
-tests/test_parser_return.cpp:30:28: error: request for member ‘parseStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   30 |     ASTNode* stmt = parser.parseStatement();
-      |                            ^~~~~~~~~~~~~~
-tests/test_parser_switch.cpp: In function ‘bool test_Parser_SwitchExpression_Basic()’:
-tests/test_parser_switch.cpp:16:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   16 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_switch.cpp: In function ‘bool test_Parser_SwitchExpression_MultiCaseProng()’:
-tests/test_parser_switch.cpp:50:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   50 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_switch.cpp: In function ‘bool test_Parser_SwitchExpression_Nested()’:
-tests/test_parser_switch.cpp:77:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   77 |     ASTNode* node = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParsePrimitiveType()’:
-tests/test_parser_types.cpp:12:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   12 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParsePointerType()’:
-tests/test_parser_types.cpp:28:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   28 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParseSliceType()’:
-tests/test_parser_types.cpp:48:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   48 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParseNestedPointerType()’:
-tests/test_parser_types.cpp:69:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   69 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParseSliceOfPointers()’:
-tests/test_parser_types.cpp:93:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   93 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_types.cpp: In function ‘bool test_Parser_ParseFixedSizeArray()’:
-tests/test_parser_types.cpp:118:33: error: request for member ‘parseType’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  118 |     ASTNode* type_node = parser.parseType();
-      |                                 ^~~~~~~~~
-tests/test_parser_unary.cpp: In function ‘bool test_Parser_UnaryOp_SimpleNegation()’:
-tests/test_parser_unary.cpp:12:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   12 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_unary.cpp: In function ‘bool test_Parser_UnaryOp_ChainedNegation()’:
-tests/test_parser_unary.cpp:35:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   35 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_unary.cpp: In function ‘bool test_Parser_UnaryOp_MixedOperators()’:
-tests/test_parser_unary.cpp:65:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   65 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_unary.cpp: In function ‘bool test_Parser_UnaryOp_WithPostfix()’:
-tests/test_parser_unary.cpp:101:28: error: request for member ‘parseExpression’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  101 |     ASTNode* expr = parser.parseExpression();
-      |                            ^~~~~~~~~~~~~~~
-tests/test_parser_union.cpp: In function ‘bool test_Parser_ParseUnionDeclaration_Empty()’:
-tests/test_parser_union.cpp:17:28: error: request for member ‘parsePrimaryExpr’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   17 |     ASTNode* node = parser.parsePrimaryExpr();
-      |                            ^~~~~~~~~~~~~~~~
-tests/test_parser_union.cpp: In function ‘bool test_Parser_ParseUnionDeclaration_WithFields()’:
-tests/test_parser_union.cpp:36:28: error: request for member ‘parsePrimaryExpr’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   36 |     ASTNode* node = parser.parsePrimaryExpr();
-      |                            ^~~~~~~~~~~~~~~~
-tests/test_parser_vars.cpp: In function ‘bool test_Parser_ParseConstDecl_Simple()’:
-tests/test_parser_vars.cpp:13:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   13 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_vars.cpp: In function ‘bool test_Parser_ParseVarDecl_Simple()’:
-tests/test_parser_vars.cpp:42:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   42 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_vars.cpp: In function ‘bool test_Parser_ParseVarDecl_PointerType()’:
-tests/test_parser_vars.cpp:71:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   71 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_vars.cpp: In function ‘bool test_Parser_ParseVarDecl_SliceType()’:
-tests/test_parser_vars.cpp:98:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   98 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_vars.cpp: In function ‘bool test_Parser_ParseVarDecl_FixedArrayType()’:
-tests/test_parser_vars.cpp:125:28: error: request for member ‘parseVarDecl’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-  125 |     ASTNode* node = parser.parseVarDecl();
-      |                            ^~~~~~~~~~~~
-tests/test_parser_while.cpp: In function ‘bool test_Parser_While_ValidStatement()’:
-tests/test_parser_while.cpp:16:28: error: request for member ‘parseWhileStatement’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   16 |     ASTNode* stmt = parser.parseWhileStatement();
-      |                            ^~~~~~~~~~~~~~~~~~~
-tests/type_checker_float_c89_compat_tests.cpp: In function ‘bool test_TypeCheckerC89Compat_FloatWidening()’:
-tests/type_checker_float_c89_compat_tests.cpp:23:41: error: request for member ‘parse’ in ‘ctx.ParserTestContext::getParser()’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   23 |         ASTNode* root = ctx.getParser().parse();
-      |                                         ^~~~~
-tests/type_checker_float_c89_compat_tests.cpp:38:41: error: request for member ‘parse’ in ‘ctx.ParserTestContext::getParser()’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   38 |         ASTNode* root = ctx.getParser().parse();
-      |                                         ^~~~~
-tests/type_checker_unary_op_c89.cpp: In function ‘bool test_TypeCheckerUnaryOp_LogicalNotResultType_ShouldBeBool()’:
-tests/type_checker_unary_op_c89.cpp:45:28: error: request for member ‘parse’ in ‘parser’, which is of pointer type ‘Parser*’ (maybe you meant to use ‘->’ ?)
-   45 |     ASTNode* root = parser.parse();
-      |                            ^~~~~
-Compilation failed!
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+test_runner: src/include/memory.hpp:158: void DynamicArray<T>::ensure_capacity(size_t) [with T = Token; size_t = long unsigned int]: Assertion `new_data' failed.
+Fatal type error at test.zig:1:26: Slices are not supported in C89 mode
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+Fatal type error at test.zig:1:21: Enum member value overflows its backing type.
+Fatal type error at test.zig:1:33: Enum member value overflows its backing type.
+Fatal type error at test.zig:1:33: Enum member value overflows its backing type.
+RUNNING: Parser_AbortOnAllocationFailure
+Fatal type error at test.zig:1:17: Slices are not supported in C89 mode
+Fatal type error at test.zig:1:32: Array size must be a constant integer literal
+Fatal type error at test.zig:3:5: Bootstrap compiler does not support function calls with more than 4 arguments.
+Fatal type error at test.zig:3:5: wrong number of arguments to function call, expected 2, got 1
+Fatal type error at test.zig:3:16: incompatible argument type for argument 1, expected 'i32', got '*const u8'
+RUNNING: Parser_AbortOnAllocationFailure
+
+--- C89 Type Mappings ---
+Mapping: Zig TypeKind 0 -> C89 "void"
+Mapping: Zig TypeKind 1 -> C89 "int"
+Mapping: Zig TypeKind 2 -> C89 "signed char"
+Mapping: Zig TypeKind 3 -> C89 "short"
+Mapping: Zig TypeKind 4 -> C89 "int"
+Mapping: Zig TypeKind 5 -> C89 "__int64"
+Mapping: Zig TypeKind 6 -> C89 "unsigned char"
+Mapping: Zig TypeKind 7 -> C89 "unsigned short"
+Mapping: Zig TypeKind 8 -> C89 "unsigned int"
+Mapping: Zig TypeKind 9 -> C89 "unsigned __int64"
+Mapping: Zig TypeKind 12 -> C89 "float"
+Mapping: Zig TypeKind 13 -> C89 "double"
+-------------------------
+Passed 275/275 tests
+All tests passed!
