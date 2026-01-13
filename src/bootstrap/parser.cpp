@@ -516,6 +516,24 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             new_node->loc = op_token.location;
             new_node->as.catch_expr = catch_node;
             left = new_node;
+        } else if (op_token.type == TOKEN_ORELSE) {
+            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
+
+            ASTOrelseExprNode* orelse_node = (ASTOrelseExprNode*)arena_->alloc(sizeof(ASTOrelseExprNode));
+            if (!orelse_node) {
+                error("Out of memory");
+            }
+            orelse_node->payload = left;
+            orelse_node->else_expr = else_expr;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
+            new_node->type = NODE_ORELSE_EXPR;
+            new_node->loc = op_token.location;
+            new_node->as.orelse_expr = orelse_node;
+            left = new_node;
         } else {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
@@ -553,8 +571,18 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
  *
  * @return A pointer to the root `ASTNode` of the parsed expression tree.
  */
+ASTNode* Parser::parseOrelseCatchExpression() {
+    return parsePrecedenceExpr(1); // Start with orelse/catch precedence
+}
+
+ASTNode* Parser::parseAssignmentExpression() {
+    // For now, assignment expressions are not implemented,
+    // so we just parse the next level of precedence.
+    return parseOrelseCatchExpression();
+}
+
 ASTNode* Parser::parseExpression() {
-    return parsePrecedenceExpr(1); // Start with the lowest precedence
+    return parseAssignmentExpression();
 }
 
 /**

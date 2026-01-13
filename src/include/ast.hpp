@@ -67,6 +67,7 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
     NODE_CATCH_EXPR,      ///< A catch expression.
+    NODE_ORELSE_EXPR,     ///< An orelse expression.
     NODE_ERRDEFER_STMT,   ///< An errdefer statement.
 
     // ~~~~~~~~~~~~~~~~ Async Operations ~~~~~~~~~~~~~~~~~
@@ -110,6 +111,7 @@ struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
 struct ASTTryExprNode;
 struct ASTCatchExprNode;
+struct ASTOrelseExprNode;
 struct ASTErrDeferStmtNode;
 struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
@@ -393,6 +395,17 @@ struct ASTCatchExprNode {
 };
 
 /**
+ * @struct ASTOrelseExprNode
+ * @brief Represents an `orelse` expression, providing a fallback value for an optional type.
+ * @var ASTOrelseExprNode::payload The expression that may be null or optional.
+ * @var ASTOrelseExprNode::else_expr The expression to evaluate if the payload is null/optional.
+ */
+struct ASTOrelseExprNode {
+    ASTNode* payload;
+    ASTNode* else_expr;
+};
+
+/**
  * @struct ASTErrDeferStmtNode
  * @brief Represents an `errdefer` statement.
  * @var ASTErrDeferStmtNode::statement The statement to be executed upon error-based scope exit.
@@ -605,6 +618,7 @@ struct ASTNode {
         // Error Handling
         ASTTryExprNode try_expr;
         ASTCatchExprNode* catch_expr; // Out-of-line
+        ASTOrelseExprNode* orelse_expr; // Out-of-line
         ASTErrDeferStmtNode errdefer_stmt;
 
         // Async

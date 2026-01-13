@@ -148,6 +148,12 @@ TEST_FUNC(Parser_CatchExpression_WithPayload);
 TEST_FUNC(Parser_CatchExpression_MixedAssociativity);
 TEST_FUNC(Parser_Orelse_IsLeftAssociative);
 TEST_FUNC(Parser_Catch_IsLeftAssociative);
+TEST_FUNC(Parser_CatchExpr_Simple);
+TEST_FUNC(Parser_CatchExpr_LeftAssociativity);
+TEST_FUNC(Parser_CatchExpr_MixedAssociativity);
+TEST_FUNC(Parser_OrelseExpr_Simple);
+TEST_FUNC(Parser_OrelseExpr_LeftAssociativity);
+TEST_FUNC(Parser_OrelseExpr_Precedence);
 
 
 // Forward declarations for Group 3C: Struct & Union Declarations
@@ -491,6 +497,12 @@ int main(int argc, char* argv[]) {
         test_Parser_CatchExpression_MixedAssociativity,
         test_Parser_Orelse_IsLeftAssociative,
         test_Parser_Catch_IsLeftAssociative,
+        test_Parser_CatchExpr_Simple,
+        test_Parser_CatchExpr_LeftAssociativity,
+        test_Parser_CatchExpr_MixedAssociativity,
+        test_Parser_OrelseExpr_Simple,
+        test_Parser_OrelseExpr_LeftAssociativity,
+        test_Parser_OrelseExpr_Precedence,
         // Group 3C
         test_ASTNode_ContainerDeclarations,
         test_Parser_Struct_Error_MissingLBrace,
