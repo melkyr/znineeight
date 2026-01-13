@@ -2,8 +2,8 @@
 #include "../src/include/parser.hpp"
 #include "test_utils.hpp"
 
-static bool is_binary_op(ASTNode* node, TokenType op) {
-    return node != NULL && node->type == NODE_BINARY_OP && node->as.binary_op->op == op;
+static bool is_orelse_expr(ASTNode* node) {
+    return node != NULL && node->type == NODE_ORELSE_EXPR;
 }
 
 static bool is_catch_expr(ASTNode* node) {
@@ -31,13 +31,13 @@ TEST_FUNC(Parser_Orelse_IsLeftAssociative) {
     //       /      \
     //      a        b
 
-    ASSERT_TRUE(is_binary_op(root, TOKEN_ORELSE));
-    ASSERT_TRUE(is_identifier(root->as.binary_op->right, "c"));
+    ASSERT_TRUE(is_orelse_expr(root));
+    ASSERT_TRUE(is_identifier(root->as.orelse_expr->else_expr, "c"));
 
-    ASTNode* left_node = root->as.binary_op->left;
-    ASSERT_TRUE(is_binary_op(left_node, TOKEN_ORELSE));
-    ASSERT_TRUE(is_identifier(left_node->as.binary_op->left, "a"));
-    ASSERT_TRUE(is_identifier(left_node->as.binary_op->right, "b"));
+    ASTNode* left_node = root->as.orelse_expr->payload;
+    ASSERT_TRUE(is_orelse_expr(left_node));
+    ASSERT_TRUE(is_identifier(left_node->as.orelse_expr->payload, "a"));
+    ASSERT_TRUE(is_identifier(left_node->as.orelse_expr->else_expr, "b"));
 
     return true;
 }
