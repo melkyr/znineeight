@@ -13,22 +13,87 @@
 #endif
 
 /**
- * @brief Reports an out-of-memory error before aborting.
+ * @brief A simple integer-to-string conversion function.
  *
- * This function provides a centralized way to report memory exhaustion.
- * On Windows, it uses the Win32 API to output a message to the debugger.
- * On other platforms, it produces no output to adhere to the project's
- * strict dependency constraints (no <cstdio>).
+ * This function converts an unsigned `size_t` integer to its string
+ * representation. It is designed to be dependency-free, avoiding stdio
+ * functions like `sprintf` to comply with project constraints.
  *
- * @note For developers on non-Windows platforms: If you wish to see this
- *       message, you can modify this function to include <cstdio> and
- *       use `fprintf(stderr, "Out of memory\n");` before the abort().
+ * @param value The integer value to convert.
+ * @param buffer A character buffer to store the resulting string.
+ * @param buffer_size The size of the buffer.
  */
-static void report_out_of_memory() {
+static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    buffer[--buffer_size] = '\0'; // Null-terminate
+
+    if (value == 0) {
+        if (buffer_size > 0) {
+            buffer[0] = '0';
+            buffer[1] = '\0';
+        }
+        return;
+    }
+
+    size_t i = buffer_size;
+    while (value > 0 && i > 0) {
+        buffer[--i] = (value % 10) + '0';
+        value /= 10;
+    }
+
+    // Shift the number to the start of the buffer
+    size_t len = buffer_size - i;
+    memmove(buffer, buffer + i, len + 1);
+}
+
+
+/**
+ * @brief Reports a detailed out-of-memory error before aborting.
+ *
+ * This function provides a centralized way to report memory exhaustion with
+ * contextual information. On Windows, it uses the Win32 API to output a
+ * detailed message to the debugger. On other platforms, it does nothing to
+ * adhere to project constraints.
+ *
+ * @param context A string describing the context of the failure (e.g., function name).
+ * @param requested The amount of memory requested.
+ * @param p1 Optional parameter 1 for context.
+ * @param p2 Optional parameter 2 for context.
+ * @param p3 Optional parameter 3 for context.
+ */
+static void report_out_of_memory(const char* context, size_t requested, size_t p1, size_t p2, size_t p3) {
 #ifdef _WIN32
-    OutputDebugStringA("Out of memory\n");
+    char buffer[256];
+    char n_requested[21], n_p1[21], n_p2[21], n_p3[21];
+
+    simple_itoa(requested, n_requested, sizeof(n_requested));
+    simple_itoa(p1, n_p1, sizeof(n_p1));
+    simple_itoa(p2, n_p2, sizeof(n_p2));
+    simple_itoa(p3, n_p3, sizeof(n_p3));
+
+    strcpy(buffer, "Out of memory in ");
+    strcat(buffer, context);
+    strcat(buffer, ". Requested: ");
+    strcat(buffer, n_requested);
+    strcat(buffer, ", P1: ");
+    strcat(buffer, n_p1);
+    strcat(buffer, ", P2: ");
+    strcat(buffer, n_p2);
+    strcat(buffer, ", P3: ");
+    strcat(buffer, n_p3);
+    strcat(buffer, "\n");
+
+    OutputDebugStringA(buffer);
 #endif
 }
+
+/**
+ * @brief Generic out-of-memory reporter for callsites that do not provide context.
+ */
+static void report_out_of_memory() {
+    report_out_of_memory("Unknown", 0, 0, 0, 0);
+}
+
 
 /**
  * @class ArenaAllocator
@@ -91,7 +156,7 @@ public:
 
         // Check overflow and capacity
         if (new_offset < offset || new_offset > capacity - size) {
-            report_out_of_memory();
+            report_out_of_memory("ArenaAllocator::alloc_aligned", size, new_offset, offset, capacity);
             return NULL;
         }
 
@@ -177,11 +242,13 @@ public:
             new_cap = min_cap;
         }
 
-        T* new_data = static_cast<T*>(allocator.alloc(new_cap * sizeof(T)));
-        if (!new_data) {
-            report_out_of_memory();
+        // Use the default-aligned alloc. The 8-byte alignment is sufficient.
+        void* new_mem = allocator.alloc(new_cap * sizeof(T));
+        if (!new_mem) {
+            // The allocator has already reported the error, so we just abort.
             abort();
         }
+        T* new_data = static_cast<T*>(new_mem);
 
         // Use placement new to copy-construct elements into the new buffer
         for (size_t i = 0; i < len; ++i) {

@@ -346,6 +346,7 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 
 // Forward declarations for Memory Stability Tests
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
+TEST_FUNC(simple_itoa_conversion);
 
 
 int main(int argc, char* argv[]) {
@@ -669,6 +670,7 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Bool_Literals,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
+        test_simple_itoa_conversion,
     };
 
     int passed = 0;
