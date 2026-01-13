@@ -110,7 +110,7 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 **Key Responsibilities:**
 - **Lifetime Management:** Ensures that all objects related to a compilation (AST nodes, tokens, interned strings) are allocated from a single arena, making cleanup trivial.
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
-- **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis.
+- **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 **Example Usage:**
 ```cpp
@@ -127,7 +127,7 @@ This abstraction is critical for future work, as it will simplify the management
 
 ### 4.1 Layer 1: Lexer (`lexer.hpp`)
 * **Input:** Source code text
-* **Output:** Stream of `Token` structs
+* **Output:** A stable stream of `Token` structs. The memory for this stream is managed by the `TokenSupplier` and is guaranteed not to move.
 * **Lexer Class Interface:**
 ```cpp
 class Lexer {
