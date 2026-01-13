@@ -1149,7 +1149,7 @@ This approach avoids forbidden standard library dependencies like `<cstdio>` (fo
 
 The `Parser` is designed with clear ownership semantics to ensure memory safety and prevent unintended side effects.
 
--   **Token Ownership:** The `Parser` does **not** own the token stream it processes. It receives a `const Token*` in its constructor, making it a read-only consumer of tokens. This `const` contract guarantees that the parser cannot modify the token stream. The ownership of the token stream is managed by the `CompilationUnit`, which ensures that the tokens' lifetime exceeds that of any `Parser` instance created to view them. This prevents dangling pointers and ensures memory safety.
+-   **Token Ownership:** The `Parser` does **not** own the token stream it processes. It receives a `const Token*` in its constructor, making it a read-only consumer of tokens. This `const` contract guarantees that the parser cannot modify the token stream. The ownership and stability of the token stream are managed by the `TokenSupplier` (which is in turn owned by the `CompilationUnit`). The `TokenSupplier` guarantees that the pointer to the token data is stable and will not be invalidated by subsequent memory allocations, which is critical for preventing dangling pointer bugs. The `CompilationUnit` ensures that the tokens' lifetime exceeds that of any `Parser` instance created to view them.
 
 -   **AST Node Ownership:** The `Parser` does **not** own the AST nodes it creates. All `ASTNode` objects are allocated from an `ArenaAllocator` that is passed into the parser's constructor. The arena's owner is responsible for managing its lifetime and freeing the memory when the AST is no longer needed, typically by using an `ArenaLifetimeGuard` in test scenarios.
 

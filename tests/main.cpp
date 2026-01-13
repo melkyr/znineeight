@@ -344,6 +344,9 @@ TEST_FUNC(C89TypeMapping_Validation);
 TEST_FUNC(C89Compat_FunctionTypeValidation);
 TEST_FUNC(TypeChecker_Bool_Literals);
 
+// Forward declarations for Memory Stability Tests
+TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -664,6 +667,8 @@ int main(int argc, char* argv[]) {
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
+        // Memory Stability
+        test_MemoryStability_TokenSupplierDanglingPointer,
     };
 
     int passed = 0;

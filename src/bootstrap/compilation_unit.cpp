@@ -32,16 +32,14 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
 }
 
 Parser* CompilationUnit::createParser(u32 file_id) {
-    const Token* tokens = token_supplier_.getTokensForFile(file_id);
-    if (!tokens) {
+    TokenStream token_stream = token_supplier_.getTokensForFile(file_id);
+    if (!token_stream.tokens) {
         fatalError("CompilationUnit::createParser: Failed to retrieve tokens for file_id.");
         return NULL; // Will not be reached
     }
 
-    size_t token_count = token_supplier_.getTokenCountForFile(file_id);
-
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(tokens, token_count, &arena_, &symbol_table_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_);
 }
 
 SymbolTable& CompilationUnit::getSymbolTable() {
