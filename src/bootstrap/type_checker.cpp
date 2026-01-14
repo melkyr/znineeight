@@ -2,11 +2,16 @@
 #include "c89_type_mapping.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
-#include <cstdio> // For snprintf
+#include "utils.hpp"
 #include <cstdlib> // For abort()
 
 #if defined(_WIN32)
 #include <windows.h> // For OutputDebugStringA
+#endif
+
+// MSVC 6.0 compatibility
+#ifndef _MSC_VER
+    typedef long long __int64;
 #endif
 
 // Helper to get the string representation of a binary operator token.
@@ -186,6 +191,11 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT: {
+            Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
+            if (promoted_type) {
+                return promoted_type;
+            }
+
             // First, check for void pointer arithmetic (must be rejected)
             if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
                 if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
@@ -195,27 +205,9 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 }
             }
 
-            // Handle pointer arithmetic
-            if (op == TOKEN_PLUS) {
-                if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-                if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
-            }
-
-            if (op == TOKEN_MINUS) {
-                if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-                if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
-                    if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                        Type* isize_type = resolvePrimitiveTypeName("isize");
-                        if (!isize_type) {
-                            unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
-                            return NULL;
-                        }
-                        return isize_type;
-                    } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to incompatible types", unit.getArena());
-                        return NULL;
-                    }
-                }
+            Type* pointer_arithmetic_result = checkPointerArithmetic(left_type, right_type, op, loc);
+            if (pointer_arithmetic_result) {
+                return pointer_arithmetic_result;
             }
 
             // Handle regular numeric arithmetic with strict C89 rules
@@ -230,8 +222,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                     typeToString(left_type, left_type_str, sizeof(left_type_str));
                     typeToString(right_type, right_type_str, sizeof(right_type_str));
                     char msg_buffer[256];
-                    snprintf(msg_buffer, sizeof(msg_buffer), "arithmetic operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                             getTokenSpelling(op), left_type_str, right_type_str);
+                    char* current = msg_buffer;
+                    size_t remaining = sizeof(msg_buffer);
+                    safe_append(current, remaining, "arithmetic operation '");
+                    safe_append(current, remaining, getTokenSpelling(op));
+                    safe_append(current, remaining, "' requires operands of the same type. Got '");
+                    safe_append(current, remaining, left_type_str);
+                    safe_append(current, remaining, "' and '");
+                    safe_append(current, remaining, right_type_str);
+                    safe_append(current, remaining, "'.");
                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                     return NULL;
                 }
@@ -243,8 +242,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             typeToString(left_type, left_type_str, sizeof(left_type_str));
             typeToString(right_type, right_type_str, sizeof(right_type_str));
             char msg_buffer[256];
-            snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for arithmetic operator '%s': '%s' and '%s'",
-                     getTokenSpelling(op), left_type_str, right_type_str);
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "invalid operands for arithmetic operator '");
+            safe_append(current, remaining, getTokenSpelling(op));
+            safe_append(current, remaining, "': '");
+            safe_append(current, remaining, left_type_str);
+            safe_append(current, remaining, "' and '");
+            safe_append(current, remaining, right_type_str);
+            safe_append(current, remaining, "'");
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
             return NULL;
         }
@@ -267,8 +273,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                     typeToString(left_type, left_type_str, sizeof(left_type_str));
                     typeToString(right_type, right_type_str, sizeof(right_type_str));
                     char msg_buffer[256];
-                    snprintf(msg_buffer, sizeof(msg_buffer), "comparison operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                             getTokenSpelling(op), left_type_str, right_type_str);
+                    char* current = msg_buffer;
+                    size_t remaining = sizeof(msg_buffer);
+                    safe_append(current, remaining, "comparison operation '");
+                    safe_append(current, remaining, getTokenSpelling(op));
+                    safe_append(current, remaining, "' requires operands of the same type. Got '");
+                    safe_append(current, remaining, left_type_str);
+                    safe_append(current, remaining, "' and '");
+                    safe_append(current, remaining, right_type_str);
+                    safe_append(current, remaining, "'.");
                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                     return NULL;
                 }
@@ -307,8 +320,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 typeToString(left_type, left_type_str, sizeof(left_type_str));
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
-                snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for comparison operator '%s': '%s' and '%s'",
-                         getTokenSpelling(op), left_type_str, right_type_str);
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "invalid operands for comparison operator '");
+                safe_append(current, remaining, getTokenSpelling(op));
+                safe_append(current, remaining, "': '");
+                safe_append(current, remaining, left_type_str);
+                safe_append(current, remaining, "' and '");
+                safe_append(current, remaining, right_type_str);
+                safe_append(current, remaining, "'");
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
@@ -333,8 +353,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                         typeToString(left_type, left_type_str, sizeof(left_type_str));
                         typeToString(right_type, right_type_str, sizeof(right_type_str));
                         char msg_buffer[256];
-                        snprintf(msg_buffer, sizeof(msg_buffer), "bitwise shift operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                                 getTokenSpelling(op), left_type_str, right_type_str);
+                        char* current = msg_buffer;
+                        size_t remaining = sizeof(msg_buffer);
+                        safe_append(current, remaining, "bitwise shift operation '");
+                        safe_append(current, remaining, getTokenSpelling(op));
+                        safe_append(current, remaining, "' requires operands of the same type. Got '");
+                        safe_append(current, remaining, left_type_str);
+                        safe_append(current, remaining, "' and '");
+                        safe_append(current, remaining, right_type_str);
+                        safe_append(current, remaining, "'.");
                         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                         return NULL;
                     }
@@ -348,8 +375,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                         typeToString(left_type, left_type_str, sizeof(left_type_str));
                         typeToString(right_type, right_type_str, sizeof(right_type_str));
                         char msg_buffer[256];
-                        snprintf(msg_buffer, sizeof(msg_buffer), "bitwise operation '%s' requires operands of the same type. Got '%s' and '%s'.",
-                                 getTokenSpelling(op), left_type_str, right_type_str);
+                        char* current = msg_buffer;
+                        size_t remaining = sizeof(msg_buffer);
+                        safe_append(current, remaining, "bitwise operation '");
+                        safe_append(current, remaining, getTokenSpelling(op));
+                        safe_append(current, remaining, "' requires operands of the same type. Got '");
+                        safe_append(current, remaining, left_type_str);
+                        safe_append(current, remaining, "' and '");
+                        safe_append(current, remaining, right_type_str);
+                        safe_append(current, remaining, "'.");
                         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                         return NULL;
                     }
@@ -360,8 +394,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 typeToString(left_type, left_type_str, sizeof(left_type_str));
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
-                snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for bitwise operator '%s': '%s' and '%s'. Operands must be integer types.",
-                         getTokenSpelling(op), left_type_str, right_type_str);
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "invalid operands for bitwise operator '");
+                safe_append(current, remaining, getTokenSpelling(op));
+                safe_append(current, remaining, "': '");
+                safe_append(current, remaining, left_type_str);
+                safe_append(current, remaining, "' and '");
+                safe_append(current, remaining, right_type_str);
+                safe_append(current, remaining, "'. Operands must be integer types.");
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
@@ -380,8 +421,15 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 typeToString(left_type, left_type_str, sizeof(left_type_str));
                 typeToString(right_type, right_type_str, sizeof(right_type_str));
                 char msg_buffer[256];
-                snprintf(msg_buffer, sizeof(msg_buffer), "invalid operands for logical operator '%s': '%s' and '%s'. Operands must be bool types.",
-                         getTokenSpelling(op), left_type_str, right_type_str);
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "invalid operands for logical operator '");
+                safe_append(current, remaining, getTokenSpelling(op));
+                safe_append(current, remaining, "': '");
+                safe_append(current, remaining, left_type_str);
+                safe_append(current, remaining, "' and '");
+                safe_append(current, remaining, right_type_str);
+                safe_append(current, remaining, "'. Operands must be bool types.");
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
                 return NULL;
             }
@@ -389,7 +437,10 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 
         default: {
             char msg_buffer[256];
-            snprintf(msg_buffer, sizeof(msg_buffer), "Unsupported binary operator in type checker: %s", getTokenSpelling(op));
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "Unsupported binary operator in type checker: ");
+            safe_append(current, remaining, getTokenSpelling(op));
             unit.getErrorHandler().report(ERR_INVALID_OPERATION, loc, msg_buffer, unit.getArena());
             return NULL;
         }
@@ -418,8 +469,15 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
 
     if (actual_args != expected_args) {
         char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "wrong number of arguments to function call, expected %lu, got %lu",
-                 (unsigned long)expected_args, (unsigned long)actual_args);
+        char expected_buf[21], actual_buf[21];
+        simple_itoa(expected_args, expected_buf, sizeof(expected_buf));
+        simple_itoa(actual_args, actual_buf, sizeof(actual_buf));
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "wrong number of arguments to function call, expected ");
+        safe_append(current, remaining, expected_buf);
+        safe_append(current, remaining, ", got ");
+        safe_append(current, remaining, actual_buf);
         fatalError(node->callee->loc, msg_buffer);
     }
 
@@ -440,8 +498,17 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
             typeToString(arg_type, arg_type_str, sizeof(arg_type_str));
 
             char msg_buffer[256];
-            snprintf(msg_buffer, sizeof(msg_buffer), "incompatible argument type for argument %lu, expected '%s', got '%s'",
-                     (unsigned long)i + 1, param_type_str, arg_type_str);
+            char arg_num_buf[21];
+            simple_itoa(i + 1, arg_num_buf, sizeof(arg_num_buf));
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "incompatible argument type for argument ");
+            safe_append(current, remaining, arg_num_buf);
+            safe_append(current, remaining, ", expected '");
+            safe_append(current, remaining, param_type_str);
+            safe_append(current, remaining, "', got '");
+            safe_append(current, remaining, arg_type_str);
+            safe_append(current, remaining, "'");
             fatalError(arg_node->loc, msg_buffer);
         }
     }
@@ -480,7 +547,13 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         typeToString(rvalue_type, rtype_str, sizeof(rtype_str));
 
         char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "incompatible types in assignment, cannot assign '%s' to '%s'", rtype_str, ltype_str);
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "incompatible types in assignment, cannot assign '");
+        safe_append(current, remaining, rtype_str);
+        safe_append(current, remaining, "' to '");
+        safe_append(current, remaining, ltype_str);
+        safe_append(current, remaining, "'");
 
         // Use fatalError as per the spec for strict C89 assignment validation
         fatalError(node->rvalue->loc, msg_buffer);
@@ -543,8 +616,15 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
         typeToString(result_type, result_type_str, sizeof(result_type_str));
 
         char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "result of operator '%s' is '%s', which cannot be assigned to type '%s'",
-                 getTokenSpelling(binary_op), result_type_str, ltype_str);
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "result of operator '");
+        safe_append(current, remaining, getTokenSpelling(binary_op));
+        safe_append(current, remaining, "' is '");
+        safe_append(current, remaining, result_type_str);
+        safe_append(current, remaining, "', which cannot be assigned to type '");
+        safe_append(current, remaining, ltype_str);
+        safe_append(current, remaining, "'");
 
         fatalError(node->lvalue->loc, msg_buffer);
         return NULL; // Unreachable
@@ -770,8 +850,13 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         typeToString(initializer_type, initializer_type_str, sizeof(initializer_type_str));
 
         char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "cannot assign type '%s' to variable of type '%s'",
-                 initializer_type_str, declared_type_str);
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "cannot assign type '");
+        safe_append(current, remaining, initializer_type_str);
+        safe_append(current, remaining, "' to variable of type '");
+        safe_append(current, remaining, declared_type_str);
+        safe_append(current, remaining, "'");
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
     }
 
@@ -943,7 +1028,11 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
     Type* resolved_type = resolvePrimitiveTypeName(node->name);
     if (!resolved_type) {
         char msg_buffer[256];
-        snprintf(msg_buffer, sizeof(msg_buffer), "use of undeclared type '%s'", node->name);
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "use of undeclared type '");
+        safe_append(current, remaining, node->name);
+        safe_append(current, remaining, "'");
         unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, msg_buffer, unit.getArena());
     }
     return resolved_type;
@@ -1113,6 +1202,63 @@ bool TypeChecker::isIntegerType(Type* type) {
     return type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE;
 }
 
+Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+    if (op == TOKEN_PLUS) {
+        if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
+        if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
+    }
+
+    if (op == TOKEN_MINUS) {
+        if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
+        if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
+            if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+                Type* isize_type = resolvePrimitiveTypeName("isize");
+                if (!isize_type) {
+                    unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
+                    return NULL;
+                }
+                return isize_type;
+            } else {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                return NULL;
+            }
+        }
+    }
+    return NULL;
+}
+
+Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op) {
+    bool is_arithmetic_op = (op == TOKEN_PLUS || op == TOKEN_MINUS ||
+                             op == TOKEN_STAR || op == TOKEN_SLASH);
+
+    if (is_arithmetic_op && isNumericType(left_type) && isNumericType(right_type)) {
+        if (left_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(left_type, right_type)) {
+            return right_type;
+        }
+        if (right_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(right_type, left_type)) {
+            return left_type;
+        }
+    }
+    return NULL;
+}
+
+bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
+    if (literal_type->kind != TYPE_INTEGER_LITERAL)
+         return false;
+    __int64 value = literal_type->as.integer_literal.value;
+    switch (target_type->kind) {
+        case TYPE_I8:  return (value >= -128 && value <= 127);
+        case TYPE_U8:  return (value >= 0 && value <= 255);
+        case TYPE_I16: return (value >= -32768 && value <= 32767);
+        case TYPE_U16: return (value >= 0 && value <= 65535);
+        case TYPE_I32: return (value >= -2147483647 - 1 && value <= 2147483647);
+        case TYPE_U32: return (value >= 0 && (unsigned __int64)value <= 4294967295ULL);
+        case TYPE_I64: return true; // Any i64 fits in i64
+        case TYPE_U64: return value >= 0;
+        default:       return false;
+    }
+}
+
 bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
     if (!isIntegerType(int_type)) {
         return false; // Should not happen with enums
@@ -1139,16 +1285,27 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
 void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     char buffer[512];
     const SourceFile* file = unit.getSourceManager().getFile(loc.file_id);
-    snprintf(buffer, sizeof(buffer), "Fatal type error at %s:%d:%d: %s\n",
-             file ? file->filename : "<unknown>",
-             loc.line,
-             loc.column,
-             message);
+
+    char* current = buffer;
+    size_t remaining = sizeof(buffer);
+
+    safe_append(current, remaining, "Fatal type error at ");
+    safe_append(current, remaining, file ? file->filename : "<unknown>");
+    safe_append(current, remaining, ":");
+    char line_buf[21], col_buf[21];
+    simple_itoa(loc.line, line_buf, sizeof(line_buf));
+    simple_itoa(loc.column, col_buf, sizeof(col_buf));
+    safe_append(current, remaining, line_buf);
+    safe_append(current, remaining, ":");
+    safe_append(current, remaining, col_buf);
+    safe_append(current, remaining, ": ");
+    safe_append(current, remaining, message);
+    safe_append(current, remaining, "\n");
 
 #if defined(_WIN32)
     OutputDebugStringA(buffer);
 #else
-    fprintf(stderr, "%s", buffer);
+    // No fprintf, as per constraints
 #endif
 
     abort();
@@ -1216,7 +1373,10 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
         // If the type was resolved, check if it's C89 compatible.
         if (field_type && !is_c89_compatible(field_type)) {
             char msg_buffer[256];
-            snprintf(msg_buffer, sizeof(msg_buffer), "%s field type is not C89 compatible.", container_type_str);
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, container_type_str);
+            safe_append(current, remaining, " field type is not C89 compatible.");
             fatalError(field->type->loc, msg_buffer);
         }
     }

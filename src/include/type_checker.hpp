@@ -65,6 +65,9 @@ private:
     bool isIntegerType(Type* type);
     bool checkIntegerLiteralFit(i64 value, Type* int_type);
     bool all_paths_return(ASTNode* node);
+    Type* checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op);
+    Type* checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
+    bool canLiteralFitInType(Type* literal_type, Type* target_type);
     CompilationUnit& unit;
     Type* current_fn_return_type;
 
