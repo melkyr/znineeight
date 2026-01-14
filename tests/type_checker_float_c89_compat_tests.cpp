@@ -5,12 +5,10 @@
 #include "type_checker.hpp"
 
 // Forward declarations for test functions
-TEST_FUNC(TypeCheckerC89Compat_FloatWidening);
+TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails);
 
-TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
-    // Test case 1: Safe widening from f32 to f64 should be allowed.
-    // We use a function context to get a variable of type f32, since float
-    // literals are always inferred as f64.
+TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails) {
+    // Test case 1: Widening from f32 to f64 should be rejected under strict C89 rules.
     {
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
@@ -22,7 +20,11 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
         TypeChecker type_checker(ctx.getCompilationUnit());
         ASTNode* root = ctx.getParser()->parse();
         type_checker.check(root);
-        ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
+        ErrorHandler& eh = ctx.getCompilationUnit().getErrorHandler();
+        ASSERT_TRUE(eh.hasErrors());
+        const DynamicArray<ErrorReport>& errors = eh.getErrors();
+        ASSERT_EQ(errors.length(), 1);
+        ASSERT_TRUE(strcmp(errors[0].message, "C89 assignment requires identical types: 'f32' to 'f64'") == 0);
     }
 
     // Test case 2: Unsafe narrowing from f64 to f32 should be rejected.
@@ -41,7 +43,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening) {
         ASSERT_TRUE(eh.hasErrors());
         const DynamicArray<ErrorReport>& errors = eh.getErrors();
         ASSERT_EQ(errors.length(), 1);
-        ASSERT_TRUE(strcmp(errors[0].message, "cannot assign type 'f64' to variable of type 'f32'") == 0);
+        ASSERT_TRUE(strcmp(errors[0].message, "C89 assignment requires identical types: 'f64' to 'f32'") == 0);
     }
 
     return true;

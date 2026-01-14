@@ -267,7 +267,7 @@ TEST_FUNC(TypeCheckerInvalidDeclarations);
 TEST_FUNC(TypeCheckerUndeclaredVariable);
 TEST_FUNC(TypeChecker_VarDecl_Valid_Simple);
 TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch);
-TEST_FUNC(TypeChecker_VarDecl_Valid_Widening);
+TEST_FUNC(TypeChecker_VarDecl_Invalid_Widening);
 TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors);
 
 // Forward declarations for Group 4C: Function Declarations & Return Validation
@@ -359,7 +359,7 @@ TEST_FUNC(TypeToString_Reentrancy);
 TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
-TEST_FUNC(TypeCheckerC89Compat_FloatWidening);
+TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails);
 TEST_FUNC(C89TypeMapping_Validation);
 TEST_FUNC(C89Compat_FunctionTypeValidation);
 TEST_FUNC(TypeChecker_Bool_Literals);
@@ -618,7 +618,7 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerUndeclaredVariable,
         test_TypeChecker_VarDecl_Valid_Simple,
         test_TypeChecker_VarDecl_Invalid_Mismatch,
-        test_TypeChecker_VarDecl_Valid_Widening,
+        test_TypeChecker_VarDecl_Invalid_Widening,
         test_TypeChecker_VarDecl_Multiple_Errors,
         // Group 4C
         test_ReturnTypeValidation_Valid,
@@ -694,7 +694,7 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
         test_TypeChecker_Call_WrongArgumentCount,
         test_TypeChecker_Call_IncompatibleArgumentType,
-        test_TypeCheckerC89Compat_FloatWidening,
+        test_TypeCheckerC89Compat_FloatWidening_Fails,
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
