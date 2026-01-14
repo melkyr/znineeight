@@ -539,8 +539,10 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         return NULL; // Error already reported.
     }
 
-    // Step 3: Check if the r-value type is compatible with the l-value type.
-    if (!areTypesCompatible(lvalue_type, rvalue_type)) {
+    // Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules.
+    if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
+        // IsTypeAssignableTo already reports a detailed error.
+        // We will now call fatalError to halt compilation as requested.
         char ltype_str[64];
         char rtype_str[64];
         typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
@@ -554,8 +556,6 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         safe_append(current, remaining, "' to '");
         safe_append(current, remaining, ltype_str);
         safe_append(current, remaining, "'");
-
-        // Use fatalError as per the spec for strict C89 assignment validation
         fatalError(node->rvalue->loc, msg_buffer);
         return NULL; // Unreachable
     }
@@ -602,14 +602,16 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     }
 
     // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOpCompatibility(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    Type* result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
     if (!result_type) {
         // Error already reported by checkBinaryOperation. We can just return.
         return NULL;
     }
 
     // Step 5: Ensure the result of the operation can be assigned back to the l-value.
-    if (!areTypesCompatible(lvalue_type, result_type)) {
+    if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
+        // IsTypeAssignableTo already reports a detailed error.
+        // We will now call fatalError to halt compilation as requested.
         char ltype_str[64];
         char result_type_str[64];
         typeToString(lvalue_type, ltype_str, sizeof(ltype_str));
@@ -625,7 +627,6 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
         safe_append(current, remaining, "', which cannot be assigned to type '");
         safe_append(current, remaining, ltype_str);
         safe_append(current, remaining, "'");
-
         fatalError(node->lvalue->loc, msg_buffer);
         return NULL; // Unreachable
     }
@@ -692,17 +693,18 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
+    // This logic is intentionally C-like. Integer literals are inferred as i32
+    // by default, unless the value is too large. This was changed from a
+    // "smallest possible type" inference to fix a large number of test failures
+    // after stricter assignment rules were put in place.
     if (node->is_unsigned) {
-        if (node->value <= 255) return resolvePrimitiveTypeName("u8");
-        if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
-        if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
+        if (node->value <= 4294967295U) return resolvePrimitiveTypeName("u32");
         return resolvePrimitiveTypeName("u64");
     } else {
-        // Since node->value is u64, we need to cast to i64 for signed comparison.
         i64 signed_value = (i64)node->value;
-        if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
-        if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
-        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) return resolvePrimitiveTypeName("i32");
+        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
+            return resolvePrimitiveTypeName("i32");
+        }
         return resolvePrimitiveTypeName("i64");
     }
 }
@@ -843,21 +845,9 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
     Type* initializer_type = visit(node->initializer);
 
-    if (declared_type && initializer_type && !areTypesCompatible(declared_type, initializer_type)) {
-        char declared_type_str[64];
-        char initializer_type_str[64];
-        typeToString(declared_type, declared_type_str, sizeof(declared_type_str));
-        typeToString(initializer_type, initializer_type_str, sizeof(initializer_type_str));
-
-        char msg_buffer[256];
-        char* current = msg_buffer;
-        size_t remaining = sizeof(msg_buffer);
-        safe_append(current, remaining, "cannot assign type '");
-        safe_append(current, remaining, initializer_type_str);
-        safe_append(current, remaining, "' to variable of type '");
-        safe_append(current, remaining, declared_type_str);
-        safe_append(current, remaining, "'");
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+    if (declared_type && initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+        // IsTypeAssignableTo already reports a detailed error.
+        // We just need to stop further processing.
     }
 
     // Insert the symbol into the current scope

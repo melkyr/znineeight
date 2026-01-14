@@ -47,3 +47,17 @@ The following tests will be affected by the implementation of `IsTypeAssignableT
   - `checker.areTypesCompatible(i32_t, i16_t)`
   - `checker.areTypesCompatible(i64_t, i32_t)`
   - `checker.areTypesCompatible(f64_t, f32_t)`
+
+## Phase 3: AST Node Integration
+
+The strict C89 assignment validation has now been integrated into the AST visitors. The `visitAssignment` and `visitCompoundAssignment` functions in `type_checker.cpp` were updated to use the `IsTypeAssignableTo` function, replacing the older, more lenient `areTypesCompatible` logic.
+
+### Newly Affected Tests
+
+This integration is expected to cause the same tests listed in Phase 2 to fail, as the logic they depend on has now been replaced. The primary tests impacted are:
+
+- **`TypeChecker_VarDecl_Valid_Widening`**: This test will now fail because implicit widening during variable initialization is no longer allowed. The test must be refactored to either use a variable of the correct type (e.g., `i32`) or be removed if it's testing a now-unsupported feature.
+
+- **`TypeCompatibility` Test**: The assertions in this test that check for numeric widening will fail. These assertions should be removed or updated to reflect that `areTypesCompatible` is no longer used for assignment validation.
+
+- **General Integration Tests**: Any other tests in the main test suite that rely on implicit numeric widening in simple or compound assignments will also fail. These will be identified and fixed in the subsequent testing and refactoring phase.
