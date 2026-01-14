@@ -157,11 +157,11 @@ TEST_FUNC(TypeCheckerBinaryOps_NumericArithmetic) {
 
     const char* base_source =
         "fn test_fn() {\n"
-        "    var a_i32: i32 = 1;\n"
-        "    var b_i32: i32 = 2;\n"
-        "    var a_i16: i16 = 3;\n"
-        "    var a_f64: f64 = 4.0;\n"
-        "    var b_f64: f64 = 5.0;\n"
+        "    var a_i32: i32;\n"
+        "    var b_i32: i32;\n"
+        "    var a_i16: i16;\n"
+        "    var a_f64: f64;\n"
+        "    var b_f64: f64;\n"
         "    %s;\n"
         "}";
 
@@ -191,13 +191,13 @@ TEST_FUNC(TypeCheckerBinaryOps_Comparison) {
 
     const char* base_source =
         "fn test_fn() {\n"
-        "    var a_i32: i32 = 1;\n"
-        "    var b_i32: i32 = 2;\n"
-        "    var a_i16: i16 = 3;\n"
+        "    var a_i32: i32;\n"
+        "    var b_i32: i32;\n"
+        "    var a_i16: i16;\n"
         "    var p_i32: *i32;\n"
         "    var p_u8: *u8;\n"
-        "    var a_bool: bool = true;\n"
-        "    var b_bool: bool = false;\n"
+        "    var a_bool: bool;\n"
+        "    var b_bool: bool;\n"
         "    %s;\n"
         "}";
 
