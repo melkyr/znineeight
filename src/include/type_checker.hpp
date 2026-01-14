@@ -53,6 +53,7 @@ public:
     bool areTypesCompatible(Type* expected, Type* actual);
 
     // Public for TDD
+    bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc);
     Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
     Type* findStructField(Type* struct_type, const char* field_name);
     void fatalError(const char* msg);

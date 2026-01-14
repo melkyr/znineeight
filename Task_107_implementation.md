@@ -1,37 +1,15 @@
-# Task 107 Implementation & Refactoring Guide
+# Task 107 Implementation Notes
 
-This document tracks the implementation of Task 107 and outlines the necessary refactoring for existing tests.
+This document tracks the implementation of Task 107: Assignment Compatibility Validation.
 
-## Phase 1: Foundational Type Helpers
+## Affected Tests
 
-The following foundational type helpers have been implemented in `type_checker.cpp` and `type_checker.hpp`:
+The following tests rely on the old, lenient assignment compatibility rules. They will need to be refactored or removed when the new C89-compliant `IsTypeAssignableTo` function is fully integrated in Phase 3.
 
-*   **`isNumericType(Type* type)`:** Checks if a given type is any of the numeric types (`i8` through `f64`, `isize`, `usize`) or a `TYPE_INTEGER_LITERAL`.
-*   **`canLiteralFitInType(Type* literal_type, Type* target_type)`:** Determines if a `TYPE_INTEGER_LITERAL` can be safely assigned to a given numeric type without overflow.
-*   **`checkBinaryOperation(...)`:** The existing binary operation checker has been updated to use the new helpers to support C89-style integer literal promotion. Now, an operation like `i32 + <literal 10>` is valid, and the result is `i32`.
+- **`TypeChecker_VarDecl_Valid_Widening`** (from `tests/type_checker_var_decl.cpp`): This test currently passes because it assumes numeric widening is allowed in variable declarations (e.g., `const x: i64 = 42;`). Under strict C89 rules, this will become an error.
 
-## Affected Tests Requiring Refactoring
-
-The introduction of stricter C89 type-checking rules, especially the requirement for identical types in binary operations (with the exception of literal promotion), will cause several existing tests to fail. These tests were written with the expectation of more lenient, C++-style implicit conversions.
-
-The following test files and specific test cases will likely require updates:
-
-*   **`tests/test_type_checker.cpp`:**
-    *   `test_addition_with_widening`: This test likely checks for implicit widening between numeric types (e.g., `i8 + i16`). This is no longer allowed. The test should be updated to use explicit casts or be removed.
-    *   `test_subtraction_with_mixed_signedness`: This test probably mixes signed and unsigned integers, which is no longer permitted.
-    *   Any other tests that rely on implicit numeric conversions in binary operations.
-
-*   **`tests/main.cpp`:**
-    *   Any integration tests that perform arithmetic with mixed types will fail. These will need to be identified and updated.
-
-### Refactoring Strategy
-
-For each failing test, the following steps should be taken:
-
-1.  **Identify the invalid operation:** Pinpoint the exact binary operation that is causing the type mismatch error.
-2.  **Assess the intent:** Determine if the test is validating a feature that is no longer supported (like implicit widening) or if it's a valid scenario that needs to be expressed differently.
-3.  **Update the test:**
-    *   For features that are no longer supported, the test should be **removed** or **rewritten** to test the new, stricter behavior (i.e., assert that the operation fails).
-    *   For valid scenarios, introduce explicit casts in the test's source code to make the types match before the operation.
-
-By following this process, we can align the existing test suite with the new C89-compliant type system.
+- **`TypeCompatibility` Test** (from `tests/type_compatibility_tests.cpp`): The assertions in this test are based on the `areTypesCompatible` helper, which explicitly allows for numeric widening. The following assertions will fail when validated against a strict C89 assignment checker:
+  - `checker.areTypesCompatible(i16_t, i8_t)`
+  - `checker.areTypesCompatible(i32_t, i16_t)`
+  - `checker.areTypesCompatible(i64_t, i32_t)`
+  - `checker.areTypesCompatible(f64_t, f32_t)`

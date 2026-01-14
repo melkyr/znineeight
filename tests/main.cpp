@@ -342,6 +342,15 @@ TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 
 // Forward declarations for Group 4I: C89 Compatibility & Misc
 TEST_FUNC(TypeChecker_RejectSlice);
+TEST_FUNC(Assignment_IncompatiblePointers_Invalid);
+TEST_FUNC(Assignment_ConstPointerToPointer_Invalid);
+TEST_FUNC(Assignment_PointerToConstPointer_Valid);
+TEST_FUNC(Assignment_VoidPointerToPointer_Invalid);
+TEST_FUNC(Assignment_PointerToVoidPointer_Valid);
+TEST_FUNC(Assignment_PointerExactMatch_Valid);
+TEST_FUNC(Assignment_NullToPointer_Valid);
+TEST_FUNC(Assignment_NumericWidening_Fails);
+TEST_FUNC(Assignment_ExactNumericMatch);
 TEST_FUNC(TypeChecker_RejectNonConstantArraySize);
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
 TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration);
@@ -689,6 +698,16 @@ int main(int argc, char* argv[]) {
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
+        // Group 4J
+        test_Assignment_ExactNumericMatch,
+        test_Assignment_NumericWidening_Fails,
+        test_Assignment_NullToPointer_Valid,
+        test_Assignment_PointerExactMatch_Valid,
+        test_Assignment_PointerToVoidPointer_Valid,
+        test_Assignment_VoidPointerToPointer_Invalid,
+        test_Assignment_PointerToConstPointer_Valid,
+        test_Assignment_ConstPointerToPointer_Invalid,
+        test_Assignment_IncompatiblePointers_Invalid,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
     };
