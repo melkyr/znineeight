@@ -424,9 +424,19 @@ To ensure C89 compatibility, the `TypeChecker` enforces several strict rules reg
 
 -   **Pointer Arithmetic:** Pointer arithmetic is not permitted on pointers of type `*void`. Attempting to perform addition or subtraction on a `void*` will result in an `ERR_INVALID_VOID_POINTER_ARITHMETIC` error.
 
-## 5. C89 Type Compatibility
+## 5. C89 Compatibility Enforcement
 
-To ensure the bootstrap compiler produces valid C89 code, a formal system for mapping and validating types has been implemented. This system is defined in the `src/include/c89_type_mapping.hpp` header.
+To ensure the bootstrap compiler produces valid C89 code, a multi-layered approach is used to reject non-C89 features.
+
+### AST Pre-Scan for Incompatible Syntax
+
+The first layer of enforcement is the **AST Pre-Scan**. Immediately after parsing is complete, a dedicated visitor class, the `C89FeatureValidator`, traverses the AST. It looks for syntactic constructs that are fundamentally incompatible with C89, such as slices (`[]u8`) and error-handling expressions (`try`, `catch`, `orelse`).
+
+If any of these features are found, the validator immediately aborts compilation with a fatal error. This "fail-fast" approach is detailed in the `C89_rejection_framework.md` document.
+
+### Type System Validation
+
+The second layer of enforcement occurs within the `TypeChecker` and the type system itself. This is handled by a formal system for mapping and validating types, which is defined in the `src/include/c89_type_mapping.hpp` header.
 
 ### C89 Primitive Type Mapping Table
 

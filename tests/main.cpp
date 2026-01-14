@@ -367,6 +367,12 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 // Forward declarations for Memory Stability Tests
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
 
+// Forward declarations for C89 Rejection Tests
+TEST_FUNC(C89Rejection_Slice);
+TEST_FUNC(C89Rejection_TryExpression);
+TEST_FUNC(C89Rejection_CatchExpression);
+TEST_FUNC(C89Rejection_OrelseExpression);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -710,6 +716,12 @@ int main(int argc, char* argv[]) {
         test_Assignment_IncompatiblePointers_Invalid,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
+
+        // C89 Rejection
+        test_C89Rejection_Slice,
+        test_C89Rejection_TryExpression,
+        test_C89Rejection_CatchExpression,
+        test_C89Rejection_OrelseExpression,
     };
 
     int passed = 0;

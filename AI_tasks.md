@@ -439,7 +439,7 @@ Given memory constraints, allocate:
     Validation: Test assignment operations in C89 context
     Success criteria: All assignments remain C89-compliant
 
-108. **Task 108:** C89 FEATURE REJECTION FRAMEWORK (HIGH)
+108. **Task 108:** C89 FEATURE REJECTION FRAMEWORK (DONE)
 
     What to implement: System to detect and reject non-C89 features
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"

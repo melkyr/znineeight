@@ -1,5 +1,6 @@
 #include "test_utils.hpp"
 #include "type_checker.hpp"
+#include "c89_feature_validator.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -87,6 +88,11 @@ void run_type_checker_test_in_child(const char* source) {
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* p = comp_unit.createParser(file_id);
     ASTNode* root = p->parse();
+
+    // Run the C89 feature validator before the type checker.
+    C89FeatureValidator validator(comp_unit);
+    validator.validate(root);
+
     TypeChecker tc(comp_unit);
     tc.check(root);
 }
