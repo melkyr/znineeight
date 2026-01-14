@@ -1381,3 +1381,74 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
         }
     }
 }
+
+bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
+    // Null literal handling
+    if (source_type->kind == TYPE_NULL) {
+        return (target_type->kind == TYPE_POINTER);
+    }
+
+    // Exact match always works
+    if (source_type == target_type) return true;
+
+    // Numeric types require exact match in C89
+    if (isNumericType(source_type) && isNumericType(target_type)) {
+        char src_str[64], tgt_str[64];
+        typeToString(source_type, src_str, sizeof(src_str));
+        typeToString(target_type, tgt_str, sizeof(tgt_str));
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "C89 assignment requires identical types: '");
+        safe_append(current, remaining, src_str);
+        safe_append(current, remaining, "' to '");
+        safe_append(current, remaining, tgt_str);
+        safe_append(current, remaining, "'");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
+        return false;
+    }
+
+    // Pointer assignment rules
+    if (source_type->kind == TYPE_POINTER && target_type->kind == TYPE_POINTER) {
+        Type* src_base = source_type->as.pointer.base;
+        Type* tgt_base = target_type->as.pointer.base;
+
+        // Allow T* -> void* (implicit)
+        if (tgt_base->kind == TYPE_VOID && src_base->kind != TYPE_VOID) return true;
+
+        // Disallow void* -> T* (requires cast)
+        if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "C89: Cannot assign void* to typed pointer without cast");
+            return false;
+        }
+
+        // Const correctness check
+        if (target_type->as.pointer.is_const && !source_type->as.pointer.is_const) {
+            return true; // T* -> const T* allowed
+        }
+        if (!target_type->as.pointer.is_const && source_type->as.pointer.is_const) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to non-const");
+            return false;
+        }
+
+        // Base types must match
+        if (src_base == tgt_base) {
+            return true;
+        }
+    }
+
+    // All other cases fail
+    char src_str[64], tgt_str[64];
+    typeToString(source_type, src_str, sizeof(src_str));
+    typeToString(target_type, tgt_str, sizeof(tgt_str));
+    char msg_buffer[256];
+    char* current = msg_buffer;
+    size_t remaining = sizeof(msg_buffer);
+    safe_append(current, remaining, "Incompatible assignment: '");
+    safe_append(current, remaining, src_str);
+    safe_append(current, remaining, "' to '");
+    safe_append(current, remaining, tgt_str);
+    safe_append(current, remaining, "'");
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
+    return false;
+}
