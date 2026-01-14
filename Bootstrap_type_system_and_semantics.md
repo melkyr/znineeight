@@ -103,44 +103,61 @@ struct Type {
 
 **Memory Management:** Like AST nodes, all `Type` structs are allocated from the `ArenaAllocator` to ensure fast allocation and simple, collective deallocation.
 
-## 3. Type Compatibility and Coercion
+## 3. Assignment Compatibility (C89 Rules)
 
-The bootstrap type checker enforces a set of strict rules for type compatibility to prevent errors and ensure that the generated C89 code is valid.
+To ensure the bootstrap compiler generates valid and predictable C89 code, the type checker enforces a strict set of rules for assignment, compound assignment, and variable initialization. These rules are generally stricter than the simple type compatibility used for function arguments. The core logic is encapsulated in the `IsTypeAssignableTo` method.
 
-### `areTypesCompatible` Function
+### The Default Rule: Strict Type Equality
 
-The core of type compatibility is the `areTypesCompatible(Type* expected, Type* actual)` method in the `TypeChecker`. It returns `true` if a value of the `actual` type can be used where a value of the `expected` type is required.
+For most operations, C89 requires that the types of the left-hand side (l-value) and right-hand side (r-value) be **identical**. The type checker enforces this as the default rule.
 
-### Implicit Coercion (Widening)
+-   **Numeric Types:** An assignment is only valid if the source and target types are exactly the same. Implicit widening is **not** allowed in assignment contexts.
+    -   `var x: i32 = my_i32;` // ✓ OK
+    -   `var x: i64 = my_i32;` // ✗ **Error:** `i32` is not identical to `i64`.
 
-The compatibility function allows for "safe" implicit conversions where no data loss can occur. This is primarily limited to widening numeric types.
+### Exception 1: The Integer Literal Rule
 
--   **Integer Widening:** A signed integer can be implicitly converted to a signed integer of a larger or equal size (e.g., `i8` -> `i16`, `i16` -> `i32`). The same applies to unsigned integers.
--   **Float Widening:** A single-precision float (`f32`) can be implicitly converted to a double-precision float (`f64`).
+A critical exception to the strict equality rule, inherited from C89, applies to **integer literals**. An integer literal (e.g., `42`, `-100`) can be assigned to a variable of any numeric type (integer or float) as long as the literal's value fits within the valid range of the target type.
 
-### Explicit Coercion (Casting)
+-   `var x: i16 = 128;`      // ✓ OK: `128` fits in an `i16`.
+-   `var x: u8 = 255;`       // ✓ OK: `255` fits in a `u8`.
+-   `var x: i64 = 42;`       // ✓ OK: `42` (inferred as `i32` literal) fits in an `i64`.
+-   `var x: u8 = -1;`        // ✗ **Error:** `-1` is out of range for `u8`.
+-   `var x: i8 = 128;`       // ✗ **Error:** `128` overflows `i8`.
 
-All other conversions must be explicit and are not currently supported by the `areTypesCompatible` function. This includes:
--   Conversions that may result in data loss (e.g., `i32` -> `i16`).
--   Conversions between signed and unsigned integers.
--   Conversions between integer and floating-point types.
--   Conversions between pointer types (e.g., `*i32` to `*u8`).
+This logic is primarily handled in the `visitVarDecl` method, which uses the `canLiteralFitInType` helper to perform the value range check.
 
-### Type Compatibility Matrix
+### Exception 2: Pointer Assignment Rules
 
-The following table summarizes the allowed implicit conversions:
+Pointer assignments follow a specific set of C89-compatible rules:
 
-| From Type (`actual`) | To Type (`expected`) | Implicitly Compatible? | Notes                                            |
-|----------------------|----------------------|------------------------|--------------------------------------------------|
-| `i(N)`               | `i(M)` where M >= N  | ✓                      | Safe integer widening conversion.                |
-| `u(N)`               | `u(M)` where M >= N  | ✓                      | Safe unsigned integer widening conversion.       |
-| `f32`                | `f64`                | ✓                      | Safe float widening conversion.                  |
-| `f64`                | `f32`                | ✗                      | Narrowing conversion is not allowed implicitly.  |
-| `*T`                 | `*const T`           | ✓                      | Adding const is a safe conversion.               |
-| `T`                  | `T`                  | ✓                      | Types are identical.                             |
-| `*const T`           | `*T`                 | ✗                      | Removing const is not allowed implicitly.        |
-| `*T`                 | `*U`                 | ✗                      | Pointers to different types are incompatible.    |
-| Any other combination| -                    | ✗                      | All other conversions require an explicit cast.  |
+1.  **Null Assignment:** The `null` literal can be assigned to a variable of any pointer type.
+    -   `var p: *i32 = null;` // ✓ OK
+
+2.  **Implicit Cast to `void*`:** Any typed pointer (`*T`) can be implicitly assigned to a `void` pointer (`*void`).
+    -   `var p_void: *void = my_i32_ptr;` // ✓ OK
+
+3.  **No Implicit Cast from `void*`:** A `void` pointer cannot be implicitly assigned to a typed pointer. This would require an explicit cast, which is not supported in the bootstrap compiler.
+    -   `var p_i32: *i32 = my_void_ptr;` // ✗ **Error**
+
+4.  **Const Correctness:**
+    -   A mutable pointer (`*T`) can be assigned to a constant pointer (`*const T`). This is a safe, "const-adding" conversion.
+        - `var p_const: *const i32 = my_i32_ptr;` // ✓ OK
+    -   A constant pointer (`*const T`) cannot be assigned to a mutable pointer (`*T`). This would unsafely remove the `const` qualification.
+        - `var p_mut: *i32 = my_const_i32_ptr;` // ✗ **Error**
+
+### Summary of Assignment Rules
+
+| From Type (`source`)    | To Type (`target`)     | Assignable? | Notes                                                              |
+|-------------------------|------------------------|-------------|--------------------------------------------------------------------|
+| `numeric`               | `numeric`              | ✗ (if different) | Must be identical types.                                           |
+| `integer_literal`       | `any_numeric`          | ✓ (if value fits) | C89 exception for literals.                                        |
+| `null`                  | `*T` (any pointer)     | ✓           | `null` is compatible with all pointers.                            |
+| `*T`                    | `*void`                | ✓           | Implicit "up-cast" to void pointer.                                |
+| `*void`                 | `*T`                   | ✗           | Requires an explicit cast.                                         |
+| `*T`                    | `*const T`             | ✓           | Safe to add `const`.                                               |
+| `*const T`              | `*T`                   | ✗           | Unsafe to remove `const`.                                          |
+| `*T`                    | `*U` (different types) | ✗           | Incompatible pointer base types.                                   |
 
 
 ## 4. Semantic Analysis
@@ -200,11 +217,11 @@ public:
 ### Variable Declarations
 
 When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` performs the following validation:
--   It determines the declared type of the variable by visiting the type expression node.
--   It determines the type of the initializer by visiting the initializer expression node.
--   It then calls `areTypesCompatible()` to verify that the initializer's type can be safely assigned to the variable's declared type. This check allows for safe, implicit widening conversions (e.g., assigning an `i32` literal to an `i64` variable).
--   If the types are not compatible, it reports a detailed `ERR_TYPE_MISMATCH` error, specifying both the variable's type and the initializer's type (e.g., "cannot assign type '*const u8' to variable of type 'i32'").
--   The check for redefinition is handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`, ensuring that duplicate symbols are caught early.
+-   It resolves the declared type of the variable.
+-   It then checks the initializer. If the initializer is an integer literal, it uses the special C89 literal assignment rule (`canLiteralFitInType`).
+-   For all other initializer types, it uses the strict `IsTypeAssignableTo` function to validate the assignment.
+-   If the types are not compatible, a detailed `ERR_TYPE_MISMATCH` is reported.
+-   Redefinition checks are handled by the `Parser` when it inserts the variable's symbol into the `SymbolTable`.
 
 ### Array Type Declarations
 
