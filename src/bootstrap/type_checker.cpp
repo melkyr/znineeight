@@ -220,6 +220,14 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 
             // Handle regular numeric arithmetic with strict C89 rules
             if (isNumericType(left_type) && isNumericType(right_type)) {
+                // Handle integer literal promotions (C89 exception)
+                if (left_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(left_type, right_type)) {
+                    return right_type;
+                }
+                if (right_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(right_type, left_type)) {
+                    return left_type;
+                }
+
                 // C89 strict rule: operands must be exactly the same type
                 if (left_type == right_type) {
                     return left_type; // Result type is same as operands
@@ -612,18 +620,28 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
-    if (node->is_unsigned) {
-        if (node->value <= 255) return resolvePrimitiveTypeName("u8");
-        if (node->value <= 65535) return resolvePrimitiveTypeName("u16");
-        if (node->value <= 4294967295) return resolvePrimitiveTypeName("u32");
-        return resolvePrimitiveTypeName("u64");
-    } else {
-        // Since node->value is u64, we need to cast to i64 for signed comparison.
-        i64 signed_value = (i64)node->value;
-        if (signed_value >= -128 && signed_value <= 127) return resolvePrimitiveTypeName("i8");
-        if (signed_value >= -32768 && signed_value <= 32767) return resolvePrimitiveTypeName("i16");
-        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) return resolvePrimitiveTypeName("i32");
-        return resolvePrimitiveTypeName("i64");
+    // For C89 compatibility, we don't infer the smallest type.
+    // Instead, we create a special "integer literal" type that will be
+    // resolved during assignment or binary operation checks.
+    // The value is stored as a signed i64, which is compatible with MSVC 6.0.
+    i64 value = (i64)node->value;
+    return createIntegerLiteralType(unit.getArena(), value);
+}
+
+bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
+    if (literal_type->kind != TYPE_INTEGER_LITERAL)
+        return false;
+
+    i64 value = literal_type->as.integer_literal.value;
+
+    switch (target_type->kind) {
+        case TYPE_I8:  return (value >= -128 && value <= 127);
+        case TYPE_U8:  return (value >= 0 && value <= 255);
+        case TYPE_I16: return (value >= -32768 && value <= 32767);
+        case TYPE_U16: return (value >= 0 && value <= 65535);
+        case TYPE_I32: return (value >= -2147483647 - 1 && value <= 2147483647);
+        case TYPE_U32: return (value >= 0 && (u64)value <= 4294967295U);
+        default:       return false;
     }
 }
 
@@ -1100,10 +1118,18 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 }
 
 bool TypeChecker::isNumericType(Type* type) {
-    if (!type) {
-        return false;
+    if (!type) return false;
+    switch (type->kind) {
+        case TYPE_I8: case TYPE_U8:
+        case TYPE_I16: case TYPE_U16:
+        case TYPE_I32: case TYPE_U32:
+        case TYPE_I64: case TYPE_U64:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_F32: case TYPE_F64:
+            return true;
+        default:
+            return false;
     }
-    return type->kind >= TYPE_I8 && type->kind <= TYPE_F64;
 }
 
 bool TypeChecker::isIntegerType(Type* type) {

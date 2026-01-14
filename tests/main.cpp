@@ -358,6 +358,10 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 // Forward declarations for Memory Stability Tests
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
 
+// Forward declarations for Group 4J: Type Checker Helpers
+TEST_FUNC(TypeCheckerHelpers_IsNumericType);
+TEST_FUNC(TypeCheckerHelpers_CanLiteralFitInType);
+TEST_FUNC(TypeCheckerHelpers_CheckBinaryOperation_LiteralPromotion);
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -691,6 +695,10 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Bool_Literals,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
+        // Group 4J
+        test_TypeCheckerHelpers_IsNumericType,
+        test_TypeCheckerHelpers_CanLiteralFitInType,
+        test_TypeCheckerHelpers_CheckBinaryOperation_LiteralPromotion,
     };
 
     int passed = 0;

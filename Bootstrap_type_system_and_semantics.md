@@ -38,6 +38,7 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_INTEGER_LITERAL,
     TYPE_ARRAY,
     TYPE_FUNCTION,
     TYPE_ENUM
@@ -70,6 +71,10 @@ struct Type {
             Type* base; // The type that the pointer points to.
             bool is_const;
         } pointer;
+
+        struct {
+            i64 value;
+        } integer_literal;
 
         /**
          * @struct FunctionDetails
@@ -369,18 +374,7 @@ To clarify the current capabilities of the type checker and guide future develop
 
 -   **Literals:**
     -   **`true`, `false`:** Inferred as type `bool`.
-    -   **Integer Literals:** The type is determined by the literal's value and suffix to be the smallest possible C89-compatible type that can hold the value.
-        -   **Unsigned Literals (e.g., `123u`):**
-            -   `0` to `255`: `u8`
-            -   `256` to `65535`: `u16`
-            -   `65536` to `4294967295`: `u32`
-            -   Larger values: `u64`
-        -   **Signed Literals (e.g., `123`, `-45`):**
-            -   `-128` to `127`: `i8`
-            -   `-32768` to `32767`: `i16`
-            -   `-2147483648` to `2147483647`: `i32`
-            -   Larger values: `i64`
-        -   The `L` suffix is parsed by the lexer for C89 compatibility but does not currently affect the type inference logic, as the system already selects the smallest possible type.
+    -   **Integer Literals:** To support C89's type promotion rules for binary operations, the type checker no longer infers the smallest possible integer type for a literal. Instead, it creates a special `TYPE_INTEGER_LITERAL` that preserves the literal's exact 64-bit value. The final type is determined later, during assignment or binary operation analysis, based on the context. For example, in `var x: i32 = 10;`, the literal `10` is initially of type `TYPE_INTEGER_LITERAL`, and the type checker confirms that the value `10` can fit into an `i32` during the assignment check.
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
     -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
     -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters).

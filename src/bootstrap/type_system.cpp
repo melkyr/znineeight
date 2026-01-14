@@ -57,6 +57,15 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
     return new_type;
 }
 
+Type* createIntegerLiteralType(ArenaAllocator& arena, i64 value) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_INTEGER_LITERAL;
+    new_type->size = 8; // Assume 64-bit for the literal's value storage
+    new_type->alignment = 8;
+    new_type->as.integer_literal.value = value;
+    return new_type;
+}
+
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
     new_type->kind = TYPE_FUNCTION;
@@ -110,6 +119,9 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         case TYPE_F32:  primitive_name = "f32";  break;
         case TYPE_F64:  primitive_name = "f64";  break;
         case TYPE_NULL: primitive_name = "null"; break;
+        case TYPE_INTEGER_LITERAL:
+            snprintf(buffer, buffer_size, "integer literal");
+            return;
         case TYPE_POINTER: {
             char base_name[64];
             typeToString(type->as.pointer.base, base_name, sizeof(base_name));

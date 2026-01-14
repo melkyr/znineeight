@@ -26,6 +26,7 @@ enum TypeKind {
     // Complex Types
     TYPE_POINTER,
     TYPE_NULL,
+    TYPE_INTEGER_LITERAL,
     TYPE_ARRAY,
     TYPE_FUNCTION,
     TYPE_ENUM,
@@ -55,6 +56,9 @@ struct Type {
             Type* base;
             bool is_const;
         } pointer;
+        struct {
+            i64 value;
+        } integer_literal;
         struct {
             DynamicArray<Type*>* params;
             Type* return_type;
@@ -89,6 +93,14 @@ class ArenaAllocator;
  * @return A pointer to the newly allocated Type object.
  */
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
+
+/**
+ * @brief Creates a new integer literal Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param value The 64-bit integer value of the literal.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createIntegerLiteralType(ArenaAllocator& arena, i64 value);
 
 /**
  * @brief Creates a new function Type object from the arena.

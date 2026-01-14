@@ -54,6 +54,8 @@ public:
 
     // Public for TDD
     Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
+    bool isNumericType(Type* type);
+    bool canLiteralFitInType(Type* literal_type, Type* target_type);
     Type* findStructField(Type* struct_type, const char* field_name);
     void fatalError(const char* msg);
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
@@ -61,7 +63,6 @@ private:
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
-    bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
     bool checkIntegerLiteralFit(i64 value, Type* int_type);
     bool all_paths_return(ASTNode* node);
