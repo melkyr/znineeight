@@ -50,37 +50,37 @@ TEST_FUNC(TypeChecker_IntegerLiteralInference) {
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("127", arena, interner);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_I8);
+        ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         // The parser sees this as UnaryOp(-) -> Integer(128).
-        // 128 is inferred as i16, so the result is i16.
+        // 128 is inferred as i32, so the result is i32.
         Type* type = get_resolved_type_of_literal("-128", arena, interner);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_I16);
+        ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("255u", arena, interner);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_U8);
+        ASSERT_EQ(type->kind, TYPE_U32);
     }
     {
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("128", arena, interner);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_I16);
+        ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("65535u", arena, interner);
         ASSERT_TRUE(type != NULL);
-        ASSERT_EQ(type->kind, TYPE_U16);
+        ASSERT_EQ(type->kind, TYPE_U32);
     }
     {
         ArenaAllocator arena(16384);
