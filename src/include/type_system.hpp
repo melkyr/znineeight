@@ -27,6 +27,7 @@ enum TypeKind {
     TYPE_POINTER,
     TYPE_NULL,
     TYPE_ARRAY,
+    TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_ENUM,
     TYPE_STRUCT
@@ -63,6 +64,11 @@ struct Type {
             Type* element_type;
             u64 size;
         } array;
+        struct {
+            // This is used for temporary types during type checking
+            // and does not represent a concrete storable type.
+            i64 value;
+        } integer_literal;
         struct {
             Type* backing_type;
             DynamicArray<EnumMember>* members;
