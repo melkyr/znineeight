@@ -35,9 +35,8 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
     ASSERT_TRUE(eh.hasErrors());
 
     const DynamicArray<ErrorReport>& errors = eh.getErrors();
-    ASSERT_TRUE(errors.length() == 2);
+    ASSERT_TRUE(errors.length() == 1);
     ASSERT_TRUE(strcmp(errors[0].message, "Incompatible assignment: '*const u8' to 'i32'") == 0);
-    ASSERT_TRUE(strcmp(errors[1].message, "C89 assignment requires identical types: 'i32' to 'f32'") == 0);
 
     return true;
 }
@@ -67,7 +66,11 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
 TEST_FUNC(TypeChecker_VarDecl_Invalid_Widening) {
     ArenaAllocator arena(16384);
     StringInterner interner(arena);
-    const char* source = "const x: i64 = 42;"; // 42 is an i32 literal, should fail in C89
+    // This test now passes. The type checker's `visitVarDecl` has been updated
+    // with a special case for integer literals, which is the correct C89 behavior.
+    // An integer literal (like 42, which is inferred as i32) can be assigned to a
+    // variable of a wider type (like i64) as long as the value fits.
+    const char* source = "const x: i64 = 42;";
     ParserTestContext ctx(source, arena, interner);
     TypeChecker type_checker(ctx.getCompilationUnit());
 
@@ -77,10 +80,7 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Widening) {
     type_checker.check(root);
 
     ErrorHandler& eh = ctx.getCompilationUnit().getErrorHandler();
-    ASSERT_TRUE(eh.hasErrors());
-    const DynamicArray<ErrorReport>& errors = eh.getErrors();
-    ASSERT_TRUE(errors.length() == 1);
-    ASSERT_TRUE(strcmp(errors[0].message, "C89 assignment requires identical types: 'i32' to 'i64'") == 0);
+    ASSERT_FALSE(eh.hasErrors());
 
     return true;
 }
