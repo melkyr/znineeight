@@ -843,11 +843,29 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         return NULL; // Stop processing this declaration
     }
 
-    Type* initializer_type = visit(node->initializer);
+    // Special handling for integer literal initializers to support C89-style assignments.
+    if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
+        ASTIntegerLiteralNode* literal_node = &node->initializer->as.integer_literal;
 
-    if (declared_type && initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
-        // IsTypeAssignableTo already reports a detailed error.
-        // We just need to stop further processing.
+        // Create a temporary literal type to pass to the checker.
+        Type literal_type;
+        literal_type.kind = TYPE_INTEGER_LITERAL;
+        literal_type.as.integer_literal.value = (i64)literal_node->value;
+
+        if (declared_type && !canLiteralFitInType(&literal_type, declared_type)) {
+            // Report a more specific error for overflow.
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "integer literal overflows declared type");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+        }
+    } else {
+        // For all other cases, use the standard assignment validation.
+        Type* initializer_type = visit(node->initializer);
+        if (declared_type && initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+            // IsTypeAssignableTo already reports a detailed error.
+        }
     }
 
     // Insert the symbol into the current scope
@@ -1245,6 +1263,9 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
         case TYPE_U32: return (value >= 0 && (unsigned __int64)value <= 4294967295ULL);
         case TYPE_I64: return true; // Any i64 fits in i64
         case TYPE_U64: return value >= 0;
+        // C89 allows implicit conversion from integer literals to floats.
+        case TYPE_F32: return true;
+        case TYPE_F64: return true;
         default:       return false;
     }
 }
