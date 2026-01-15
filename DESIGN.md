@@ -20,6 +20,7 @@ To ensure compatibility with 1998-era hardware and software:
 * **Specific MSVC 6.0 Hacks:**
   * Use `__int64` instead of `long long`
   * Define `bool`, `true`, `false` manually if missing
+* **Dynamic Memory:** Standard C dynamic memory allocation functions (e.g., `malloc`, `free`) are forbidden. The compiler will produce a fatal error if calls to these functions are detected.
 
 ## 3. Architecture & Memory Strategy
 The compiler uses a layered architecture relying heavily on "Arena Allocation" to avoid `malloc`/`free` overhead on slow 90s allocators.
