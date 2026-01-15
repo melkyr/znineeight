@@ -260,11 +260,8 @@ public:
      *
      * If the current capacity is insufficient, it reallocates a larger buffer.
      * The new capacity is doubled, or set to the minimum required if that's larger.
-     *
-     * @warning This operation can be expensive. It allocates a new memory block
-     * and copy-constructs all existing elements into it using placement new.
-     * This is safe for non-POD types but does not call destructors on the old
-     * objects, as is standard for arena-based allocators.
+     * This operation is safe for non-POD types as it uses placement new for
+     * copy construction and manually calls destructors on the old elements.
      *
      * @param min_cap The minimum required capacity.
      */
@@ -282,9 +279,17 @@ public:
             abort();
         }
 
-        // Use placement new to copy-construct elements into the new buffer
+        // Safely copy-construct elements to the new buffer
         for (size_t i = 0; i < len; ++i) {
             new (&new_data[i]) T(data[i]);
+        }
+
+        // Manually destruct the old objects.
+        // The old `data` buffer itself is managed by the arena and is not freed here.
+        if (data) {
+            for (size_t i = 0; i < len; ++i) {
+                data[i].~T();
+            }
         }
 
         data = new_data;

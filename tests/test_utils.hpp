@@ -44,6 +44,13 @@ private:
 bool expect_parser_abort(const char* source_code);
 bool expect_statement_parser_abort(const char* source_code);
 bool expect_type_checker_abort(const char* source_code);
+
+/**
+ * @brief Runs the type checker on the given source and expects it to succeed.
+ * @param source The source code to compile.
+ * @return True if the type checker runs without aborting and returns exit code 0.
+ */
+bool run_type_checker_test_successfully(const char* source);
 bool expect_parser_oom_abort(const char* source);
 
 
