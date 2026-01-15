@@ -66,6 +66,14 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
     errors_.append(new_report);
 }
 
+void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message) {
+    WarningReport new_warning;
+    new_warning.code = code;
+    new_warning.location = location;
+    new_warning.message = message;
+    warnings_.append(new_warning);
+}
+
 void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint) {
     size_t msg_len = strlen(message);
     char* msg_copy = (char*)arena.alloc(msg_len + 1);
@@ -172,6 +180,45 @@ void ErrorHandler::printErrors() {
         if (report.hint) {
             fprintf(stderr, "    hint: %s\n", report.hint);
         }
+    }
+#endif
+}
+
+void ErrorHandler::printWarnings() {
+#ifdef _WIN32
+    // TODO: Implement for Windows
+#else
+    for (size_t i = 0; i < warnings_.length(); ++i) {
+        const WarningReport& report = warnings_[i];
+        const SourceFile* file = source_manager.getFile(report.location.file_id);
+
+        fprintf(stderr, "%s:%u:%u: warning: %s\n",
+                file->filename, report.location.line, report.location.column, report.message);
+
+        // Print the line of code
+        const char* line_start = file->content;
+        for (u32 line = 1; line < report.location.line; ++line) {
+            while (*line_start != '\n' && *line_start != '\0') {
+                line_start++;
+            }
+            if (*line_start == '\n') {
+                line_start++;
+            }
+        }
+
+        const char* line_end = line_start;
+        while (*line_end != '\n' && *line_end != '\0') {
+            line_end++;
+        }
+
+        fprintf(stderr, "    %.*s\n", (int)(line_end - line_start), line_start);
+
+        // Print the caret
+        fprintf(stderr, "    ");
+        for (u32 col = 1; col < report.location.column; ++col) {
+            fprintf(stderr, " ");
+        }
+        fprintf(stderr, "^\n");
     }
 #endif
 }
