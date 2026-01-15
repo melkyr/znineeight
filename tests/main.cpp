@@ -298,6 +298,8 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer);
 TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
 
 // Forward declarations for Group 4E: Pointer Arithmetic
+TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases);
+TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases);
 TEST_FUNC(TypeCheckerVoidTests_PointerAddition);
 TEST_FUNC(TypeChecker_PointerIntegerAddition);
 TEST_FUNC(TypeChecker_IntegerPointerAddition);
@@ -659,6 +661,8 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerPointerOps_Dereference_ValidPointer,
         test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
         // Group 4E
+        test_TypeChecker_PointerArithmetic_ValidCases,
+        test_TypeChecker_PointerArithmetic_InvalidCases,
         test_TypeCheckerVoidTests_PointerAddition,
         test_TypeChecker_PointerIntegerAddition,
         test_TypeChecker_IntegerPointerAddition,

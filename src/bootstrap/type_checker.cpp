@@ -1239,15 +1239,19 @@ bool TypeChecker::isIntegerType(Type* type) {
 }
 
 Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
-    if (op == TOKEN_PLUS) {
-        if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-        if (isIntegerType(left_type) && right_type->kind == TYPE_POINTER) return right_type;
-    }
+    bool left_is_ptr = (left_type->kind == TYPE_POINTER);
+    bool right_is_ptr = (right_type->kind == TYPE_POINTER);
+    bool left_is_int = isIntegerType(left_type);
+    bool right_is_int = isIntegerType(right_type);
 
-    if (op == TOKEN_MINUS) {
-        if (left_type->kind == TYPE_POINTER && isIntegerType(right_type)) return left_type;
-        if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
-            if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+    if (op == TOKEN_PLUS) {
+        if (left_is_ptr && right_is_int) return left_type;  // ptr + int
+        if (left_is_int && right_is_ptr) return right_type; // int + ptr
+    } else if (op == TOKEN_MINUS) {
+        if (left_is_ptr && right_is_int) return left_type; // ptr - int
+        if (left_is_ptr && right_is_ptr) { // ptr - ptr
+            // For subtraction, the pointer types must be identical, not just compatible.
+            if (left_type->as.pointer.base == right_type->as.pointer.base) {
                 Type* isize_type = resolvePrimitiveTypeName("isize");
                 if (!isize_type) {
                     unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
@@ -1255,11 +1259,16 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
                 }
                 return isize_type;
             } else {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to incompatible types", unit.getArena());
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to different types", unit.getArena());
                 return NULL;
             }
         }
     }
+
+    // If we are here, it means some combination involving a pointer was used
+    // with an unsupported operator (e.g., ptr * int, ptr + ptr).
+    // The calling function, checkBinaryOperation, will handle the final error reporting
+    // if no valid arithmetic operation is found.
     return NULL;
 }
 
