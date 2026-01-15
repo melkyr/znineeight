@@ -383,11 +383,15 @@ TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
 
 // Forward declarations for C89 Rejection Tests
 #include "type_checker_slice_expression_test.cpp"
+#include "type_checker_more_slice_rejection_tests.cpp"
 TEST_FUNC(C89Rejection_Slice);
 TEST_FUNC(C89Rejection_TryExpression);
 TEST_FUNC(C89Rejection_CatchExpression);
 TEST_FUNC(C89Rejection_OrelseExpression);
 TEST_FUNC(TypeChecker_RejectSliceExpression);
+TEST_FUNC(TypeChecker_RejectSliceInFunctionParameter);
+TEST_FUNC(TypeChecker_RejectSliceInFunctionReturnType);
+TEST_FUNC(TypeChecker_RejectSliceInVariableDeclaration);
 
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
@@ -756,6 +760,9 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_CatchExpression,
         test_C89Rejection_OrelseExpression,
         test_TypeChecker_RejectSliceExpression,
+        test_TypeChecker_RejectSliceInFunctionParameter,
+        test_TypeChecker_RejectSliceInFunctionReturnType,
+        test_TypeChecker_RejectSliceInVariableDeclaration,
 
         // Address-of Operator
         test_TypeChecker_AddressOf_RValueLiteral,
