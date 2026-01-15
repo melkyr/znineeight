@@ -62,6 +62,16 @@ struct ErrorReport {
     const char* hint;
 };
 
+enum WarningCode {
+    WARN_NULL_DEREFERENCE = 6000
+};
+
+struct WarningReport {
+    WarningCode code;
+    SourceLocation location;
+    const char* message;
+};
+
 /**
  * @class ErrorHandler
  * @brief Manages the reporting of compilation errors.
@@ -75,6 +85,7 @@ private:
     SourceManager& source_manager;
     ArenaAllocator& arena_;
     DynamicArray<ErrorReport> errors_;
+    DynamicArray<WarningReport> warnings_;
 
 public:
     /**
@@ -83,7 +94,7 @@ public:
      * @param arena The arena allocator to use for the error list.
      */
     ErrorHandler(SourceManager& sm, ArenaAllocator& arena)
-        : source_manager(sm), arena_(arena), errors_(arena) {}
+        : source_manager(sm), arena_(arena), errors_(arena), warnings_(arena) {}
 
     /**
      * @brief Reports a new error.
@@ -117,6 +128,30 @@ public:
      * @brief Prints all reported errors to standard error.
      */
     void printErrors();
+
+    /**
+     * @brief Reports a new warning.
+     */
+    void reportWarning(WarningCode code, SourceLocation location, const char* message);
+
+    /**
+     * @brief Checks if any warnings have been reported.
+     */
+    bool hasWarnings() const {
+        return warnings_.length() > 0;
+    }
+
+    /**
+     * @brief Gets the list of reported warnings.
+     */
+    const DynamicArray<WarningReport>& getWarnings() const {
+        return warnings_;
+    }
+
+    /**
+     * @brief Prints all reported warnings to standard error.
+     */
+    void printWarnings();
 };
 
 #endif // ERROR_HANDLER_HPP

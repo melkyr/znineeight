@@ -287,6 +287,10 @@ TEST_FUNC(TypeChecker_AddressOf_RValueLiteral);
 TEST_FUNC(TypeChecker_AddressOf_RValueExpression);
 TEST_FUNC(TypeChecker_Dereference_ValidPointer);
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
+TEST_FUNC(TypeChecker_Dereference_VoidPointer);
+TEST_FUNC(TypeChecker_Dereference_NullLiteral);
+TEST_FUNC(TypeChecker_Dereference_ZeroLiteral);
+TEST_FUNC(TypeChecker_Dereference_NestedPointer);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
 TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue);
@@ -645,6 +649,10 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_AddressOf_RValueExpression,
         test_TypeChecker_Dereference_ValidPointer,
         test_TypeChecker_Dereference_Invalid_NonPointer,
+        test_TypeChecker_Dereference_VoidPointer,
+        test_TypeChecker_Dereference_NullLiteral,
+        test_TypeChecker_Dereference_ZeroLiteral,
+        test_TypeChecker_Dereference_NestedPointer,
         test_TypeChecker_Dereference_ConstPointer,
         test_TypeChecker_AddressOf_Valid_LValues,
         test_TypeCheckerPointerOps_AddressOf_ValidLValue,

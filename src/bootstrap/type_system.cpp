@@ -1,5 +1,6 @@
 #include "type_system.hpp"
 #include "memory.hpp"
+#include "utils.hpp"
 #include <cstdio> // For sprintf
 #include <cstring> // For strcmp
 
@@ -88,74 +89,70 @@ Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<Enu
 }
 
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
-    if (!type) {
-        snprintf(buffer, buffer_size, "(null)");
+    if (!type || buffer_size == 0) {
+        if (buffer_size > 0) buffer[0] = '\0';
         return;
     }
 
-    const char* primitive_name = NULL;
+    char* current = buffer;
+    size_t remaining = buffer_size;
+
     switch (type->kind) {
-        case TYPE_VOID: primitive_name = "void"; break;
-        case TYPE_BOOL: primitive_name = "bool"; break;
-        case TYPE_I8:   primitive_name = "i8";   break;
-        case TYPE_I16:  primitive_name = "i16";  break;
-        case TYPE_I32:  primitive_name = "i32";  break;
-        case TYPE_I64:  primitive_name = "i64";  break;
-        case TYPE_U8:   primitive_name = "u8";   break;
-        case TYPE_U16:  primitive_name = "u16";  break;
-        case TYPE_U32:  primitive_name = "u32";  break;
-        case TYPE_U64:  primitive_name = "u64";  break;
-        case TYPE_ISIZE:primitive_name = "isize";break;
-        case TYPE_USIZE:primitive_name = "usize";break;
-        case TYPE_F32:  primitive_name = "f32";  break;
-        case TYPE_F64:  primitive_name = "f64";  break;
-        case TYPE_NULL: primitive_name = "null"; break;
+        case TYPE_VOID:  safe_append(current, remaining, "void"); break;
+        case TYPE_BOOL:  safe_append(current, remaining, "bool"); break;
+        case TYPE_I8:    safe_append(current, remaining, "i8"); break;
+        case TYPE_I16:   safe_append(current, remaining, "i16"); break;
+        case TYPE_I32:   safe_append(current, remaining, "i32"); break;
+        case TYPE_I64:   safe_append(current, remaining, "i64"); break;
+        case TYPE_U8:    safe_append(current, remaining, "u8"); break;
+        case TYPE_U16:   safe_append(current, remaining, "u16"); break;
+        case TYPE_U32:   safe_append(current, remaining, "u32"); break;
+        case TYPE_U64:   safe_append(current, remaining, "u64"); break;
+        case TYPE_ISIZE: safe_append(current, remaining, "isize"); break;
+        case TYPE_USIZE: safe_append(current, remaining, "usize"); break;
+        case TYPE_F32:   safe_append(current, remaining, "f32"); break;
+        case TYPE_F64:   safe_append(current, remaining, "f64"); break;
+        case TYPE_NULL:  safe_append(current, remaining, "null"); break;
         case TYPE_POINTER: {
-            char base_name[64];
-            typeToString(type->as.pointer.base, base_name, sizeof(base_name));
             if (type->as.pointer.is_const) {
-                snprintf(buffer, buffer_size, "*const %s", base_name);
+                safe_append(current, remaining, "*const ");
             } else {
-                snprintf(buffer, buffer_size, "*%s", base_name);
+                safe_append(current, remaining, "*");
             }
-            return;
+            typeToString(type->as.pointer.base, current, remaining);
+            break;
         }
         case TYPE_ARRAY: {
-            char element_type_str[64];
-            typeToString(type->as.array.element_type, element_type_str, sizeof(element_type_str));
-            snprintf(buffer, buffer_size, "[%llu]%s", (unsigned long long)type->as.array.size, element_type_str);
-            return;
+            safe_append(current, remaining, "[");
+            // Note: This is a simplified itoa; a proper one would be better.
+            if (remaining > 11) {
+                char size_buf[21];
+                simple_itoa(type->as.array.size, size_buf, sizeof(size_buf));
+                safe_append(current, remaining, size_buf);
+            }
+            safe_append(current, remaining, "]");
+            typeToString(type->as.array.element_type, current, remaining);
+            break;
         }
         case TYPE_FUNCTION: {
-            char return_type_str[64];
-            typeToString(type->as.function.return_type, return_type_str, sizeof(return_type_str));
-
-            size_t offset = snprintf(buffer, buffer_size, "fn(");
-
+            safe_append(current, remaining, "fn(");
             if (type->as.function.params) {
                 for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    if (offset >= buffer_size) break;
-                    char param_type_str[64];
-                    typeToString((*type->as.function.params)[i], param_type_str, sizeof(param_type_str));
-                    offset += snprintf(buffer + offset, buffer_size - offset, "%s", param_type_str);
+                    typeToString((*type->as.function.params)[i], current, remaining);
                     if (i < type->as.function.params->length() - 1) {
-                        if (offset < buffer_size) {
-                            offset += snprintf(buffer + offset, buffer_size - offset, ", ");
-                        }
+                        safe_append(current, remaining, ", ");
                     }
                 }
             }
-
-            if (offset < buffer_size) {
-                snprintf(buffer + offset, buffer_size - offset, ") -> %s", return_type_str);
-            }
-            return;
+            safe_append(current, remaining, ") -> ");
+            typeToString(type->as.function.return_type, current, remaining);
+            break;
         }
         case TYPE_ENUM:
-            primitive_name = "enum";
+            safe_append(current, remaining, "enum");
             break;
-        default: primitive_name = "unknown"; break;
+        default:
+            safe_append(current, remaining, "unknown");
+            break;
     }
-
-    snprintf(buffer, buffer_size, "%s", primitive_name);
 }

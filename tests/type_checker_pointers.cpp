@@ -2,6 +2,7 @@
 #include "test_utils.hpp"
 #include "type_checker.hpp"
 #include <new> // For placement new
+#include <cstring> // For strcmp
 
 TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     const char* source = "const x: i32 = 0; const p: *i32 = &x;";
@@ -47,6 +48,41 @@ TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     return true;
 }
 
+TEST_FUNC(TypeChecker_Dereference_ZeroLiteral) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit comp_unit(arena, interner);
+    u32 file_id = comp_unit.addSource("test.zig", "*0");
+    TypeChecker type_checker(comp_unit);
+
+    // Manually create a '*0' expression
+    ASTNode* zero_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    zero_node->type = NODE_INTEGER_LITERAL;
+    zero_node->as.integer_literal.value = 0;
+    SourceLocation loc;
+    loc.file_id = file_id;
+    loc.line = 1;
+    loc.column = 2;
+    zero_node->loc = loc;
+
+    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    deref_node->type = NODE_UNARY_OP;
+    deref_node->as.unary_op.op = TOKEN_STAR;
+    deref_node->as.unary_op.operand = zero_node;
+    deref_node->loc = loc;
+
+    type_checker.visit(deref_node);
+
+    ASSERT_FALSE(comp_unit.getErrorHandler().hasErrors());
+    ASSERT_TRUE(comp_unit.getErrorHandler().hasWarnings());
+    ASSERT_EQ(1, comp_unit.getErrorHandler().getWarnings().length());
+    const WarningReport& warn = comp_unit.getErrorHandler().getWarnings()[0];
+    ASSERT_EQ(WARN_NULL_DEREFERENCE, warn.code);
+    ASSERT_TRUE(strcmp(warn.message, "Dereferencing null pointer may cause undefined behavior") == 0);
+
+    return true;
+}
 
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     const char* source = "const x: i32 = 42;";
@@ -74,11 +110,18 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     ASTNode* x_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
     x_node->type = NODE_IDENTIFIER;
     x_node->as.identifier.name = interner.intern("x");
+    SourceLocation loc;
+    loc.file_id = file_id;
+    loc.line = 1;
+    loc.column = 1;
+    x_node->loc = loc;
+
 
     ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = x_node;
+    deref_node->loc = loc;
 
     // Visit only the dereference operation
     Type* result_type = type_checker.visit(deref_node);
@@ -88,7 +131,109 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     ASSERT_TRUE(result_type == NULL); // Expect a NULL result due to the error
     ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
     ASSERT_EQ(1, comp_unit.getErrorHandler().getErrors().length());
-    ASSERT_EQ(ERR_TYPE_MISMATCH, comp_unit.getErrorHandler().getErrors()[0].code);
+    const ErrorReport& err = comp_unit.getErrorHandler().getErrors()[0];
+    ASSERT_EQ(ERR_TYPE_MISMATCH, err.code);
+    ASSERT_TRUE(strcmp(err.message, "Cannot dereference a non-pointer type 'i32'") == 0);
+
+
+    return true;
+}
+
+TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
+    const char* source = "const p: *void = null;";
+
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit comp_unit(arena, interner);
+    u32 file_id = comp_unit.addSource("test.zig", source);
+    Parser* parser = comp_unit.createParser(file_id);
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(comp_unit);
+    comp_unit.getSymbolTable().enterScope();
+
+    // Manually add 'p' to the symbol table.
+    Type* void_type = resolvePrimitiveTypeName("void");
+    Type* p_type = createPointerType(arena, void_type, false);
+    Symbol p_symbol = SymbolBuilder(arena)
+        .withName(interner.intern("p"))
+        .ofType(SYMBOL_VARIABLE).withType(p_type).build();
+    comp_unit.getSymbolTable().insert(p_symbol);
+
+    // Manually create the '*p' expression
+    ASTNode* p_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    p_node->type = NODE_IDENTIFIER;
+    p_node->as.identifier.name = interner.intern("p");
+    SourceLocation loc;
+    loc.file_id = file_id;
+    loc.line = 1;
+    loc.column = 1;
+    p_node->loc = loc;
+
+    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    deref_node->type = NODE_UNARY_OP;
+    deref_node->as.unary_op.op = TOKEN_STAR;
+    deref_node->as.unary_op.operand = p_node;
+    deref_node->loc = loc;
+
+    // Visit only the dereference operation
+    Type* result_type = type_checker.visit(deref_node);
+
+    comp_unit.getSymbolTable().exitScope();
+
+    ASSERT_TRUE(result_type == NULL); // Expect a NULL result due to the error
+    ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
+    ASSERT_EQ(1, comp_unit.getErrorHandler().getErrors().length());
+    const ErrorReport& err = comp_unit.getErrorHandler().getErrors()[0];
+    ASSERT_EQ(ERR_TYPE_MISMATCH, err.code);
+    ASSERT_TRUE(strcmp(err.message, "Cannot dereference a void pointer") == 0);
+
+    return true;
+}
+
+TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit comp_unit(arena, interner);
+    u32 file_id = comp_unit.addSource("test.zig", "*null");
+    TypeChecker type_checker(comp_unit);
+
+    // Manually create a '*null' expression
+    ASTNode* null_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    null_node->type = NODE_NULL_LITERAL;
+    SourceLocation loc;
+    loc.file_id = file_id;
+    loc.line = 1;
+    loc.column = 2;
+    null_node->loc = loc;
+
+    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    deref_node->type = NODE_UNARY_OP;
+    deref_node->as.unary_op.op = TOKEN_STAR;
+    deref_node->as.unary_op.operand = null_node;
+    deref_node->loc = loc;
+
+    type_checker.visit(deref_node);
+
+    ASSERT_FALSE(comp_unit.getErrorHandler().hasErrors());
+    ASSERT_TRUE(comp_unit.getErrorHandler().hasWarnings());
+    ASSERT_EQ(1, comp_unit.getErrorHandler().getWarnings().length());
+    const WarningReport& warn = comp_unit.getErrorHandler().getWarnings()[0];
+    ASSERT_EQ(WARN_NULL_DEREFERENCE, warn.code);
+    ASSERT_TRUE(strcmp(warn.message, "Dereferencing null pointer may cause undefined behavior") == 0);
+
+    return true;
+}
+
+TEST_FUNC(TypeChecker_Dereference_NestedPointer) {
+    const char* source = "var x: i32 = 0; var p1: *i32 = &x; var p2: **i32 = &p1; var y: i32 = **p2;";
+
+    // This is a regression test to ensure that valid nested dereferences are handled correctly.
+    // It should compile with no errors or warnings.
+    run_type_checker_test_successfully(source);
 
     return true;
 }

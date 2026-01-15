@@ -113,13 +113,38 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     }
 
     switch (node->op) {
-        case TOKEN_STAR: // Dereference operator (*)
-            if (operand_type->kind == TYPE_POINTER) {
-                return operand_type->as.pointer.base;
+        case TOKEN_STAR: { // Dereference operator (*)
+            // Check for null literal dereference first, as it's a special case.
+            if (node->operand->type == NODE_NULL_LITERAL ||
+                (node->operand->type == NODE_INTEGER_LITERAL && node->operand->as.integer_literal.value == 0)) {
+                unit.getErrorHandler().reportWarning(WARN_NULL_DEREFERENCE, node->operand->loc, "Dereferencing null pointer may cause undefined behavior");
+                // The type of '*null' is technically undefined, but for the compiler to proceed,
+                // we can treat it as yielding a void type. This prevents cascading errors.
+                return get_g_type_void();
             }
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a non-pointer type");
-            return NULL;
 
+            // Now, perform standard pointer checks.
+            if (operand_type->kind != TYPE_POINTER) {
+                char type_str[64];
+                typeToString(operand_type, type_str, sizeof(type_str));
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "Cannot dereference a non-pointer type '");
+                safe_append(current, remaining, type_str);
+                safe_append(current, remaining, "'");
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, msg_buffer, unit.getArena());
+                return NULL;
+            }
+
+            Type* base_type = operand_type->as.pointer.base;
+            if (base_type->kind == TYPE_VOID) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a void pointer");
+                return NULL;
+            }
+
+            return base_type;
+        }
         case TOKEN_AMPERSAND: { // Address-of operator (&)
             // The operand of '&' must be an l-value.
             bool is_lvalue;
