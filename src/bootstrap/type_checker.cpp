@@ -476,6 +476,26 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
+    // --- NEW LOGIC FOR TASK 119 ---
+    // Check if the callee is a direct identifier call to a banned function.
+    if (node->callee->type == NODE_IDENTIFIER) {
+        const char* callee_name = node->callee->as.identifier.name;
+        static const char* banned_functions[] = {"malloc", "calloc", "realloc", "free", "aligned_alloc"};
+        for (size_t i = 0; i < sizeof(banned_functions) / sizeof(banned_functions[0]); ++i) {
+            if (strcmp(callee_name, banned_functions[i]) == 0) {
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "Call to '");
+                safe_append(current, remaining, callee_name);
+                safe_append(current, remaining, "' is a dynamic memory allocation function and is not supported in C89 mode.");
+                fatalError(node->callee->loc, msg_buffer);
+                return NULL; // Unreachable
+            }
+        }
+    }
+    // --- END NEW LOGIC FOR TASK 119 ---
+
     if (node->args->length() > 4) {
         fatalError(node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
     }

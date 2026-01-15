@@ -392,6 +392,14 @@ TEST_FUNC(TypeChecker_RejectSliceExpression);
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
 
+// Forward declarations for Task 119
+#include "task_119_test.cpp"
+TEST_FUNC(Task119_DetectMalloc);
+TEST_FUNC(Task119_DetectCalloc);
+TEST_FUNC(Task119_DetectRealloc);
+TEST_FUNC(Task119_DetectFree);
+TEST_FUNC(Task119_DetectAlignedAlloc);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -762,7 +770,14 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_AddressOf_RValueExpression,
 
         // Bug Fix Verification
-        test_dynamic_array_destructor_fix
+        test_dynamic_array_destructor_fix,
+
+        // Task 119
+        test_Task119_DetectMalloc,
+        test_Task119_DetectCalloc,
+        test_Task119_DetectRealloc,
+        test_Task119_DetectFree,
+        test_Task119_DetectAlignedAlloc
     };
 
     int passed = 0;
