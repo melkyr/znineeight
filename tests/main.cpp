@@ -283,13 +283,13 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction);
 TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction);
 
 // Forward declarations for Group 4D: Pointer Operations
+TEST_FUNC(TypeChecker_AddressOf_RValueLiteral);
+TEST_FUNC(TypeChecker_AddressOf_RValueExpression);
 TEST_FUNC(TypeChecker_Dereference_ValidPointer);
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
-TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
 TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue);
-TEST_FUNC(TypeCheckerPointerOps_AddressOf_InvalidRValue);
 TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer);
 TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
 
@@ -638,13 +638,13 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction,
         test_TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction,
         // Group 4D
+        test_TypeChecker_AddressOf_RValueLiteral,
+        test_TypeChecker_AddressOf_RValueExpression,
         test_TypeChecker_Dereference_ValidPointer,
         test_TypeChecker_Dereference_Invalid_NonPointer,
         test_TypeChecker_Dereference_ConstPointer,
-        test_TypeChecker_AddressOf_Invalid_RValue,
         test_TypeChecker_AddressOf_Valid_LValues,
         test_TypeCheckerPointerOps_AddressOf_ValidLValue,
-        test_TypeCheckerPointerOps_AddressOf_InvalidRValue,
         test_TypeCheckerPointerOps_Dereference_ValidPointer,
         test_TypeCheckerPointerOps_Dereference_InvalidNonPointer,
         // Group 4E
@@ -722,6 +722,10 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_TryExpression,
         test_C89Rejection_CatchExpression,
         test_C89Rejection_OrelseExpression,
+
+        // Address-of Operator
+        test_TypeChecker_AddressOf_RValueLiteral,
+        test_TypeChecker_AddressOf_RValueExpression
     };
 
     int passed = 0;

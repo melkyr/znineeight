@@ -304,7 +304,7 @@ Function calls are subject to the following strict limitations:
         -   Variables (e.g., `&my_var`).
         -   Array accesses (e.g., `&my_array[i]`).
         -   Pointer dereferences (e.g., `&*my_ptr`).
-        Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_TYPE_MISMATCH`. The resulting type of `&x` where `x` has type `T` is `*T`.
+        Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
     -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
     -   **Pointer Arithmetic:** To ensure C89 compatibility, the type checker enforces the following rules for pointer arithmetic:

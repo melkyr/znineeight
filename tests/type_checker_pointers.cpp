@@ -132,33 +132,6 @@ TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
     return true;
 }
 
-TEST_FUNC(TypeChecker_AddressOf_Invalid_RValue) {
-    ArenaAllocator arena(16384);
-    ArenaLifetimeGuard guard(arena);
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
-    TypeChecker type_checker(comp_unit);
-
-    // Manually create the '&42' expression
-    ASTNode* literal_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
-    literal_node->type = NODE_INTEGER_LITERAL;
-    literal_node->as.integer_literal.value = 42;
-
-    ASTNode* addrof_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
-    addrof_node->type = NODE_UNARY_OP;
-    addrof_node->as.unary_op.op = TOKEN_AMPERSAND;
-    addrof_node->as.unary_op.operand = literal_node;
-
-    // Visit the address-of operation
-    Type* result_type = type_checker.visit(addrof_node);
-
-    ASSERT_TRUE(result_type == NULL); // Expect a NULL result due to the error
-    ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-    ASSERT_EQ(1, comp_unit.getErrorHandler().getErrors().length());
-    ASSERT_EQ(ERR_TYPE_MISMATCH, comp_unit.getErrorHandler().getErrors()[0].code);
-
-    return true;
-}
 
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues) {
     ArenaAllocator arena(16384);

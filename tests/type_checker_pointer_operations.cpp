@@ -301,38 +301,3 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer) {
     return true;
 }
 
-TEST_FUNC(TypeCheckerPointerOps_AddressOf_InvalidRValue) {
-    ArenaAllocator arena(16384);
-    ArenaLifetimeGuard guard(arena);
-    StringInterner interner(arena);
-    CompilationUnit comp_unit(arena, interner);
-    TypeChecker checker(comp_unit);
-
-    // 2. Create mock AST for '&42'
-    // AST for '42'
-    ASTNode int_literal_node;
-    int_literal_node.type = NODE_INTEGER_LITERAL;
-    int_literal_node.as.integer_literal.value = 42;
-    int_literal_node.resolved_type = get_g_type_i32(); // Pre-resolve for unit test
-
-    // AST for '&' operator
-    ASTUnaryOpNode unary_op_node;
-    unary_op_node.op = TOKEN_AMPERSAND;
-    unary_op_node.operand = &int_literal_node;
-
-    ASTNode root_node;
-    root_node.type = NODE_UNARY_OP;
-    root_node.as.unary_op = unary_op_node;
-
-    // 3. Act: Visit the unary op node
-    Type* result_type = checker.visit(&root_node);
-
-    // 4. Assert
-    ASSERT_TRUE(result_type == NULL);
-    ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-    const DynamicArray<ErrorReport>& errors = comp_unit.getErrorHandler().getErrors();
-    ASSERT_EQ(errors.length(), 1);
-    ASSERT_EQ(errors[0].code, ERR_TYPE_MISMATCH);
-
-    return true;
-}
