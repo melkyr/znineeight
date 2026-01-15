@@ -13,7 +13,7 @@
 #endif
 
 #if defined(_WIN32)
-static bool expect_abort(const char* source, const char* test_type_flag) {
+static bool run_test_in_child_process(const char* source, const char* test_type_flag, DWORD expected_exit_code) {
     // 1. Create a temporary file to pass source code
     char temp_path[MAX_PATH];
     char temp_filename[MAX_PATH];
@@ -52,8 +52,12 @@ static bool expect_abort(const char* source, const char* test_type_flag) {
     CloseHandle(pi.hThread);
     remove(temp_filename);
 
+    return exit_code == expected_exit_code;
+}
+
+static bool expect_abort(const char* source, const char* test_type_flag) {
     // MSVC abort() has exit code 3
-    return exit_code == 3;
+    return run_test_in_child_process(source, test_type_flag, 3);
 }
 #else
 // POSIX implementation using fork()
@@ -131,6 +135,26 @@ bool expect_type_checker_abort(const char* source) {
 #else
     g_source_for_abort_test = source;
     return expect_abort(posix_type_check_and_expect_abort);
+#endif
+}
+
+bool run_type_checker_test_successfully(const char* source) {
+#if defined(_WIN32)
+    return run_test_in_child_process(source, "--run_type_checker_test", 0);
+#else
+    // For POSIX, we need a different approach. We'll fork and check for a successful exit.
+    // This is a simplified version. A more robust implementation would be needed
+    // for a real-world scenario.
+    pid_t pid = fork();
+    if (pid == 0) { // Child process
+        run_type_checker_test_in_child(source);
+        exit(0);
+    } else if (pid > 0) { // Parent process
+        int status;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
+    return false; // Fork failed
 #endif
 }
 

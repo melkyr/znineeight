@@ -373,6 +373,9 @@ TEST_FUNC(C89Rejection_TryExpression);
 TEST_FUNC(C89Rejection_CatchExpression);
 TEST_FUNC(C89Rejection_OrelseExpression);
 
+// Bug Fix Verification Tests
+TEST_FUNC(dynamic_array_destructor_fix);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -725,7 +728,10 @@ int main(int argc, char* argv[]) {
 
         // Address-of Operator
         test_TypeChecker_AddressOf_RValueLiteral,
-        test_TypeChecker_AddressOf_RValueExpression
+        test_TypeChecker_AddressOf_RValueExpression,
+
+        // Bug Fix Verification
+        test_dynamic_array_destructor_fix
     };
 
     int passed = 0;
