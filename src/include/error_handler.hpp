@@ -35,6 +35,7 @@ enum ErrorCode {
     // Operational Errors (4000-4999)
     ERR_INVALID_OPERATION = 4000,
     ERR_INVALID_VOID_POINTER_ARITHMETIC = 4001,
+    ERR_DIVISION_BY_ZERO = 4002,
 
     // System Errors (5000-5999)
     ERR_OUT_OF_MEMORY = 5000

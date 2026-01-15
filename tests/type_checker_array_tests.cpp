@@ -9,6 +9,54 @@ TEST_FUNC(TypeChecker_RejectSlice) {
     return true;
 }
 
+TEST_FUNC(TypeChecker_ArrayAccessInBoundsWithNamedConstant) {
+    const char* source = "const A_CONST: i32 = 15; var my_array: [16]i32; var x: i32 = my_array[A_CONST];";
+    ASSERT_FALSE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessInBounds) {
+    const char* source = "var my_array: [16]i32; var x: i32 = my_array[15];";
+    ASSERT_FALSE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsPositive) {
+    const char* source = "var my_array: [16]i32; var x: i32 = my_array[16];";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsNegative) {
+    const char* source = "var my_array: [16]i32; var x: i32 = my_array[-1];";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsExpression) {
+    const char* source = "var my_array: [16]i32; var x: i32 = my_array[10 + 6];";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessWithVariable) {
+    const char* source = "var my_array: [16]i32; var i: i32 = 10; var x: i32 = my_array[i];";
+    ASSERT_FALSE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_IndexingNonArray) {
+    const char* source = "var my_var: i32; var x: i32 = my_var[0];";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(TypeChecker_ArrayAccessWithNamedConstant) {
+    const char* source = "const A_CONST: i32 = 16; var my_array: [16]i32; var x: i32 = my_array[A_CONST];";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration) {
     const char* source = "var my_array: [16]i32;";
     ArenaAllocator arena(16384);
