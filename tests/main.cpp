@@ -382,10 +382,12 @@ TEST_FUNC(TypeChecker_Bool_Literals);
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
 
 // Forward declarations for C89 Rejection Tests
+#include "type_checker_slice_expression_test.cpp"
 TEST_FUNC(C89Rejection_Slice);
 TEST_FUNC(C89Rejection_TryExpression);
 TEST_FUNC(C89Rejection_CatchExpression);
 TEST_FUNC(C89Rejection_OrelseExpression);
+TEST_FUNC(TypeChecker_RejectSliceExpression);
 
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
@@ -753,6 +755,7 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_TryExpression,
         test_C89Rejection_CatchExpression,
         test_C89Rejection_OrelseExpression,
+        test_TypeChecker_RejectSliceExpression,
 
         // Address-of Operator
         test_TypeChecker_AddressOf_RValueLiteral,
