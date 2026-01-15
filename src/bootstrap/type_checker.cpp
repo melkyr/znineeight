@@ -122,24 +122,27 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
 
         case TOKEN_AMPERSAND: { // Address-of operator (&)
             // The operand of '&' must be an l-value.
-            bool is_lvalue = false;
-            if (node->operand->type == NODE_IDENTIFIER) {
-                is_lvalue = true;
-            } else if (node->operand->type == NODE_ARRAY_ACCESS) {
-                is_lvalue = true;
-            } else if (node->operand->type == NODE_UNARY_OP && node->operand->as.unary_op.op == TOKEN_STAR) {
-                 Type* inner_op_type = node->operand->as.unary_op.operand->resolved_type ? node->operand->as.unary_op.operand->resolved_type : visit(node->operand->as.unary_op.operand);
-                 if (inner_op_type && inner_op_type->kind == TYPE_POINTER) {
-                     is_lvalue = true;
-                 }
+            bool is_lvalue;
+            switch (node->operand->type) {
+                case NODE_IDENTIFIER:
+                case NODE_ARRAY_ACCESS:
+                    is_lvalue = true;
+                    break;
+                case NODE_UNARY_OP:
+                    is_lvalue = (node->operand->as.unary_op.op == TOKEN_STAR);
+                    break;
+                default:
+                    is_lvalue = false;
+                    break;
             }
 
             if (is_lvalue) {
                 return createPointerType(unit.getArena(), operand_type, false);
             }
 
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot take the address of an r-value");
-            return NULL;
+            unit.getErrorHandler().report(ERR_LVALUE_EXPECTED, node->operand->loc, "l-value expected as operand of address-of operator '&'");
+            fatalError(node->operand->loc, "l-value expected as operand of address-of operator '&'");
+            return NULL; // Unreachable
         }
         case TOKEN_MINUS:
             // C89 Unary '-' is only valid for numeric types.
