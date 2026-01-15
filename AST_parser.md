@@ -30,6 +30,7 @@ enum NodeType {
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
     NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
+    NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
@@ -366,11 +367,18 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
     - It constructs an `ASTFunctionCallNode`.
     - It parses a comma-separated list of arguments until it finds a `TOKEN_RPAREN`.
     - It supports empty argument lists (`()`) and allows an optional trailing comma (e.g., `(a, b,)`).
-- **For an array access**:
-    - It constructs an `ASTArrayAccessNode`.
-    - It calls `parseExpression` to parse the index expression within the brackets.
-    - It expects a closing `TOKEN_RBRACKET`.
-- The result of the postfix operation (e.g., the `ASTFunctionCallNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
+- **For an array access or slice**:
+    - It checks if the expression inside the brackets is a slice by looking ahead for a `TOKEN_RANGE` (`..`).
+    - **If it is a slice**:
+        - It constructs an `ASTArraySliceNode`.
+        - It parses the optional start expression before the `..`.
+        - It parses the optional end expression after the `..`.
+        - It handles all forms of slices: `[start..end]`, `[..end]`, `[start..]`, and `[..]`.
+    - **If it is a simple array access**:
+        - It constructs an `ASTArrayAccessNode`.
+        - It calls `parseExpression` to parse the index expression.
+    - It expects a closing `TOKEN_RBRACKET` for both cases.
+- The result of the postfix operation (e.g., the `ASTFunctionCallNode` or `ASTArraySliceNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
 - If no postfix operator is found, the loop terminates, and the function returns the constructed expression tree.
 
 

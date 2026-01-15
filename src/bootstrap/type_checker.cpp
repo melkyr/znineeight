@@ -726,10 +726,9 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
-    visit(node->array);
-    if (node->start) visit(node->start);
-    if (node->end) visit(node->end);
-    return NULL; // Placeholder
+    // Slice expressions are not supported in C89. This is a fatal error.
+    fatalError(node->array->loc, "Slice expressions (e.g., array[start..end]) are not supported in C89 mode.");
+    return NULL; // Unreachable, but good practice.
 }
 
 Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
