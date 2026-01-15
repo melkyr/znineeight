@@ -864,49 +864,48 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 }
 
 Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
-    Type* declared_type = node->type ? visit(node->type) : NULL;
-    Type* initializer_type = node->initializer ? visit(node->initializer) : NULL;
+    Type* declared_type = visit(node->type);
 
-    Type* final_type = declared_type;
-    if (!final_type && initializer_type) {
-        final_type = initializer_type; // Type inference
+    if (declared_type && declared_type->kind == TYPE_VOID) {
+        unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type->loc, "variables cannot be declared as 'void'");
+        return NULL; // Stop processing this declaration
     }
 
-    if (final_type && final_type->kind == TYPE_VOID) {
-        unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : node->initializer->loc, "variables cannot be declared as 'void'");
-        return NULL;
-    }
+    // Special handling for integer literal initializers to support C89-style assignments.
+    if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
+        ASTIntegerLiteralNode* literal_node = &node->initializer->as.integer_literal;
 
-    // If a type was explicitly declared, perform assignment checks
-    if (declared_type && initializer_type) {
-        // Special handling for integer literal initializers
-        if (node->initializer->type == NODE_INTEGER_LITERAL) {
-            Type literal_type;
-            literal_type.kind = TYPE_INTEGER_LITERAL;
-            literal_type.as.integer_literal.value = (i64)node->initializer->as.integer_literal.value;
+        // Create a temporary literal type to pass to the checker.
+        Type literal_type;
+        literal_type.kind = TYPE_INTEGER_LITERAL;
+        literal_type.as.integer_literal.value = (i64)literal_node->value;
 
-            if (!canLiteralFitInType(&literal_type, declared_type)) {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, "integer literal overflows declared type", unit.getArena());
-            }
-        } else {
-            // Standard assignment validation for other types
-            if (!IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
-                // Error is reported by IsTypeAssignableTo
-            }
+        if (declared_type && !canLiteralFitInType(&literal_type, declared_type)) {
+            // Report a more specific error for overflow.
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "integer literal overflows declared type");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+        }
+    } else {
+        // For all other cases, use the standard assignment validation.
+        Type* initializer_type = visit(node->initializer);
+        if (declared_type && initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+            // IsTypeAssignableTo already reports a detailed error.
         }
     }
 
-    // Insert the symbol into the current scope if we have a type
-    if (final_type) {
+    // Insert the symbol into the current scope
+    if (declared_type) {
         Symbol var_symbol = SymbolBuilder(unit.getArena())
             .withName(node->name)
             .ofType(SYMBOL_VARIABLE)
-            .withType(final_type)
-            .atLocation(node->type ? node->type->loc : node->initializer->loc) // Best-effort location
-            .definedBy(node) // Store the declaration node for const checks
+            .withType(declared_type)
+            .atLocation(node->type->loc)
             .build();
         if (!unit.getSymbolTable().insert(var_symbol)) {
-            unit.getErrorHandler().report(ERR_REDEFINITION, node->type ? node->type->loc : node->initializer->loc, "redefinition of variable", unit.getArena());
+            unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
         }
     }
 
