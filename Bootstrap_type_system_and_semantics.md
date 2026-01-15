@@ -311,7 +311,7 @@ Function calls are subject to the following strict limitations:
         -   `pointer + integer` -> `pointer`: The result is a pointer of the same type.
         -   `integer + pointer` -> `pointer`: The result is a pointer of the same type.
         -   `pointer - integer` -> `pointer`: The result is a pointer of the same type.
-        -   `pointer - pointer` -> `isize`: The result is a signed integer of type `isize`. This is only valid if both pointers are of the same type (e.g., `*i32` and `*i32`).
+        -   `pointer - pointer` -> `isize`: The result is a signed integer of type `isize`. This is only valid if both pointers are of the exact same type (e.g., `*i32` and `*i32`, but not `*i32` and `*const i32`).
         -   Any other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered a type error.
 
 ### Control Flow Statements

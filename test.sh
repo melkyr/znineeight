@@ -94,6 +94,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/test_parser_union.cpp \
     tests/test_parser_vars.cpp \
     tests/test_parser_while.cpp \
+    tests/pointer_arithmetic_test.cpp \
     tests/test_source_manager.cpp \
     tests/test_string_interner.cpp \
     tests/test_string_literal.cpp \
