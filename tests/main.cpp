@@ -347,7 +347,15 @@ TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
 
 // Forward declarations for Group 4I: C89 Compatibility & Misc
+TEST_FUNC(TypeChecker_ArrayAccessInBoundsWithNamedConstant);
 TEST_FUNC(TypeChecker_RejectSlice);
+TEST_FUNC(TypeChecker_ArrayAccessInBounds);
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsPositive);
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsNegative);
+TEST_FUNC(TypeChecker_ArrayAccessOutOfBoundsExpression);
+TEST_FUNC(TypeChecker_ArrayAccessWithVariable);
+TEST_FUNC(TypeChecker_IndexingNonArray);
+TEST_FUNC(TypeChecker_ArrayAccessWithNamedConstant);
 TEST_FUNC(Assignment_IncompatiblePointers_Invalid);
 TEST_FUNC(Assignment_ConstPointerToPointer_Invalid);
 TEST_FUNC(Assignment_PointerToConstPointer_Valid);
@@ -706,7 +714,15 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnumTests_AutoIncrementSignedOverflow,
         test_TypeCheckerEnumTests_ValidValues,
         // Group 4I
+        test_TypeChecker_ArrayAccessInBoundsWithNamedConstant,
         test_TypeChecker_RejectSlice,
+        test_TypeChecker_ArrayAccessInBounds,
+        test_TypeChecker_ArrayAccessOutOfBoundsPositive,
+        test_TypeChecker_ArrayAccessOutOfBoundsNegative,
+        test_TypeChecker_ArrayAccessOutOfBoundsExpression,
+        test_TypeChecker_ArrayAccessWithVariable,
+        test_TypeChecker_IndexingNonArray,
+        test_TypeChecker_ArrayAccessWithNamedConstant,
         test_TypeChecker_RejectNonConstantArraySize,
         test_TypeChecker_AcceptsValidArrayDeclaration,
         test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,

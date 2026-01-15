@@ -700,9 +700,29 @@ Type* TypeChecker::findStructField(Type* struct_type, const char* /*field_name*/
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
-    visit(node->array);
-    visit(node->index);
-    return NULL; // Placeholder
+    Type* array_type = visit(node->array);
+    Type* index_type = visit(node->index);
+
+    if (!array_type || !index_type) {
+        return NULL; // Error already reported
+    }
+
+    if (array_type->kind != TYPE_ARRAY) {
+        fatalError(node->array->loc, "Cannot index into a non-array type.");
+        return NULL;
+    }
+
+    // Attempt to evaluate the index as a compile-time constant.
+    i64 index_value;
+    if (evaluateConstantExpression(node->index, &index_value)) {
+        u64 array_size = array_type->as.array.size;
+        if (index_value < 0 || (u64)index_value >= array_size) {
+            fatalError(node->index->loc, "Array index out of bounds.");
+            return NULL;
+        }
+    }
+
+    return array_type->as.array.element_type;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
@@ -903,6 +923,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
             .ofType(SYMBOL_VARIABLE)
             .withType(declared_type)
             .atLocation(node->type->loc)
+            .definedBy(node)
             .build();
         if (!unit.getSymbolTable().insert(var_symbol)) {
             unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
@@ -1499,4 +1520,75 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     safe_append(current, remaining, "'");
     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
     return false;
+}
+bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
+    if (!node) {
+        return false;
+    }
+
+    switch (node->type) {
+        case NODE_INTEGER_LITERAL:
+            *out_value = (i64)node->as.integer_literal.value;
+            return true;
+
+        case NODE_UNARY_OP: {
+            if (node->as.unary_op.op == TOKEN_MINUS) {
+                i64 operand_value;
+                if (evaluateConstantExpression(node->as.unary_op.operand, &operand_value)) {
+                    *out_value = -operand_value;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        case NODE_BINARY_OP: {
+            i64 left_value, right_value;
+            bool left_is_const = evaluateConstantExpression(node->as.binary_op->left, &left_value);
+            bool right_is_const = evaluateConstantExpression(node->as.binary_op->right, &right_value);
+
+            if (left_is_const && right_is_const) {
+                switch (node->as.binary_op->op) {
+                    case TOKEN_PLUS:
+                        *out_value = left_value + right_value;
+                        return true;
+                    case TOKEN_MINUS:
+                        *out_value = left_value - right_value;
+                        return true;
+                    case TOKEN_STAR:
+                        *out_value = left_value * right_value;
+                        return true;
+                    case TOKEN_SLASH:
+                        if (right_value == 0) {
+                             unit.getErrorHandler().report(ERR_DIVISION_BY_ZERO, node->loc, "compile-time division by zero");
+                            return false;
+                        }
+                        *out_value = left_value / right_value;
+                        return true;
+                    case TOKEN_PERCENT:
+                        if (right_value == 0) {
+                            unit.getErrorHandler().report(ERR_DIVISION_BY_ZERO, node->loc, "compile-time division by zero");
+                            return false;
+                        }
+                        *out_value = left_value % right_value;
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            return false;
+        }
+        case NODE_IDENTIFIER: {
+            Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
+            if (symbol && symbol->details) {
+                ASTVarDeclNode* decl = (ASTVarDeclNode*)symbol->details;
+                if (decl->is_const && decl->initializer) {
+                    return evaluateConstantExpression(decl->initializer, out_value);
+                }
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
 }
