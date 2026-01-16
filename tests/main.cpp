@@ -401,6 +401,7 @@ TEST_FUNC(SymbolFlags_SymbolBuilder);
 #include "task_119_test.cpp"
 #include "test_utils_bug.cpp"
 TEST_FUNC(safe_append_null_termination);
+TEST_FUNC(safe_append_explicit_check);
 TEST_FUNC(simple_itoa_null_termination);
 TEST_FUNC(Task119_DetectMalloc);
 TEST_FUNC(Task119_DetectCalloc);
@@ -801,6 +802,7 @@ int main(int argc, char* argv[]) {
 
         // Utils Bug Fix
         test_safe_append_null_termination,
+        test_safe_append_explicit_check,
         test_simple_itoa_null_termination
     };
 
