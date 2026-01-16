@@ -399,6 +399,9 @@ TEST_FUNC(SymbolFlags_SymbolBuilder);
 
 // Forward declarations for Task 119
 #include "task_119_test.cpp"
+#include "test_utils_bug.cpp"
+TEST_FUNC(safe_append_null_termination);
+TEST_FUNC(simple_itoa_null_termination);
 TEST_FUNC(Task119_DetectMalloc);
 TEST_FUNC(Task119_DetectCalloc);
 TEST_FUNC(Task119_DetectRealloc);
@@ -794,7 +797,11 @@ int main(int argc, char* argv[]) {
 
         // Symbol Flags
         test_SymbolFlags_GlobalVariable,
-        test_SymbolFlags_SymbolBuilder
+        test_SymbolFlags_SymbolBuilder,
+
+        // Utils Bug Fix
+        test_safe_append_null_termination,
+        test_simple_itoa_null_termination
     };
 
     int passed = 0;

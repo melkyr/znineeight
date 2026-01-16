@@ -42,7 +42,13 @@ public:
 * **Alignment:** The `alloc()` method now guarantees 8-byte alignment for all allocations, which is safe for most data types. For specific alignment needs, `alloc_aligned()` is available.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 
-### 3.2 String Interning (`string_interner.hpp`)
+### 3.2 Utility Functions (`utils.hpp`)
+**Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies.
+
+* **`safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
+* **`simple_itoa(long value, char* buffer, size_t buffer_size)`**: Converts a `long` to a string without using `sprintf` or `std::string`.
+
+### 3.3 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.
 * **Structure:** Hash table (1024 buckets) with chaining
 * **Hashing:** FNV-1a or similar simple hash
