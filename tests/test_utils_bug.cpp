@@ -35,6 +35,34 @@ TEST_FUNC(safe_append_null_termination) {
     return true;
 }
 
+TEST_FUNC(safe_append_explicit_check) {
+    char buf[5];
+    memset(buf, 'X', 5); // Fill with X
+
+    char* ptr = buf;
+    size_t remaining = 4;
+    // This should trigger the 'else if (remaining > 0)' branch in safe_append
+    safe_append(ptr, remaining, "LONG_STRING");
+
+    // buf index 0, 1, 2 should be 'L', 'O', 'N'
+    // buf index 3 should be '\0'
+    // buf index 4 should still be 'X' (as safe_append with remaining=4 only touches up to index 3)
+
+    ASSERT_TRUE(buf[0] == 'L');
+    ASSERT_TRUE(buf[1] == 'O');
+    ASSERT_TRUE(buf[2] == 'N');
+    ASSERT_TRUE(buf[3] == '\0');
+
+    // Explicitly check against the '0' bug
+    ASSERT_TRUE(buf[3] != '0');
+
+    // Verify strlen stops at the null terminator
+    size_t len = strlen(buf);
+    ASSERT_TRUE(len == 3);
+
+    return true;
+}
+
 TEST_FUNC(simple_itoa_null_termination) {
     char buffer[10];
 
