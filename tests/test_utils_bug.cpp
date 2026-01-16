@@ -1,0 +1,61 @@
+#include "test_framework.hpp"
+#include "utils.hpp"
+#include <cstring>
+
+TEST_FUNC(safe_append_null_termination) {
+    char buffer[10];
+    char* dest = buffer;
+    size_t remaining = 10;
+
+    // 1. Normal append (no truncation)
+    // "abc" is 3 chars, remaining is 10. len < remaining.
+    safe_append(dest, remaining, "abc");
+    // buffer should be {'a', 'b', 'c', '\0', ...}
+    ASSERT_TRUE(buffer[3] == '\0');
+    ASSERT_TRUE(remaining == 7);
+    ASSERT_TRUE(dest == buffer + 3);
+
+    // 2. Truncated append
+    // "123456789" is 9 chars, remaining is 7. len >= remaining.
+    safe_append(dest, remaining, "123456789");
+    // remaining was 7. strncpy(dest, src, 7-1) -> copies 6 chars: "123456"
+    // dest[6] = '\0'
+    // Total buffer should be "abc" + "123456" + '\0'
+    // buffer index: 012 345678 9
+    ASSERT_TRUE(buffer[9] == '\0');
+    // If bug is present, buffer[9] will be '0' (ASCII 48)
+    if (buffer[9] == '0') {
+        // This is where we detect the bug
+        return false;
+    }
+
+    ASSERT_TRUE(remaining == 0);
+    ASSERT_TRUE(dest == buffer + 9);
+
+    return true;
+}
+
+TEST_FUNC(simple_itoa_null_termination) {
+    char buffer[10];
+
+    // 1. Test zero
+    simple_itoa(0, buffer, 10);
+    ASSERT_TRUE(buffer[0] == '0');
+    ASSERT_TRUE(buffer[1] == '\0');
+    if (buffer[1] == '0') return false; // Bug detection
+
+    // 2. Test positive
+    simple_itoa(123, buffer, 10);
+    // "123" -> buffer[0]='1', [1]='2', [2]='3', [3]='\0'
+    ASSERT_TRUE(buffer[3] == '\0');
+    if (buffer[3] == '0') return false; // Bug detection
+    ASSERT_TRUE(strcmp(buffer, "123") == 0);
+
+    // 3. Test negative
+    simple_itoa(-456, buffer, 10);
+    ASSERT_TRUE(strcmp(buffer, "-456") == 0);
+    ASSERT_TRUE(buffer[4] == '\0');
+    if (buffer[4] == '0') return false; // Bug detection
+
+    return true;
+}

@@ -23,7 +23,7 @@ void safe_append(char*& dest, size_t& remaining, const char* src) {
         remaining -= len;
     } else if (remaining > 0) {
         strncpy(dest, src, remaining - 1);
-        dest[remaining - 1] = '\\0';
+        dest[remaining - 1] = '\0';
         dest += (remaining - 1);
         remaining = 0;
     }
@@ -39,7 +39,7 @@ void simple_itoa(long value, char* buffer, size_t buffer_size) {
     if (n == 0) {
         if (buffer_size > 1) {
             buffer[i++] = '0';
-            buffer[i] = '\\0';
+            buffer[i] = '\0';
         }
         return;
     }
@@ -59,6 +59,6 @@ void simple_itoa(long value, char* buffer, size_t buffer_size) {
         buffer[i++] = '-';
     }
 
-    buffer[i] = '\\0';
+    buffer[i] = '\0';
     reverse(buffer, i);
 }
