@@ -392,6 +392,11 @@ TEST_FUNC(TypeChecker_RejectSliceExpression);
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
 
+// Forward declarations for Symbol Flags
+#include "test_symbol_flags.cpp"
+TEST_FUNC(SymbolFlags_GlobalVariable);
+TEST_FUNC(SymbolFlags_SymbolBuilder);
+
 // Forward declarations for Task 119
 #include "task_119_test.cpp"
 TEST_FUNC(Task119_DetectMalloc);
@@ -785,7 +790,11 @@ int main(int argc, char* argv[]) {
         test_Task119_DetectStrdup,
         test_Task119_DetectMemcpy,
         test_Task119_DetectMemset,
-        test_Task119_DetectStrcpy
+        test_Task119_DetectStrcpy,
+
+        // Symbol Flags
+        test_SymbolFlags_GlobalVariable,
+        test_SymbolFlags_SymbolBuilder
     };
 
     int passed = 0;

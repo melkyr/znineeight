@@ -17,6 +17,13 @@ enum SymbolType {
     SYMBOL_UNION_TYPE,
 };
 
+enum SymbolFlag {
+    SYMBOL_FLAG_LOCAL   = (1 << 0),  // Stack-allocated variable/parameter
+    SYMBOL_FLAG_STATIC  = (1 << 1),  // Static storage
+    SYMBOL_FLAG_PARAM   = (1 << 2),  // Function parameter
+    SYMBOL_FLAG_GLOBAL  = (1 << 3)   // Global variable
+};
+
 struct Symbol {
     const char* name;
     SymbolType kind;
@@ -24,7 +31,7 @@ struct Symbol {
     SourceLocation location;
     void* details;
     unsigned int scope_level; // Set by SymbolTable on insertion
-    unsigned int flags;
+    unsigned int flags;        // Bitmask of SymbolFlag
 };
 
 class SymbolBuilder {
