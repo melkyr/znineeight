@@ -399,6 +399,10 @@ TEST_FUNC(Task119_DetectCalloc);
 TEST_FUNC(Task119_DetectRealloc);
 TEST_FUNC(Task119_DetectFree);
 TEST_FUNC(Task119_DetectAlignedAlloc);
+TEST_FUNC(Task119_DetectStrdup);
+TEST_FUNC(Task119_DetectMemcpy);
+TEST_FUNC(Task119_DetectMemset);
+TEST_FUNC(Task119_DetectStrcpy);
 
 
 int main(int argc, char* argv[]) {
@@ -777,7 +781,11 @@ int main(int argc, char* argv[]) {
         test_Task119_DetectCalloc,
         test_Task119_DetectRealloc,
         test_Task119_DetectFree,
-        test_Task119_DetectAlignedAlloc
+        test_Task119_DetectAlignedAlloc,
+        test_Task119_DetectStrdup,
+        test_Task119_DetectMemcpy,
+        test_Task119_DetectMemset,
+        test_Task119_DetectStrcpy
     };
 
     int passed = 0;
