@@ -940,12 +940,14 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
     // Insert the symbol into the current scope
     if (declared_type) {
+        bool is_local = (unit.getSymbolTable().getCurrentScopeLevel() > 1);
         Symbol var_symbol = SymbolBuilder(unit.getArena())
             .withName(node->name)
             .ofType(SYMBOL_VARIABLE)
             .withType(declared_type)
             .atLocation(node->type->loc)
             .definedBy(node)
+            .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
             .build();
         if (!unit.getSymbolTable().insert(var_symbol)) {
             unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
@@ -1003,6 +1005,7 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
             .ofType(SYMBOL_VARIABLE)
             .withType(param_type)
             .atLocation(param_node->type->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
             .build();
         unit.getSymbolTable().insert(param_symbol);
     }

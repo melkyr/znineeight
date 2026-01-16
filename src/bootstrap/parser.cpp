@@ -1007,12 +1007,14 @@ ASTNode* Parser::parseVarDecl() {
     // Resolve the type and create the symbol for the symbol table.
     Type* symbol_type = resolveAndVerifyType(type_node);
 
+    bool is_local = (symbol_table_->getCurrentScopeLevel() > 1);
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
+        .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
         .build();
 
     if (!symbol_table_->insert(symbol)) {

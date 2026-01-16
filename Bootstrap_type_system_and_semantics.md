@@ -191,6 +191,17 @@ struct Symbol {
     unsigned int scope_level;
     unsigned int flags;
 };
+
+/**
+ * @enum SymbolFlag
+ * @brief Bitmask flags for symbols.
+ */
+enum SymbolFlag {
+    SYMBOL_FLAG_LOCAL   = (1 << 0),  // Stack-allocated variable/parameter
+    SYMBOL_FLAG_STATIC  = (1 << 1),  // Static storage
+    SYMBOL_FLAG_PARAM   = (1 << 2),  // Function parameter
+    SYMBOL_FLAG_GLOBAL  = (1 << 3)   // Global variable
+};
 ```
 
 #### `SymbolTable` and `Scope` Classes
