@@ -480,7 +480,10 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
     // Check if the callee is a direct identifier call to a banned function.
     if (node->callee->type == NODE_IDENTIFIER) {
         const char* callee_name = node->callee->as.identifier.name;
-        static const char* banned_functions[] = {"malloc", "calloc", "realloc", "free", "aligned_alloc"};
+        static const char* banned_functions[] = {
+            "malloc", "calloc", "realloc", "free", "aligned_alloc",
+            "strdup", "memcpy", "memset", "strcpy"
+        };
         for (size_t i = 0; i < sizeof(banned_functions) / sizeof(banned_functions[0]); ++i) {
             if (strcmp(callee_name, banned_functions[i]) == 0) {
                 char msg_buffer[256];
@@ -488,7 +491,7 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
                 size_t remaining = sizeof(msg_buffer);
                 safe_append(current, remaining, "Call to '");
                 safe_append(current, remaining, callee_name);
-                safe_append(current, remaining, "' is a dynamic memory allocation function and is not supported in C89 mode.");
+                safe_append(current, remaining, "' is forbidden. Use the project's ArenaAllocator for safe memory management.");
                 fatalError(node->callee->loc, msg_buffer);
                 return NULL; // Unreachable
             }
