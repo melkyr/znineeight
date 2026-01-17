@@ -25,6 +25,7 @@ Responsibilities of the AI Agent
             - `<cstdlib>`: Allowed *only* for `abort()` (for fatal error handling in the parser), and `strtol`/`strtod` (for number parsing in the lexer). Direct memory management functions like `malloc` and `free` are strictly forbidden.
     Implement Code: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
     Document Changes: Update existing documentation (e.g., AST_parser.md) and add Doxygen-style comments to the generated code.
+    Task Review: Review completed tasks for architectural alignment and completeness (e.g., Task 125: Lifetime Analysis Review).
     Seek Clarification: When encountering ambiguity in task specifications or required decisions not covered by documentation, explicitly ask for clarification rather than making assumptions.
     Follow Methodology: Implement code with a Test-Driven Development (TDD) mindset, ensuring modularity and correctness for future testing phases.
 

@@ -205,14 +205,16 @@ Semantic analysis is performed in two distinct, sequential passes after the AST 
 #### Pass 1: Type Checking
 The `TypeChecker` resolves identifiers, verifies type compatibility for assignments and operations, and populates the `SymbolTable` with semantic metadata.
 
-- **Symbol Flags:** Symbols are marked with flags like `SYMBOL_FLAG_LOCAL` (stack variables) or `SYMBOL_FLAG_PARAM` (function parameters) based on their declaration context.
+- **Symbol Flags:** Symbols are marked with flags like `SYMBOL_FLAG_LOCAL` (stack variables), `SYMBOL_FLAG_PARAM` (function parameters), and `SYMBOL_FLAG_GLOBAL` based on their declaration context.
 - **Redefinition Check:** Ensures no two symbols share the same name in the same scope.
 
-#### Pass 2: Lifetime Analysis
+#### Pass 2: Lifetime Analysis (Task 125)
 The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
 
-- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`).
+- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
+- **Assignment Handling**: The analyzer tracks direct address-of assignments (`ptr = &local`) and correctly handles reassignments within a function.
 - **Violation Detection:** Reports `ERR_LIFETIME_VIOLATION` if a local address or a pointer to a local variable is returned from a function.
+- **Parameter Safety**: Directly returning a parameter is permitted, as its lifetime is managed by the caller, but returning the address of a parameter (`&param`) is blocked as it resides on the current stack frame.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**

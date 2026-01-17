@@ -15,6 +15,12 @@ Given the strict memory constraints of the target platform (<16MB), the entire A
 
 All nodes in the tree are represented by the `ASTNode` struct. It is designed to be memory-efficient by using a `union` to store data specific to the node's type.
 
+### 2.1 Pass Pipeline
+
+The compiler's semantic analysis is divided into two passes:
+1.  **Type Checker**: Resolves types, validates operations, and tags symbols with semantic flags (`SYMBOL_FLAG_LOCAL`, `SYMBOL_FLAG_PARAM`).
+2.  **Lifetime Analyzer**: A read-only pass that uses the flags and AST structure to detect dangling pointers.
+
 ### `NodeType` Enum
 
 This enum is the discriminator for the `union` inside the `ASTNode` struct.
