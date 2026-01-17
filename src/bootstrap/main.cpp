@@ -1,6 +1,7 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp"
 #include "type_checker.hpp"
+#include "lifetime_analyzer.hpp"
 #include <iostream>
 #include <cstring>
 
@@ -18,7 +19,10 @@ int main(int argc, char* argv[]) {
         ASTNode* ast = parser->parse();
 
         TypeChecker checker(unit);
-        checker.check(root);
+        checker.check(ast);
+
+        LifetimeAnalyzer analyzer(unit);
+        analyzer.analyze(ast);
 
         if (unit.getErrorHandler().hasErrors()) {
             std::cout << "Self-test failed." << std::endl;

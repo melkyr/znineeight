@@ -422,6 +422,26 @@ To clarify the current capabilities of the type checker and guide future develop
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
+### Lifetime Analysis (Dangling Pointers)
+
+Following the Type Checking phase, the compiler performs a **Lifetime Analysis** pass to detect potential dangling pointers. This is a read-only analysis that leverages the semantic information and flags populated by the `TypeChecker`.
+
+#### Tracking Variable Provenance
+The analysis relies on the `SYMBOL_FLAG_LOCAL` and `SYMBOL_FLAG_PARAM` flags in the `SymbolTable`.
+-   **`SYMBOL_FLAG_LOCAL`**: Applied to variables declared within a function body.
+-   **`SYMBOL_FLAG_PARAM`**: Applied to function parameters.
+
+The `LifetimeAnalyzer` tracks assignments where a pointer variable is assigned the address of a local variable or parameter (e.g., `p = &x;`).
+
+#### Violation Rules
+A dangling pointer error (`ERR_LIFETIME_VIOLATION`) is reported in the following scenarios:
+1.  **Returning Local Address**: `return &x;` where `x` is a local variable or parameter.
+2.  **Returning Local Pointer**: `return p;` if `p` is a local variable that was previously assigned the address of a local variable or parameter.
+
+#### Global and Parameter Safety
+-   Returning the address of a **Global Variable** is always safe, as globals have static lifetime.
+-   Returning a **Parameter Value** (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is safe, as the caller is responsible for the lifetime of the object pointed to by `p`.
+
 ### `void` Type Validation
 
 To ensure C89 compatibility, the `TypeChecker` enforces several strict rules regarding the use of the `void` type:
