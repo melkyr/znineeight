@@ -2,6 +2,7 @@
 #include "ast.hpp"
 #include "symbol_table.hpp"
 #include "type_system.hpp"
+#include "utils.hpp"
 #include <cstdio>
 #include <string.h>
 #include <new>
@@ -78,11 +79,13 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
 
     if (isDangerousLocalPointer(node->expression)) {
         const char* var_name = extractVariableName(node->expression);
-        char msg_buffer[256];
-        msg_buffer[0] = '\0';
-        strcat(msg_buffer, "Returning pointer to local variable '");
-        strcat(msg_buffer, var_name);
-        strcat(msg_buffer, "' creates dangling pointer");
+
+        char* msg_buffer = (char*)unit_.getArena().alloc(1024);
+        char* current = msg_buffer;
+        size_t remaining = 1024;
+        safe_append(current, remaining, "Returning pointer to local variable '");
+        safe_append(current, remaining, var_name);
+        safe_append(current, remaining, "' creates dangling pointer");
 
         unit_.getErrorHandler().report(ERR_LIFETIME_VIOLATION, node->expression->loc, msg_buffer, unit_.getArena());
     }
