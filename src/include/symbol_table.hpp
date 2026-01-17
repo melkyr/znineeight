@@ -70,6 +70,7 @@ struct Scope {
 class SymbolTable {
     ArenaAllocator& arena_;
     DynamicArray<Scope*> scopes;
+    DynamicArray<Scope*> all_scopes_; // Persist all scopes for subsequent passes
     unsigned int current_scope_level_;
 
 public:
@@ -79,6 +80,7 @@ public:
     bool insert(Symbol& symbol);
     Symbol* lookup(const char* name);
     Symbol* lookupInCurrentScope(const char* name);
+    Symbol* findInAnyScope(const char* name); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 };
 

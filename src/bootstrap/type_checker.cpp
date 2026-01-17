@@ -42,15 +42,21 @@ TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_
 
 void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
+        // First pass: Process function declarations and global variables
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* top_level_node = (*root->as.block_stmt.statements)[i];
             if (top_level_node && top_level_node->type == NODE_FN_DECL) {
-                // This is a simplified version of the original pre-pass.
-                // It doesn't do anything yet, but it's here to match the structure.
+                // We could do a pre-scan here, but visit() handles it for now.
             }
         }
+
+        // Main pass: visit children directly to avoid root block scope level issue
+        for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
+            visit((*root->as.block_stmt.statements)[i]);
+        }
+    } else {
+        visit(root);
     }
-    visit(root);
 }
 
 Type* TypeChecker::visit(ASTNode* node) {
@@ -938,19 +944,28 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         }
     }
 
-    // Insert the symbol into the current scope
-    if (declared_type) {
-        bool is_local = (unit.getSymbolTable().getCurrentScopeLevel() > 1);
-        Symbol var_symbol = SymbolBuilder(unit.getArena())
-            .withName(node->name)
-            .ofType(SYMBOL_VARIABLE)
-            .withType(declared_type)
-            .atLocation(node->type->loc)
-            .definedBy(node)
-            .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
-            .build();
-        if (!unit.getSymbolTable().insert(var_symbol)) {
-            unit.getErrorHandler().report(ERR_REDEFINITION, node->type->loc, "redefinition of variable", unit.getArena());
+    // Update the symbol in the current scope with flags
+    Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+    if (existing_sym) {
+        existing_sym->symbol_type = declared_type;
+        existing_sym->details = node;
+
+        // If we are inside a function body, current_fn_return_type will be non-NULL
+        bool is_local = (current_fn_return_type != NULL);
+        existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+    } else {
+        // If not found (e.g. injected in tests), create and insert
+        if (declared_type) {
+            bool is_local = (current_fn_return_type != NULL);
+            Symbol var_symbol = SymbolBuilder(unit.getArena())
+                .withName(node->name)
+                .ofType(SYMBOL_VARIABLE)
+                .withType(declared_type)
+                .atLocation(node->type->loc)
+                .definedBy(node)
+                .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
+                .build();
+            unit.getSymbolTable().insert(var_symbol);
         }
     }
 

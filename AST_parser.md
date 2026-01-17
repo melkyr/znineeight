@@ -1183,6 +1183,24 @@ The `Parser` is designed with clear ownership semantics to ensure memory safety 
 
 This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
 
+## 16. Lifetime Analysis Phase
+
+The Lifetime Analysis phase is a critical semantic analysis pass that follows the Type Checker. Its purpose is to identify memory safety issues at compile-time, specifically dangling pointers created by returning pointers to local (stack-allocated) variables.
+
+### Timing and Dependencies
+- **Placement:** It runs after the `TypeChecker` has completed and before the `CodeGenerator`.
+- **Dependencies:** It relies on the `SymbolTable` being fully populated with semantic flags (`SYMBOL_FLAG_LOCAL`, `SYMBOL_FLAG_PARAM`) by the `TypeChecker`.
+- **Input:** It traverses the AST produced by the `Parser`.
+
+### Analysis Rules
+1. **Direct Dangling Pointers:** Identifies immediate returns of local addresses, such as `return &local_var;` or `return &parameter;`.
+2. **Indirect Dangling Pointers:** Tracks assignments to pointer variables. If a local pointer is assigned the address of a local variable (e.g., `p = &x;`), returning that pointer (`return p;`) is flagged as a violation.
+3. **Safety of Parameters:** Returning a pointer *value* passed as a parameter (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is considered safe, as the caller manages its lifetime. However, returning the *address* of the parameter itself (`return &p;`) is a violation.
+4. **Global Persistence:** Addresses of global variables are always safe to return.
+
+### Implementation Strategy
+The `LifetimeAnalyzer` uses a visitor pattern to traverse the AST. It maintains a list of `PointerAssignment` records for the current function to track the provenance of local pointer variables. It reports `ERR_LIFETIME_VIOLATION` through the `ErrorHandler`, allowing compilation to continue and identify multiple issues in a single pass.
+
 ---
 
 ## Deprecated
