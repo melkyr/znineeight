@@ -413,6 +413,15 @@ TEST_FUNC(Task119_DetectMemcpy);
 TEST_FUNC(Task119_DetectMemset);
 TEST_FUNC(Task119_DetectStrcpy);
 
+// Forward declarations for Lifetime Analysis
+#include "lifetime_analysis_tests.cpp"
+TEST_FUNC(Lifetime_DirectReturnLocalAddress);
+TEST_FUNC(Lifetime_ReturnLocalPointer);
+TEST_FUNC(Lifetime_ReturnParamOK);
+TEST_FUNC(Lifetime_ReturnAddrOfParam);
+TEST_FUNC(Lifetime_ReturnGlobalOK);
+TEST_FUNC(Lifetime_ReassignedPointerOK);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -803,7 +812,15 @@ int main(int argc, char* argv[]) {
         // Utils Bug Fix
         test_safe_append_null_termination,
         test_safe_append_explicit_check,
-        test_simple_itoa_null_termination
+        test_simple_itoa_null_termination,
+
+        // Lifetime Analysis
+        test_Lifetime_DirectReturnLocalAddress,
+        test_Lifetime_ReturnLocalPointer,
+        test_Lifetime_ReturnParamOK,
+        test_Lifetime_ReturnAddrOfParam,
+        test_Lifetime_ReturnGlobalOK,
+        test_Lifetime_ReassignedPointerOK
     };
 
     int passed = 0;

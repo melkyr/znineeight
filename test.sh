@@ -122,7 +122,6 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/type_system_tests.cpp \
     tests/type_to_string_tests.cpp \
     tests/test_assignment_compatibility.cpp \
-    tests/lifetime_analysis_tests.cpp \
     -o test_runner
 
 if [ $? -ne 0 ]; then
