@@ -422,25 +422,27 @@ To clarify the current capabilities of the type checker and guide future develop
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
-### Lifetime Analysis (Dangling Pointers)
+### Lifetime Analysis (Dangling Pointers) - Task 125
 
 Following the Type Checking phase, the compiler performs a **Lifetime Analysis** pass to detect potential dangling pointers. This is a read-only analysis that leverages the semantic information and flags populated by the `TypeChecker`.
 
 #### Tracking Variable Provenance
-The analysis relies on the `SYMBOL_FLAG_LOCAL` and `SYMBOL_FLAG_PARAM` flags in the `SymbolTable`.
--   **`SYMBOL_FLAG_LOCAL`**: Applied to variables declared within a function body.
--   **`SYMBOL_FLAG_PARAM`**: Applied to function parameters.
+The analysis relies on the `SYMBOL_FLAG_LOCAL`, `SYMBOL_FLAG_PARAM`, and `SYMBOL_FLAG_GLOBAL` flags in the `SymbolTable`.
+-   **`SYMBOL_FLAG_LOCAL`**: Applied by `TypeChecker` to variables declared within a function body.
+-   **`SYMBOL_FLAG_PARAM`**: Applied by `TypeChecker` to function parameters.
+-   **`SYMBOL_FLAG_GLOBAL`**: Applied by `TypeChecker` to top-level declarations.
 
-The `LifetimeAnalyzer` tracks assignments where a pointer variable is assigned the address of a local variable or parameter (e.g., `p = &x;`).
+The `LifetimeAnalyzer` tracks assignments where a pointer variable is assigned the address of a local variable or parameter (e.g., `p = &x;`). It uses a function-local `DynamicArray` to store these mappings during the pass.
 
 #### Violation Rules
 A dangling pointer error (`ERR_LIFETIME_VIOLATION`) is reported in the following scenarios:
-1.  **Returning Local Address**: `return &x;` where `x` is a local variable or parameter.
+1.  **Returning Local Address**: `return &x;` where `x` is marked as `SYMBOL_FLAG_LOCAL` (including parameters).
 2.  **Returning Local Pointer**: `return p;` if `p` is a local variable that was previously assigned the address of a local variable or parameter.
+3.  **Returning Uninitialized Local Pointer**: `return p;` where `p` is a local pointer variable with no recorded safe assignment (conservative safety).
 
 #### Global and Parameter Safety
--   Returning the address of a **Global Variable** is always safe, as globals have static lifetime.
--   Returning a **Parameter Value** (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is safe, as the caller is responsible for the lifetime of the object pointed to by `p`.
+-   Returning the address of a **Global Variable** is always safe, as globals have static lifetime (marked with `SYMBOL_FLAG_GLOBAL`).
+-   Returning a **Parameter Value** directly (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is safe, as the caller is responsible for the lifetime of the object pointed to by `p`.
 
 ### `void` Type Validation
 
