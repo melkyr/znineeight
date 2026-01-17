@@ -117,6 +117,11 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 **Key Responsibilities:**
 - **Lifetime Management:** Ensures that all objects related to a compilation (AST nodes, tokens, interned strings) are allocated from a single arena, making cleanup trivial.
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
+- **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
+    1.  **Lexing & Parsing:** Produces the Initial AST.
+    2.  **Type Checking:** Resolves types and populates the `SymbolTable` with semantic flags (e.g., `SYMBOL_FLAG_LOCAL`).
+    3.  **Lifetime Analysis:** Detects memory safety issues like dangling pointers.
+    4.  **Code Generation:** Emits target code (C89).
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 **Example Usage:**
@@ -193,7 +198,23 @@ private:
   * It **does not** reorder code; it simply records the `DEFER_STMT` node in the AST block. The *Code Generator* handles the execution order.
   * During parsing of a block, `defer` statements are pushed into a vector for later processing
 
-### 4.3 Layer 3: Type System (`type_system.hpp`)
+### 4.3 Layer 3: Semantic Analysis & Lifetime (`type_checker.hpp`, `lifetime_analyzer.hpp`)
+
+Semantic analysis is performed in two distinct, sequential passes after the AST is generated.
+
+#### Pass 1: Type Checking
+The `TypeChecker` resolves identifiers, verifies type compatibility for assignments and operations, and populates the `SymbolTable` with semantic metadata.
+
+- **Symbol Flags:** Symbols are marked with flags like `SYMBOL_FLAG_LOCAL` (stack variables) or `SYMBOL_FLAG_PARAM` (function parameters) based on their declaration context.
+- **Redefinition Check:** Ensures no two symbols share the same name in the same scope.
+
+#### Pass 2: Lifetime Analysis
+The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
+
+- **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`).
+- **Violation Detection:** Reports `ERR_LIFETIME_VIOLATION` if a local address or a pointer to a local variable is returned from a function.
+
+### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`
 * **Pointers:** `*T` (Single level)
@@ -244,7 +265,7 @@ struct Type {
   | T | *T | ✓ | - |
   | *T | *const T | ✓ | - |
 
-### 4.4 Layer 4: Symbol Table (`symbol_table.hpp`)
+### 4.5 Layer 5: Symbol Table (`symbol_table.hpp`)
 **Concept:** A hierarchical table for managing identifiers (variables, functions, types) across different scopes. It is designed to be extensible to support the growing complexity of the language.
 
 **Scoping:** The table uses a stack of `Scope` objects. When the parser enters a new block, it calls `enterScope()`, and when it exits, it calls `exitScope()`. Lookups search from the innermost scope outwards, correctly handling symbol shadowing.
@@ -291,7 +312,7 @@ public:
 };
 ```
 
-### 4.5 Layer 5: Code Generation (`codegen.hpp`)
+### 4.6 Layer 6: Code Generation (`codegen.hpp`)
 **Target:** C89
 **Register Strategy:** N/A (Handled by C compiler)
 
@@ -304,7 +325,7 @@ public:
      2. Emit block body code
      3. At scope exit (`}` or `return`), iterate `defers` in **reverse order** and emit their C code
 
-### 4.6 Layer 6: PE Backend (`pe_builder.hpp`)
+### 4.7 Layer 7: PE Backend (`pe_builder.hpp`)
 **Goal:** Direct `.exe` generation (No `LINK.EXE` needed for Stage 2)
 * **Headers:** `IMAGE_DOS_HEADER`, `IMAGE_NT_HEADERS`
 * **Sections:** `.text` (Code), `.data` (Globals), `.idata` (Imports)

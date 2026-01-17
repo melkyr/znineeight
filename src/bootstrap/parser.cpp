@@ -576,9 +576,24 @@ ASTNode* Parser::parseOrelseCatchExpression() {
 }
 
 ASTNode* Parser::parseAssignmentExpression() {
-    // For now, assignment expressions are not implemented,
-    // so we just parse the next level of precedence.
-    return parseOrelseCatchExpression();
+    ASTNode* left = parseOrelseCatchExpression();
+
+    if (match(TOKEN_EQUAL)) {
+        ASTNode* right = parseAssignmentExpression();
+
+        ASTAssignmentNode* assign_node = (ASTAssignmentNode*)arena_->alloc(sizeof(ASTAssignmentNode));
+        if (!assign_node) {
+            error("Out of memory");
+        }
+        assign_node->lvalue = left;
+        assign_node->rvalue = right;
+
+        ASTNode* node = createNode(NODE_ASSIGNMENT);
+        node->as.assignment = assign_node;
+        return node;
+    }
+
+    return left;
 }
 
 ASTNode* Parser::parseExpression() {
@@ -1007,14 +1022,13 @@ ASTNode* Parser::parseVarDecl() {
     // Resolve the type and create the symbol for the symbol table.
     Type* symbol_type = resolveAndVerifyType(type_node);
 
-    bool is_local = (symbol_table_->getCurrentScopeLevel() > 1);
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
-        .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
+        .withFlags(0) // Semantic flags will be set by TypeChecker
         .build();
 
     if (!symbol_table_->insert(symbol)) {

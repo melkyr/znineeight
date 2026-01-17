@@ -1,5 +1,6 @@
 #include "test_utils.hpp"
 #include "type_checker.hpp"
+#include "lifetime_analyzer.hpp"
 #include "c89_feature_validator.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -99,6 +100,9 @@ void run_type_checker_test_in_child(const char* source) {
 
     TypeChecker tc(comp_unit);
     tc.check(root);
+
+    LifetimeAnalyzer la(comp_unit);
+    la.analyze(root);
 }
 
 

@@ -138,7 +138,7 @@ void Scope::resize() {
 // --- SymbolTable Implementation ---
 
 SymbolTable::SymbolTable(ArenaAllocator& arena)
-    : arena_(arena), scopes(arena), current_scope_level_(0)
+    : arena_(arena), scopes(arena), all_scopes_(arena), current_scope_level_(0)
 {
     // The global scope is entered by default upon initialization.
     enterScope();
@@ -150,6 +150,7 @@ void SymbolTable::enterScope() {
     Scope* new_scope = (Scope*)arena_.alloc(sizeof(Scope));
     new (new_scope) Scope(arena_);
     scopes.append(new_scope);
+    all_scopes_.append(new_scope);
 }
 
 void SymbolTable::exitScope() {
@@ -187,6 +188,17 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
         return NULL;
     }
     return scopes.back()->find(name);
+}
+
+Symbol* SymbolTable::findInAnyScope(const char* name) {
+    // Search all scopes ever created, from most recent to oldest.
+    for (int i = (int)all_scopes_.length() - 1; i >= 0; --i) {
+        Symbol* symbol = all_scopes_[i]->find(name);
+        if (symbol) {
+            return symbol;
+        }
+    }
+    return NULL;
 }
 
 unsigned int SymbolTable::getCurrentScopeLevel() const {
