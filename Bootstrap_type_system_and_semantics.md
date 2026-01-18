@@ -578,6 +578,26 @@ A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type, bo
 ### `createFunctionType`
 A new helper function, `createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type)`, has been added to create `TYPE_FUNCTION` objects. It allocates a new `Type` and populates it with the list of parameter types and the return type.
 
+## 6. Null Pointer Analysis (Task 126)
+
+Following Type Checking and Lifetime Analysis, the compiler performs **Null Pointer Analysis**. Phase 1 implements the foundational visitor framework and isolated state tracking.
+
+### State Tracking
+The analyzer tracks the nullability state of pointer variables using an internal `State` enum:
+- **`STATE_UNINIT`**: Variable has no initializer.
+- **`STATE_NULL`**: Variable is definitely null (assigned `0` or `null`).
+- **`STATE_SAFE`**: Variable is definitely non-null (e.g., address-of `&x`).
+- **`STATE_MAYBE`**: State is unknown or ambiguous.
+
+### Isolated Scoping
+The `NullPointerAnalyzer` maintains its own scope stack using `DynamicArray<VarTrack>`. This ensures that variable state tracking is isolated from the main `SymbolTable`, allowing for specialized flow-sensitive analysis in later phases.
+
+### Phase 1 Implementation
+The current implementation (Phase 1) correctly handles:
+- **Function Declarations**: Enters a new scope for function bodies and tracks parameters as `STATE_MAYBE`.
+- **Block Statements**: Manages nested scopes for local variables.
+- **Variable Declarations**: Detects initial states for `null` literals and address-of expressions.
+
 ## 7. Parser Integration
 
 To make the symbol table functional, it is integrated directly into the parsing process. This allows the parser to manage scopes and register symbols as it traverses the source code.

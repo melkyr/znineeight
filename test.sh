@@ -14,6 +14,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     src/bootstrap/token_supplier.cpp \
     src/bootstrap/c89_feature_validator.cpp \
     src/bootstrap/lifetime_analyzer.cpp \
+    src/bootstrap/null_pointer_analyzer.cpp \
     src/bootstrap/utils.cpp \
     tests/test_c89_rejection.cpp \
     tests/c89_type_compat_tests.cpp \
@@ -99,6 +100,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/test_string_interner.cpp \
     tests/test_string_literal.cpp \
     tests/test_utils.cpp \
+    tests/null_pointer_analyzer_tests.cpp \
     tests/type_checker_address_of.cpp \
     tests/type_checker_array_tests.cpp \
     tests/type_checker_binary_ops.cpp \
