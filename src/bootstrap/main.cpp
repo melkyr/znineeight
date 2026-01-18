@@ -2,6 +2,7 @@
 #include "parser.hpp"
 #include "type_checker.hpp"
 #include "lifetime_analyzer.hpp"
+#include "null_pointer_analyzer.hpp"
 #include <iostream>
 #include <cstring>
 
@@ -23,6 +24,9 @@ int main(int argc, char* argv[]) {
 
         LifetimeAnalyzer analyzer(unit);
         analyzer.analyze(ast);
+
+        NullPointerAnalyzer null_analyzer(arena, unit);
+        null_analyzer.analyze(ast);
 
         if (unit.getErrorHandler().hasErrors()) {
             std::cout << "Self-test failed." << std::endl;

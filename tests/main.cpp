@@ -422,6 +422,10 @@ TEST_FUNC(Lifetime_ReturnAddrOfParam);
 TEST_FUNC(Lifetime_ReturnGlobalOK);
 TEST_FUNC(Lifetime_ReassignedPointerOK);
 
+// Null Pointer Analyzer tests
+bool test_null_pointer_analyzer_basic();
+bool test_null_pointer_analyzer_global_var();
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -820,7 +824,9 @@ int main(int argc, char* argv[]) {
         test_Lifetime_ReturnParamOK,
         test_Lifetime_ReturnAddrOfParam,
         test_Lifetime_ReturnGlobalOK,
-        test_Lifetime_ReassignedPointerOK
+        test_Lifetime_ReassignedPointerOK,
+        test_null_pointer_analyzer_basic,
+        test_null_pointer_analyzer_global_var
     };
 
     int passed = 0;
