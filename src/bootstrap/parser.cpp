@@ -320,6 +320,12 @@ ASTNode* Parser::parsePostfixExpression() {
                 new_expr_node->as.array_access = access_node;
                 expr = new_expr_node;
             }
+        } else if (match(TOKEN_DOT_ASTERISK)) {
+            // Zig-style dereference: p.*
+            ASTNode* new_expr_node = createNode(NODE_UNARY_OP);
+            new_expr_node->as.unary_op.op = TOKEN_DOT_ASTERISK;
+            new_expr_node->as.unary_op.operand = expr;
+            expr = new_expr_node;
         } else {
             break;
         }
