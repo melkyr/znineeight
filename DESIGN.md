@@ -216,10 +216,10 @@ The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations
 #### Pass 3: Null Pointer Analysis (Task 126)
 The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage.
 
-- **Phase 1 (Complete):** Core infrastructure, visitor framework, and basic state tracking (`UNINIT`, `NULL`, `SAFE`, `MAYBE`) within nested scopes.
-- **State Tracking:** It tracks the nullability state of pointer variables through different control flow paths.
-- **Scope Management:** It uses a stack of scopes to manage variable state across blocks and functions, ensuring correct tracking of persistent state changes.
-- **Violation Detection (Planned):** Will report `ERR_NULL_POINTER_DEREFERENCE` (2004) for definite null dereferences, `WARN_UNINITIALIZED_POINTER` (6001) for uninitialized pointers, and `WARN_POTENTIAL_NULL_DEREFERENCE` (6002) for potential null dereferences in Phase 2.
+- **Phase 1 (Infrastructure):** Implements the core skeleton, visitor framework, and a robust, scoped state-tracking system.
+- **State Tracking:** Tracks pointer nullability states (`UNINIT`, `NULL`, `SAFE`, `MAYBE`) throughout function bodies and global declarations.
+- **Scope Management:** Employs a stack-based scope system to handle variable persistence and shadowing correctly across nested blocks.
+- **Violation Detection (Phase 2):** Definite null dereferences (`ERR_NULL_POINTER_DEREFERENCE` - 2004), uninitialized pointer warnings (`WARN_UNINITIALIZED_POINTER` - 6001), and potential null dereference warnings (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002) are planned for implementation in Phase 2.
 - **Assignment Handling**: The analyzer tracks direct address-of assignments (`ptr = &local`) and correctly handles reassignments within a function.
 - **Violation Detection:** Reports `ERR_LIFETIME_VIOLATION` if a local address or a pointer to a local variable is returned from a function.
 - **Parameter Safety**: Directly returning a parameter is permitted, as its lifetime is managed by the caller, but returning the address of a parameter (`&param`) is blocked as it resides on the current stack frame.

@@ -74,45 +74,61 @@ PointerState NullPointerAnalyzer::getState(const char* name) {
 void NullPointerAnalyzer::visit(ASTNode* node) {
     if (!node) return;
 
+    // Note: The following access patterns (inline vs. out-of-line) are dictated by the
+    // ASTNode union definition in src/include/ast.hpp to minimize memory usage.
     switch (node->type) {
         case NODE_FN_DECL:
+            // ASTFnDeclNode* (out-of-line)
             visitFnDecl(node->as.fn_decl);
             break;
         case NODE_BLOCK_STMT:
+            // ASTBlockStmtNode (inline)
             visitBlock(&node->as.block_stmt);
             break;
         case NODE_VAR_DECL:
+            // ASTVarDeclNode* (out-of-line)
             visitVarDecl(node->as.var_decl);
             break;
         case NODE_ASSIGNMENT:
+            // ASTAssignmentNode* (out-of-line)
             visitAssignment(node->as.assignment);
             break;
         case NODE_IF_STMT:
+            // ASTIfStmtNode* (out-of-line)
             visitIfStmt(node->as.if_stmt);
             break;
         case NODE_WHILE_STMT:
+            // ASTWhileStmtNode (inline)
             visitWhileStmt(&node->as.while_stmt);
             break;
         case NODE_FOR_STMT:
+            // ASTForStmtNode* (out-of-line)
             visitForStmt(node->as.for_stmt);
             break;
         case NODE_RETURN_STMT:
+            // ASTReturnStmtNode (inline)
             visitReturnStmt(&node->as.return_stmt);
             break;
         case NODE_EXPRESSION_STMT:
+            // ASTExpressionStmtNode (inline)
             visit(node->as.expression_stmt.expression);
             break;
         case NODE_UNARY_OP:
+            // ASTUnaryOpNode (inline)
+            // Note: The bootstrap compiler currently uses prefix '*' (C-style) for
+            // dereference, producing a NODE_UNARY_OP with TOKEN_STAR.
             if (node->as.unary_op.op == TOKEN_STAR) {
                 checkDereference(node->as.unary_op.operand);
             }
             visit(node->as.unary_op.operand);
             break;
         case NODE_BINARY_OP:
+            // ASTBinaryOpNode* (out-of-line)
             visit(node->as.binary_op->left);
             visit(node->as.binary_op->right);
             break;
         case NODE_FUNCTION_CALL:
+            // ASTFunctionCallNode* (out-of-line)
             visit(node->as.function_call->callee);
             if (node->as.function_call->args) {
                 for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
@@ -121,6 +137,7 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
             }
             break;
         case NODE_ARRAY_ACCESS:
+            // ASTArrayAccessNode* (out-of-line)
             checkDereference(node->as.array_access->array);
             visit(node->as.array_access->array);
             visit(node->as.array_access->index);
