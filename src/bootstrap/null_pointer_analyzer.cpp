@@ -53,9 +53,6 @@ void NullPointerAnalyzer::setState(const char* name, PointerState state) {
             }
         }
     }
-
-    // If not found, it might be a new variable or a global.
-    // In Phase 1, we only update existing tracked variables.
 }
 
 PointerState NullPointerAnalyzer::getState(const char* name) {
@@ -74,61 +71,45 @@ PointerState NullPointerAnalyzer::getState(const char* name) {
 void NullPointerAnalyzer::visit(ASTNode* node) {
     if (!node) return;
 
-    // Note: The following access patterns (inline vs. out-of-line) are dictated by the
-    // ASTNode union definition in src/include/ast.hpp to minimize memory usage.
     switch (node->type) {
         case NODE_FN_DECL:
-            // ASTFnDeclNode* (out-of-line)
             visitFnDecl(node->as.fn_decl);
             break;
         case NODE_BLOCK_STMT:
-            // ASTBlockStmtNode (inline)
             visitBlock(&node->as.block_stmt);
             break;
         case NODE_VAR_DECL:
-            // ASTVarDeclNode* (out-of-line)
             visitVarDecl(node->as.var_decl);
             break;
         case NODE_ASSIGNMENT:
-            // ASTAssignmentNode* (out-of-line)
             visitAssignment(node->as.assignment);
             break;
         case NODE_IF_STMT:
-            // ASTIfStmtNode* (out-of-line)
             visitIfStmt(node->as.if_stmt);
             break;
         case NODE_WHILE_STMT:
-            // ASTWhileStmtNode (inline)
             visitWhileStmt(&node->as.while_stmt);
             break;
         case NODE_FOR_STMT:
-            // ASTForStmtNode* (out-of-line)
             visitForStmt(node->as.for_stmt);
             break;
         case NODE_RETURN_STMT:
-            // ASTReturnStmtNode (inline)
             visitReturnStmt(&node->as.return_stmt);
             break;
         case NODE_EXPRESSION_STMT:
-            // ASTExpressionStmtNode (inline)
             visit(node->as.expression_stmt.expression);
             break;
         case NODE_UNARY_OP:
-            // ASTUnaryOpNode (inline)
-            // Note: The bootstrap compiler currently uses prefix '*' (C-style) for
-            // dereference, producing a NODE_UNARY_OP with TOKEN_STAR.
-            if (node->as.unary_op.op == TOKEN_STAR) {
+            if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
                 checkDereference(node->as.unary_op.operand);
             }
             visit(node->as.unary_op.operand);
             break;
         case NODE_BINARY_OP:
-            // ASTBinaryOpNode* (out-of-line)
             visit(node->as.binary_op->left);
             visit(node->as.binary_op->right);
             break;
         case NODE_FUNCTION_CALL:
-            // ASTFunctionCallNode* (out-of-line)
             visit(node->as.function_call->callee);
             if (node->as.function_call->args) {
                 for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
@@ -137,7 +118,6 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
             }
             break;
         case NODE_ARRAY_ACCESS:
-            // ASTArrayAccessNode* (out-of-line)
             checkDereference(node->as.array_access->array);
             visit(node->as.array_access->array);
             visit(node->as.array_access->index);
@@ -150,11 +130,9 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
 void NullPointerAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     pushScope();
 
-    // Add parameters to the scope
     if (node->params) {
         for (size_t i = 0; i < node->params->length(); ++i) {
             ASTParamDeclNode* param = (*node->params)[i];
-            // Parameters are considered MAYBE initially
             addVariable(param->name, PS_MAYBE);
         }
     }
@@ -174,11 +152,14 @@ void NullPointerAnalyzer::visitBlock(ASTBlockStmtNode* node) {
 }
 
 void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
-    Symbol* sym = unit_.getSymbolTable().lookup(node->name);
+    if (node->initializer) {
+        visit(node->initializer);
+    }
+
+    Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
     if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
         PointerState state = PS_UNINIT;
         if (node->initializer) {
-            visit(node->initializer);
             state = getExpressionState(node->initializer);
         }
         addVariable(node->name, state);
@@ -189,11 +170,10 @@ void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
     visit(node->rvalue);
     if (node->lvalue->type == NODE_IDENTIFIER) {
         const char* name = node->lvalue->as.identifier.name;
-        Symbol* sym = unit_.getSymbolTable().lookup(name);
+        Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
         if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
             PointerState state = getExpressionState(node->rvalue);
             setState(name, state);
-            return;
         }
     }
     visit(node->lvalue);
@@ -243,11 +223,32 @@ PointerState NullPointerAnalyzer::getExpressionState(ASTNode* expr) {
             return PS_MAYBE;
         case NODE_IDENTIFIER:
             return getState(expr->as.identifier.name);
+        case NODE_FUNCTION_CALL:
+            return PS_MAYBE;
         default:
             return PS_MAYBE;
     }
 }
 
-void NullPointerAnalyzer::checkDereference(ASTNode* /*expr*/) {
-    // Phase 2 implementation
+void NullPointerAnalyzer::checkDereference(ASTNode* expr) {
+    if (!expr) return;
+
+    PointerState state = getExpressionState(expr);
+
+    switch (state) {
+        case PS_NULL:
+            unit_.getErrorHandler().report(ERR_NULL_POINTER_DEREFERENCE, expr->loc,
+                "Definite null pointer dereference");
+            break;
+        case PS_UNINIT:
+            unit_.getErrorHandler().reportWarning(WARN_UNINITIALIZED_POINTER, expr->loc,
+                "Using uninitialized pointer");
+            break;
+        case PS_MAYBE:
+            unit_.getErrorHandler().reportWarning(WARN_POTENTIAL_NULL_DEREFERENCE, expr->loc,
+                "Potential null pointer dereference");
+            break;
+        case PS_SAFE:
+            break;
+    }
 }
