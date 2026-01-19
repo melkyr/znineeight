@@ -25,4 +25,12 @@ void safe_append(char*& dest, size_t& remaining, const char* src);
  */
 void simple_itoa(long value, char* buffer, size_t buffer_size);
 
+/**
+ * @brief Checks if two C-style strings are equal.
+ * @param a The first string.
+ * @param b The second string.
+ * @return True if the strings are equal, false otherwise.
+ */
+bool strings_equal(const char* a, const char* b);
+
 #endif // UTILS_HPP
