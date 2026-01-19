@@ -119,7 +119,8 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     }
 
     switch (node->op) {
-        case TOKEN_STAR: { // Dereference operator (*)
+        case TOKEN_STAR:
+        case TOKEN_DOT_ASTERISK: { // Dereference operator (*) or (.*)
             // Check for null literal dereference first, as it's a special case.
             if (node->operand->type == NODE_NULL_LITERAL ||
                 (node->operand->type == NODE_INTEGER_LITERAL && node->operand->as.integer_literal.value == 0)) {
