@@ -14,6 +14,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     src/bootstrap/token_supplier.cpp \
     src/bootstrap/c89_feature_validator.cpp \
     src/bootstrap/lifetime_analyzer.cpp \
+    src/bootstrap/null_pointer_analyzer.cpp \
     src/bootstrap/utils.cpp \
     tests/test_c89_rejection.cpp \
     tests/c89_type_compat_tests.cpp \

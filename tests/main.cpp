@@ -422,6 +422,12 @@ TEST_FUNC(Lifetime_ReturnAddrOfParam);
 TEST_FUNC(Lifetime_ReturnGlobalOK);
 TEST_FUNC(Lifetime_ReassignedPointerOK);
 
+// Forward declarations for Null Pointer Analysis
+#include "null_pointer_analysis_tests.cpp"
+TEST_FUNC(NullPointerAnalyzer_BasicTracking);
+TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking);
+TEST_FUNC(NullPointerAnalyzer_AssignmentTracking);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -820,7 +826,12 @@ int main(int argc, char* argv[]) {
         test_Lifetime_ReturnParamOK,
         test_Lifetime_ReturnAddrOfParam,
         test_Lifetime_ReturnGlobalOK,
-        test_Lifetime_ReassignedPointerOK
+        test_Lifetime_ReassignedPointerOK,
+
+        // Null Pointer Analysis
+        test_NullPointerAnalyzer_BasicTracking,
+        test_NullPointerAnalyzer_PersistentStateTracking,
+        test_NullPointerAnalyzer_AssignmentTracking
     };
 
     int passed = 0;

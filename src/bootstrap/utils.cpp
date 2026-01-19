@@ -62,3 +62,12 @@ void simple_itoa(long value, char* buffer, size_t buffer_size) {
     buffer[i] = '\0';
     reverse(buffer, i);
 }
+
+bool strings_equal(const char* a, const char* b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+    while (*a && *b && *a == *b) {
+        a++; b++;
+    }
+    return *a == *b;
+}

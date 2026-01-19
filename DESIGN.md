@@ -212,6 +212,14 @@ The `TypeChecker` resolves identifiers, verifies type compatibility for assignme
 The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
 
 - **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
+
+#### Pass 3: Null Pointer Analysis (Task 126)
+The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage.
+
+- **Phase 1 (Complete):** Core infrastructure, visitor framework, and basic state tracking (`UNINIT`, `NULL`, `SAFE`, `MAYBE`) within nested scopes.
+- **State Tracking:** It tracks the nullability state of pointer variables through different control flow paths.
+- **Scope Management:** It uses a stack of scopes to manage variable state across blocks and functions, ensuring correct tracking of persistent state changes.
+- **Violation Detection (Planned):** Will report `ERR_NULL_POINTER_DEREFERENCE` (2004) for definite null dereferences, `WARN_UNINITIALIZED_POINTER` (6001) for uninitialized pointers, and `WARN_POTENTIAL_NULL_DEREFERENCE` (6002) for potential null dereferences in Phase 2.
 - **Assignment Handling**: The analyzer tracks direct address-of assignments (`ptr = &local`) and correctly handles reassignments within a function.
 - **Violation Detection:** Reports `ERR_LIFETIME_VIOLATION` if a local address or a pointer to a local variable is returned from a function.
 - **Parameter Safety**: Directly returning a parameter is permitted, as its lifetime is managed by the caller, but returning the address of a parameter (`&param`) is blocked as it resides on the current stack frame.
