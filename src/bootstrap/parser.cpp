@@ -581,6 +581,10 @@ ASTNode* Parser::parseOrelseCatchExpression() {
     return parsePrecedenceExpr(1); // Start with orelse/catch precedence
 }
 
+/**
+ * @brief Parses an assignment expression.
+ * @return A pointer to the ASTNode representing the assignment.
+ */
 ASTNode* Parser::parseAssignmentExpression() {
     ASTNode* left = parseOrelseCatchExpression();
 
