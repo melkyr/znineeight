@@ -427,6 +427,12 @@ TEST_FUNC(Lifetime_ReassignedPointerOK);
 TEST_FUNC(NullPointerAnalyzer_BasicTracking);
 TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking);
 TEST_FUNC(NullPointerAnalyzer_AssignmentTracking);
+TEST_FUNC(NullPointerAnalyzer_IfNullGuard);
+TEST_FUNC(NullPointerAnalyzer_IfElseMerge);
+TEST_FUNC(NullPointerAnalyzer_WhileGuard);
+TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
+TEST_FUNC(NullPointerAnalyzer_Shadowing);
+TEST_FUNC(NullPointerAnalyzer_NoLeakage);
 
 
 int main(int argc, char* argv[]) {
@@ -831,7 +837,13 @@ int main(int argc, char* argv[]) {
         // Null Pointer Analysis
         test_NullPointerAnalyzer_BasicTracking,
         test_NullPointerAnalyzer_PersistentStateTracking,
-        test_NullPointerAnalyzer_AssignmentTracking
+        test_NullPointerAnalyzer_AssignmentTracking,
+        test_NullPointerAnalyzer_IfNullGuard,
+        test_NullPointerAnalyzer_IfElseMerge,
+        test_NullPointerAnalyzer_WhileGuard,
+        test_NullPointerAnalyzer_WhileConservativeReset,
+        test_NullPointerAnalyzer_Shadowing,
+        test_NullPointerAnalyzer_NoLeakage
     };
 
     int passed = 0;

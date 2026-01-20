@@ -322,9 +322,13 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 }
             }
                 // Pointer comparisons (equality only for ordering operators)
-            else if (left_type->kind == TYPE_POINTER && right_type->kind == TYPE_POINTER) {
+            else if ((left_type->kind == TYPE_POINTER || left_type->kind == TYPE_NULL) &&
+                     (right_type->kind == TYPE_POINTER || right_type->kind == TYPE_NULL)) {
                 // Equality operators can work with any compatible pointer types
                 if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
+                    if (left_type->kind == TYPE_NULL || right_type->kind == TYPE_NULL) {
+                        return get_g_type_bool(); // Result is always bool
+                    }
                     if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base) ||
                         (left_type->as.pointer.base->kind == TYPE_VOID) ||
                         (right_type->as.pointer.base->kind == TYPE_VOID)) {
@@ -1244,13 +1248,13 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return true;
     }
 
+    if (!expected || !actual) {
+        return false;
+    }
+
     // Handle null assignment to any pointer
     if (actual->kind == TYPE_NULL && expected->kind == TYPE_POINTER) {
         return true;
-    }
-
-    if (!expected || !actual) {
-        return false;
     }
 
     // Widening for signed integers

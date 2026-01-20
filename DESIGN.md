@@ -213,18 +213,26 @@ The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations
 
 - **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
 
-#### Pass 3: Null Pointer Analysis (Task 126)
-The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage.
+#### Pass 3: Null Pointer Analysis (Task 126 - COMPLETE)
+The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage using flow-sensitive analysis.
 
 - **Phase 1 (Infrastructure):** Implemented the core skeleton, visitor framework, and a robust, scoped state-tracking system.
 - **Phase 2 (Basic Detection):** Implements detection for obvious null dereferences and uninitialized pointer usage.
+- **Phase 3 (Conditionals & Flow):** Adds support for null guards in `if` statements and `while` loops, and implements state merging for branched control flow.
 - **State Tracking:** Tracks pointer nullability states (`UNINIT`, `NULL`, `SAFE`, `MAYBE`) throughout function bodies and global declarations.
-- **Scope Management:** Employs a stack-based scope system (using `findInAnyScope`) to handle variable persistence and shadowing correctly across nested blocks even after their formal scope has exited.
+- **Scope Management & Branching:** Employs a stack-based `StateMap` system. When encountering a branch (e.g., an `if` block), the analyzer creates a copy of the current state. Modifications within branches are merged back using conservative rules:
+    - `NULL` + `SAFE` = `MAYBE`
+    - `SAFE` + `SAFE` = `SAFE`
+    - `NULL` + `NULL` = `NULL`
+    - Anything + `MAYBE` = `MAYBE`
+- **Null Guards:**
+    - **If Statements:** Recognizes patterns like `if (p != null)`, `if (p == null)`, `if (p)`, and `if (!p)`. It refines the state of `p` within the `then` and `else` blocks accordingly.
+    - **While Loops:** Recognizes `while (p != null)` and treats `p` as `SAFE` within the loop body. After the loop, variables modified within the loop are conservatively set to `MAYBE`.
 - **Violation Detection:**
     - **Definite Null Dereference (`ERR_NULL_POINTER_DEREFERENCE` - 2004):** Reported when a pointer explicitly set to `null` or `0` is dereferenced.
     - **Uninitialized Pointer Warning (`WARN_UNINITIALIZED_POINTER` - 6001):** Reported when a pointer declared without an initializer is dereferenced before being assigned a value.
-    - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call) is dereferenced.
-- **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments within a function and persists state across nested blocks.
+    - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call or after a merge) is dereferenced.
+- **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments and persists state through linear and branched flow.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**
