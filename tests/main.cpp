@@ -434,6 +434,23 @@ TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
 TEST_FUNC(NullPointerAnalyzer_Shadowing);
 TEST_FUNC(NullPointerAnalyzer_NoLeakage);
 
+// Forward declarations for Milestone 4 Integration
+#include "test_semantic_type_checker_integration.cpp"
+TEST_FUNC(Milestone4_HappyPath_Integrated);
+TEST_FUNC(Milestone4_C89_Rejection_FailFast);
+TEST_FUNC(Milestone4_Lifetime_Violation_Integrated);
+TEST_FUNC(Milestone4_NullPointer_Deref_Integrated);
+TEST_FUNC(Milestone4_Complex_EdgeCase_Shadowing_And_NullGuards);
+TEST_FUNC(Milestone4_Enum_AutoIncrement_Overflow);
+TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking);
+TEST_FUNC(NullPointerAnalyzer_AssignmentTracking);
+TEST_FUNC(NullPointerAnalyzer_IfNullGuard);
+TEST_FUNC(NullPointerAnalyzer_IfElseMerge);
+TEST_FUNC(NullPointerAnalyzer_WhileGuard);
+TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
+TEST_FUNC(NullPointerAnalyzer_Shadowing);
+TEST_FUNC(NullPointerAnalyzer_NoLeakage);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -843,7 +860,15 @@ int main(int argc, char* argv[]) {
         test_NullPointerAnalyzer_WhileGuard,
         test_NullPointerAnalyzer_WhileConservativeReset,
         test_NullPointerAnalyzer_Shadowing,
-        test_NullPointerAnalyzer_NoLeakage
+        test_NullPointerAnalyzer_NoLeakage,
+
+        // Milestone 4 Integration
+        test_Milestone4_HappyPath_Integrated,
+        test_Milestone4_C89_Rejection_FailFast,
+        test_Milestone4_Lifetime_Violation_Integrated,
+        test_Milestone4_NullPointer_Deref_Integrated,
+        test_Milestone4_Complex_EdgeCase_Shadowing_And_NullGuards,
+        test_Milestone4_Enum_AutoIncrement_Overflow
     };
 
     int passed = 0;

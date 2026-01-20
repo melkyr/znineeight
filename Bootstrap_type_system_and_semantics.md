@@ -494,7 +494,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 ### The `is_c89_compatible` Function
 
-A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. Its behavior is as follows:
+A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. It is used both by the `C89FeatureValidator` and during `TypeChecker` passes (e.g., when validating struct fields or function arguments). Its behavior is as follows:
 
 -   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
 -   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
