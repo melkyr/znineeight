@@ -168,10 +168,21 @@ void NullPointerAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
 
 void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
     visit(node->rvalue);
+
+    // Track assignment to identifiers
     if (node->lvalue->type == NODE_IDENTIFIER) {
         const char* name = node->lvalue->as.identifier.name;
-        Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
-        if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
+
+        // Use resolved_type from ASTNode if available (justifying its addition)
+        Type* target_type = node->lvalue->resolved_type;
+
+        // Fallback to symbol table if TypeChecker hasn't run or resolved it
+        if (!target_type) {
+            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            if (sym) target_type = sym->symbol_type;
+        }
+
+        if (target_type && target_type->kind == TYPE_POINTER) {
             PointerState state = getExpressionState(node->rvalue);
             setState(name, state);
         }
