@@ -168,6 +168,9 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
             visit(node->as.array_access->array);
             visit(node->as.array_access->index);
             break;
+        case NODE_MEMBER_ACCESS:
+            visit(node->as.member_access->object);
+            break;
         default:
             break;
     }

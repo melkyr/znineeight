@@ -45,6 +45,9 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
         case NODE_EXPRESSION_STMT:
             visit(node->as.expression_stmt.expression);
             break;
+        case NODE_MEMBER_ACCESS:
+            visit(node->as.member_access->object);
+            break;
         case NODE_UNARY_OP:
             visit(node->as.unary_op.operand);
             break;

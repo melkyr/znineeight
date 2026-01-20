@@ -326,6 +326,24 @@ ASTNode* Parser::parsePostfixExpression() {
             new_expr_node->as.unary_op.op = TOKEN_DOT_ASTERISK;
             new_expr_node->as.unary_op.operand = expr;
             expr = new_expr_node;
+        } else if (match(TOKEN_DOT)) {
+            // Member Access: obj.member
+            ASTMemberAccessNode* member_access = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            if (!member_access) {
+                error("Out of memory");
+            }
+            member_access->object = expr;
+            Token member_token = expect(TOKEN_IDENTIFIER, "Expected member name after '.'");
+            member_access->member_name = member_token.value.identifier;
+
+            ASTNode* new_expr_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_expr_node) {
+                error("Out of memory");
+            }
+            new_expr_node->type = NODE_MEMBER_ACCESS;
+            new_expr_node->loc = expr->loc;
+            new_expr_node->as.member_access = member_access;
+            expr = new_expr_node;
         } else {
             break;
         }

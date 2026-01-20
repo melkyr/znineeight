@@ -237,6 +237,20 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call or after a merge) is dereferenced.
 - **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments and persists state through linear and branched flow.
 
+#### Pass 4: Double Free Analysis (Task 127 - COMPLETE)
+The `DoubleFreeAnalyzer` is a read-only pass that detects multiple deallocations of the same memory and identifies potential memory leaks.
+
+- **Infrastructure:** Implements a scoped state-tracking system for pointers and a virtual `DeferStack` to simulate Zig's `defer` semantics.
+- **State Tracking:** Tracks pointer allocation states (`NOT_ALLOCATED`, `ALLOCATED`, `FREED`, `UNKNOWN`) through function bodies and block scopes.
+- **Virtual Defer Simulation:** Accurately models the execution of `defer` and `errdefer` blocks at scope exit, ensuring that deferred deallocations are correctly accounted for in the double-free detection logic.
+- **Control Flow & Merging:** Employs state merging rules for `if/else` branches and conservative assumptions for loops to detect potential double frees in complex control flow.
+- **Violation Detection:**
+    - **Double Free Error (`ERR_DOUBLE_FREE` - 2005):** Reported when a pointer is explicitly freed more than once.
+    - **Memory Leak Warning (`WARN_MEMORY_LEAK` - 6005):** Reported when a pointer allocated within a function is not freed before the function exits.
+    - **Potential Double Free Warning (`WARN_POTENTIAL_DOUBLE_FREE` - 6007):** Reported when a pointer with an unknown state (e.g., from different control flow paths) is freed.
+    - **Unallocated Free Warning (`WARN_FREE_UNALLOCATED` - 6006):** Reported when a pointer that was never allocated is passed to a deallocation function.
+- **Banned Function Integration:** Works in conjunction with the `TypeChecker`'s banned function reporting to track and analyze calls to forbidden standard C functions like `free()` and `malloc()`.
+
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`

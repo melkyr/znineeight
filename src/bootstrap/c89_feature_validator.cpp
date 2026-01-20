@@ -48,6 +48,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 visit((*node->as.function_call->args)[i]);
             }
             break;
+        case NODE_MEMBER_ACCESS:
+            visit(node->as.member_access->object);
+            break;
         case NODE_BLOCK_STMT:
             for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
                 visit((*node->as.block_stmt.statements)[i]);

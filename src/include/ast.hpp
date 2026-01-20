@@ -23,6 +23,7 @@ enum NodeType {
     NODE_UNARY_OP,        ///< A unary operation (e.g., `-x`, `!y`).
     NODE_BINARY_OP,       ///< A binary operation (e.g., `a + b`).
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
+    NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `obj.member`).
     NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
 
@@ -117,6 +118,7 @@ struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
 struct ASTComptimeBlockNode;
 struct ASTFunctionCallNode;
+struct ASTMemberAccessNode;
 struct ASTArrayAccessNode;
 struct ASTArraySliceNode;
 
@@ -237,6 +239,17 @@ struct ASTIdentifierNode {
 struct ASTFunctionCallNode {
     ASTNode* callee;
     DynamicArray<ASTNode*>* args;
+};
+
+/**
+ * @struct ASTMemberAccessNode
+ * @brief Represents a member access expression (e.g., `object.member`).
+ * @var ASTMemberAccessNode::object The expression being accessed.
+ * @var ASTMemberAccessNode::member_name The name of the member (interned string).
+ */
+struct ASTMemberAccessNode {
+    ASTNode* object;
+    const char* member_name;
 };
 
 /**
@@ -591,6 +604,7 @@ struct ASTNode {
         ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
         ASTFunctionCallNode* function_call; // Out-of-line
+        ASTMemberAccessNode* member_access; // Out-of-line
         ASTArrayAccessNode* array_access; // Out-of-line
         ASTArraySliceNode* array_slice; // Out-of-line
 
