@@ -35,6 +35,10 @@ The lexer supports two types of comments, which are consumed and discarded:
 
 If the lexer encounters a character that does not belong to any valid token, it produces a `TOKEN_ERROR` token. This allows the parser to handle lexical errors gracefully.
 
+### 1.4 Token Supplier and Stability
+
+The lexer is integrated with a `TokenSupplier` (managed by the `CompilationUnit`), which ensures that the token stream has a stable memory address for the lifetime of the compilation session. This is critical for the parser and subsequent semantic passes, as it prevents dangling pointer issues when referencing tokens.
+
 ## 2. Token Implementation Status
 
 This section tracks the implementation status of all tokens required for the RetroZig compiler. It is based on a gap analysis between the official Zig language specification and the current lexer implementation.

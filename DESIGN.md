@@ -200,7 +200,10 @@ private:
 
 ### 4.3 Layer 3: Semantic Analysis & Lifetime (`type_checker.hpp`, `lifetime_analyzer.hpp`)
 
-Semantic analysis is performed in two distinct, sequential passes after the AST is generated.
+Semantic analysis is performed in several distinct, sequential passes after the AST is generated.
+
+#### Pass 0: C89 Feature Validation (Fail-Fast)
+The `C89FeatureValidator` perform a quick AST scan to reject non-C89 features like slices, error handling, and multi-level pointers before more intensive analysis begins.
 
 #### Pass 1: Type Checking
 The `TypeChecker` resolves identifiers, verifies type compatibility for assignments and operations, and populates the `SymbolTable` with semantic metadata.

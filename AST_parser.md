@@ -1229,6 +1229,7 @@ The Lifetime Analysis phase is a critical semantic analysis pass that follows th
 2. **Indirect Dangling Pointers:** Tracks assignments to pointer variables. If a local pointer is assigned the address of a local variable (e.g., `p = &x;`), returning that pointer (`return p;`) is flagged as a violation.
 3. **Safety of Parameters:** Returning a pointer *value* passed as a parameter (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is considered safe, as the caller manages its lifetime. However, returning the *address* of the parameter itself (`return &p;`) is a violation.
 4. **Global Persistence:** Addresses of global variables are always safe to return.
+5. **Reassignment Tracking:** The analysis correctly handles pointer reassignments. If a pointer that was previously "unsafe" (pointing to a local) is reassigned a safe address (e.g., `p = &global;`), it becomes safe again for that scope.
 
 ### Implementation Strategy
 The `LifetimeAnalyzer` uses a visitor pattern to traverse the AST. It maintains a list of `PointerAssignment` records for the current function to track the provenance of local pointer variables. It reports `ERR_LIFETIME_VIOLATION` through the `ErrorHandler`, allowing compilation to continue and identify multiple issues in a single pass.
