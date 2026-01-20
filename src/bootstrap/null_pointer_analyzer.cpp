@@ -4,8 +4,6 @@
 #include "type_system.hpp"
 #include "utils.hpp"
 #include <new>
-#include <cstring>
-#include <cstdio>
 
 StateMap::StateMap(ArenaAllocator& arena, StateMap* p)
     : vars(arena), modified(arena), parent(p), arena_(arena) {
