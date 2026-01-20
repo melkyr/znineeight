@@ -42,6 +42,10 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_);
 }
 
+/**
+ * @brief Returns the symbol table for this compilation unit.
+ * @return A reference to the SymbolTable.
+ */
 SymbolTable& CompilationUnit::getSymbolTable() {
     return symbol_table_;
 }
