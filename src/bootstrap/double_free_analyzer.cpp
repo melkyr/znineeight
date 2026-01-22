@@ -15,37 +15,40 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
 
     switch (node->type) {
         case NODE_BLOCK_STMT:
-            visitBlockStmt(&node->as.block_stmt);
+            visitBlockStmt(node);
             break;
         case NODE_FN_DECL:
-            visitFnDecl(node->as.fn_decl);
+            visitFnDecl(node);
             break;
         case NODE_VAR_DECL:
-            visitVarDecl(node->as.var_decl);
+            visitVarDecl(node);
             break;
         case NODE_ASSIGNMENT:
-            visitAssignment(node->as.assignment);
+            visitAssignment(node);
             break;
         case NODE_FUNCTION_CALL:
-            visitFunctionCall(node->as.function_call);
+            visitFunctionCall(node);
             break;
         case NODE_DEFER_STMT:
-            visitDeferStmt(&node->as.defer_stmt);
+            visitDeferStmt(node);
             break;
         case NODE_ERRDEFER_STMT:
-            visitErrdeferStmt(&node->as.errdefer_stmt);
+            visitErrdeferStmt(node);
             break;
         case NODE_IF_STMT:
-            visitIfStmt(node->as.if_stmt);
+            visitIfStmt(node);
             break;
         case NODE_WHILE_STMT:
-            visitWhileStmt(&node->as.while_stmt);
+            visitWhileStmt(node);
             break;
         case NODE_FOR_STMT:
-            visitForStmt(node->as.for_stmt);
+            visitForStmt(node);
             break;
         case NODE_RETURN_STMT:
-            visitReturnStmt(&node->as.return_stmt);
+            visitReturnStmt(node);
+            break;
+        case NODE_EXPRESSION_STMT:
+            visit(node->as.expression_stmt.expression);
             break;
         default:
             // For now, no-op for other node types
@@ -53,25 +56,30 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
     }
 }
 
-void DoubleFreeAnalyzer::visitBlockStmt(ASTBlockStmtNode* node) {
-    if (!node->statements) return;
-    for (size_t i = 0; i < node->statements->length(); ++i) {
-        visit((*node->statements)[i]);
+void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
+    ASTBlockStmtNode& block = node->as.block_stmt;
+    if (!block.statements) return;
+    for (size_t i = 0; i < block.statements->length(); ++i) {
+        visit((*block.statements)[i]);
     }
 }
 
-void DoubleFreeAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
-    if (node->body) {
-        visit(node->body);
+void DoubleFreeAnalyzer::visitFnDecl(ASTNode* node) {
+    ASTFnDeclNode* fn = node->as.fn_decl;
+    // Phase 3: Clear tracked pointers for each function
+    tracked_pointers_.clear();
+    if (fn->body) {
+        visit(fn->body);
     }
 }
 
-void DoubleFreeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
-    if (node->initializer) {
-        visit(node->initializer);
-        if (isArenaAllocCall(node->initializer)) {
+void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
+    ASTVarDeclNode* var = node->as.var_decl;
+    if (var->initializer) {
+        visit(var->initializer);
+        if (isArenaAllocCall(var->initializer)) {
             TrackedPointer tp;
-            tp.name = node->name;
+            tp.name = var->name;
             tp.allocated = true;
             tp.freed = false;
             tracked_pointers_.append(tp);
@@ -79,10 +87,11 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
     }
 }
 
-void DoubleFreeAnalyzer::visitAssignment(ASTAssignmentNode* node) {
-    visit(node->rvalue);
-    if (isArenaAllocCall(node->rvalue)) {
-        const char* var_name = extractVariableName(node->lvalue);
+void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
+    ASTAssignmentNode* assign = node->as.assignment;
+    visit(assign->rvalue);
+    if (isArenaAllocCall(assign->rvalue)) {
+        const char* var_name = extractVariableName(assign->lvalue);
         if (var_name) {
             TrackedPointer* tp = findTrackedPointer(var_name);
             if (tp) {
@@ -99,59 +108,77 @@ void DoubleFreeAnalyzer::visitAssignment(ASTAssignmentNode* node) {
     }
 }
 
-void DoubleFreeAnalyzer::visitFunctionCall(ASTFunctionCallNode* node) {
-    if (isArenaFreeCall(node)) {
-        if (node->args && node->args->length() > 0) {
-            const char* var_name = extractVariableName((*node->args)[0]);
+void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
+    ASTFunctionCallNode* call = node->as.function_call;
+    if (isArenaFreeCall(call)) {
+        if (call->args && call->args->length() > 0) {
+            const char* var_name = extractVariableName((*call->args)[0]);
             if (var_name) {
                 TrackedPointer* tp = findTrackedPointer(var_name);
                 if (tp) {
-                    tp->freed = true;
+                    if (tp->freed) {
+                        // Double free detected!
+                        char* msg = (char*)unit_.getArena().alloc(256);
+                        char* p = msg;
+                        size_t rem = 256;
+                        safe_append(p, rem, "Double free of pointer '");
+                        safe_append(p, rem, var_name);
+                        safe_append(p, rem, "'");
+                        unit_.getErrorHandler().report(ERR_DOUBLE_FREE, node->loc, msg, unit_.getArena());
+                    } else {
+                        tp->freed = true;
+                    }
                 }
             }
         }
     }
 
     // Visit arguments
-    if (node->args) {
-        for (size_t i = 0; i < node->args->length(); ++i) {
-            visit((*node->args)[i]);
+    if (call->args) {
+        for (size_t i = 0; i < call->args->length(); ++i) {
+            visit((*call->args)[i]);
         }
     }
 }
 
-void DoubleFreeAnalyzer::visitDeferStmt(ASTDeferStmtNode* node) {
-    if (node->statement) {
-        visit(node->statement);
+void DoubleFreeAnalyzer::visitDeferStmt(ASTNode* node) {
+    ASTDeferStmtNode& defer = node->as.defer_stmt;
+    if (defer.statement) {
+        visit(defer.statement);
     }
 }
 
-void DoubleFreeAnalyzer::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
-    if (node->statement) {
-        visit(node->statement);
+void DoubleFreeAnalyzer::visitErrdeferStmt(ASTNode* node) {
+    ASTErrDeferStmtNode& errdefer = node->as.errdefer_stmt;
+    if (errdefer.statement) {
+        visit(errdefer.statement);
     }
 }
 
-void DoubleFreeAnalyzer::visitIfStmt(ASTIfStmtNode* node) {
-    visit(node->condition);
-    if (node->then_block) visit(node->then_block);
-    if (node->else_block) visit(node->else_block);
+void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
+    ASTIfStmtNode* if_stmt = node->as.if_stmt;
+    visit(if_stmt->condition);
+    if (if_stmt->then_block) visit(if_stmt->then_block);
+    if (if_stmt->else_block) visit(if_stmt->else_block);
 }
 
-void DoubleFreeAnalyzer::visitWhileStmt(ASTWhileStmtNode* node) {
-    visit(node->condition);
-    if (node->body) visit(node->body);
+void DoubleFreeAnalyzer::visitWhileStmt(ASTNode* node) {
+    ASTWhileStmtNode& while_stmt = node->as.while_stmt;
+    visit(while_stmt.condition);
+    if (while_stmt.body) visit(while_stmt.body);
 }
 
-void DoubleFreeAnalyzer::visitForStmt(ASTForStmtNode* node) {
+void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
+    ASTForStmtNode* for_stmt = node->as.for_stmt;
     // For loop components
-    if (node->iterable_expr) visit(node->iterable_expr);
-    if (node->body) visit(node->body);
+    if (for_stmt->iterable_expr) visit(for_stmt->iterable_expr);
+    if (for_stmt->body) visit(for_stmt->body);
 }
 
-void DoubleFreeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
-    if (node->expression) {
-        visit(node->expression);
+void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
+    ASTReturnStmtNode& ret = node->as.return_stmt;
+    if (ret.expression) {
+        visit(ret.expression);
     }
 }
 
@@ -159,17 +186,17 @@ bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
     if (!node || node->type != NODE_FUNCTION_CALL) return false;
     ASTFunctionCallNode* call = node->as.function_call;
     if (call->callee->type != NODE_IDENTIFIER) return false;
-    return strcmp(call->callee->as.identifier.name, "arena_alloc") == 0;
+    return strings_equal(call->callee->as.identifier.name, "arena_alloc");
 }
 
 bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
     if (!call || call->callee->type != NODE_IDENTIFIER) return false;
-    return strcmp(call->callee->as.identifier.name, "arena_free") == 0;
+    return strings_equal(call->callee->as.identifier.name, "arena_free");
 }
 
 TrackedPointer* DoubleFreeAnalyzer::findTrackedPointer(const char* name) {
     for (size_t i = 0; i < tracked_pointers_.length(); ++i) {
-        if (strcmp(tracked_pointers_[i].name, name) == 0) {
+        if (strings_equal(tracked_pointers_[i].name, name)) {
             return &tracked_pointers_[i];
         }
     }
@@ -181,6 +208,5 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
     if (node->type == NODE_IDENTIFIER) {
         return node->as.identifier.name;
     }
-    // Handle other cases like member access if needed later
     return NULL;
 }

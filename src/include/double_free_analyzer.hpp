@@ -28,21 +28,21 @@ private:
     DynamicArray<TrackedPointer> tracked_pointers_;
 
     void visit(ASTNode* node);
-    void visitBlockStmt(ASTBlockStmtNode* node);
-    void visitFnDecl(ASTFnDeclNode* node);
-    void visitVarDecl(ASTVarDeclNode* node);
-    void visitAssignment(ASTAssignmentNode* node);
-    void visitFunctionCall(ASTFunctionCallNode* node);
-    void visitDeferStmt(ASTDeferStmtNode* node);
-    void visitErrdeferStmt(ASTErrDeferStmtNode* node);
-    void visitIfStmt(ASTIfStmtNode* node);
-    void visitWhileStmt(ASTWhileStmtNode* node);
-    void visitForStmt(ASTForStmtNode* node);
-    void visitReturnStmt(ASTReturnStmtNode* node);
+    void visitBlockStmt(ASTNode* node);
+    void visitFnDecl(ASTNode* node);
+    void visitVarDecl(ASTNode* node);
+    void visitAssignment(ASTNode* node);
+    void visitFunctionCall(ASTNode* node);
+    void visitDeferStmt(ASTNode* node);
+    void visitErrdeferStmt(ASTNode* node);
+    void visitIfStmt(ASTNode* node);
+    void visitWhileStmt(ASTNode* node);
+    void visitForStmt(ASTNode* node);
+    void visitReturnStmt(ASTNode* node);
 
     // Helpers
     bool isArenaAllocCall(ASTNode* node);
-    bool isArenaFreeCall(ASTFunctionCallNode* node);
+    bool isArenaFreeCall(ASTFunctionCallNode* call);
     TrackedPointer* findTrackedPointer(const char* name);
     const char* extractVariableName(ASTNode* node);
 };

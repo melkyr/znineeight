@@ -444,6 +444,30 @@ A dangling pointer error (`ERR_LIFETIME_VIOLATION`) is reported in the following
 -   Returning the address of a **Global Variable** is always safe, as globals have static lifetime (marked with `SYMBOL_FLAG_GLOBAL`).
 -   Returning a **Parameter Value** directly (e.g., `fn f(p: *i32) -> *i32 { return p; }`) is safe, as the caller is responsible for the lifetime of the object pointed to by `p`.
 
+### Double Free Detection (Task 127)
+
+Following the Type Checking and Lifetime Analysis phases, the compiler performs a **Double Free Detection** pass. This pass is designed to identify potential memory safety issues related to the use of the project's `ArenaAllocator` interface, specifically the `arena_alloc` and `arena_free` functions.
+
+#### 1. Tracking State
+The `DoubleFreeAnalyzer` tracks the state of pointers within each function. A pointer is tracked if it is:
+-   Initialized with the result of a call to `arena_alloc`.
+-   Assigned the result of a call to `arena_alloc`.
+
+The analyzer maintains a function-local list of `TrackedPointer` structures, each storing the variable's name and its current state (`allocated` and `freed` flags).
+
+#### 2. Double Free Detection
+When a call to `arena_free(p)` is encountered:
+-   The analyzer looks up the variable `p` in its list of tracked pointers.
+-   If the pointer is found and its `freed` flag is already set, an `ERR_DOUBLE_FREE` (2005) is reported.
+-   The error message follows the format: `"Double free of pointer '%s'"` (where `%s` is the name of the variable).
+-   If the pointer is found and is not yet freed, its `freed` flag is set to `true`.
+
+#### 3. State Isolation
+To ensure accuracy and prevent false positives, the list of tracked pointers is cleared at the beginning of every function declaration. This ensures that the analysis of one function does not interfere with another.
+
+#### 4. Limitations (Current Phase)
+The current implementation focuses on direct, local double-free detection. Advanced scenarios such as tracking across nested scopes, detecting leaks at scope exit, or handling `defer` statements are planned for subsequent phases.
+
 ### `void` Type Validation
 
 To ensure C89 compatibility, the `TypeChecker` enforces several strict rules regarding the use of the `void` type:
