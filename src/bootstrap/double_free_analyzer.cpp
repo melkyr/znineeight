@@ -65,6 +65,29 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
             visit((*block.statements)[i]);
         }
     }
+
+    // Phase 5: Check for leaks at scope exit
+    size_t i = 0;
+    while (i < tracked_pointers_.length()) {
+        if (tracked_pointers_[i].scope_depth == current_scope_depth_) {
+            if (tracked_pointers_[i].state == ALLOC_STATE_ALLOCATED) {
+                char* msg = (char*)unit_.getArena().alloc(256);
+                char* p = msg;
+                size_t rem = 256;
+                safe_append(p, rem, "Memory leak: '");
+                safe_append(p, rem, tracked_pointers_[i].name);
+                safe_append(p, rem, "' not freed");
+                unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, node->loc, msg);
+            }
+            // Remove by swapping with last
+            tracked_pointers_[i] = tracked_pointers_[tracked_pointers_.length() - 1];
+            tracked_pointers_.pop_back();
+            // Don't increment i, check the new element at i
+        } else {
+            i++;
+        }
+    }
+
     current_scope_depth_--;
 }
 
