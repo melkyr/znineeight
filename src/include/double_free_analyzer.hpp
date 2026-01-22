@@ -62,6 +62,7 @@ private:
     void visitReturnStmt(ASTNode* node);
 
     // Helpers
+    void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
     TrackedPointer* findTrackedPointer(const char* name);
