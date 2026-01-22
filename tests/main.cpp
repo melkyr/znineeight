@@ -434,6 +434,14 @@ TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
 TEST_FUNC(NullPointerAnalyzer_Shadowing);
 TEST_FUNC(NullPointerAnalyzer_NoLeakage);
 
+// Forward declarations for Double Free Analysis
+#include "double_free_analysis_tests.cpp"
+TEST_FUNC(DoubleFree_SimpleDoubleFree);
+TEST_FUNC(DoubleFree_BasicTracking);
+TEST_FUNC(DoubleFree_UninitializedFree);
+TEST_FUNC(DoubleFree_MemoryLeak);
+TEST_FUNC(DoubleFree_DeferDoubleFree);
+
 
 int main(int argc, char* argv[]) {
     if (argc == 3) {
@@ -843,7 +851,14 @@ int main(int argc, char* argv[]) {
         test_NullPointerAnalyzer_WhileGuard,
         test_NullPointerAnalyzer_WhileConservativeReset,
         test_NullPointerAnalyzer_Shadowing,
-        test_NullPointerAnalyzer_NoLeakage
+        test_NullPointerAnalyzer_NoLeakage,
+
+        // Double Free Analysis
+        test_DoubleFree_SimpleDoubleFree,
+        test_DoubleFree_BasicTracking,
+        test_DoubleFree_UninitializedFree,
+        test_DoubleFree_MemoryLeak,
+        test_DoubleFree_DeferDoubleFree
     };
 
     int passed = 0;
