@@ -3,7 +3,7 @@
 #include "type_system.hpp"
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
-    : unit_(unit), tracked_pointers_(unit.getArena()), current_scope_depth_(0) {
+    : unit_(unit), tracked_pointers_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0) {
 }
 
 void DoubleFreeAnalyzer::analyze(ASTNode* root) {
@@ -66,6 +66,13 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
         }
     }
 
+    // Phase 6: Execute defers for THIS scope (LIFO)
+    while (deferred_actions_.length() > 0 && deferred_actions_.back().scope_depth == current_scope_depth_) {
+        DeferredAction action = deferred_actions_.back();
+        deferred_actions_.pop_back();
+        visit(action.statement);
+    }
+
     // Phase 5: Check for leaks at scope exit
     size_t i = 0;
     while (i < tracked_pointers_.length()) {
@@ -95,6 +102,7 @@ void DoubleFreeAnalyzer::visitFnDecl(ASTNode* node) {
     ASTFnDeclNode* fn = node->as.fn_decl;
     // Phase 3: Clear tracked pointers for each function
     tracked_pointers_.clear();
+    deferred_actions_.clear();
     current_scope_depth_ = 0;
     if (fn->body) {
         visit(fn->body);
@@ -191,14 +199,20 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
 void DoubleFreeAnalyzer::visitDeferStmt(ASTNode* node) {
     ASTDeferStmtNode& defer = node->as.defer_stmt;
     if (defer.statement) {
-        visit(defer.statement);
+        DeferredAction action;
+        action.statement = defer.statement;
+        action.scope_depth = current_scope_depth_;
+        deferred_actions_.append(action);
     }
 }
 
 void DoubleFreeAnalyzer::visitErrdeferStmt(ASTNode* node) {
     ASTErrDeferStmtNode& errdefer = node->as.errdefer_stmt;
     if (errdefer.statement) {
-        visit(errdefer.statement);
+        DeferredAction action;
+        action.statement = errdefer.statement;
+        action.scope_depth = current_scope_depth_;
+        deferred_actions_.append(action);
     }
 }
 
@@ -223,6 +237,11 @@ void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
+    // Phase 6: Execute all defers (LIFO)
+    // NOTE: In a simple path-blind visitor, executing defers here and then at block exit
+    // would cause double execution. We rely on block exit for now.
+    // In a more complex analyzer, we would stop visiting after return.
+
     ASTReturnStmtNode& ret = node->as.return_stmt;
     if (ret.expression) {
         visit(ret.expression);
