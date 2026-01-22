@@ -5,13 +5,23 @@
 #include "ast.hpp"
 
 /**
+ * @enum AllocationState
+ * @brief Defines the state of a tracked pointer.
+ */
+enum AllocationState {
+    ALLOC_STATE_UNINITIALIZED = 0,
+    ALLOC_STATE_ALLOCATED = 1,
+    ALLOC_STATE_FREED = 2
+};
+
+/**
  * @struct TrackedPointer
  * @brief Represents a pointer whose allocation state is being tracked.
  */
 struct TrackedPointer {
     const char* name;
-    bool allocated;
-    bool freed;
+    AllocationState state;
+    int scope_depth;
 };
 
 /**
@@ -26,6 +36,7 @@ public:
 private:
     CompilationUnit& unit_;
     DynamicArray<TrackedPointer> tracked_pointers_;
+    int current_scope_depth_;
 
     void visit(ASTNode* node);
     void visitBlockStmt(ASTNode* node);
