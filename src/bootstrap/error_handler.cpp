@@ -74,6 +74,15 @@ void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, cons
     warnings_.append(new_warning);
 }
 
+void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
+    size_t msg_len = strlen(message);
+    char* msg_copy = (char*)arena.alloc(msg_len + 1);
+    strcpy(msg_copy, message);
+    msg_copy[msg_len] = '\0';
+
+    reportWarning(code, location, msg_copy);
+}
+
 void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint) {
     size_t msg_len = strlen(message);
     char* msg_copy = (char*)arena.alloc(msg_len + 1);

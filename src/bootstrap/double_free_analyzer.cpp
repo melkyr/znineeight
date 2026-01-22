@@ -77,7 +77,7 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
                 safe_append(p, rem, "Memory leak: '");
                 safe_append(p, rem, tracked_pointers_[i].name);
                 safe_append(p, rem, "' not freed");
-                unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, node->loc, msg);
+                unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, node->loc, msg, unit_.getArena());
             }
             // Remove by swapping with last
             tracked_pointers_[i] = tracked_pointers_[tracked_pointers_.length() - 1];
