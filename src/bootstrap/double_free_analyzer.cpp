@@ -67,11 +67,7 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     }
 
     // Phase 6: Execute defers for THIS scope (LIFO)
-    while (deferred_actions_.length() > 0 && deferred_actions_.back().scope_depth == current_scope_depth_) {
-        DeferredAction action = deferred_actions_.back();
-        deferred_actions_.pop_back();
-        visit(action.statement);
-    }
+    executeDefers(current_scope_depth_);
 
     // Phase 5: Check for leaks at scope exit
     size_t i = 0;
@@ -237,14 +233,21 @@ void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
-    // Phase 6: Execute all defers (LIFO)
-    // NOTE: In a simple path-blind visitor, executing defers here and then at block exit
-    // would cause double execution. We rely on block exit for now.
-    // In a more complex analyzer, we would stop visiting after return.
+    // Phase 6: Execute all defers for the entire function (depth_limit = 1)
+    // We execute them all because return exits all nested scopes.
+    executeDefers(1);
 
     ASTReturnStmtNode& ret = node->as.return_stmt;
     if (ret.expression) {
         visit(ret.expression);
+    }
+}
+
+void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
+    while (deferred_actions_.length() > 0 && deferred_actions_.back().scope_depth >= depth_limit) {
+        DeferredAction action = deferred_actions_.back();
+        deferred_actions_.pop_back();
+        visit(action.statement);
     }
 }
 
