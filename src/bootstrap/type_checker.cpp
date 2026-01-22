@@ -974,7 +974,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         }
     }
 
-    return NULL;
+    return declared_type;
 }
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
