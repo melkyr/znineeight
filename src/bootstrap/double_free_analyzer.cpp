@@ -1,8 +1,9 @@
 #include "double_free_analyzer.hpp"
 #include "utils.hpp"
+#include "type_system.hpp"
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
-    : unit_(unit), tracked_pointers_(unit.getArena()) {
+    : unit_(unit), tracked_pointers_(unit.getArena()), current_scope_depth_(0) {
 }
 
 void DoubleFreeAnalyzer::analyze(ASTNode* root) {
@@ -58,16 +59,20 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
 
 void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     ASTBlockStmtNode& block = node->as.block_stmt;
-    if (!block.statements) return;
-    for (size_t i = 0; i < block.statements->length(); ++i) {
-        visit((*block.statements)[i]);
+    current_scope_depth_++;
+    if (block.statements) {
+        for (size_t i = 0; i < block.statements->length(); ++i) {
+            visit((*block.statements)[i]);
+        }
     }
+    current_scope_depth_--;
 }
 
 void DoubleFreeAnalyzer::visitFnDecl(ASTNode* node) {
     ASTFnDeclNode* fn = node->as.fn_decl;
     // Phase 3: Clear tracked pointers for each function
     tracked_pointers_.clear();
+    current_scope_depth_ = 0;
     if (fn->body) {
         visit(fn->body);
     }
@@ -75,15 +80,21 @@ void DoubleFreeAnalyzer::visitFnDecl(ASTNode* node) {
 
 void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
     ASTVarDeclNode* var = node->as.var_decl;
+    // Phase 4: Track all pointer variables
+    if (node->resolved_type && node->resolved_type->kind == TYPE_POINTER) {
+        TrackedPointer tp;
+        tp.name = var->name;
+        tp.scope_depth = current_scope_depth_;
+        if (var->initializer && isArenaAllocCall(var->initializer)) {
+            tp.state = ALLOC_STATE_ALLOCATED;
+        } else {
+            tp.state = ALLOC_STATE_UNINITIALIZED;
+        }
+        tracked_pointers_.append(tp);
+    }
+
     if (var->initializer) {
         visit(var->initializer);
-        if (isArenaAllocCall(var->initializer)) {
-            TrackedPointer tp;
-            tp.name = var->name;
-            tp.allocated = true;
-            tp.freed = false;
-            tracked_pointers_.append(tp);
-        }
     }
 }
 
@@ -95,13 +106,12 @@ void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
         if (var_name) {
             TrackedPointer* tp = findTrackedPointer(var_name);
             if (tp) {
-                tp->allocated = true;
-                tp->freed = false;
+                tp->state = ALLOC_STATE_ALLOCATED;
             } else {
                 TrackedPointer new_tp;
                 new_tp.name = var_name;
-                new_tp.allocated = true;
-                new_tp.freed = false;
+                new_tp.state = ALLOC_STATE_ALLOCATED;
+                new_tp.scope_depth = current_scope_depth_;
                 tracked_pointers_.append(new_tp);
             }
         }
@@ -116,17 +126,31 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
             if (var_name) {
                 TrackedPointer* tp = findTrackedPointer(var_name);
                 if (tp) {
-                    if (tp->freed) {
-                        // Double free detected!
-                        char* msg = (char*)unit_.getArena().alloc(256);
-                        char* p = msg;
-                        size_t rem = 256;
-                        safe_append(p, rem, "Double free of pointer '");
-                        safe_append(p, rem, var_name);
-                        safe_append(p, rem, "'");
-                        unit_.getErrorHandler().report(ERR_DOUBLE_FREE, node->loc, msg, unit_.getArena());
-                    } else {
-                        tp->freed = true;
+                    switch (tp->state) {
+                        case ALLOC_STATE_FREED: {
+                            // Double free detected!
+                            char* msg = (char*)unit_.getArena().alloc(256);
+                            char* p = msg;
+                            size_t rem = 256;
+                            safe_append(p, rem, "Double free of pointer '");
+                            safe_append(p, rem, var_name);
+                            safe_append(p, rem, "'");
+                            unit_.getErrorHandler().report(ERR_DOUBLE_FREE, node->loc, msg, unit_.getArena());
+                            break;
+                        }
+                        case ALLOC_STATE_ALLOCATED:
+                            tp->state = ALLOC_STATE_FREED;
+                            break;
+                        case ALLOC_STATE_UNINITIALIZED: {
+                            char* msg = (char*)unit_.getArena().alloc(256);
+                            char* p = msg;
+                            size_t rem = 256;
+                            safe_append(p, rem, "Freeing uninitialized pointer '");
+                            safe_append(p, rem, var_name);
+                            safe_append(p, rem, "'");
+                            unit_.getErrorHandler().reportWarning(WARN_FREE_UNALLOCATED, node->loc, msg);
+                            break;
+                        }
                     }
                 }
             }

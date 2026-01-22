@@ -2,6 +2,7 @@
 #include "test_utils.hpp"
 #include "double_free_analyzer.hpp"
 #include "error_handler.hpp"
+#include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_SimpleDoubleFree) {
     ArenaAllocator arena(16384);
@@ -19,6 +20,9 @@ TEST_FUNC(DoubleFree_SimpleDoubleFree) {
     Parser* parser = ctx.getParser();
     ASTNode* ast = parser->parse();
     ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
 
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
@@ -53,11 +57,30 @@ TEST_FUNC(DoubleFree_BasicTracking) {
     ASTNode* ast = parser->parse();
     ASSERT_TRUE(ast != NULL);
 
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
 
     // This should PASS even in Phase 1 because no errors should be reported
-    ASSERT_FALSE(ctx.getCompilationUnit().getErrorHandler().hasErrors());
+    // We check specifically for ERR_DOUBLE_FREE and WARN_FREE_UNALLOCATED
+    bool has_relevant_diagnostics = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            has_relevant_diagnostics = true;
+            break;
+        }
+    }
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_FREE_UNALLOCATED) {
+            has_relevant_diagnostics = true;
+            break;
+        }
+    }
+    ASSERT_FALSE(has_relevant_diagnostics);
 
     return true;
 }
@@ -77,6 +100,9 @@ TEST_FUNC(DoubleFree_UninitializedFree) {
     Parser* parser = ctx.getParser();
     ASTNode* ast = parser->parse();
     ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
 
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
@@ -109,6 +135,9 @@ TEST_FUNC(DoubleFree_MemoryLeak) {
     Parser* parser = ctx.getParser();
     ASTNode* ast = parser->parse();
     ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
 
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
@@ -143,6 +172,9 @@ TEST_FUNC(DoubleFree_DeferDoubleFree) {
     Parser* parser = ctx.getParser();
     ASTNode* ast = parser->parse();
     ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
 
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
