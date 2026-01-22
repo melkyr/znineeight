@@ -25,6 +25,15 @@ struct TrackedPointer {
 };
 
 /**
+ * @struct DeferredAction
+ * @brief Represents a statement deferred until scope exit.
+ */
+struct DeferredAction {
+    ASTNode* statement;
+    int scope_depth;
+};
+
+/**
  * @class DoubleFreeAnalyzer
  * @brief Performs static analysis to detect double free and memory leaks.
  */
@@ -36,6 +45,7 @@ public:
 private:
     CompilationUnit& unit_;
     DynamicArray<TrackedPointer> tracked_pointers_;
+    DynamicArray<DeferredAction> deferred_actions_;
     int current_scope_depth_;
 
     void visit(ASTNode* node);
