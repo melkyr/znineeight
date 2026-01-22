@@ -144,6 +144,11 @@ public:
     void reportWarning(WarningCode code, SourceLocation location, const char* message);
 
     /**
+     * @brief Reports a new warning with a message that will be copied into the arena.
+     */
+    void reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& arena);
+
+    /**
      * @brief Checks if any warnings have been reported.
      */
     bool hasWarnings() const {
