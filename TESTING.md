@@ -69,6 +69,12 @@ TEST_FUNC(MyTest) {
 
 ## 5. Manual Compilation Testing
 
+### Enhanced Error Messages
+The `DoubleFreeAnalyzer` provides enhanced diagnostics by tracking allocation sites. When testing, you should verify that error messages contain correct location information:
+
+- **Memory Leak Warning**: `Memory leak: 'p' not freed (allocated at test.zig:2:15)`
+- **Double Free Error**: `Double free of pointer 'p' (allocated at test.zig:2:15) - first freed at test.zig:3:5`
+
 You can manually test the compiler on Zig source files using the `--compile` flag:
 
 ```bash
