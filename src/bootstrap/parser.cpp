@@ -111,6 +111,7 @@ ASTNode* Parser::parseComptimeBlock() {
     }
     node->type = NODE_COMPTIME_BLOCK;
     node->loc = comptime_token.location;
+    node->resolved_type = NULL;
     node->as.comptime_block = comptime_block;
 
     return node;
@@ -261,6 +262,7 @@ ASTNode* Parser::parsePostfixExpression() {
             }
             new_expr_node->type = NODE_FUNCTION_CALL;
             new_expr_node->loc = expr->loc; // Use location of the callee
+            new_expr_node->resolved_type = NULL;
             new_expr_node->as.function_call = call_node;
             expr = new_expr_node;
         } else if (match(TOKEN_LBRACKET)) {
@@ -298,6 +300,7 @@ ASTNode* Parser::parsePostfixExpression() {
                 }
                 new_expr_node->type = NODE_ARRAY_SLICE;
                 new_expr_node->loc = expr->loc;
+                new_expr_node->resolved_type = NULL;
                 new_expr_node->as.array_slice = slice_node;
                 expr = new_expr_node;
             }
@@ -317,6 +320,7 @@ ASTNode* Parser::parsePostfixExpression() {
                 }
                 new_expr_node->type = NODE_ARRAY_ACCESS;
                 new_expr_node->loc = expr->loc;
+                new_expr_node->resolved_type = NULL;
                 new_expr_node->as.array_access = access_node;
                 expr = new_expr_node;
             }
@@ -368,6 +372,7 @@ ASTNode* Parser::parseUnaryExpr() {
         }
         node->type = NODE_TRY_EXPR;
         node->loc = try_token.location;
+        node->resolved_type = NULL;
         node->as.try_expr = try_expr_node;
         recursion_depth_--;
         return node;
@@ -393,6 +398,7 @@ ASTNode* Parser::parseUnaryExpr() {
         }
         new_expr_node->type = NODE_UNARY_OP;
         new_expr_node->loc = op_token.location;
+        new_expr_node->resolved_type = NULL;
         new_expr_node->as.unary_op = unary_op_node;
         expr = new_expr_node;
     }
@@ -520,6 +526,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             }
             new_node->type = NODE_CATCH_EXPR;
             new_node->loc = op_token.location;
+            new_node->resolved_type = NULL;
             new_node->as.catch_expr = catch_node;
             left = new_node;
         } else if (op_token.type == TOKEN_ORELSE) {
@@ -538,6 +545,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             }
             new_node->type = NODE_ORELSE_EXPR;
             new_node->loc = op_token.location;
+            new_node->resolved_type = NULL;
             new_node->as.orelse_expr = orelse_node;
             left = new_node;
         } else {
@@ -557,6 +565,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             }
             new_node->type = NODE_BINARY_OP;
             new_node->loc = op_token.location;
+            new_node->resolved_type = NULL;
             new_node->as.binary_op = binary_op;
             left = new_node;
         }
@@ -691,6 +700,7 @@ ASTNode* Parser::parseSwitchExpression() {
     }
     node->type = NODE_SWITCH_EXPR;
     node->loc = switch_token.location;
+    node->resolved_type = NULL;
     node->as.switch_expr = switch_node;
 
     return node;
@@ -773,6 +783,7 @@ ASTNode* Parser::parseEnumDeclaration() {
     }
     node->type = NODE_ENUM_DECL;
     node->loc = enum_token.location;
+    node->resolved_type = NULL;
     node->as.enum_decl = enum_decl;
 
     return node;
@@ -840,6 +851,7 @@ ASTNode* Parser::parseUnionDeclaration() {
     }
     node->type = NODE_UNION_DECL;
     node->loc = union_token.location;
+    node->resolved_type = NULL;
     node->as.union_decl = union_decl;
 
     return node;
@@ -865,6 +877,7 @@ ASTNode* Parser::parseErrDeferStatement() {
     }
     node->type = NODE_ERRDEFER_STMT;
     node->loc = errdefer_token.location;
+    node->resolved_type = NULL;
     node->as.errdefer_stmt = errdefer_stmt;
 
     return node;
@@ -975,6 +988,7 @@ ASTNode* Parser::parseStructDeclaration() {
     }
     node->type = NODE_STRUCT_DECL;
     node->loc = struct_token.location;
+    node->resolved_type = NULL;
     node->as.struct_decl = struct_decl;
 
     return node;
@@ -1089,6 +1103,7 @@ ASTNode* Parser::parseForStatement() {
     }
     node->type = NODE_FOR_STMT;
     node->loc = for_token.location;
+    node->resolved_type = NULL;
     node->as.for_stmt = for_stmt_node;
 
     return node;
@@ -1114,6 +1129,7 @@ ASTNode* Parser::parseDeferStatement() {
     }
     node->type = NODE_DEFER_STMT;
     node->loc = defer_token.location;
+    node->resolved_type = NULL;
     node->as.defer_stmt = defer_stmt;
 
     return node;
@@ -1270,6 +1286,7 @@ ASTNode* Parser::parseStatement() {
             }
             empty_stmt_node->type = NODE_EMPTY_STMT;
             empty_stmt_node->loc = semi_token.location;
+            empty_stmt_node->resolved_type = NULL;
             return empty_stmt_node;
         }
         default: {
@@ -1346,6 +1363,7 @@ ASTNode* Parser::parseIfStatement() {
     }
     node->type = NODE_IF_STMT;
     node->loc = if_token.location;
+    node->resolved_type = NULL;
     node->as.if_stmt = if_stmt_node;
 
     return node;
@@ -1374,6 +1392,7 @@ ASTNode* Parser::parseWhileStatement() {
     }
     node->type = NODE_WHILE_STMT;
     node->loc = while_token.location;
+    node->resolved_type = NULL;
     node->as.while_stmt = while_stmt_node;
 
     return node;
@@ -1403,6 +1422,7 @@ ASTNode* Parser::parseReturnStatement() {
     }
     node->type = NODE_RETURN_STMT;
     node->loc = return_token.location;
+    node->resolved_type = NULL;
     node->as.return_stmt = return_stmt;
 
     return node;
@@ -1423,6 +1443,7 @@ ASTNode* Parser::parseType() {
         }
         node->type = NODE_TYPE_NAME;
         node->loc = type_name_token.location;
+        node->resolved_type = NULL;
         node->as.type_name.name = type_name_token.value.identifier;
         return node;
     }
@@ -1441,6 +1462,7 @@ ASTNode* Parser::parsePointerType() {
     }
     node->type = NODE_POINTER_TYPE;
     node->loc = start_token.location;
+    node->resolved_type = NULL;
     node->as.pointer_type.base = base_type;
     node->as.pointer_type.is_const = is_const;
 
@@ -1466,6 +1488,7 @@ ASTNode* Parser::parseArrayType() {
     }
     node->type = NODE_ARRAY_TYPE;
     node->loc = lbracket_token.location;
+    node->resolved_type = NULL;
     node->as.array_type.element_type = element_type;
     node->as.array_type.size = size_expr; // Will be NULL for slices
 

@@ -67,6 +67,15 @@ private:
     void visitWhileStmt(ASTNode* node);
     void visitForStmt(ASTNode* node);
     void visitReturnStmt(ASTNode* node);
+    void visitBinaryOp(ASTNode* node);
+    void visitUnaryOp(ASTNode* node);
+    void visitArrayAccess(ASTNode* node);
+    void visitArraySlice(ASTNode* node);
+    void visitCompoundAssignment(ASTNode* node);
+    void visitSwitchExpr(ASTNode* node);
+    void visitTryExpr(ASTNode* node);
+    void visitCatchExpr(ASTNode* node);
+    void visitOrelseExpr(ASTNode* node);
 
     // Helpers
     void executeDefers(int depth_limit);
