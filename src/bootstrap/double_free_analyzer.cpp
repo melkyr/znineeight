@@ -48,11 +48,38 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
         case NODE_RETURN_STMT:
             visitReturnStmt(node);
             break;
+        case NODE_BINARY_OP:
+            visitBinaryOp(node);
+            break;
+        case NODE_UNARY_OP:
+            visitUnaryOp(node);
+            break;
+        case NODE_ARRAY_ACCESS:
+            visitArrayAccess(node);
+            break;
+        case NODE_ARRAY_SLICE:
+            visitArraySlice(node);
+            break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            visitCompoundAssignment(node);
+            break;
+        case NODE_SWITCH_EXPR:
+            visitSwitchExpr(node);
+            break;
+        case NODE_TRY_EXPR:
+            visitTryExpr(node);
+            break;
+        case NODE_CATCH_EXPR:
+            visitCatchExpr(node);
+            break;
+        case NODE_ORELSE_EXPR:
+            visitOrelseExpr(node);
+            break;
         case NODE_EXPRESSION_STMT:
             visit(node->as.expression_stmt.expression);
             break;
         default:
-            // For now, no-op for other node types
+            // For now, no-op for other node types (literals, identifiers, etc.)
             break;
     }
 }
@@ -242,6 +269,80 @@ void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
     }
 }
 
+void DoubleFreeAnalyzer::visitBinaryOp(ASTNode* node) {
+    ASTBinaryOpNode* bin = node->as.binary_op;
+    visit(bin->left);
+    visit(bin->right);
+}
+
+void DoubleFreeAnalyzer::visitUnaryOp(ASTNode* node) {
+    ASTUnaryOpNode& un = node->as.unary_op;
+    visit(un.operand);
+}
+
+void DoubleFreeAnalyzer::visitArrayAccess(ASTNode* node) {
+    ASTArrayAccessNode* access = node->as.array_access;
+    visit(access->array);
+    visit(access->index);
+}
+
+void DoubleFreeAnalyzer::visitArraySlice(ASTNode* node) {
+    ASTArraySliceNode* slice = node->as.array_slice;
+    visit(slice->array);
+    if (slice->start) visit(slice->start);
+    if (slice->end) visit(slice->end);
+}
+
+void DoubleFreeAnalyzer::visitCompoundAssignment(ASTNode* node) {
+    ASTCompoundAssignmentNode* assign = node->as.compound_assignment;
+    visit(assign->rvalue);
+
+    // We should also check for leaks if the lvalue is an allocated pointer
+    const char* var_name = extractVariableName(assign->lvalue);
+    if (var_name) {
+        TrackedPointer* tp = findTrackedPointer(var_name);
+        if (tp && tp->state == AS_ALLOCATED) {
+            // Compound assignment like p += 1 changes the pointer value.
+            reportLeak(var_name, node->loc, true);
+            tp->state = AS_UNKNOWN;
+        }
+    }
+
+    visit(assign->lvalue);
+}
+
+void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
+    ASTSwitchExprNode* sw = node->as.switch_expr;
+    visit(sw->expression);
+    if (sw->prongs) {
+        for (size_t i = 0; i < sw->prongs->length(); ++i) {
+            ASTSwitchProngNode* prong = (*sw->prongs)[i];
+            if (prong->cases) {
+                for (size_t j = 0; j < prong->cases->length(); ++j) {
+                    visit((*prong->cases)[j]);
+                }
+            }
+            visit(prong->body);
+        }
+    }
+}
+
+void DoubleFreeAnalyzer::visitTryExpr(ASTNode* node) {
+    visit(node->as.try_expr.expression);
+}
+
+void DoubleFreeAnalyzer::visitCatchExpr(ASTNode* node) {
+    ASTCatchExprNode* catch_expr = node->as.catch_expr;
+    visit(catch_expr->payload);
+    visit(catch_expr->else_expr);
+}
+
+void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
+    ASTOrelseExprNode* orelse = node->as.orelse_expr;
+    visit(orelse->payload);
+    visit(orelse->else_expr);
+}
+
 void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
     while (deferred_actions_.length() > 0 && deferred_actions_.back().scope_depth >= depth_limit) {
         DeferredAction action = deferred_actions_.back();
@@ -255,10 +356,22 @@ bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
 }
 
 bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
-    if (!node || node->type != NODE_FUNCTION_CALL) return false;
-    ASTFunctionCallNode* call = node->as.function_call;
-    if (call->callee->type != NODE_IDENTIFIER) return false;
-    return strings_equal(call->callee->as.identifier.name, "arena_alloc");
+    if (!node) return false;
+    if (node->type == NODE_FUNCTION_CALL) {
+        ASTFunctionCallNode* call = node->as.function_call;
+        if (call->callee->type == NODE_IDENTIFIER) {
+            return strings_equal(call->callee->as.identifier.name, "arena_alloc");
+        }
+    } else if (node->type == NODE_TRY_EXPR) {
+        return isAllocationCall(node->as.try_expr.expression);
+    } else if (node->type == NODE_CATCH_EXPR) {
+        return isAllocationCall(node->as.catch_expr->payload) || isAllocationCall(node->as.catch_expr->else_expr);
+    } else if (node->type == NODE_ORELSE_EXPR) {
+        return isAllocationCall(node->as.orelse_expr->payload) || isAllocationCall(node->as.orelse_expr->else_expr);
+    } else if (node->type == NODE_BINARY_OP) {
+        return isAllocationCall(node->as.binary_op->left) || isAllocationCall(node->as.binary_op->right);
+    }
+    return false;
 }
 
 bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {

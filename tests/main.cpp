@@ -446,6 +446,11 @@ TEST_FUNC(DoubleFree_BasicTracking);
 TEST_FUNC(DoubleFree_UninitializedFree);
 TEST_FUNC(DoubleFree_MemoryLeak);
 TEST_FUNC(DoubleFree_DeferDoubleFree);
+TEST_FUNC(DoubleFree_SwitchAnalysis);
+TEST_FUNC(DoubleFree_TryAnalysis);
+TEST_FUNC(DoubleFree_TryAnalysisComplex);
+TEST_FUNC(DoubleFree_CatchAnalysis);
+TEST_FUNC(DoubleFree_BinaryOpAnalysis);
 
 
 int main(int argc, char* argv[]) {
@@ -867,6 +872,11 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_ReassignmentLeak,
         test_DoubleFree_NullReassignmentLeak,
         test_DoubleFree_ReturnExempt,
+        test_DoubleFree_SwitchAnalysis,
+        test_DoubleFree_TryAnalysis,
+        test_DoubleFree_TryAnalysisComplex,
+        test_DoubleFree_CatchAnalysis,
+        test_DoubleFree_BinaryOpAnalysis,
         // Integration Tests
         test_Integration_FullPipeline,
         test_Integration_CorrectUsage
