@@ -458,20 +458,35 @@ The analyzer maintains a function-local list of `TrackedPointer` structures, eac
 #### 2. Double Free Detection
 When a call to `arena_free(p)` is encountered:
 -   The analyzer looks up the variable `p` in its list of tracked pointers.
--   If the pointer is found and its `freed` flag is already set, an `ERR_DOUBLE_FREE` (2005) is reported.
+-   If the pointer is found and its state is `AS_FREED`, an `ERR_DOUBLE_FREE` (2005) is reported.
 -   The error message follows the format: `"Double free of pointer '%s'"` (where `%s` is the name of the variable).
--   If the pointer is found and is not yet freed, its `freed` flag is set to `true`.
+-   If the pointer's state is `AS_ALLOCATED`, it is updated to `AS_FREED`.
+-   If the pointer's state is `AS_UNINITIALIZED`, an `WARN_FREE_UNALLOCATED` (6006) is reported.
 
 #### 3. State Isolation
 To ensure accuracy and prevent false positives, the list of tracked pointers is cleared at the beginning of every function declaration. This ensures that the analysis of one function does not interfere with another.
 
 #### 4. Advanced Scenarios
 The `DoubleFreeAnalyzer` correctly handles more complex scenarios:
-- **Nested Scopes:** Correctly tracks pointers into and out of nested blocks.
+- **Nested Scopes:** Correctly tracks pointers into and out of nested blocks using a `current_scope_depth_` counter.
 - **Leak Detection at Scope Exit:** Detects and warns about `AS_ALLOCATED` pointers that are not freed before their defining scope ends.
-- **Defer Statements:** Models `defer` and `errdefer` blocks to account for automatic deallocations at scope exit.
 - **Immediate Reassignment Leaks:** Detects leaks when an `AS_ALLOCATED` pointer is reassigned to another value (including `null` or a new allocation) before the original memory is freed.
+    ```zig
+    var p = arena_alloc(100u);
+    p = null; // Warning: Memory leak: reassigning allocated pointer 'p'
+    ```
 - **Return Exemption:** Pointers that are returned from a function are exempt from leak detection within that function.
+- **Expression Wrapping:** The analyzer can look through `try`, `catch`, `orelse`, and binary operations to find `arena_alloc` calls.
+    ```zig
+    var p: *u8 = try arena_alloc(10u); // Correctly tracked as AS_ALLOCATED
+    ```
+- **Defer & Errdefer:** These are modeled using a LIFO queue. Actions are queued when discovered and executed in reverse order at block exits or `return` statements.
+    ```zig
+    {
+        var p = arena_alloc(10u);
+        defer arena_free(p);
+    } // state of p is updated to AS_FREED here, no leak warning.
+    ```
 
 #### 5. Integration with other passes
 The analyzer runs as Pass 4 in the semantic pipeline, following Type Checking, Lifetime Analysis, and Null Pointer Analysis. This ensures it has access to accurate symbol information.

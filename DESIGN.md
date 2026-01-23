@@ -240,11 +240,15 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
 #### Pass 4: Double Free Detection (Task 127)
 The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-free scenarios and memory leaks related to the project's `ArenaAllocator` interface (`arena_alloc` and `arena_free`).
 
-- **Allocation Tracking:** It tracks the state of pointers, marking them as `ALLOCATED`, `FREED`, or `UNINITIALIZED`.
+- **Allocation Tracking:** It tracks the state of pointers using the `AllocationState` enum (`AS_UNINITIALIZED`, `AS_ALLOCATED`, `AS_FREED`, `AS_RETURNED`, `AS_UNKNOWN`). A pointer is tracked if it is initialized or assigned the result of `arena_alloc`.
 - **Double Free Detection:** Reports `ERR_DOUBLE_FREE` (2005) when `arena_free` is called on an already freed pointer.
-- **Leak Detection:** Reports `WARN_MEMORY_LEAK` (6005) when an allocated pointer goes out of scope without being freed or returned, or when it is reassigned before being freed.
-- **Uninitialized Free:** Reports `WARN_FREE_UNALLOCATED` (6006) when `arena_free` is called on a pointer that was never assigned an allocation.
-- **Defer Handling:** Correctly models `defer` and `errdefer` statements to ensure they are considered in the allocation lifecycle.
+- **Leak Detection:**
+    - **Scope Exit:** Reports `WARN_MEMORY_LEAK` (6005) when an `AS_ALLOCATED` pointer goes out of scope without being freed or returned.
+    - **Immediate Reassignment:** Reports a leak if an `AS_ALLOCATED` variable is reassigned to any other value (including `null` or a new allocation) before the original memory is freed.
+- **Uninitialized Free:** Reports `WARN_FREE_UNALLOCATED` (6006) when `arena_free` is called on a pointer that was never assigned an allocation or has an unknown state.
+- **Expression Support:** The analyzer recursively visits all Milestone 4 node types, including `switch`, `try`, `catch`, `orelse`, binary operations, and array accesses. It can detect `arena_alloc` calls even when wrapped in other expressions (e.g., `var p = try arena_alloc(100);`).
+- **Defer & Errdefer:** Employs a LIFO queue to model deferred actions. At the end of a block or upon a `return` statement, deferred actions are "executed" in reverse order to update the allocation state of tracked pointers.
+- **Conservative Path-Blind Analysis:** As a simple visitor-based analyzer, it does not perform full data-flow analysis. It assumes all paths are taken. While this may lead to false positives in complex branched code (e.g., a free in only one branch of a `switch`), it ensures no potential safety violations are missed in the bootstrap phase.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**
