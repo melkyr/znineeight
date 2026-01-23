@@ -858,7 +858,10 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_BasicTracking,
         test_DoubleFree_UninitializedFree,
         test_DoubleFree_MemoryLeak,
-        test_DoubleFree_DeferDoubleFree
+        test_DoubleFree_DeferDoubleFree,
+        test_DoubleFree_ReassignmentLeak,
+        test_DoubleFree_NullReassignmentLeak,
+        test_DoubleFree_ReturnExempt
     };
 
     int passed = 0;

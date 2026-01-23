@@ -69,18 +69,12 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     // Phase 6: Execute defers for THIS scope (LIFO)
     executeDefers(current_scope_depth_);
 
-    // Phase 5: Check for leaks at scope exit
+    // Phase 5 & 7: Check for leaks at scope exit
     size_t i = 0;
     while (i < tracked_pointers_.length()) {
         if (tracked_pointers_[i].scope_depth == current_scope_depth_) {
-            if (tracked_pointers_[i].state == ALLOC_STATE_ALLOCATED) {
-                char* msg = (char*)unit_.getArena().alloc(256);
-                char* p = msg;
-                size_t rem = 256;
-                safe_append(p, rem, "Memory leak: '");
-                safe_append(p, rem, tracked_pointers_[i].name);
-                safe_append(p, rem, "' not freed");
-                unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, node->loc, msg, unit_.getArena());
+            if (tracked_pointers_[i].state == AS_ALLOCATED && !(tracked_pointers_[i].flags & TP_FLAG_RETURNED)) {
+                reportLeak(tracked_pointers_[i].name, node->loc, false);
             }
             // Remove by swapping with last
             tracked_pointers_[i] = tracked_pointers_[tracked_pointers_.length() - 1];
@@ -112,10 +106,11 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
         TrackedPointer tp;
         tp.name = var->name;
         tp.scope_depth = current_scope_depth_;
-        if (var->initializer && isArenaAllocCall(var->initializer)) {
-            tp.state = ALLOC_STATE_ALLOCATED;
+        tp.flags = TP_FLAG_NONE;
+        if (var->initializer && isAllocationCall(var->initializer)) {
+            tp.state = AS_ALLOCATED;
         } else {
-            tp.state = ALLOC_STATE_UNINITIALIZED;
+            tp.state = AS_UNINITIALIZED;
         }
         tracked_pointers_.append(tp);
     }
@@ -128,19 +123,28 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
 void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
     ASTAssignmentNode* assign = node->as.assignment;
     visit(assign->rvalue);
-    if (isArenaAllocCall(assign->rvalue)) {
-        const char* var_name = extractVariableName(assign->lvalue);
-        if (var_name) {
-            TrackedPointer* tp = findTrackedPointer(var_name);
+
+    const char* var_name = extractVariableName(assign->lvalue);
+    if (var_name) {
+        TrackedPointer* tp = findTrackedPointer(var_name);
+
+        // Phase 7: Check for leak BEFORE updating state
+        if (tp && tp->state == AS_ALLOCATED && isChangingPointerValue(assign->rvalue)) {
+            reportLeak(var_name, node->loc, true);
+        }
+
+        // Update state based on new value
+        if (isAllocationCall(assign->rvalue)) {
             if (tp) {
-                tp->state = ALLOC_STATE_ALLOCATED;
+                tp->state = AS_ALLOCATED;
+                tp->flags &= ~TP_FLAG_RETURNED; // Reset returned flag if reassigned to new allocation
             } else {
-                TrackedPointer new_tp;
-                new_tp.name = var_name;
-                new_tp.state = ALLOC_STATE_ALLOCATED;
-                new_tp.scope_depth = current_scope_depth_;
-                tracked_pointers_.append(new_tp);
+                trackAllocation(var_name);
             }
+        } else if (isChangingPointerValue(assign->rvalue)) {
+             if (tp) {
+                tp->state = AS_UNKNOWN; // State becomes unknown after general reassignment
+             }
         }
     }
 }
@@ -154,30 +158,17 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
                 TrackedPointer* tp = findTrackedPointer(var_name);
                 if (tp) {
                     switch (tp->state) {
-                        case ALLOC_STATE_FREED: {
-                            // Double free detected!
-                            char* msg = (char*)unit_.getArena().alloc(256);
-                            char* p = msg;
-                            size_t rem = 256;
-                            safe_append(p, rem, "Double free of pointer '");
-                            safe_append(p, rem, var_name);
-                            safe_append(p, rem, "'");
-                            unit_.getErrorHandler().report(ERR_DOUBLE_FREE, node->loc, msg, unit_.getArena());
+                        case AS_FREED:
+                            reportDoubleFree(var_name, node->loc);
                             break;
-                        }
-                        case ALLOC_STATE_ALLOCATED:
-                            tp->state = ALLOC_STATE_FREED;
+                        case AS_ALLOCATED:
+                            tp->state = AS_FREED;
                             break;
-                        case ALLOC_STATE_UNINITIALIZED: {
-                            char* msg = (char*)unit_.getArena().alloc(256);
-                            char* p = msg;
-                            size_t rem = 256;
-                            safe_append(p, rem, "Freeing uninitialized pointer '");
-                            safe_append(p, rem, var_name);
-                            safe_append(p, rem, "'");
-                            unit_.getErrorHandler().reportWarning(WARN_FREE_UNALLOCATED, node->loc, msg);
+                        case AS_UNINITIALIZED:
+                            reportUninitializedFree(var_name, node->loc);
                             break;
-                        }
+                        default:
+                            break;
                     }
                 }
             }
@@ -239,6 +230,14 @@ void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
 
     ASTReturnStmtNode& ret = node->as.return_stmt;
     if (ret.expression) {
+        // Phase 7: Exempt returned pointers from leak checks
+        const char* var_name = extractVariableName(ret.expression);
+        if (var_name) {
+            TrackedPointer* tp = findTrackedPointer(var_name);
+            if (tp && tp->state == AS_ALLOCATED) {
+                tp->flags |= TP_FLAG_RETURNED;
+            }
+        }
         visit(ret.expression);
     }
 }
@@ -252,6 +251,10 @@ void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
 }
 
 bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
+    return isAllocationCall(node);
+}
+
+bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
     if (!node || node->type != NODE_FUNCTION_CALL) return false;
     ASTFunctionCallNode* call = node->as.function_call;
     if (call->callee->type != NODE_IDENTIFIER) return false;
@@ -261,6 +264,27 @@ bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
 bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
     if (!call || call->callee->type != NODE_IDENTIFIER) return false;
     return strings_equal(call->callee->as.identifier.name, "arena_free");
+}
+
+bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
+    if (!rvalue) return true;
+
+    if (rvalue->type == NODE_NULL_LITERAL) return true;
+    if (rvalue->type == NODE_UNARY_OP && rvalue->as.unary_op.op == TOKEN_AMPERSAND) return true;
+    if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue)) return true;
+    if (rvalue->type == NODE_IDENTIFIER) return true; // Reassigning from another variable also loses track
+    if (isAllocationCall(rvalue)) return true; // Reassigning to a new allocation also loses track of old one
+
+    return false;
+}
+
+void DoubleFreeAnalyzer::trackAllocation(const char* name) {
+    TrackedPointer tp;
+    tp.name = name;
+    tp.state = AS_ALLOCATED;
+    tp.scope_depth = current_scope_depth_;
+    tp.flags = TP_FLAG_NONE;
+    tracked_pointers_.append(tp);
 }
 
 TrackedPointer* DoubleFreeAnalyzer::findTrackedPointer(const char* name) {
@@ -278,4 +302,42 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
         return node->as.identifier.name;
     }
     return NULL;
+}
+
+void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) {
+    char* msg = (char*)unit_.getArena().alloc(256);
+    char* p = msg;
+    size_t rem = 256;
+    safe_append(p, rem, "Double free of pointer '");
+    safe_append(p, rem, name);
+    safe_append(p, rem, "'");
+    unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, msg, unit_.getArena());
+}
+
+void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool is_reassignment) {
+    char* msg = (char*)unit_.getArena().alloc(256);
+    char* p = msg;
+    size_t rem = 256;
+    if (is_reassignment) {
+        safe_append(p, rem, "Memory leak: reassigning allocated pointer '");
+    } else {
+        safe_append(p, rem, "Memory leak: pointer '");
+    }
+    safe_append(p, rem, name);
+    if (is_reassignment) {
+        safe_append(p, rem, "'");
+    } else {
+        safe_append(p, rem, "' not freed");
+    }
+    unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, loc, msg, unit_.getArena());
+}
+
+void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {
+    char* msg = (char*)unit_.getArena().alloc(256);
+    char* p = msg;
+    size_t rem = 256;
+    safe_append(p, rem, "Freeing uninitialized pointer '");
+    safe_append(p, rem, name);
+    safe_append(p, rem, "'");
+    unit_.getErrorHandler().reportWarning(WARN_FREE_UNALLOCATED, loc, msg, unit_.getArena());
 }

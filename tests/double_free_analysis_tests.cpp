@@ -41,6 +41,112 @@ TEST_FUNC(DoubleFree_SimpleDoubleFree) {
     return true;
 }
 
+TEST_FUNC(DoubleFree_ReassignmentLeak) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> void {\n"
+        "    var p: *u8 = arena_alloc(100);\n"
+        "    p = arena_alloc(200);\n" // Leak of first allocation
+        "    arena_free(p);\n"
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_leak = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            has_leak = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_leak);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_NullReassignmentLeak) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> void {\n"
+        "    var p: *u8 = arena_alloc(100);\n"
+        "    p = null;\n" // Leak
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_leak = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            has_leak = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_leak);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_ReturnExempt) {
+    ArenaAllocator arena(16384);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> *u8 {\n"
+        "    var p: *u8 = arena_alloc(100);\n"
+        "    return p;\n" // No leak
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_leak = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_MEMORY_LEAK) {
+            has_leak = true;
+            break;
+        }
+    }
+    ASSERT_FALSE(has_leak);
+
+    return true;
+}
+
 TEST_FUNC(DoubleFree_BasicTracking) {
     ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
