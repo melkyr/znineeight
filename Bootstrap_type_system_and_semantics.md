@@ -146,6 +146,15 @@ Pointer assignments follow a specific set of C89-compatible rules:
     -   A constant pointer (`*const T`) cannot be assigned to a mutable pointer (`*T`). This would unsafely remove the `const` qualification.
         - `var p_mut: *i32 = my_const_i32_ptr;` // ✗ **Error**
 
+### Compound Assignment Rules
+
+Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-value and type compatibility rules as simple assignment, but with additional restrictions based on the operator:
+
+1.  **L-Value Requirement:** The left-hand side must be a modifiable l-value (not `const`).
+2.  **Arithmetic Operators (`+=`, `-=`, `*=`, `/=`, `%=`):** Both operands must be numeric types of the **exact same type**.
+3.  **Bitwise Operators (`&=`, `|=`, `^=`, `<<=`, `>>=`):** Both operands must be integer types of the **exact same type**.
+4.  **Pointer Arithmetic (`+=`, `-=`):** The left-hand side can be a pointer, in which case the right-hand side must be an integer type.
+
 ### Summary of Assignment Rules
 
 | From Type (`source`)    | To Type (`target`)     | Assignable? | Notes                                                              |

@@ -140,6 +140,10 @@ TEST_FUNC(Parser_FunctionCall_WithArgs);
 TEST_FUNC(Parser_FunctionCall_WithTrailingComma);
 TEST_FUNC(Parser_ArrayAccess);
 TEST_FUNC(Parser_ChainedPostfixOps);
+TEST_FUNC(Parser_CompoundAssignment_Simple);
+TEST_FUNC(Parser_CompoundAssignment_AllOperators);
+TEST_FUNC(Parser_CompoundAssignment_RightAssociativity);
+TEST_FUNC(Parser_CompoundAssignment_ComplexRHS);
 TEST_FUNC(Parser_BinaryExpr_SimplePrecedence);
 TEST_FUNC(Parser_BinaryExpr_LeftAssociativity);
 TEST_FUNC(Parser_TryExpr_Simple);
@@ -377,6 +381,12 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails);
 TEST_FUNC(C89TypeMapping_Validation);
 TEST_FUNC(C89Compat_FunctionTypeValidation);
 TEST_FUNC(TypeChecker_Bool_Literals);
+TEST_FUNC(TypeChecker_CompoundAssignment_Valid);
+TEST_FUNC(TypeChecker_CompoundAssignment_InvalidLValue);
+TEST_FUNC(TypeChecker_CompoundAssignment_Bitwise);
+TEST_FUNC(TypeChecker_CompoundAssignment_PointerArithmetic);
+TEST_FUNC(TypeChecker_CompoundAssignment_InvalidTypes);
+TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment);
 
 // Forward declarations for Memory Stability Tests
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer);
@@ -585,6 +595,10 @@ int main(int argc, char* argv[]) {
         test_Parser_FunctionCall_WithTrailingComma,
         test_Parser_ArrayAccess,
         test_Parser_ChainedPostfixOps,
+        test_Parser_CompoundAssignment_Simple,
+        test_Parser_CompoundAssignment_AllOperators,
+        test_Parser_CompoundAssignment_RightAssociativity,
+        test_Parser_CompoundAssignment_ComplexRHS,
         test_Parser_BinaryExpr_SimplePrecedence,
         test_Parser_BinaryExpr_LeftAssociativity,
         test_Parser_TryExpr_Simple,
@@ -797,6 +811,12 @@ int main(int argc, char* argv[]) {
         test_C89TypeMapping_Validation,
         test_C89Compat_FunctionTypeValidation,
         test_TypeChecker_Bool_Literals,
+        test_TypeChecker_CompoundAssignment_Valid,
+        test_TypeChecker_CompoundAssignment_InvalidLValue,
+        test_TypeChecker_CompoundAssignment_Bitwise,
+        test_TypeChecker_CompoundAssignment_PointerArithmetic,
+        test_TypeChecker_CompoundAssignment_InvalidTypes,
+        test_DoubleFreeAnalyzer_CompoundAssignment,
         // Group 4J
         test_Assignment_ExactNumericMatch,
         test_Assignment_NumericWidening_Fails,

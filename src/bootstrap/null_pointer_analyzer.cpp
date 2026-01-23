@@ -130,6 +130,9 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
         case NODE_ASSIGNMENT:
             visitAssignment(node->as.assignment);
             break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            visitCompoundAssignment(node->as.compound_assignment);
+            break;
         case NODE_IF_STMT:
             visitIfStmt(node->as.if_stmt);
             break;
@@ -233,6 +236,25 @@ void NullPointerAnalyzer::visitAssignment(ASTAssignmentNode* node) {
         if (target_type && target_type->kind == TYPE_POINTER) {
             PointerState state = getExpressionState(node->rvalue);
             setState(name, state);
+        }
+    }
+    visit(node->lvalue);
+}
+
+void NullPointerAnalyzer::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
+    visit(node->rvalue);
+
+    // For pointers, compound assignment (like p += 1) makes the state MAYBE
+    if (node->lvalue->type == NODE_IDENTIFIER) {
+        const char* name = node->lvalue->as.identifier.name;
+        Type* target_type = node->lvalue->resolved_type;
+        if (!target_type) {
+            Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
+            if (sym) target_type = sym->symbol_type;
+        }
+
+        if (target_type && target_type->kind == TYPE_POINTER) {
+            setState(name, PS_MAYBE);
         }
     }
     visit(node->lvalue);

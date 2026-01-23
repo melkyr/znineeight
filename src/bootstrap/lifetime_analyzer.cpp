@@ -33,6 +33,12 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
         case NODE_ASSIGNMENT:
             visitAssignment(node->as.assignment);
             break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            // For now, just visit children. Compound assignment doesn't
+            // create new pointer provenance in our simple model.
+            visit(node->as.compound_assignment->lvalue);
+            visit(node->as.compound_assignment->rvalue);
+            break;
         case NODE_IF_STMT:
             visitIfStmt(node->as.if_stmt);
             break;
