@@ -9,6 +9,21 @@
 #include "error_handler.hpp"
 #include "token_supplier.hpp"
 
+/**
+ * @struct CompilationOptions
+ * @brief Controls the behavior of the compilation pipeline.
+ */
+struct CompilationOptions {
+    bool enable_double_free_analysis;
+    bool enable_null_pointer_analysis;
+    bool enable_lifetime_analysis;
+
+    CompilationOptions()
+        : enable_double_free_analysis(false),
+          enable_null_pointer_analysis(false),
+          enable_lifetime_analysis(false) {}
+};
+
 // Forward-declare Parser to avoid including parser.hpp in this header.
 class Parser;
 
@@ -22,8 +37,18 @@ public:
 
     SymbolTable& getSymbolTable();
     ErrorHandler& getErrorHandler();
+    const ErrorHandler& getErrorHandler() const;
     SourceManager& getSourceManager();
     ArenaAllocator& getArena();
+
+    CompilationOptions& getOptions();
+    const CompilationOptions& getOptions() const;
+    void setOptions(const CompilationOptions& options);
+
+    /**
+     * @brief Injects mandatory runtime symbols (like arena_alloc, arena_free) into the global scope.
+     */
+    void injectRuntimeSymbols();
 
 private:
     ArenaAllocator& arena_;
@@ -32,6 +57,7 @@ private:
     SymbolTable symbol_table_;
     ErrorHandler error_handler_;
     TokenSupplier token_supplier_;
+    CompilationOptions options_;
 };
 
 #endif // COMPILATION_UNIT_HPP

@@ -434,6 +434,11 @@ TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
 TEST_FUNC(NullPointerAnalyzer_Shadowing);
 TEST_FUNC(NullPointerAnalyzer_NoLeakage);
 
+// Forward declarations for Integration Tests
+#include "integration_tests.cpp"
+TEST_FUNC(Integration_FullPipeline);
+TEST_FUNC(Integration_CorrectUsage);
+
 // Forward declarations for Double Free Analysis
 #include "double_free_analysis_tests.cpp"
 TEST_FUNC(DoubleFree_SimpleDoubleFree);
@@ -861,7 +866,10 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_DeferDoubleFree,
         test_DoubleFree_ReassignmentLeak,
         test_DoubleFree_NullReassignmentLeak,
-        test_DoubleFree_ReturnExempt
+        test_DoubleFree_ReturnExempt,
+        // Integration Tests
+        test_Integration_FullPipeline,
+        test_Integration_CorrectUsage
     };
 
     int passed = 0;

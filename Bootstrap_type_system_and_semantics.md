@@ -465,8 +465,16 @@ When a call to `arena_free(p)` is encountered:
 #### 3. State Isolation
 To ensure accuracy and prevent false positives, the list of tracked pointers is cleared at the beginning of every function declaration. This ensures that the analysis of one function does not interfere with another.
 
-#### 4. Limitations (Current Phase)
-The current implementation focuses on direct, local double-free detection. Advanced scenarios such as tracking across nested scopes, detecting leaks at scope exit, or handling `defer` statements are planned for subsequent phases.
+#### 4. Advanced Scenarios
+The `DoubleFreeAnalyzer` correctly handles more complex scenarios:
+- **Nested Scopes:** Correctly tracks pointers into and out of nested blocks.
+- **Leak Detection at Scope Exit:** Detects and warns about `AS_ALLOCATED` pointers that are not freed before their defining scope ends.
+- **Defer Statements:** Models `defer` and `errdefer` blocks to account for automatic deallocations at scope exit.
+- **Immediate Reassignment Leaks:** Detects leaks when an `AS_ALLOCATED` pointer is reassigned to another value (including `null` or a new allocation) before the original memory is freed.
+- **Return Exemption:** Pointers that are returned from a function are exempt from leak detection within that function.
+
+#### 5. Integration with other passes
+The analyzer runs as Pass 4 in the semantic pipeline, following Type Checking, Lifetime Analysis, and Null Pointer Analysis. This ensures it has access to accurate symbol information.
 
 ### `void` Type Validation
 
