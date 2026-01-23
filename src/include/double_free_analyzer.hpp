@@ -9,10 +9,16 @@
  * @brief Defines the state of a tracked pointer.
  */
 enum AllocationState {
-    ALLOC_STATE_UNINITIALIZED = 0,
-    ALLOC_STATE_ALLOCATED = 1,
-    ALLOC_STATE_FREED = 2
+    AS_UNKNOWN,          // Can't determine (e.g., parameter)
+    AS_UNINITIALIZED,    // No initializer
+    AS_ALLOCATED,        // arena_alloc() called
+    AS_FREED,            // arena_free() called
+    AS_RETURNED,         // Returned from function
+    AS_TRANSFERRED       // Passed to unknown function
 };
+
+#define TP_FLAG_NONE     0
+#define TP_FLAG_RETURNED (1 << 0)
 
 /**
  * @struct TrackedPointer
@@ -22,6 +28,7 @@ struct TrackedPointer {
     const char* name;
     AllocationState state;
     int scope_depth;
+    unsigned int flags;
 };
 
 /**
@@ -65,8 +72,16 @@ private:
     void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
+    bool isAllocationCall(ASTNode* node);
+    bool isChangingPointerValue(ASTNode* rvalue);
+    void trackAllocation(const char* name);
     TrackedPointer* findTrackedPointer(const char* name);
     const char* extractVariableName(ASTNode* node);
+
+    // Reporting helpers
+    void reportDoubleFree(const char* name, SourceLocation loc);
+    void reportLeak(const char* name, SourceLocation loc, bool is_reassignment = false);
+    void reportUninitializedFree(const char* name, SourceLocation loc);
 };
 
 #endif // DOUBLE_FREE_ANALYZER_HPP
