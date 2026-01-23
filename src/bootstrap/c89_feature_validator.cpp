@@ -75,6 +75,14 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 visit(node->as.var_decl->initializer);
             }
             break;
+        case NODE_ASSIGNMENT:
+            visit(node->as.assignment->lvalue);
+            visit(node->as.assignment->rvalue);
+            break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            visit(node->as.compound_assignment->lvalue);
+            visit(node->as.compound_assignment->rvalue);
+            break;
         case NODE_FN_DECL:
             for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
                 visit((*node->as.fn_decl->params)[i]->type);

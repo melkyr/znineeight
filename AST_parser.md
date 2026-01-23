@@ -430,8 +430,21 @@ Represents an operation with two operands.
 The parser handles assignments as the lowest-precedence expressions.
 
 - `parseExpression()` calls `parseAssignmentExpression()`.
-- `parseAssignmentExpression()` parses a higher-precedence expression and then checks for an `=` token.
-- If `=` is found, it recursively calls itself to parse the right-hand side, building an `ASTAssignmentNode`.
+- `parseAssignmentExpression()` parses a higher-precedence expression and then checks for an `=` token or any compound assignment operator (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`).
+- If an assignment operator is found, it recursively calls itself to parse the right-hand side, building either an `ASTAssignmentNode` or an `ASTCompoundAssignmentNode`.
+- Assignments are **right-associative** (e.g., `a = b = c` is `a = (b = c)`).
+
+#### `ASTCompoundAssignmentNode`
+Represents a compound assignment operation.
+*   **Zig Code:** `a += 5`, `x *= y`
+*   **Structure:**
+    ```cpp
+    struct ASTCompoundAssignmentNode {
+        ASTNode* lvalue;
+        ASTNode* rvalue;
+        TokenType op;
+    };
+    ```
 
 #### Parsing Logic (`parseBinaryExpr`)
 The parser uses a **Pratt parsing** algorithm to handle binary expressions, which elegantly solves the problem of operator precedence and associativity.

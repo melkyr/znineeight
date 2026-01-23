@@ -69,6 +69,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/test_missing_keywords.cpp \
     tests/test_parser_array_slice.cpp \
     tests/test_parser_bitwise_expr.cpp \
+    tests/test_parser_compound_assignment.cpp \
     tests/test_parser_block.cpp \
     tests/test_parser_bug.cpp \
     tests/test_parser_catch_expr.cpp \
@@ -105,6 +106,7 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/type_checker_array_tests.cpp \
     tests/type_checker_binary_ops.cpp \
     tests/type_checker_bool_tests.cpp \
+    tests/test_type_checker_compound_assignment.cpp \
     tests/type_checker_c89_compat_tests.cpp \
     tests/type_checker_control_flow.cpp \
     tests/type_checker_enum_tests.cpp \
