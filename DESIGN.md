@@ -119,9 +119,12 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the Initial AST.
-    2.  **Type Checking:** Resolves types and populates the `SymbolTable` with semantic flags (e.g., `SYMBOL_FLAG_LOCAL`).
-    3.  **Lifetime Analysis:** Detects memory safety issues like dangling pointers.
-    4.  **Code Generation:** Emits target code (C89).
+    2.  **Pass 0: C89 Feature Validation (Fail-Fast):** Rejects non-C89 features early.
+    3.  **Pass 1: Type Checking:** Resolves types and populates the `SymbolTable`.
+    4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
+    5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
+    6.  **Pass 4: Double Free Detection:** Detects arena double frees and leaks.
+    7.  **Code Generation:** Emits target code (C89).
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 **Example Usage:**
@@ -198,9 +201,9 @@ private:
   * It **does not** reorder code; it simply records the `DEFER_STMT` node in the AST block. The *Code Generator* handles the execution order.
   * During parsing of a block, `defer` statements are pushed into a vector for later processing
 
-### 4.3 Layer 3: Semantic Analysis & Lifetime (`type_checker.hpp`, `lifetime_analyzer.hpp`)
+### 4.3 Layer 3: Semantic Analysis & Static Analyzers (`type_checker.hpp`, `lifetime_analyzer.hpp`, `null_pointer_analyzer.hpp`, `double_free_analyzer.hpp`)
 
-Semantic analysis is performed in two distinct, sequential passes after the AST is generated.
+Semantic analysis is performed in several distinct, sequential passes after the AST is generated and the basic C89 feature validation is complete.
 
 #### Pass 1: Type Checking
 The `TypeChecker` resolves identifiers, verifies type compatibility for assignments and operations, and populates the `SymbolTable` with semantic metadata.
@@ -213,7 +216,7 @@ The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations
 
 - **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
 
-#### Pass 3: Null Pointer Analysis (Task 126 - COMPLETE)
+#### Pass 3: Null Pointer Analysis (Task 126)
 The `NullPointerAnalyzer` is a read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage using flow-sensitive analysis.
 
 - **Phase 1 (Infrastructure):** Implemented the core skeleton, visitor framework, and a robust, scoped state-tracking system.
@@ -233,6 +236,15 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - **Uninitialized Pointer Warning (`WARN_UNINITIALIZED_POINTER` - 6001):** Reported when a pointer declared without an initializer is dereferenced before being assigned a value.
     - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call or after a merge) is dereferenced.
 - **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments and persists state through linear and branched flow.
+
+#### Pass 4: Double Free Detection (Task 127)
+The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-free scenarios and memory leaks related to the project's `ArenaAllocator` interface (`arena_alloc` and `arena_free`).
+
+- **Allocation Tracking:** It tracks the state of pointers, marking them as `ALLOCATED`, `FREED`, or `UNINITIALIZED`.
+- **Double Free Detection:** Reports `ERR_DOUBLE_FREE` (2005) when `arena_free` is called on an already freed pointer.
+- **Leak Detection:** Reports `WARN_MEMORY_LEAK` (6005) when an allocated pointer goes out of scope without being freed or returned, or when it is reassigned before being freed.
+- **Uninitialized Free:** Reports `WARN_FREE_UNALLOCATED` (6006) when `arena_free` is called on a pointer that was never assigned an allocation.
+- **Defer Handling:** Correctly models `defer` and `errdefer` statements to ensure they are considered in the allocation lifecycle.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**
