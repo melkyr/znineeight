@@ -1,5 +1,6 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
+#include "type_system.hpp"
 #include <cstring>   // For strlen
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
@@ -54,10 +55,56 @@ ErrorHandler& CompilationUnit::getErrorHandler() {
     return error_handler_;
 }
 
+const ErrorHandler& CompilationUnit::getErrorHandler() const {
+    return error_handler_;
+}
+
 SourceManager& CompilationUnit::getSourceManager() {
     return source_manager_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {
     return arena_;
+}
+
+CompilationOptions& CompilationUnit::getOptions() {
+    return options_;
+}
+
+const CompilationOptions& CompilationUnit::getOptions() const {
+    return options_;
+}
+
+void CompilationUnit::setOptions(const CompilationOptions& options) {
+    options_ = options;
+}
+
+void CompilationUnit::injectRuntimeSymbols() {
+    // arena_alloc(size: u32) -> *u8
+    void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+    DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+    params->append(get_g_type_u32());
+    Type* ret_type = createPointerType(arena_, get_g_type_u8(), false);
+    Type* fn_type = createFunctionType(arena_, params, ret_type);
+
+    Symbol sym_alloc = SymbolBuilder(arena_)
+        .withName(interner_.intern("arena_alloc"))
+        .ofType(SYMBOL_FUNCTION)
+        .withType(fn_type)
+        .build();
+    symbol_table_.insert(sym_alloc);
+
+    // arena_free(ptr: *u8) -> void
+    void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
+    DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
+    params2->append(createPointerType(arena_, get_g_type_u8(), false));
+    Type* ret_type2 = get_g_type_void();
+    Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
+
+    Symbol sym_free = SymbolBuilder(arena_)
+        .withName(interner_.intern("arena_free"))
+        .ofType(SYMBOL_FUNCTION)
+        .withType(fn_type2)
+        .build();
+    symbol_table_.insert(sym_free);
 }
