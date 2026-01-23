@@ -612,38 +612,13 @@ ASTNode* Parser::parseAssignmentExpression() {
         return node;
     }
 
-    TokenType compound_ops[] = {
-        TOKEN_PLUS_EQUAL, TOKEN_MINUS_EQUAL, TOKEN_STAR_EQUAL,
-        TOKEN_SLASH_EQUAL, TOKEN_PERCENT_EQUAL, TOKEN_AMPERSAND_EQUAL,
-        TOKEN_PIPE_EQUAL, TOKEN_CARET_EQUAL, TOKEN_LARROW2_EQUAL,
-        TOKEN_RARROW2_EQUAL
-    };
-
-    for (size_t i = 0; i < sizeof(compound_ops) / sizeof(compound_ops[0]); ++i) {
-        if (match(compound_ops[i])) {
-            TokenType op = compound_ops[i];
-            ASTNode* right = parseAssignmentExpression();
-
-            ASTCompoundAssignmentNode* comp_node = (ASTCompoundAssignmentNode*)arena_->alloc(sizeof(ASTCompoundAssignmentNode));
-            if (!comp_node) {
-                error("Out of memory");
-            }
-            comp_node->lvalue = left;
-            comp_node->rvalue = right;
-            comp_node->op = op;
-
-            ASTNode* node = createNode(NODE_COMPOUND_ASSIGNMENT);
-            node->as.compound_assignment = comp_node;
-            return node;
-        }
-    }
-
     return left;
 }
 
 ASTNode* Parser::parseExpression() {
     return parseAssignmentExpression();
 }
+
 /**
  * @brief Parses a switch expression.
  *

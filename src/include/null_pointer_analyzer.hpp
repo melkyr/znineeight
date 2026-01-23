@@ -64,6 +64,7 @@ private:
     void visitBlock(ASTBlockStmtNode* node);
     void visitVarDecl(ASTVarDeclNode* node);
     void visitAssignment(ASTAssignmentNode* node);
+    void visitCompoundAssignment(ASTCompoundAssignmentNode* node);
     void visitIfStmt(ASTIfStmtNode* node);
     void visitWhileStmt(ASTWhileStmtNode* node);
     void visitForStmt(ASTForStmtNode* node);
