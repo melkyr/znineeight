@@ -451,6 +451,7 @@ TEST_FUNC(Integration_CorrectUsage);
 
 // Forward declarations for Double Free Analysis
 #include "double_free_analysis_tests.cpp"
+#include "test_double_free_locations.cpp"
 TEST_FUNC(DoubleFree_SimpleDoubleFree);
 TEST_FUNC(DoubleFree_BasicTracking);
 TEST_FUNC(DoubleFree_UninitializedFree);
@@ -897,6 +898,9 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_TryAnalysisComplex,
         test_DoubleFree_CatchAnalysis,
         test_DoubleFree_BinaryOpAnalysis,
+        test_DoubleFree_LocationInLeakWarning,
+        test_DoubleFree_LocationInReassignmentLeak,
+        test_DoubleFree_LocationInDoubleFreeError,
         // Integration Tests
         test_Integration_FullPipeline,
         test_Integration_CorrectUsage

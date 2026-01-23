@@ -136,6 +136,7 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
         tp.flags = TP_FLAG_NONE;
         if (var->initializer && isAllocationCall(var->initializer)) {
             tp.state = AS_ALLOCATED;
+            tp.alloc_loc = var->initializer->loc;
         } else {
             tp.state = AS_UNINITIALIZED;
         }
@@ -165,8 +166,9 @@ void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
             if (tp) {
                 tp->state = AS_ALLOCATED;
                 tp->flags &= ~TP_FLAG_RETURNED; // Reset returned flag if reassigned to new allocation
+                tp->alloc_loc = assign->rvalue->loc; // Update allocation site
             } else {
-                trackAllocation(var_name);
+                trackAllocation(var_name, assign->rvalue->loc);
             }
         } else if (isChangingPointerValue(assign->rvalue)) {
              if (tp) {
@@ -190,6 +192,7 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
                             break;
                         case AS_ALLOCATED:
                             tp->state = AS_FREED;
+                            tp->first_free_loc = node->loc; // Record where it was first freed
                             break;
                         case AS_UNINITIALIZED:
                             reportUninitializedFree(var_name, node->loc);
@@ -391,12 +394,13 @@ bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
     return false;
 }
 
-void DoubleFreeAnalyzer::trackAllocation(const char* name) {
+void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
     TrackedPointer tp;
     tp.name = name;
     tp.state = AS_ALLOCATED;
     tp.scope_depth = current_scope_depth_;
     tp.flags = TP_FLAG_NONE;
+    tp.alloc_loc = loc;
     tracked_pointers_.append(tp);
 }
 
@@ -418,19 +422,51 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) {
-    char* msg = (char*)unit_.getArena().alloc(256);
+    TrackedPointer* tp = findTrackedPointer(name);
+    char* msg = (char*)unit_.getArena().alloc(512);
     char* p = msg;
-    size_t rem = 256;
+    size_t rem = 512;
     safe_append(p, rem, "Double free of pointer '");
     safe_append(p, rem, name);
     safe_append(p, rem, "'");
+
+    if (tp && tp->alloc_loc.line > 0) {
+        const SourceFile* file = unit_.getSourceManager().getFile(tp->alloc_loc.file_id);
+        safe_append(p, rem, " (allocated at ");
+        if (file) safe_append(p, rem, file->filename);
+        else safe_append(p, rem, "unknown");
+        safe_append(p, rem, ":");
+        char buf[16];
+        simple_itoa(tp->alloc_loc.line, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+        safe_append(p, rem, ":");
+        simple_itoa(tp->alloc_loc.column, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+        safe_append(p, rem, ")");
+    }
+
+    if (tp && tp->first_free_loc.line > 0) {
+        const SourceFile* file = unit_.getSourceManager().getFile(tp->first_free_loc.file_id);
+        safe_append(p, rem, " - first freed at ");
+        if (file) safe_append(p, rem, file->filename);
+        else safe_append(p, rem, "unknown");
+        safe_append(p, rem, ":");
+        char buf[16];
+        simple_itoa(tp->first_free_loc.line, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+        safe_append(p, rem, ":");
+        simple_itoa(tp->first_free_loc.column, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+    }
+
     unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, msg, unit_.getArena());
 }
 
 void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool is_reassignment) {
-    char* msg = (char*)unit_.getArena().alloc(256);
+    TrackedPointer* tp = findTrackedPointer(name);
+    char* msg = (char*)unit_.getArena().alloc(512);
     char* p = msg;
-    size_t rem = 256;
+    size_t rem = 512;
     if (is_reassignment) {
         safe_append(p, rem, "Memory leak: reassigning allocated pointer '");
     } else {
@@ -442,6 +478,22 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
     } else {
         safe_append(p, rem, "' not freed");
     }
+
+    if (tp && tp->alloc_loc.line > 0) {
+        const SourceFile* file = unit_.getSourceManager().getFile(tp->alloc_loc.file_id);
+        safe_append(p, rem, " (allocated at ");
+        if (file) safe_append(p, rem, file->filename);
+        else safe_append(p, rem, "unknown");
+        safe_append(p, rem, ":");
+        char buf[16];
+        simple_itoa(tp->alloc_loc.line, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+        safe_append(p, rem, ":");
+        simple_itoa(tp->alloc_loc.column, buf, sizeof(buf));
+        safe_append(p, rem, buf);
+        safe_append(p, rem, ")");
+    }
+
     unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, loc, msg, unit_.getArena());
 }
 

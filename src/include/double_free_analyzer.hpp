@@ -29,6 +29,17 @@ struct TrackedPointer {
     AllocationState state;
     int scope_depth;
     unsigned int flags;
+    SourceLocation alloc_loc;
+    SourceLocation first_free_loc;
+
+    TrackedPointer() : name(NULL), state(AS_UNKNOWN), scope_depth(0), flags(TP_FLAG_NONE) {
+        alloc_loc.file_id = 0;
+        alloc_loc.line = 0;
+        alloc_loc.column = 0;
+        first_free_loc.file_id = 0;
+        first_free_loc.line = 0;
+        first_free_loc.column = 0;
+    }
 };
 
 /**
@@ -83,7 +94,7 @@ private:
     bool isArenaFreeCall(ASTFunctionCallNode* call);
     bool isAllocationCall(ASTNode* node);
     bool isChangingPointerValue(ASTNode* rvalue);
-    void trackAllocation(const char* name);
+    void trackAllocation(const char* name, SourceLocation loc);
     TrackedPointer* findTrackedPointer(const char* name);
     const char* extractVariableName(ASTNode* node);
 

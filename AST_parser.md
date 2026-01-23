@@ -1246,6 +1246,26 @@ The Lifetime Analysis phase is a critical semantic analysis pass that follows th
 ### Implementation Strategy
 The `LifetimeAnalyzer` uses a visitor pattern to traverse the AST. It maintains a list of `PointerAssignment` records for the current function to track the provenance of local pointer variables. It reports `ERR_LIFETIME_VIOLATION` through the `ErrorHandler`, allowing compilation to continue and identify multiple issues in a single pass.
 
+## 17. Double Free Analysis Phase
+
+The Double Free Analysis phase (Task 127 & 128) detects memory safety issues related to the `ArenaAllocator` interface (`arena_alloc`, `arena_free`).
+
+### Allocation Site Tracking
+To improve diagnostics, the analyzer tracks the `SourceLocation` of every allocation site. This information is preserved in the `TrackedPointer` structure and used to enhance error messages.
+
+### Enhanced Diagnostics
+1. **Memory Leaks**: When a pointer is not freed at scope exit or is leaked through reassignment, the warning message includes the location of the original `arena_alloc` call.
+   - *Example*: `Memory leak: 'p' not freed (allocated at main.zig:10:15)`
+2. **Double Frees**: When a pointer is freed more than once, the error message includes the original allocation site and the location where it was first freed.
+   - *Example*: `Double free of pointer 'p' (allocated at main.zig:10:15) - first freed at main.zig:12:5`
+3. **Uninitialized Frees**: Detects and warns when a pointer that was never allocated is passed to `arena_free`.
+
+### Implementation Details
+The analyzer records locations in:
+- `visitVarDecl`: Captures location from the initializer if it's an `arena_alloc` call.
+- `visitAssignment`: Updates the tracked allocation site when a pointer is reassigned to a new `arena_alloc` result.
+- `visitFunctionCall`: Records the `first_free_loc` when `arena_free` is first called on an allocated pointer.
+
 ---
 
 ## Deprecated
