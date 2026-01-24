@@ -3,7 +3,11 @@
 #include "type_system.hpp"
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
-    : unit_(unit), tracked_pointers_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0) {
+    : unit_(unit), tracked_pointers_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0),
+      current_is_errdefer_(false), is_executing_defers_(false) {
+    current_defer_loc_.file_id = 0;
+    current_defer_loc_.line = 0;
+    current_defer_loc_.column = 0;
 }
 
 void DoubleFreeAnalyzer::analyze(ASTNode* root) {
@@ -100,8 +104,12 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     size_t i = 0;
     while (i < tracked_pointers_.length()) {
         if (tracked_pointers_[i].scope_depth == current_scope_depth_) {
-            if (tracked_pointers_[i].state == AS_ALLOCATED && !(tracked_pointers_[i].flags & TP_FLAG_RETURNED)) {
-                reportLeak(tracked_pointers_[i].name, node->loc, false);
+            if (!(tracked_pointers_[i].flags & TP_FLAG_RETURNED)) {
+                if (tracked_pointers_[i].state == AS_ALLOCATED) {
+                    reportLeak(tracked_pointers_[i].name, node->loc, false);
+                } else if (tracked_pointers_[i].state == AS_TRANSFERRED) {
+                    reportLeak(tracked_pointers_[i].name, node->loc, false);
+                }
             }
             // Remove by swapping with last
             tracked_pointers_[i] = tracked_pointers_[tracked_pointers_.length() - 1];
@@ -193,12 +201,34 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
                         case AS_ALLOCATED:
                             tp->state = AS_FREED;
                             tp->first_free_loc = node->loc; // Record where it was first freed
+                            if (is_executing_defers_) {
+                                tp->freed_via_defer = true;
+                                tp->defer_loc = current_defer_loc_;
+                                tp->is_errdefer = current_is_errdefer_;
+                            }
                             break;
                         case AS_UNINITIALIZED:
                             reportUninitializedFree(var_name, node->loc);
                             break;
+                        case AS_TRANSFERRED:
+                            // Don't report double free - ownership might have been transferred
+                            break;
                         default:
                             break;
+                    }
+                }
+            }
+        }
+    } else if (isOwnershipTransferCall(call)) {
+        // Check each argument for tracked pointers
+        if (call->args) {
+            for (size_t i = 0; i < call->args->length(); ++i) {
+                const char* var_name = extractVariableName((*call->args)[i]);
+                if (var_name) {
+                    TrackedPointer* tp = findTrackedPointer(var_name);
+                    if (tp && (tp->state == AS_ALLOCATED || tp->state == AS_UNINITIALIZED)) {
+                        tp->state = AS_TRANSFERRED;
+                        tp->transfer_loc = node->loc;
                     }
                 }
             }
@@ -219,6 +249,8 @@ void DoubleFreeAnalyzer::visitDeferStmt(ASTNode* node) {
         DeferredAction action;
         action.statement = defer.statement;
         action.scope_depth = current_scope_depth_;
+        action.defer_loc = node->loc;
+        action.is_errdefer = false;
         deferred_actions_.append(action);
     }
 }
@@ -229,6 +261,8 @@ void DoubleFreeAnalyzer::visitErrdeferStmt(ASTNode* node) {
         DeferredAction action;
         action.statement = errdefer.statement;
         action.scope_depth = current_scope_depth_;
+        action.defer_loc = node->loc;
+        action.is_errdefer = true;
         deferred_actions_.append(action);
     }
 }
@@ -347,11 +381,20 @@ void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
+    bool old_is_executing = is_executing_defers_;
+    is_executing_defers_ = true;
+
     while (deferred_actions_.length() > 0 && deferred_actions_.back().scope_depth >= depth_limit) {
         DeferredAction action = deferred_actions_.back();
         deferred_actions_.pop_back();
+
+        current_defer_loc_ = action.defer_loc;
+        current_is_errdefer_ = action.is_errdefer;
+
         visit(action.statement);
     }
+
+    is_executing_defers_ = old_is_executing;
 }
 
 bool DoubleFreeAnalyzer::isArenaAllocCall(ASTNode* node) {
@@ -380,6 +423,14 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
 bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
     if (!call || call->callee->type != NODE_IDENTIFIER) return false;
     return strings_equal(call->callee->as.identifier.name, "arena_free");
+}
+
+bool DoubleFreeAnalyzer::isOwnershipTransferCall(ASTFunctionCallNode* call) {
+    // For bootstrap: assume any function call that isn't arena_free
+    // and takes a pointer argument could be a transfer.
+    // In a more advanced analyzer, we would check the function signature
+    // or look for specific ownership-transferring patterns.
+    return true;
 }
 
 bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
@@ -446,8 +497,28 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
     }
 
     if (tp && tp->first_free_loc.line > 0) {
+        if (tp->freed_via_defer) {
+            safe_append(p, rem, " - first freed via ");
+            safe_append(p, rem, tp->is_errdefer ? "errdefer" : "defer");
+            if (tp->defer_loc.line > 0) {
+                const SourceFile* file = unit_.getSourceManager().getFile(tp->defer_loc.file_id);
+                safe_append(p, rem, " at ");
+                if (file) safe_append(p, rem, file->filename);
+                else safe_append(p, rem, "unknown");
+                safe_append(p, rem, ":");
+                char buf[16];
+                simple_itoa(tp->defer_loc.line, buf, sizeof(buf));
+                safe_append(p, rem, buf);
+                safe_append(p, rem, ":");
+                simple_itoa(tp->defer_loc.column, buf, sizeof(buf));
+                safe_append(p, rem, buf);
+            }
+            safe_append(p, rem, " (deferred free at ");
+        } else {
+            safe_append(p, rem, " - first freed at ");
+        }
+
         const SourceFile* file = unit_.getSourceManager().getFile(tp->first_free_loc.file_id);
-        safe_append(p, rem, " - first freed at ");
         if (file) safe_append(p, rem, file->filename);
         else safe_append(p, rem, "unknown");
         safe_append(p, rem, ":");
@@ -457,6 +528,10 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
         safe_append(p, rem, ":");
         simple_itoa(tp->first_free_loc.column, buf, sizeof(buf));
         safe_append(p, rem, buf);
+
+        if (tp->freed_via_defer) {
+            safe_append(p, rem, ")");
+        }
     }
 
     unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, msg, unit_.getArena());
@@ -467,16 +542,41 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
     char* msg = (char*)unit_.getArena().alloc(512);
     char* p = msg;
     size_t rem = 512;
-    if (is_reassignment) {
-        safe_append(p, rem, "Memory leak: reassigning allocated pointer '");
+
+    WarningCode code = WARN_MEMORY_LEAK;
+
+    if (tp && tp->state == AS_TRANSFERRED) {
+        code = WARN_TRANSFERRED_MEMORY;
+        safe_append(p, rem, "Pointer '");
+        safe_append(p, rem, name);
+        safe_append(p, rem, "' transferred");
+        if (tp->transfer_loc.line > 0) {
+            const SourceFile* file = unit_.getSourceManager().getFile(tp->transfer_loc.file_id);
+            safe_append(p, rem, " (at ");
+            if (file) safe_append(p, rem, file->filename);
+            else safe_append(p, rem, "unknown");
+            safe_append(p, rem, ":");
+            char buf[16];
+            simple_itoa(tp->transfer_loc.line, buf, sizeof(buf));
+            safe_append(p, rem, buf);
+            safe_append(p, rem, ":");
+            simple_itoa(tp->transfer_loc.column, buf, sizeof(buf));
+            safe_append(p, rem, buf);
+            safe_append(p, rem, ")");
+        }
+        safe_append(p, rem, " - receiver responsible for freeing");
     } else {
-        safe_append(p, rem, "Memory leak: pointer '");
-    }
-    safe_append(p, rem, name);
-    if (is_reassignment) {
-        safe_append(p, rem, "'");
-    } else {
-        safe_append(p, rem, "' not freed");
+        if (is_reassignment) {
+            safe_append(p, rem, "Memory leak: reassigning allocated pointer '");
+        } else {
+            safe_append(p, rem, "Memory leak: pointer '");
+        }
+        safe_append(p, rem, name);
+        if (is_reassignment) {
+            safe_append(p, rem, "'");
+        } else {
+            safe_append(p, rem, "' not freed");
+        }
     }
 
     if (tp && tp->alloc_loc.line > 0) {
@@ -494,7 +594,7 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
         safe_append(p, rem, ")");
     }
 
-    unit_.getErrorHandler().reportWarning(WARN_MEMORY_LEAK, loc, msg, unit_.getArena());
+    unit_.getErrorHandler().reportWarning(code, loc, msg, unit_.getArena());
 }
 
 void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {

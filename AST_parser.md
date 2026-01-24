@@ -1258,7 +1258,11 @@ To improve diagnostics, the analyzer tracks the `SourceLocation` of every alloca
    - *Example*: `Memory leak: 'p' not freed (allocated at main.zig:10:15)`
 2. **Double Frees**: When a pointer is freed more than once, the error message includes the original allocation site and the location where it was first freed.
    - *Example*: `Double free of pointer 'p' (allocated at main.zig:10:15) - first freed at main.zig:12:5`
-3. **Uninitialized Frees**: Detects and warns when a pointer that was never allocated is passed to `arena_free`.
+3. **Deallocation Site Tracking (Task 129)**: Double free errors now provide context if the first free occurred via a `defer` or `errdefer` statement.
+   - *Example*: `Double free of pointer 'p' ... - first freed via defer at main.zig:5:5 (deferred free at main.zig:6:10)`
+4. **Ownership Transfer Tracking (Task 129)**: Detects when a pointer is passed to a function call (other than `arena_free`), conservatively assuming ownership might have been transferred.
+   - *Example*: `Pointer 'p' transferred (at main.zig:8:5) - receiver responsible for freeing`
+5. **Uninitialized Frees**: Detects and warns when a pointer that was never allocated is passed to `arena_free`.
 
 ### Implementation Details
 The analyzer records locations in:

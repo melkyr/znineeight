@@ -127,10 +127,10 @@ TEST_FUNC(DoubleFree_TryAnalysisComplex) {
     StringInterner interner(arena);
 
     const char* source =
-        "fn fallible(p: *u8) -> void {}\n"
+        "fn fallible() -> void {}\n"
         "fn my_func() -> void {\n"
         "    var p: *u8 = arena_alloc(100u);\n"
-        "    try fallible(p);\n" // try wrapping a call
+        "    try fallible();\n" // try wrapping a call
         "    arena_free(p);\n"
         "    arena_free(p);\n"
         "}\n";
