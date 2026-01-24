@@ -31,14 +31,25 @@ struct TrackedPointer {
     unsigned int flags;
     SourceLocation alloc_loc;
     SourceLocation first_free_loc;
+    SourceLocation transfer_loc;
+    SourceLocation defer_loc;
+    bool freed_via_defer;
+    bool is_errdefer;
 
-    TrackedPointer() : name(NULL), state(AS_UNKNOWN), scope_depth(0), flags(TP_FLAG_NONE) {
+    TrackedPointer() : name(NULL), state(AS_UNKNOWN), scope_depth(0), flags(TP_FLAG_NONE),
+                       freed_via_defer(false), is_errdefer(false) {
         alloc_loc.file_id = 0;
         alloc_loc.line = 0;
         alloc_loc.column = 0;
         first_free_loc.file_id = 0;
         first_free_loc.line = 0;
         first_free_loc.column = 0;
+        transfer_loc.file_id = 0;
+        transfer_loc.line = 0;
+        transfer_loc.column = 0;
+        defer_loc.file_id = 0;
+        defer_loc.line = 0;
+        defer_loc.column = 0;
     }
 };
 
@@ -49,6 +60,8 @@ struct TrackedPointer {
 struct DeferredAction {
     ASTNode* statement;
     int scope_depth;
+    SourceLocation defer_loc;
+    bool is_errdefer;
 };
 
 /**
@@ -88,11 +101,17 @@ private:
     void visitCatchExpr(ASTNode* node);
     void visitOrelseExpr(ASTNode* node);
 
+    // Defer execution context tracking
+    SourceLocation current_defer_loc_;
+    bool current_is_errdefer_;
+    bool is_executing_defers_;
+
     // Helpers
     void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
     bool isAllocationCall(ASTNode* node);
+    bool isOwnershipTransferCall(ASTFunctionCallNode* call);
     bool isChangingPointerValue(ASTNode* rvalue);
     void trackAllocation(const char* name, SourceLocation loc);
     TrackedPointer* findTrackedPointer(const char* name);

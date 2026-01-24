@@ -123,7 +123,7 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
     3.  **Pass 1: Type Checking:** Resolves types and populates the `SymbolTable`.
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
-    6.  **Pass 4: Double Free Detection:** Detects arena double frees and leaks.
+    6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
     7.  **Code Generation:** Emits target code (C89).
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
@@ -237,11 +237,11 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call or after a merge) is dereferenced.
 - **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments and persists state through linear and branched flow.
 
-#### Pass 4: Double Free Detection (Task 127)
+#### Pass 4: Double Free Detection (Tasks 127-129)
 The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-free scenarios and memory leaks related to the project's `ArenaAllocator` interface (`arena_alloc` and `arena_free`).
 
 - **Allocation Tracking:** It tracks the state of pointers using the `AllocationState` enum (`AS_UNINITIALIZED`, `AS_ALLOCATED`, `AS_FREED`, `AS_RETURNED`, `AS_UNKNOWN`). A pointer is tracked if it is initialized or assigned the result of `arena_alloc`.
-- **Double Free Detection:** Reports `ERR_DOUBLE_FREE` (2005) when `arena_free` is called on an already freed pointer.
+- **Double Free Detection:** Reports `ERR_DOUBLE_FREE` (2005) when `arena_free` is called on an already freed pointer. Tracks both the allocation site and the first deallocation site (including defer context) for detailed diagnostics.
 - **Leak Detection:**
     - **Scope Exit:** Reports `WARN_MEMORY_LEAK` (6005) when an `AS_ALLOCATED` pointer goes out of scope without being freed or returned.
     - **Immediate Reassignment:** Reports a leak if an `AS_ALLOCATED` variable is reassigned to any other value (including `null` or a new allocation) before the original memory is freed.
@@ -249,6 +249,7 @@ The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-fr
 - **Expression Support:** The analyzer recursively visits all Milestone 4 node types, including `switch`, `try`, `catch`, `orelse`, binary operations, and array accesses. It can detect `arena_alloc` calls even when wrapped in other expressions (e.g., `var p = try arena_alloc(100);`).
 - **Defer & Errdefer:** Employs a LIFO queue to model deferred actions. At the end of a block or upon a `return` statement, deferred actions are "executed" in reverse order to update the allocation state of tracked pointers.
 - **Conservative Path-Blind Analysis:** As a simple visitor-based analyzer, it does not perform full data-flow analysis. It assumes all paths are taken. While this may lead to false positives in complex branched code (e.g., a free in only one branch of a `switch`), it ensures no potential safety violations are missed in the bootstrap phase.
+- **Ownership Transfers (Task 129):** Conservatively assumes that passing a pointer to any function (other than `arena_free`) transfers ownership. Transferred pointers are no longer checked for leaks or double frees, but a specific warning (`WARN_TRANSFERRED_MEMORY`) is issued at scope exit to remind the developer that the receiver is now responsible for the memory.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**

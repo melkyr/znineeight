@@ -567,7 +567,7 @@ Output: Runtime assertions in codegen module
     Validation: Track allocation/deallocation pairs
     Success criteria: All potential double-free scenarios are identified
 128. **Task 128:** Track allocation sites (DONE)
-129. **Task 129:** Track deallocation sites
+129. **Task 129:** Track deallocation sites (DONE 2024-05-24)
 130. **Task 130:** Analyze control flow paths
 131. **Task 131:** Identify potential multiple deallocations
 132. **Task 132:** Flag all double-free risks
