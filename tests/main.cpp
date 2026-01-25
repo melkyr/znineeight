@@ -453,16 +453,29 @@ TEST_FUNC(Integration_CorrectUsage);
 #include "double_free_analysis_tests.cpp"
 #include "test_double_free_locations.cpp"
 #include "test_double_free_task_129.cpp"
+#include "test_double_free_path_aware.cpp"
 TEST_FUNC(DoubleFree_SimpleDoubleFree);
 TEST_FUNC(DoubleFree_BasicTracking);
 TEST_FUNC(DoubleFree_UninitializedFree);
 TEST_FUNC(DoubleFree_MemoryLeak);
 TEST_FUNC(DoubleFree_DeferDoubleFree);
+TEST_FUNC(DoubleFree_ReassignmentLeak);
+TEST_FUNC(DoubleFree_NullReassignmentLeak);
+TEST_FUNC(DoubleFree_ReturnExempt);
 TEST_FUNC(DoubleFree_SwitchAnalysis);
 TEST_FUNC(DoubleFree_TryAnalysis);
 TEST_FUNC(DoubleFree_TryAnalysisComplex);
 TEST_FUNC(DoubleFree_CatchAnalysis);
 TEST_FUNC(DoubleFree_BinaryOpAnalysis);
+TEST_FUNC(DoubleFree_LocationInLeakWarning);
+TEST_FUNC(DoubleFree_LocationInReassignmentLeak);
+TEST_FUNC(DoubleFree_LocationInDoubleFreeError);
+TEST_FUNC(DoubleFree_TransferTracking);
+TEST_FUNC(DoubleFree_DeferContextInError);
+TEST_FUNC(DoubleFree_ErrdeferContextInError);
+TEST_FUNC(DoubleFree_IfElseBranching);
+TEST_FUNC(DoubleFree_IfElseBothFree);
+TEST_FUNC(DoubleFree_WhileConservative);
 
 
 int main(int argc, char* argv[]) {
@@ -801,6 +814,15 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_ArrayAccessWithVariable,
         test_TypeChecker_IndexingNonArray,
         test_TypeChecker_ArrayAccessWithNamedConstant,
+        test_Assignment_IncompatiblePointers_Invalid,
+        test_Assignment_ConstPointerToPointer_Invalid,
+        test_Assignment_PointerToConstPointer_Valid,
+        test_Assignment_VoidPointerToPointer_Invalid,
+        test_Assignment_PointerToVoidPointer_Valid,
+        test_Assignment_PointerExactMatch_Valid,
+        test_Assignment_NullToPointer_Valid,
+        test_Assignment_NumericWidening_Fails,
+        test_Assignment_ExactNumericMatch,
         test_TypeChecker_RejectNonConstantArraySize,
         test_TypeChecker_AcceptsValidArrayDeclaration,
         test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
@@ -819,16 +841,6 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_CompoundAssignment_PointerArithmetic,
         test_TypeChecker_CompoundAssignment_InvalidTypes,
         test_DoubleFreeAnalyzer_CompoundAssignment,
-        // Group 4J
-        test_Assignment_ExactNumericMatch,
-        test_Assignment_NumericWidening_Fails,
-        test_Assignment_NullToPointer_Valid,
-        test_Assignment_PointerExactMatch_Valid,
-        test_Assignment_PointerToVoidPointer_Valid,
-        test_Assignment_VoidPointerToPointer_Invalid,
-        test_Assignment_PointerToConstPointer_Valid,
-        test_Assignment_ConstPointerToPointer_Invalid,
-        test_Assignment_IncompatiblePointers_Invalid,
         // Memory Stability
         test_MemoryStability_TokenSupplierDanglingPointer,
 
@@ -905,6 +917,9 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_TransferTracking,
         test_DoubleFree_DeferContextInError,
         test_DoubleFree_ErrdeferContextInError,
+        test_DoubleFree_IfElseBranching,
+        test_DoubleFree_IfElseBothFree,
+        test_DoubleFree_WhileConservative,
         // Integration Tests
         test_Integration_FullPipeline,
         test_Integration_CorrectUsage

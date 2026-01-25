@@ -84,3 +84,15 @@ You can manually test the compiler on Zig source files using the `--compile` fla
 ```
 
 This will run the full compilation pipeline, including all static analysis passes, and report any errors or warnings to the console.
+
+## 6. Path-Aware Analysis Testing (Task 130)
+The `DoubleFreeAnalyzer` is path-aware. Tests should verify that it correctly handles conditional deallocations and merges states.
+
+### If/Else Branching
+Verify that freeing a pointer in only one branch of an `if` results in an `AS_UNKNOWN` state after the `if`, preventing false definite double-free reports.
+
+### Try Expression
+Verify that `try` transitions `AS_ALLOCATED` pointers to `AS_UNKNOWN` due to potential early exit.
+
+### Loop Safety
+Verify that variables modified within `while` or `for` loops are transitioned to `AS_UNKNOWN` to account for potential multiple iterations.

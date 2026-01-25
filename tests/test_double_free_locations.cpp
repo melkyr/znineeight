@@ -29,7 +29,7 @@ static bool contains(const char* haystack, const char* needle) {
 }
 
 TEST_FUNC(DoubleFree_LocationInLeakWarning) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(131072);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -69,7 +69,7 @@ TEST_FUNC(DoubleFree_LocationInLeakWarning) {
 }
 
 TEST_FUNC(DoubleFree_LocationInReassignmentLeak) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(131072);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -109,7 +109,7 @@ TEST_FUNC(DoubleFree_LocationInReassignmentLeak) {
 }
 
 TEST_FUNC(DoubleFree_LocationInDoubleFreeError) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(131072);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

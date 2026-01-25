@@ -1,9 +1,68 @@
 #include "double_free_analyzer.hpp"
 #include "utils.hpp"
 #include "type_system.hpp"
+#include <new>
+
+AllocationStateMap::AllocationStateMap(ArenaAllocator& arena, AllocationStateMap* p)
+    : vars(arena), modified(arena), parent(p), arena_(arena) {
+}
+
+AllocationStateMap::AllocationStateMap(const AllocationStateMap& other, ArenaAllocator& arena)
+    : vars(arena), modified(arena), parent(NULL), arena_(arena) {
+    for (size_t i = 0; i < other.vars.length(); ++i) {
+        vars.append(other.vars[i]);
+    }
+}
+
+void AllocationStateMap::setState(const char* name, const TrackedPointer& state) {
+    if (!name) return;
+    for (int i = (int)vars.length() - 1; i >= 0; --i) {
+        if (strings_equal(vars[i].name, name)) {
+            vars[i] = state;
+            vars[i].name = name; // Ensure name is preserved
+
+            bool already_modified = false;
+            for (size_t j = 0; j < modified.length(); ++j) {
+                if (strings_equal(modified[j], name)) {
+                    already_modified = true;
+                    break;
+                }
+            }
+            if (!already_modified) {
+                modified.append(name);
+            }
+            return;
+        }
+    }
+    addVariable(name, state);
+}
+
+TrackedPointer* AllocationStateMap::getState(const char* name) {
+    for (int i = (int)vars.length() - 1; i >= 0; --i) {
+        if (strings_equal(vars[i].name, name)) {
+            return &vars[i];
+        }
+    }
+    return NULL;
+}
+
+void AllocationStateMap::addVariable(const char* name, const TrackedPointer& state) {
+    TrackedPointer tp = state;
+    tp.name = name;
+    vars.append(tp);
+}
+
+bool AllocationStateMap::hasVariable(const char* name) const {
+    for (size_t i = 0; i < vars.length(); ++i) {
+        if (strings_equal(vars[i].name, name)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
-    : unit_(unit), tracked_pointers_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0),
+    : unit_(unit), current_state_(NULL), scopes_(unit.getArena()), deferred_actions_(unit.getArena()), current_scope_depth_(0),
       current_is_errdefer_(false), is_executing_defers_(false) {
     current_defer_loc_.file_id = 0;
     current_defer_loc_.line = 0;
@@ -12,7 +71,34 @@ DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
 
 void DoubleFreeAnalyzer::analyze(ASTNode* root) {
     if (!root) return;
+    pushScope(); // Global/Function entry scope
     visit(root);
+    popScope();
+}
+
+void DoubleFreeAnalyzer::pushScope(bool copy_parent) {
+    void* mem = unit_.getArena().alloc(sizeof(AllocationStateMap));
+    if (!mem) return;
+    AllocationStateMap* new_scope;
+    if (copy_parent && current_state_) {
+        new_scope = new (mem) AllocationStateMap(*current_state_, unit_.getArena());
+        new_scope->parent = current_state_;
+    } else {
+        new_scope = new (mem) AllocationStateMap(unit_.getArena(), current_state_);
+    }
+    scopes_.append(new_scope);
+    current_state_ = new_scope;
+}
+
+void DoubleFreeAnalyzer::popScope() {
+    if (scopes_.length() > 0) {
+        scopes_.pop_back();
+        if (scopes_.length() > 0) {
+            current_state_ = scopes_.back();
+        } else {
+            current_state_ = NULL;
+        }
+    }
 }
 
 void DoubleFreeAnalyzer::visit(ASTNode* node) {
@@ -91,6 +177,8 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
 void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     ASTBlockStmtNode& block = node->as.block_stmt;
     current_scope_depth_++;
+    pushScope(true);
+
     if (block.statements) {
         for (size_t i = 0; i < block.statements->length(); ++i) {
             visit((*block.statements)[i]);
@@ -101,37 +189,49 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
     executeDefers(current_scope_depth_);
 
     // Phase 5 & 7: Check for leaks at scope exit
-    size_t i = 0;
-    while (i < tracked_pointers_.length()) {
-        if (tracked_pointers_[i].scope_depth == current_scope_depth_) {
-            if (!(tracked_pointers_[i].flags & TP_FLAG_RETURNED)) {
-                if (tracked_pointers_[i].state == AS_ALLOCATED) {
-                    reportLeak(tracked_pointers_[i].name, node->loc, false);
-                } else if (tracked_pointers_[i].state == AS_TRANSFERRED) {
-                    reportLeak(tracked_pointers_[i].name, node->loc, false);
+    if (current_state_) {
+        for (size_t i = 0; i < current_state_->vars.length(); ++i) {
+            TrackedPointer& tp = current_state_->vars[i];
+            if (tp.scope_depth == current_scope_depth_) {
+                if (!(tp.flags & TP_FLAG_RETURNED)) {
+                    if (tp.state == AS_ALLOCATED) {
+                        reportLeak(tp.name, node->loc, false);
+                    } else if (tp.state == AS_TRANSFERRED) {
+                        reportLeak(tp.name, node->loc, false);
+                    }
                 }
             }
-            // Remove by swapping with last
-            tracked_pointers_[i] = tracked_pointers_[tracked_pointers_.length() - 1];
-            tracked_pointers_.pop_back();
-            // Don't increment i, check the new element at i
-        } else {
-            i++;
         }
     }
+
+    AllocationStateMap* block_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, block_state);
 
     current_scope_depth_--;
 }
 
 void DoubleFreeAnalyzer::visitFnDecl(ASTNode* node) {
     ASTFnDeclNode* fn = node->as.fn_decl;
-    // Phase 3: Clear tracked pointers for each function
-    tracked_pointers_.clear();
+
+    // Save current scope and start fresh for function
+    AllocationStateMap* old_state = current_state_;
+    size_t old_scopes_len = scopes_.length();
+
+    current_state_ = NULL; // Don't inherit from parent scope for functions
+    pushScope();
+
     deferred_actions_.clear();
     current_scope_depth_ = 0;
     if (fn->body) {
         visit(fn->body);
     }
+
+    while (scopes_.length() > old_scopes_len) {
+        popScope();
+    }
+
+    current_state_ = old_state;
 }
 
 void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
@@ -148,7 +248,9 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
         } else {
             tp.state = AS_UNINITIALIZED;
         }
-        tracked_pointers_.append(tp);
+        if (current_state_) {
+            current_state_->addVariable(var->name, tp);
+        }
     }
 
     if (var->initializer) {
@@ -157,6 +259,7 @@ void DoubleFreeAnalyzer::visitVarDecl(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
+    if (!current_state_) return;
     ASTAssignmentNode* assign = node->as.assignment;
     visit(assign->rvalue);
 
@@ -172,21 +275,26 @@ void DoubleFreeAnalyzer::visitAssignment(ASTNode* node) {
         // Update state based on new value
         if (isAllocationCall(assign->rvalue)) {
             if (tp) {
-                tp->state = AS_ALLOCATED;
-                tp->flags &= ~TP_FLAG_RETURNED; // Reset returned flag if reassigned to new allocation
-                tp->alloc_loc = assign->rvalue->loc; // Update allocation site
+                TrackedPointer next_tp = *tp;
+                next_tp.state = AS_ALLOCATED;
+                next_tp.flags &= ~TP_FLAG_RETURNED; // Reset returned flag if reassigned to new allocation
+                next_tp.alloc_loc = assign->rvalue->loc; // Update allocation site
+                current_state_->setState(var_name, next_tp);
             } else {
                 trackAllocation(var_name, assign->rvalue->loc);
             }
         } else if (isChangingPointerValue(assign->rvalue)) {
              if (tp) {
-                tp->state = AS_UNKNOWN; // State becomes unknown after general reassignment
+                TrackedPointer next_tp = *tp;
+                next_tp.state = AS_UNKNOWN; // State becomes unknown after general reassignment
+                current_state_->setState(var_name, next_tp);
              }
         }
     }
 }
 
 void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
+    if (!current_state_) return;
     ASTFunctionCallNode* call = node->as.function_call;
     if (isArenaFreeCall(call)) {
         if (call->args && call->args->length() > 0) {
@@ -198,15 +306,18 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
                         case AS_FREED:
                             reportDoubleFree(var_name, node->loc);
                             break;
-                        case AS_ALLOCATED:
-                            tp->state = AS_FREED;
-                            tp->first_free_loc = node->loc; // Record where it was first freed
+                        case AS_ALLOCATED: {
+                            TrackedPointer next_tp = *tp;
+                            next_tp.state = AS_FREED;
+                            next_tp.first_free_loc = node->loc; // Record where it was first freed
                             if (is_executing_defers_) {
-                                tp->freed_via_defer = true;
-                                tp->defer_loc = current_defer_loc_;
-                                tp->is_errdefer = current_is_errdefer_;
+                                next_tp.freed_via_defer = true;
+                                next_tp.defer_loc = current_defer_loc_;
+                                next_tp.is_errdefer = current_is_errdefer_;
                             }
+                            current_state_->setState(var_name, next_tp);
                             break;
+                        }
                         case AS_UNINITIALIZED:
                             reportUninitializedFree(var_name, node->loc);
                             break;
@@ -227,8 +338,10 @@ void DoubleFreeAnalyzer::visitFunctionCall(ASTNode* node) {
                 if (var_name) {
                     TrackedPointer* tp = findTrackedPointer(var_name);
                     if (tp && (tp->state == AS_ALLOCATED || tp->state == AS_UNINITIALIZED)) {
-                        tp->state = AS_TRANSFERRED;
-                        tp->transfer_loc = node->loc;
+                        TrackedPointer next_tp = *tp;
+                        next_tp.state = AS_TRANSFERRED;
+                        next_tp.transfer_loc = node->loc;
+                        current_state_->setState(var_name, next_tp);
                     }
                 }
             }
@@ -270,21 +383,107 @@ void DoubleFreeAnalyzer::visitErrdeferStmt(ASTNode* node) {
 void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
     ASTIfStmtNode* if_stmt = node->as.if_stmt;
     visit(if_stmt->condition);
+
+    // Save entry state
+    pushScope(true);
+    AllocationStateMap* entry_state = current_state_;
+
+    // Analyze then branch
+    pushScope(true);
     if (if_stmt->then_block) visit(if_stmt->then_block);
-    if (if_stmt->else_block) visit(if_stmt->else_block);
+    AllocationStateMap* then_branch = current_state_;
+    popScope();
+
+    // Analyze else branch
+    if (if_stmt->else_block) {
+        pushScope(true);
+        visit(if_stmt->else_block);
+        AllocationStateMap* else_branch = current_state_;
+        popScope();
+
+        // Merge both branches into entry_state
+        if (entry_state && then_branch && else_branch) {
+            for (size_t i = 0; i < entry_state->vars.length(); ++i) {
+                const char* name = entry_state->vars[i].name;
+                if (!name) continue;
+                TrackedPointer* s_then = then_branch->getState(name);
+                TrackedPointer* s_else = else_branch->getState(name);
+                if (s_then && s_else) {
+                    TrackedPointer merged = mergeTrackedPointers(*s_then, *s_else);
+                    entry_state->setState(name, merged);
+                }
+            }
+        }
+    } else if (entry_state && then_branch) {
+        // No else block - merge then branch with entry state
+        mergeScopesAlternative(entry_state, then_branch);
+    }
+
+    // Restore state, merging modified variables back to parent
+    AllocationStateMap* final_if_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, final_if_state);
 }
 
 void DoubleFreeAnalyzer::visitWhileStmt(ASTNode* node) {
     ASTWhileStmtNode& while_stmt = node->as.while_stmt;
     visit(while_stmt.condition);
+
+    // Save entry state
+    pushScope(true);
+
+    // Analyze body once
+    pushScope(true);
     if (while_stmt.body) visit(while_stmt.body);
+    AllocationStateMap* loop_state = current_state_;
+    popScope();
+
+    // Conservative: all variables modified in loop become AS_UNKNOWN
+    if (current_state_) {
+        for (size_t i = 0; i < loop_state->modified.length(); ++i) {
+            const char* name = loop_state->modified[i];
+            TrackedPointer* tp = findTrackedPointer(name);
+            if (tp) {
+                TrackedPointer next_tp = *tp;
+                next_tp.state = AS_UNKNOWN;
+                current_state_->setState(name, next_tp);
+            }
+        }
+    }
+
+    AllocationStateMap* final_while_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, final_while_state);
 }
 
 void DoubleFreeAnalyzer::visitForStmt(ASTNode* node) {
     ASTForStmtNode* for_stmt = node->as.for_stmt;
-    // For loop components
     if (for_stmt->iterable_expr) visit(for_stmt->iterable_expr);
+
+    pushScope(true);
+
+    // Analyze body once
+    pushScope(true);
     if (for_stmt->body) visit(for_stmt->body);
+    AllocationStateMap* loop_state = current_state_;
+    popScope();
+
+    // Conservative: all variables modified in loop become AS_UNKNOWN
+    if (current_state_) {
+        for (size_t i = 0; i < loop_state->modified.length(); ++i) {
+            const char* name = loop_state->modified[i];
+            TrackedPointer* tp = findTrackedPointer(name);
+            if (tp) {
+                TrackedPointer next_tp = *tp;
+                next_tp.state = AS_UNKNOWN;
+                current_state_->setState(name, next_tp);
+            }
+        }
+    }
+
+    AllocationStateMap* final_for_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, final_for_state);
 }
 
 void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
@@ -299,7 +498,11 @@ void DoubleFreeAnalyzer::visitReturnStmt(ASTNode* node) {
         if (var_name) {
             TrackedPointer* tp = findTrackedPointer(var_name);
             if (tp && tp->state == AS_ALLOCATED) {
-                tp->flags |= TP_FLAG_RETURNED;
+                TrackedPointer next_tp = *tp;
+                next_tp.flags |= TP_FLAG_RETURNED;
+                if (current_state_) {
+                    current_state_->setState(var_name, next_tp);
+                }
             }
         }
         visit(ret.expression);
@@ -341,7 +544,12 @@ void DoubleFreeAnalyzer::visitCompoundAssignment(ASTNode* node) {
         if (tp && tp->state == AS_ALLOCATED) {
             // Compound assignment like p += 1 changes the pointer value.
             reportLeak(var_name, node->loc, true);
-            tp->state = AS_UNKNOWN;
+
+            TrackedPointer next_tp = *tp;
+            next_tp.state = AS_UNKNOWN;
+            if (current_state_) {
+                current_state_->setState(var_name, next_tp);
+            }
         }
     }
 
@@ -351,33 +559,205 @@ void DoubleFreeAnalyzer::visitCompoundAssignment(ASTNode* node) {
 void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
     ASTSwitchExprNode* sw = node->as.switch_expr;
     visit(sw->expression);
-    if (sw->prongs) {
+
+    if (sw->prongs && sw->prongs->length() > 0) {
+        pushScope(true);
+        AllocationStateMap* entry_state = current_state_;
+
+        DynamicArray<AllocationStateMap*> prong_states(unit_.getArena());
+
         for (size_t i = 0; i < sw->prongs->length(); ++i) {
             ASTSwitchProngNode* prong = (*sw->prongs)[i];
+
+            pushScope(true);
             if (prong->cases) {
                 for (size_t j = 0; j < prong->cases->length(); ++j) {
                     visit((*prong->cases)[j]);
                 }
             }
             visit(prong->body);
+            prong_states.append(current_state_);
+            popScope();
         }
+
+        // Merge all prong states
+        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
+            const char* name = entry_state->vars[i].name;
+            if (!name) continue;
+            TrackedPointer* first_prong_tp = prong_states[0]->getState(name);
+            if (!first_prong_tp) continue;
+
+            TrackedPointer merged = *first_prong_tp;
+
+            for (size_t j = 1; j < prong_states.length(); ++j) {
+                TrackedPointer* next_prong_tp = prong_states[j]->getState(name);
+                if (next_prong_tp) {
+                    merged = mergeTrackedPointers(merged, *next_prong_tp);
+                }
+            }
+            entry_state->setState(name, merged);
+        }
+
+        AllocationStateMap* final_switch_state = current_state_;
+        popScope();
+        mergeScopesLinear(current_state_, final_switch_state);
     }
 }
 
 void DoubleFreeAnalyzer::visitTryExpr(ASTNode* node) {
     visit(node->as.try_expr.expression);
+
+    // Path-awareness for 'try':
+    // 'try' introduces a potential early exit path. On that path, 'errdefer's
+    // are executed. On the success path, they are not.
+    // Since we don't track the exact error path, we transition all currently
+    // ALLOCATED pointers to UNKNOWN to conservatively reflect this uncertainty.
+    if (current_state_) {
+        for (size_t i = 0; i < current_state_->vars.length(); ++i) {
+            TrackedPointer& tp = current_state_->vars[i];
+            if (tp.state == AS_ALLOCATED) {
+                TrackedPointer next_tp = tp;
+                next_tp.state = AS_UNKNOWN;
+                current_state_->setState(tp.name, next_tp);
+            }
+        }
+    }
 }
 
 void DoubleFreeAnalyzer::visitCatchExpr(ASTNode* node) {
     ASTCatchExprNode* catch_expr = node->as.catch_expr;
+
+    // Save entry state
+    pushScope(true);
+    AllocationStateMap* entry_state = current_state_;
+
+    // Main path (payload)
+    pushScope(true);
     visit(catch_expr->payload);
+    AllocationStateMap* main_branch = current_state_;
+    popScope();
+
+    // Catch path (else_expr)
+    pushScope(true);
     visit(catch_expr->else_expr);
+    AllocationStateMap* catch_branch = current_state_;
+    popScope();
+
+    // Merge both branches into entry_state
+    if (entry_state && main_branch && catch_branch) {
+        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
+            const char* name = entry_state->vars[i].name;
+            if (!name) continue;
+            TrackedPointer* s_main = main_branch->getState(name);
+            TrackedPointer* s_catch = catch_branch->getState(name);
+            if (s_main && s_catch) {
+                TrackedPointer merged = mergeTrackedPointers(*s_main, *s_catch);
+                entry_state->setState(name, merged);
+            }
+        }
+    }
+
+    AllocationStateMap* final_catch_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, final_catch_state);
 }
 
 void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
     ASTOrelseExprNode* orelse = node->as.orelse_expr;
+
+    // Save entry state
+    pushScope(true);
+    AllocationStateMap* entry_state = current_state_;
+
+    // Main path (payload)
+    pushScope(true);
     visit(orelse->payload);
+    AllocationStateMap* main_branch = current_state_;
+    popScope();
+
+    // Orelse path (else_expr)
+    pushScope(true);
     visit(orelse->else_expr);
+    AllocationStateMap* orelse_branch = current_state_;
+    popScope();
+
+    // Merge both branches into entry_state
+    if (entry_state && main_branch && orelse_branch) {
+        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
+            const char* name = entry_state->vars[i].name;
+            if (!name) continue;
+            TrackedPointer* s_main = main_branch->getState(name);
+            TrackedPointer* s_orelse = orelse_branch->getState(name);
+            if (s_main && s_orelse) {
+                TrackedPointer merged = mergeTrackedPointers(*s_main, *s_orelse);
+                entry_state->setState(name, merged);
+            }
+        }
+    }
+
+    AllocationStateMap* final_orelse_state = current_state_;
+    popScope();
+    mergeScopesLinear(current_state_, final_orelse_state);
+}
+
+TrackedPointer DoubleFreeAnalyzer::mergeTrackedPointers(const TrackedPointer& a, const TrackedPointer& b) {
+    if (a.state == b.state) return a;
+
+    TrackedPointer result = a;
+    result.state = mergeAllocationStates(a.state, b.state);
+
+    // If state is unknown, clear locations to be safe
+    if (result.state == AS_UNKNOWN) {
+        result.alloc_loc.line = 0;
+        result.first_free_loc.line = 0;
+        result.transfer_loc.line = 0;
+    }
+
+    return result;
+}
+
+void DoubleFreeAnalyzer::mergeScopesAlternative(AllocationStateMap* target, AllocationStateMap* branch) {
+    if (!target || !branch) return;
+
+    for (size_t i = 0; i < branch->modified.length(); ++i) {
+        const char* name = branch->modified[i];
+        if (!name) continue;
+
+        if (target->hasVariable(name)) {
+            TrackedPointer* branch_tp = branch->getState(name);
+            TrackedPointer* target_tp = target->getState(name);
+
+            if (branch_tp && target_tp) {
+                TrackedPointer merged = mergeTrackedPointers(*target_tp, *branch_tp);
+                target->setState(name, merged);
+            }
+        }
+    }
+}
+
+void DoubleFreeAnalyzer::mergeScopesLinear(AllocationStateMap* target, AllocationStateMap* source) {
+    if (!target || !source) return;
+
+    for (size_t i = 0; i < source->modified.length(); ++i) {
+        const char* name = source->modified[i];
+        if (!name) continue;
+
+        if (target->hasVariable(name)) {
+            TrackedPointer* source_tp = source->getState(name);
+            if (source_tp) {
+                target->setState(name, *source_tp);
+            }
+        }
+    }
+}
+
+AllocationState DoubleFreeAnalyzer::mergeAllocationStates(AllocationState s1, AllocationState s2) {
+    if (s1 == s2) return s1;
+
+    // Conservative merge: if any path differs from another, we lose certainty.
+    // Especially important: ALLOCATED + (ANYTHING ELSE) = UNKNOWN
+    // to ensure we don't miss potential leaks or double frees.
+    return AS_UNKNOWN;
 }
 
 void DoubleFreeAnalyzer::executeDefers(int depth_limit) {
@@ -452,16 +832,14 @@ void DoubleFreeAnalyzer::trackAllocation(const char* name, SourceLocation loc) {
     tp.scope_depth = current_scope_depth_;
     tp.flags = TP_FLAG_NONE;
     tp.alloc_loc = loc;
-    tracked_pointers_.append(tp);
+    if (current_state_) {
+        current_state_->addVariable(name, tp);
+    }
 }
 
 TrackedPointer* DoubleFreeAnalyzer::findTrackedPointer(const char* name) {
-    for (size_t i = 0; i < tracked_pointers_.length(); ++i) {
-        if (strings_equal(tracked_pointers_[i].name, name)) {
-            return &tracked_pointers_[i];
-        }
-    }
-    return NULL;
+    if (!current_state_) return NULL;
+    return current_state_->getState(name);
 }
 
 const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
@@ -473,8 +851,11 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) {
+    if (!name) return;
     TrackedPointer* tp = findTrackedPointer(name);
     char* msg = (char*)unit_.getArena().alloc(512);
+    if (!msg) return; // OOM, nothing we can do here
+
     char* p = msg;
     size_t rem = 512;
     safe_append(p, rem, "Double free of pointer '");
@@ -538,8 +919,11 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
 }
 
 void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool is_reassignment) {
+    if (!name) return;
     TrackedPointer* tp = findTrackedPointer(name);
     char* msg = (char*)unit_.getArena().alloc(512);
+    if (!msg) return;
+
     char* p = msg;
     size_t rem = 512;
 
@@ -598,7 +982,10 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
 }
 
 void DoubleFreeAnalyzer::reportUninitializedFree(const char* name, SourceLocation loc) {
+    if (!name) return;
     char* msg = (char*)unit_.getArena().alloc(256);
+    if (!msg) return;
+
     char* p = msg;
     size_t rem = 256;
     safe_append(p, rem, "Freeing uninitialized pointer '");
