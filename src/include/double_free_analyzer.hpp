@@ -65,6 +65,27 @@ struct DeferredAction {
 };
 
 /**
+ * @class AllocationStateMap
+ * @brief Holds allocation states for a scope, supporting branching and merging.
+ */
+class AllocationStateMap {
+public:
+    AllocationStateMap(ArenaAllocator& arena, AllocationStateMap* parent = NULL);
+    AllocationStateMap(const AllocationStateMap& other, ArenaAllocator& arena);
+
+    void setState(const char* name, const TrackedPointer& state);
+    TrackedPointer* getState(const char* name);
+    void addVariable(const char* name, const TrackedPointer& state);
+    bool hasVariable(const char* name) const;
+
+    DynamicArray<TrackedPointer> vars;
+    DynamicArray<const char*> modified; // Names of variables modified in this scope
+    AllocationStateMap* parent;
+private:
+    ArenaAllocator& arena_;
+};
+
+/**
  * @class DoubleFreeAnalyzer
  * @brief Performs static analysis to detect double free and memory leaks.
  */
@@ -75,7 +96,8 @@ public:
 
 private:
     CompilationUnit& unit_;
-    DynamicArray<TrackedPointer> tracked_pointers_;
+    AllocationStateMap* current_state_;
+    DynamicArray<AllocationStateMap*> scopes_;
     DynamicArray<DeferredAction> deferred_actions_;
     int current_scope_depth_;
 
@@ -107,6 +129,8 @@ private:
     bool is_executing_defers_;
 
     // Helpers
+    void pushScope(bool copy_parent = false);
+    void popScope();
     void executeDefers(int depth_limit);
     bool isArenaAllocCall(ASTNode* node);
     bool isArenaFreeCall(ASTFunctionCallNode* call);
@@ -116,6 +140,12 @@ private:
     void trackAllocation(const char* name, SourceLocation loc);
     TrackedPointer* findTrackedPointer(const char* name);
     const char* extractVariableName(ASTNode* node);
+
+    // Branching helpers
+    TrackedPointer mergeTrackedPointers(const TrackedPointer& a, const TrackedPointer& b);
+    void mergeScopesAlternative(AllocationStateMap* target, AllocationStateMap* branch);
+    void mergeScopesLinear(AllocationStateMap* target, AllocationStateMap* source);
+    AllocationState mergeAllocationStates(AllocationState s1, AllocationState s2);
 
     // Reporting helpers
     void reportDoubleFree(const char* name, SourceLocation loc);

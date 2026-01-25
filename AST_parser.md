@@ -1270,6 +1270,15 @@ The analyzer records locations in:
 - `visitAssignment`: Updates the tracked allocation site when a pointer is reassigned to a new `arena_alloc` result.
 - `visitFunctionCall`: Records the `first_free_loc` when `arena_free` is first called on an allocated pointer.
 
+### Control Flow Analysis (Task 130)
+The analyzer is path-aware, tracking allocation states across branches and loops.
+
+1. **Branching**: For `if`, `switch`, `catch`, and `orelse` constructs, the analyzer forks the current state for each branch. This allows independent tracking of allocations and deallocations within each path.
+2. **Merging**: At control flow join points, the branched states are merged back using conservative rules:
+   - If a pointer's state differs between branches (e.g., `AS_ALLOCATED` on one path and `AS_FREED` on another), its state becomes `AS_UNKNOWN` to avoid false positives.
+3. **Try Expression**: The `try` keyword introduces uncertainty because it may return early from the function. After a `try` expression, all currently `AS_ALLOCATED` pointers transition to `AS_UNKNOWN`.
+4. **Loops**: For `while` and `for` loops, any variable modified within the loop body is transitioned to `AS_UNKNOWN`, reflecting the uncertainty of potential multiple iterations.
+
 ---
 
 ## Deprecated
