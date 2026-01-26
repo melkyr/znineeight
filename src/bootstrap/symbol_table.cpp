@@ -98,7 +98,9 @@ Symbol* Scope::find(const char* name) {
     size_t index = hash % bucket_count;
 
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
-        if (strcmp(entry->symbol.name, name) == 0) {
+        // Optimization: identifiers are interned, so pointer comparison works.
+        // Fallback to strcmp for literals and strings from other arenas (e.g. in tests).
+        if (entry->symbol.name == name || strcmp(entry->symbol.name, name) == 0) {
             return &entry->symbol;
         }
     }

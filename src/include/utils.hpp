@@ -33,4 +33,11 @@ void simple_itoa(long value, char* buffer, size_t buffer_size);
  */
 bool strings_equal(const char* a, const char* b);
 
+/**
+ * @brief Checks if two identifiers are equal.
+ * Since all identifiers are interned, we can use pointer comparison.
+ * Fallback to strcmp for strings from other arenas or literals.
+ */
+bool identifiers_equal(const char* a, const char* b);
+
 #endif // UTILS_HPP

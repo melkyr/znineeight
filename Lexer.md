@@ -35,6 +35,24 @@ The lexer supports two types of comments, which are consumed and discarded:
 
 If the lexer encounters a character that does not belong to any valid token, it produces a `TOKEN_ERROR` token. This allows the parser to handle lexical errors gracefully.
 
+### 1.4 Token Resolution and Disambiguation
+The RetroZig lexer handles complex token resolution to ensure correct parsing of Zig's syntax:
+
+- **Dot Operators:** The lexer uses a two-character lookahead to resolve the ambiguity between:
+    - `.` (TOKEN_DOT): Member access.
+    - `.*` (TOKEN_DOT_ASTERISK): Pointer dereference.
+    - `.?` (TOKEN_DOT_QUESTION): Optional unwrapping.
+    - `..` (TOKEN_RANGE): Used in slices and for loops.
+    - `...` (TOKEN_ELLIPSIS): Variadic parameters (partially supported).
+- **Numeric Literals vs. Ranges:** When encountering a dot after a number (e.g., `0..10`), the lexer peeks ahead. If a second dot is present, it correctly identifies the number as an integer and the `..` as a range operator, rather than incorrectly consuming it as a floating-point literal.
+
+### 1.5 String Interning and Performance
+All identifiers and string literals are automatically processed through the `StringInterner`. This architectural choice has significant benefits for the entire compiler pipeline:
+
+- **Memory Efficiency:** Identical identifiers (e.g., variable names used multiple times) are stored only once in the memory arena.
+- **Fast Comparison:** Subsequent compilation passes (like the `DoubleFreeAnalyzer` or `TypeChecker`) can use O(1) pointer comparison (`==`) instead of O(n) string comparison (`strcmp`) to check for identifier equality.
+- **Stable Addresses:** Interned strings have a stable memory address for the entire duration of the compilation unit's lifetime.
+
 ## 2. Token Implementation Status
 
 This section tracks the implementation status of all tokens required for the RetroZig compiler. It is based on a gap analysis between the official Zig language specification and the current lexer implementation.

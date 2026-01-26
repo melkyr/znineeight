@@ -32,6 +32,11 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_CatchPathAware,
         test_DoubleFree_OrelsePathAware,
         test_DoubleFree_LoopConservativeVerification,
+        test_DoubleFree_MultipleDefers,
+        test_DoubleFree_DeferInLoop,
+        test_DoubleFree_PointerAliasing,
+        test_DoubleFree_ConditionalAllocUnconditionalFree,
+        test_DoubleFree_TransferThenFree,
         // Integration Tests
         test_Integration_FullPipeline,
         test_Integration_CorrectUsage

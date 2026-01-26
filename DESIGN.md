@@ -252,6 +252,8 @@ The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-fr
 - **Control Flow Analysis (Task 130):** The analyzer is path-aware. It forks the allocation state at control flow branches (`if`, `switch`, `catch`, `orelse`) and merges them at join points. If states diverge (e.g., freed in one branch but not another), the variable transitions to `AS_UNKNOWN` to remain conservative.
 - **Try & Loops:** The `try` keyword and loop bodies (`while`, `for`) introduce uncertainty. Tracked pointers transition to `AS_UNKNOWN` after a `try` or if modified within a loop.
 - **Ownership Transfers (Task 129):** Conservatively assumes that passing a pointer to any function (other than `arena_free`) transfers ownership. Transferred pointers are no longer checked for leaks or double frees, but a specific warning (`WARN_TRANSFERRED_MEMORY`) is issued at scope exit to remind the developer that the receiver is now responsible for the memory.
+- **Path-Aware Analysis (Task 130):** Tracks allocation states across branches (`if`, `switch`, `catch`, `orelse`). Uses a memory-efficient delta-based linked list for state tracking, supporting deep nesting on legacy hardware.
+- **Conservative Reassignment:** Immediately detects and warns about potential leaks when an allocated pointer is reassigned to a new value (including `null` or a new allocation) before the original memory is freed.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 **Supported Types (Bootstrap Phase):**

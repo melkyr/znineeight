@@ -71,3 +71,11 @@ bool strings_equal(const char* a, const char* b) {
     }
     return *a == *b;
 }
+
+bool identifiers_equal(const char* a, const char* b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+    // Identifiers are interned, but some might come from different arenas in tests,
+    // or be literal strings compared against interned names.
+    return strcmp(a, b) == 0;
+}
