@@ -1271,9 +1271,15 @@ The analyzer records locations in:
 - `visitFunctionCall`: Records the `first_free_loc` when `arena_free` is first called on an allocated pointer.
 
 ### Control Flow Analysis (Task 130)
-The analyzer is path-aware, tracking allocation states across branches and loops.
+The analyzer is path-aware, tracking allocation states across branches and loops to detect memory safety issues in complex control flow.
 
-0. **Memory-Efficient State Tracking**: To support deep branch nesting on 1990s hardware, the analyzer uses an `AllocationStateMap` that stores state changes as a linked list of **deltas** pointing to a parent scope. `fork()` is an O(1) operation, and `getState()` recursively traverses the delta list.
+#### Memory-Efficient State Tracking
+To support deep branch nesting on 1990s hardware, the analyzer uses an `AllocationStateMap` that stores state changes as a linked list of **deltas** pointing to a parent scope. This architecture provides several benefits:
+- **O(1) Forking**: Creating a new branch state only requires creating a new map pointing to the current one.
+- **O(K) Merging**: Merging only requires iterating over the variables modified in the branches (K).
+- **Recursive Lookup**: `getState()` traverses the delta list to find the most recent state of a variable.
+
+#### Analysis Rules for Milestone 4 Constructs
 1. **Branching**: For `if`, `switch`, `catch`, and `orelse` constructs, the analyzer forks the current state for each branch. This allows independent tracking of allocations and deallocations within each path.
 2. **Merging**: At control flow join points, the branched states are merged back using conservative rules:
    - If a pointer's state differs between branches (e.g., `AS_ALLOCATED` on one path and `AS_FREED` on another), its state becomes `AS_UNKNOWN` to avoid false positives.

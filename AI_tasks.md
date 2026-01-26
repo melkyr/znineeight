@@ -557,7 +557,7 @@ Output: Runtime assertions in codegen module
     Validation: Flag all potential null dereference points
     Success criteria: All null pointer risks are identified in advance. Phase 3 (Conditionals & Flow) is implemented.
 
-127. **Task 127:** DOUBLE FREE DETECTION (HIGH)
+127. **Task 127:** DOUBLE FREE DETECTION (COMPLETE)
 
     What to implement: Detect potential double-free scenarios
     Watch for: 
@@ -568,9 +568,9 @@ Output: Runtime assertions in codegen module
     Success criteria: All potential double-free scenarios are identified
 128. **Task 128:** Track allocation sites (DONE)
 129. **Task 129:** Track deallocation sites (DONE 2024-05-24)
-130. **Task 130:** Analyze control flow paths
-131. **Task 131:** Identify potential multiple deallocations
-132. **Task 132:** Flag all double-free risks
+130. **Task 130:** Analyze control flow paths (DONE)
+131. **Task 131:** Identify potential multiple deallocations (DONE)
+132. **Task 132:** Flag all double-free risks (DONE)
 
 133. **Task 133:** Implement struct type checking (simple)
     - Risk Level: MEDIUM

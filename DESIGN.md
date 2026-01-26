@@ -496,6 +496,15 @@ TokenType getKeywordType(const char* word) {
 ```
 
 ## 8. Testing Strategy
+
+The testing strategy is designed to handle the complexity of the compiler while respecting strict memory and performance constraints.
+
+### Batch Testing Architecture
+To avoid arena fragmentation and out-of-memory errors during large-scale test runs, the unit test suite is split into multiple independent "batches".
+- **Isolation**: Each batch runs in its own process, ensuring a clean memory heap and arena.
+- **Scalability**: New tests can be added to existing batches or new ones without increasing the memory footprint of a single run.
+- **Verification**: A master script (`run_all_tests.sh`) orchestrates the sequential execution of all batches and aggregates results.
+
 ### Unit Test Framework
 ```cpp
 // test_framework.h
