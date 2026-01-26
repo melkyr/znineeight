@@ -28,6 +28,14 @@ public:
 
 private:
     CompilationUnit& unit;
+    bool error_found_;
+
+    /**
+     * @brief Reports a non-fatal C89 feature violation.
+     * @param location The source location of the unsupported feature.
+     * @param message A descriptive error message.
+     */
+    void reportNonC89Feature(SourceLocation location, const char* message);
 
     /**
      * @brief The main visitor dispatch method.

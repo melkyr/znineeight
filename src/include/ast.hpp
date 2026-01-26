@@ -616,15 +616,18 @@ struct ASTArrayTypeNode {
  */
 struct ASTErrorUnionTypeNode {
     ASTNode* payload_type;
+    SourceLocation loc;
 };
 
 /**
  * @struct ASTOptionalTypeNode
  * @brief Represents an optional type (e.g., `?i32`).
  * @var ASTOptionalTypeNode::payload_type A pointer to the ASTNode for the payload type.
+ * @var ASTOptionalTypeNode::loc The source location of the '?' operator.
  */
 struct ASTOptionalTypeNode {
     ASTNode* payload_type;
+    SourceLocation loc;
 };
 
 
@@ -705,8 +708,8 @@ struct ASTNode {
         ASTTypeNameNode type_name;
         ASTPointerTypeNode pointer_type;
         ASTArrayTypeNode array_type;
-        ASTErrorUnionTypeNode error_union_type;
-        ASTOptionalTypeNode optional_type;
+        ASTErrorUnionTypeNode* error_union_type; // Out-of-line
+        ASTOptionalTypeNode* optional_type; // Out-of-line
     } as;
 };
 
