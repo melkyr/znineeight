@@ -237,9 +237,10 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - **Potential Null Dereference Warning (`WARN_POTENTIAL_NULL_DEREFERENCE` - 6002):** Reported when a pointer with an unknown state (e.g., from a function call or after a merge) is dereferenced.
 - **Assignment Handling**: The analyzer tracks direct assignments (`p = q`), `null` assignments (`p = null`), and address-of assignments (`p = &x`). It correctly handles reassignments and persists state through linear and branched flow.
 
-#### Pass 4: Double Free Detection (Tasks 127-129)
+#### Pass 4: Double Free Detection (Tasks 127-130)
 The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-free scenarios and memory leaks related to the project's `ArenaAllocator` interface (`arena_alloc` and `arena_free`).
 
+- **Memory Efficiency (Task 130):** Uses a memory-efficient `AllocationStateMap` based on a linked list of **deltas**. This avoids deep-copying the entire state when forking for branches, reducing memory overhead to O(1) for forks and O(k) for merges (where k is the number of modified variables).
 - **Allocation Tracking:** It tracks the state of pointers using the `AllocationState` enum (`AS_UNINITIALIZED`, `AS_ALLOCATED`, `AS_FREED`, `AS_RETURNED`, `AS_UNKNOWN`). A pointer is tracked if it is initialized or assigned the result of `arena_alloc`.
 - **Double Free Detection:** Reports `ERR_DOUBLE_FREE` (2005) when `arena_free` is called on an already freed pointer. Tracks both the allocation site and the first deallocation site (including defer context) for detailed diagnostics.
 - **Leak Detection:**

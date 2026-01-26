@@ -65,20 +65,35 @@ struct DeferredAction {
 };
 
 /**
+ * @struct StateDelta
+ * @brief Represents a change in a pointer's allocation state within a specific scope.
+ */
+struct StateDelta {
+    const char* name;
+    TrackedPointer state;
+    StateDelta* next;
+
+    StateDelta() : name(NULL), next(NULL) {}
+    StateDelta(const char* n, const TrackedPointer& s, StateDelta* nxt)
+        : name(n), state(s), next(nxt) {}
+};
+
+/**
  * @class AllocationStateMap
- * @brief Holds allocation states for a scope, supporting branching and merging.
+ * @brief Holds allocation states for a scope using a memory-efficient delta-based linked list.
  */
 class AllocationStateMap {
 public:
     AllocationStateMap(ArenaAllocator& arena, AllocationStateMap* parent = NULL);
-    AllocationStateMap(const AllocationStateMap& other, ArenaAllocator& arena);
 
     void setState(const char* name, const TrackedPointer& state);
     TrackedPointer* getState(const char* name);
     void addVariable(const char* name, const TrackedPointer& state);
     bool hasVariable(const char* name) const;
 
-    DynamicArray<TrackedPointer> vars;
+    AllocationStateMap* fork();
+
+    StateDelta* delta_head;
     DynamicArray<const char*> modified; // Names of variables modified in this scope
     AllocationStateMap* parent;
 private:

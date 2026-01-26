@@ -91,8 +91,14 @@ The `DoubleFreeAnalyzer` is path-aware. Tests should verify that it correctly ha
 ### If/Else Branching
 Verify that freeing a pointer in only one branch of an `if` results in an `AS_UNKNOWN` state after the `if`, preventing false definite double-free reports.
 
-### Try Expression
-Verify that `try` transitions `AS_ALLOCATED` pointers to `AS_UNKNOWN` due to potential early exit.
+### Switch Expressions
+Verify that `switch` prongs fork state correctly and merge back. If states diverge across prongs, the variable should become `AS_UNKNOWN`.
+
+### Try/Catch and Orelse
+Verify that `try` transitions all potentially affected pointers to `AS_UNKNOWN`. `catch` and `orelse` should fork for success/failure paths and merge back accurately.
 
 ### Loop Safety
 Verify that variables modified within `while` or `for` loops are transitioned to `AS_UNKNOWN` to account for potential multiple iterations.
+
+### Memory Stability
+Run Valgrind to ensure the new delta-based state map does not leak memory or access uninitialized values during branch analysis.
