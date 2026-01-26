@@ -17,23 +17,27 @@ if errorlevel 1 (
 )
 
 echo.
-echo Compiling test runner...
-cl.exe /nologo /EHsc /W4 /Isrc/include ^
-    tests/main.cpp ^
-    tests/test_arena.cpp ^
-    tests/test_string_interner.cpp ^
-    tests/test_memory.cpp ^
-    src/bootstrap/string_interner.cpp ^
-    /Fe:test_runner.exe
+echo Compiling Batch Test Runners...
 
-if errorlevel 1 (
-    echo Test runner compilation failed!
-    exit /b 1
+set BOOTSTRAP_SRCS=src/bootstrap/lexer.cpp src/bootstrap/parser.cpp src/bootstrap/string_interner.cpp src/bootstrap/error_handler.cpp src/bootstrap/symbol_table.cpp src/bootstrap/type_system.cpp src/bootstrap/type_checker.cpp src/bootstrap/compilation_unit.cpp src/bootstrap/source_manager.cpp src/bootstrap/token_supplier.cpp src/bootstrap/c89_feature_validator.cpp src/bootstrap/lifetime_analyzer.cpp src/bootstrap/null_pointer_analyzer.cpp src/bootstrap/double_free_analyzer.cpp src/bootstrap/utils.cpp
+set TEST_SRCS=tests/test_*.cpp tests/c89_*.cpp tests/dynamic_array_copy_test.cpp tests/integer_literal_parsing.cpp tests/lexer_*.cpp tests/memory_*.cpp tests/parser_*.cpp tests/return_type_validation_tests.cpp tests/symbol_*.cpp tests/task_119_test.cpp tests/type_*.cpp tests/pointer_arithmetic_test.cpp tests/const_var_crash_test.cpp tests/bug_test_memory.cpp tests/lifetime_analysis_tests.cpp tests/null_pointer_analysis_tests.cpp tests/integration_tests.cpp tests/double_free_analysis_tests.cpp
+
+for %%i in (1 2 3 4 5) do (
+    echo Compiling batch %%i...
+    cl.exe /nologo /EHsc /W4 /Isrc/include ^
+        %BOOTSTRAP_SRCS% ^
+        %TEST_SRCS% ^
+        tests/main_batch%%i.cpp ^
+        /Fe:test_runner_batch%%i.exe
+    if errorlevel 1 (
+        echo Test runner batch %%i compilation failed!
+        exit /b 1
+    )
 )
 
 echo.
 echo Running tests...
-test_runner.exe
+call run_all_tests.bat
 if errorlevel 1 (
     echo Tests failed!
     exit /b 1

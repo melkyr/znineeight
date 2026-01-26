@@ -6,11 +6,18 @@ This document outlines the testing strategy and procedures for the RetroZig comp
 
 Unit tests are used to verify the correctness of individual compiler components (Lexer, Parser, TypeChecker, Analyzers).
 
-### Running Unit Tests
-Execute the `test.sh` script (or `test.bat` on Windows) to compile and run all unit tests:
+### Batch Testing Strategy
+To prevent memory fragmentation and handle the large number of tests (~380+) within strict memory constraints (<16MB), the test suite is divided into multiple batches. Each batch runs in a fresh process with its own arena.
+
+Execute the `test.sh` script (or `test.bat` on Windows) to compile all batch runners and execute them sequentially via `run_all_tests.sh`:
 
 ```bash
 ./test.sh
+```
+
+To run a specific batch:
+```bash
+./test_runner_batch1
 ```
 
 ### Test Framework
