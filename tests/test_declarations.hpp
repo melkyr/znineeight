@@ -482,4 +482,10 @@ TEST_FUNC(TypeChecker_StructInitialization_TypeMismatch);
 TEST_FUNC(TypeChecker_StructLayout_Verification);
 TEST_FUNC(TypeChecker_UnionDeclaration_DuplicateField);
 
+// Forward declarations for Task 136
+TEST_FUNC(Task136_ErrorSet_Catalogue);
+TEST_FUNC(Task136_ErrorSet_Rejection);
+TEST_FUNC(Task136_ErrorSetMerge_Rejection);
+TEST_FUNC(Task136_Import_Rejection);
+
 #endif // TEST_DECLARATIONS_HPP

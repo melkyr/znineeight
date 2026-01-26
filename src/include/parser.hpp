@@ -15,6 +15,7 @@
 // Forward-declarations for core data structures
 struct ASTNode;
 struct Type;
+class ErrorSetCatalogue;
 
 /**
  * @class Parser
@@ -36,8 +37,9 @@ public:
      * @param count The total number of tokens in the stream.
      * @param arena A pointer to the ArenaAllocator for memory management.
      * @param symbol_table A pointer to the SymbolTable for managing scopes.
+     * @param catalogue A pointer to the ErrorSetCatalogue for tracking error sets.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table);
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue);
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -288,6 +290,12 @@ private:
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();
 
+    /** @brief Parses an error set definition (e.g., `error { A, B }`). */
+    ASTNode* parseErrorSetDefinition();
+
+    /** @brief Parses an @import statement. */
+    ASTNode* parseImport();
+
     /** @brief Parses a top-level item. Helper for `parse`. */
     ASTNode* parseTopLevelItem();
 
@@ -306,6 +314,7 @@ private:
     size_t current_index_;
     ArenaAllocator* arena_;
     SymbolTable* symbol_table_;
+    ErrorSetCatalogue* catalogue_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
     Token eof_token_; ///< A cached EOF token to return from peekNext()
 

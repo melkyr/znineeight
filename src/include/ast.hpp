@@ -60,6 +60,11 @@ enum NodeType {
     NODE_STRUCT_DECL,     ///< A struct declaration.
     NODE_UNION_DECL,      ///< A union declaration.
     NODE_ENUM_DECL,       ///< An enum declaration.
+    NODE_ERROR_SET_DEFINITION, ///< An error set definition (e.g., `error { A, B }`).
+    NODE_ERROR_SET_MERGE,      ///< An error set merge (e.g., `E1 || E2`).
+
+    // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_IMPORT_STMT,     ///< An @import statement.
 
     // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
@@ -110,6 +115,9 @@ struct ASTStructFieldNode;
 struct ASTStructDeclNode;
 struct ASTUnionDeclNode;
 struct ASTEnumDeclNode;
+struct ASTErrorSetDefinitionNode;
+struct ASTErrorSetMergeNode;
+struct ASTImportStmtNode;
 struct ASTTypeNameNode;
 struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
@@ -576,6 +584,37 @@ struct ASTEnumDeclNode {
     DynamicArray<ASTNode*>* fields;
 };
 
+/**
+ * @struct ASTErrorSetDefinitionNode
+ * @brief Represents an error set definition (e.g., `error { A, B }`).
+ * @var ASTErrorSetDefinitionNode::name The name of the error set (can be NULL if anonymous).
+ * @var ASTErrorSetDefinitionNode::tags A dynamic array of interned strings representing the error tags.
+ */
+struct ASTErrorSetDefinitionNode {
+    const char* name; // NULL for anonymous
+    DynamicArray<const char*>* tags;
+};
+
+/**
+ * @struct ASTErrorSetMergeNode
+ * @brief Represents an error set merge (e.g., `E1 || E2`).
+ * @var ASTErrorSetMergeNode::left The left-hand side of the merge.
+ * @var ASTErrorSetMergeNode::right The right-hand side of the merge.
+ */
+struct ASTErrorSetMergeNode {
+    ASTNode* left;
+    ASTNode* right;
+};
+
+/**
+ * @struct ASTImportStmtNode
+ * @brief Represents an @import statement.
+ * @var ASTImportStmtNode::module_name The name of the module being imported.
+ */
+struct ASTImportStmtNode {
+    const char* module_name;
+};
+
 
 // --- Type Expression Nodes ---
 
@@ -615,6 +654,7 @@ struct ASTArrayTypeNode {
  * @var ASTErrorUnionTypeNode::payload_type A pointer to the ASTNode for the payload type.
  */
 struct ASTErrorUnionTypeNode {
+    ASTNode* error_set; // NULL for inferred (!)
     ASTNode* payload_type;
     SourceLocation loc;
 };
@@ -702,7 +742,11 @@ struct ASTNode {
         ASTStructDeclNode* struct_decl; // Out-of-line
         ASTUnionDeclNode* union_decl; // Out-of-line
         ASTEnumDeclNode* enum_decl; // Out-of-line
+        ASTErrorSetDefinitionNode* error_set_decl; // Out-of-line
+        ASTErrorSetMergeNode* error_set_merge; // Out-of-line
 
+        // Statements
+        ASTImportStmtNode* import_stmt; // Out-of-line
 
         // Type Expressions
         ASTTypeNameNode type_name;

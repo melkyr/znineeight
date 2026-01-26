@@ -46,6 +46,15 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_ORELSE_EXPR:
             visitOrelseExpr(node);
             break;
+        case NODE_ERROR_SET_DEFINITION:
+            visitErrorSetDefinition(node);
+            break;
+        case NODE_ERROR_SET_MERGE:
+            visitErrorSetMerge(node);
+            break;
+        case NODE_IMPORT_STMT:
+            visitImportStmt(node);
+            break;
 
         // --- Recursive traversal for other node types ---
         case NODE_BINARY_OP:
@@ -184,4 +193,16 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
 
 void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
     fatalError(node->loc, "'orelse' expressions are not supported for C89 compatibility.");
+}
+
+void C89FeatureValidator::visitErrorSetDefinition(ASTNode* node) {
+    fatalError(node->loc, "Error sets are not supported for C89 compatibility.");
+}
+
+void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
+    fatalError(node->loc, "Error set merging (||) is not supported for C89 compatibility.");
+}
+
+void C89FeatureValidator::visitImportStmt(ASTNode* node) {
+    fatalError(node->loc, "Imports (@import) are not supported in the bootstrap phase.");
 }

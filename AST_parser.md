@@ -75,6 +75,11 @@ enum NodeType {
     NODE_STRUCT_DECL,     ///< A struct declaration.
     NODE_UNION_DECL,      ///< A union declaration.
     NODE_ENUM_DECL,       ///< An enum declaration.
+    NODE_ERROR_SET_DEFINITION, ///< An error set definition (e.g., `error { A, B }`).
+    NODE_ERROR_SET_MERGE,      ///< An error set merge (e.g., `E1 || E2`).
+
+    // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
+    NODE_IMPORT_STMT,     ///< An @import statement.
 
     // ~~~~~~~~~~~~~~~~~~~ Type Expressions ~~~~~~~~~~~~~~~~~~~~
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
@@ -149,6 +154,11 @@ struct ASTNode {
         ASTStructDeclNode* struct_decl; // Out-of-line
         ASTUnionDeclNode* union_decl; // Out-of-line
         ASTEnumDeclNode* enum_decl; // Out-of-line
+        ASTErrorSetDefinitionNode* error_set_decl; // Out-of-line
+        ASTErrorSetMergeNode* error_set_merge; // Out-of-line
+
+        // Statements
+        ASTImportStmtNode* import_stmt; // Out-of-line
 
         // Type Expressions
         ASTTypeNameNode type_name;
@@ -219,6 +229,9 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTUnaryOpNode`            | 8            | Inline          |
 | `ASTMemberAccessNode`       | 4            | Pointer (4)     |
 | `ASTStructInitializerNode`  | 4            | Pointer (4)     |
+| `ASTErrorSetDefinitionNode` | 8            | Pointer (4)     |
+| `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
+| `ASTImportStmtNode`         | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
 
 ## 4. Implemented AST Node Types
@@ -1175,7 +1188,61 @@ Represents an `errdefer` statement, which is executed only if the function retur
     };
     ```
 
-## 12. Compile-Time Operation Node Types
+## 11. Error Set Definitions
+
+### Syntax
+```zig
+// Named error set
+const MyErrors = error { FileNotFound, PermissionDenied };
+
+// Anonymous error set
+fn open() error{FileNotFound}!void { ... }
+
+// Error set merging
+const AllErrors = Errors1 || Errors2;
+```
+
+### AST Nodes
+
+#### `ASTErrorSetDefinitionNode`
+Represents a definition of error tags.
+```cpp
+struct ASTErrorSetDefinitionNode {
+    const char* name; // NULL for anonymous
+    DynamicArray<const char*>* tags;
+};
+```
+
+#### `ASTErrorSetMergeNode`
+Represents the merging of two error sets.
+```cpp
+struct ASTErrorSetMergeNode {
+    ASTNode* left;
+    ASTNode* right;
+};
+```
+
+### Detection and Cataloguing
+Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. This allows for documentation and analysis of all errors used in the codebase, even though they are eventually rejected by the `C89FeatureValidator`.
+
+## 12. Import Statements
+
+### Syntax
+```zig
+const std = @import("std");
+```
+
+### AST Node
+
+#### `ASTImportStmtNode`
+Represents an `@import` expression.
+```cpp
+struct ASTImportStmtNode {
+    const char* module_name;
+};
+```
+
+## 13. Compile-Time Operation Node Types
 
 These nodes are related to compile-time execution and evaluation.
 

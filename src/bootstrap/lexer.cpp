@@ -682,7 +682,20 @@ Token Lexer::nextToken() {
             token.type = match('=') ? TOKEN_AMPERSAND_EQUAL : TOKEN_AMPERSAND;
             break;
         case '|':
-            token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE;
+            if (match('|')) {
+                token.type = TOKEN_PIPE_PIPE;
+            } else {
+                token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE;
+            }
+            break;
+        case '@':
+            if (strncmp(this->current, "import", 6) == 0 && !isIdentifierChar(this->current[6])) {
+                this->current += 6;
+                this->column += 6;
+                token.type = TOKEN_AT_IMPORT;
+            } else {
+                token.type = TOKEN_ERROR;
+            }
             break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
         case '.': // Handles '.', '..', '...', '.*', '.?'

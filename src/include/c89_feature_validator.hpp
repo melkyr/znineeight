@@ -50,6 +50,9 @@ private:
     void visitTryExpr(ASTNode* node);
     void visitCatchExpr(ASTNode* node);
     void visitOrelseExpr(ASTNode* node);
+    void visitErrorSetDefinition(ASTNode* node);
+    void visitErrorSetMerge(ASTNode* node);
+    void visitImportStmt(ASTNode* node);
 
     /**
      * @brief Reports a fatal error and aborts compilation.

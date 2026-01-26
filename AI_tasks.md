@@ -590,7 +590,7 @@ Output: Runtime assertions in codegen module
     Validation: Log all detected error union locations
     Success criteria: All error union usages are identified and flagged
 
-136. **Task 136:** ERROR SET DEFINITION DETECTION (LOW)
+136. **Task 136:** ERROR SET DEFINITION DETECTION (DONE)
 
     What to implement: Find all error set declarations
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"

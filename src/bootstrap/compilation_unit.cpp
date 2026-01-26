@@ -25,7 +25,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       source_manager_(arena),
       symbol_table_(arena),
       error_handler_(source_manager_, arena),
-      token_supplier_(source_manager_, interner_, arena) {
+      token_supplier_(source_manager_, interner_, arena),
+      error_set_catalogue_(arena) {
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -40,7 +41,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_);
 }
 
 /**
@@ -61,6 +62,10 @@ const ErrorHandler& CompilationUnit::getErrorHandler() const {
 
 SourceManager& CompilationUnit::getSourceManager() {
     return source_manager_;
+}
+
+ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue() {
+    return error_set_catalogue_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {
