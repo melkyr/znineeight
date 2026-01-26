@@ -7,6 +7,7 @@
 #include <string.h>
 #include <new>
 
+
 LifetimeAnalyzer::LifetimeAnalyzer(CompilationUnit& unit)
     : unit_(unit), current_assignments_(NULL) {}
 
@@ -150,7 +151,7 @@ bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
                 bool is_parameter = (sym->flags & SYMBOL_FLAG_PARAM) != 0;
                 if (current_assignments_) {
                     for (size_t i = 0; i < current_assignments_->length(); ++i) {
-                        if (strcmp((*current_assignments_)[i].pointer_name, name) == 0) {
+                        if (identifiers_equal((*current_assignments_)[i].pointer_name, name)) {
                             const char* source = (*current_assignments_)[i].points_to_name;
                             if (source) {
                                 return isSymbolLocalVariable(source);
@@ -187,7 +188,7 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
     }
 
     for (size_t i = 0; i < current_assignments_->length(); ++i) {
-        if (strcmp((*current_assignments_)[i].pointer_name, pointer_name) == 0) {
+        if (identifiers_equal((*current_assignments_)[i].pointer_name, pointer_name)) {
             (*current_assignments_)[i].points_to_name = points_to_name;
             return;
         }

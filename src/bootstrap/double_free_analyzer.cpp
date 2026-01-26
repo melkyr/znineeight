@@ -3,6 +3,7 @@
 #include "type_system.hpp"
 #include <new>
 
+
 AllocationStateMap::AllocationStateMap(ArenaAllocator& arena, AllocationStateMap* p)
     : delta_head(NULL), modified(arena), parent(p), arena_(arena) {
 }
@@ -13,7 +14,7 @@ void AllocationStateMap::setState(const char* name, const TrackedPointer& state)
     // Check if already in delta for THIS scope
     StateDelta* curr = delta_head;
     while (curr) {
-        if (strings_equal(curr->name, name)) {
+        if (identifiers_equal(curr->name, name)) {
             curr->state = state;
             curr->state.name = name; // Ensure name is preserved
             return;
@@ -31,7 +32,7 @@ void AllocationStateMap::setState(const char* name, const TrackedPointer& state)
     // Mark as modified in this scope
     bool already_modified = false;
     for (size_t j = 0; j < modified.length(); ++j) {
-        if (strings_equal(modified[j], name)) {
+        if (identifiers_equal(modified[j], name)) {
             already_modified = true;
             break;
         }
@@ -45,7 +46,7 @@ TrackedPointer* AllocationStateMap::getState(const char* name) {
     // Check deltas in this scope
     StateDelta* curr = delta_head;
     while (curr) {
-        if (strings_equal(curr->name, name)) {
+        if (identifiers_equal(curr->name, name)) {
             return &curr->state;
         }
         curr = curr->next;
@@ -66,7 +67,7 @@ void AllocationStateMap::addVariable(const char* name, const TrackedPointer& sta
 bool AllocationStateMap::hasVariable(const char* name) const {
     StateDelta* curr = delta_head;
     while (curr) {
-        if (strings_equal(curr->name, name)) {
+        if (identifiers_equal(curr->name, name)) {
             return true;
         }
         curr = curr->next;
@@ -438,7 +439,7 @@ void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
                 const char* name = else_branch->modified[i];
                 bool already = false;
                 for (size_t j = 0; j < to_merge.length(); ++j) {
-                    if (strings_equal(to_merge[j], name)) {
+                    if (identifiers_equal(to_merge[j], name)) {
                         already = true;
                         break;
                     }
@@ -632,7 +633,7 @@ void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
                 const char* name = prong_states[i]->modified[j];
                 bool already = false;
                 for (size_t k = 0; k < to_merge.length(); ++k) {
-                    if (strings_equal(to_merge[k], name)) {
+                    if (identifiers_equal(to_merge[k], name)) {
                         already = true;
                         break;
                     }
@@ -736,7 +737,7 @@ void DoubleFreeAnalyzer::visitCatchExpr(ASTNode* node) {
         for (size_t i = 0; i < catch_branch->modified.length(); ++i) {
             const char* name = catch_branch->modified[i];
             bool already = false;
-            for (size_t j = 0; j < to_merge.length(); ++j) if (strings_equal(to_merge[j], name)) { already = true; break; }
+            for (size_t j = 0; j < to_merge.length(); ++j) if (identifiers_equal(to_merge[j], name)) { already = true; break; }
             if (!already) to_merge.append(name);
         }
 
@@ -782,7 +783,7 @@ void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
         for (size_t i = 0; i < orelse_branch->modified.length(); ++i) {
             const char* name = orelse_branch->modified[i];
             bool already = false;
-            for (size_t j = 0; j < to_merge.length(); ++j) if (strings_equal(to_merge[j], name)) { already = true; break; }
+            for (size_t j = 0; j < to_merge.length(); ++j) if (identifiers_equal(to_merge[j], name)) { already = true; break; }
             if (!already) to_merge.append(name);
         }
 

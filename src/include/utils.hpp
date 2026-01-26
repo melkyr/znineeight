@@ -33,4 +33,18 @@ void simple_itoa(long value, char* buffer, size_t buffer_size);
  */
 bool strings_equal(const char* a, const char* b);
 
+/**
+ * @brief Checks if two interned identifiers are equal using pointer comparison.
+ *
+ * Since identifiers are interned in the StringInterner, we can use pointer equality
+ * for O(1) comparison instead of O(n) string comparison.
+ *
+ * @param a The first identifier.
+ * @param b The second identifier.
+ * @return True if the identifiers are equal, false otherwise.
+ */
+inline bool identifiers_equal(const char* a, const char* b) {
+    return a == b;
+}
+
 #endif // UTILS_HPP
