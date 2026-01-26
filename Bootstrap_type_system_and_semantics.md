@@ -573,6 +573,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_U64`        | `"unsigned __int64"`   | Size: 8, Align: 8. For MSVC 6.0 compatibility. |
 | `TYPE_F32`        | `"float"`              | Size: 4, Align: 4              |
 | `TYPE_F64`        | `"double"`             | Size: 8, Align: 8              |
+| `TYPE_ENUM`       | `"typedef T"`          | Dependent on backing type.      |
 
 *Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
 

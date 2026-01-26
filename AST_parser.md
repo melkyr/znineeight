@@ -1049,6 +1049,15 @@ Represents an `enum` definition.
     };
     ```
 
+### Enum Type Checking
+The `TypeChecker` validates enums by:
+1.  **Backing Type Verification**: Ensures the backing type is a C89-compatible integer (defaults to `i32`).
+2.  **Value Calculation**: Handles explicit values and Zig-style auto-incrementing.
+3.  **Range Checking**: Verifies each member value fits within the backing type's range.
+4.  **Nominal Typing**: Enums are distinct types based on their declaration identity.
+5.  **Dot Notation Access**: Supports `EnumName.MemberName` via `visitMemberAccess`.
+6.  **C89 Compatibility**: Allows implicit conversion from enums to integer types.
+
 #### Parsing Logic (`parseEnumDeclaration`)
 The `parseEnumDeclaration` function handles anonymous enum literals. It is invoked from `parsePrimaryExpr` when an `enum` keyword is encountered. The function adheres to the grammar:
 `'enum' ('(' type ')')? '{' (field (',' field)* ','?)? '}'`

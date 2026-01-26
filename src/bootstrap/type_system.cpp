@@ -123,13 +123,16 @@ void calculateStructLayout(Type* struct_type) {
     struct_type->alignment = max_alignment;
 }
 
-Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members) {
+Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
     new_type->alignment = backing_type->alignment;
+    new_type->as.enum_details.name = name;
     new_type->as.enum_details.backing_type = backing_type;
     new_type->as.enum_details.members = members;
+    new_type->as.enum_details.min_value = min_val;
+    new_type->as.enum_details.max_value = max_val;
     return new_type;
 }
 

@@ -3,6 +3,7 @@
 
 #include <cstddef> // For size_t
 #include "memory.hpp" // For DynamicArray
+#include "source_manager.hpp" // For SourceLocation
 
 // Forward-declare Type for the pointer union member
 struct Type;
@@ -52,6 +53,7 @@ struct StructField {
 struct EnumMember {
     const char* name;
     i64 value;
+    SourceLocation loc;
 };
 
 /**
@@ -82,8 +84,11 @@ struct Type {
             i64 value;
         } integer_literal;
         struct {
+            const char* name;
             Type* backing_type;
             DynamicArray<EnumMember>* members;
+            i64 min_value;
+            i64 max_value;
         } enum_details;
         struct {
             DynamicArray<StructField>* fields;
@@ -146,11 +151,14 @@ void calculateStructLayout(Type* struct_type);
 /**
  * @brief Creates a new enum Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
+ * @param name The name of the enum type (can be NULL for anonymous).
  * @param backing_type A pointer to the enum's backing type.
  * @param members A dynamic array of the enum's members.
+ * @param min_val The minimum value in the enum.
+ * @param max_val The maximum value in the enum.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members);
+Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val);
 
 /**
  * @brief Converts a Type object to its string representation.
