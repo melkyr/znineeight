@@ -602,6 +602,7 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 |-------------|----------------|--------|
 | `!T` (error union) | No equivalent | REJECTED |
 | `?T` (optional) | No equivalent | REJECTED |
+| `error { ... }` | No equivalent | REJECTED |
 
 These features cannot be mapped to C89 and are rejected at parse time by the `C89FeatureValidator`.
 

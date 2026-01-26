@@ -127,6 +127,12 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
     7.  **Code Generation:** Emits target code (C89).
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
+#### 4.0.1 Non-C89 Feature Detection Strategy
+To maintain strict compatibility with C89, the compiler employs a multi-layered detection and rejection strategy for modern Zig features:
+1.  **Syntactic Detection (Parser):** The parser is equipped to recognize modern Zig syntax (e.g., error sets, error unions, optionals, `@import`) for the sole purpose of detection and cataloguing.
+2.  **Feature Cataloguing:** Detected features like error sets are logged into specialized structures (e.g., `ErrorSetCatalogue`) during parsing. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
+3.  **Formal Rejection (C89FeatureValidator):** Immediately after parsing, the `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, ensuring they never reach the type checking or code generation phases.
+
 **Example Usage:**
 ```cpp
 // In a test environment

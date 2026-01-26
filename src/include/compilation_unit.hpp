@@ -8,6 +8,7 @@
 #include "symbol_table.hpp"
 #include "error_handler.hpp"
 #include "token_supplier.hpp"
+#include "error_set_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -39,6 +40,7 @@ public:
     ErrorHandler& getErrorHandler();
     const ErrorHandler& getErrorHandler() const;
     SourceManager& getSourceManager();
+    ErrorSetCatalogue& getErrorSetCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -57,6 +59,7 @@ private:
     SymbolTable symbol_table_;
     ErrorHandler error_handler_;
     TokenSupplier token_supplier_;
+    ErrorSetCatalogue error_set_catalogue_;
     CompilationOptions options_;
 };
 

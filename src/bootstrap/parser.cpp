@@ -1,4 +1,5 @@
 #include "parser.hpp"
+#include "error_set_catalogue.hpp"
 #include "ast.hpp"
 #include "type_system.hpp"
 #include <cstdlib>   // For abort()
@@ -12,18 +13,20 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
       arena_(arena),
       symbol_table_(symbol_table),
-      recursion_depth_(0) {
+      catalogue_(catalogue),
+      recursion_depth_(0)
+{
     assert(arena_ != NULL && "ArenaAllocator cannot be null");
     assert(symbol_table_ != NULL && "SymbolTable cannot be null");
     // Initialize the EOF token.
     eof_token_.type = TOKEN_EOF;
-    eof_token_.value.identifier = NULL; // Should be zero-initialized anyway
+    eof_token_.value.identifier = NULL;
 }
 
 Token Parser::advance() {
@@ -207,6 +210,10 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseUnionDeclaration();
         case TOKEN_ENUM:
             return parseEnumDeclaration();
+        case TOKEN_ERROR_SET:
+            return parseErrorSetDefinition();
+        case TOKEN_AT_IMPORT:
+            return parseImport();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -471,6 +478,7 @@ static int get_token_precedence(TokenType type) {
         // Error handling and optional unwrapping (lowest precedence)
         case TOKEN_ORELSE:
         case TOKEN_CATCH:
+        case TOKEN_PIPE_PIPE:
             return 1;
 
         default:
@@ -563,6 +571,25 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             new_node->loc = op_token.location;
             new_node->resolved_type = NULL;
             new_node->as.orelse_expr = orelse_node;
+            left = new_node;
+        } else if (op_token.type == TOKEN_PIPE_PIPE) {
+            ASTNode* right = parsePrecedenceExpr(precedence + 1);
+
+            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)arena_->alloc(sizeof(ASTErrorSetMergeNode));
+            if (!merge_data) {
+                error("Out of memory");
+            }
+            merge_data->left = left;
+            merge_data->right = right;
+
+            ASTNode* new_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!new_node) {
+                error("Out of memory");
+            }
+            new_node->type = NODE_ERROR_SET_MERGE;
+            new_node->loc = op_token.location;
+            new_node->resolved_type = NULL;
+            new_node->as.error_set_merge = merge_data;
             left = new_node;
         } else {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
@@ -986,6 +1013,64 @@ ASTNode* Parser::parse() {
     return block_node;
 }
 
+/**
+ * @brief Parses an error set definition (e.g., `error { A, B }`).
+ * @return A pointer to an `ASTNode` representing the error set definition.
+ */
+ASTNode* Parser::parseErrorSetDefinition() {
+    Token error_token = expect(TOKEN_ERROR_SET, "Expected 'error'");
+
+    DynamicArray<const char*>* tags = NULL;
+
+    if (match(TOKEN_LBRACE)) {
+        void* tags_mem = arena_->alloc(sizeof(DynamicArray<const char*>));
+        if (!tags_mem) error("Out of memory");
+        tags = new (tags_mem) DynamicArray<const char*>(*arena_);
+
+        while (!is_at_end() && peek().type != TOKEN_RBRACE) {
+            Token tag_token = expect(TOKEN_IDENTIFIER, "Expected error tag identifier");
+            tags->append(tag_token.value.identifier);
+
+            if (!match(TOKEN_COMMA)) break;
+        }
+        expect(TOKEN_RBRACE, "Expected '}' after error tags");
+    }
+
+    // Add to catalogue. Name is initially NULL; might be updated by caller if assigned to a const.
+    catalogue_->addErrorSet(NULL, tags, error_token.location);
+
+    ASTErrorSetDefinitionNode* es_node = (ASTErrorSetDefinitionNode*)arena_->alloc(sizeof(ASTErrorSetDefinitionNode));
+    if (!es_node) error("Out of memory");
+    es_node->name = NULL;
+    es_node->tags = tags;
+
+    ASTNode* node = createNode(NODE_ERROR_SET_DEFINITION);
+    node->loc = error_token.location;
+    node->as.error_set_decl = es_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses an @import statement.
+ * @return A pointer to an `ASTNode` representing the import.
+ */
+ASTNode* Parser::parseImport() {
+    Token import_token = expect(TOKEN_AT_IMPORT, "Expected '@import'");
+    expect(TOKEN_LPAREN, "Expected '(' after '@import'");
+    Token module_token = expect(TOKEN_STRING_LITERAL, "Expected module name string after '@import('");
+    expect(TOKEN_RPAREN, "Expected ')' after module name");
+
+    ASTImportStmtNode* import_stmt = (ASTImportStmtNode*)arena_->alloc(sizeof(ASTImportStmtNode));
+    if (!import_stmt) error("Out of memory");
+    import_stmt->module_name = module_token.value.identifier;
+
+    ASTNode* node = createNode(NODE_IMPORT_STMT);
+    node->loc = import_token.location;
+    node->as.import_stmt = import_stmt;
+    return node;
+}
+
 ASTNode* Parser::parseTopLevelItem() {
     switch (peek().type) {
         case TOKEN_FN:
@@ -1116,6 +1201,11 @@ ASTNode* Parser::parseVarDecl() {
     ASTNode* initializer_node = NULL;
     if (match(TOKEN_EQUAL)) {
         initializer_node = parseExpression();
+        // If it's a named error set, update its name in the catalogue.
+        if (initializer_node && initializer_node->type == NODE_ERROR_SET_DEFINITION) {
+            initializer_node->as.error_set_decl->name = name_token.value.identifier;
+            catalogue_->updateLastSetName(name_token.value.identifier);
+        }
     }
 
     if (!type_node && !initializer_node) {
@@ -1529,32 +1619,78 @@ ASTNode* Parser::parseReturnStatement() {
 }
 
 ASTNode* Parser::parseType() {
+    ASTNode* left = NULL;
     if (peek().type == TOKEN_STAR) {
-        return parsePointerType();
-    }
-    if (peek().type == TOKEN_LBRACKET) {
-        return parseArrayType();
-    }
-    if (peek().type == TOKEN_BANG) {
-        return parseErrorUnionType();
-    }
-    if (peek().type == TOKEN_QUESTION) {
-        return parseOptionalType();
-    }
-    if (peek().type == TOKEN_IDENTIFIER) {
+        left = parsePointerType();
+    } else if (peek().type == TOKEN_LBRACKET) {
+        left = parseArrayType();
+    } else if (peek().type == TOKEN_BANG) {
+        left = parseErrorUnionType();
+    } else if (peek().type == TOKEN_QUESTION) {
+        left = parseOptionalType();
+    } else if (peek().type == TOKEN_ERROR_SET) {
+        left = parseErrorSetDefinition();
+    } else if (peek().type == TOKEN_IDENTIFIER) {
         Token type_name_token = advance();
-        ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-        if (!node) {
+        left = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+        if (!left) {
             error("Out of memory");
         }
-        node->type = NODE_TYPE_NAME;
-        node->loc = type_name_token.location;
-        node->resolved_type = NULL;
-        node->as.type_name.name = type_name_token.value.identifier;
-        return node;
+        left->type = NODE_TYPE_NAME;
+        left->loc = type_name_token.location;
+        left->resolved_type = NULL;
+        left->as.type_name.name = type_name_token.value.identifier;
+    } else {
+        error("Expected a type expression");
     }
-    error("Expected a type expression");
-    return NULL; // Unreachable
+
+    // Check for binary type operators (! for error union, || for error set merge)
+    while (peek().type == TOKEN_BANG || peek().type == TOKEN_PIPE_PIPE) {
+        if (peek().type == TOKEN_BANG) {
+            Token bang_token = advance();
+            ASTNode* payload_type = parseType();
+
+            ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)arena_->alloc(sizeof(ASTErrorUnionTypeNode));
+            if (!eu_node) {
+                error("Out of memory");
+            }
+            eu_node->error_set = left;
+            eu_node->payload_type = payload_type;
+            eu_node->loc = bang_token.location;
+
+            ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!node) {
+                error("Out of memory");
+            }
+            node->type = NODE_ERROR_UNION_TYPE;
+            node->loc = bang_token.location;
+            node->resolved_type = NULL;
+            node->as.error_union_type = eu_node;
+            left = node;
+        } else {
+            Token pipe_token = advance();
+            ASTNode* right = parseType();
+
+            ASTErrorSetMergeNode* merge_data = (ASTErrorSetMergeNode*)arena_->alloc(sizeof(ASTErrorSetMergeNode));
+            if (!merge_data) {
+                error("Out of memory");
+            }
+            merge_data->left = left;
+            merge_data->right = right;
+
+            ASTNode* merge_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+            if (!merge_node) {
+                error("Out of memory");
+            }
+            merge_node->type = NODE_ERROR_SET_MERGE;
+            merge_node->loc = pipe_token.location;
+            merge_node->resolved_type = NULL;
+            merge_node->as.error_set_merge = merge_data;
+            left = merge_node;
+        }
+    }
+
+    return left;
 }
 
 ASTNode* Parser::parsePointerType() {
@@ -1583,6 +1719,7 @@ ASTNode* Parser::parseErrorUnionType() {
     if (!eu_node) {
         error("Out of memory");
     }
+    eu_node->error_set = NULL; // Inferred error set
     eu_node->payload_type = payload_type;
     eu_node->loc = bang_token.location;
 

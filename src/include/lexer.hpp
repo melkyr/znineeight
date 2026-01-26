@@ -152,6 +152,8 @@ enum TokenType {
     TOKEN_CARET_EQUAL,      ///< '^=' operator.
     TOKEN_LARROW2_EQUAL,    ///< '<<=' operator.
     TOKEN_RARROW2_EQUAL,    ///< '>>=' operator.
+    TOKEN_PIPE_PIPE,        ///< '||' operator.
+    TOKEN_AT_IMPORT,        ///< '@import' keyword-like.
 
     // Delimiters
     TOKEN_LPAREN,           ///< '(' - Left parenthesis.

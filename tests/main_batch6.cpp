@@ -23,7 +23,11 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_OptionalType_VarDecl,
         test_C89Rejection_ErrorUnionType_Param,
         test_C89Rejection_ErrorUnionType_StructField,
-        test_C89Rejection_NestedErrorUnionType
+        test_C89Rejection_NestedErrorUnionType,
+        test_Task136_ErrorSet_Catalogue,
+        test_Task136_ErrorSet_Rejection,
+        test_Task136_ErrorSetMerge_Rejection,
+        test_Task136_Import_Rejection
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

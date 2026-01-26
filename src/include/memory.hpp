@@ -24,7 +24,7 @@
  * @param buffer_size The size of the buffer.
  */
 #ifdef DEBUG
-static void simple_itoa(size_t value, char* buffer, size_t buffer_size) {
+static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
     buffer[--buffer_size] = '\0'; // Null-terminate
 
@@ -97,10 +97,10 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
     buffer[0] = '\0';
 
     char n_requested[21], n_p1[21], n_p2[21], n_p3[21];
-    simple_itoa(requested, n_requested, sizeof(n_requested));
-    simple_itoa(p1, n_p1, sizeof(n_p1));
-    simple_itoa(p2, n_p2, sizeof(n_p2));
-    simple_itoa(p3, n_p3, sizeof(n_p3));
+    arena_simple_itoa(requested, n_requested, sizeof(n_requested));
+    arena_simple_itoa(p1, n_p1, sizeof(n_p1));
+    arena_simple_itoa(p2, n_p2, sizeof(n_p2));
+    arena_simple_itoa(p3, n_p3, sizeof(n_p3));
 
     safe_append(current, remaining, "Out of memory in ");
     safe_append(current, remaining, context);
