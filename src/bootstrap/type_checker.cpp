@@ -73,6 +73,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
+        case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node->as.member_access); break;
+        case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
         case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(node, &node->as.integer_literal); break;
@@ -725,11 +727,17 @@ Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType
  * @param field_name The name of the field to find.
  * @return Returns NULL as it is a placeholder.
  */
-Type* TypeChecker::findStructField(Type* struct_type, const char* /*field_name*/) {
+Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
     if (struct_type->kind != TYPE_STRUCT) {
         return NULL;
     }
-    // Placeholder for field lookup logic as per Task 3.5
+
+    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        if (identifiers_equal((*fields)[i].name, field_name)) {
+            return (*fields)[i].type;
+        }
+    }
     return NULL;
 }
 
@@ -933,19 +941,29 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
         literal_type.kind = TYPE_INTEGER_LITERAL;
         literal_type.as.integer_literal.value = (i64)literal_node->value;
 
-        if (declared_type && !canLiteralFitInType(&literal_type, declared_type)) {
-            // Report a more specific error for overflow.
-            char msg_buffer[256];
-            char* current = msg_buffer;
-            size_t remaining = sizeof(msg_buffer);
-            safe_append(current, remaining, "integer literal overflows declared type");
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+        if (declared_type) {
+            if (!canLiteralFitInType(&literal_type, declared_type)) {
+                // Report a more specific error for overflow.
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "integer literal overflows declared type");
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+            }
+        } else {
+            // Infer type from integer literal
+            declared_type = visit(node->initializer);
         }
     } else {
         // For all other cases, use the standard assignment validation.
         Type* initializer_type = visit(node->initializer);
-        if (declared_type && initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
-            // IsTypeAssignableTo already reports a detailed error.
+        if (declared_type) {
+            if (initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+                // IsTypeAssignableTo already reports a detailed error.
+            }
+        } else {
+            // Infer type from initializer
+            declared_type = initializer_type;
         }
     }
 
@@ -1044,17 +1062,159 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* /*node*/) {
-    validateStructOrUnionFields(parent);
-    // TODO: The rest of the struct type checking logic will go here.
-    // For now, we return NULL as no actual type is created yet.
+Type* TypeChecker::visitStructDecl(ASTNode* /*parent*/, ASTStructDeclNode* node) {
+    // 1. Check for duplicate field names
+    for (size_t i = 0; i < node->fields->length(); ++i) {
+        const char* name = (*node->fields)[i]->as.struct_field->name;
+        for (size_t j = i + 1; j < node->fields->length(); ++j) {
+            if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
+                unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, "duplicate field name in struct", unit.getArena());
+                return NULL;
+            }
+        }
+    }
+
+    // 2. Resolve field types and build the type structure
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
+    DynamicArray<StructField>* fields = new (mem) DynamicArray<StructField>(unit.getArena());
+
+    for (size_t i = 0; i < node->fields->length(); ++i) {
+        ASTNode* field_node = (*node->fields)[i];
+        ASTStructFieldNode* field_data = field_node->as.struct_field;
+        Type* field_type = visit(field_data->type);
+
+        if (!field_type) {
+             return NULL; // Error already reported
+        }
+
+        if (!is_c89_compatible(field_type)) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, "struct field type is not C89 compatible.", unit.getArena());
+            return NULL;
+        }
+
+        StructField sf;
+        sf.name = field_data->name;
+        sf.type = field_type;
+        sf.offset = 0;
+        sf.size = field_type->size;
+        sf.alignment = field_type->alignment;
+        fields->append(sf);
+    }
+
+    // 3. Create struct type and calculate layout
+    Type* struct_type = createStructType(unit.getArena(), fields);
+    calculateStructLayout(struct_type);
+
+    return struct_type;
+}
+
+Type* TypeChecker::visitUnionDecl(ASTNode* /*parent*/, ASTUnionDeclNode* node) {
+    // Basic validation for unions as well
+    for (size_t i = 0; i < node->fields->length(); ++i) {
+        const char* name = (*node->fields)[i]->as.struct_field->name;
+        for (size_t j = i + 1; j < node->fields->length(); ++j) {
+            if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
+                unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, "duplicate field name in union", unit.getArena());
+                return NULL;
+            }
+        }
+    }
+    // Note: We don't fully implement Union type creation yet, but we validate fields
     return NULL;
 }
 
-Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* /*node*/) {
-    validateStructOrUnionFields(parent);
-    // TODO: The rest of the union type checking logic will go here.
-    return NULL;
+Type* TypeChecker::visitMemberAccess(ASTMemberAccessNode* node) {
+    Type* base_type = visit(node->base);
+    if (!base_type) return NULL;
+
+    // Auto-dereference for single level pointer
+    if (base_type->kind == TYPE_POINTER) {
+        base_type = base_type->as.pointer.base;
+    }
+
+    if (base_type->kind != TYPE_STRUCT) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs or pointers to structs", unit.getArena());
+        return NULL;
+    }
+
+    Type* field_type = findStructField(base_type, node->field_name);
+    if (!field_type) {
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "struct has no field named '");
+        safe_append(current, remaining, node->field_name);
+        safe_append(current, remaining, "'");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, msg_buffer, unit.getArena());
+        return NULL;
+    }
+
+    return field_type;
+}
+
+Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
+    Type* struct_type = visit(node->type_expr);
+    if (!struct_type) return NULL;
+
+    if (struct_type->kind != TYPE_STRUCT) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct type for initialization", unit.getArena());
+        return NULL;
+    }
+
+    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+
+    // 1. Check for missing or extra fields
+    for (size_t i = 0; i < fields->length(); ++i) {
+        const char* expected_name = (*fields)[i].name;
+        bool found = false;
+        for (size_t j = 0; j < node->fields->length(); ++j) {
+            if (identifiers_equal(expected_name, (*node->fields)[j]->field_name)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+             char msg_buffer[256];
+             char* current = msg_buffer;
+             size_t remaining = sizeof(msg_buffer);
+             safe_append(current, remaining, "missing field '");
+             safe_append(current, remaining, expected_name);
+             safe_append(current, remaining, "' in struct initializer");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, msg_buffer, unit.getArena());
+             return NULL;
+        }
+    }
+
+    for (size_t i = 0; i < node->fields->length(); ++i) {
+        ASTNamedInitializer* init = (*node->fields)[i];
+        Type* field_type = findStructField(struct_type, init->field_name);
+        if (!field_type) {
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "no field named '");
+            safe_append(current, remaining, init->field_name);
+            safe_append(current, remaining, "' in struct");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, init->loc, msg_buffer, unit.getArena());
+            return NULL;
+        }
+
+        // Check for duplicates in initializer
+        for (size_t j = i + 1; j < node->fields->length(); ++j) {
+            if (identifiers_equal(init->field_name, (*node->fields)[j]->field_name)) {
+                unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, "duplicate field initializer", unit.getArena());
+                return NULL;
+            }
+        }
+
+        // 2. Type check initializer values
+        Type* val_type = visit(init->value);
+        if (!IsTypeAssignableTo(val_type, field_type, init->loc)) {
+             // IsTypeAssignableTo already reports the error
+        }
+    }
+
+    return struct_type;
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
@@ -1128,6 +1288,19 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
     Type* resolved_type = resolvePrimitiveTypeName(node->name);
+    if (!resolved_type) {
+        // Look up in symbol table for type aliases (e.g., const Point = struct { ... })
+        Symbol* sym = unit.getSymbolTable().lookup(node->name);
+        if (sym) {
+            // A constant can hold a type in Zig.
+            // For now, we assume if it's in the symbol table and has a struct type,
+            // it can be used as a type name.
+            if (sym->symbol_type && sym->symbol_type->kind == TYPE_STRUCT) {
+                resolved_type = sym->symbol_type;
+            }
+        }
+    }
+
     if (!resolved_type) {
         char msg_buffer[256];
         char* current = msg_buffer;
@@ -1222,6 +1395,9 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
         case NODE_ARRAY_ACCESS:
             // An array access is const if the array itself is const.
             return isLValueConst(node->as.array_access->array);
+        case NODE_MEMBER_ACCESS:
+            // A member access is const if the struct itself is const.
+            return isLValueConst(node->as.member_access->base);
         default:
             return false;
     }

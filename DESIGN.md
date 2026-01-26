@@ -358,6 +358,7 @@ public:
 
 **Special Implementation Details:**
 1. **Slices (`[]T`):** Mapped to a C struct `{ T* ptr, size_t len }`
+* **Structs:** Supported with C89-compliant layout (aligned fields, trailing padding). Zig-specific features like methods and default values are rejected in the bootstrap phase.
 2. **Error Unions (`!T`):** Mapped to a C struct `{ union { T payload; int err; } data; bool is_error; }`
 3. **Defer Implementation:**
    * When generating code for a `{ block }`:

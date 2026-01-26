@@ -25,6 +25,8 @@ enum NodeType {
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
     NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
+    NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
+    NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -119,6 +121,9 @@ struct ASTComptimeBlockNode;
 struct ASTFunctionCallNode;
 struct ASTArrayAccessNode;
 struct ASTArraySliceNode;
+struct ASTMemberAccessNode;
+struct ASTStructInitializerNode;
+struct ASTNamedInitializer;
 
 
 // --- Node-specific data structs ---
@@ -133,6 +138,40 @@ struct ASTArraySliceNode;
 struct ASTAssignmentNode {
     ASTNode* lvalue;
     ASTNode* rvalue;
+};
+
+/**
+ * @struct ASTMemberAccessNode
+ * @brief Represents a member access expression (e.g., `s.field`).
+ * @var ASTMemberAccessNode::base The expression being accessed.
+ * @var ASTMemberAccessNode::field_name The name of the field (interned string).
+ */
+struct ASTMemberAccessNode {
+    ASTNode* base;
+    const char* field_name;
+};
+
+/**
+ * @struct ASTNamedInitializer
+ * @brief Represents a single named field initializer in a struct initializer.
+ * @var ASTNamedInitializer::field_name The name of the field (interned string).
+ * @var ASTNamedInitializer::value The initializer expression.
+ */
+struct ASTNamedInitializer {
+    const char* field_name;
+    ASTNode* value;
+    SourceLocation loc;
+};
+
+/**
+ * @struct ASTStructInitializerNode
+ * @brief Represents a struct initializer (e.g., `S { .x = 1, .y = 2 }`).
+ * @var ASTStructInitializerNode::type_expr The type expression of the struct being initialized.
+ * @var ASTStructInitializerNode::fields A dynamic array of pointers to the named field initializers.
+ */
+struct ASTStructInitializerNode {
+    ASTNode* type_expr;
+    DynamicArray<ASTNamedInitializer*>* fields;
 };
 
 /**
@@ -593,6 +632,8 @@ struct ASTNode {
         ASTFunctionCallNode* function_call; // Out-of-line
         ASTArrayAccessNode* array_access; // Out-of-line
         ASTArraySliceNode* array_slice; // Out-of-line
+        ASTMemberAccessNode* member_access; // Out-of-line
+        ASTStructInitializerNode* struct_initializer; // Out-of-line
 
         // Literals
         ASTBoolLiteralNode bool_literal;

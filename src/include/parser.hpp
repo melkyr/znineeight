@@ -276,6 +276,9 @@ private:
     /** @brief Parses an enum declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseEnumDeclaration();
 
+    /** @brief Parses a struct initializer (e.g., `Point { .x = 10 }`). Helper for `parsePostfixExpression`. */
+    ASTNode* parseStructInitializer(ASTNode* type_expr);
+
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();
 

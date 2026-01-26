@@ -34,6 +34,18 @@ enum TypeKind {
 };
 
 /**
+ * @struct StructField
+ * @brief Represents a single field within a struct type.
+ */
+struct StructField {
+    const char* name;
+    Type* type;
+    size_t offset;
+    size_t size;
+    size_t alignment;
+};
+
+/**
  * @struct EnumMember
  * @brief Represents a single member of an enum.
  */
@@ -73,6 +85,9 @@ struct Type {
             Type* backing_type;
             DynamicArray<EnumMember>* members;
         } enum_details;
+        struct {
+            DynamicArray<StructField>* fields;
+        } struct_details;
     } as;
 };
 
@@ -113,6 +128,20 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  * @return A pointer to the newly allocated Type object.
  */
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
+
+/**
+ * @brief Creates a new struct Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param fields A dynamic array of the struct's fields.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields);
+
+/**
+ * @brief Calculates the layout (offsets, total size, alignment) of a struct type.
+ * @param struct_type The struct type to calculate the layout for.
+ */
+void calculateStructLayout(Type* struct_type);
 
 /**
  * @brief Creates a new enum Type object from the arena.

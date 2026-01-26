@@ -40,7 +40,8 @@ enum TypeKind {
     TYPE_POINTER,
     TYPE_ARRAY,
     TYPE_FUNCTION,
-    TYPE_ENUM
+    TYPE_ENUM,
+    TYPE_STRUCT
 };
 ```
 
@@ -97,6 +98,10 @@ struct Type {
             Type* backing_type;
             DynamicArray<EnumMember>* members;
         } enum_details;
+
+        struct StructDetails {
+            DynamicArray<StructField>* fields;
+        } struct_details;
     } as;
 };
 ```
@@ -253,15 +258,38 @@ When visiting an array type declaration (`ASTArrayTypeNode`), the `TypeChecker` 
 
 If both checks pass, a new `Type` of kind `TYPE_ARRAY` is created. Its `size` field is calculated from the element type's size and the array's length, and its `as.array` details are populated accordingly.
 
-### Struct and Union Field Validation
+### Struct Type Declarations and Validation
 
-When visiting a struct or union declaration (`ASTStructDeclNode` or `ASTUnionDeclNode`), the `TypeChecker` iterates through all of the container's fields to ensure they are C89-compatible.
+When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` creates a new `TYPE_STRUCT` and performs comprehensive validation and layout calculation:
 
-1.  **Field Type Resolution:** For each field, the `TypeChecker` first visits the field's type node to resolve it into a `Type*`.
+1.  **Field Uniqueness:** The `TypeChecker` ensures that all field names within a struct are unique. Duplicate field names result in a semantic error.
 
-2.  **C89 Compatibility Check:** It then calls the `is_c89_compatible()` function on the resolved field type.
+2.  **Field Type Resolution & C89 Check:** For each field, the `TypeChecker` resolves the field's type and verifies it using `is_c89_compatible()`. Non-C89 compatible types (like slices or multi-level pointers) are rejected.
 
-3.  **Fatal Error on Incompatible Field:** If `is_c89_compatible()` returns `false`, it signifies that the field's type is not supported in the C89 subset (e.g., a slice `[]u8`, a multi-level pointer `**i32`, or an `isize`). This is treated as a fatal error, and the `TypeChecker` immediately calls its `fatalError` method to abort compilation. This strict approach prevents any non-C89 types from being included in struct or union definitions.
+3.  **Layout Calculation:** The `TypeChecker` calculates the memory layout of the struct according to C89 rules:
+    -   Fields are placed in the order they are declared.
+    -   Each field's offset is aligned based on its type's alignment requirements.
+    -   The total size of the struct is aligned to the maximum alignment requirement of its fields, adding trailing padding if necessary.
+
+4.  **Type Aliasing:** Support for `const S = struct { ... };` is implemented through type inference in variable declarations and symbol table lookups in type names.
+
+### Member Access and Struct Initialization
+
+1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
+
+2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
+    -   The type being initialized is a struct.
+    -   All fields defined in the struct are initialized exactly once.
+    -   No extra fields are provided in the initializer.
+    -   Each initializer expression's type is compatible with the corresponding field's type.
+
+### Union Field Validation
+
+For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently performs basic field name uniqueness validation. Full union type creation and layout are deferred to future milestones.
+
+### Known Limitations
+
+- **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
 
 ### Enum Type Declarations
 
