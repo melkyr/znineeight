@@ -1579,6 +1579,13 @@ ASTNode* Parser::parseErrorUnionType() {
     Token bang_token = advance(); // Consume '!'
     ASTNode* payload_type = parseType();
 
+    ASTErrorUnionTypeNode* eu_node = (ASTErrorUnionTypeNode*)arena_->alloc(sizeof(ASTErrorUnionTypeNode));
+    if (!eu_node) {
+        error("Out of memory");
+    }
+    eu_node->payload_type = payload_type;
+    eu_node->loc = bang_token.location;
+
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     if (!node) {
         error("Out of memory");
@@ -1586,7 +1593,7 @@ ASTNode* Parser::parseErrorUnionType() {
     node->type = NODE_ERROR_UNION_TYPE;
     node->loc = bang_token.location;
     node->resolved_type = NULL;
-    node->as.error_union_type.payload_type = payload_type;
+    node->as.error_union_type = eu_node;
 
     return node;
 }
@@ -1595,6 +1602,13 @@ ASTNode* Parser::parseOptionalType() {
     Token question_token = advance(); // Consume '?'
     ASTNode* payload_type = parseType();
 
+    ASTOptionalTypeNode* opt_node = (ASTOptionalTypeNode*)arena_->alloc(sizeof(ASTOptionalTypeNode));
+    if (!opt_node) {
+        error("Out of memory");
+    }
+    opt_node->payload_type = payload_type;
+    opt_node->loc = question_token.location;
+
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     if (!node) {
         error("Out of memory");
@@ -1602,7 +1616,7 @@ ASTNode* Parser::parseOptionalType() {
     node->type = NODE_OPTIONAL_TYPE;
     node->loc = question_token.location;
     node->resolved_type = NULL;
-    node->as.optional_type.payload_type = payload_type;
+    node->as.optional_type = opt_node;
 
     return node;
 }

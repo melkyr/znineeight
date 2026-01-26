@@ -3,16 +3,23 @@
 #include "compilation_unit.hpp"
 #include <cstdlib> // For abort()
 
-C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit) : unit(unit) {}
+C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit) : unit(unit), error_found_(false) {}
 
 void C89FeatureValidator::validate(ASTNode* node) {
     visit(node);
+    if (error_found_) {
+        unit.getErrorHandler().printErrors();
+        abort();
+    }
+}
+
+void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message) {
+    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
+    error_found_ = true;
 }
 
 void C89FeatureValidator::fatalError(SourceLocation location, const char* message) {
-    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
-    unit.getErrorHandler().printErrors();
-    abort();
+    reportNonC89Feature(location, message);
 }
 
 void C89FeatureValidator::visit(ASTNode* node) {
@@ -158,11 +165,13 @@ void C89FeatureValidator::visitArrayType(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
-    fatalError(node->loc, "Error union types (!T) are not C89-compatible.");
+    reportNonC89Feature(node->loc, "Error union types (!T) are not C89-compatible.");
+    visit(node->as.error_union_type->payload_type);
 }
 
 void C89FeatureValidator::visitOptionalType(ASTNode* node) {
-    fatalError(node->loc, "Optional types (?T) are not C89-compatible.");
+    reportNonC89Feature(node->loc, "Optional types (?T) are not C89-compatible.");
+    visit(node->as.optional_type->payload_type);
 }
 
 void C89FeatureValidator::visitTryExpr(ASTNode* node) {
