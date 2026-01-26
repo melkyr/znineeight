@@ -78,6 +78,51 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
     return new_type;
 }
 
+Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_STRUCT;
+    new_type->size = 0; // Will be calculated by calculateStructLayout
+    new_type->alignment = 1; // Will be calculated by calculateStructLayout
+    new_type->as.struct_details.fields = fields;
+    return new_type;
+}
+
+void calculateStructLayout(Type* struct_type) {
+    if (struct_type->kind != TYPE_STRUCT) return;
+
+    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    size_t current_offset = 0;
+    size_t max_alignment = 1;
+
+    for (size_t i = 0; i < fields->length(); ++i) {
+        StructField& field = (*fields)[i];
+        size_t field_alignment = field.type->alignment;
+        if (field_alignment == 0) field_alignment = 1;
+
+        // Align current_offset to field_alignment
+        if (current_offset % field_alignment != 0) {
+            current_offset += (field_alignment - (current_offset % field_alignment));
+        }
+
+        field.offset = current_offset;
+        field.size = field.type->size;
+        field.alignment = field_alignment;
+
+        current_offset += field.size;
+        if (field_alignment > max_alignment) {
+            max_alignment = field_alignment;
+        }
+    }
+
+    // Final struct alignment and padding
+    if (current_offset % max_alignment != 0) {
+        current_offset += (max_alignment - (current_offset % max_alignment));
+    }
+
+    struct_type->size = current_offset;
+    struct_type->alignment = max_alignment;
+}
+
 Type* createEnumType(ArenaAllocator& arena, Type* backing_type, DynamicArray<EnumMember>* members) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
     new_type->kind = TYPE_ENUM;
@@ -150,6 +195,9 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         }
         case TYPE_ENUM:
             safe_append(current, remaining, "enum");
+            break;
+        case TYPE_STRUCT:
+            safe_append(current, remaining, "struct");
             break;
         default:
             safe_append(current, remaining, "unknown");

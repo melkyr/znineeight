@@ -457,4 +457,16 @@ TEST_FUNC(DoubleFree_PointerAliasing);
 TEST_FUNC(DoubleFree_DeferInLoop);
 TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree);
 
+// Forward declarations for Group 4J: Struct Type Checking (Task 133)
+TEST_FUNC(TypeChecker_StructDeclaration_Valid);
+TEST_FUNC(TypeChecker_StructDeclaration_DuplicateField);
+TEST_FUNC(TypeChecker_StructInitialization_Valid);
+TEST_FUNC(TypeChecker_MemberAccess_Valid);
+TEST_FUNC(TypeChecker_MemberAccess_InvalidField);
+TEST_FUNC(TypeChecker_StructInitialization_MissingField);
+TEST_FUNC(TypeChecker_StructInitialization_ExtraField);
+TEST_FUNC(TypeChecker_StructInitialization_TypeMismatch);
+TEST_FUNC(TypeChecker_StructLayout_Verification);
+TEST_FUNC(TypeChecker_UnionDeclaration_DuplicateField);
+
 #endif // TEST_DECLARATIONS_HPP

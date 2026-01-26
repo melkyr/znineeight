@@ -40,6 +40,8 @@ enum NodeType {
     NODE_FUNCTION_CALL,   ///< A function call expression (e.g., `foo()`).
     NODE_ARRAY_ACCESS,    ///< An array access expression (e.g., `arr[i]`).
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
+    NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
+    NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -113,8 +115,16 @@ struct ASTNode {
     Type* resolved_type;
 
     union {
+        // Expressions
+        ASTAssignmentNode* assignment; // Out-of-line
+        ASTCompoundAssignmentNode* compound_assignment; // Out-of-line
         ASTBinaryOpNode* binary_op; // Out-of-line
         ASTUnaryOpNode unary_op;
+        ASTFunctionCallNode* function_call; // Out-of-line
+        ASTArrayAccessNode* array_access; // Out-of-line
+        ASTArraySliceNode* array_slice; // Out-of-line
+        ASTMemberAccessNode* member_access; // Out-of-line
+        ASTStructInitializerNode* struct_initializer; // Out-of-line
 
         // Literals
         ASTIntegerLiteralNode integer_literal;
@@ -207,6 +217,8 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTStringLiteralNode`      | 4            | Inline          |
 | `ASTTypeNameNode`           | 4            | Inline          |
 | `ASTUnaryOpNode`            | 8            | Inline          |
+| `ASTMemberAccessNode`       | 4            | Pointer (4)     |
+| `ASTStructInitializerNode`  | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
 
 ## 4. Implemented AST Node Types
@@ -388,6 +400,12 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
 
 - It starts by calling `parsePrimaryExpr` to get the base of the expression (e.g., an identifier, a literal, or a parenthesized expression).
 - It then enters a loop, checking for either a `TOKEN_LPAREN` (indicating a function call) or a `TOKEN_LBRACKET` (indicating an array access).
+- **For a member access**:
+    - When a `TOKEN_DOT` is encountered, it expects an identifier.
+    - It constructs an `ASTMemberAccessNode`.
+- **For a struct initializer**:
+    - When a `TOKEN_LBRACE` is encountered after an identifier (type name), it parses a list of field initializers like `.field = value`.
+    - It constructs an `ASTStructInitializerNode`.
 - **For a function call**:
     - It constructs an `ASTFunctionCallNode`.
     - It parses a comma-separated list of arguments until it finds a `TOKEN_RPAREN`.

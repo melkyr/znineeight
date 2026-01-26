@@ -22,6 +22,8 @@ public:
     Type* visitFunctionCall(ASTFunctionCallNode* node);
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
+    Type* visitMemberAccess(ASTMemberAccessNode* node);
+    Type* visitStructInitializer(ASTStructInitializerNode* node);
     Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
     Type* visitNullLiteral(ASTNode* node);
     Type* visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node);

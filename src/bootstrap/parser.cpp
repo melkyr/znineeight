@@ -324,6 +324,22 @@ ASTNode* Parser::parsePostfixExpression() {
                 new_expr_node->as.array_access = access_node;
                 expr = new_expr_node;
             }
+        } else if (match(TOKEN_DOT)) {
+            // Member Access: s.field
+            Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name after '.'");
+
+            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            if (!member_node) error("Out of memory");
+            member_node->base = expr;
+            member_node->field_name = name_token.value.identifier;
+
+            ASTNode* new_expr_node = createNode(NODE_MEMBER_ACCESS);
+            new_expr_node->loc = name_token.location;
+            new_expr_node->as.member_access = member_node;
+            expr = new_expr_node;
+        } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME)) {
+            // Struct Initializer: Type { .field = value }
+            expr = parseStructInitializer(expr);
         } else if (match(TOKEN_DOT_ASTERISK)) {
             // Zig-style dereference: p.*
             ASTNode* new_expr_node = createNode(NODE_UNARY_OP);
@@ -746,6 +762,41 @@ ASTNode* Parser::parseSwitchExpression() {
  * @return A pointer to an `ASTNode` representing the parsed enum declaration.
  *         The node is allocated from the parser's arena.
  */
+ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
+    Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start struct initializer");
+
+    ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+    if (!init_data) error("Out of memory");
+    init_data->type_expr = type_expr;
+    init_data->fields = (DynamicArray<ASTNamedInitializer*>*)arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+    if (!init_data->fields) error("Out of memory");
+    new (init_data->fields) DynamicArray<ASTNamedInitializer*>(*arena_);
+
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        expect(TOKEN_DOT, "Expected '.' before field name in struct initializer");
+        Token field_name = expect(TOKEN_IDENTIFIER, "Expected field name in struct initializer");
+        expect(TOKEN_EQUAL, "Expected '=' after field name in struct initializer");
+        ASTNode* value = parseExpression();
+
+        ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+        if (!named_init) error("Out of memory");
+        named_init->field_name = field_name.value.identifier;
+        named_init->value = value;
+        named_init->loc = field_name.location;
+
+        init_data->fields->append(named_init);
+
+        if (!match(TOKEN_COMMA)) break;
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' after struct initializer");
+
+    ASTNode* node = createNode(NODE_STRUCT_INITIALIZER);
+    node->loc = lbrace.location;
+    node->as.struct_initializer = init_data;
+    return node;
+}
+
 ASTNode* Parser::parseEnumDeclaration() {
     Token enum_token = expect(TOKEN_ENUM, "Expected 'enum' keyword");
     ASTNode* backing_type = NULL;
@@ -845,9 +896,17 @@ ASTNode* Parser::parseUnionDeclaration() {
 
     // Handle fields
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        if (peek().type == TOKEN_FN || peek().type == TOKEN_PUB) {
+            error("Methods are not supported in union declarations in bootstrap compiler");
+        }
+
         Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in union declaration");
         expect(TOKEN_COLON, "Expected ':' after field name");
         ASTNode* type_node = parseType();
+
+        if (peek().type == TOKEN_EQUAL) {
+            error("Default field values are not supported in bootstrap compiler");
+        }
 
         ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
         if (!field_data) {
@@ -982,9 +1041,17 @@ ASTNode* Parser::parseStructDeclaration() {
 
     // Handle fields
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        if (peek().type == TOKEN_FN || peek().type == TOKEN_PUB) {
+            error("Methods are not supported in struct declarations in bootstrap compiler");
+        }
+
         Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct declaration");
         expect(TOKEN_COLON, "Expected ':' after field name");
         ASTNode* type_node = parseType();
+
+        if (peek().type == TOKEN_EQUAL) {
+            error("Default field values are not supported in bootstrap compiler");
+        }
 
         ASTStructFieldNode* field_data = (ASTStructFieldNode*)arena_->alloc(sizeof(ASTStructFieldNode));
         if (!field_data) {
@@ -1032,22 +1099,27 @@ ASTNode* Parser::parseVarDecl() {
     bool is_mut = keyword_token.type == TOKEN_VAR;
 
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected an identifier after 'var' or 'const'");
-    expect(TOKEN_COLON, "Expected ':' after identifier in variable declaration");
 
-    // The type can be a simple type name or a container declaration.
-    ASTNode* type_node;
-    if (peek().type == TOKEN_STRUCT || peek().type == TOKEN_UNION || peek().type == TOKEN_ENUM) {
-        // Let parsePrimaryExpr handle the container declaration, as it knows how.
-        type_node = parsePrimaryExpr();
-    } else {
-        // Otherwise, parse it as a standard type expression (pointer, array, simple name).
-        type_node = parseType();
+    ASTNode* type_node = NULL;
+    if (match(TOKEN_COLON)) {
+        // The type can be a simple type name or a container declaration.
+        if (peek().type == TOKEN_STRUCT || peek().type == TOKEN_UNION || peek().type == TOKEN_ENUM) {
+            // Let parsePrimaryExpr handle the container declaration, as it knows how.
+            type_node = parsePrimaryExpr();
+        } else {
+            // Otherwise, parse it as a standard type expression (pointer, array, simple name).
+            type_node = parseType();
+        }
     }
 
     // Parse optional initializer
     ASTNode* initializer_node = NULL;
     if (match(TOKEN_EQUAL)) {
         initializer_node = parseExpression();
+    }
+
+    if (!type_node && !initializer_node) {
+        error("Variable declaration must have either a type or an initializer");
     }
 
     expect(TOKEN_SEMICOLON, "Expected ';' after variable declaration");
@@ -1266,6 +1338,9 @@ ASTNode* Parser::parseFnDecl() {
  * @return A pointer to the ASTNode representing the parsed statement.
  */
 Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
+    if (type_node == NULL) {
+        return NULL;
+    }
     if (type_node->type == NODE_TYPE_NAME) {
         Type* resolved_type = resolvePrimitiveTypeName(type_node->as.type_name.name);
         // It's not the parser's job to fail on an unknown type,

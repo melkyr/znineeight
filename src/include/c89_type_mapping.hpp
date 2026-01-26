@@ -102,6 +102,10 @@ static inline bool is_c89_compatible(Type* type) {
             return is_c89_compatible(current_type);
         }
 
+        case TYPE_STRUCT:
+        case TYPE_ENUM:
+            return true;
+
         default: {
             // Check for whitelisted primitive types.
             const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);

@@ -138,11 +138,12 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_double_free_path_aware.cpp \
     tests/test_task_130_switch.cpp \
     tests/test_task_130_error_handling.cpp \
-    tests/test_task_130_loops.cpp"
+    tests/test_task_130_loops.cpp \
+    tests/type_checker_struct_tests.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
-for i in 1 2 3 4 5; do
+for i in 1 2 3 4 5 6; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then
