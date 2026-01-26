@@ -1273,6 +1273,7 @@ The analyzer records locations in:
 ### Control Flow Analysis (Task 130)
 The analyzer is path-aware, tracking allocation states across branches and loops.
 
+0. **Memory-Efficient State Tracking**: To support deep branch nesting on 1990s hardware, the analyzer uses an `AllocationStateMap` that stores state changes as a linked list of **deltas** pointing to a parent scope. `fork()` is an O(1) operation, and `getState()` recursively traverses the delta list.
 1. **Branching**: For `if`, `switch`, `catch`, and `orelse` constructs, the analyzer forks the current state for each branch. This allows independent tracking of allocations and deallocations within each path.
 2. **Merging**: At control flow join points, the branched states are merged back using conservative rules:
    - If a pointer's state differs between branches (e.g., `AS_ALLOCATED` on one path and `AS_FREED` on another), its state becomes `AS_UNKNOWN` to avoid false positives.
