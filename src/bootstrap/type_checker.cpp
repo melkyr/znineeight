@@ -73,7 +73,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
-        case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node->as.member_access); break;
+        case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
         case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
@@ -919,9 +919,51 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 }
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
-    visit(node->expression);
-    // TODO: Visit prongs
-    return NULL;
+    Type* cond_type = visit(node->expression);
+    if (!cond_type) return NULL;
+
+    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM) {
+        fatalError(node->expression->loc, "Switch condition must be integer or enum type");
+        return NULL;
+    }
+
+    Type* result_type = NULL;
+    for (size_t i = 0; i < node->prongs->length(); ++i) {
+        ASTSwitchProngNode* prong = (*node->prongs)[i];
+
+        if (!prong->is_else) {
+            for (size_t j = 0; j < prong->cases->length(); ++j) {
+                ASTNode* case_expr = (*prong->cases)[j];
+                Type* case_type = visit(case_expr);
+                if (case_type) {
+                    // Check compatibility between condition and case
+                    if (!areTypesCompatible(cond_type, case_type)) {
+                        // Allow enum members if cond is enum
+                        if (cond_type->kind == TYPE_ENUM && case_type->kind == TYPE_ENUM) {
+                            if (cond_type != case_type) {
+                                fatalError(case_expr->loc, "Switch case type mismatch");
+                            }
+                        } else if (cond_type->kind == TYPE_ENUM && isIntegerType(case_type)) {
+                            // C89 allows integers for enum cases
+                        } else if (isIntegerType(cond_type) && case_type->kind == TYPE_ENUM) {
+                             // Allow enum cases for integer discriminant?
+                        } else {
+                            fatalError(case_expr->loc, "Switch case type mismatch");
+                        }
+                    }
+                }
+            }
+        }
+
+        Type* prong_type = visit(prong->body);
+        if (!result_type) {
+            result_type = prong_type;
+        } else if (prong_type && result_type != prong_type) {
+            // Require exact match for switch expression resulting type for now.
+        }
+    }
+
+    return result_type;
 }
 
 Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
@@ -1123,7 +1165,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* /*parent*/, ASTUnionDeclNode* node) {
     return NULL;
 }
 
-Type* TypeChecker::visitMemberAccess(ASTMemberAccessNode* node) {
+Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
     Type* base_type = visit(node->base);
     if (!base_type) return NULL;
 
@@ -1132,8 +1174,33 @@ Type* TypeChecker::visitMemberAccess(ASTMemberAccessNode* node) {
         base_type = base_type->as.pointer.base;
     }
 
+    if (base_type->kind == TYPE_ENUM) {
+        // Enum member access
+        DynamicArray<EnumMember>* members = base_type->as.enum_details.members;
+        bool found = false;
+        for (size_t i = 0; i < members->length(); ++i) {
+            if (identifiers_equal((*members)[i].name, node->field_name)) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "enum has no member named '");
+            safe_append(current, remaining, node->field_name);
+            safe_append(current, remaining, "'");
+            fatalError(parent->loc, msg_buffer);
+            return NULL;
+        }
+
+        return base_type; // Result type is the enum type itself
+    }
+
     if (base_type->kind != TYPE_STRUCT) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs or pointers to structs", unit.getArena());
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs, enums or pointers to structs", unit.getArena());
         return NULL;
     }
 
@@ -1274,16 +1341,35 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             fatalError(member_node_wrapper->loc, "Enum member value overflows its backing type.");
         }
 
+        // Check for unique member names
+        for (size_t j = 0; j < i; ++j) {
+            if (identifiers_equal((*members)[j].name, member_node->name)) {
+                fatalError(member_node_wrapper->loc, "Duplicate enum member name");
+            }
+        }
+
         EnumMember member;
         member.name = member_node->name;
         member.value = member_value;
+        member.loc = member_node_wrapper->loc;
         members->append(member);
 
         current_value = member_value + 1;
     }
 
+    i64 min_val = 0;
+    i64 max_val = 0;
+    if (members->length() > 0) {
+        min_val = (*members)[0].value;
+        max_val = (*members)[0].value;
+        for (size_t i = 1; i < members->length(); ++i) {
+            if ((*members)[i].value < min_val) min_val = (*members)[i].value;
+            if ((*members)[i].value > max_val) max_val = (*members)[i].value;
+        }
+    }
+
     // 4. Create and return the new enum type.
-    return createEnumType(unit.getArena(), backing_type, members);
+    return createEnumType(unit.getArena(), NULL, backing_type, members, min_val, max_val);
 }
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
@@ -1293,9 +1379,9 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         Symbol* sym = unit.getSymbolTable().lookup(node->name);
         if (sym) {
             // A constant can hold a type in Zig.
-            // For now, we assume if it's in the symbol table and has a struct type,
+            // For now, we assume if it's in the symbol table and has a struct or enum type,
             // it can be used as a type name.
-            if (sym->symbol_type && sym->symbol_type->kind == TYPE_STRUCT) {
+            if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT || sym->symbol_type->kind == TYPE_ENUM)) {
                 resolved_type = sym->symbol_type;
             }
         }
@@ -1430,6 +1516,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // Handle null assignment to any pointer
     if (actual->kind == TYPE_NULL && expected->kind == TYPE_POINTER) {
+        return true;
+    }
+
+    // Enum to Integer conversion (C89 compatible)
+    if (actual->kind == TYPE_ENUM && isIntegerType(expected)) {
         return true;
     }
 
@@ -1680,6 +1771,11 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Exact match always works
     if (source_type == target_type) return true;
+
+    // Enum to Integer conversion (C89 compatible)
+    if (source_type->kind == TYPE_ENUM && isIntegerType(target_type)) {
+        return true;
+    }
 
     // Numeric types require exact match in C89
     if (isNumericType(source_type) && isNumericType(target_type)) {

@@ -366,7 +366,38 @@ public:
      2. Emit block body code
      3. At scope exit (`}` or `return`), iterate `defers` in **reverse order** and emit their C code
 
-### 4.7 Layer 7: PE Backend (`pe_builder.hpp`)
+### 4.7 Enum Semantics (C89 Compatibility)
+
+#### Type Representation
+Enums are represented as distinct nominal types with:
+- Unique type identity per declaration
+- Implicit conversion to integer types
+- Compile-time constant values
+
+#### C89 Mapping
+Zig enums map directly to C89 enums:
+```zig
+// Zig source
+const Color = enum(u8) {
+    Red,
+    Green,
+    Blue,
+};
+```
+
+```c
+/* Generated C89 */
+typedef unsigned char Color;
+#define COLOR_RED 0
+#define COLOR_GREEN 1
+#define COLOR_BLUE 2
+```
+
+#### Member Access
+Enum members use dot notation: `Color.Red`
+Type checking ensures member exists in enum.
+
+### 4.8 Layer 7: PE Backend (`pe_builder.hpp`)
 **Goal:** Direct `.exe` generation (No `LINK.EXE` needed for Stage 2)
 * **Headers:** `IMAGE_DOS_HEADER`, `IMAGE_NT_HEADERS`
 * **Sections:** `.text` (Code), `.data` (Globals), `.idata` (Imports)

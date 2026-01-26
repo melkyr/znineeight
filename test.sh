@@ -139,7 +139,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_task_130_switch.cpp \
     tests/test_task_130_error_handling.cpp \
     tests/test_task_130_loops.cpp \
-    tests/type_checker_struct_tests.cpp"
+    tests/type_checker_struct_tests.cpp \
+    tests/test_enum_member_access.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

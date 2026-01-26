@@ -12,7 +12,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_StructInitialization_ExtraField,
         test_TypeChecker_StructInitialization_TypeMismatch,
         test_TypeChecker_StructLayout_Verification,
-        test_TypeChecker_UnionDeclaration_DuplicateField
+        test_TypeChecker_UnionDeclaration_DuplicateField,
+        test_TypeCheckerEnum_MemberAccess,
+        test_TypeCheckerEnum_InvalidMemberAccess,
+        test_TypeCheckerEnum_ImplicitConversion,
+        test_TypeCheckerEnum_Switch,
+        test_TypeCheckerEnum_DuplicateMember,
+        test_TypeCheckerEnum_AutoIncrement
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

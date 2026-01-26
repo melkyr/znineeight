@@ -330,6 +330,12 @@ TEST_FUNC(TypeCheckerEnumTests_NegativeValueInUnsignedEnum);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementOverflow);
 TEST_FUNC(TypeCheckerEnumTests_AutoIncrementSignedOverflow);
 TEST_FUNC(TypeCheckerEnumTests_ValidValues);
+TEST_FUNC(TypeCheckerEnum_MemberAccess);
+TEST_FUNC(TypeCheckerEnum_InvalidMemberAccess);
+TEST_FUNC(TypeCheckerEnum_ImplicitConversion);
+TEST_FUNC(TypeCheckerEnum_Switch);
+TEST_FUNC(TypeCheckerEnum_DuplicateMember);
+TEST_FUNC(TypeCheckerEnum_AutoIncrement);
 
 // Forward declarations for Group 4I: C89 Compatibility & Misc
 TEST_FUNC(TypeChecker_ArrayAccessInBoundsWithNamedConstant);
