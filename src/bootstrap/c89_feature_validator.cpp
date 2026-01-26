@@ -10,7 +10,7 @@ void C89FeatureValidator::validate(ASTNode* node) {
 }
 
 void C89FeatureValidator::fatalError(SourceLocation location, const char* message) {
-    unit.getErrorHandler().report(ERR_SYNTAX_ERROR, location, message);
+    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
     unit.getErrorHandler().printErrors();
     abort();
 }
@@ -23,6 +23,12 @@ void C89FeatureValidator::visit(ASTNode* node) {
     switch (node->type) {
         case NODE_ARRAY_TYPE:
             visitArrayType(node);
+            break;
+        case NODE_ERROR_UNION_TYPE:
+            visitErrorUnionType(node);
+            break;
+        case NODE_OPTIONAL_TYPE:
+            visitOptionalType(node);
             break;
         case NODE_TRY_EXPR:
             visitTryExpr(node);
@@ -92,11 +98,51 @@ void C89FeatureValidator::visit(ASTNode* node) {
             }
             visit(node->as.fn_decl->body);
             break;
+        case NODE_STRUCT_DECL:
+            for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                visit((*node->as.struct_decl->fields)[i]);
+            }
+            break;
+        case NODE_UNION_DECL:
+            for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                visit((*node->as.union_decl->fields)[i]);
+            }
+            break;
+        case NODE_ENUM_DECL:
+            if (node->as.enum_decl->backing_type) {
+                visit(node->as.enum_decl->backing_type);
+            }
+            for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                visit((*node->as.enum_decl->fields)[i]);
+            }
+            break;
+        case NODE_STRUCT_FIELD:
+            visit(node->as.struct_field->type);
+            break;
         case NODE_POINTER_TYPE:
             visit(node->as.pointer_type.base);
             break;
         case NODE_EXPRESSION_STMT:
             visit(node->as.expression_stmt.expression);
+            break;
+        case NODE_FOR_STMT:
+            visit(node->as.for_stmt->iterable_expr);
+            visit(node->as.for_stmt->body);
+            break;
+        case NODE_SWITCH_EXPR:
+            visit(node->as.switch_expr->expression);
+            for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
+                if (!prong->is_else) {
+                    for (size_t j = 0; j < prong->cases->length(); ++j) {
+                        visit((*prong->cases)[j]);
+                    }
+                }
+                visit(prong->body);
+            }
+            break;
+        case NODE_COMPTIME_BLOCK:
+            visit(node->as.comptime_block.expression);
             break;
         default:
             // No action needed for literals, identifiers, etc.
@@ -109,6 +155,14 @@ void C89FeatureValidator::visitArrayType(ASTNode* node) {
         fatalError(node->loc, "Slices are not supported for C89 compatibility.");
     }
     visit(node->as.array_type.element_type);
+}
+
+void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
+    fatalError(node->loc, "Error union types (!T) are not C89-compatible.");
+}
+
+void C89FeatureValidator::visitOptionalType(ASTNode* node) {
+    fatalError(node->loc, "Optional types (?T) are not C89-compatible.");
 }
 
 void C89FeatureValidator::visitTryExpr(ASTNode* node) {

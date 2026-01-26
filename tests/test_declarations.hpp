@@ -388,6 +388,13 @@ TEST_FUNC(TypeChecker_RejectSliceExpression);
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
 
+// Forward declarations for Task 135 (Error Union & Optional Type Rejection)
+TEST_FUNC(C89Rejection_ErrorUnionType_FnReturn);
+TEST_FUNC(C89Rejection_OptionalType_VarDecl);
+TEST_FUNC(C89Rejection_ErrorUnionType_Param);
+TEST_FUNC(C89Rejection_ErrorUnionType_StructField);
+TEST_FUNC(C89Rejection_NestedErrorUnionType);
+
 // Forward declarations for Symbol Flags
 TEST_FUNC(SymbolFlags_GlobalVariable);
 TEST_FUNC(SymbolFlags_SymbolBuilder);

@@ -65,6 +65,8 @@ enum NodeType {
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
     NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
+    NODE_ERROR_UNION_TYPE, ///< An error union type (e.g., `!i32`).
+    NODE_OPTIONAL_TYPE,    ///< An optional type (e.g., `?i32`).
 
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
@@ -111,6 +113,8 @@ struct ASTEnumDeclNode;
 struct ASTTypeNameNode;
 struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
+struct ASTErrorUnionTypeNode;
+struct ASTOptionalTypeNode;
 struct ASTTryExprNode;
 struct ASTCatchExprNode;
 struct ASTOrelseExprNode;
@@ -605,6 +609,24 @@ struct ASTArrayTypeNode {
     ASTNode* size; // Can be NULL for a slice
 };
 
+/**
+ * @struct ASTErrorUnionTypeNode
+ * @brief Represents an error union type (e.g., `!i32`).
+ * @var ASTErrorUnionTypeNode::payload_type A pointer to the ASTNode for the payload type.
+ */
+struct ASTErrorUnionTypeNode {
+    ASTNode* payload_type;
+};
+
+/**
+ * @struct ASTOptionalTypeNode
+ * @brief Represents an optional type (e.g., `?i32`).
+ * @var ASTOptionalTypeNode::payload_type A pointer to the ASTNode for the payload type.
+ */
+struct ASTOptionalTypeNode {
+    ASTNode* payload_type;
+};
+
 
 /**
  * @struct ASTNode
@@ -683,6 +705,8 @@ struct ASTNode {
         ASTTypeNameNode type_name;
         ASTPointerTypeNode pointer_type;
         ASTArrayTypeNode array_type;
+        ASTErrorUnionTypeNode error_union_type;
+        ASTOptionalTypeNode optional_type;
     } as;
 };
 

@@ -48,6 +48,8 @@ public:
     Type* visitTypeName(ASTNode* parent, ASTTypeNameNode* node);
     Type* visitPointerType(ASTPointerTypeNode* node);
     Type* visitArrayType(ASTArrayTypeNode* node);
+    Type* visitErrorUnionType(ASTErrorUnionTypeNode* node);
+    Type* visitOptionalType(ASTOptionalTypeNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
     Type* visitCatchExpr(ASTCatchExprNode* node);
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
@@ -60,6 +62,7 @@ public:
     Type* findStructField(Type* struct_type, const char* field_name);
     void fatalError(const char* msg);
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
+    void logFeatureLocation(const char* feature, SourceLocation loc);
 private:
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);

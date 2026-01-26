@@ -18,7 +18,12 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerEnum_ImplicitConversion,
         test_TypeCheckerEnum_Switch,
         test_TypeCheckerEnum_DuplicateMember,
-        test_TypeCheckerEnum_AutoIncrement
+        test_TypeCheckerEnum_AutoIncrement,
+        test_C89Rejection_ErrorUnionType_FnReturn,
+        test_C89Rejection_OptionalType_VarDecl,
+        test_C89Rejection_ErrorUnionType_Param,
+        test_C89Rejection_ErrorUnionType_StructField,
+        test_C89Rejection_NestedErrorUnionType
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

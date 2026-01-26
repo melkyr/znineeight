@@ -264,6 +264,12 @@ private:
     /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). Helper for `parseType`. */
     ASTNode* parseArrayType();
 
+    /** @brief Parses an error union type (e.g., `!i32`). Helper for `parseType`. */
+    ASTNode* parseErrorUnionType();
+
+    /** @brief Parses an optional type (e.g., `?i32`). Helper for `parseType`. */
+    ASTNode* parseOptionalType();
+
     /** @brief Parses a struct declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseStructDeclaration();
 
