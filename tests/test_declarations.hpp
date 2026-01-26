@@ -452,5 +452,10 @@ TEST_FUNC(DoubleFree_TryPathAware);
 TEST_FUNC(DoubleFree_CatchPathAware);
 TEST_FUNC(DoubleFree_OrelsePathAware);
 TEST_FUNC(DoubleFree_LoopConservativeVerification);
+TEST_FUNC(DoubleFree_MultipleDefers);
+TEST_FUNC(DoubleFree_DeferInLoop);
+TEST_FUNC(DoubleFree_PointerAliasing);
+TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree);
+TEST_FUNC(DoubleFree_TransferThenFree);
 
 #endif // TEST_DECLARATIONS_HPP

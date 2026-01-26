@@ -138,7 +138,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_double_free_path_aware.cpp \
     tests/test_task_130_switch.cpp \
     tests/test_task_130_error_handling.cpp \
-    tests/test_task_130_loops.cpp"
+    tests/test_task_130_loops.cpp \
+    tests/double_free_edge_cases.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

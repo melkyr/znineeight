@@ -1248,7 +1248,27 @@ The `LifetimeAnalyzer` uses a visitor pattern to traverse the AST. It maintains 
 
 ## 17. Double Free Analysis Phase
 
-The Double Free Analysis phase (Task 127 & 128) detects memory safety issues related to the `ArenaAllocator` interface (`arena_alloc`, `arena_free`).
+The Double Free Analysis phase (Task 127-132) detects memory safety issues related to the `ArenaAllocator` interface (`arena_alloc`, `arena_free`).
+
+### 17.1 Core Strategy: Conservative Path-Blind Analysis
+For the bootstrap compiler, the analyzer employs a **conservative path-blind strategy**. This approach prioritizes safety and simplicity over absolute precision, which is ideal for the constrained target environment.
+
+- **Safety Over Precision:** It is better to issue a false positive warning than to miss a real memory safety risk.
+- **Simplicity:** The implementation avoids complex data-flow solvers, reducing the potential for bugs in the compiler itself.
+- **Deterministic state transitions:** Pointers transition through well-defined states (`AS_ALLOCATED`, `AS_FREED`, `AS_UNKNOWN`, etc.).
+
+### 17.2 Control Flow and Merging
+The analyzer is path-aware and tracks states through branches and join points.
+
+- **Forking:** When encountering a branch (`if`, `switch`, `catch`, `orelse`), the current allocation state is forked. Modifications in each branch are tracked independently.
+- **Merging:** At join points, states from diverging paths are merged. If a pointer's state differs between paths (e.g., freed in one branch but not another), it transitions to `AS_UNKNOWN`. This ensures that subsequent code cannot make unsafe assumptions about the pointer's validity.
+- **Loops (`while`, `for`):** To handle potential multiple iterations, any pointer modified within a loop body is transitioned to `AS_UNKNOWN` in the outer scope after the loop is processed.
+- **Try Expressions:** The `try` keyword introduces an implicit error path. To remain conservative, all currently `AS_ALLOCATED` pointers transition to `AS_UNKNOWN` after a `try` expression, as they might have been freed or transferred on the error path.
+
+### 17.3 Performance Optimization: Pointer Comparison
+Thanks to the **String Interning** system, the analyzer performs identifier lookups using O(1) pointer comparisons (`==`) instead of O(n) string comparisons (`strcmp`). This significantly improves the speed of semantic analysis passes, especially for large source files with many variables.
+
+### 17.4 Allocation Site Tracking
 
 ### Allocation Site Tracking
 To improve diagnostics, the analyzer tracks the `SourceLocation` of every allocation site. This information is preserved in the `TrackedPointer` structure and used to enhance error messages.

@@ -41,6 +41,13 @@ Integration tests verify that multiple compiler stages work together correctly. 
 ### Integration Test Examples
 Existing integration tests can be found in `tests/integration_tests.cpp`. They demonstrate how to set up a `CompilationUnit`, add source code, and run the full pipeline with all analyzers enabled.
 
+**Milestone 4 Coverage:** Integration tests now cover the complete semantic analysis pipeline:
+1. **Pass 0**: C89 Feature Validation (Rejection of slices, etc.)
+2. **Pass 1**: Type Checking (Resolution and compatibility)
+3. **Pass 2**: Lifetime Analysis (Dangling pointer detection)
+4. **Pass 3**: Null Pointer Analysis (Flow-sensitive detection)
+5. **Pass 4**: Double Free Detection (Path-aware tracking)
+
 ## 3. Self-Tests
 
 The bootstrap compiler includes a `--self-test` mode that runs an internal suite of integration tests directly from the compiler executable.

@@ -5,6 +5,7 @@
 #include "utils.hpp"
 #include <new>
 
+
 StateMap::StateMap(ArenaAllocator& arena, StateMap* p)
     : vars(arena), modified(arena), parent(p), arena_(arena) {
 }
@@ -19,12 +20,12 @@ StateMap::StateMap(const StateMap& other, ArenaAllocator& arena)
 void StateMap::setState(const char* name, PointerState state) {
     // Search BACKWARDS for most recent declaration (to handle shadowing)
     for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             vars[i].state = state;
             // Mark as modified
             bool already_modified = false;
             for (size_t j = 0; j < modified.length(); ++j) {
-                if (strings_equal(modified[j], name)) {
+                if (identifiers_equal(modified[j], name)) {
                     already_modified = true;
                     break;
                 }
@@ -42,7 +43,7 @@ void StateMap::setState(const char* name, PointerState state) {
 PointerState StateMap::getState(const char* name) const {
     // Search BACKWARDS
     for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             return vars[i].state;
         }
     }
@@ -51,7 +52,7 @@ PointerState StateMap::getState(const char* name) const {
 
 bool StateMap::hasVariable(const char* name) const {
     for (size_t i = 0; i < vars.length(); ++i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             return true;
         }
     }
@@ -445,7 +446,7 @@ bool NullPointerAnalyzer::isNullExpression(ASTNode* expr) {
     if (!expr) return false;
     if (expr->type == NODE_NULL_LITERAL) return true;
     if (expr->type == NODE_INTEGER_LITERAL && expr->as.integer_literal.value == 0) return true;
-    if (expr->type == NODE_IDENTIFIER && strings_equal(expr->as.identifier.name, "NULL")) return true;
+    if (expr->type == NODE_IDENTIFIER && identifiers_equal(expr->as.identifier.name, "NULL")) return true;
     return false;
 }
 
