@@ -1,8 +1,7 @@
 #!/bin/bash
-echo "Compiling and running tests..."
+echo "Compiling RetroZig Batch Test Runners..."
 
-g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include \
-    src/bootstrap/lexer.cpp \
+BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/parser.cpp \
     src/bootstrap/string_interner.cpp \
     src/bootstrap/error_handler.cpp \
@@ -16,8 +15,9 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     src/bootstrap/lifetime_analyzer.cpp \
     src/bootstrap/null_pointer_analyzer.cpp \
     src/bootstrap/double_free_analyzer.cpp \
-    src/bootstrap/utils.cpp \
-    tests/test_c89_rejection.cpp \
+    src/bootstrap/utils.cpp"
+
+TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/c89_type_compat_tests.cpp \
     tests/c89_type_mapping_tests.cpp \
     tests/const_var_crash_test.cpp \
@@ -28,7 +28,6 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/lexer_fixes.cpp \
     tests/lexer_strings.cpp \
     tests/lexer_utils.cpp \
-    tests/main.cpp \
     tests/memory_alignment_test.cpp \
     tests/memory_stability_tests.cpp \
     tests/memory_tests.cpp \
@@ -126,19 +125,31 @@ g++ -std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno
     tests/type_system_tests.cpp \
     tests/type_to_string_tests.cpp \
     tests/test_assignment_compatibility.cpp \
-    -o test_runner
+    tests/type_checker_slice_expression_test.cpp \
+    tests/task_119_test.cpp \
+    tests/test_symbol_flags.cpp \
+    tests/test_utils_bug.cpp \
+    tests/lifetime_analysis_tests.cpp \
+    tests/null_pointer_analysis_tests.cpp \
+    tests/integration_tests.cpp \
+    tests/double_free_analysis_tests.cpp \
+    tests/test_double_free_locations.cpp \
+    tests/test_double_free_task_129.cpp \
+    tests/test_double_free_path_aware.cpp \
+    tests/test_task_130_switch.cpp \
+    tests/test_task_130_error_handling.cpp \
+    tests/test_task_130_loops.cpp"
 
-if [ $? -ne 0 ]; then
-    echo "Compilation failed!"
-    exit 1
-fi
+FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
-./test_runner -v
+for i in 1 2 3 4 5; do
+    echo "Compiling Batch $i..."
+    g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
+    if [ $? -ne 0 ]; then
+        echo "Compilation of Batch $i failed!"
+        exit 1
+    fi
+done
 
-if [ $? -ne 0 ]; then
-    echo "Tests failed!"
-    exit 1
-fi
-
-echo "All tests passed!"
-exit 0
+echo "Running all tests..."
+./run_all_tests.sh
