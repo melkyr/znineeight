@@ -476,6 +476,15 @@ TEST_FUNC(DoubleFree_ErrdeferContextInError);
 TEST_FUNC(DoubleFree_IfElseBranching);
 TEST_FUNC(DoubleFree_IfElseBothFree);
 TEST_FUNC(DoubleFree_WhileConservative);
+#include "test_task_130_switch.cpp"
+TEST_FUNC(DoubleFree_SwitchPathAware);
+TEST_FUNC(DoubleFree_SwitchBothFree);
+#include "test_task_130_error_handling.cpp"
+TEST_FUNC(DoubleFree_TryPathAware);
+TEST_FUNC(DoubleFree_CatchPathAware);
+TEST_FUNC(DoubleFree_OrelsePathAware);
+#include "test_task_130_loops.cpp"
+TEST_FUNC(DoubleFree_LoopConservativeVerification);
 
 
 int main(int argc, char* argv[]) {
@@ -920,6 +929,12 @@ int main(int argc, char* argv[]) {
         test_DoubleFree_IfElseBranching,
         test_DoubleFree_IfElseBothFree,
         test_DoubleFree_WhileConservative,
+        test_DoubleFree_SwitchPathAware,
+        test_DoubleFree_SwitchBothFree,
+        test_DoubleFree_TryPathAware,
+        test_DoubleFree_CatchPathAware,
+        test_DoubleFree_OrelsePathAware,
+        test_DoubleFree_LoopConservativeVerification,
         // Integration Tests
         test_Integration_FullPipeline,
         test_Integration_CorrectUsage

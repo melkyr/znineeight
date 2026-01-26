@@ -4,61 +4,85 @@
 #include <new>
 
 AllocationStateMap::AllocationStateMap(ArenaAllocator& arena, AllocationStateMap* p)
-    : vars(arena), modified(arena), parent(p), arena_(arena) {
-}
-
-AllocationStateMap::AllocationStateMap(const AllocationStateMap& other, ArenaAllocator& arena)
-    : vars(arena), modified(arena), parent(NULL), arena_(arena) {
-    for (size_t i = 0; i < other.vars.length(); ++i) {
-        vars.append(other.vars[i]);
-    }
+    : delta_head(NULL), modified(arena), parent(p), arena_(arena) {
 }
 
 void AllocationStateMap::setState(const char* name, const TrackedPointer& state) {
     if (!name) return;
-    for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
-            vars[i] = state;
-            vars[i].name = name; // Ensure name is preserved
 
-            bool already_modified = false;
-            for (size_t j = 0; j < modified.length(); ++j) {
-                if (strings_equal(modified[j], name)) {
-                    already_modified = true;
-                    break;
-                }
-            }
-            if (!already_modified) {
-                modified.append(name);
-            }
+    // Check if already in delta for THIS scope
+    StateDelta* curr = delta_head;
+    while (curr) {
+        if (strings_equal(curr->name, name)) {
+            curr->state = state;
+            curr->state.name = name; // Ensure name is preserved
             return;
         }
+        curr = curr->next;
     }
-    addVariable(name, state);
+
+    // Add new delta entry
+    void* mem = arena_.alloc(sizeof(StateDelta));
+    if (!mem) return;
+    StateDelta* new_delta = new (mem) StateDelta(name, state, delta_head);
+    new_delta->state.name = name; // Ensure name is preserved in TrackedPointer
+    delta_head = new_delta;
+
+    // Mark as modified in this scope
+    bool already_modified = false;
+    for (size_t j = 0; j < modified.length(); ++j) {
+        if (strings_equal(modified[j], name)) {
+            already_modified = true;
+            break;
+        }
+    }
+    if (!already_modified) {
+        modified.append(name);
+    }
 }
 
 TrackedPointer* AllocationStateMap::getState(const char* name) {
-    for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
-            return &vars[i];
+    // Check deltas in this scope
+    StateDelta* curr = delta_head;
+    while (curr) {
+        if (strings_equal(curr->name, name)) {
+            return &curr->state;
         }
+        curr = curr->next;
     }
+
+    // Recurse to parent
+    if (parent) {
+        return parent->getState(name);
+    }
+
     return NULL;
 }
 
 void AllocationStateMap::addVariable(const char* name, const TrackedPointer& state) {
-    TrackedPointer tp = state;
-    tp.name = name;
-    vars.append(tp);
+    setState(name, state);
 }
 
 bool AllocationStateMap::hasVariable(const char* name) const {
-    for (size_t i = 0; i < vars.length(); ++i) {
-        if (strings_equal(vars[i].name, name)) {
+    StateDelta* curr = delta_head;
+    while (curr) {
+        if (strings_equal(curr->name, name)) {
             return true;
         }
+        curr = curr->next;
     }
+
+    if (parent) {
+        return parent->hasVariable(name);
+    }
+
     return false;
+}
+
+AllocationStateMap* AllocationStateMap::fork() {
+    void* mem = arena_.alloc(sizeof(AllocationStateMap));
+    if (!mem) return NULL;
+    return new (mem) AllocationStateMap(arena_, this);
 }
 
 DoubleFreeAnalyzer::DoubleFreeAnalyzer(CompilationUnit& unit)
@@ -77,17 +101,18 @@ void DoubleFreeAnalyzer::analyze(ASTNode* root) {
 }
 
 void DoubleFreeAnalyzer::pushScope(bool copy_parent) {
-    void* mem = unit_.getArena().alloc(sizeof(AllocationStateMap));
-    if (!mem) return;
-    AllocationStateMap* new_scope;
     if (copy_parent && current_state_) {
-        new_scope = new (mem) AllocationStateMap(*current_state_, unit_.getArena());
-        new_scope->parent = current_state_;
+        AllocationStateMap* new_scope = current_state_->fork();
+        if (!new_scope) return;
+        scopes_.append(new_scope);
+        current_state_ = new_scope;
     } else {
-        new_scope = new (mem) AllocationStateMap(unit_.getArena(), current_state_);
+        void* mem = unit_.getArena().alloc(sizeof(AllocationStateMap));
+        if (!mem) return;
+        AllocationStateMap* new_scope = new (mem) AllocationStateMap(unit_.getArena(), current_state_);
+        scopes_.append(new_scope);
+        current_state_ = new_scope;
     }
-    scopes_.append(new_scope);
-    current_state_ = new_scope;
 }
 
 void DoubleFreeAnalyzer::popScope() {
@@ -190,17 +215,17 @@ void DoubleFreeAnalyzer::visitBlockStmt(ASTNode* node) {
 
     // Phase 5 & 7: Check for leaks at scope exit
     if (current_state_) {
-        for (size_t i = 0; i < current_state_->vars.length(); ++i) {
-            TrackedPointer& tp = current_state_->vars[i];
-            if (tp.scope_depth == current_scope_depth_) {
-                if (!(tp.flags & TP_FLAG_RETURNED)) {
-                    if (tp.state == AS_ALLOCATED) {
-                        reportLeak(tp.name, node->loc, false);
-                    } else if (tp.state == AS_TRANSFERRED) {
-                        reportLeak(tp.name, node->loc, false);
-                    }
+        StateDelta* curr = current_state_->delta_head;
+        while (curr) {
+            TrackedPointer& tp = curr->state;
+            // Variables declared in this scope (matching current_scope_depth_)
+            // that are still AS_ALLOCATED or AS_TRANSFERRED are leaked.
+            if (tp.scope_depth == current_scope_depth_ && !(tp.flags & TP_FLAG_RETURNED)) {
+                if (tp.state == AS_ALLOCATED || tp.state == AS_TRANSFERRED) {
+                    reportLeak(tp.name, node->loc, false);
                 }
             }
+            curr = curr->next;
         }
     }
 
@@ -403,14 +428,34 @@ void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
 
         // Merge both branches into entry_state
         if (entry_state && then_branch && else_branch) {
-            for (size_t i = 0; i < entry_state->vars.length(); ++i) {
-                const char* name = entry_state->vars[i].name;
-                if (!name) continue;
-                TrackedPointer* s_then = then_branch->getState(name);
-                TrackedPointer* s_else = else_branch->getState(name);
-                if (s_then && s_else) {
-                    TrackedPointer merged = mergeTrackedPointers(*s_then, *s_else);
-                    entry_state->setState(name, merged);
+            // Variables to merge are those modified in either branch
+            DynamicArray<const char*> to_merge(unit_.getArena());
+
+            for (size_t i = 0; i < then_branch->modified.length(); ++i) {
+                to_merge.append(then_branch->modified[i]);
+            }
+            for (size_t i = 0; i < else_branch->modified.length(); ++i) {
+                const char* name = else_branch->modified[i];
+                bool already = false;
+                for (size_t j = 0; j < to_merge.length(); ++j) {
+                    if (strings_equal(to_merge[j], name)) {
+                        already = true;
+                        break;
+                    }
+                }
+                if (!already) to_merge.append(name);
+            }
+
+            for (size_t i = 0; i < to_merge.length(); ++i) {
+                const char* name = to_merge[i];
+                // Only merge variables that existed before the if statement
+                if (entry_state->hasVariable(name)) {
+                    TrackedPointer* s_then = then_branch->getState(name);
+                    TrackedPointer* s_else = else_branch->getState(name);
+                    if (s_then && s_else) {
+                        TrackedPointer merged = mergeTrackedPointers(*s_then, *s_else);
+                        entry_state->setState(name, merged);
+                    }
                 }
             }
         }
@@ -581,21 +626,50 @@ void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
         }
 
         // Merge all prong states
-        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
-            const char* name = entry_state->vars[i].name;
-            if (!name) continue;
-            TrackedPointer* first_prong_tp = prong_states[0]->getState(name);
-            if (!first_prong_tp) continue;
-
-            TrackedPointer merged = *first_prong_tp;
-
-            for (size_t j = 1; j < prong_states.length(); ++j) {
-                TrackedPointer* next_prong_tp = prong_states[j]->getState(name);
-                if (next_prong_tp) {
-                    merged = mergeTrackedPointers(merged, *next_prong_tp);
+        DynamicArray<const char*> to_merge(unit_.getArena());
+        for (size_t i = 0; i < prong_states.length(); ++i) {
+            for (size_t j = 0; j < prong_states[i]->modified.length(); ++j) {
+                const char* name = prong_states[i]->modified[j];
+                bool already = false;
+                for (size_t k = 0; k < to_merge.length(); ++k) {
+                    if (strings_equal(to_merge[k], name)) {
+                        already = true;
+                        break;
+                    }
                 }
+                if (!already) to_merge.append(name);
             }
-            entry_state->setState(name, merged);
+        }
+
+        for (size_t i = 0; i < to_merge.length(); ++i) {
+            const char* name = to_merge[i];
+            if (entry_state->hasVariable(name)) {
+                TrackedPointer* first_prong_tp = prong_states[0]->getState(name);
+
+                TrackedPointer merged;
+                if (first_prong_tp) {
+                    merged = *first_prong_tp;
+                } else {
+                    // Not modified in first prong, take from entry state
+                    TrackedPointer* entry_tp = entry_state->getState(name);
+                    if (entry_tp) merged = *entry_tp;
+                    else continue; // Should not happen if hasVariable was true
+                }
+
+                for (size_t j = 1; j < prong_states.length(); ++j) {
+                    TrackedPointer* next_prong_tp = prong_states[j]->getState(name);
+                    if (next_prong_tp) {
+                        merged = mergeTrackedPointers(merged, *next_prong_tp);
+                    } else {
+                        // If one prong doesn't have it, it means it's unchanged from entry state
+                        TrackedPointer* entry_tp = entry_state->getState(name);
+                        if (entry_tp) {
+                            merged = mergeTrackedPointers(merged, *entry_tp);
+                        }
+                    }
+                }
+                entry_state->setState(name, merged);
+            }
         }
 
         AllocationStateMap* final_switch_state = current_state_;
@@ -612,14 +686,26 @@ void DoubleFreeAnalyzer::visitTryExpr(ASTNode* node) {
     // are executed. On the success path, they are not.
     // Since we don't track the exact error path, we transition all currently
     // ALLOCATED pointers to UNKNOWN to conservatively reflect this uncertainty.
+    // We only care about pointers that exist in the parent scope (not locals of this try)
     if (current_state_) {
-        for (size_t i = 0; i < current_state_->vars.length(); ++i) {
-            TrackedPointer& tp = current_state_->vars[i];
-            if (tp.state == AS_ALLOCATED) {
-                TrackedPointer next_tp = tp;
-                next_tp.state = AS_UNKNOWN;
-                current_state_->setState(tp.name, next_tp);
+        // Since we don't have a 'vars' array, we have a problem.
+        // We could iterate over all deltas in all scopes...
+        // Or we just accept that we can only mark currently 'modified' ones?
+        // No, that's not enough.
+
+        // Let's iterate up the scope chain.
+        AllocationStateMap* s = current_state_;
+        while (s) {
+            StateDelta* curr = s->delta_head;
+            while (curr) {
+                if (curr->state.state == AS_ALLOCATED) {
+                    TrackedPointer next_tp = curr->state;
+                    next_tp.state = AS_UNKNOWN;
+                    current_state_->setState(curr->name, next_tp);
+                }
+                curr = curr->next;
             }
+            s = s->parent;
         }
     }
 }
@@ -645,9 +731,17 @@ void DoubleFreeAnalyzer::visitCatchExpr(ASTNode* node) {
 
     // Merge both branches into entry_state
     if (entry_state && main_branch && catch_branch) {
-        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
-            const char* name = entry_state->vars[i].name;
-            if (!name) continue;
+        DynamicArray<const char*> to_merge(unit_.getArena());
+        for (size_t i = 0; i < main_branch->modified.length(); ++i) to_merge.append(main_branch->modified[i]);
+        for (size_t i = 0; i < catch_branch->modified.length(); ++i) {
+            const char* name = catch_branch->modified[i];
+            bool already = false;
+            for (size_t j = 0; j < to_merge.length(); ++j) if (strings_equal(to_merge[j], name)) { already = true; break; }
+            if (!already) to_merge.append(name);
+        }
+
+        for (size_t i = 0; i < to_merge.length(); ++i) {
+            const char* name = to_merge[i];
             TrackedPointer* s_main = main_branch->getState(name);
             TrackedPointer* s_catch = catch_branch->getState(name);
             if (s_main && s_catch) {
@@ -683,9 +777,17 @@ void DoubleFreeAnalyzer::visitOrelseExpr(ASTNode* node) {
 
     // Merge both branches into entry_state
     if (entry_state && main_branch && orelse_branch) {
-        for (size_t i = 0; i < entry_state->vars.length(); ++i) {
-            const char* name = entry_state->vars[i].name;
-            if (!name) continue;
+        DynamicArray<const char*> to_merge(unit_.getArena());
+        for (size_t i = 0; i < main_branch->modified.length(); ++i) to_merge.append(main_branch->modified[i]);
+        for (size_t i = 0; i < orelse_branch->modified.length(); ++i) {
+            const char* name = orelse_branch->modified[i];
+            bool already = false;
+            for (size_t j = 0; j < to_merge.length(); ++j) if (strings_equal(to_merge[j], name)) { already = true; break; }
+            if (!already) to_merge.append(name);
+        }
+
+        for (size_t i = 0; i < to_merge.length(); ++i) {
+            const char* name = to_merge[i];
             TrackedPointer* s_main = main_branch->getState(name);
             TrackedPointer* s_orelse = orelse_branch->getState(name);
             if (s_main && s_orelse) {
