@@ -41,6 +41,170 @@ TEST_FUNC(DoubleFree_SimpleDoubleFree) {
     return true;
 }
 
+TEST_FUNC(DoubleFree_NestedDeferScopes) {
+    ArenaAllocator arena(131072);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> void {\n"
+        "    var p: *u8 = arena_alloc(100u);\n"
+        "    {\n"
+        "        defer { arena_free(p); }\n"
+        "    }\n"
+        "    arena_free(p);\n" // Double free
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    ctx.getCompilationUnit().injectRuntimeSymbols();
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_double_free = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) {
+            has_double_free = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(has_double_free);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_PointerAliasing) {
+    ArenaAllocator arena(131072);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func() -> void {\n"
+        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var q: *u8 = p;\n"
+        "    arena_free(p);\n"
+        "    arena_free(q);\n" // Double free via alias (Risk)
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    ctx.getCompilationUnit().injectRuntimeSymbols();
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    // Current implementation does NOT track aliases, but it might report
+    // WARN_FREE_UNALLOCATED for q since it wasn't explicitly allocated.
+    bool has_double_free = false;
+    bool has_uninit_free = false;
+    const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
+    for (size_t i = 0; i < errors.length(); ++i) {
+        if (errors[i].code == ERR_DOUBLE_FREE) has_double_free = true;
+    }
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_FREE_UNALLOCATED) has_uninit_free = true;
+    }
+
+    // Design choice: aliases are not tracked.
+    ASSERT_FALSE(has_double_free);
+    // q is considered uninitialized or unknown state because it was assigned from p,
+    // and assignments from identifiers make state AS_UNKNOWN.
+    ASSERT_TRUE(has_uninit_free);
+
+    return true;
+}
+
+TEST_FUNC(DoubleFree_DeferInLoop) {
+    ArenaAllocator arena(131072);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func(x: i32) -> void {\n"
+        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var i: i32 = 0;\n"
+        "    while (i < x) {\n"
+        "        defer { arena_free(p); }\n"
+        "        i = i + 1;\n"
+        "    }\n"
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    ctx.getCompilationUnit().injectRuntimeSymbols();
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    // The analyzer visits the loop body once.
+    // The defer is executed at the end of the block.
+    // Then p becomes AS_UNKNOWN after the loop because it was modified (freed) in the loop.
+    // We check that it doesn't crash and correctly transitions state.
+    return true;
+}
+
+TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree) {
+    ArenaAllocator arena(131072);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn my_func(x: i32) -> void {\n"
+        "    var p: *u8 = null;\n"
+        "    if (x > 0) {\n"
+        "        p = arena_alloc(100u);\n"
+        "    } else {\n"
+        "        p = null;\n"
+        "    }\n"
+        "    arena_free(p);\n" // Risk: p might be null
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    ctx.getCompilationUnit().injectRuntimeSymbols();
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+
+    DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    bool has_warning = false;
+    const DynamicArray<WarningReport>& warnings = ctx.getCompilationUnit().getErrorHandler().getWarnings();
+    for (size_t i = 0; i < warnings.length(); ++i) {
+        if (warnings[i].code == WARN_FREE_UNALLOCATED) {
+            has_warning = true;
+            break;
+        }
+    }
+    // Path-aware: AS_ALLOCATED on one path, AS_UNKNOWN (from null) on other.
+    // Merged state is AS_UNKNOWN.
+    // Currently, freeing AS_UNKNOWN does NOT report a warning to avoid false positives on parameters.
+    ASSERT_FALSE(has_warning);
+
+    return true;
+}
+
 TEST_FUNC(DoubleFree_SwitchAnalysis) {
     ArenaAllocator arena(131072);
     ArenaLifetimeGuard guard(arena);

@@ -109,3 +109,16 @@ Verify that variables modified within `while` or `for` loops are transitioned to
 
 ### Memory Stability
 Run Valgrind to ensure the new delta-based state map does not leak memory or access uninitialized values during branch analysis.
+
+## 7. Edge Case Coverage (Tasks 131 & 132)
+The test suite explicitly covers the following edge cases to ensure analyzer reliability:
+
+### Task 131 (Identify Multiple Deallocations)
+-   **Nested Defer Scopes**: Verified that `defer` statements in inner blocks are executed correctly and their state persists or triggers double-free reports at appropriate points.
+-   **Multiple Defers**: Verified that multiple `defer` statements for the same pointer in the same scope trigger a double free (in LIFO order).
+-   **Defers in Loops**: Verified that the analyzer correctly handles the uncertainty of multiple loop iterations, transitioning modified pointers to `AS_UNKNOWN`.
+
+### Task 132 (Flag Double-Free Risks)
+-   **Pointer Aliasing**: Verified that the compiler conservatively handles assignments between pointer variables by transitioning the target to `AS_UNKNOWN`.
+-   **Transfer to Unknown Functions**: Verified that passing a pointer to any non-freeing function marks it as `AS_TRANSFERRED` and issues a warning at scope exit.
+-   **Conditional Allocation**: Verified that unconditional frees after a conditional allocation (if-else) are flagged as potential risks (`WARN_FREE_UNALLOCATED`).

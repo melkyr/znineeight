@@ -1286,6 +1286,22 @@ To support deep branch nesting on 1990s hardware, the analyzer uses an `Allocati
 3. **Try Expression**: The `try` keyword introduces uncertainty because it may return early from the function. After a `try` expression, all currently `AS_ALLOCATED` pointers transition to `AS_UNKNOWN`.
 4. **Loops**: For `while` and `for` loops, any variable modified within the loop body is transitioned to `AS_UNKNOWN`, reflecting the uncertainty of potential multiple iterations.
 
+### Double-Free Analysis Details (Tasks 131-132)
+
+The `DoubleFreeAnalyzer` employs a conservative, path-aware strategy to identify deallocation risks in complex control flow.
+
+#### Multiple Deallocations Detection
+The analyzer identifies potential double frees by tracking the transition to the `AS_FREED` state.
+-   **Linear Paths**: A definite double free (`ERR_DOUBLE_FREE`) is reported if `arena_free` is called on a pointer already in the `AS_FREED` state.
+-   **Deferred Actions**: `defer` and `errdefer` statements are queued and executed in LIFO order at scope exit. The analyzer tracks the source location of the first deallocation (including its defer context) to provide detailed diagnostics.
+-   **Nested Scopes**: Correct depth handling ensures that `defer` statements in nested blocks are executed only when their defining block is exited, correctly modeling runtime behavior.
+
+#### Flagging Double-Free Risks
+To minimize false negatives while maintaining simplicity, the analyzer flags risks where it cannot prove safety:
+-   **Conservative Merging**: When control flow paths merge (e.g., after an `if-else`), any pointer whose state differs between branches is transitioned to `AS_UNKNOWN`.
+-   **Aliasing Design Choice**: In the bootstrap phase, the compiler **does not track aliases** (multiple variables pointing to the same allocation). Assigning an allocated pointer to another variable transitions the target variable to `AS_UNKNOWN`. This avoids the complexity of full pointer alias analysis while still catching basic mistakes on the original tracked pointer.
+-   **Function Call Conservatism**: Passing a pointer to any function (except `arena_free`) marks it as `AS_TRANSFERRED`. This stops tracking for that pointer to avoid false positives, instead issuing a `WARN_TRANSFERRED_MEMORY` warning to the developer.
+
 ---
 
 ## Deprecated

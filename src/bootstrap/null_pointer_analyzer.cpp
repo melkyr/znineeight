@@ -5,6 +5,7 @@
 #include "utils.hpp"
 #include <new>
 
+
 StateMap::StateMap(ArenaAllocator& arena, StateMap* p)
     : vars(arena), modified(arena), parent(p), arena_(arena) {
 }
@@ -19,12 +20,12 @@ StateMap::StateMap(const StateMap& other, ArenaAllocator& arena)
 void StateMap::setState(const char* name, PointerState state) {
     // Search BACKWARDS for most recent declaration (to handle shadowing)
     for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             vars[i].state = state;
             // Mark as modified
             bool already_modified = false;
             for (size_t j = 0; j < modified.length(); ++j) {
-                if (strings_equal(modified[j], name)) {
+                if (identifiers_equal(modified[j], name)) {
                     already_modified = true;
                     break;
                 }
@@ -42,7 +43,7 @@ void StateMap::setState(const char* name, PointerState state) {
 PointerState StateMap::getState(const char* name) const {
     // Search BACKWARDS
     for (int i = (int)vars.length() - 1; i >= 0; --i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             return vars[i].state;
         }
     }
@@ -51,7 +52,7 @@ PointerState StateMap::getState(const char* name) const {
 
 bool StateMap::hasVariable(const char* name) const {
     for (size_t i = 0; i < vars.length(); ++i) {
-        if (strings_equal(vars[i].name, name)) {
+        if (identifiers_equal(vars[i].name, name)) {
             return true;
         }
     }

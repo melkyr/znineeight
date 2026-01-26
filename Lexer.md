@@ -179,3 +179,30 @@ The following keywords for compile-time and special functions are also implement
 | `TOKEN_FAT_ARROW` | `=>`   | Yes         | Implemented as part of Task 23. |
 | `TOKEN_ELLIPSIS`  | `...`  | Yes         | Implemented as part of Task 23. |
 | `TOKEN_RANGE`     | `..`   | Yes         | Implemented as part of Task 75. |
+
+## 3. Token Resolution & String Interning
+
+### 3.1 Token Disambiguation
+The lexer resolves ambiguous tokens through multi-character lookahead and backtracking where necessary:
+
+1.  **Dot Operators**: When encountering a `.`, the lexer peeks up to two characters ahead to distinguish between:
+    -   `.` (`TOKEN_DOT`)
+    -   `..` (`TOKEN_RANGE`)
+    -   `...` (`TOKEN_ELLIPSIS`)
+    -   `.*` (`TOKEN_DOT_ASTERISK`)
+    -   `.?` (`TOKEN_DOT_QUESTION`)
+
+2.  **Numeric Ambiguity**: To correctly handle Zig's range syntax (e.g., `0..10`), the numeric literal parser peeks ahead. If a `.` is followed by another `.`, it aborts float parsing and returns an integer literal, allowing the `..` to be lexed as a separate token.
+
+### 3.2 String Interning Architecture
+All identifiers and string literals are automatically interned via the `StringInterner` during the lexing phase.
+
+1.  **Deduplication**: Identical strings across the entire compilation unit are mapped to the exact same memory address in the `ArenaAllocator`.
+2.  **Pointer Equality**: This architecture guarantees that `str1 == str2` if and only if the strings are content-equal. This enables O(1) string comparisons throughout the compiler.
+3.  **Memory Efficiency**: Only a single copy of each unique identifier or string literal is stored, significantly reducing memory footprint on 1990s hardware.
+
+### 3.3 Guarantees for Analysis
+String interning provides critical guarantees for subsequent compilation passes:
+-   **Performance**: Static analyzers (like the Double-Free or Null-Pointer analyzers) use pointer equality for identifier lookups and state tracking.
+-   **Stability**: Interned strings have a lifetime tied to the `CompilationUnit`'s arena, ensuring no dangling references during analysis or code generation.
+-   **Identity**: Symbols can be uniquely identified by their name pointer, simplifying symbol table implementation.
