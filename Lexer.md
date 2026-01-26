@@ -72,6 +72,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | Token Type            | Symbol | Implemented | Notes |
 | --------------------- | ------ | ----------- | ----- |
 | `TOKEN_EQUAL_EQUAL`   | `==`   | Yes         |       |
+| `TOKEN_BANG`          | `!`    | Yes         | Also used for Error Union types (!T) |
 | `TOKEN_BANG_EQUAL`    | `!=`   | Yes         |       |
 | `TOKEN_LESS`          | `<`    | Yes         |       |
 | `TOKEN_LESS_EQUAL`    | `<=`   | Yes         |       |
@@ -101,7 +102,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_DOT`        | `.`    | Yes         | Implemented as part of Task 22. |
 | `TOKEN_DOT_ASTERISK`| `.*`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_DOT_QUESTION`| `.?`   | Yes         | Implemented as part of Task 22. |
-| `TOKEN_QUESTION`   | `?`    | Yes         | Implemented as part of Task 22. |
+| `TOKEN_QUESTION`   | `?`    | Yes         | Also used for Optional types (?T) |
 | `TOKEN_PLUS2`      | `++`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_STAR2`      | `**`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_PLUSPERCENT`| `+%`   | Yes         | Implemented as part of Task 22. |

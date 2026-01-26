@@ -1329,6 +1329,25 @@ To minimize false negatives while maintaining simplicity, the analyzer flags ris
 -   **Aliasing Design Choice**: In the bootstrap phase, the compiler **does not track aliases** (multiple variables pointing to the same allocation). Assigning an allocated pointer to another variable transitions the target variable to `AS_UNKNOWN`. This avoids the complexity of full pointer alias analysis while still catching basic mistakes on the original tracked pointer.
 -   **Function Call Conservatism**: Passing a pointer to any function (except `arena_free`) marks it as `AS_TRANSFERRED`. This stops tracking for that pointer to avoid false positives, instead issuing a `WARN_TRANSFERRED_MEMORY` warning to the developer.
 
+## 18. Non-C89 Type Detection
+
+### Error Union Types (!T)
+The parser recognizes `!` as an error union type operator:
+- Syntax: `!` payload_type
+- Example: `!u32`, `![]const u8`
+- Rejected by C89FeatureValidator
+
+### Optional Types (?T)
+The parser recognizes `?` as an optional type operator:
+- Syntax: `?` payload_type
+- Example: `?i32`, `?*u8`
+- Rejected by C89FeatureValidator
+
+### Detection Strategy
+Both validators traverse type expressions recursively:
+1. C89FeatureValidator: Reports fatal errors
+2. TypeChecker: Logs locations for documentation
+
 ---
 
 ## Deprecated

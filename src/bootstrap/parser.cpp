@@ -1535,6 +1535,12 @@ ASTNode* Parser::parseType() {
     if (peek().type == TOKEN_LBRACKET) {
         return parseArrayType();
     }
+    if (peek().type == TOKEN_BANG) {
+        return parseErrorUnionType();
+    }
+    if (peek().type == TOKEN_QUESTION) {
+        return parseOptionalType();
+    }
     if (peek().type == TOKEN_IDENTIFIER) {
         Token type_name_token = advance();
         ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
@@ -1565,6 +1571,38 @@ ASTNode* Parser::parsePointerType() {
     node->resolved_type = NULL;
     node->as.pointer_type.base = base_type;
     node->as.pointer_type.is_const = is_const;
+
+    return node;
+}
+
+ASTNode* Parser::parseErrorUnionType() {
+    Token bang_token = advance(); // Consume '!'
+    ASTNode* payload_type = parseType();
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
+    node->type = NODE_ERROR_UNION_TYPE;
+    node->loc = bang_token.location;
+    node->resolved_type = NULL;
+    node->as.error_union_type.payload_type = payload_type;
+
+    return node;
+}
+
+ASTNode* Parser::parseOptionalType() {
+    Token question_token = advance(); // Consume '?'
+    ASTNode* payload_type = parseType();
+
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    if (!node) {
+        error("Out of memory");
+    }
+    node->type = NODE_OPTIONAL_TYPE;
+    node->loc = question_token.location;
+    node->resolved_type = NULL;
+    node->as.optional_type.payload_type = payload_type;
 
     return node;
 }

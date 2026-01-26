@@ -595,6 +595,16 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 
 This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` to reject unsupported Zig features early in the compilation process.
 
+## Rejected Zig Features
+
+### Error Handling Types
+| Zig Feature | C89 Equivalent | Status |
+|-------------|----------------|--------|
+| `!T` (error union) | No equivalent | REJECTED |
+| `?T` (optional) | No equivalent | REJECTED |
+
+These features cannot be mapped to C89 and are rejected at parse time by the `C89FeatureValidator`.
+
 ## 6. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.

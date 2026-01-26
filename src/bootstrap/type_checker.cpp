@@ -99,6 +99,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_TYPE_NAME:        resolved_type = visitTypeName(node, &node->as.type_name); break;
         case NODE_POINTER_TYPE:     resolved_type = visitPointerType(&node->as.pointer_type); break;
         case NODE_ARRAY_TYPE:       resolved_type = visitArrayType(&node->as.array_type); break;
+        case NODE_ERROR_UNION_TYPE: resolved_type = visitErrorUnionType(&node->as.error_union_type); break;
+        case NODE_OPTIONAL_TYPE:    resolved_type = visitOptionalType(&node->as.optional_type); break;
         case NODE_TRY_EXPR:         resolved_type = visitTryExpr(&node->as.try_expr); break;
         case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node->as.catch_expr); break;
         case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
@@ -1435,6 +1437,22 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {
     visit(node->expression);
     return NULL; // Placeholder
+}
+
+Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
+    logFeatureLocation("error_union_type", node->payload_type->loc);
+    visit(node->payload_type);
+    return NULL; // Error unions are not supported in the type system yet
+}
+
+Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
+    logFeatureLocation("optional_type", node->payload_type->loc);
+    visit(node->payload_type);
+    return NULL; // Optionals are not supported in the type system yet
+}
+
+void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
+    // Primary rejection happens in C89FeatureValidator.
 }
 
 Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {

@@ -37,6 +37,8 @@ private:
 
     // Visitor methods for specific node types will be added here.
     void visitArrayType(ASTNode* node);
+    void visitErrorUnionType(ASTNode* node);
+    void visitOptionalType(ASTNode* node);
     void visitTryExpr(ASTNode* node);
     void visitCatchExpr(ASTNode* node);
     void visitOrelseExpr(ASTNode* node);
