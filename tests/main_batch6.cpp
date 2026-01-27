@@ -33,7 +33,9 @@ int main(int argc, char* argv[]) {
         test_GenericCatalogue_TracksExplicit,
         test_GenericCatalogue_TracksImplicit,
         test_C89Rejection_ComptimeValueParam,
-        test_GenericCatalogue_Deduplication
+        test_GenericCatalogue_Deduplication,
+        test_Task142_ErrorFunctionDetection,
+        test_Task142_ErrorFunctionRejection
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

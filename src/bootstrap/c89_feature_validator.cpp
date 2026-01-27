@@ -3,6 +3,7 @@
 #include "ast_utils.hpp"
 #include "compilation_unit.hpp"
 #include "type_system.hpp"
+#include "utils.hpp"
 #include <cstdlib> // For abort()
 
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit) : unit(unit), error_found_(false) {}
@@ -15,13 +16,30 @@ void C89FeatureValidator::validate(ASTNode* node) {
     }
 }
 
-void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message) {
-    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
+void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message, bool copy_message) {
+    if (copy_message) {
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message, unit.getArena());
+    } else {
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
+    }
     error_found_ = true;
 }
 
 void C89FeatureValidator::fatalError(SourceLocation location, const char* message) {
     reportNonC89Feature(location, message);
+}
+
+static bool isErrorType(Type* type) {
+    if (!type) return false;
+    return type->kind == TYPE_ERROR_UNION || type->kind == TYPE_ERROR_SET;
+}
+
+static bool hasComptimeParams(ASTFnDeclNode* node) {
+    if (!node->params) return false;
+    for (size_t i = 0; i < node->params->length(); ++i) {
+        if ((*node->params)[i]->is_comptime) return true;
+    }
+    return false;
 }
 
 void C89FeatureValidator::visit(ASTNode* node) {
@@ -105,13 +123,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.compound_assignment->rvalue);
             break;
         case NODE_FN_DECL:
-            for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
-                visit((*node->as.fn_decl->params)[i]->type);
-            }
-            if (node->as.fn_decl->return_type) {
-                visit(node->as.fn_decl->return_type);
-            }
-            visit(node->as.fn_decl->body);
+            visitFnDecl(node);
             break;
         case NODE_STRUCT_DECL:
             for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
@@ -230,4 +242,52 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     for (size_t i = 0; i < call->args->length(); ++i) {
         visit((*call->args)[i]);
     }
+}
+
+void C89FeatureValidator::visitFnDecl(ASTNode* node) {
+    ASTFnDeclNode* fn = node->as.fn_decl;
+    // Resolve return type from symbol table (populated by TypeChecker)
+    Symbol* symbol = unit.getSymbolTable().lookup(fn->name);
+    Type* return_type = NULL;
+    if (symbol && symbol->symbol_type && symbol->symbol_type->kind == TYPE_FUNCTION) {
+        return_type = symbol->symbol_type->as.function.return_type;
+    }
+
+    bool is_generic = hasComptimeParams(fn);
+    bool returns_error = isErrorType(return_type);
+
+    // Catalogue BEFORE rejection
+    if (returns_error) {
+        unit.getErrorFunctionCatalogue().addErrorFunction(
+            fn->name,
+            return_type,
+            node->loc,
+            is_generic,
+            (int)fn->params->length()
+        );
+    }
+
+    // Report diagnostics
+    if (returns_error) {
+        char type_str[128];
+        typeToString(return_type, type_str, sizeof(type_str));
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "Function '");
+        safe_append(current, remaining, fn->name);
+        safe_append(current, remaining, "' returns error type '");
+        safe_append(current, remaining, type_str);
+        safe_append(current, remaining, "' (non-C89)");
+        reportNonC89Feature(node->loc, msg_buffer, true);
+    }
+
+    // Continue traversal
+    for (size_t i = 0; i < fn->params->length(); ++i) {
+        visit((*fn->params)[i]->type);
+    }
+    if (fn->return_type) {
+        visit(fn->return_type);
+    }
+    visit(fn->body);
 }

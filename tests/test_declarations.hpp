@@ -496,4 +496,8 @@ TEST_FUNC(GenericCatalogue_TracksImplicit);
 TEST_FUNC(C89Rejection_ComptimeValueParam);
 TEST_FUNC(GenericCatalogue_Deduplication);
 
+// Forward declarations for Task 142
+TEST_FUNC(Task142_ErrorFunctionDetection);
+TEST_FUNC(Task142_ErrorFunctionRejection);
+
 #endif // TEST_DECLARATIONS_HPP

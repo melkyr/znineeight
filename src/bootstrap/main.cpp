@@ -42,13 +42,13 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
         return false;
     }
 
-    // Pass 0: Fail-fast C89 feature validation
-    C89FeatureValidator validator(unit);
-    validator.validate(ast);
-
-    // Pass 1: Type Checking
+    // Pass 0: Type Checking (resolves !T -> TYPE_ERROR_UNION)
     TypeChecker checker(unit);
     checker.check(ast);
+
+    // Pass 1: C89 feature validation (detects error returns via resolved types)
+    C89FeatureValidator validator(unit);
+    validator.validate(ast);
 
     const CompilationOptions& opts = unit.getOptions();
 

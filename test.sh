@@ -18,7 +18,8 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/utils.cpp \
     src/bootstrap/ast_utils.cpp \
     src/bootstrap/error_set_catalogue.cpp \
-    src/bootstrap/generic_catalogue.cpp"
+    src/bootstrap/generic_catalogue.cpp \
+    src/bootstrap/error_function_catalogue.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/c89_type_compat_tests.cpp \
@@ -146,7 +147,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_enum_member_access.cpp \
     tests/test_task_135.cpp \
     tests/test_task_136.cpp \
-    tests/test_generics_rejection.cpp"
+    tests/test_generics_rejection.cpp \
+    tests/test_task_142.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

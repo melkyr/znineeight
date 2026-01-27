@@ -54,7 +54,14 @@ public:
 * **Hashing:** FNV-1a or similar simple hash
 * **Performance:** Reduces memory usage and speeds up identifier comparisons
 
-### 3.3 Source Management (`source_manager.hpp`)
+### 3.4 Catalogues & Feature Tracking
+
+All catalogues (GenericCatalogue, ErrorSetCatalogue, ErrorFunctionCatalogue) follow the Arena Allocation Pattern:
+- **Lifetime Safety**: All catalogue structures are allocated from the `CompilationUnit`'s arena.
+- **No Manual Management**: No `malloc`/`free` or `new`/`delete` (except placement new) are used during analysis.
+- **String Interning**: Feature names and identifiers are stored as interned strings for efficiency and lifetime stability.
+
+### 3.5 Source Management (source_manager.hpp)
 **Purpose:** Track source code locations and file content
 ```cpp
 struct SourceLocation {
@@ -130,8 +137,15 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 #### 4.0.1 Non-C89 Feature Detection Strategy
 To maintain strict compatibility with C89, the compiler employs a multi-layered detection and rejection strategy for modern Zig features:
 1.  **Syntactic Detection (Parser):** The parser is equipped to recognize modern Zig syntax (e.g., error sets, error unions, optionals, `@import`, `comptime` parameters) for the sole purpose of detection and cataloguing.
-2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
-3.  **Formal Rejection (C89FeatureValidator):** Immediately after parsing, the `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls, ensuring they never reach the type checking or code generation phases.
+2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`, `ErrorFunctionCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
+3.  **Formal Rejection (C89FeatureValidator):** The `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls and error-returning functions.
+
+#### 4.0.2 Compilation Pipeline Update (Task 142)
+The compilation pipeline has been reordered to enable type-aware diagnostics:
+1. **Pass 0: Type Checking**: Resolves all types, including non-C89 types like error unions.
+2. **Pass 1: C89 Validation**: Rejects non-C89 features using resolved semantic information.
+
+This change allows the validator to accurately detect error-returning functions even when they use type aliases for error sets.
 
 **Example Usage:**
 ```cpp

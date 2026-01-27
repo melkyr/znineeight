@@ -95,12 +95,12 @@ void run_type_checker_test_in_child(const char* source) {
     Parser* p = comp_unit.createParser(file_id);
     ASTNode* root = p->parse();
 
-    // Run the C89 feature validator before the type checker.
-    C89FeatureValidator validator(comp_unit);
-    validator.validate(root);
-
+    // Run the type checker before the C89 feature validator.
     TypeChecker tc(comp_unit);
     tc.check(root);
+
+    C89FeatureValidator validator(comp_unit);
+    validator.validate(root);
 
     LifetimeAnalyzer la(comp_unit);
     la.analyze(root);
