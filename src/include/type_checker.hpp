@@ -79,6 +79,7 @@ private:
 
     CompilationUnit& unit;
     Type* current_fn_return_type;
+    Symbol* current_fn_symbol;
 
 };
 

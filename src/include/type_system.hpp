@@ -31,7 +31,9 @@ enum TypeKind {
     TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_ENUM,
-    TYPE_STRUCT
+    TYPE_STRUCT,
+    TYPE_ERROR_UNION,
+    TYPE_ERROR_SET
 };
 
 /**
@@ -184,5 +186,9 @@ Type* get_g_type_usize();
 Type* get_g_type_f32();
 Type* get_g_type_f64();
 Type* get_g_type_null();
+
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload);
+Type* createErrorSetType(ArenaAllocator& arena);
+bool isErrorType(Type* type);
 
 #endif // TYPE_SYSTEM_HPP

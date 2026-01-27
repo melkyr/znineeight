@@ -9,6 +9,7 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/type_system.cpp \
     src/bootstrap/type_checker.cpp \
     src/bootstrap/compilation_unit.cpp \
+    src/bootstrap/error_function_catalogue.cpp \
     src/bootstrap/source_manager.cpp \
     src/bootstrap/token_supplier.cpp \
     src/bootstrap/c89_feature_validator.cpp \
@@ -146,7 +147,9 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_enum_member_access.cpp \
     tests/test_task_135.cpp \
     tests/test_task_136.cpp \
-    tests/test_generics_rejection.cpp"
+    tests/test_generics_rejection.cpp \
+    tests/test_error_function_detection.cpp \
+    tests/integration_error_detection.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

@@ -202,8 +202,41 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         case TYPE_STRUCT:
             safe_append(current, remaining, "struct");
             break;
+        case TYPE_ERROR_UNION: {
+            safe_append(current, remaining, "!");
+            typeToString(type->as.pointer.base, current, remaining);
+            break;
+        }
+        case TYPE_ERROR_SET:
+            safe_append(current, remaining, "error");
+            break;
         default:
             safe_append(current, remaining, "unknown");
             break;
     }
+}
+
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ERROR_UNION;
+    new_type->size = 8;
+    new_type->alignment = 4;
+    new_type->as.pointer.base = payload;
+    new_type->as.pointer.is_const = false;
+    return new_type;
+}
+
+Type* createErrorSetType(ArenaAllocator& arena) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ERROR_SET;
+    new_type->size = 4;
+    new_type->alignment = 4;
+    return new_type;
+}
+
+bool isErrorType(Type* type) {
+    if (!type) return false;
+    if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_ERROR_SET) return true;
+    if (type->kind == TYPE_POINTER) return isErrorType(type->as.pointer.base);
+    return false;
 }

@@ -38,7 +38,7 @@ static const char* getTokenSpelling(TokenType op) {
     }
 }
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
+TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_symbol(NULL) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -1045,9 +1045,21 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Type* prev_fn_return_type = current_fn_return_type;
+    Symbol* prev_fn_symbol = current_fn_symbol;
+    (void)prev_fn_symbol;
 
     // Resolve return type
     current_fn_return_type = visit(node->return_type);
+
+    // Update symbol's returns_error flag
+    Symbol* sym = unit.getSymbolTable().lookup(node->name);
+    if (sym) {
+        if (isErrorType(current_fn_return_type)) {
+            sym->returns_error = true;
+        }
+        current_fn_symbol = sym;
+    }
+
     if (!current_fn_return_type) {
         // If the return type is invalid (e.g., an undefined identifier),
         // we can't proceed with checking the function body.

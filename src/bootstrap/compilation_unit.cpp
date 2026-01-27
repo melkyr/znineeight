@@ -27,6 +27,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       error_handler_(source_manager_, arena),
       token_supplier_(source_manager_, interner_, arena),
       error_set_catalogue_(arena),
+      error_function_catalogue_(arena),
       generic_catalogue_(arena) {
 }
 
@@ -67,6 +68,10 @@ SourceManager& CompilationUnit::getSourceManager() {
 
 ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue() {
     return error_set_catalogue_;
+}
+
+ErrorFunctionCatalogue& CompilationUnit::getErrorFunctionCatalogue() {
+    return error_function_catalogue_;
 }
 
 GenericCatalogue& CompilationUnit::getGenericCatalogue() {

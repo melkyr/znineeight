@@ -4,10 +4,13 @@
 #include "compilation_unit.hpp"
 #include "type_system.hpp"
 #include <cstdlib> // For abort()
+#include <string.h>
 
-C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit) : unit(unit), error_found_(false) {}
+C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
+    : unit(unit), error_found_(false), check_only_(false) {}
 
 void C89FeatureValidator::validate(ASTNode* node) {
+    check_only_ = false;
     visit(node);
     if (error_found_) {
         unit.getErrorHandler().printErrors();
@@ -15,8 +18,13 @@ void C89FeatureValidator::validate(ASTNode* node) {
     }
 }
 
+void C89FeatureValidator::checkOnly(ASTNode* node) {
+    check_only_ = true;
+    visit(node);
+}
+
 void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message) {
-    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
+    unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message, unit.getArena());
     error_found_ = true;
 }
 
@@ -59,6 +67,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_FUNCTION_CALL:
             visitFunctionCall(node);
+            break;
+        case NODE_FN_DECL:
+            visitFnDecl(node);
             break;
 
         // --- Recursive traversal for other node types ---
@@ -103,15 +114,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_COMPOUND_ASSIGNMENT:
             visit(node->as.compound_assignment->lvalue);
             visit(node->as.compound_assignment->rvalue);
-            break;
-        case NODE_FN_DECL:
-            for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
-                visit((*node->as.fn_decl->params)[i]->type);
-            }
-            if (node->as.fn_decl->return_type) {
-                visit(node->as.fn_decl->return_type);
-            }
-            visit(node->as.fn_decl->body);
             break;
         case NODE_STRUCT_DECL:
             for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
@@ -206,6 +208,23 @@ void C89FeatureValidator::visitImportStmt(ASTNode* node) {
     fatalError(node->loc, "Imports (@import) are not supported in the bootstrap phase.");
 }
 
+bool C89FeatureValidator::returnsError(ASTNode* node) {
+    if (!node) return false;
+    if (node->type == NODE_ERROR_SET_DEFINITION || node->type == NODE_ERROR_SET_MERGE) return true;
+    if (node->type == NODE_IDENTIFIER) {
+        Symbol* sym = unit.getSymbolTable().lookup(node->as.identifier.name);
+        if (sym && sym->kind == SYMBOL_TYPE && isErrorType(sym->symbol_type)) return true;
+    }
+    return returnsErrorUnion(node);
+}
+
+bool C89FeatureValidator::returnsErrorUnion(ASTNode* node) {
+    if (!node) return false;
+    if (node->type == NODE_ERROR_UNION_TYPE) return true;
+    if (node->type == NODE_POINTER_TYPE) return returnsErrorUnion(node->as.pointer_type.base);
+    return false;
+}
+
 void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     ASTFunctionCallNode* call = node->as.function_call;
 
@@ -230,4 +249,50 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     for (size_t i = 0; i < call->args->length(); ++i) {
         visit((*call->args)[i]);
     }
+}
+
+void C89FeatureValidator::visitFnDecl(ASTNode* node) {
+    ASTFnDeclNode* fn = node->as.fn_decl;
+
+    bool is_err = returnsError(fn->return_type);
+    bool is_generic = false;
+
+    // Check for comptime params (generic)
+    for (size_t i = 0; i < fn->params->length(); ++i) {
+        if ((*fn->params)[i]->is_comptime) {
+            is_generic = true;
+            break;
+        }
+    }
+
+    if (is_err) {
+        unit.getErrorFunctionCatalogue().addFunction(fn->name, node->loc, NULL, is_generic);
+
+        if (!check_only_) {
+            char msg[256];
+            msg[0] = '\0';
+            strcat(msg, "Function '");
+            strcat(msg, fn->name);
+            strcat(msg, "' returns an error type, which is not C89-compatible");
+            reportNonC89Feature(node->loc, msg);
+        }
+    }
+
+    if (is_generic && !check_only_) {
+        char msg[256];
+        msg[0] = '\0';
+        strcat(msg, "Function '");
+        strcat(msg, fn->name);
+        strcat(msg, "' has comptime parameters, which are not C89-compatible");
+        reportNonC89Feature(node->loc, msg);
+    }
+
+    // Continue traversal
+    for (size_t i = 0; i < fn->params->length(); ++i) {
+        visit((*fn->params)[i]->type);
+    }
+    if (fn->return_type) {
+        visit(fn->return_type);
+    }
+    visit(fn->body);
 }

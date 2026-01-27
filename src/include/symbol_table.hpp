@@ -33,6 +33,7 @@ struct Symbol {
     unsigned int scope_level; // Set by SymbolTable on insertion
     unsigned int flags;        // Bitmask of SymbolFlag
     bool is_generic;           // True if it's a generic function
+    bool returns_error;        // True if it's a function that returns an error
 };
 
 class SymbolBuilder {
@@ -49,6 +50,7 @@ public:
     SymbolBuilder& inScope(unsigned int level);
     SymbolBuilder& withFlags(unsigned int flags);
     SymbolBuilder& asGeneric(bool generic = true);
+    SymbolBuilder& asReturnsError(bool returns_error = true);
     Symbol build();
 };
 

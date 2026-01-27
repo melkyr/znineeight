@@ -25,10 +25,10 @@ public:
      * @param node The root node of the AST to validate.
      */
     void validate(ASTNode* node);
+    void checkOnly(ASTNode* node);
 
 private:
     CompilationUnit& unit;
-    bool error_found_;
 
     /**
      * @brief Reports a non-fatal C89 feature violation.
@@ -36,6 +36,8 @@ private:
      * @param message A descriptive error message.
      */
     void reportNonC89Feature(SourceLocation location, const char* message);
+    bool returnsError(ASTNode* node);
+    bool returnsErrorUnion(ASTNode* node);
 
     /**
      * @brief The main visitor dispatch method.
@@ -54,6 +56,7 @@ private:
     void visitErrorSetMerge(ASTNode* node);
     void visitImportStmt(ASTNode* node);
     void visitFunctionCall(ASTNode* node);
+    void visitFnDecl(ASTNode* node);
 
     /**
      * @brief Reports a fatal error and aborts compilation.
@@ -61,6 +64,9 @@ private:
      * @param message A descriptive error message.
      */
     void fatalError(SourceLocation location, const char* message);
+
+    bool error_found_;
+    bool check_only_;
 };
 
 #endif // C89_FEATURE_VALIDATOR_HPP
