@@ -635,7 +635,7 @@ Output: Runtime assertions in codegen module
     Validation: Document all catch expression locations
     Success criteria: All catch expressions are identified
 
-145. **Task 145:** ERROR CODE MAPPING STRATEGY (MEDIUM)
+145. **Task 145:** ERROR CODE MAPPING STRATEGY (COMPLETE)
 
     What to implement: Design how to map errors to C89 integers
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -643,7 +643,7 @@ Output: Runtime assertions in codegen module
         Negative vs positive error code conventions
         Error code range limitations
     Validation: Create mapping table example
-    Success criteria: Clear strategy for converting all errors to integers
+    Success criteria: Clear strategy for converting all errors to integers. Documented in `Error_code_mapping_strategy.md`.
 
 146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (MEDIUM)
 

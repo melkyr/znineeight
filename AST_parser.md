@@ -1162,6 +1162,12 @@ Represents a `catch` expression, providing a fallback value in case of an error.
     };
     ```
 
+#### Parsing Logic (`parsePrecedenceExpr` for `catch`)
+The `catch` expression is parsed as a binary operator within `parsePrecedenceExpr` with a precedence of 1.
+- When `TOKEN_CATCH` is encountered, it is consumed.
+- The parser optionally handles the `|err|` capture syntax.
+- The fallback expression is parsed recursively.
+
 ### `ASTOrelseExprNode`
 Represents an `orelse` expression, providing a fallback value in case of an error or optional type.
 *   **Zig Code:** `my_value orelse default_value`
@@ -1178,6 +1184,9 @@ Represents an `orelse` expression, providing a fallback value in case of an erro
         ASTNode* else_expr;
     };
     ```
+
+#### Parsing Logic (`parsePrecedenceExpr` for `orelse`)
+The `orelse` expression is handled similarly to `catch` within `parsePrecedenceExpr` (precedence 1). It takes the current left-hand side as the payload and parses the subsequent expression as the fallback.
 
 ### `ASTErrDeferStmtNode`
 Represents an `errdefer` statement, which is executed only if the function returns an error.
@@ -1219,6 +1228,9 @@ struct ASTErrorSetDefinitionNode {
 };
 ```
 
+#### Parsing Logic (`parseErrorSetDefinition`)
+The `parseErrorSetDefinition` function handles error set declarations like `error { A, B }`. It consumes the `error` keyword and the braced list of identifiers. It also registers the error set in the `ErrorSetCatalogue`.
+
 #### `ASTErrorSetMergeNode`
 Represents the merging of two error sets.
 ```cpp
@@ -1227,6 +1239,9 @@ struct ASTErrorSetMergeNode {
     ASTNode* right;
 };
 ```
+
+#### Parsing Logic (`parsePrecedenceExpr` for `||`)
+The error set merge operator `||` is parsed within `parsePrecedenceExpr` (or recursively in `parseType`) when two error sets are combined.
 
 ### Detection and Cataloguing
 Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. This allows for documentation and analysis of all errors used in the codebase, even though they are eventually rejected by the `C89FeatureValidator`.
