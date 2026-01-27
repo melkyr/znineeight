@@ -26,6 +26,13 @@ public:
      */
     void validate(ASTNode* node);
 
+public:
+    /**
+     * @brief Traverses the AST without aborting. Useful for testing.
+     * @param node The root node of the AST to visit.
+     */
+    void visitAll(ASTNode* node) { visit(node); }
+
 private:
     CompilationUnit& unit;
     bool error_found_;
@@ -34,8 +41,9 @@ private:
      * @brief Reports a non-fatal C89 feature violation.
      * @param location The source location of the unsupported feature.
      * @param message A descriptive error message.
+     * @param copy_message If true, the message will be copied into the arena.
      */
-    void reportNonC89Feature(SourceLocation location, const char* message);
+    void reportNonC89Feature(SourceLocation location, const char* message, bool copy_message = false);
 
     /**
      * @brief The main visitor dispatch method.
@@ -54,6 +62,7 @@ private:
     void visitErrorSetMerge(ASTNode* node);
     void visitImportStmt(ASTNode* node);
     void visitFunctionCall(ASTNode* node);
+    void visitFnDecl(ASTNode* node);
 
     /**
      * @brief Reports a fatal error and aborts compilation.

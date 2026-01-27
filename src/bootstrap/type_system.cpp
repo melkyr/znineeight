@@ -87,6 +87,28 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields)
     return new_type;
 }
 
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ERROR_UNION;
+    new_type->size = 8; // Placeholder: error union size is usually tag + payload
+    new_type->alignment = 4;
+    new_type->as.error_union.payload = payload;
+    new_type->as.error_union.error_set = error_set;
+    new_type->as.error_union.is_inferred = is_inferred;
+    return new_type;
+}
+
+Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_ERROR_SET;
+    new_type->size = 2; // Placeholder: error sets are typically 16-bit integers
+    new_type->alignment = 2;
+    new_type->as.error_set.name = name;
+    new_type->as.error_set.tags = tags;
+    new_type->as.error_set.is_anonymous = is_anonymous;
+    return new_type;
+}
+
 void calculateStructLayout(Type* struct_type) {
     if (struct_type->kind != TYPE_STRUCT) return;
 
@@ -202,6 +224,24 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         case TYPE_STRUCT:
             safe_append(current, remaining, "struct");
             break;
+        case TYPE_ERROR_UNION: {
+            if (type->as.error_union.is_inferred) {
+                safe_append(current, remaining, "!");
+            } else {
+                typeToString(type->as.error_union.error_set, current, remaining);
+                safe_append(current, remaining, "!");
+            }
+            typeToString(type->as.error_union.payload, current, remaining);
+            break;
+        }
+        case TYPE_ERROR_SET: {
+            if (type->as.error_set.name) {
+                safe_append(current, remaining, type->as.error_set.name);
+            } else {
+                safe_append(current, remaining, "error{...}");
+            }
+            break;
+        }
         default:
             safe_append(current, remaining, "unknown");
             break;

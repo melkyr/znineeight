@@ -97,6 +97,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
         case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node, node->as.union_decl); break;
         case NODE_ENUM_DECL:        resolved_type = visitEnumDecl(node->as.enum_decl); break;
+        case NODE_ERROR_SET_DEFINITION: resolved_type = visitErrorSetDefinition(node->as.error_set_decl); break;
+        case NODE_ERROR_SET_MERGE:  resolved_type = visitErrorSetMerge(node->as.error_set_merge); break;
         case NODE_TYPE_NAME:        resolved_type = visitTypeName(node, &node->as.type_name); break;
         case NODE_POINTER_TYPE:     resolved_type = visitPointerType(&node->as.pointer_type); break;
         case NODE_ARRAY_TYPE:       resolved_type = visitArrayType(&node->as.array_type); break;
@@ -1439,14 +1441,31 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 }
 
 Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {
-    visit(node->expression);
-    return NULL; // Placeholder
+    Type* inner_type = visit(node->expression);
+    if (inner_type && inner_type->kind == TYPE_ERROR_UNION) {
+        return inner_type->as.error_union.payload;
+    }
+    return inner_type;
 }
 
 Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
-    logFeatureLocation("error_union_type", node->loc);
-    visit(node->payload_type);
-    return NULL; // Error unions are not supported in the type system yet
+    Type* payload = visit(node->payload_type);
+    Type* error_set = node->error_set ? visit(node->error_set) : NULL;
+
+    return createErrorUnionType(unit.getArena(), payload, error_set, node->error_set == NULL);
+}
+
+Type* TypeChecker::visitErrorSetDefinition(ASTErrorSetDefinitionNode* node) {
+    return createErrorSetType(unit.getArena(), node->name, node->tags, node->name == NULL);
+}
+
+Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
+    visit(node->left);
+    visit(node->right);
+
+    // For now, we just return an anonymous error set type.
+    // In a real compiler we'd merge the tags, but for rejection it's enough to know it's an error set.
+    return createErrorSetType(unit.getArena(), NULL, NULL, true);
 }
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {

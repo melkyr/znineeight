@@ -122,3 +122,15 @@ The test suite explicitly covers the following edge cases to ensure analyzer rel
 -   **Pointer Aliasing**: Verified that the compiler conservatively handles assignments between pointer variables by transitioning the target to `AS_UNKNOWN`.
 -   **Transfer to Unknown Functions**: Verified that passing a pointer to any non-freeing function marks it as `AS_TRANSFERRED` and issues a warning at scope exit.
 -   **Conditional Allocation**: Verified that unconditional frees after a conditional allocation (if-else) are flagged as potential risks (`WARN_FREE_UNALLOCATED`).
+
+## 8. Error-Returning Function Detection Testing (Task 142)
+Tests verify that functions returning error unions (`!T`) or error sets are correctly identified and rejected.
+
+### Cataloguing Verification
+Verify that `ErrorFunctionCatalogue` correctly records function names, return types, and parameter counts for all error-returning functions, even when they are rejected.
+
+### Rejection Verification
+Confirm that `C89FeatureValidator` reports `ERR_NON_C89_FEATURE` for each detected error-returning function.
+
+### Pipeline Order
+Tests should verify that `TypeChecker` successfully resolves error types before `C89FeatureValidator` runs, ensuring that even complex return types (like those using type aliases) are accurately detected.

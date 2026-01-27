@@ -85,6 +85,8 @@ enum NodeType {
     NODE_TYPE_NAME,       ///< A type represented by a name (e.g., `i32`).
     NODE_POINTER_TYPE,    ///< A pointer type (e.g., `*u8`).
     NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
+    NODE_ERROR_UNION_TYPE, ///< An error union type (e.g., `!i32`).
+    NODE_OPTIONAL_TYPE,    ///< An optional type (e.g., `?i32`).
 
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
@@ -164,6 +166,8 @@ struct ASTNode {
         ASTTypeNameNode type_name;
         ASTPointerTypeNode pointer_type;
         ASTArrayTypeNode array_type;
+        ASTErrorUnionTypeNode* error_union_type; // Out-of-line
+        ASTOptionalTypeNode* optional_type; // Out-of-line
 
         // Compile-Time Operations
         ASTComptimeBlockNode comptime_block;
@@ -233,6 +237,8 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
 | `ASTImportStmtNode`         | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
+| `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
+| `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 
 ## 4. Implemented AST Node Types
 
@@ -1242,7 +1248,30 @@ struct ASTImportStmtNode {
 };
 ```
 
-## 13. Compile-Time Operation Node Types
+## 13. Error-Returning Function Detection (Task 142)
+
+### Detection Criteria
+A function is catalogued as error-returning when its resolved return type is:
+1. Error union (`!T`) → `TYPE_ERROR_UNION`
+2. Error set (`error{A,B}`) → `TYPE_ERROR_SET`
+3. Named error set alias (`MyErrorSet`) → `TYPE_ERROR_SET`
+
+### Cataloguing Process
+During the `C89FeatureValidator` pass (which now runs AFTER `TypeChecker`):
+1. Resolve the function's return type using the symbol table (populated by `TypeChecker`).
+2. Check if the return type kind is `TYPE_ERROR_UNION` or `TYPE_ERROR_SET`.
+3. Record in `ErrorFunctionCatalogue` with:
+   - Function name (interned string)
+   - Resolved return type pointer
+   - Source location
+   - Generic flag (comptime params)
+   - Parameter count
+
+### Rejection
+`C89FeatureValidator` rejects all catalogued functions with specific diagnostics:
+- "Function 'X' returns error type 'Y' (non-C89)"
+
+## 14. Compile-Time Operation Node Types
 
 These nodes are related to compile-time execution and evaluation.
 

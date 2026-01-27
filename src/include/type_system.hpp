@@ -31,7 +31,9 @@ enum TypeKind {
     TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_ENUM,
-    TYPE_STRUCT
+    TYPE_STRUCT,
+    TYPE_ERROR_UNION,
+    TYPE_ERROR_SET
 };
 
 /**
@@ -93,6 +95,16 @@ struct Type {
         struct {
             DynamicArray<StructField>* fields;
         } struct_details;
+        struct {
+            Type* payload;
+            Type* error_set; // NULL for inferred
+            bool is_inferred;
+        } error_union;
+        struct {
+            const char* name; // NULL for anonymous
+            DynamicArray<const char*>* tags;
+            bool is_anonymous;
+        } error_set;
     } as;
 };
 
@@ -141,6 +153,26 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
  * @return A pointer to the newly allocated Type object.
  */
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields);
+
+/**
+ * @brief Creates a new error union Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param payload The payload type.
+ * @param error_set The error set type (can be NULL for inferred).
+ * @param is_inferred True if the error set is inferred (!T).
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred);
+
+/**
+ * @brief Creates a new error set Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param name The name of the error set (can be NULL).
+ * @param tags A dynamic array of tag names (interned strings).
+ * @param is_anonymous True if the error set is anonymous.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous);
 
 /**
  * @brief Calculates the layout (offsets, total size, alignment) of a struct type.

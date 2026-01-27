@@ -41,7 +41,9 @@ enum TypeKind {
     TYPE_ARRAY,
     TYPE_FUNCTION,
     TYPE_ENUM,
-    TYPE_STRUCT
+    TYPE_STRUCT,
+    TYPE_ERROR_UNION,
+    TYPE_ERROR_SET
 };
 ```
 
@@ -102,6 +104,18 @@ struct Type {
         struct StructDetails {
             DynamicArray<StructField>* fields;
         } struct_details;
+
+        struct ErrorUnionDetails {
+            Type* payload;
+            Type* error_set; // NULL for inferred
+            bool is_inferred;
+        } error_union;
+
+        struct ErrorSetDetails {
+            const char* name; // NULL for anonymous
+            DynamicArray<const char*>* tags;
+            bool is_anonymous;
+        } error_set;
     } as;
 };
 ```
@@ -574,6 +588,8 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_F32`        | `"float"`              | Size: 4, Align: 4              |
 | `TYPE_F64`        | `"double"`             | Size: 8, Align: 8              |
 | `TYPE_ENUM`       | `"typedef T"`          | Dependent on backing type.      |
+| `TYPE_ERROR_UNION` | No equivalent         | Internal; rejected by validator |
+| `TYPE_ERROR_SET`   | No equivalent         | Internal; rejected by validator |
 
 *Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
 
@@ -598,13 +614,14 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 ## Rejected Zig Features
 
 ### Error Handling Types
-| Zig Feature | C89 Equivalent | Status |
-|-------------|----------------|--------|
-| `!T` (error union) | No equivalent | REJECTED |
-| `?T` (optional) | No equivalent | REJECTED |
-| `error { ... }` | No equivalent | REJECTED |
+| Zig Feature | C89 Equivalent | Status | Rejection Point |
+|-------------|----------------|--------|-----------------|
+| `!T` (error union) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `error { ... }` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `fn() !T` (error return) | No equivalent | REJECTED | `C89FeatureValidator` |
 
-These features cannot be mapped to C89 and are rejected at parse time by the `C89FeatureValidator`.
+These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics, and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 
 ## 6. Symbol Table and Memory Usage
 

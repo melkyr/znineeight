@@ -27,7 +27,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       error_handler_(source_manager_, arena),
       token_supplier_(source_manager_, interner_, arena),
       error_set_catalogue_(arena),
-      generic_catalogue_(arena) {
+      generic_catalogue_(arena),
+      error_function_catalogue_(arena) {
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -71,6 +72,10 @@ ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue() {
 
 GenericCatalogue& CompilationUnit::getGenericCatalogue() {
     return generic_catalogue_;
+}
+
+ErrorFunctionCatalogue& CompilationUnit::getErrorFunctionCatalogue() {
+    return error_function_catalogue_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {
