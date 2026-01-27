@@ -75,6 +75,8 @@ private:
     Type* checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
+    void catalogGenericInstantiation(ASTFunctionCallNode* node);
+
     CompilationUnit& unit;
     Type* current_fn_return_type;
 

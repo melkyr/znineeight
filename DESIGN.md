@@ -129,9 +129,9 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 
 #### 4.0.1 Non-C89 Feature Detection Strategy
 To maintain strict compatibility with C89, the compiler employs a multi-layered detection and rejection strategy for modern Zig features:
-1.  **Syntactic Detection (Parser):** The parser is equipped to recognize modern Zig syntax (e.g., error sets, error unions, optionals, `@import`) for the sole purpose of detection and cataloguing.
-2.  **Feature Cataloguing:** Detected features like error sets are logged into specialized structures (e.g., `ErrorSetCatalogue`) during parsing. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
-3.  **Formal Rejection (C89FeatureValidator):** Immediately after parsing, the `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, ensuring they never reach the type checking or code generation phases.
+1.  **Syntactic Detection (Parser):** The parser is equipped to recognize modern Zig syntax (e.g., error sets, error unions, optionals, `@import`, `comptime` parameters) for the sole purpose of detection and cataloguing.
+2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
+3.  **Formal Rejection (C89FeatureValidator):** Immediately after parsing, the `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls, ensuring they never reach the type checking or code generation phases.
 
 **Example Usage:**
 ```cpp

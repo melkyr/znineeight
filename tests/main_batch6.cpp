@@ -27,7 +27,13 @@ int main(int argc, char* argv[]) {
         test_Task136_ErrorSet_Catalogue,
         test_Task136_ErrorSet_Rejection,
         test_Task136_ErrorSetMerge_Rejection,
-        test_Task136_Import_Rejection
+        test_Task136_Import_Rejection,
+        test_C89Rejection_ExplicitGeneric,
+        test_C89Rejection_ImplicitGeneric,
+        test_GenericCatalogue_TracksExplicit,
+        test_GenericCatalogue_TracksImplicit,
+        test_C89Rejection_ComptimeValueParam,
+        test_GenericCatalogue_Deduplication
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

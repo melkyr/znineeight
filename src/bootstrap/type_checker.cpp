@@ -1,5 +1,6 @@
 #include "type_checker.hpp"
 #include "c89_type_mapping.hpp"
+#include "ast_utils.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include "utils.hpp"
@@ -491,6 +492,9 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 }
 
 Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
+    // Detect and catalogue generic instantiation if this is a generic call
+    catalogGenericInstantiation(node);
+
     // --- NEW LOGIC FOR TASK 119 ---
     // Check if the callee is a direct identifier call to a banned function.
     if (node->callee->type == NODE_IDENTIFIER) {
@@ -1877,6 +1881,44 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
     return false;
 }
+void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
+    bool is_explicit = false;
+    for (size_t i = 0; i < node->args->length(); ++i) {
+        if (isTypeExpression((*node->args)[i], unit.getSymbolTable())) {
+            is_explicit = true;
+            break;
+        }
+    }
+
+    bool is_implicit = false;
+    const char* callee_name = NULL;
+    if (node->callee->type == NODE_IDENTIFIER) {
+        callee_name = node->callee->as.identifier.name;
+        Symbol* sym = unit.getSymbolTable().lookup(callee_name);
+        if (sym && sym->is_generic) {
+            is_implicit = true;
+        }
+    }
+
+    if (is_explicit || is_implicit) {
+        // Collect type arguments
+        Type* type_args[4];
+        int type_count = 0;
+        for (size_t i = 0; i < node->args->length() && type_count < 4; ++i) {
+            if (isTypeExpression((*node->args)[i], unit.getSymbolTable())) {
+                type_args[type_count++] = visit((*node->args)[i]);
+            }
+        }
+
+        unit.getGenericCatalogue().addInstantiation(
+            callee_name ? callee_name : "anonymous",
+            type_args,
+            type_count,
+            node->callee->loc
+        );
+    }
+}
+
 bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
     if (!node) {
         return false;

@@ -22,6 +22,8 @@ SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     temp_symbol_.details = NULL;
     temp_symbol_.scope_level = 0;
     temp_symbol_.flags = 0;
+    temp_symbol_.is_generic = false;
+    // location is a struct, hopefully its default constructor (if any) or bitwise zero is fine
 }
 
 SymbolBuilder& SymbolBuilder::withName(const char* name) {
@@ -56,6 +58,11 @@ SymbolBuilder& SymbolBuilder::inScope(unsigned int level) {
 
 SymbolBuilder& SymbolBuilder::withFlags(unsigned int flags) {
     temp_symbol_.flags = flags;
+    return *this;
+}
+
+SymbolBuilder& SymbolBuilder::asGeneric(bool generic) {
+    temp_symbol_.is_generic = generic;
     return *this;
 }
 

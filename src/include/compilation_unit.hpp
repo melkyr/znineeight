@@ -9,6 +9,7 @@
 #include "error_handler.hpp"
 #include "token_supplier.hpp"
 #include "error_set_catalogue.hpp"
+#include "generic_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -41,6 +42,7 @@ public:
     const ErrorHandler& getErrorHandler() const;
     SourceManager& getSourceManager();
     ErrorSetCatalogue& getErrorSetCatalogue();
+    GenericCatalogue& getGenericCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -60,6 +62,7 @@ private:
     ErrorHandler error_handler_;
     TokenSupplier token_supplier_;
     ErrorSetCatalogue error_set_catalogue_;
+    GenericCatalogue generic_catalogue_;
     CompilationOptions options_;
 };
 

@@ -11,7 +11,7 @@
 TEST_FUNC(MemoryStability_TokenSupplierDanglingPointer) {
     // Use a moderately sized arena. The size isn't the most critical factor for
     // this bug, but rather the sequence of allocations.
-    ArenaAllocator arena(8192);
+    ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit compilation_unit(arena, interner);
 
