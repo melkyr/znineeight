@@ -54,6 +54,7 @@ public:
     Type* visitOptionalType(ASTOptionalTypeNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
     Type* visitCatchExpr(ASTCatchExprNode* node);
+    Type* visitOrelseExpr(ASTOrelseExprNode* node);
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);

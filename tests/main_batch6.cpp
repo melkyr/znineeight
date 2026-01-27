@@ -38,7 +38,13 @@ int main(int argc, char* argv[]) {
         test_Task142_ErrorFunctionRejection,
         test_Task143_TryExpressionDetection_Contexts,
         test_Task143_TryExpressionDetection_Nested,
-        test_Task143_TryExpressionDetection_MultipleInStatement
+        test_Task143_TryExpressionDetection_MultipleInStatement,
+        test_CatchExpressionCatalogue_Basic,
+        test_CatchExpressionCatalogue_Chaining,
+        test_OrelseExpressionCatalogue_Basic,
+        test_Task144_CatchExpressionDetection_Basic,
+        test_Task144_CatchExpressionDetection_Chained,
+        test_Task144_OrelseExpressionDetection
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

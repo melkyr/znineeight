@@ -37,6 +37,9 @@ private:
     CompilationUnit& unit;
     bool error_found_;
     int try_expression_depth_;
+    int catch_chain_index_;
+    int catch_chain_total_;
+    bool in_catch_chain_;
     ASTNode* current_parent_;
 
     /**

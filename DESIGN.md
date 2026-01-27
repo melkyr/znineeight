@@ -140,11 +140,13 @@ To maintain strict compatibility with C89, the compiler employs a multi-layered 
 2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`, `ErrorFunctionCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
 3. **Formal Rejection (C89FeatureValidator):** The `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls, error-returning functions, and `try` expressions.
 
-#### 4.0.2 Error Handling Detection (Task 143)
+#### 4.0.2 Error Handling Detection (Tasks 143-144)
 Modern Zig error handling features are detected and catalogued for documentation:
 - **Error Sets**: Catalogued in `ErrorSetCatalogue` during parsing.
 - **Error-Returning Functions**: Catalogued in `ErrorFunctionCatalogue` during validation.
 - **Try Expressions**: Catalogued in `TryExpressionCatalogue` during validation, including usage context (e.g., assignment, return) and nesting depth.
+- **Catch Expressions**: Catalogued in `CatchExpressionCatalogue` during validation, including chaining information and error capture.
+- **Orelse Expressions**: Catalogued in `OrelseExpressionCatalogue` during validation.
 
 #### 4.0.3 Compilation Pipeline Update (Task 142)
 The compilation pipeline has been reordered to enable type-aware diagnostics:

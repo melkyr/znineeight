@@ -625,7 +625,7 @@ Output: Runtime assertions in codegen module
     Validation: Log location and context of all try expressions
     Success criteria: All try expressions are located and catalogued
 
-144. **Task 144:** CATCH EXPRESSION DETECTION (LOW)
+144. **Task 144:** CATCH EXPRESSION DETECTION (DONE)
 
     What to implement: Find all catch expressions
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"

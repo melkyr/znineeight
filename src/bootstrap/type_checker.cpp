@@ -106,6 +106,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_OPTIONAL_TYPE:    resolved_type = visitOptionalType(node->as.optional_type); break;
         case NODE_TRY_EXPR:         resolved_type = visitTryExpr(&node->as.try_expr); break;
         case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node->as.catch_expr); break;
+        case NODE_ORELSE_EXPR:      resolved_type = visitOrelseExpr(node->as.orelse_expr); break;
         case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
         case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
         default:
@@ -1500,9 +1501,42 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
 }
 
 Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {
-    visit(node->payload);
+    Type* payload_type = visit(node->payload);
+
+    Type* result_type = NULL;
+    Type* error_set = NULL;
+    if (payload_type && payload_type->kind == TYPE_ERROR_UNION) {
+        result_type = payload_type->as.error_union.payload;
+        error_set = payload_type->as.error_union.error_set;
+    }
+
+    if (node->error_name) {
+        unit.getSymbolTable().enterScope();
+        Symbol sym = SymbolBuilder(unit.getArena())
+            .withName(node->error_name)
+            .ofType(SYMBOL_VARIABLE)
+            .withType(error_set) // Use error set as type if available
+            .build();
+        unit.getSymbolTable().insert(sym);
+    }
+
     visit(node->else_expr);
-    return NULL; // Placeholder
+
+    if (node->error_name) {
+        unit.getSymbolTable().exitScope();
+    }
+
+    return result_type;
+}
+
+Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
+    Type* left_type = visit(node->payload);
+    visit(node->else_expr);
+
+    // If it's an optional type, result is the payload.
+    // For now, we return NULL as optionals are not fully supported,
+    // but if we had TYPE_OPTIONAL, we'd return its payload.
+    return NULL;
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
