@@ -66,6 +66,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_CARET`     | `^`    | Yes         | Implemented as part of Task 20. |
 | `TOKEN_LARROW2`   | `<<`   | Yes         | Implemented as part of Task 20. |
 | `TOKEN_RARROW2`   | `>>`   | Yes         | Implemented as part of Task 20. |
+| `TOKEN_PIPE_PIPE`  | `||`   | Yes         | Used for Error Set merging.      |
 
 #### 2.2.2 Comparison and Equality Operators
 
@@ -151,6 +152,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_PACKED` | `packed` |
 | `TOKEN_THREADLOCAL` | `threadlocal` |
 | `TOKEN_VOLATILE` | `volatile` |
+| `TOKEN_AT_IMPORT` | `@import` |
 
 The following keywords for compile-time and special functions are also implemented:
 
