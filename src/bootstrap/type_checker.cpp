@@ -1898,6 +1898,11 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
         if (sym && sym->is_generic) {
             is_implicit = true;
         }
+    } else if (node->callee->type == NODE_MEMBER_ACCESS) {
+        callee_name = node->callee->as.member_access->field_name;
+        // For now, we don't have an easy way to resolve the symbol for a member
+        // to check its is_generic flag without more complex type resolution.
+        // Explicit generics via member access will still be caught by is_explicit.
     }
 
     if (is_explicit || is_implicit) {
