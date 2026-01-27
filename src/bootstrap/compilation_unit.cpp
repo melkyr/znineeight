@@ -26,7 +26,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       symbol_table_(arena),
       error_handler_(source_manager_, arena),
       token_supplier_(source_manager_, interner_, arena),
-      error_set_catalogue_(arena) {
+      error_set_catalogue_(arena),
+      generic_catalogue_(arena) {
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -68,6 +69,10 @@ ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue() {
     return error_set_catalogue_;
 }
 
+GenericCatalogue& CompilationUnit::getGenericCatalogue() {
+    return generic_catalogue_;
+}
+
 ArenaAllocator& CompilationUnit::getArena() {
     return arena_;
 }
@@ -85,6 +90,24 @@ void CompilationUnit::setOptions(const CompilationOptions& options) {
 }
 
 void CompilationUnit::injectRuntimeSymbols() {
+    // Inject primitive types as SYMBOL_TYPE
+    const char* primitives[] = {
+        "void", "bool", "i8", "i16", "i32", "i64",
+        "u8", "u16", "u32", "u64", "isize", "usize",
+        "f32", "f64"
+    };
+    for (size_t i = 0; i < sizeof(primitives) / sizeof(primitives[0]); ++i) {
+        Type* t = resolvePrimitiveTypeName(primitives[i]);
+        if (t) {
+            Symbol sym = SymbolBuilder(arena_)
+                .withName(interner_.intern(primitives[i]))
+                .ofType(SYMBOL_TYPE)
+                .withType(t)
+                .build();
+            symbol_table_.insert(sym);
+        }
+    }
+
     // arena_alloc(size: u32) -> *u8
     void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);

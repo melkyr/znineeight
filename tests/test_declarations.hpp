@@ -488,4 +488,12 @@ TEST_FUNC(Task136_ErrorSet_Rejection);
 TEST_FUNC(Task136_ErrorSetMerge_Rejection);
 TEST_FUNC(Task136_Import_Rejection);
 
+// Forward declarations for Tasks 137-141 (Generics)
+TEST_FUNC(C89Rejection_ExplicitGeneric);
+TEST_FUNC(C89Rejection_ImplicitGeneric);
+TEST_FUNC(GenericCatalogue_TracksExplicit);
+TEST_FUNC(GenericCatalogue_TracksImplicit);
+TEST_FUNC(C89Rejection_ComptimeValueParam);
+TEST_FUNC(GenericCatalogue_Deduplication);
+
 #endif // TEST_DECLARATIONS_HPP

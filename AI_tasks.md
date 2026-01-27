@@ -599,11 +599,11 @@ Output: Runtime assertions in codegen module
         Imported error sets
     Validation: List all error sets found in source
     Success criteria: All error set definitions are catalogued
-137. **Task 137:** Detect explicit template instantiation
-138. **Task 138:** Detect implicit template instantiation
-139. **Task 139:** Track template specialization
-140. **Task 140:** Catalog instantiation parameters
-141. **Task 141:** Validate instantiation safety
+137. **Task 137:** Detect explicit template instantiation (DONE)
+138. **Task 138:** Detect implicit template instantiation (DONE)
+139. **Task 139:** Track template specialization (DONE)
+140. **Task 140:** Catalog instantiation parameters (DONE)
+141. **Task 141:** Validate instantiation safety (DONE)
 
 142. **Task 142:** ERROR FUNCTION SIGNATURE DETECTION (LOW)
 
@@ -743,11 +743,11 @@ Output: Runtime assertions in codegen module
         Recursive template instantiations
     Validation: Track all template instantiation sites
     Success criteria: All template usage is catalogued for processing
-156. **Task 156:** Detect explicit template instantiation
-157. **Task 157:** Detect implicit template instantiation
-158. **Task 158:** Track template specialization
-159. **Task 159:** Catalog instantiation parameters
-160. **Task 160:** Validate instantiation safety
+156. **Task 156:** Detect explicit template instantiation (DONE)
+157. **Task 157:** Detect implicit template instantiation (DONE)
+158. **Task 158:** Track template specialization (DONE)
+159. **Task 159:** Catalog instantiation parameters (DONE)
+160. **Task 160:** Validate instantiation safety (DONE)
 
 161. **Task 161:** NAME MANGLING ALGORITHM DESIGN (MEDIUM)
 

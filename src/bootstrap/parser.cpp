@@ -1366,9 +1366,13 @@ ASTNode* Parser::parseFnDecl() {
     fn_decl->body = NULL;
 
 
+    bool is_generic = false;
     expect(TOKEN_LPAREN, "Expected '(' after function name");
     if (peek().type != TOKEN_RPAREN) {
         do {
+            bool is_comptime = match(TOKEN_COMPTIME);
+            if (is_comptime) is_generic = true;
+
             Token param_name_token = expect(TOKEN_IDENTIFIER, "Expected parameter name");
             expect(TOKEN_COLON, "Expected ':' after parameter name");
             ASTNode* param_type_node = parseType();
@@ -1379,11 +1383,18 @@ ASTNode* Parser::parseFnDecl() {
             }
             param_decl->name = param_name_token.value.identifier;
             param_decl->type = param_type_node;
+            param_decl->is_comptime = is_comptime;
 
             fn_decl->params->append(param_decl);
         } while (match(TOKEN_COMMA));
     }
     expect(TOKEN_RPAREN, "Expected ')' after parameter list");
+
+    // Update the symbol to reflect generic status if needed.
+    Symbol* inserted_sym = symbol_table_->lookupInCurrentScope(name_token.value.identifier);
+    if (inserted_sym) {
+        inserted_sym->is_generic = is_generic;
+    }
 
     ASTNode* return_type_node = NULL;
     // A return type is optional. If the next token is not a '{',

@@ -1415,6 +1415,39 @@ Both validators traverse type expressions recursively:
 1. C89FeatureValidator: Reports fatal errors
 2. TypeChecker: Logs locations for documentation
 
+## 19. Generic Function Detection (Tasks 137-141)
+
+Zig's compile-time generic functions (often called "templates" in older documentation) are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features.
+
+### Detection Mechanism
+
+The compiler identifies generic function calls using two primary strategies:
+
+1.  **Explicit Generic Calls**: A function call is considered explicitly generic if one or more of its arguments is a type expression (e.g., `max(i32, a, b)`).
+2.  **Implicit Generic Calls**: A function call is considered implicitly generic if the callee is a function symbol marked as `is_generic`. Symbols are marked as generic during parsing if their declaration contains `comptime` parameters.
+
+### `isTypeExpression` Helper
+
+The `isTypeExpression` helper function is used by both the `C89FeatureValidator` and the `TypeChecker` to identify AST nodes that represent types. It recognizes:
+-   Built-in primitive type names (e.g., `i32`, `u8`, `bool`, `type`).
+-   Type expression nodes like `NODE_POINTER_TYPE`, `NODE_ARRAY_TYPE`, etc.
+-   Identifiers that resolve to symbols of kind `SYMBOL_TYPE`.
+
+### Cataloguing (GenericCatalogue)
+
+Detected generic instantiations are recorded in the `GenericCatalogue` owned by the `CompilationUnit`. Each entry includes:
+-   The function name.
+-   Up to 4 resolved type arguments.
+-   The source location of the call.
+
+This catalogue provides a comprehensive record of all generic features used in the source code, even though they are eventually rejected to maintain C89 compatibility.
+
+### Rejection Strategy
+
+All generic function calls are rejected by the `C89FeatureValidator` because:
+1.  Standard C89 does not support compile-time type parameters or generics.
+2.  Zig's `comptime` execution model has no direct equivalent in the target legacy environments.
+
 ---
 
 ## Deprecated

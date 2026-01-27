@@ -53,6 +53,7 @@ private:
     void visitErrorSetDefinition(ASTNode* node);
     void visitErrorSetMerge(ASTNode* node);
     void visitImportStmt(ASTNode* node);
+    void visitFunctionCall(ASTNode* node);
 
     /**
      * @brief Reports a fatal error and aborts compilation.

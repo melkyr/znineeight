@@ -1,6 +1,8 @@
 #include "c89_feature_validator.hpp"
 #include "ast.hpp"
+#include "ast_utils.hpp"
 #include "compilation_unit.hpp"
+#include "type_system.hpp"
 #include <cstdlib> // For abort()
 
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit) : unit(unit), error_found_(false) {}
@@ -55,6 +57,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_IMPORT_STMT:
             visitImportStmt(node);
             break;
+        case NODE_FUNCTION_CALL:
+            visitFunctionCall(node);
+            break;
 
         // --- Recursive traversal for other node types ---
         case NODE_BINARY_OP:
@@ -63,12 +68,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_UNARY_OP:
             visit(node->as.unary_op.operand);
-            break;
-        case NODE_FUNCTION_CALL:
-            visit(node->as.function_call->callee);
-            for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
-                visit((*node->as.function_call->args)[i]);
-            }
             break;
         case NODE_BLOCK_STMT:
             for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
@@ -205,4 +204,30 @@ void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
 
 void C89FeatureValidator::visitImportStmt(ASTNode* node) {
     fatalError(node->loc, "Imports (@import) are not supported in the bootstrap phase.");
+}
+
+void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
+    ASTFunctionCallNode* call = node->as.function_call;
+
+    // 1. Detect explicit generic call (type expression as argument)
+    for (size_t i = 0; i < call->args->length(); ++i) {
+        if (isTypeExpression((*call->args)[i], unit.getSymbolTable())) {
+            reportNonC89Feature(node->loc, "Generic function calls (with type arguments) are not C89-compatible.");
+            break;
+        }
+    }
+
+    // 2. Detect implicit generic call (call to generic function)
+    if (call->callee->type == NODE_IDENTIFIER) {
+        Symbol* sym = unit.getSymbolTable().lookup(call->callee->as.identifier.name);
+        if (sym && sym->is_generic) {
+            reportNonC89Feature(node->loc, "Calls to generic functions are not C89-compatible.");
+        }
+    }
+
+    // Continue traversal
+    visit(call->callee);
+    for (size_t i = 0; i < call->args->length(); ++i) {
+        visit((*call->args)[i]);
+    }
 }

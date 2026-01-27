@@ -504,10 +504,12 @@ struct ASTComptimeBlockNode {
  * @brief Represents a single parameter in a function declaration.
  * @var ASTParamDeclNode::name The name of the parameter (interned string).
  * @var ASTParamDeclNode::type A pointer to an ASTNode representing the parameter's type.
+ * @var ASTParamDeclNode::is_comptime True if the parameter is marked 'comptime'.
  */
 struct ASTParamDeclNode {
     const char* name;
     ASTNode* type;
+    bool is_comptime;
 };
 
 /**
