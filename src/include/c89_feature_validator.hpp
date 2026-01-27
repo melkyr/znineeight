@@ -36,6 +36,8 @@ public:
 private:
     CompilationUnit& unit;
     bool error_found_;
+    int try_expression_depth_;
+    ASTNode* current_parent_;
 
     /**
      * @brief Reports a non-fatal C89 feature violation.
@@ -63,6 +65,8 @@ private:
     void visitImportStmt(ASTNode* node);
     void visitFunctionCall(ASTNode* node);
     void visitFnDecl(ASTNode* node);
+
+    const char* getExpressionContext(ASTNode* node);
 
     /**
      * @brief Reports a fatal error and aborts compilation.

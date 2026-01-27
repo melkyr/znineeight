@@ -500,4 +500,9 @@ TEST_FUNC(GenericCatalogue_Deduplication);
 TEST_FUNC(Task142_ErrorFunctionDetection);
 TEST_FUNC(Task142_ErrorFunctionRejection);
 
+// Forward declarations for Task 143
+TEST_FUNC(Task143_TryExpressionDetection_Contexts);
+TEST_FUNC(Task143_TryExpressionDetection_Nested);
+TEST_FUNC(Task143_TryExpressionDetection_MultipleInStatement);
+
 #endif // TEST_DECLARATIONS_HPP

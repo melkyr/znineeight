@@ -11,6 +11,7 @@
 #include "error_set_catalogue.hpp"
 #include "generic_catalogue.hpp"
 #include "error_function_catalogue.hpp"
+#include "try_expression_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -45,6 +46,7 @@ public:
     ErrorSetCatalogue& getErrorSetCatalogue();
     GenericCatalogue& getGenericCatalogue();
     ErrorFunctionCatalogue& getErrorFunctionCatalogue();
+    TryExpressionCatalogue& getTryExpressionCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -66,6 +68,7 @@ private:
     ErrorSetCatalogue error_set_catalogue_;
     GenericCatalogue generic_catalogue_;
     ErrorFunctionCatalogue error_function_catalogue_;
+    TryExpressionCatalogue try_expression_catalogue_;
     CompilationOptions options_;
 };
 

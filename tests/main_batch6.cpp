@@ -35,7 +35,10 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_ComptimeValueParam,
         test_GenericCatalogue_Deduplication,
         test_Task142_ErrorFunctionDetection,
-        test_Task142_ErrorFunctionRejection
+        test_Task142_ErrorFunctionRejection,
+        test_Task143_TryExpressionDetection_Contexts,
+        test_Task143_TryExpressionDetection_Nested,
+        test_Task143_TryExpressionDetection_MultipleInStatement
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
