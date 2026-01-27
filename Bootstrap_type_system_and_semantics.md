@@ -620,8 +620,9 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `error { ... }` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `fn() !T` (error return) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `try expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 
-These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics, and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
+These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 
 ## 6. Symbol Table and Memory Usage
 

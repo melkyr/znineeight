@@ -1231,7 +1231,34 @@ struct ASTErrorSetMergeNode {
 ### Detection and Cataloguing
 Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. This allows for documentation and analysis of all errors used in the codebase, even though they are eventually rejected by the `C89FeatureValidator`.
 
-## 12. Import Statements
+## 12. Try Expression Detection (Task 143)
+
+### AST Node
+```cpp
+struct ASTTryExprNode {
+    ASTNode* expression;  // The expression being tried
+};
+```
+
+### Detection Context
+Try expressions are detected in various contexts to provide detailed analysis:
+1. **Return statements**: `return try func();` -> `context: "return"`
+2. **Assignments**: `x = try func();` -> `context: "assignment"`
+3. **Function arguments**: `foo(try bar());` -> `context: "call_argument"`
+4. **Variable declarations**: `var x = try init();` -> `context: "variable_decl"`
+5. **Conditional**: `if (try func()) { ... }` -> `context: "conditional"`
+6. **Binary Operations**: `try a() + try b()` -> `context: "binary_op"`
+7. **Nested expressions**: `try (try inner())` -> `context: "nested_try"`
+
+### Catalogue Information
+Each try expression is recorded in the `TryExpressionCatalogue` with:
+- **Source location**: Exact position in the file.
+- **Context type**: String representation of the usage context.
+- **Inner expression type**: The resolved type of the expression being tried (e.g., `!i32`).
+- **Result type**: The type after unwrapping (e.g., `i32`).
+- **Nesting depth**: Tracking how deep the `try` is nested within other `try` expressions.
+
+## 13. Import Statements
 
 ### Syntax
 ```zig
