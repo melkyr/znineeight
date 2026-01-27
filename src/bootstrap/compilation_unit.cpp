@@ -29,7 +29,9 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       error_set_catalogue_(arena),
       generic_catalogue_(arena),
       error_function_catalogue_(arena),
-      try_expression_catalogue_(arena) {
+      try_expression_catalogue_(arena),
+      catch_expression_catalogue_(arena),
+      orelse_expression_catalogue_(arena) {
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -81,6 +83,14 @@ ErrorFunctionCatalogue& CompilationUnit::getErrorFunctionCatalogue() {
 
 TryExpressionCatalogue& CompilationUnit::getTryExpressionCatalogue() {
     return try_expression_catalogue_;
+}
+
+CatchExpressionCatalogue& CompilationUnit::getCatchExpressionCatalogue() {
+    return catch_expression_catalogue_;
+}
+
+OrelseExpressionCatalogue& CompilationUnit::getOrelseExpressionCatalogue() {
+    return orelse_expression_catalogue_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {

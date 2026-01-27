@@ -1258,7 +1258,46 @@ Each try expression is recorded in the `TryExpressionCatalogue` with:
 - **Result type**: The type after unwrapping (e.g., `i32`).
 - **Nesting depth**: Tracking how deep the `try` is nested within other `try` expressions.
 
-## 13. Import Statements
+## 13. Catch Expression Detection (Task 144)
+
+### AST Node
+```cpp
+struct ASTCatchExprNode {
+    ASTNode* payload;        // Expression that might error
+    const char* error_name;  // NULL or identifier name (from |err|)
+    ASTNode* else_expr;      // Handler expression
+};
+```
+
+### Detection Context
+Catch expressions are catalogued in `CatchExpressionCatalogue` with:
+- **Source location**: Position of the `catch` keyword.
+- **Context type**: e.g., "assignment", "variable_decl", "return".
+- **Error type**: Resolved type of the payload (the error union).
+- **Handler type**: Resolved type of the `else_expr`.
+- **Result type**: Type after the catch operation.
+- **Chaining info**: Whether it is part of a chain (`a catch b catch c`) and its index in that chain.
+- **Error parameter**: Name of the captured error variable, if any.
+
+## 14. Orelse Expression Detection
+
+### AST Node
+```cpp
+struct ASTOrelseExprNode {
+    ASTNode* payload;        // Expression that might be null
+    ASTNode* else_expr;      // Fallback expression
+};
+```
+
+### Catalogue Information
+Orelse expressions are catalogued in `OrelseExpressionCatalogue` with:
+- **Source location**: Position of the `orelse` keyword.
+- **Context type**: usage context.
+- **Left type**: Type of the payload (typically an optional type).
+- **Right type**: Type of the fallback expression.
+- **Result type**: Resolved type after the orelse operation.
+
+## 15. Import Statements
 
 ### Syntax
 ```zig
@@ -1275,7 +1314,7 @@ struct ASTImportStmtNode {
 };
 ```
 
-## 13. Error-Returning Function Detection (Task 142)
+## 16. Error-Returning Function Detection (Task 142)
 
 ### Detection Criteria
 A function is catalogued as error-returning when its resolved return type is:
@@ -1298,7 +1337,7 @@ During the `C89FeatureValidator` pass (which now runs AFTER `TypeChecker`):
 `C89FeatureValidator` rejects all catalogued functions with specific diagnostics:
 - "Function 'X' returns error type 'Y' (non-C89)"
 
-## 14. Compile-Time Operation Node Types
+## 17. Compile-Time Operation Node Types
 
 These nodes are related to compile-time execution and evaluation.
 

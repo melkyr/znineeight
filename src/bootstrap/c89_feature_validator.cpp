@@ -7,7 +7,9 @@
 #include <cstdlib> // For abort()
 
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
-    : unit(unit), error_found_(false), try_expression_depth_(0), current_parent_(NULL) {}
+    : unit(unit), error_found_(false), try_expression_depth_(0),
+      catch_chain_index_(0), catch_chain_total_(0), in_catch_chain_(false),
+      current_parent_(NULL) {}
 
 void C89FeatureValidator::validate(ASTNode* node) {
     visit(node);
@@ -280,11 +282,92 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
-    fatalError(node->loc, "'catch' expressions are not supported for C89 compatibility.");
+    bool is_outermost = !in_catch_chain_;
+
+    if (is_outermost) {
+        // Calculate chain total
+        int count = 0;
+        ASTNode* curr = node;
+        while (curr && curr->type == NODE_CATCH_EXPR) {
+            count++;
+            curr = curr->as.catch_expr->payload;
+        }
+        catch_chain_total_ = count;
+        catch_chain_index_ = 0;
+        in_catch_chain_ = true;
+    }
+
+    ASTNode* payload = node->as.catch_expr->payload;
+    ASTNode* else_expr = node->as.catch_expr->else_expr;
+
+    // Recursive visit payload (inner catches first in source order)
+    ASTNode* prev_parent = current_parent_;
+    current_parent_ = node;
+    visit(payload);
+    current_parent_ = prev_parent;
+
+    // Now log THIS catch expression
+    int my_index = catch_chain_index_++;
+    bool is_chained = (catch_chain_total_ > 1);
+
+    Type* error_type = (payload ? payload->resolved_type : NULL);
+    Type* handler_type = (else_expr ? else_expr->resolved_type : NULL);
+    Type* result_type = node->resolved_type;
+
+    unit.getCatchExpressionCatalogue().addCatchExpression(
+        node->loc,
+        getExpressionContext(node),
+        error_type,
+        handler_type,
+        result_type,
+        node->as.catch_expr->error_name,
+        my_index,
+        is_chained
+    );
+
+    // Reject
+    reportNonC89Feature(node->loc, "'catch' expressions are not supported for C89 compatibility.");
+
+    // Visit else_expr (handler)
+    bool prev_in_chain = in_catch_chain_;
+    in_catch_chain_ = false; // Handler is not part of the chain
+    current_parent_ = node;
+    visit(else_expr);
+    current_parent_ = prev_parent;
+    in_catch_chain_ = prev_in_chain;
+
+    if (is_outermost) {
+        in_catch_chain_ = false;
+    }
 }
 
 void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
-    fatalError(node->loc, "'orelse' expressions are not supported for C89 compatibility.");
+    Type* left_type = (node->as.orelse_expr->payload ? node->as.orelse_expr->payload->resolved_type : NULL);
+    Type* right_type = (node->as.orelse_expr->else_expr ? node->as.orelse_expr->else_expr->resolved_type : NULL);
+    Type* result_type = node->resolved_type;
+
+    unit.getOrelseExpressionCatalogue().addOrelseExpression(
+        node->loc,
+        getExpressionContext(node),
+        left_type,
+        right_type,
+        result_type
+    );
+
+    // Reject
+    char msg[256];
+    char* current = msg;
+    size_t remaining = sizeof(msg);
+    safe_append(current, remaining, "Orelse expression in ");
+    safe_append(current, remaining, getExpressionContext(node));
+    safe_append(current, remaining, " context is not C89-compatible.");
+    reportNonC89Feature(node->loc, msg, true);
+
+    ASTNode* prev_parent = current_parent_;
+    current_parent_ = node;
+    visit(node->as.orelse_expr->payload);
+    visit(node->as.orelse_expr->else_expr);
+    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitErrorSetDefinition(ASTNode* node) {

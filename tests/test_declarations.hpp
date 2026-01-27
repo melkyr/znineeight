@@ -505,4 +505,12 @@ TEST_FUNC(Task143_TryExpressionDetection_Contexts);
 TEST_FUNC(Task143_TryExpressionDetection_Nested);
 TEST_FUNC(Task143_TryExpressionDetection_MultipleInStatement);
 
+// Forward declarations for Task 144
+TEST_FUNC(CatchExpressionCatalogue_Basic);
+TEST_FUNC(CatchExpressionCatalogue_Chaining);
+TEST_FUNC(OrelseExpressionCatalogue_Basic);
+TEST_FUNC(Task144_CatchExpressionDetection_Basic);
+TEST_FUNC(Task144_CatchExpressionDetection_Chained);
+TEST_FUNC(Task144_OrelseExpressionDetection);
+
 #endif // TEST_DECLARATIONS_HPP

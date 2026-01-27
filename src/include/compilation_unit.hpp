@@ -12,6 +12,8 @@
 #include "generic_catalogue.hpp"
 #include "error_function_catalogue.hpp"
 #include "try_expression_catalogue.hpp"
+#include "catch_expression_catalogue.hpp"
+#include "orelse_expression_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -47,6 +49,8 @@ public:
     GenericCatalogue& getGenericCatalogue();
     ErrorFunctionCatalogue& getErrorFunctionCatalogue();
     TryExpressionCatalogue& getTryExpressionCatalogue();
+    CatchExpressionCatalogue& getCatchExpressionCatalogue();
+    OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -69,6 +73,8 @@ private:
     GenericCatalogue generic_catalogue_;
     ErrorFunctionCatalogue error_function_catalogue_;
     TryExpressionCatalogue try_expression_catalogue_;
+    CatchExpressionCatalogue catch_expression_catalogue_;
+    OrelseExpressionCatalogue orelse_expression_catalogue_;
     CompilationOptions options_;
 };
 
