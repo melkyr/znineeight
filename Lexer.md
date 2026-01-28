@@ -204,7 +204,16 @@ All identifiers and string literals are automatically interned via the `StringIn
 2.  **Pointer Equality**: This architecture guarantees that `str1 == str2` if and only if the strings are content-equal. This enables O(1) string comparisons throughout the compiler.
 3.  **Memory Efficiency**: Only a single copy of each unique identifier or string literal is stored, significantly reducing memory footprint on 1990s hardware.
 
-### 3.3 Guarantees for Analysis
+### 3.3 Error handling tokens
+The lexer provides specific tokens to support Zig's error handling model:
+
+1.  **`TOKEN_BANG` (!)**: This token is used in two contexts:
+    -   As a prefix unary operator for logical NOT.
+    -   As a type constructor for error unions (e.g., `!i32`).
+2.  **`TOKEN_ERROR_SET` (error)**: Recognizes the `error` keyword used for defining error sets (e.g., `error { ... }`) or as part of an explicit error union (e.g., `error{A}!void`).
+3.  **`TOKEN_PIPE_PIPE` (||)**: This token is specifically used for merging error sets (e.g., `Set1 || Set2`).
+
+### 3.4 Guarantees for Analysis
 String interning provides critical guarantees for subsequent compilation passes:
 -   **Performance**: Static analyzers (like the Double-Free or Null-Pointer analyzers) use pointer equality for identifier lookups and state tracking.
 -   **Stability**: Interned strings have a lifetime tied to the `CompilationUnit`'s arena, ensuring no dangling references during analysis or code generation.

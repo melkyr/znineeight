@@ -645,7 +645,7 @@ Output: Runtime assertions in codegen module
     Validation: Create mapping table example
     Success criteria: Clear strategy for converting all errors to integers. Documented in `Error_code_mapping_strategy.md`.
 
-146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (MEDIUM)
+146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (DONE)
 
     What to implement: Strategy to extract success values from error unions
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -653,7 +653,7 @@ Output: Runtime assertions in codegen module
         Memory layout considerations
         Out-parameter design choices
     Validation: Design sample success value extraction patterns
-    Success criteria: Clear method for separating success from error paths
+    Success criteria: Clear method for separating success from error paths. Documented in `Error_code_mapping_strategy.md`.
 
 147. **Task 147:** ERROR PROPAGATION ALTERNATIVE DESIGN (MEDIUM)
 

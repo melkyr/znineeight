@@ -239,6 +239,8 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTCharLiteralNode`        | 1            | Inline          |
 | `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
+| `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
+| `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 
 ## 4. Implemented AST Node Types
 
@@ -325,7 +327,7 @@ Represents an identifier, such as a variable or function name. The `name` field 
 
 #### `ASTUnaryOpNode`
 Represents an operation with a single operand.
-*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`
+*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`, `try ...`
 *   **Structure:**
     ```cpp
     /**
@@ -349,9 +351,9 @@ The `parsePostfixExpression` function handles Zig-style postfix dereference:
 #### Parsing Logic (`parseUnaryExpr`)
 The `parseUnaryExpr` function is responsible for handling prefix unary operators. To avoid deep recursion and potential stack overflow on constrained systems, it uses an iterative approach to handle chained operators like `!!x` or `-&y`.
 
-- It first enters a `while` loop to consume all consecutive unary operator tokens (`-`, `!`, `~`, `&`), storing them in a temporary list.
+- It first enters a `while` loop to consume all consecutive unary operator tokens (`-`, `!`, `~`, `&`, `try`), storing them in a temporary list.
 - After consuming all prefix operators, it calls `parsePostfixExpression` to parse the operand.
-- It then iterates through the stored operator tokens in reverse order. For each operator, it constructs an `ASTUnaryOpNode` with the current expression as its operand.
+- It then iterates through the stored operator tokens in reverse order. For each operator, it constructs an `ASTUnaryOpNode` (or `ASTTryExprNode` for `try`) with the current expression as its operand.
 - The newly created `ASTUnaryOpNode` then becomes the new expression, effectively wrapping the previous one. This process correctly builds the nested AST structure from right to left, ensuring the correct operator precedence.
 
 #### Parsing Logic (`parsePrimaryExpr`)
@@ -446,7 +448,7 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
 
 #### `ASTBinaryOpNode`
 Represents an operation with two operands.
-*   **Zig Code:** `a + b`, `x * y`
+*   **Zig Code:** `a + b`, `x * y`, `a catch b`, `a orelse b`
 *   **Structure:**
     ```cpp
     /**
@@ -581,6 +583,30 @@ Represents both fixed-size arrays and dynamic slices.
         ASTNode* size; // Can be NULL for a slice
     };
     ```
+
+### `ASTErrorUnionTypeNode`
+Represents an error union type.
+*   **Zig Code:** `!i32`, `error{A,B}!void`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTErrorUnionTypeNode
+     * @brief Represents an error union type.
+     * @var ASTErrorUnionTypeNode::error_set A pointer to the error set node (can be NULL for inferred `!`).
+     * @var ASTErrorUnionTypeNode::payload_type A pointer to the ASTNode for the payload type.
+     */
+    struct ASTErrorUnionTypeNode {
+        ASTNode* error_set; // NULL for inferred (!)
+        ASTNode* payload_type;
+        SourceLocation loc;
+    };
+    ```
+
+#### Parsing Logic (`parseErrorUnionType`)
+The `parseErrorUnionType` function handles both inferred error unions (`!T`) and explicit ones (`error{A,B}!T`).
+- If it starts with `TOKEN_BANG`, the `error_set` is `NULL`.
+- If it starts with `TOKEN_ERROR_SET`, it calls `parseErrorSetDefinition` to get the error set node before the `!`.
+- It then parses the payload type.
 
 ## 6. Statement Node Types
 
@@ -1248,66 +1274,35 @@ Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUn
 
 ## 12. Try Expression Detection (Task 143)
 
-### AST Node
-```cpp
-struct ASTTryExprNode {
-    ASTNode* expression;  // The expression being tried
-};
-```
-
-### Detection Context
-Try expressions are detected in various contexts to provide detailed analysis:
-1. **Return statements**: `return try func();` -> `context: "return"`
-2. **Assignments**: `x = try func();` -> `context: "assignment"`
-3. **Function arguments**: `foo(try bar());` -> `context: "call_argument"`
-4. **Variable declarations**: `var x = try init();` -> `context: "variable_decl"`
-5. **Conditional**: `if (try func()) { ... }` -> `context: "conditional"`
-6. **Binary Operations**: `try a() + try b()` -> `context: "binary_op"`
-7. **Nested expressions**: `try (try inner())` -> `context: "nested_try"`
-
-### Catalogue Information
-Each try expression is recorded in the `TryExpressionCatalogue` with:
-- **Source location**: Exact position in the file.
-- **Context type**: String representation of the usage context.
-- **Inner expression type**: The resolved type of the expression being tried (e.g., `!i32`).
-- **Result type**: The type after unwrapping (e.g., `i32`).
-- **Nesting depth**: Tracking how deep the `try` is nested within other `try` expressions.
+### TryExpressionCatalogue
+Logs every `try` site during the `C89FeatureValidator` pass.
+Tracked Metadata (`TryExpressionInfo`):
+- **Source location**: Position of the `try` keyword.
+- **Context type**: Usage context (e.g., "assignment", "return", "call_argument", "variable_decl", "conditional", "binary_op").
+- **Inner type**: Resolved type of the expression being tried (the error union).
+- **Result type**: Type after unwrapping (payload type).
+- **Nesting**: Whether it's nested inside another `try` and its depth.
 
 ## 13. Catch Expression Detection (Task 144)
 
-### AST Node
-```cpp
-struct ASTCatchExprNode {
-    ASTNode* payload;        // Expression that might error
-    const char* error_name;  // NULL or identifier name (from |err|)
-    ASTNode* else_expr;      // Handler expression
-};
-```
-
-### Detection Context
-Catch expressions are catalogued in `CatchExpressionCatalogue` with:
+### CatchExpressionCatalogue
+Logs `catch` expressions during the `C89FeatureValidator` pass.
+Tracked Metadata (`CatchExpressionInfo`):
 - **Source location**: Position of the `catch` keyword.
-- **Context type**: e.g., "assignment", "variable_decl", "return".
+- **Context type**: Usage context.
 - **Error type**: Resolved type of the payload (the error union).
-- **Handler type**: Resolved type of the `else_expr`.
+- **Handler type**: Resolved type of the fallback expression.
 - **Result type**: Type after the catch operation.
-- **Chaining info**: Whether it is part of a chain (`a catch b catch c`) and its index in that chain.
-- **Error parameter**: Name of the captured error variable, if any.
+- **Chaining info**: Whether it is part of a chain and its index.
+- **Error parameter**: Name of the captured error variable (from `|err|`), if any.
 
 ## 14. Orelse Expression Detection
 
-### AST Node
-```cpp
-struct ASTOrelseExprNode {
-    ASTNode* payload;        // Expression that might be null
-    ASTNode* else_expr;      // Fallback expression
-};
-```
-
-### Catalogue Information
-Orelse expressions are catalogued in `OrelseExpressionCatalogue` with:
+### OrelseExpressionCatalogue
+Logs `orelse` expressions during the `C89FeatureValidator` pass.
+Tracked Metadata (`OrelseExpressionInfo`):
 - **Source location**: Position of the `orelse` keyword.
-- **Context type**: usage context.
+- **Context type**: Usage context.
 - **Left type**: Type of the payload (typically an optional type).
 - **Right type**: Type of the fallback expression.
 - **Result type**: Resolved type after the orelse operation.
@@ -1331,22 +1326,14 @@ struct ASTImportStmtNode {
 
 ## 16. Error-Returning Function Detection (Task 142)
 
-### Detection Criteria
-A function is catalogued as error-returning when its resolved return type is:
-1. Error union (`!T`) → `TYPE_ERROR_UNION`
-2. Error set (`error{A,B}`) → `TYPE_ERROR_SET`
-3. Named error set alias (`MyErrorSet`) → `TYPE_ERROR_SET`
-
-### Cataloguing Process
-During the `C89FeatureValidator` pass (which now runs AFTER `TypeChecker`):
-1. Resolve the function's return type using the symbol table (populated by `TypeChecker`).
-2. Check if the return type kind is `TYPE_ERROR_UNION` or `TYPE_ERROR_SET`.
-3. Record in `ErrorFunctionCatalogue` with:
-   - Function name (interned string)
-   - Resolved return type pointer
-   - Source location
-   - Generic flag (comptime params)
-   - Parameter count
+### ErrorFunctionCatalogue
+Tracks functions that return error types.
+Tracked Metadata (`ErrorFunctionInfo`):
+- **Name**: Function name.
+- **Return type**: Resolved return type pointer (Error Union or Error Set).
+- **Location**: Source location of the declaration.
+- **Generic**: Whether it's a generic function.
+- **Param count**: Number of parameters.
 
 ### Rejection
 `C89FeatureValidator` rejects all catalogued functions with specific diagnostics:
@@ -1527,7 +1514,14 @@ Both validators traverse type expressions recursively:
 
 ## 19. Generic Function Detection (Tasks 137-141)
 
-Zig's compile-time generic functions (often called "templates" in older documentation) are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features.
+### GenericCatalogue
+Catalogues all generic function instantiations detected during semantic analysis.
+Tracked Metadata (`GenericInstantiation`):
+- **Function name**: Name of the generic function.
+- **Type arguments**: Up to 4 resolved type arguments used in the instantiation.
+- **Location**: Source location of the call site.
+
+Zig's compile-time generic functions are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features.
 
 ### Detection Mechanism
 
@@ -1542,15 +1536,6 @@ The `isTypeExpression` helper function is used by both the `C89FeatureValidator`
 -   Built-in primitive type names (e.g., `i32`, `u8`, `bool`, `type`).
 -   Type expression nodes like `NODE_POINTER_TYPE`, `NODE_ARRAY_TYPE`, etc.
 -   Identifiers that resolve to symbols of kind `SYMBOL_TYPE`.
-
-### Cataloguing (GenericCatalogue)
-
-Detected generic instantiations are recorded in the `GenericCatalogue` owned by the `CompilationUnit`. Each entry includes:
--   The function name.
--   Up to 4 resolved type arguments.
--   The source location of the call.
-
-This catalogue provides a comprehensive record of all generic features used in the source code, even though they are eventually rejected to maintain C89 compatibility.
 
 ### Rejection Strategy
 

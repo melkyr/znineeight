@@ -29,13 +29,13 @@ Error unions will be translated into a C89 `struct` containing a `union` for the
 /* Generated C89 */
 typedef struct {
     union {
-        int32_t payload;    /* Valid if is_error is false */
-        int error_code;     /* Valid if is_error is true */
+        int32_t success_value;    /* Valid if is_error is 0 */
+        int error_code;           /* Valid if is_error is 1 */
     } data;
-    bool is_error;
-} ErrorableInt32;
+    int is_error;                 /* 0 = success, 1 = error */
+} Errorable_int32;
 
-ErrorableInt32 read(const char* path);
+Errorable_int32 read(const char* path);
 ```
 
 ### Alternative: Pointer Parameters
@@ -59,11 +59,11 @@ var x = try mightFail();
 
 **Generated C89:**
 ```c
-ErrorableInt32 result = mightFail();
+Errorable_int32 result = mightFail();
 if (result.is_error) {
     return result; /* Propagate the error union */
 }
-int32_t x = result.data.payload;
+int32_t x = result.data.success_value;
 ```
 
 ### `catch` Expression
@@ -76,8 +76,8 @@ var x = mightFail() catch 0;
 
 **Generated C89:**
 ```c
-ErrorableInt32 result = mightFail();
-int32_t x = result.is_error ? 0 : result.data.payload;
+Errorable_int32 result = mightFail();
+int32_t x = result.is_error ? 0 : result.data.success_value;
 ```
 
 ### `orelse` Expression
@@ -130,3 +130,101 @@ The mapping strategy handles this by using the **Global Error Registry**. Since 
 ## Anonymous Error Sets
 Functions can return anonymous error sets: `fn f() error{A, B}!void`.
 The compiler treats these tags exactly like named ones, registering `A` and `B` in the global registry if they haven't been seen before.
+
+## Success Value Extraction Strategy
+
+### Memory Layout Options
+1. **Out-parameter approach**: Function returns error code, success via pointer.
+2. **Struct return approach**: Return `Errorable_T` struct (CHOSEN).
+3. **Tagged union approach**: Union with error/success discriminant.
+
+### Chosen Approach: Errorable<T> Struct
+The compiler generates a specialized struct for each unique error union type encountered.
+
+```c
+typedef struct {
+    union {
+        T success_value;
+        int error_code;
+    } data;
+    int is_error;  /* 0 = success, 1 = error (bool not in C89) */
+} Errorable_T;
+```
+
+### Type-Specific Macros
+To maintain C89 compatibility and avoid template-like overhead, the compiler utilizes per-type definitions:
+
+```c
+#define DECLARE_ERRORABLE(TYPE, NAME) \
+    typedef struct { \
+        union { TYPE success_value; int error_code; } data; \
+        int is_error; \
+    } Errorable_##NAME
+
+DECLARE_ERRORABLE(int32_t, int32);
+DECLARE_ERRORABLE(void*, ptr);
+```
+
+### Memory Allocation Strategy
+- **Small `Errorable_T` structs (< 64 bytes)**: Stack allocated as automatic variables during expression evaluation.
+- **Large `Errorable_T` structs (>= 64 bytes)**: Allocated from the `ArenaAllocator` if they need to persist or to avoid excessive stack usage.
+- **MSVC 6.0 Stack Limits**: MSVC 6.0 has a 64KB stack frame limit. Large `Errorable_T` structs (> 1KB) should use arena allocation to avoid stack overflow.
+
+### MSVC 6.0 Alignment Constraints
+To ensure correct layout on 1990s hardware, the compiler may emit alignment pragmas:
+
+```c
+#pragma pack(push, 4)  /* Ensure 4-byte alignment */
+typedef struct {
+    union {
+        double dbl_value;   /* 8 bytes */
+        int error_code;     /* 4 bytes */
+    } data;
+    int is_error;           /* 4 bytes */
+} Errorable_double;         /* Total: 12 bytes */
+#pragma pack(pop)
+```
+
+### Success Value Extraction Patterns
+
+#### Pattern 1: Variable Assignment
+**Zig:** `var x = try mightFail();`
+**C89:**
+```c
+Errorable_int32 temp = mightFail();
+if (temp.is_error) {
+    return temp; /* Propagate */
+}
+int32_t x = temp.data.success_value;
+```
+
+#### Pattern 2: Direct Use in Expressions
+**Zig:** `process(try getValue());`
+**C89:**
+```c
+Errorable_int32 temp = getValue();
+if (temp.is_error) return temp;
+process(temp.data.success_value);
+```
+
+### Edge Cases
+
+#### 1. Large Success Types
+When `T` is a large struct (e.g., 64+ bytes), the `Errorable_T` struct stores the success value directly by value in the union to maintain simple semantics, but uses arena allocation for the temporary if necessary.
+
+#### 2. Nested Error Unions
+**Zig:** `fn doubleError() !!void { ... }`
+**C89:** Translated as an `Errorable` struct where the success value is itself an `Errorable` struct.
+
+#### 3. Void Success Values
+**Zig:** `fn mightFail() !void { ... }`
+**C89:** `Errorable_void` contains a union where the success path has no associated data, only the `is_error` flag is checked.
+
+### MSVC 6.0 Union Initialization
+MSVC 6.0 does not support C99 designated initializers. Generated code must perform manual initialization:
+
+```c
+Errorable_int32 result;
+result.is_error = 0;
+result.data.success_value = 42;
+```
