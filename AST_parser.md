@@ -239,8 +239,6 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTCharLiteralNode`        | 1            | Inline          |
 | `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
-| `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
-| `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 
 ## 4. Implemented AST Node Types
 
@@ -1274,6 +1272,13 @@ Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUn
 
 ## 12. Try Expression Detection (Task 143)
 
+### AST Node
+```cpp
+struct ASTTryExprNode {
+    ASTNode* expression;  // The expression being tried
+};
+```
+
 ### TryExpressionCatalogue
 Logs every `try` site during the `C89FeatureValidator` pass.
 Tracked Metadata (`TryExpressionInfo`):
@@ -1284,6 +1289,15 @@ Tracked Metadata (`TryExpressionInfo`):
 - **Nesting**: Whether it's nested inside another `try` and its depth.
 
 ## 13. Catch Expression Detection (Task 144)
+
+### AST Node
+```cpp
+struct ASTCatchExprNode {
+    ASTNode* payload;        // Expression that might error
+    const char* error_name;  // NULL or identifier name (from |err|)
+    ASTNode* else_expr;      // Handler expression
+};
+```
 
 ### CatchExpressionCatalogue
 Logs `catch` expressions during the `C89FeatureValidator` pass.
@@ -1297,6 +1311,14 @@ Tracked Metadata (`CatchExpressionInfo`):
 - **Error parameter**: Name of the captured error variable (from `|err|`), if any.
 
 ## 14. Orelse Expression Detection
+
+### AST Node
+```cpp
+struct ASTOrelseExprNode {
+    ASTNode* payload;        // Expression that might be null
+    ASTNode* else_expr;      // Fallback expression
+};
+```
 
 ### OrelseExpressionCatalogue
 Logs `orelse` expressions during the `C89FeatureValidator` pass.
