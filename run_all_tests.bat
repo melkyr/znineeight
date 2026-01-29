@@ -4,7 +4,7 @@ echo ================================
 
 set FAILED=0
 
-for %%i in (1 2 3 4 5) do (
+for %%i in (1 2 3 4 5 6 7) do (
     echo Batch %%i...
     if exist test_runner_batch%%i.exe (
         test_runner_batch%%i.exe
