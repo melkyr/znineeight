@@ -92,7 +92,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
-        case NODE_VAR_DECL:         resolved_type = visitVarDecl(node->as.var_decl); break;
+        case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
         case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node, node->as.union_decl); break;
@@ -975,11 +975,11 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     return result_type;
 }
 
-Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
-    Type* declared_type = visit(node->type);
+Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
+    Type* declared_type = node->type ? visit(node->type) : NULL;
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
-        unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type->loc, "variables cannot be declared as 'void'");
+        unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'void'");
         return NULL; // Stop processing this declaration
     }
 
@@ -1035,7 +1035,7 @@ Type* TypeChecker::visitVarDecl(ASTVarDeclNode* node) {
                 .withName(node->name)
                 .ofType(SYMBOL_VARIABLE)
                 .withType(declared_type)
-                .atLocation(node->type->loc)
+                .atLocation(node->name_loc)
                 .definedBy(node)
                 .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
                 .build();

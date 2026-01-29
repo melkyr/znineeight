@@ -4,7 +4,7 @@ echo "================================"
 
 FAILED=0
 
-for i in 1 2 3 4 5 6; do
+for i in 1 2 3 4 5 6 7; do
     echo "Batch $i..."
     if [ -f "./test_runner_batch$i" ]; then
         ./test_runner_batch$i

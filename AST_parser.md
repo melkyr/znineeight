@@ -22,6 +22,11 @@ The compiler's semantic analysis is divided into three passes:
 2.  **Lifetime Analyzer**: A read-only pass that uses the flags and AST structure to detect dangling pointers.
 3.  **Null Pointer Analyzer**: A read-only pass that identifies potential null pointer dereferences and uninitialized pointer usage.
 
+### 2.2 Type Inference Handling
+The `TypeChecker` supports Zig-style type inference for `var` and `const` declarations (e.g., `const x = 42;`).
+- **Internal Representation**: Inferred variables have their `type` pointer set to `NULL` in the `ASTVarDeclNode`.
+- **Location Tracking**: Since inferred variables lack an explicit type annotation, the `TypeChecker` uses the declaration node's location (typically the `var` or `const` keyword) as the source location for the symbol in the `SymbolTable`. This ensures robust error reporting and prevents NULL pointer dereferences during semantic analysis.
+
 ### `NodeType` Enum
 
 This enum is the discriminator for the `union` inside the `ASTNode` struct.

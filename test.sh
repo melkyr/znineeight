@@ -154,11 +154,12 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_task_142.cpp \
     tests/test_task_143.cpp \
     tests/test_catalogues_task_144.cpp \
-    tests/test_task_144_detection.cpp"
+    tests/test_task_144_detection.cpp \
+    tests/type_checker_inference_tests.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
-for i in 1 2 3 4 5 6; do
+for i in 1 2 3 4 5 6 7; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then

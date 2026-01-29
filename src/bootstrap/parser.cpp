@@ -861,6 +861,7 @@ ASTNode* Parser::parseEnumDeclaration() {
             error("Out of memory");
         }
         field_data->name = name_token.value.identifier;
+        field_data->name_loc = name_token.location;
         field_data->type = NULL; // Enums members don't have a type annotation
         field_data->initializer = initializer;
         field_data->is_const = true; // Enum members are constants
@@ -940,6 +941,7 @@ ASTNode* Parser::parseUnionDeclaration() {
             error("Out of memory");
         }
         field_data->name = name_token.value.identifier;
+        field_data->name_loc = name_token.location;
         field_data->type = type_node;
 
         ASTNode* field_node = createNode(NODE_STRUCT_FIELD);
@@ -1143,6 +1145,7 @@ ASTNode* Parser::parseStructDeclaration() {
             error("Out of memory");
         }
         field_data->name = name_token.value.identifier;
+        field_data->name_loc = name_token.location;
         field_data->type = type_node;
 
         ASTNode* field_node = createNode(NODE_STRUCT_FIELD);
@@ -1219,6 +1222,7 @@ ASTNode* Parser::parseVarDecl() {
         error("Out of memory");
     }
     var_decl->name = name_token.value.identifier;
+    var_decl->name_loc = name_token.location;
     var_decl->type = type_node;
     var_decl->initializer = initializer_node;
     var_decl->is_const = is_const;

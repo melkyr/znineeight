@@ -513,4 +513,9 @@ TEST_FUNC(Task144_CatchExpressionDetection_Basic);
 TEST_FUNC(Task144_CatchExpressionDetection_Chained);
 TEST_FUNC(Task144_OrelseExpressionDetection);
 
+// Forward declarations for TypeChecker Bug Fixes
+TEST_FUNC(TypeChecker_VarDecl_Inferred_Crash);
+TEST_FUNC(TypeChecker_VarDecl_Inferred_Loop);
+TEST_FUNC(TypeChecker_VarDecl_Inferred_Multiple);
+
 #endif // TEST_DECLARATIONS_HPP
