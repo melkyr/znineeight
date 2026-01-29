@@ -523,6 +523,7 @@ struct ASTParamDeclNode {
  */
 struct ASTVarDeclNode {
     const char* name;
+    SourceLocation name_loc;
     ASTNode* type; // Can be NULL
     ASTNode* initializer;
     bool is_const;
@@ -554,6 +555,7 @@ struct ASTFnDeclNode {
  */
 struct ASTStructFieldNode {
     const char* name;
+    SourceLocation name_loc;
     ASTNode* type;
 };
 

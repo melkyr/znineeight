@@ -40,7 +40,7 @@ public:
     Type* visitForStmt(ASTForStmtNode* node);
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
-    Type* visitVarDecl(ASTVarDeclNode* node);
+    Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
     Type* visitStructDecl(ASTNode* parent, ASTStructDeclNode* node);
     Type* visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node);
