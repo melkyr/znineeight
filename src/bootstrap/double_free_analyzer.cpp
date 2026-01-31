@@ -176,6 +176,17 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
         case NODE_ARRAY_SLICE:
             visitArraySlice(node);
             break;
+        case NODE_MEMBER_ACCESS:
+            visit(node->as.member_access->base);
+            break;
+        case NODE_STRUCT_INITIALIZER:
+            visit(node->as.struct_initializer->type_expr);
+            if (node->as.struct_initializer->fields) {
+                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                    visit((*node->as.struct_initializer->fields)[i]->value);
+                }
+            }
+            break;
         case NODE_COMPOUND_ASSIGNMENT:
             visitCompoundAssignment(node);
             break;

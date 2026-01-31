@@ -118,6 +118,39 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.while_stmt.body);
             current_parent_ = prev_parent;
             break;
+        case NODE_MEMBER_ACCESS:
+            current_parent_ = node;
+            visit(node->as.member_access->base);
+            current_parent_ = prev_parent;
+            break;
+        case NODE_STRUCT_INITIALIZER:
+            current_parent_ = node;
+            visit(node->as.struct_initializer->type_expr);
+            if (node->as.struct_initializer->fields) {
+                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                    visit((*node->as.struct_initializer->fields)[i]->value);
+                }
+            }
+            current_parent_ = prev_parent;
+            break;
+        case NODE_ARRAY_ACCESS:
+            current_parent_ = node;
+            visit(node->as.array_access->array);
+            visit(node->as.array_access->index);
+            current_parent_ = prev_parent;
+            break;
+        case NODE_ARRAY_SLICE:
+            current_parent_ = node;
+            visit(node->as.array_slice->array);
+            if (node->as.array_slice->start) visit(node->as.array_slice->start);
+            if (node->as.array_slice->end) visit(node->as.array_slice->end);
+            current_parent_ = prev_parent;
+            break;
+        case NODE_ERRDEFER_STMT:
+            current_parent_ = node;
+            visit(node->as.errdefer_stmt.statement);
+            current_parent_ = prev_parent;
+            break;
         case NODE_RETURN_STMT:
             current_parent_ = node;
             if (node->as.return_stmt.expression) {
@@ -342,8 +375,11 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
-    Type* left_type = (node->as.orelse_expr->payload ? node->as.orelse_expr->payload->resolved_type : NULL);
-    Type* right_type = (node->as.orelse_expr->else_expr ? node->as.orelse_expr->else_expr->resolved_type : NULL);
+    ASTOrelseExprNode* orelse = node->as.orelse_expr;
+    if (!orelse) return;
+
+    Type* left_type = (orelse->payload ? orelse->payload->resolved_type : NULL);
+    Type* right_type = (orelse->else_expr ? orelse->else_expr->resolved_type : NULL);
     Type* result_type = node->resolved_type;
 
     unit.getOrelseExpressionCatalogue().addOrelseExpression(
@@ -365,8 +401,8 @@ void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
 
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
-    visit(node->as.orelse_expr->payload);
-    visit(node->as.orelse_expr->else_expr);
+    visit(orelse->payload);
+    visit(orelse->else_expr);
     current_parent_ = prev_parent;
 }
 
