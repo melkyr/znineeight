@@ -16,7 +16,10 @@ int main(int argc, char* argv[]) {
         test_Task144_OrelseExpressionDetection,
         test_TypeChecker_VarDecl_Inferred_Crash,
         test_TypeChecker_VarDecl_Inferred_Loop,
-        test_TypeChecker_VarDecl_Inferred_Multiple
+        test_TypeChecker_VarDecl_Inferred_Multiple,
+        test_C89Rejection_NestedTryInMemberAccess,
+        test_C89Rejection_NestedTryInStructInitializer,
+        test_C89Rejection_NestedTryInArrayAccess
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

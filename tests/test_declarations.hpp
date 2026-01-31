@@ -383,6 +383,9 @@ TEST_FUNC(C89Rejection_Slice);
 TEST_FUNC(C89Rejection_TryExpression);
 TEST_FUNC(C89Rejection_CatchExpression);
 TEST_FUNC(C89Rejection_OrelseExpression);
+TEST_FUNC(C89Rejection_NestedTryInMemberAccess);
+TEST_FUNC(C89Rejection_NestedTryInStructInitializer);
+TEST_FUNC(C89Rejection_NestedTryInArrayAccess);
 TEST_FUNC(TypeChecker_RejectSliceExpression);
 
 // Bug Fix Verification Tests

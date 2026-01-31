@@ -214,6 +214,8 @@ The `ASTNode` struct itself contains:
 
 Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 
+**Note on 8-byte nodes:** Some nodes that are exactly 8 bytes (e.g., `ASTOrelseExprNode`, `ASTMemberAccessNode`, `ASTStructInitializerNode`) are currently stored as out-of-line pointers to maintain a clean separation of concerns or because they were initially designed as potentially larger. They must always be accessed via the `->` operator through the `as` union.
+
 ### Node Size Analysis (32-bit architecture)
 
 | Node Struct                 | Size (bytes) | Stored in Union |
@@ -236,13 +238,14 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTStringLiteralNode`      | 4            | Inline          |
 | `ASTTypeNameNode`           | 4            | Inline          |
 | `ASTUnaryOpNode`            | 8            | Inline          |
-| `ASTMemberAccessNode`       | 4            | Pointer (4)     |
-| `ASTStructInitializerNode`  | 4            | Pointer (4)     |
+| `ASTMemberAccessNode`       | 8            | Pointer (4)     |
+| `ASTStructInitializerNode`  | 8            | Pointer (4)     |
 | `ASTErrorSetDefinitionNode` | 8            | Pointer (4)     |
 | `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
 | `ASTImportStmtNode`         | 4            | Pointer (4)     |
+| `ASTOrelseExprNode`         | 8            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
-| `ASTErrorUnionTypeNode`     | 16           | Pointer (4)     |
+| `ASTErrorUnionTypeNode`     | 20           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 
 ## 4. Implemented AST Node Types

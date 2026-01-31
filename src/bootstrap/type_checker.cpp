@@ -1530,7 +1530,7 @@ Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {
 }
 
 Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
-    Type* left_type = visit(node->payload);
+    /* Type* left_type = */ visit(node->payload);
     visit(node->else_expr);
 
     // If it's an optional type, result is the payload.
