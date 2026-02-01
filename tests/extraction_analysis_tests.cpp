@@ -115,11 +115,14 @@ TEST_FUNC(ExtractionAnalysis_Linking) {
     const ExtractionSiteInfo& try_site = (*sites)[0];
     const ExtractionSiteInfo& catch_site = (*sites)[1];
 
-    ASSERT_TRUE(try_site.try_info != NULL);
-    ASSERT_TRUE(catch_site.catch_info != NULL);
+    ASSERT_TRUE(try_site.try_info_index != -1);
+    ASSERT_TRUE(catch_site.catch_info_index != -1);
 
-    ASSERT_EQ((int)try_site.strategy, (int)try_site.try_info->extraction_strategy);
-    ASSERT_EQ((int)catch_site.strategy, (int)catch_site.catch_info->extraction_strategy);
+    TryExpressionInfo& try_info = unit.getTryExpressionCatalogue().getTryExpression(try_site.try_info_index);
+    CatchExpressionInfo& catch_info = unit.getCatchExpressionCatalogue().getCatchExpression(catch_site.catch_info_index);
+
+    ASSERT_EQ((int)try_site.strategy, (int)try_info.extraction_strategy);
+    ASSERT_EQ((int)catch_site.strategy, (int)catch_info.extraction_strategy);
 
     return true;
 }

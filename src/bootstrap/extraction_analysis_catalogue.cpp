@@ -41,12 +41,12 @@ void ExtractionAnalysisCatalogue::exitBlock() {
     }
 }
 
-ExtractionSiteInfo* ExtractionAnalysisCatalogue::addExtractionSite(
+int ExtractionAnalysisCatalogue::addExtractionSite(
     SourceLocation loc,
     Type* payload_type,
     const char* context,
-    TryExpressionInfo* try_link,
-    CatchExpressionInfo* catch_link
+    int try_info_index,
+    int catch_info_index
 ) {
     int nesting = (function_stack_.length() > 0) ? function_stack_.back().current_depth : 0;
     int max_nesting = (function_stack_.length() > 0) ? function_stack_.back().max_depth : 0;
@@ -64,26 +64,15 @@ ExtractionSiteInfo* ExtractionAnalysisCatalogue::addExtractionSite(
     info.msvc6_safe = isStackSafe(payload_type);
     info.context = arena_.allocString(context);
     info.estimated_stack_usage = (strategy == EXTRACTION_STACK) ? payload_type->size : 0;
-    info.try_info = try_link;
-    info.catch_info = catch_link;
+    info.try_info_index = try_info_index;
+    info.catch_info_index = catch_info_index;
 
     if (strategy == EXTRACTION_STACK) {
         current_stack_estimate_ += payload_type->size;
     }
 
     sites_->append(info);
-    ExtractionSiteInfo* site_ptr = &((*sites_)[sites_->length() - 1]);
-
-    if (try_link) {
-        try_link->extraction_strategy = strategy;
-        try_link->stack_safe = info.msvc6_safe;
-    }
-    if (catch_link) {
-        catch_link->extraction_strategy = strategy;
-        catch_link->stack_safe = info.msvc6_safe;
-    }
-
-    return site_ptr;
+    return (int)(sites_->length() - 1);
 }
 
 ExtractionStrategy ExtractionAnalysisCatalogue::determineStrategy(Type* payload_type, int nesting_depth) {

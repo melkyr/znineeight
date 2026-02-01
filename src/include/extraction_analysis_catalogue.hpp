@@ -24,8 +24,8 @@ struct ExtractionSiteInfo {
     const char* context; // "try", "catch", etc.
     size_t estimated_stack_usage;
 
-    TryExpressionInfo* try_info;
-    CatchExpressionInfo* catch_info;
+    int try_info_index;   // Index in TryExpressionCatalogue, -1 if none
+    int catch_info_index; // Index in CatchExpressionCatalogue, -1 if none
 };
 
 /**
@@ -41,12 +41,12 @@ public:
     void enterBlock();
     void exitBlock();
 
-    ExtractionSiteInfo* addExtractionSite(
+    int addExtractionSite(
         SourceLocation loc,
         Type* payload_type,
         const char* context,
-        TryExpressionInfo* try_link = NULL,
-        CatchExpressionInfo* catch_link = NULL
+        int try_info_index = -1,
+        int catch_info_index = -1
     );
 
     ExtractionStrategy determineStrategy(Type* payload_type, int nesting_depth);
@@ -55,6 +55,11 @@ public:
     void generateReport(class CompilationUnit* unit);
 
     const DynamicArray<ExtractionSiteInfo>* getSites() const { return sites_; }
+
+    /**
+     * @brief Returns a reference to a catalogued extraction site by index.
+     */
+    ExtractionSiteInfo& getSite(int index) { return (*sites_)[index]; }
 
 private:
     ArenaAllocator& arena_;

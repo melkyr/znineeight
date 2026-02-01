@@ -290,7 +290,7 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
     }
 
     // Catalogue before rejecting
-    TryExpressionInfo* try_info = unit.getTryExpressionCatalogue().addTryExpression(
+    int try_idx = unit.getTryExpressionCatalogue().addTryExpression(
         node->loc,
         context,
         inner_type,
@@ -301,13 +301,19 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
     // Extraction Analysis if it's an error union
     if (inner_type && inner_type->kind == TYPE_ERROR_UNION) {
         Type* payload = inner_type->as.error_union.payload;
-        unit.getExtractionAnalysisCatalogue().addExtractionSite(
+        int site_idx = unit.getExtractionAnalysisCatalogue().addExtractionSite(
             node->loc,
             payload,
             "try",
-            try_info,
-            NULL
+            try_idx,
+            -1
         );
+
+        // Link strategy back to TryExpressionCatalogue
+        ExtractionSiteInfo& site = unit.getExtractionAnalysisCatalogue().getSite(site_idx);
+        TryExpressionInfo& try_info = unit.getTryExpressionCatalogue().getTryExpression(try_idx);
+        try_info.extraction_strategy = site.strategy;
+        try_info.stack_safe = site.msvc6_safe;
     }
 
     // Reject
@@ -361,7 +367,7 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     Type* handler_type = (else_expr ? else_expr->resolved_type : NULL);
     Type* result_type = node->resolved_type;
 
-    CatchExpressionInfo* catch_info = unit.getCatchExpressionCatalogue().addCatchExpression(
+    int catch_idx = unit.getCatchExpressionCatalogue().addCatchExpression(
         node->loc,
         getExpressionContext(node),
         error_type,
@@ -375,13 +381,19 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     // Extraction Analysis
     if (error_type && error_type->kind == TYPE_ERROR_UNION) {
         Type* payload = error_type->as.error_union.payload;
-        unit.getExtractionAnalysisCatalogue().addExtractionSite(
+        int site_idx = unit.getExtractionAnalysisCatalogue().addExtractionSite(
             node->loc,
             payload,
             "catch",
-            NULL,
-            catch_info
+            -1,
+            catch_idx
         );
+
+        // Link strategy back to CatchExpressionCatalogue
+        ExtractionSiteInfo& site = unit.getExtractionAnalysisCatalogue().getSite(site_idx);
+        CatchExpressionInfo& catch_info = unit.getCatchExpressionCatalogue().getCatchExpression(catch_idx);
+        catch_info.extraction_strategy = site.strategy;
+        catch_info.stack_safe = site.msvc6_safe;
     }
 
     // Reject

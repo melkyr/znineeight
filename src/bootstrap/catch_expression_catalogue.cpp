@@ -7,7 +7,7 @@ CatchExpressionCatalogue::CatchExpressionCatalogue(ArenaAllocator& arena)
     catch_expressions_ = new (mem) DynamicArray<CatchExpressionInfo>(arena_);
 }
 
-CatchExpressionInfo* CatchExpressionCatalogue::addCatchExpression(SourceLocation loc, const char* context_type,
+int CatchExpressionCatalogue::addCatchExpression(SourceLocation loc, const char* context_type,
                                                Type* error_type, Type* handler_type, Type* result_type,
                                                const char* error_param_name, int chain_index, bool is_chained) {
     CatchExpressionInfo info;
@@ -23,7 +23,7 @@ CatchExpressionInfo* CatchExpressionCatalogue::addCatchExpression(SourceLocation
     info.stack_safe = true;
 
     catch_expressions_->append(info);
-    return &((*catch_expressions_)[catch_expressions_->length() - 1]);
+    return (int)(catch_expressions_->length() - 1);
 }
 
 int CatchExpressionCatalogue::count() const {

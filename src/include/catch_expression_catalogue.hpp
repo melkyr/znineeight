@@ -36,11 +36,16 @@ public:
 
     /**
      * @brief Adds a new 'catch' expression to the catalogue.
-     * @return A pointer to the newly added entry.
+     * @return The index of the newly added entry.
      */
-    CatchExpressionInfo* addCatchExpression(SourceLocation loc, const char* context_type,
-                                           Type* error_type, Type* handler_type, Type* result_type,
-                                           const char* error_param_name, int chain_index, bool is_chained);
+    int addCatchExpression(SourceLocation loc, const char* context_type,
+                          Type* error_type, Type* handler_type, Type* result_type,
+                          const char* error_param_name, int chain_index, bool is_chained);
+
+    /**
+     * @brief Returns a reference to a catalogued 'catch' expression by index.
+     */
+    CatchExpressionInfo& getCatchExpression(int index) { return (*catch_expressions_)[index]; }
 
     /**
      * @brief Returns the number of catalogued 'catch' expressions.
