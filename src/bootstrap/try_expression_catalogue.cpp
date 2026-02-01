@@ -12,7 +12,7 @@ TryExpressionCatalogue::TryExpressionCatalogue(ArenaAllocator& arena)
     new (try_expressions_) DynamicArray<TryExpressionInfo>(arena);
 }
 
-void TryExpressionCatalogue::addTryExpression(SourceLocation loc, const char* context_type,
+TryExpressionInfo* TryExpressionCatalogue::addTryExpression(SourceLocation loc, const char* context_type,
                                              Type* inner_type, Type* result_type, int depth) {
     TryExpressionInfo info;
     info.location = loc;
@@ -21,8 +21,11 @@ void TryExpressionCatalogue::addTryExpression(SourceLocation loc, const char* co
     info.result_type = result_type;
     info.is_nested = (depth > 0);
     info.depth = depth;
+    info.extraction_strategy = EXTRACTION_STACK; // Default
+    info.stack_safe = true; // Default
 
     try_expressions_->append(info);
+    return &((*try_expressions_)[try_expressions_->length() - 1]);
 }
 
 int TryExpressionCatalogue::count() const {
@@ -35,7 +38,7 @@ void TryExpressionCatalogue::printSummary() const {
     for (size_t i = 0; i < try_expressions_->length(); ++i) {
         const TryExpressionInfo& info = (*try_expressions_)[i];
         char msg[256];
-        char line[16], col[16], depth[16];
+        char line[16], col[16], depth[16], strategy[16];
         arena_simple_itoa(info.location.line, line, sizeof(line));
         arena_simple_itoa(info.location.column, col, sizeof(col));
         arena_simple_itoa(info.depth, depth, sizeof(depth));
@@ -51,7 +54,12 @@ void TryExpressionCatalogue::printSummary() const {
         safe_append(current, remaining, info.context_type);
         safe_append(current, remaining, " depth=");
         safe_append(current, remaining, depth);
-        safe_append(current, remaining, info.is_nested ? " nested=yes\n" : " nested=no\n");
+        safe_append(current, remaining, info.is_nested ? " nested=yes" : " nested=no");
+
+        arena_simple_itoa((size_t)info.extraction_strategy, strategy, sizeof(strategy));
+        safe_append(current, remaining, " strategy=");
+        safe_append(current, remaining, strategy);
+        safe_append(current, remaining, info.stack_safe ? " safe=yes\n" : " safe=no\n");
 
         OutputDebugStringA(buffer);
     }
@@ -68,9 +76,10 @@ void TryExpressionCatalogue::printSummary() const {
     printf("--- Try Expression Catalogue Summary ---\n");
     for (size_t i = 0; i < try_expressions_->length(); ++i) {
         const TryExpressionInfo& info = (*try_expressions_)[i];
-        printf("Try at %u:%u context=%s depth=%d nested=%s\n",
+        printf("Try at %u:%u context=%s depth=%d nested=%s strategy=%d safe=%s\n",
                info.location.line, info.location.column,
-               info.context_type, info.depth, info.is_nested ? "yes" : "no");
+               info.context_type, info.depth, info.is_nested ? "yes" : "no",
+               (int)info.extraction_strategy, info.stack_safe ? "yes" : "no");
     }
     printf("Total: %d\n", count());
 #endif

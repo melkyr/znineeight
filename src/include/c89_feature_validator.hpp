@@ -40,6 +40,7 @@ private:
     int catch_chain_index_;
     int catch_chain_total_;
     bool in_catch_chain_;
+    int current_nesting_depth_;
     ASTNode* current_parent_;
 
     /**
@@ -68,6 +69,7 @@ private:
     void visitImportStmt(ASTNode* node);
     void visitFunctionCall(ASTNode* node);
     void visitFnDecl(ASTNode* node);
+    void visitBlockStmt(ASTNode* node);
 
     const char* getExpressionContext(ASTNode* node);
 

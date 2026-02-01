@@ -7,6 +7,16 @@
 #include "type_system.hpp"
 
 /**
+ * @enum ExtractionStrategy
+ * @brief Strategy for extracting success values from error unions.
+ */
+enum ExtractionStrategy {
+    EXTRACTION_STACK,
+    EXTRACTION_ARENA,
+    EXTRACTION_OUT_PARAM
+};
+
+/**
  * @struct TryExpressionInfo
  * @brief Stores metadata about a detected 'try' expression for analysis and documentation.
  */
@@ -17,6 +27,10 @@ struct TryExpressionInfo {
     Type* result_type;              // Type after unwrapping (payload type)
     bool is_nested;                 // Is this try inside another try?
     int depth;                      // Nesting depth (0 = top-level)
+
+    // Extraction Analysis fields
+    ExtractionStrategy extraction_strategy;
+    bool stack_safe;
 };
 
 /**
@@ -29,9 +43,10 @@ public:
 
     /**
      * @brief Adds a new 'try' expression to the catalogue.
+     * @return A pointer to the newly added entry.
      */
-    void addTryExpression(SourceLocation loc, const char* context_type,
-                         Type* inner_type, Type* result_type, int depth);
+    TryExpressionInfo* addTryExpression(SourceLocation loc, const char* context_type,
+                                       Type* inner_type, Type* result_type, int depth);
 
     /**
      * @brief Returns the number of catalogued 'try' expressions.

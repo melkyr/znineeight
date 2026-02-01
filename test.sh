@@ -22,7 +22,8 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/error_function_catalogue.cpp \
     src/bootstrap/try_expression_catalogue.cpp \
     src/bootstrap/catch_expression_catalogue.cpp \
-    src/bootstrap/orelse_expression_catalogue.cpp"
+    src/bootstrap/orelse_expression_catalogue.cpp \
+    src/bootstrap/extraction_analysis_catalogue.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/c89_type_compat_tests.cpp \
@@ -155,7 +156,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_task_143.cpp \
     tests/test_catalogues_task_144.cpp \
     tests/test_task_144_detection.cpp \
-    tests/type_checker_inference_tests.cpp"
+    tests/type_checker_inference_tests.cpp \
+    tests/extraction_analysis_tests.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

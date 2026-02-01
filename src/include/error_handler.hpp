@@ -48,6 +48,33 @@ enum ErrorCode {
 };
 
 /**
+ * @enum WarningCode
+ * @brief Defines numeric codes for compiler warnings.
+ */
+enum WarningCode {
+    WARN_NULL_DEREFERENCE = 6000,
+    WARN_UNINITIALIZED_POINTER = 6001,
+    WARN_POTENTIAL_NULL_DEREFERENCE = 6002,
+    WARN_MEMORY_LEAK = 6005,
+    WARN_FREE_UNALLOCATED = 6006,
+    WARN_TRANSFERRED_MEMORY = 6007,
+
+    // Extraction Analysis Warnings (7000s)
+    WARN_EXTRACTION_LARGE_PAYLOAD = 7001,
+    WARN_EXTRACTION_DEEP_NESTING = 7002
+};
+
+/**
+ * @enum InfoCode
+ * @brief Defines numeric codes for informational messages.
+ */
+enum InfoCode {
+    // Extraction Analysis Info (8000s)
+    INFO_EXTRACTION_REPORT_HEADER = 8001,
+    INFO_EXTRACTION_STACK_USAGE = 8002
+};
+
+/**
  * @struct ErrorReport
  * @brief Represents a single diagnosed error in the source code.
  *
@@ -69,17 +96,18 @@ struct ErrorReport {
     const char* hint;
 };
 
-enum WarningCode {
-    WARN_NULL_DEREFERENCE = 6000,
-    WARN_UNINITIALIZED_POINTER = 6001,
-    WARN_POTENTIAL_NULL_DEREFERENCE = 6002,
-    WARN_MEMORY_LEAK = 6005,
-    WARN_FREE_UNALLOCATED = 6006,
-    WARN_TRANSFERRED_MEMORY = 6007
-};
-
 struct WarningReport {
     WarningCode code;
+    SourceLocation location;
+    const char* message;
+};
+
+/**
+ * @struct InfoReport
+ * @brief Represents an informational diagnostic.
+ */
+struct InfoReport {
+    InfoCode code;
     SourceLocation location;
     const char* message;
 };
@@ -106,7 +134,7 @@ public:
      * @param arena The arena allocator to use for the error list.
      */
     ErrorHandler(SourceManager& sm, ArenaAllocator& arena)
-        : source_manager(sm), arena_(arena), errors_(arena), warnings_(arena) {}
+        : source_manager(sm), arena_(arena), errors_(arena), warnings_(arena), infos_(arena) {}
 
     /**
      * @brief Reports a new error.
@@ -169,6 +197,38 @@ public:
      * @brief Prints all reported warnings to standard error.
      */
     void printWarnings();
+
+    /**
+     * @brief Reports a new informational message.
+     */
+    void reportInfo(InfoCode code, SourceLocation location, const char* message);
+
+    /**
+     * @brief Reports a new informational message with a message that will be copied into the arena.
+     */
+    void reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& arena);
+
+    /**
+     * @brief Checks if any informational messages have been reported.
+     */
+    bool hasInfos() const {
+        return infos_.length() > 0;
+    }
+
+    /**
+     * @brief Gets the list of reported informational messages.
+     */
+    const DynamicArray<InfoReport>& getInfos() const {
+        return infos_;
+    }
+
+    /**
+     * @brief Prints all reported informational messages to standard error.
+     */
+    void printInfos();
+
+private:
+    DynamicArray<InfoReport> infos_;
 };
 
 #endif // ERROR_HANDLER_HPP

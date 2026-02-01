@@ -626,6 +626,8 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 
 These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 
+To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T` and implicit (but unsafe) unwrapping of `!T` to `T` during Pass 0.
+
 ## 6. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.

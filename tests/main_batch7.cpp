@@ -19,7 +19,13 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_VarDecl_Inferred_Multiple,
         test_C89Rejection_NestedTryInMemberAccess,
         test_C89Rejection_NestedTryInStructInitializer,
-        test_C89Rejection_NestedTryInArrayAccess
+        test_C89Rejection_NestedTryInArrayAccess,
+        test_ExtractionAnalysis_StackStrategy,
+        test_ExtractionAnalysis_ArenaStrategy_LargePayload,
+        test_ExtractionAnalysis_ArenaStrategy_DeepNesting,
+        test_ExtractionAnalysis_OutParamStrategy,
+        test_ExtractionAnalysis_ArenaStrategy_Alignment,
+        test_ExtractionAnalysis_Linking
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

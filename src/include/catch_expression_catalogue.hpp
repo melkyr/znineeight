@@ -5,6 +5,7 @@
 #include "memory.hpp"
 #include "lexer.hpp" // For SourceLocation
 #include "type_system.hpp"
+#include "try_expression_catalogue.hpp" // For ExtractionStrategy
 
 /**
  * @struct CatchExpressionInfo
@@ -19,6 +20,10 @@ struct CatchExpressionInfo {
     bool is_chained;                 // Part of a catch chain (a catch b catch c)
     int chain_index;                 // Position in chain (0 = first)
     const char* error_param_name;    // |err| parameter name or NULL if none
+
+    // Extraction Analysis fields
+    ExtractionStrategy extraction_strategy;
+    bool stack_safe;
 };
 
 /**
@@ -31,10 +36,11 @@ public:
 
     /**
      * @brief Adds a new 'catch' expression to the catalogue.
+     * @return A pointer to the newly added entry.
      */
-    void addCatchExpression(SourceLocation loc, const char* context_type,
-                           Type* error_type, Type* handler_type, Type* result_type,
-                           const char* error_param_name, int chain_index, bool is_chained);
+    CatchExpressionInfo* addCatchExpression(SourceLocation loc, const char* context_type,
+                                           Type* error_type, Type* handler_type, Type* result_type,
+                                           const char* error_param_name, int chain_index, bool is_chained);
 
     /**
      * @brief Returns the number of catalogued 'catch' expressions.
