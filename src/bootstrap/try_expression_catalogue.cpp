@@ -12,7 +12,7 @@ TryExpressionCatalogue::TryExpressionCatalogue(ArenaAllocator& arena)
     new (try_expressions_) DynamicArray<TryExpressionInfo>(arena);
 }
 
-TryExpressionInfo* TryExpressionCatalogue::addTryExpression(SourceLocation loc, const char* context_type,
+int TryExpressionCatalogue::addTryExpression(SourceLocation loc, const char* context_type,
                                              Type* inner_type, Type* result_type, int depth) {
     TryExpressionInfo info;
     info.location = loc;
@@ -25,7 +25,7 @@ TryExpressionInfo* TryExpressionCatalogue::addTryExpression(SourceLocation loc, 
     info.stack_safe = true; // Default
 
     try_expressions_->append(info);
-    return &((*try_expressions_)[try_expressions_->length() - 1]);
+    return (int)(try_expressions_->length() - 1);
 }
 
 int TryExpressionCatalogue::count() const {

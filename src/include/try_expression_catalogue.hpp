@@ -43,10 +43,15 @@ public:
 
     /**
      * @brief Adds a new 'try' expression to the catalogue.
-     * @return A pointer to the newly added entry.
+     * @return The index of the newly added entry.
      */
-    TryExpressionInfo* addTryExpression(SourceLocation loc, const char* context_type,
-                                       Type* inner_type, Type* result_type, int depth);
+    int addTryExpression(SourceLocation loc, const char* context_type,
+                        Type* inner_type, Type* result_type, int depth);
+
+    /**
+     * @brief Returns a reference to a catalogued 'try' expression by index.
+     */
+    TryExpressionInfo& getTryExpression(int index) { return (*try_expressions_)[index]; }
 
     /**
      * @brief Returns the number of catalogued 'try' expressions.
