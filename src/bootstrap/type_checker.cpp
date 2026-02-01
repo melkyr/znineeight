@@ -1637,6 +1637,20 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return true;
     }
 
+    // Error Union compatibility (Zig-like for analysis purposes)
+    if (expected->kind == TYPE_ERROR_UNION) {
+        // T is compatible with !T (implicit wrap)
+        if (areTypesCompatible(expected->as.error_union.payload, actual)) {
+            return true;
+        }
+    }
+    if (actual->kind == TYPE_ERROR_UNION) {
+        // !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass)
+        if (areTypesCompatible(expected, actual->as.error_union.payload)) {
+            return true;
+        }
+    }
+
     // Pointer compatibility
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         // Must have the same base type
@@ -1867,6 +1881,13 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Exact match always works
     if (source_type == target_type) return true;
+
+    // Error Union assignment (Zig-like for analysis purposes)
+    if (target_type->kind == TYPE_ERROR_UNION) {
+        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
+            return true;
+        }
+    }
 
     // Enum to Integer conversion (C89 compatible)
     if (source_type->kind == TYPE_ENUM && isIntegerType(target_type)) {

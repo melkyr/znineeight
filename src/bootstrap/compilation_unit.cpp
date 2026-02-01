@@ -31,7 +31,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       error_function_catalogue_(arena),
       try_expression_catalogue_(arena),
       catch_expression_catalogue_(arena),
-      orelse_expression_catalogue_(arena) {
+      orelse_expression_catalogue_(arena),
+      extraction_analysis_catalogue_(arena) {
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -91,6 +92,10 @@ CatchExpressionCatalogue& CompilationUnit::getCatchExpressionCatalogue() {
 
 OrelseExpressionCatalogue& CompilationUnit::getOrelseExpressionCatalogue() {
     return orelse_expression_catalogue_;
+}
+
+ExtractionAnalysisCatalogue& CompilationUnit::getExtractionAnalysisCatalogue() {
+    return extraction_analysis_catalogue_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {

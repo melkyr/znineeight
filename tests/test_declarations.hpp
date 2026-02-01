@@ -521,4 +521,12 @@ TEST_FUNC(TypeChecker_VarDecl_Inferred_Crash);
 TEST_FUNC(TypeChecker_VarDecl_Inferred_Loop);
 TEST_FUNC(TypeChecker_VarDecl_Inferred_Multiple);
 
+// Forward declarations for Task 146 (Extraction Analysis)
+TEST_FUNC(ExtractionAnalysis_StackStrategy);
+TEST_FUNC(ExtractionAnalysis_ArenaStrategy_LargePayload);
+TEST_FUNC(ExtractionAnalysis_ArenaStrategy_DeepNesting);
+TEST_FUNC(ExtractionAnalysis_OutParamStrategy);
+TEST_FUNC(ExtractionAnalysis_ArenaStrategy_Alignment);
+TEST_FUNC(ExtractionAnalysis_Linking);
+
 #endif // TEST_DECLARATIONS_HPP

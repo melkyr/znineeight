@@ -14,6 +14,7 @@
 #include "try_expression_catalogue.hpp"
 #include "catch_expression_catalogue.hpp"
 #include "orelse_expression_catalogue.hpp"
+#include "extraction_analysis_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -51,6 +52,7 @@ public:
     TryExpressionCatalogue& getTryExpressionCatalogue();
     CatchExpressionCatalogue& getCatchExpressionCatalogue();
     OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
+    ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -75,6 +77,7 @@ private:
     TryExpressionCatalogue try_expression_catalogue_;
     CatchExpressionCatalogue catch_expression_catalogue_;
     OrelseExpressionCatalogue orelse_expression_catalogue_;
+    ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     CompilationOptions options_;
 };
 

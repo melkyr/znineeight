@@ -193,6 +193,41 @@ void ErrorHandler::printErrors() {
 #endif
 }
 
+void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message) {
+    InfoReport new_info;
+    new_info.code = code;
+    new_info.location = location;
+    new_info.message = message;
+    infos_.append(new_info);
+}
+
+void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
+    size_t msg_len = strlen(message);
+    char* msg_copy = (char*)arena.alloc(msg_len + 1);
+    strcpy(msg_copy, message);
+    msg_copy[msg_len] = '\0';
+
+    reportInfo(code, location, msg_copy);
+}
+
+void ErrorHandler::printInfos() {
+#ifdef _WIN32
+    // TODO: Implement for Windows
+#else
+    for (size_t i = 0; i < infos_.length(); ++i) {
+        const InfoReport& report = infos_[i];
+
+        if (report.location.file_id != 0) {
+            const SourceFile* file = source_manager.getFile(report.location.file_id);
+            fprintf(stderr, "%s:%u:%u: info: %s\n",
+                    file->filename, report.location.line, report.location.column, report.message);
+        } else {
+            fprintf(stderr, "info: %s\n", report.message);
+        }
+    }
+#endif
+}
+
 void ErrorHandler::printWarnings() {
 #ifdef _WIN32
     // TODO: Implement for Windows

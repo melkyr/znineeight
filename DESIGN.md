@@ -147,6 +147,7 @@ Modern Zig error handling features are detected and catalogued for documentation
 - **Try Expressions**: Catalogued in `TryExpressionCatalogue` during validation, including usage context (e.g., assignment, return) and nesting depth.
 - **Catch Expressions**: Catalogued in `CatchExpressionCatalogue` during validation, including chaining information and error capture.
 - **Orelse Expressions**: Catalogued in `OrelseExpressionCatalogue` during validation.
+- **Success Value Extraction**: Analyzed and catalogued in `ExtractionAnalysisCatalogue` during validation. Decisions are made between `EXTRACTION_STACK`, `EXTRACTION_ARENA`, and `EXTRACTION_OUT_PARAM` based on MSVC 6.0 constraints (alignment, stack limits, and nesting depth).
 
 For details on how these features will be mapped to C89 in Milestone 5, see [Error Code Mapping Strategy](Error_code_mapping_strategy.md).
 

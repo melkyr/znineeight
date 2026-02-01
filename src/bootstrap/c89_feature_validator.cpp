@@ -9,10 +9,16 @@
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
     : unit(unit), error_found_(false), try_expression_depth_(0),
       catch_chain_index_(0), catch_chain_total_(0), in_catch_chain_(false),
-      current_parent_(NULL) {}
+      current_nesting_depth_(0), current_parent_(NULL) {}
 
 void C89FeatureValidator::validate(ASTNode* node) {
     visit(node);
+
+    // Generate extraction analysis report even if error found,
+    // as it's useful for Milestone 5 planning.
+    unit.getExtractionAnalysisCatalogue().generateReport(&unit);
+    unit.getErrorHandler().printInfos();
+
     if (error_found_) {
         unit.getErrorHandler().printErrors();
         abort();
@@ -97,11 +103,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_BLOCK_STMT:
-            current_parent_ = node;
-            for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-                visit((*node->as.block_stmt.statements)[i]);
-            }
-            current_parent_ = prev_parent;
+            visitBlockStmt(node);
             break;
         case NODE_IF_STMT:
             current_parent_ = node;
@@ -288,13 +290,31 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
     }
 
     // Catalogue before rejecting
-    unit.getTryExpressionCatalogue().addTryExpression(
+    int try_idx = unit.getTryExpressionCatalogue().addTryExpression(
         node->loc,
         context,
         inner_type,
         result_type,
         try_expression_depth_
     );
+
+    // Extraction Analysis if it's an error union
+    if (inner_type && inner_type->kind == TYPE_ERROR_UNION) {
+        Type* payload = inner_type->as.error_union.payload;
+        int site_idx = unit.getExtractionAnalysisCatalogue().addExtractionSite(
+            node->loc,
+            payload,
+            "try",
+            try_idx,
+            -1
+        );
+
+        // Link strategy back to TryExpressionCatalogue
+        ExtractionSiteInfo& site = unit.getExtractionAnalysisCatalogue().getSite(site_idx);
+        TryExpressionInfo& try_info = unit.getTryExpressionCatalogue().getTryExpression(try_idx);
+        try_info.extraction_strategy = site.strategy;
+        try_info.stack_safe = site.msvc6_safe;
+    }
 
     // Reject
     char msg[256];
@@ -347,7 +367,7 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     Type* handler_type = (else_expr ? else_expr->resolved_type : NULL);
     Type* result_type = node->resolved_type;
 
-    unit.getCatchExpressionCatalogue().addCatchExpression(
+    int catch_idx = unit.getCatchExpressionCatalogue().addCatchExpression(
         node->loc,
         getExpressionContext(node),
         error_type,
@@ -357,6 +377,24 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
         my_index,
         is_chained
     );
+
+    // Extraction Analysis
+    if (error_type && error_type->kind == TYPE_ERROR_UNION) {
+        Type* payload = error_type->as.error_union.payload;
+        int site_idx = unit.getExtractionAnalysisCatalogue().addExtractionSite(
+            node->loc,
+            payload,
+            "catch",
+            -1,
+            catch_idx
+        );
+
+        // Link strategy back to CatchExpressionCatalogue
+        ExtractionSiteInfo& site = unit.getExtractionAnalysisCatalogue().getSite(site_idx);
+        CatchExpressionInfo& catch_info = unit.getCatchExpressionCatalogue().getCatchExpression(catch_idx);
+        catch_info.extraction_strategy = site.strategy;
+        catch_info.stack_safe = site.msvc6_safe;
+    }
 
     // Reject
     reportNonC89Feature(node->loc, "'catch' expressions are not supported for C89 compatibility.");
@@ -465,6 +503,10 @@ const char* C89FeatureValidator::getExpressionContext(ASTNode* node) {
 
 void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     ASTFnDeclNode* fn = node->as.fn_decl;
+
+    // Nesting tracking
+    unit.getExtractionAnalysisCatalogue().enterFunction(fn->name);
+
     // Resolve return type from symbol table (populated by TypeChecker)
     Symbol* symbol = unit.getSymbolTable().lookup(fn->name);
     Type* return_type = NULL;
@@ -512,4 +554,19 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     }
     visit(fn->body);
     current_parent_ = prev_parent;
+
+    unit.getExtractionAnalysisCatalogue().exitFunction();
+}
+
+void C89FeatureValidator::visitBlockStmt(ASTNode* node) {
+    unit.getExtractionAnalysisCatalogue().enterBlock();
+
+    ASTNode* prev_parent = current_parent_;
+    current_parent_ = node;
+    for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+        visit((*node->as.block_stmt.statements)[i]);
+    }
+    current_parent_ = prev_parent;
+
+    unit.getExtractionAnalysisCatalogue().exitBlock();
 }
