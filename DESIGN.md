@@ -126,8 +126,8 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the Initial AST.
-    2.  **Pass 0: C89 Feature Validation (Fail-Fast):** Rejects non-C89 features early.
-    3.  **Pass 1: Type Checking:** Resolves types and populates the `SymbolTable`.
+    2.  **Pass 0: Type Checking:** Resolves all types, including non-C89 types like error unions, to enable accurate semantic analysis.
+    3.  **Pass 1: C89 Feature Validation:** Rejects non-C89 features using resolved semantic information.
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.

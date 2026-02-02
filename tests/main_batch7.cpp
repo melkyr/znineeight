@@ -32,7 +32,12 @@ int main(int argc, char* argv[]) {
         test_Task148_PatternGeneration_OutParameter,
         test_Task148_PatternGeneration_Arena,
         test_Task149_ErrorHandlingFeaturesCatalogued,
-        test_Task150_ErrorTypeEliminatedFromFinalTypeSystem
+        test_Task150_ErrorTypeEliminatedFromFinalTypeSystem,
+        test_C89Rejection_GenericFnDecl_ShouldBeRejected,
+        test_C89Rejection_DeferAndErrDefer,
+        test_C89Rejection_ErrorTypeInParam_ShouldBeRejected,
+        test_Task150_MoreComprehensiveElimination,
+        test_C89Rejection_ArraySliceExpression
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

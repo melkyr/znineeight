@@ -777,9 +777,9 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
-    // Slice expressions are not supported in C89. This is a fatal error.
-    fatalError(node->array->loc, "Slice expressions (e.g., array[start..end]) are not supported in C89 mode.");
-    return NULL; // Unreachable, but good practice.
+    // Slice expressions are not supported in C89.
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Slice expressions (e.g., array[start..end]) are not supported in C89 mode.", unit.getArena());
+    return NULL;
 }
 
 Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
@@ -1420,13 +1420,13 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     // 1. Reject slices
     if (!node->size) {
-        fatalError(node->element_type->loc, "Slices are not supported in C89 mode");
-        return NULL; // fatalError aborts, but return for clarity
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->element_type->loc, "Slices are not supported in C89 mode", unit.getArena());
+        return NULL;
     }
 
     // 2. Ensure size is a constant integer literal
     if (node->size->type != NODE_INTEGER_LITERAL) {
-        fatalError(node->size->loc, "Array size must be a constant integer literal");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->size->loc, "Array size must be a constant integer literal", unit.getArena());
         return NULL;
     }
 
