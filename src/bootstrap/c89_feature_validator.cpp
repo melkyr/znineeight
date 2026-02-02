@@ -161,6 +161,19 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_VAR_DECL:
             current_parent_ = node;
+            if (node->resolved_type && isErrorType(node->resolved_type)) {
+                char type_str[128];
+                typeToString(node->resolved_type, type_str, sizeof(type_str));
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "Variable '");
+                safe_append(current, remaining, node->as.var_decl->name);
+                safe_append(current, remaining, "' has error type '");
+                safe_append(current, remaining, type_str);
+                safe_append(current, remaining, "' which is not supported in C89 mode");
+                reportNonC89Feature(node->loc, msg_buffer, true);
+            }
             visit(node->as.var_decl->type);
             if (node->as.var_decl->initializer) {
                 visit(node->as.var_decl->initializer);
@@ -208,6 +221,19 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_STRUCT_FIELD:
             current_parent_ = node;
+            if (node->resolved_type && isErrorType(node->resolved_type)) {
+                char type_str[128];
+                typeToString(node->resolved_type, type_str, sizeof(type_str));
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "Struct field '");
+                safe_append(current, remaining, node->as.struct_field->name);
+                safe_append(current, remaining, "' has error type '");
+                safe_append(current, remaining, type_str);
+                safe_append(current, remaining, "' which is not supported in C89 mode");
+                reportNonC89Feature(node->loc, msg_buffer, true);
+            }
             visit(node->as.struct_field->type);
             current_parent_ = prev_parent;
             break;
@@ -246,9 +272,32 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.comptime_block.expression);
             current_parent_ = prev_parent;
             break;
+        case NODE_ASYNC_EXPR:
+            reportNonC89Feature(node->loc, "Async expressions are not supported in C89 mode");
+            current_parent_ = node;
+            visit(node->as.async_expr.expression);
+            current_parent_ = prev_parent;
+            break;
+        case NODE_AWAIT_EXPR:
+            reportNonC89Feature(node->loc, "Await expressions are not supported in C89 mode");
+            current_parent_ = node;
+            visit(node->as.await_expr.expression);
+            current_parent_ = prev_parent;
+            break;
         case NODE_TYPE_NAME:
             if (strcmp(node->as.type_name.name, "anyerror") == 0) {
                 reportNonC89Feature(node->loc, "anyerror type is not supported in C89 mode");
+            }
+            if (node->resolved_type && isErrorType(node->resolved_type)) {
+                char type_str[128];
+                typeToString(node->resolved_type, type_str, sizeof(type_str));
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "Error type '");
+                safe_append(current, remaining, type_str);
+                safe_append(current, remaining, "' is not supported in C89 mode");
+                reportNonC89Feature(node->loc, msg_buffer, true);
             }
             break;
         default:
