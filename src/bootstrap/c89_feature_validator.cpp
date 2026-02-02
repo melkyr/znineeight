@@ -304,6 +304,33 @@ void C89FeatureValidator::visit(ASTNode* node) {
             // No action needed for literals, identifiers, etc.
             break;
     }
+
+    // General safety check: if we somehow missed an error type in the specific nodes,
+    // catch it here, unless it's a node that is DESIGNED to handle error types
+    // (and thus already rejected/catalogued with a better message).
+    if (node->resolved_type && isErrorType(node->resolved_type)) {
+        if (node->type != NODE_TRY_EXPR &&
+            node->type != NODE_CATCH_EXPR &&
+            node->type != NODE_ORELSE_EXPR &&
+            node->type != NODE_ERROR_UNION_TYPE &&
+            node->type != NODE_ERROR_SET_DEFINITION &&
+            node->type != NODE_ERROR_SET_MERGE &&
+            node->type != NODE_VAR_DECL &&
+            node->type != NODE_STRUCT_FIELD &&
+            node->type != NODE_TYPE_NAME &&
+            node->type != NODE_FN_DECL)
+        {
+            char type_str[128];
+            typeToString(node->resolved_type, type_str, sizeof(type_str));
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "Unsupported use of error type '");
+            safe_append(current, remaining, type_str);
+            safe_append(current, remaining, "' in this context");
+            reportNonC89Feature(node->loc, msg_buffer, true);
+        }
+    }
 }
 
 void C89FeatureValidator::visitArrayType(ASTNode* node) {
