@@ -543,5 +543,10 @@ TEST_FUNC(Task149_ErrorHandlingFeaturesCatalogued);
 
 // Forward declarations for Task 150
 TEST_FUNC(Task150_ErrorTypeEliminatedFromFinalTypeSystem);
+TEST_FUNC(C89Rejection_GenericFnDecl_ShouldBeRejected);
+TEST_FUNC(C89Rejection_DeferAndErrDefer);
+TEST_FUNC(C89Rejection_ErrorTypeInParam_ShouldBeRejected);
+TEST_FUNC(Task150_MoreComprehensiveElimination);
+TEST_FUNC(C89Rejection_ArraySliceExpression);
 
 #endif // TEST_DECLARATIONS_HPP

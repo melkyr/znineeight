@@ -117,6 +117,19 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.while_stmt.body);
             current_parent_ = prev_parent;
             break;
+        case NODE_DEFER_STMT:
+            current_parent_ = node;
+            visit(node->as.defer_stmt.statement);
+            current_parent_ = prev_parent;
+            break;
+        case NODE_PARAM_DECL:
+            current_parent_ = node;
+            if (node->as.param_decl.is_comptime) {
+                reportNonC89Feature(node->loc, "comptime parameters are not supported in C89 mode");
+            }
+            visit(node->as.param_decl.type);
+            current_parent_ = prev_parent;
+            break;
         case NODE_MEMBER_ACCESS:
             current_parent_ = node;
             visit(node->as.member_access->base);
@@ -139,6 +152,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_SLICE:
+            reportNonC89Feature(node->loc, "Array slices are not supported in C89 mode");
             current_parent_ = node;
             visit(node->as.array_slice->array);
             if (node->as.array_slice->start) visit(node->as.array_slice->start);
@@ -596,6 +610,10 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
 
     bool is_generic = hasComptimeParams(fn);
     bool returns_error = isErrorType(return_type);
+
+    if (is_generic) {
+        reportNonC89Feature(node->loc, "Generic functions (with comptime parameters) are not supported in C89 mode.");
+    }
 
     // Catalogue BEFORE rejection
     if (returns_error) {

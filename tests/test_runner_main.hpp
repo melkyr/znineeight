@@ -47,6 +47,7 @@ inline int run_batch(int argc, char* argv[], bool (*tests[])(), int num_tests) {
 
     int passed = 0;
     for (int i = 0; i < num_tests; ++i) {
+        printf("Running test %d...\n", i); fflush(stdout);
         if (tests[i]()) {
             passed++;
         }

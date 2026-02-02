@@ -107,6 +107,7 @@ void run_type_checker_test_in_child(const char* source) {
 
     if (comp_unit.getErrorHandler().hasErrors()) {
         fprintf(stderr, "Child process: errors found, aborting...\n");
+        comp_unit.getErrorHandler().printErrors();
         abort();
     }
 }
