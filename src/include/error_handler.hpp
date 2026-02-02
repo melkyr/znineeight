@@ -71,7 +71,10 @@ enum WarningCode {
 enum InfoCode {
     // Extraction Analysis Info (8000s)
     INFO_EXTRACTION_REPORT_HEADER = 8001,
-    INFO_EXTRACTION_STACK_USAGE = 8002
+    INFO_EXTRACTION_STACK_USAGE = 8002,
+
+    // Error Handling Validation Info (9000s)
+    INFO_ERROR_HANDLING_VALIDATION = 9001
 };
 
 /**

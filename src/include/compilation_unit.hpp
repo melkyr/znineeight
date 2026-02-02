@@ -15,6 +15,7 @@
 #include "catch_expression_catalogue.hpp"
 #include "orelse_expression_catalogue.hpp"
 #include "extraction_analysis_catalogue.hpp"
+#include "errdefer_catalogue.hpp"
 
 /**
  * @struct CompilationOptions
@@ -54,6 +55,7 @@ public:
     CatchExpressionCatalogue& getCatchExpressionCatalogue();
     OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
     ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
+    ErrDeferCatalogue& getErrDeferCatalogue();
     ArenaAllocator& getArena();
 
     CompilationOptions& getOptions();
@@ -82,6 +84,11 @@ public:
     const char* getGeneratedPattern(int index) const;
 
     /**
+     * @brief Performs validation of error handling patterns and reports summary info.
+     */
+    void validateErrorHandlingRules();
+
+    /**
      * @brief Sets whether the unit is in test mode (enabling pattern generation).
      */
     void setTestMode(bool test_mode);
@@ -100,6 +107,7 @@ private:
     CatchExpressionCatalogue catch_expression_catalogue_;
     OrelseExpressionCatalogue orelse_expression_catalogue_;
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
+    ErrDeferCatalogue errdefer_catalogue_;
     CompilationOptions options_;
 
     C89PatternGenerator* pattern_generator_;

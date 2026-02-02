@@ -30,7 +30,8 @@ int main(int argc, char* argv[]) {
         test_Task147_AnyErrorRejection,
         test_Task148_PatternGeneration_StructReturn,
         test_Task148_PatternGeneration_OutParameter,
-        test_Task148_PatternGeneration_Arena
+        test_Task148_PatternGeneration_Arena,
+        test_Task149_ErrorHandlingFeaturesCatalogued
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

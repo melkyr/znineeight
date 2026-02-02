@@ -2,6 +2,7 @@
 #include "parser.hpp" // For Parser class definition
 #include "type_system.hpp"
 #include "c89_pattern_generator.hpp"
+#include "utils.hpp"
 #include <cstring>   // For strlen
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
@@ -34,6 +35,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       catch_expression_catalogue_(arena),
       orelse_expression_catalogue_(arena),
       extraction_analysis_catalogue_(arena),
+      errdefer_catalogue_(arena),
       is_test_mode_(false) {
 
     void* gen_mem = arena_.alloc(sizeof(C89PatternGenerator));
@@ -104,6 +106,10 @@ OrelseExpressionCatalogue& CompilationUnit::getOrelseExpressionCatalogue() {
 
 ExtractionAnalysisCatalogue& CompilationUnit::getExtractionAnalysisCatalogue() {
     return extraction_analysis_catalogue_;
+}
+
+ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
+    return errdefer_catalogue_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {
@@ -187,6 +193,33 @@ int CompilationUnit::getGeneratedPatternCount() const {
 const char* CompilationUnit::getGeneratedPattern(int index) const {
     if (index < 0 || (size_t)index >= test_patterns_->length()) return NULL;
     return (*test_patterns_)[index];
+}
+
+void CompilationUnit::validateErrorHandlingRules() {
+    char buffer[512];
+    char* cur = buffer;
+    size_t rem = sizeof(buffer);
+
+    safe_append(cur, rem, "Found ");
+    char num_buf[21];
+
+    simple_itoa(try_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
+    safe_append(cur, rem, " try expressions, ");
+
+    simple_itoa(catch_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
+    safe_append(cur, rem, " catch expressions, ");
+
+    simple_itoa(orelse_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
+    safe_append(cur, rem, " orelse expressions, ");
+
+    simple_itoa(errdefer_catalogue_.count(), num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
+    safe_append(cur, rem, " errdefer statements");
+
+    error_handler_.reportInfo(INFO_ERROR_HANDLING_VALIDATION, SourceLocation(), buffer, arena_);
 }
 
 void CompilationUnit::setTestMode(bool test_mode) {

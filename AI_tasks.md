@@ -675,7 +675,7 @@ Output: Runtime assertions in codegen module
     Validation: Test generated patterns compile in C89
     Success criteria: All error-returning functions generate valid C89 code
 
-149. **Task 149:** ERROR HANDLING VALIDATION RULES (MEDIUM)
+149. **Task 149:** ERROR HANDLING VALIDATION RULES (DONE)
 
     What to implement: Rules to validate error handling patterns
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -683,7 +683,7 @@ Output: Runtime assertions in codegen module
         Missing error checks in translated code
         Invalid error handling combinations
     Validation: Apply rules to sample error-handling code
-    Success criteria: All error handling follows consistent C89 patterns
+    Success criteria: All error handling follows consistent C89 patterns. Documented in `error_handling_validation_rules.md`.
 
 150. **Task 150:** ERROR TYPE ELIMINATION IMPLEMENTATION (HIGH)
 
