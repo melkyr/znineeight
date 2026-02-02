@@ -36,41 +36,14 @@ static char* readEntireFile(const char* path) {
  * @brief Executes the full compilation pipeline for a single file.
  */
 static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
-    Parser* parser = unit.createParser(file_id);
-    ASTNode* ast = parser->parse();
-    if (!ast) {
+    if (!unit.performFullPipeline(file_id)) {
         return false;
     }
 
-    // Pass 0: Type Checking (resolves !T -> TYPE_ERROR_UNION)
-    TypeChecker checker(unit);
-    checker.check(ast);
-
-    // Pass 1: C89 feature validation (detects error returns via resolved types)
-    C89FeatureValidator validator(unit);
-    validator.validate(ast);
-
-    const CompilationOptions& opts = unit.getOptions();
-
-    // Pass 2: Lifetime Analysis
-    if (opts.enable_lifetime_analysis) {
-        LifetimeAnalyzer analyzer(unit);
-        analyzer.analyze(ast);
-    }
-
-    // Pass 3: Null Pointer Analysis
-    if (opts.enable_null_pointer_analysis) {
-        NullPointerAnalyzer analyzer(unit);
-        analyzer.analyze(ast);
-    }
-
-    // Pass 4: Double Free Detection
-    if (opts.enable_double_free_analysis) {
-        DoubleFreeAnalyzer analyzer(unit);
-        analyzer.analyze(ast);
-    }
-
     if (unit.getErrorHandler().hasErrors()) {
+        // Errors already printed by performFullPipeline calls if they were fatal,
+        // but performFullPipeline itself might have returned true after collecting errors.
+        // Actually CompilationUnit::performFullPipeline doesn't print errors, it just runs passes.
         unit.getErrorHandler().printErrors();
         return false;
     }

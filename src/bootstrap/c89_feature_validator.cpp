@@ -11,7 +11,7 @@ C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
       catch_chain_index_(0), catch_chain_total_(0), in_catch_chain_(false),
       current_nesting_depth_(0), current_parent_(NULL) {}
 
-void C89FeatureValidator::validate(ASTNode* node) {
+bool C89FeatureValidator::validate(ASTNode* node) {
     visit(node);
 
     // Generate extraction analysis report even if error found,
@@ -19,10 +19,7 @@ void C89FeatureValidator::validate(ASTNode* node) {
     unit.getExtractionAnalysisCatalogue().generateReport(&unit);
     unit.getErrorHandler().printInfos();
 
-    if (error_found_) {
-        unit.getErrorHandler().printErrors();
-        abort();
-    }
+    return !error_found_;
 }
 
 void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message, bool copy_message) {

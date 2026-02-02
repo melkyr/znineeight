@@ -31,7 +31,8 @@ int main(int argc, char* argv[]) {
         test_Task148_PatternGeneration_StructReturn,
         test_Task148_PatternGeneration_OutParameter,
         test_Task148_PatternGeneration_Arena,
-        test_Task149_ErrorHandlingFeaturesCatalogued
+        test_Task149_ErrorHandlingFeaturesCatalogued,
+        test_Task150_ErrorTypeEliminatedFromFinalTypeSystem
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

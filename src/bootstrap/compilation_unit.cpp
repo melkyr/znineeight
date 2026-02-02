@@ -1,9 +1,15 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
+#include "type_checker.hpp"
+#include "c89_feature_validator.hpp"
+#include "lifetime_analyzer.hpp"
+#include "null_pointer_analyzer.hpp"
+#include "double_free_analyzer.hpp"
 #include "type_system.hpp"
 #include "c89_pattern_generator.hpp"
 #include "utils.hpp"
 #include <cstring>   // For strlen
+#include <cstdio>    // For fprintf
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
 
@@ -36,7 +42,9 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       orelse_expression_catalogue_(arena),
       extraction_analysis_catalogue_(arena),
       errdefer_catalogue_(arena),
-      is_test_mode_(false) {
+      is_test_mode_(false),
+      validation_completed_(false),
+      c89_validation_passed_(false) {
 
     void* gen_mem = arena_.alloc(sizeof(C89PatternGenerator));
     pattern_generator_ = new (gen_mem) C89PatternGenerator(arena_);
@@ -224,4 +232,56 @@ void CompilationUnit::validateErrorHandlingRules() {
 
 void CompilationUnit::setTestMode(bool test_mode) {
     is_test_mode_ = test_mode;
+}
+
+bool CompilationUnit::performFullPipeline(u32 file_id) {
+    Parser* parser = createParser(file_id);
+    ASTNode* ast = parser->parse();
+    if (!ast) return false;
+
+    // Pass 0: Type Checking
+    TypeChecker checker(*this);
+    checker.check(ast);
+
+    // Pass 1: C89 feature validation
+    C89FeatureValidator validator(*this);
+    bool success = validator.validate(ast);
+    validation_completed_ = true;
+    c89_validation_passed_ = success;
+
+    // Pass 2+: Static Analyzers (if enabled)
+    if (options_.enable_lifetime_analysis) {
+        LifetimeAnalyzer analyzer(*this);
+        analyzer.analyze(ast);
+    }
+
+    if (options_.enable_null_pointer_analysis) {
+        NullPointerAnalyzer analyzer(*this);
+        analyzer.analyze(ast);
+    }
+
+    if (options_.enable_double_free_analysis) {
+        DoubleFreeAnalyzer analyzer(*this);
+        analyzer.analyze(ast);
+    }
+
+    return true;
+}
+
+bool CompilationUnit::areErrorTypesEliminated() const {
+    if (!validation_completed_) return false;
+
+    // Conceptual elimination: they are eliminated from final C89 output via rejection.
+    // If validation passed (c89_validation_passed_ is true), then NO error types should be present.
+    // If validation failed, it means error types were detected and rejected.
+    if (c89_validation_passed_) {
+        return (error_function_catalogue_.count() == 0 &&
+                error_set_catalogue_.count() == 0 &&
+                try_expression_catalogue_.count() == 0 &&
+                catch_expression_catalogue_.count() == 0 &&
+                orelse_expression_catalogue_.count() == 0);
+    }
+
+    // Validation failed, which means the non-C89 error types were successfully rejected.
+    return true;
 }

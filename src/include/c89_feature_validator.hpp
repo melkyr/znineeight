@@ -23,8 +23,9 @@ public:
     /**
      * @brief Traverses the given ASTNode and all its children, checking for non-C89 features.
      * @param node The root node of the AST to validate.
+     * @return True if no non-C89 features were found, false otherwise.
      */
-    void validate(ASTNode* node);
+    bool validate(ASTNode* node);
 
 public:
     /**
