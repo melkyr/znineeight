@@ -525,12 +525,19 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
 
     // Catalogue BEFORE rejection
     if (returns_error) {
+        Type* payload = (return_type->kind == TYPE_ERROR_UNION) ? return_type->as.error_union.payload : NULL;
+        size_t size = payload ? payload->size : 0;
+        bool safe = payload ? unit.getExtractionAnalysisCatalogue().isStackSafe(payload) : true;
+
         unit.getErrorFunctionCatalogue().addErrorFunction(
             fn->name,
             return_type,
+            payload,
             node->loc,
             is_generic,
-            (int)fn->params->length()
+            (int)fn->params->length(),
+            size,
+            safe
         );
     }
 
