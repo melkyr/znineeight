@@ -630,6 +630,20 @@ For detailed validation rules that will be enforced in Milestone 5 (when rejecti
 
 To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T` and implicit (but unsafe) unwrapping of `!T` to `T` during Pass 0.
 
+### Error Type Elimination (Task 150)
+
+Zig error types (`!T`, `error{A,B}`) are not compatible with C89. The bootstrap compiler eliminates them through a deliberate rejection process in the semantic pipeline.
+
+#### Process
+1.  **Parse**: Error types are recognized and parsed into internal AST nodes and `Type` objects (`TYPE_ERROR_UNION`, `TYPE_ERROR_SET`).
+2.  **Type Check (Pass 0)**: Error types are resolved and their semantics (like implicit wrapping) are validated to enable accurate analysis.
+3.  **Catalogue**: Metadata about error handling features is recorded in specialized catalogues (e.g., `ErrorFunctionCatalogue`) for documentation and future mapping.
+4.  **Reject (Pass 1)**: The `C89FeatureValidator` traverses the AST and issues fatal errors for all modern error-related constructs.
+5.  **Eliminate**: Because rejection occurs early, no error types proceed to the code generation phase. They are conceptually "eliminated" from the final C89 output.
+
+#### Verification
+The `CompilationUnit` provides an `areErrorTypesEliminated()` method which returns true if the validation pass has successfully completed and rejected all non-C89 error features. This ensures a clean hand-off to Milestone 5 translation.
+
 ## 6. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.

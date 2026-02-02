@@ -104,6 +104,11 @@ void run_type_checker_test_in_child(const char* source) {
 
     LifetimeAnalyzer la(comp_unit);
     la.analyze(root);
+
+    if (comp_unit.getErrorHandler().hasErrors()) {
+        fprintf(stderr, "Child process: errors found, aborting...\n");
+        abort();
+    }
 }
 
 

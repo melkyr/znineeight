@@ -541,4 +541,7 @@ TEST_FUNC(Task148_PatternGeneration_Arena);
 // Forward declarations for Task 149
 TEST_FUNC(Task149_ErrorHandlingFeaturesCatalogued);
 
+// Forward declarations for Task 150
+TEST_FUNC(Task150_ErrorTypeEliminatedFromFinalTypeSystem);
+
 #endif // TEST_DECLARATIONS_HPP

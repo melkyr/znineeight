@@ -84,6 +84,19 @@ public:
     const char* getGeneratedPattern(int index) const;
 
     /**
+     * @brief Executes the full compilation pipeline for a single file.
+     * @param file_id The ID of the source file to compile.
+     * @return True if the pipeline finished successfully (though it may have found errors).
+     */
+    bool performFullPipeline(u32 file_id);
+
+    /**
+     * @brief Checks if error types have been effectively eliminated from the final output
+     *        (by ensuring they were all rejected by the validator).
+     */
+    bool areErrorTypesEliminated() const;
+
+    /**
      * @brief Performs validation of error handling patterns and reports summary info.
      */
     void validateErrorHandlingRules();
@@ -113,6 +126,8 @@ private:
     C89PatternGenerator* pattern_generator_;
     DynamicArray<const char*>* test_patterns_;
     bool is_test_mode_;
+    bool validation_completed_;
+    bool c89_validation_passed_;
 };
 
 #endif // COMPILATION_UNIT_HPP
