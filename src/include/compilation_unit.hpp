@@ -31,8 +31,9 @@ struct CompilationOptions {
           enable_lifetime_analysis(false) {}
 };
 
-// Forward-declare Parser to avoid including parser.hpp in this header.
+// Forward-declare to avoid circular dependencies.
 class Parser;
+class C89PatternGenerator;
 
 class CompilationUnit {
 public:
@@ -64,6 +65,27 @@ public:
      */
     void injectRuntimeSymbols();
 
+    /**
+     * @brief Generates C89 return patterns for all error-returning functions in the catalogue.
+     *        Only used for Task 148 validation.
+     */
+    void testErrorPatternGeneration();
+
+    /**
+     * @brief Returns the number of generated test patterns.
+     */
+    int getGeneratedPatternCount() const;
+
+    /**
+     * @brief Returns a specific generated test pattern by index.
+     */
+    const char* getGeneratedPattern(int index) const;
+
+    /**
+     * @brief Sets whether the unit is in test mode (enabling pattern generation).
+     */
+    void setTestMode(bool test_mode);
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
@@ -79,6 +101,10 @@ private:
     OrelseExpressionCatalogue orelse_expression_catalogue_;
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     CompilationOptions options_;
+
+    C89PatternGenerator* pattern_generator_;
+    DynamicArray<const char*>* test_patterns_;
+    bool is_test_mode_;
 };
 
 #endif // COMPILATION_UNIT_HPP

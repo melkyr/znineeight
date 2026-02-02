@@ -1,6 +1,7 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
 #include "type_system.hpp"
+#include "c89_pattern_generator.hpp"
 #include <cstring>   // For strlen
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
@@ -32,7 +33,14 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       try_expression_catalogue_(arena),
       catch_expression_catalogue_(arena),
       orelse_expression_catalogue_(arena),
-      extraction_analysis_catalogue_(arena) {
+      extraction_analysis_catalogue_(arena),
+      is_test_mode_(false) {
+
+    void* gen_mem = arena_.alloc(sizeof(C89PatternGenerator));
+    pattern_generator_ = new (gen_mem) C89PatternGenerator(arena_);
+
+    void* patterns_mem = arena_.alloc(sizeof(DynamicArray<const char*>));
+    test_patterns_ = new (patterns_mem) DynamicArray<const char*>(arena_);
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -160,4 +168,27 @@ void CompilationUnit::injectRuntimeSymbols() {
         .withType(fn_type2)
         .build();
     symbol_table_.insert(sym_free);
+}
+
+void CompilationUnit::testErrorPatternGeneration() {
+    if (!is_test_mode_) return;
+
+    for (size_t i = 0; i < error_function_catalogue_.getFunctions()->length(); ++i) {
+        const ErrorFunctionInfo& info = (*error_function_catalogue_.getFunctions())[i];
+        const char* pattern = pattern_generator_->generatePattern(info);
+        test_patterns_->append(pattern);
+    }
+}
+
+int CompilationUnit::getGeneratedPatternCount() const {
+    return (int)test_patterns_->length();
+}
+
+const char* CompilationUnit::getGeneratedPattern(int index) const {
+    if (index < 0 || (size_t)index >= test_patterns_->length()) return NULL;
+    return (*test_patterns_)[index];
+}
+
+void CompilationUnit::setTestMode(bool test_mode) {
+    is_test_mode_ = test_mode;
 }
