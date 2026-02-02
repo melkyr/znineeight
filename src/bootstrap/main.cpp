@@ -48,6 +48,12 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
         return false;
     }
 
+    if (!unit.areErrorTypesEliminated()) {
+        unit.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Error types were not effectively eliminated during validation.");
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
     if (unit.getErrorHandler().hasWarnings()) {
         unit.getErrorHandler().printWarnings();
     }

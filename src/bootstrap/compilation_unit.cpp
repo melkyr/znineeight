@@ -42,6 +42,9 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       orelse_expression_catalogue_(arena),
       extraction_analysis_catalogue_(arena),
       errdefer_catalogue_(arena),
+      options_(),
+      pattern_generator_(NULL),
+      test_patterns_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
       c89_validation_passed_(false) {
