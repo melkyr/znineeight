@@ -7,6 +7,18 @@ TEST_FUNC(C89Rejection_Slice) {
     return true;
 }
 
+TEST_FUNC(Task147_ErrDeferRejection) {
+    const char* source = "fn f() void { errdefer {}; }";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(Task147_AnyErrorRejection) {
+    const char* source = "var x: anyerror = 0;";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
 TEST_FUNC(C89Rejection_NestedTryInMemberAccess) {
     const char* source =
         "const S = struct { f: i32 };\n"

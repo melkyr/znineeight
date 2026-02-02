@@ -149,6 +149,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_ERRDEFER_STMT:
+            reportNonC89Feature(node->loc, "errdefer statements are not supported in C89 mode");
             current_parent_ = node;
             visit(node->as.errdefer_stmt.statement);
             current_parent_ = prev_parent;
@@ -246,6 +247,11 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = node;
             visit(node->as.comptime_block.expression);
             current_parent_ = prev_parent;
+            break;
+        case NODE_TYPE_NAME:
+            if (strcmp(node->as.type_name.name, "anyerror") == 0) {
+                reportNonC89Feature(node->loc, "anyerror type is not supported in C89 mode");
+            }
             break;
         default:
             // No action needed for literals, identifiers, etc.

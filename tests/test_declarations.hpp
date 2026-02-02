@@ -529,4 +529,8 @@ TEST_FUNC(ExtractionAnalysis_OutParamStrategy);
 TEST_FUNC(ExtractionAnalysis_ArenaStrategy_Alignment);
 TEST_FUNC(ExtractionAnalysis_Linking);
 
+// Forward declarations for Task 147
+TEST_FUNC(Task147_ErrDeferRejection);
+TEST_FUNC(Task147_AnyErrorRejection);
+
 #endif // TEST_DECLARATIONS_HPP
