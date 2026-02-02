@@ -626,6 +626,8 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 
 These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 
+For detailed validation rules that will be enforced in Milestone 5 (when rejection is replaced by translation), see `error_handling_validation_rules.md`.
+
 To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T` and implicit (but unsafe) unwrapping of `!T` to `T` during Pass 0.
 
 ## 6. Symbol Table and Memory Usage

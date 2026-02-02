@@ -149,6 +149,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_ERRDEFER_STMT:
+            unit.getErrDeferCatalogue().addErrDefer(node->loc);
             reportNonC89Feature(node->loc, "errdefer statements are not supported in C89 mode");
             current_parent_ = node;
             visit(node->as.errdefer_stmt.statement);
