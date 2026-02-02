@@ -25,7 +25,9 @@ int main(int argc, char* argv[]) {
         test_ExtractionAnalysis_ArenaStrategy_DeepNesting,
         test_ExtractionAnalysis_OutParamStrategy,
         test_ExtractionAnalysis_ArenaStrategy_Alignment,
-        test_ExtractionAnalysis_Linking
+        test_ExtractionAnalysis_Linking,
+        test_Task147_ErrDeferRejection,
+        test_Task147_AnyErrorRejection
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
