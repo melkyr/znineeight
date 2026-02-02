@@ -1566,6 +1566,22 @@ All generic function calls are rejected by the `C89FeatureValidator` because:
 1.  Standard C89 does not support compile-time type parameters or generics.
 2.  Zig's `comptime` execution model has no direct equivalent in the target legacy environments.
 
+## 20. Parser Path for Non-C89 Features (Task 150)
+
+To support accurate diagnostics and future translation planning, the RetroZig parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
+
+### 20.1 Purpose of Detection
+- **Comprehensive Cataloguing**: By parsing and resolving these features, the compiler can maintain detailed catalogues (e.g., `ErrorSetCatalogue`, `GenericCatalogue`) that inform Milestone 5 translation strategies.
+- **Type-Aware Rejection**: The `TypeChecker` (Pass 0) resolves the semantics of these features (like error union implicit wrapping), allowing the `C89FeatureValidator` (Pass 1) to issue more precise diagnostics (e.g., "Function 'X' returns error type 'Y'") rather than simple syntax errors.
+
+### 20.2 Implementation Highlights
+- **Error Handling**: The parser handles `try`, `catch`, `orelse`, and `errdefer` using standard Zig precedence rules. Error sets and error unions (`!T`) are parsed as types.
+- **Generics**: Function declarations support `comptime` parameters, and function calls support explicit type arguments. The `TypeChecker` populates the `GenericCatalogue` with resolved type arguments for each instantiation site.
+- **Imports**: `@import` is recognized as a primary expression for the purpose of identifying external dependencies, though it is currently strictly rejected.
+
+### 20.3 Rejection via Validation
+The `C89FeatureValidator` ensures that none of these modern constructs proceed to the code generation phase. It recursively traverses the AST and issues fatal errors for any node that represents a non-C89 feature or has an associated error-related type.
+
 ---
 
 ## Deprecated

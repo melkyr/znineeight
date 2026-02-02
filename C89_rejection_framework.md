@@ -12,9 +12,9 @@ The `C89FeatureValidator` is a visitor class that traverses the entire Abstract 
 
 When an unsupported feature is found, the validator performs the following actions:
 1.  It uses the `ErrorHandler` to report a fatal error, providing a clear message indicating why the feature is not supported.
-2.  It immediately calls `abort()` to halt the compilation process.
+2.  It sets an internal `error_found_` flag, which causes the `validate()` method to eventually return `false`.
 
-This "fail-fast" approach prevents the `TypeChecker` and subsequent compilation stages from ever having to deal with language constructs that cannot be translated to C89.
+This approach allows the compiler to collect multiple errors before terminating, providing a better developer experience while still ensuring that no non-C89 code proceed to the generation phase. To maintain stability in test environments, child processes explicitly call `abort()` if the error handler reports any errors.
 
 ## Feature Compatibility Table
 
@@ -33,3 +33,18 @@ The following table details the Zig features that are rejected and provides the 
 | **Struct Methods**      | `my_struct.my_method()`         | No                  | **Rejected.** C89 structs do not have associated functions. The equivalent is passing a struct pointer to a global function.                              |
 | **`async`/`await`**     | `async my_func();`              | No                  | **Rejected.** Asynchronous programming is a modern concept with no C89 equivalent.                                                                        |
 | **Variadic Functions**  | `fn my_printf(fmt: ..., args) {}` | No                  | **Rejected.** The bootstrap compiler does not support variadic arguments to simplify the calling convention and type checking.                               |
+| **`defer`**             | `defer file.close();`           | **Yes**             | **Supported.** While not a C89 keyword, `defer` is implemented via simple code transformation (moving the code to function exit points).                 |
+| **`errdefer`**          | `errdefer cleanup();`           | **Yes**             | **Rejected.** Relies on the error handling system which is not supported in C89.                                                                          |
+| **Generics**            | `fn max(comptime T: type, ...)` | **Yes**             | **Rejected.** Generic functions (with `comptime` parameters) and calls with explicit type arguments are rejected.                                         |
+
+## Milestone 5 Integration & Translation Strategy
+
+| Zig Feature | Milestone 4 Status | Milestone 5 Translation Strategy | C89 Equivalent |
+|-------------|--------------------|-----------------------------------|----------------|
+| Error Unions | Rejected | Extraction Strategy (Stack/Arena/Out) | Struct + Union |
+| Error Sets | Rejected | Global Integer Registry | #define constants |
+| `try` | Rejected | Pattern-based Generation | `if (err) return err;` |
+| `catch` | Rejected | Fallback Pattern Generation | `if (err) { val = fallback; }` |
+| `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
+| `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
+| Generics | Rejected | Template Specialization / Mangling | Mangled Functions |
