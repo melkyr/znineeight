@@ -163,7 +163,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_task_148.cpp \
     tests/test_task_149.cpp \
     tests/test_task_150.cpp \
-    tests/test_task_150_extra.cpp"
+    tests/test_task_150_extra.cpp \
+    tests/test_task_151.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
