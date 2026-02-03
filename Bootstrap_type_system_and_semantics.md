@@ -891,3 +891,152 @@ typedef struct {
 - [ ] MSVC 6.0 alignment workarounds.
 - [ ] Stack usage optimization.
 - [ ] Error code mapping tables.
+
+## 11. Lifetime Analysis Implementation Review (Task 125)
+
+### Overview
+The Lifetime Analysis pass has been implemented as a separate visitor-based pass (`LifetimeAnalyzer`) that runs after the `TypeChecker`. Its primary goal is to detect dangling pointers caused by returning the address of local variables or parameters from functions.
+
+### Architectural Alignment
+The implementation follows the requested multi-pass architecture:
+1.  **Parser**: Builds the AST.
+2.  **TypeChecker**: Performs semantic analysis, populates the `SymbolTable`, and marks symbols with `SYMBOL_FLAG_LOCAL` and `SYMBOL_FLAG_PARAM`.
+3.  **LifetimeAnalyzer**: Performs a read-only pass over the AST to track pointer origins and detect violations.
+
+### Feature Completeness
+
+#### 1. Symbol Tagging
+- `TypeChecker::visitVarDecl` correctly distinguishes between global and local scopes (based on whether it's inside a function) and sets `SYMBOL_FLAG_LOCAL` or `SYMBOL_FLAG_GLOBAL`.
+- `TypeChecker::visitFnDecl` correctly marks parameters with `SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM`.
+
+#### 2. Detection Logic
+- **Direct Address-of Return**: `return &x` where `x` is local is correctly detected.
+- **Local Pointer Tracking**: Tracking of assignments to local pointer variables (e.g., `ptr = &local`) is implemented using a `DynamicArray` of `PointerAssignment` structs.
+- **Conservative Analysis**: If a local pointer variable is returned and its origin cannot be proven safe (e.g., if it was assigned from another pointer `p = q`), the analyzer conservatively reports a violation.
+- **Parameter Safety**: Returning a parameter directly is allowed (as its lifetime is managed by the caller), but returning the address of a parameter (`return &p`) is correctly blocked.
+
+#### 3. Technical Constraints
+- **C++98 Compliance**: Uses standard C++98 syntax. No `auto`, `nullptr`, or modern STL.
+- **Memory Management**: Uses `ArenaAllocator` for all allocations, including the `DynamicArray` and placement new for the tracking map.
+- **Dependencies**: Restricted to project headers and minimal standard C headers (`cstdio`, `string.h`).
+- **Performance**: Uses linear search on `DynamicArray` for assignment tracking, which is efficient for typical small bootstrap-era functions.
+
+### Observations & Deviations
+- **Global Flag**: The implementation uses `SYMBOL_FLAG_GLOBAL` to mark non-local variables. In the context of the RetroZig bootstrap compiler, these are functionally equivalent to static storage for lifetime purposes.
+- **Analysis Depth**: As per the "safe for bootstrap" philosophy, the analysis focuses on the most common dangling pointer cases. It does not currently handle nested pointer-to-pointer tracking or struct field addresses.
+
+
+## 12. Assignment Compatibility Implementation (Task 107)
+
+### Phase 1: Foundational Type Helpers
+The following foundational type helpers are implemented in `type_checker.cpp` and `type_checker.hpp`:
+- **`isNumericType(Type* type)`**: Checks if a given type is any of the numeric types or a `TYPE_INTEGER_LITERAL`.
+- **`canLiteralFitInType(Type* literal_type, Type* target_type)`**: Determines if a `TYPE_INTEGER_LITERAL` can be safely assigned to a given numeric type without overflow.
+- **`checkBinaryOperation(...)`**: Updated to support C89-style integer literal promotion (e.g., `i32 + <literal 10>` is valid and results in `i32`).
+
+### Phase 2: Assignment Compatibility Validation
+Stricter C89 type-checking rules require identical types in binary operations (except for literal promotion). Implicit widening in variable declarations (e.g., `const x: i64 = 42;`) is treated as an error unless it's a direct assignment from an integer literal.
+
+### Phase 3: AST Node Integration
+The strict C89 assignment validation is integrated into the AST visitors. The `visitAssignment` and `visitCompoundAssignment` functions use the `IsTypeAssignableTo` function, replacing more lenient logic.
+
+### Test Suite Alignment
+Existing tests were refactored to align with these stricter rules:
+1.  **Integer literal initializers**: Handled as a special case in `visitVarDecl`.
+2.  **Floating-point assignments**: `canLiteralFitInType` was enhanced to allow integer literals to be assigned to floating-point types.
+3.  **Strict numeric match**: Binary operations like `TypeCheckerBinaryOps_NumericArithmetic` now use consistent types to avoid mismatch errors during setup.
+
+
+## 13. Error Handling & Milestone 5 Translation Strategy
+
+### 13.1 Global Error Registry
+The bootstrap compiler maintains a global registry of all unique error tags encountered during compilation.
+- **Success Convention**: The integer value `0` is reserved for "success".
+- **Unique Identifiers**: Each unique error tag is assigned a unique 32-bit positive integer starting from `1`.
+- **Global Scope**: All error tags across all error sets share this same global integer space to support merging (`E1 || E2`).
+- **MSVC 6.0 Compatibility**: Error codes are emitted as `#define` constants to avoid ambiguities.
+
+```c
+/* Generated C89 - Global Error Registry */
+#define ERROR_SUCCESS           0
+#define ERROR_FILE_NOT_FOUND    1
+#define ERROR_PERMISSION_DENIED 2
+```
+
+### 13.2 Error Union Representation (`!T`)
+Error unions are translated into a C89 `struct` containing a `union` for the payload and the error code.
+
+```c
+/* Zig: fn read(path: []const u8) !i32 */
+typedef struct {
+    union {
+        int32_t payload;    /* Valid if is_error is false */
+        int error_code;     /* Valid if is_error is true */
+    } data;
+    int is_error;           /* 0 = success, 1 = error */
+} ErrorableInt32;
+```
+
+#### Alternative: Pointer Parameters
+For simpler functions, the compiler may optionally emit functions that use an out-parameter for the error code:
+```c
+int32_t read(const char* path, int* out_error);
+```
+
+### 13.3 Operator Translation
+
+#### `try` Expression
+The `try` expression is translated into an `if` check that propagates the error.
+```c
+/* Zig: var x = try mightFail(); */
+ErrorableInt32 result = mightFail();
+if (result.is_error) return result;
+int32_t x = result.data.payload;
+```
+
+#### `catch` Expression
+The `catch` expression provides a fallback value.
+```c
+/* Zig: var x = mightFail() catch 0; */
+ErrorableInt32 result = mightFail();
+int32_t x = result.is_error ? 0 : result.data.payload;
+```
+
+#### `orelse` Expression
+Similar to catch, specifically for optional types.
+```c
+/* Zig: var x = optional_val orelse default_val; */
+int32_t x = optional_val.has_value ? optional_val.value : default_val;
+```
+
+#### `errdefer` Statement
+Zig's `errdefer` is implemented using `goto` and a cleanup label.
+```c
+ErrorableInt operation(void) {
+    Resource* res = acquire_resource();
+    ErrorableInt result = do_work(res);
+    if (result.is_error) goto cleanup;
+    return result;
+cleanup:
+    release_resource(res);
+    return result;
+}
+```
+
+### 13.4 Validation Rules & Constraints
+
+#### Stack Safety Rules
+1.  Error union structs > 256 bytes cannot use stack return pattern.
+2.  Alignment > 4 bytes requires arena allocation for MSVC 6.0.
+3.  Deep nesting (> 8 levels) reduces stack threshold to 32 bytes.
+
+#### MSVC 6.0 Specific Constraints
+1.  **No `stdbool.h`**: Use `int` with 0/1.
+2.  **4-byte alignment**: MSVC 6.0 cannot guarantee 8-byte alignment on the stack.
+3.  **32-bit Error Codes**: Mapped via `#define`.
+4.  **No `alloca()`**: Avoided for stability.
+
+#### Memory Strategy
+- **Small Payloads (< 32 bytes)**: Stored directly on stack (`EXTRACTION_STACK`).
+- **Medium Payloads (32-1024 bytes)**: Managed via `ArenaAllocator` (`EXTRACTION_ARENA`).
+- **Large Payloads (> 1024 bytes)**: Uses out-parameter pattern (`EXTRACTION_OUT_PARAM`).
