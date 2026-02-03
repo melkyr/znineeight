@@ -39,7 +39,10 @@ int main(int argc, char* argv[]) {
         test_Task150_MoreComprehensiveElimination,
         test_C89Rejection_ArraySliceExpression,
         test_Task151_ErrorTypeRejection,
-        test_Task151_OptionalTypeRejection
+        test_Task151_OptionalTypeRejection,
+        test_FunctionNameCollisionSameScope,
+        test_FunctionVariableCollisionSameScope,
+        test_ShadowingAllowed
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
