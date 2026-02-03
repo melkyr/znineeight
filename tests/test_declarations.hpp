@@ -553,4 +553,9 @@ TEST_FUNC(C89Rejection_ArraySliceExpression);
 TEST_FUNC(Task151_ErrorTypeRejection);
 TEST_FUNC(Task151_OptionalTypeRejection);
 
+// Forward declarations for Task 152 (Name Collision Detection)
+TEST_FUNC(FunctionNameCollisionSameScope);
+TEST_FUNC(FunctionVariableCollisionSameScope);
+TEST_FUNC(ShadowingAllowed);
+
 #endif // TEST_DECLARATIONS_HPP

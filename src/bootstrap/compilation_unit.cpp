@@ -1,5 +1,6 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
+#include "name_collision_detector.hpp"
 #include "type_checker.hpp"
 #include "c89_feature_validator.hpp"
 #include "lifetime_analyzer.hpp"
@@ -241,6 +242,13 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     Parser* parser = createParser(file_id);
     ASTNode* ast = parser->parse();
     if (!ast) return false;
+
+    // Name Collision Detection
+    NameCollisionDetector name_detector(*this);
+    name_detector.check(ast);
+    if (name_detector.hasCollisions()) {
+        return false;
+    }
 
     // Pass 0: Type Checking
     TypeChecker checker(*this);

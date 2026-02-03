@@ -1246,9 +1246,7 @@ ASTNode* Parser::parseVarDecl() {
         .withFlags(0) // Semantic flags will be set by TypeChecker
         .build();
 
-    if (!symbol_table_->insert(symbol)) {
-        error("Redeclaration of variable");
-    }
+    symbol_table_->insert(symbol);
 
     return node;
 }
@@ -1351,9 +1349,7 @@ ASTNode* Parser::parseFnDecl() {
         .atLocation(name_token.location)
         .build();
 
-    if (!symbol_table_->insert(fn_symbol)) {
-        error("Redeclaration of symbol");
-    }
+    symbol_table_->insert(fn_symbol);
 
     // Create the function declaration node early to hold the parameters
     ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
