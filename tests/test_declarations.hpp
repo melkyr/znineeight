@@ -549,4 +549,8 @@ TEST_FUNC(C89Rejection_ErrorTypeInParam_ShouldBeRejected);
 TEST_FUNC(Task150_MoreComprehensiveElimination);
 TEST_FUNC(C89Rejection_ArraySliceExpression);
 
+// Forward declarations for Task 151
+TEST_FUNC(Task151_ErrorTypeRejection);
+TEST_FUNC(Task151_OptionalTypeRejection);
+
 #endif // TEST_DECLARATIONS_HPP

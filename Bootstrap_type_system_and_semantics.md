@@ -768,3 +768,126 @@ The results from both methods were consistent and conclusive:
 ### Conclusion
 
 The memory allocation strategy is sound. The compiler components have a minimal and controlled memory footprint, and the an arena-based approach is effectively preventing memory leaks. The observed increases in memory usage are a natural result of the project's evolution and do not indicate an underlying issue.
+
+## 10. Error-Free Type Conversion (Task 151)
+
+### Overview
+Zig error types (`!T`) and optional types (`?T`) require conversion to C89-compatible types. This document outlines the conversion strategy for Milestone 5. In the bootstrap compiler (Milestone 4), these features are strictly **rejected**, but the type system preserves the necessary information to enable this future conversion.
+
+### Error Union Conversion (!T → T)
+
+#### Basic Conversion Pattern
+```c
+// Zig: var x: i32 = try maybeError();
+// C89 Conversion:
+ErrorableInt32 result = maybeError();
+if (result.is_error) {
+    // Handle error (return/propagate)
+}
+int32_t x = result.data.value;
+```
+
+#### Type Representation
+```c
+// Zig type: !i32
+// C89 representation:
+typedef struct {
+    union {
+        int32_t value;
+        int error_code;
+    } data;
+    int is_error;  // 0 = success, 1 = error
+} ErrorableInt32;
+```
+
+#### Conversion Rules
+1.  **Direct access**: Only allowed after error check.
+2.  **Type safety**: Cannot access payload without checking `is_error`.
+3.  **Memory layout**: Must match Zig's ABI for compatibility.
+
+### Optional Type Conversion (?T → T)
+
+#### Basic Conversion Pattern
+```c
+// Zig: var x: i32 = maybeNull orelse 0;
+// C89 Conversion:
+OptionalInt32 opt = maybeNull;
+int32_t x = opt.has_value ? opt.value : 0;
+```
+
+#### Type Representation
+```c
+// Zig type: ?i32
+// C89 representation:
+typedef struct {
+    int32_t value;
+    int has_value;  // 0 = null, 1 = present
+} OptionalInt32;
+```
+
+### The .? Operator
+
+#### Zig Semantics
+The `.?` operator asserts that an error union or optional is non-error/non-null:
+```zig
+var x: i32 = errorUnion.?;  // Crashes if error
+var y: i32 = optional.?;    // Crashes if null
+```
+
+#### C89 Equivalent
+```c
+// Zig: value = expr.?;
+// C89:
+ResultType result = expr;
+if (result.is_error) {
+    abort();  // Or call panic handler
+}
+value = result.data.value;
+```
+
+### Type Safety Considerations
+
+#### Loss of Type Information
+Error unions and optionals carry runtime safety information that is lost when converting to base types:
+
+| Zig Type     | C89 Type | Information Lost        |
+| ------------ | -------- | ----------------------- |
+| `!i32`       | `i32`    | Error state, error code |
+| `?i32`       | `i32`    | Null state              |
+| `error{A,B}` | `int`    | Type safety             |
+
+#### Safety Violation Prevention
+To prevent safety violations in generated C89 code:
+1.  **Runtime checks**: Insert `assert()` for `.?` operator.
+2.  **Default values**: Use safe defaults for `orelse` conversions.
+3.  **Error propagation**: Convert `try` to explicit error checking.
+
+### MSVC 6.0 Constraints
+
+#### Alignment Constraints
+```c
+// MSVC 6.0 maximum alignment is 4 bytes
+#pragma pack(push, 4)
+typedef struct {
+    union {
+        // Types with alignment > 4 must be handled specially
+        double value;    // 8-byte alignment on some platforms
+        int error_code;
+    } data;
+    int is_error;
+} ErrorableDouble;
+#pragma pack(pop)
+```
+
+#### Stack Usage
+-   **Small conversions** (< 64 bytes): Use stack-allocated temporaries.
+-   **Medium conversions** (64-256 bytes): Use arena allocation.
+-   **Large conversions** (> 256 bytes): Use out-parameters.
+
+### Implementation Checklist for Milestone 5
+- [ ] Type conversion functions for each primitive type.
+- [ ] Runtime safety checks for `.?` operator.
+- [ ] Memory layout validation against Zig ABI.
+- [ ] MSVC 6.0 alignment workarounds.
+- [ ] Stack usage optimization.
+- [ ] Error code mapping tables.

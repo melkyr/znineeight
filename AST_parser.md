@@ -1575,7 +1575,7 @@ To support accurate diagnostics and future translation planning, the RetroZig pa
 - **Type-Aware Rejection**: The `TypeChecker` (Pass 0) resolves the semantics of these features (like error union implicit wrapping), allowing the `C89FeatureValidator` (Pass 1) to issue more precise diagnostics (e.g., "Function 'X' returns error type 'Y'") rather than simple syntax errors.
 
 ### 20.2 Implementation Highlights
-- **Error Handling**: The parser handles `try`, `catch`, `orelse`, and `errdefer` using standard Zig precedence rules. Error sets and error unions (`!T`) are parsed as types.
+- **Error Handling**: The parser handles `try`, `catch`, `orelse`, and `errdefer` using standard Zig precedence rules. Error sets and error unions (`!T`) are parsed as types. The `.?` operator is recognized by the lexer and strictly rejected as non-C89.
 - **Generics**: Function declarations support `comptime` parameters, and function calls support explicit type arguments. The `TypeChecker` populates the `GenericCatalogue` with resolved type arguments for each instantiation site.
 - **Imports**: `@import` is recognized as a primary expression for the purpose of identifying external dependencies, though it is currently strictly rejected.
 

@@ -695,7 +695,7 @@ Output: Runtime assertions in codegen module
     Validation: Ensure type system remains consistent after elimination
     Success criteria: No error types remain in final type system. Implemented via the rejection process in `C89FeatureValidator` and verified by `CompilationUnit::areErrorTypesEliminated()`.
 
-151. **Task 151:** ERROR-FREE TYPE CONVERSION (MEDIUM)
+151. **Task 151:** ERROR-FREE TYPE CONVERSION (DONE)
 
     What to implement: Convert error union types to base types
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -703,7 +703,7 @@ Output: Runtime assertions in codegen module
         Loss of important type information
         Inconsistent conversion across codebase
     Validation: Test that converted types still work correctly
-    Success criteria: All types remain safe and functional without error components
+    Success criteria: All types remain safe and functional without error components. Strategy for Milestone 5 conversion is documented in `Bootstrap_type_system_and_semantics.md`.
 152. **Task 152:** FUNCTION NAME COLLISION DETECTION (LOW)
 
     What to implement: Find functions with identical names
