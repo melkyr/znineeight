@@ -149,7 +149,7 @@ Modern Zig error handling features are detected and catalogued for documentation
 - **Orelse Expressions**: Catalogued in `OrelseExpressionCatalogue` during validation.
 - **Success Value Extraction**: Analyzed and catalogued in `ExtractionAnalysisCatalogue` during validation. Decisions are made between `EXTRACTION_STACK`, `EXTRACTION_ARENA`, and `EXTRACTION_OUT_PARAM` based on MSVC 6.0 constraints (alignment, stack limits, and nesting depth).
 
-For details on how these features will be mapped to C89 in Milestone 5, see [Error Code Mapping Strategy](Error_code_mapping_strategy.md).
+For details on how these features will be mapped to C89 in Milestone 5, see [Bootstrap Type System & Semantic Analysis](Bootstrap_type_system_and_semantics.md) (Section 13).
 
 #### 4.0.3 Compilation Pipeline Update (Task 142)
 The compilation pipeline has been reordered to enable type-aware diagnostics:

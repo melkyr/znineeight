@@ -643,7 +643,7 @@ Output: Runtime assertions in codegen module
         Negative vs positive error code conventions
         Error code range limitations
     Validation: Create mapping table example
-    Success criteria: Clear strategy for converting all errors to integers. Documented in `Error_code_mapping_strategy.md`.
+    Success criteria: Clear strategy for converting all errors to integers. Documented in `Bootstrap_type_system_and_semantics.md`.
 
 146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (MEDIUM)
 
@@ -683,7 +683,7 @@ Output: Runtime assertions in codegen module
         Missing error checks in translated code
         Invalid error handling combinations
     Validation: Apply rules to sample error-handling code
-    Success criteria: All error handling follows consistent C89 patterns. Documented in `error_handling_validation_rules.md`.
+    Success criteria: All error handling follows consistent C89 patterns. Documented in `Bootstrap_type_system_and_semantics.md`.
 
 150. **Task 150:** ERROR TYPE ELIMINATION IMPLEMENTATION (DONE)
 
