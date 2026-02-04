@@ -558,4 +558,12 @@ TEST_FUNC(FunctionNameCollisionSameScope);
 TEST_FUNC(FunctionVariableCollisionSameScope);
 TEST_FUNC(ShadowingAllowed);
 
+// Forward declarations for Task 153 (Signature Analysis)
+TEST_FUNC(SignatureAnalysisNonC89Types);
+TEST_FUNC(SignatureAnalysisTooManyParams);
+TEST_FUNC(SignatureAnalysisMultiLevelPointers);
+TEST_FUNC(SignatureAnalysisTypeAliasResolution);
+TEST_FUNC(SignatureAnalysisArrayParameterWarning);
+TEST_FUNC(SignatureAnalysisReturnTypeRejection);
+
 #endif // TEST_DECLARATIONS_HPP

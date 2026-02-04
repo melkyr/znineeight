@@ -42,7 +42,13 @@ int main(int argc, char* argv[]) {
         test_Task151_OptionalTypeRejection,
         test_FunctionNameCollisionSameScope,
         test_FunctionVariableCollisionSameScope,
-        test_ShadowingAllowed
+        test_ShadowingAllowed,
+        test_SignatureAnalysisNonC89Types,
+        test_SignatureAnalysisTooManyParams,
+        test_SignatureAnalysisMultiLevelPointers,
+        test_SignatureAnalysisTypeAliasResolution,
+        test_SignatureAnalysisArrayParameterWarning,
+        test_SignatureAnalysisReturnTypeRejection
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

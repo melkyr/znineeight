@@ -1040,3 +1040,28 @@ cleanup:
 - **Small Payloads (< 32 bytes)**: Stored directly on stack (`EXTRACTION_STACK`).
 - **Medium Payloads (32-1024 bytes)**: Managed via `ArenaAllocator` (`EXTRACTION_ARENA`).
 - **Large Payloads (> 1024 bytes)**: Uses out-parameter pattern (`EXTRACTION_OUT_PARAM`).
+
+## 14. Function Signature Analysis (Task 153)
+
+To ensure generated code is compatible with C89 backend constraints, the bootstrap compiler performs a dedicated signature analysis pass (`SignatureAnalyzer`) after type resolution.
+
+### 14.1 Rejected Signature Patterns
+
+The following patterns are strictly rejected in the bootstrap phase to maintain C89 compatibility:
+
+1.  **Parameter Count Limit**: Functions are limited to a maximum of **4 parameters**. This is a conservative limit to ensure compatibility with MSVC 6.0 stack management and various calling conventions.
+2.  **Non-C89 Types in Parameters**:
+    -   **Slices** (`[]T`): No direct primitive mapping in C89.
+    -   **Error Unions** (`!T`): Error handling is handled via alternative designs.
+    -   **Error Sets** (`error{...}`): Incompatible with C89 function signatures.
+    -   **Optional Types** (`?T`): Nullability handled differently in C89.
+3.  **Multi-level Pointers**: Only single-level pointers (e.g., `*i32`) are allowed in parameters. Multi-level pointers (e.g., `**i32`) are rejected to avoid complexity.
+4.  **Void Parameters**: Parameters cannot have the `void` type.
+
+### 14.2 Type Alias Resolution
+
+Signature analysis is performed after type resolution (Pass 0), ensuring that type aliases are fully resolved to their underlying types before validation.
+
+### 14.3 Array Parameters
+
+Zig sized arrays (e.g., `[10]i32`) are allowed in function parameters but trigger a warning (`WARN_ARRAY_PARAMETER`), as they are treated as pointers in the generated C89 code, losing their size information in the signature.
