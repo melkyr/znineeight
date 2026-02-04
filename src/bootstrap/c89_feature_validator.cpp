@@ -611,8 +611,8 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     bool is_generic = hasComptimeParams(fn);
     bool returns_error = isErrorType(return_type);
 
-    if (is_generic) {
-        reportNonC89Feature(node->loc, "Generic functions (with comptime parameters) are not supported in C89 mode.");
+    if (is_generic || unit.getGenericCatalogue().isFunctionGeneric(fn->name)) {
+        reportNonC89Feature(node->loc, "Generic functions are not supported in C89 mode.");
     }
 
     // Catalogue BEFORE rejection

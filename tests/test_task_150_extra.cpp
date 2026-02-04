@@ -20,7 +20,7 @@ TEST_FUNC(C89Rejection_GenericFnDecl_ShouldBeRejected) {
     ASSERT_TRUE(unit.getErrorHandler().hasErrors());
     bool found_msg = false;
     for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        if (strstr(unit.getErrorHandler().getErrors()[i].message, "comptime parameters")) {
+        if (strstr(unit.getErrorHandler().getErrors()[i].message, "Generic functions are not supported")) {
             found_msg = true;
             break;
         }
