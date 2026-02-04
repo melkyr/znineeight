@@ -566,4 +566,11 @@ TEST_FUNC(SignatureAnalysisTypeAliasResolution);
 TEST_FUNC(SignatureAnalysisArrayParameterWarning);
 TEST_FUNC(SignatureAnalysisReturnTypeRejection);
 
+// Forward declarations for Task 154 (Generic Function Detection)
+TEST_FUNC(Task154_RejectAnytypeParam);
+TEST_FUNC(Task154_RejectTypeParam);
+TEST_FUNC(Task154_CatalogueComptimeDefinition);
+TEST_FUNC(Task154_CatalogueAnytypeDefinition);
+TEST_FUNC(Task154_CatalogueTypeParamDefinition);
+
 #endif // TEST_DECLARATIONS_HPP

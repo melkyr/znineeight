@@ -70,7 +70,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_);
 }
 
 /**

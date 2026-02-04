@@ -1,5 +1,6 @@
 #include "parser.hpp"
 #include "error_set_catalogue.hpp"
+#include "generic_catalogue.hpp"
 #include "ast.hpp"
 #include "type_system.hpp"
 #include <cstdlib>   // For abort()
@@ -13,13 +14,14 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
       arena_(arena),
       symbol_table_(symbol_table),
       catalogue_(catalogue),
+      generic_catalogue_(generic_catalogue),
       recursion_depth_(0)
 {
     assert(arena_ != NULL && "ArenaAllocator cannot be null");
@@ -1367,28 +1369,85 @@ ASTNode* Parser::parseFnDecl() {
 
 
     bool is_generic = false;
+    GenericParamKind first_generic_kind = GENERIC_KIND_COMPTIME;
+
     expect(TOKEN_LPAREN, "Expected '(' after function name");
     if (peek().type != TOKEN_RPAREN) {
         do {
             bool is_comptime = match(TOKEN_COMPTIME);
-            if (is_comptime) is_generic = true;
+            bool is_anytype = match(TOKEN_ANYTYPE);
+            bool is_type_param = false;
 
-            Token param_name_token = expect(TOKEN_IDENTIFIER, "Expected parameter name");
-            expect(TOKEN_COLON, "Expected ':' after parameter name");
-            ASTNode* param_type_node = parseType();
+            const char* param_name = NULL;
+            ASTNode* param_type_node = NULL;
+            SourceLocation param_loc = peek().location;
+
+            if (is_anytype) {
+                Token param_name_token = expect(TOKEN_IDENTIFIER, "Expected parameter name after 'anytype'");
+                param_name = param_name_token.value.identifier;
+                param_loc = param_name_token.location;
+                if (!is_generic) {
+                    is_generic = true;
+                    first_generic_kind = GENERIC_KIND_ANYTYPE;
+                }
+                // Provide a pseudo-type node for 'anytype'
+                param_type_node = createNode(NODE_TYPE_NAME);
+                param_type_node->loc = param_loc;
+                param_type_node->as.type_name.name = "anytype";
+            } else {
+                Token param_name_token = expect(TOKEN_IDENTIFIER, "Expected parameter name");
+                param_name = param_name_token.value.identifier;
+                param_loc = param_name_token.location;
+                expect(TOKEN_COLON, "Expected ':' after parameter name");
+
+                if (peek().type == TOKEN_TYPE) {
+                    Token type_token = advance();
+                    is_type_param = true;
+                    if (!is_generic) {
+                        is_generic = true;
+                        first_generic_kind = GENERIC_KIND_TYPE_PARAM;
+                    }
+                    param_type_node = createNode(NODE_TYPE_NAME);
+                    param_type_node->loc = type_token.location;
+                    param_type_node->as.type_name.name = "type";
+                } else if (peek().type == TOKEN_ANYTYPE) {
+                    Token anytype_token = advance();
+                    is_anytype = true;
+                    if (!is_generic) {
+                        is_generic = true;
+                        first_generic_kind = GENERIC_KIND_ANYTYPE;
+                    }
+                    param_type_node = createNode(NODE_TYPE_NAME);
+                    param_type_node->loc = anytype_token.location;
+                    param_type_node->as.type_name.name = "anytype";
+                } else {
+                    param_type_node = parseType();
+                }
+            }
+
+            if (is_comptime && !is_generic) {
+                is_generic = true;
+                first_generic_kind = GENERIC_KIND_COMPTIME;
+            }
 
             ASTParamDeclNode* param_decl = (ASTParamDeclNode*)arena_->alloc(sizeof(ASTParamDeclNode));
             if (!param_decl) {
                 error("Out of memory");
             }
-            param_decl->name = param_name_token.value.identifier;
+            param_decl->name = param_name;
             param_decl->type = param_type_node;
             param_decl->is_comptime = is_comptime;
+            param_decl->is_anytype = is_anytype;
+            param_decl->is_type_param = is_type_param;
 
             fn_decl->params->append(param_decl);
         } while (match(TOKEN_COMMA));
     }
     expect(TOKEN_RPAREN, "Expected ')' after parameter list");
+
+    if (is_generic) {
+        generic_catalogue_->addDefinition(name_token.value.identifier, fn_token.location, first_generic_kind);
+    }
 
     // Update the symbol to reflect generic status if needed.
     Symbol* inserted_sym = symbol_table_->lookupInCurrentScope(name_token.value.identifier);

@@ -1065,3 +1065,22 @@ Signature analysis is performed after type resolution (Pass 0), ensuring that ty
 ### 14.3 Array Parameters
 
 Zig sized arrays (e.g., `[10]i32`) are allowed in function parameters but trigger a warning (`WARN_ARRAY_PARAMETER`), as they are treated as pointers in the generated C89 code, losing their size information in the signature.
+
+## 15. Generic Function Detection (Task 154)
+
+Zig supports generic functions through `comptime`, `anytype`, and `type` parameters. To maintain C89 compatibility, the bootstrap compiler detects and strictly rejects these features.
+
+### 15.1 Detection Strategy
+
+The parser is equipped to identify generic function definitions by looking for the following patterns in parameter declarations:
+1.  **`comptime` parameters**: Parameters prefixed with the `comptime` keyword.
+2.  **`anytype` parameters**: Parameters that use the `anytype` keyword instead of an explicit type.
+3.  **`type` parameters**: Parameters whose type is the `type` keyword.
+
+### 15.2 Cataloguing and Rejection
+
+When a generic function is detected:
+1.  It is recorded in the `GenericCatalogue` with its name, location, and the kind of generic parameter that triggered the detection.
+2.  The `C89FeatureValidator` pass checks the catalogue and issues a fatal error: "Generic functions are not supported in C89 mode."
+
+For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](docs/generic_functions_c89.md).

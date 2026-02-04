@@ -16,6 +16,7 @@
 struct ASTNode;
 struct Type;
 class ErrorSetCatalogue;
+class GenericCatalogue;
 
 /**
  * @class Parser
@@ -38,8 +39,9 @@ public:
      * @param arena A pointer to the ArenaAllocator for memory management.
      * @param symbol_table A pointer to the SymbolTable for managing scopes.
      * @param catalogue A pointer to the ErrorSetCatalogue for tracking error sets.
+     * @param generic_catalogue A pointer to the GenericCatalogue for tracking generic functions.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue);
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue);
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -315,6 +317,7 @@ private:
     ArenaAllocator* arena_;
     SymbolTable* symbol_table_;
     ErrorSetCatalogue* catalogue_;
+    GenericCatalogue* generic_catalogue_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
     Token eof_token_; ///< A cached EOF token to return from peekNext()
 

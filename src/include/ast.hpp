@@ -510,6 +510,8 @@ struct ASTParamDeclNode {
     const char* name;
     ASTNode* type;
     bool is_comptime;
+    bool is_anytype;
+    bool is_type_param;
 };
 
 /**
