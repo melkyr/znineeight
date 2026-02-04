@@ -1,6 +1,7 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
 #include "name_collision_detector.hpp"
+#include "signature_analyzer.hpp"
 #include "type_checker.hpp"
 #include "c89_feature_validator.hpp"
 #include "lifetime_analyzer.hpp"
@@ -254,11 +255,20 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     TypeChecker checker(*this);
     checker.check(ast);
 
+    // Pass 0.5: Signature Analysis
+    SignatureAnalyzer sig_analyzer(*this);
+    sig_analyzer.analyze(ast);
+
     // Pass 1: C89 feature validation
     C89FeatureValidator validator(*this);
     bool success = validator.validate(ast);
+
     validation_completed_ = true;
-    c89_validation_passed_ = success;
+    c89_validation_passed_ = success && !sig_analyzer.hasInvalidSignatures();
+
+    if (!c89_validation_passed_) {
+        return false;
+    }
 
     // Pass 2+: Static Analyzers (if enabled)
     if (options_.enable_lifetime_analysis) {
