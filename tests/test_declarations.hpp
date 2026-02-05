@@ -498,6 +498,9 @@ TEST_FUNC(GenericCatalogue_TracksExplicit);
 TEST_FUNC(GenericCatalogue_TracksImplicit);
 TEST_FUNC(C89Rejection_ComptimeValueParam);
 TEST_FUNC(GenericCatalogue_Deduplication);
+TEST_FUNC(Task155_AllTemplateFormsDetectedAndRejected);
+TEST_FUNC(Task155_TypeParamRejected);
+TEST_FUNC(Task155_AnytypeParamRejected);
 
 // Forward declarations for Task 142
 TEST_FUNC(Task142_ErrorFunctionDetection);

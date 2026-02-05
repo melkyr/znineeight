@@ -40,10 +40,11 @@ static bool isErrorType(Type* type) {
     return type->kind == TYPE_ERROR_UNION || type->kind == TYPE_ERROR_SET;
 }
 
-static bool hasComptimeParams(ASTFnDeclNode* node) {
+static bool hasGenericParams(ASTFnDeclNode* node) {
     if (!node->params) return false;
     for (size_t i = 0; i < node->params->length(); ++i) {
-        if ((*node->params)[i]->is_comptime) return true;
+        ASTParamDeclNode* p = (*node->params)[i];
+        if (p->is_comptime || p->is_anytype || p->is_type_param) return true;
     }
     return false;
 }
@@ -126,6 +127,12 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = node;
             if (node->as.param_decl.is_comptime) {
                 reportNonC89Feature(node->loc, "comptime parameters are not supported in C89 mode");
+            }
+            if (node->as.param_decl.is_anytype) {
+                reportNonC89Feature(node->loc, "anytype parameters are not supported in C89 mode");
+            }
+            if (node->as.param_decl.is_type_param) {
+                reportNonC89Feature(node->loc, "type parameters are not supported in C89 mode");
             }
             visit(node->as.param_decl.type);
             current_parent_ = prev_parent;
@@ -301,6 +308,12 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_TYPE_NAME:
             if (strcmp(node->as.type_name.name, "anyerror") == 0) {
                 reportNonC89Feature(node->loc, "anyerror type is not supported in C89 mode");
+            }
+            if (strcmp(node->as.type_name.name, "type") == 0) {
+                reportNonC89Feature(node->loc, "Type parameters/variables are not supported in C89 mode");
+            }
+            if (strcmp(node->as.type_name.name, "anytype") == 0) {
+                reportNonC89Feature(node->loc, "anytype is not supported in C89 mode");
             }
             if (node->resolved_type && isErrorType(node->resolved_type)) {
                 char type_str[128];
@@ -564,8 +577,9 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
 
     // 2. Detect implicit generic call (call to generic function)
     if (call->callee->type == NODE_IDENTIFIER) {
-        Symbol* sym = unit.getSymbolTable().lookup(call->callee->as.identifier.name);
-        if (sym && sym->is_generic) {
+        const char* name = call->callee->as.identifier.name;
+        Symbol* sym = unit.getSymbolTable().lookup(name);
+        if ((sym && sym->is_generic) || unit.getGenericCatalogue().isFunctionGeneric(name)) {
             reportNonC89Feature(node->loc, "Calls to generic functions are not C89-compatible.");
         }
     }
@@ -608,7 +622,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
         return_type = symbol->symbol_type->as.function.return_type;
     }
 
-    bool is_generic = hasComptimeParams(fn);
+    bool is_generic = hasGenericParams(fn);
     bool returns_error = isErrorType(return_type);
 
     if (is_generic || unit.getGenericCatalogue().isFunctionGeneric(fn->name)) {
