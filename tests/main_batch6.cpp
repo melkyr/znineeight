@@ -33,7 +33,10 @@ int main(int argc, char* argv[]) {
         test_GenericCatalogue_TracksExplicit,
         test_GenericCatalogue_TracksImplicit,
         test_C89Rejection_ComptimeValueParam,
-        test_GenericCatalogue_Deduplication
+        test_GenericCatalogue_Deduplication,
+        test_Task155_AllTemplateFormsDetectedAndRejected,
+        test_Task155_TypeParamRejected,
+        test_Task155_AnytypeParamRejected
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

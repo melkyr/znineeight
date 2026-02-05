@@ -41,6 +41,32 @@ TEST_FUNC(GenericCatalogue_TracksExplicit) {
     return true;
 }
 
+TEST_FUNC(Task155_AllTemplateFormsDetectedAndRejected) {
+    const char* source =
+        "fn explicit_fn(comptime T: type, x: T) T { return x; }\n"
+        "fn implicit_fn(anytype x) void {}\n"
+        "fn test_caller() void {\n"
+        "    _ = explicit_fn(i32, 5);  // explicit instantiation\n"
+        "    implicit_fn(42);      // implicit instantiation\n"
+        "}\n";
+
+    ASSERT_TRUE(expect_type_checker_abort(source));
+
+    return true;
+}
+
+TEST_FUNC(Task155_TypeParamRejected) {
+    const char* source = "fn f(comptime T: type) void {}";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
+TEST_FUNC(Task155_AnytypeParamRejected) {
+    const char* source = "fn f(anytype x) void {}";
+    ASSERT_TRUE(expect_type_checker_abort(source));
+    return true;
+}
+
 TEST_FUNC(GenericCatalogue_TracksImplicit) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
