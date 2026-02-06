@@ -36,7 +36,7 @@ TEST_FUNC(GenericCatalogue_TracksExplicit) {
     ASSERT_EQ(1, unit.getGenericCatalogue().count());
     const GenericInstantiation& inst = (*unit.getGenericCatalogue().getInstantiations())[0];
     ASSERT_STREQ("bar", inst.function_name);
-    ASSERT_EQ(1, inst.type_count);
+    ASSERT_EQ(2, inst.param_count);
 
     return true;
 }

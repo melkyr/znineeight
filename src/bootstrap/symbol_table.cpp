@@ -197,6 +197,12 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     return scopes.back()->find(name);
 }
 
+Symbol* SymbolTable::lookupWithModule(const char* module, const char* name) {
+    // For now, ignore module parameter and use existing lookup
+    // TODO: In Milestone 6, implement proper module-aware lookup
+    return lookup(name);
+}
+
 Symbol* SymbolTable::findInAnyScope(const char* name) {
     // Search all scopes ever created, from most recent to oldest.
     for (int i = (int)all_scopes_.length() - 1; i >= 0; --i) {

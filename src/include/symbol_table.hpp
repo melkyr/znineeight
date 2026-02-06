@@ -82,6 +82,7 @@ public:
     bool insert(Symbol& symbol);
     Symbol* lookup(const char* name);
     Symbol* lookupInCurrentScope(const char* name);
+    Symbol* lookupWithModule(const char* module, const char* name);
     Symbol* findInAnyScope(const char* name); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 };

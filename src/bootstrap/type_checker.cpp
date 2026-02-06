@@ -1965,26 +1965,52 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
         }
     } else if (node->callee->type == NODE_MEMBER_ACCESS) {
         callee_name = node->callee->as.member_access->field_name;
-        // For now, we don't have an easy way to resolve the symbol for a member
-        // to check its is_generic flag without more complex type resolution.
-        // Explicit generics via member access will still be caught by is_explicit.
     }
 
     if (is_explicit || is_implicit) {
-        // Collect type arguments
-        Type* type_args[4];
-        int type_count = 0;
-        for (size_t i = 0; i < node->args->length() && type_count < 4; ++i) {
-            if (isTypeExpression((*node->args)[i], unit.getSymbolTable())) {
-                type_args[type_count++] = visit((*node->args)[i]);
+        // Collect parameter info
+        GenericParamInfo params[4];
+        int param_count = 0;
+        for (size_t i = 0; i < node->args->length() && param_count < 4; ++i) {
+            ASTNode* arg = (*node->args)[i];
+            if (isTypeExpression(arg, unit.getSymbolTable())) {
+                params[param_count].kind = GENERIC_PARAM_TYPE;
+                params[param_count].type_value = visit(arg);
+                params[param_count].param_name = NULL;
+                param_count++;
+            } else {
+                i64 int_val;
+                if (evaluateConstantExpression(arg, &int_val)) {
+                    params[param_count].kind = GENERIC_PARAM_COMPTIME_INT;
+                    params[param_count].int_value = int_val;
+                    params[param_count].param_name = NULL;
+                    param_count++;
+                }
+                // Handle float if needed, but for now int and type are primary
             }
+        }
+
+        // Compute hash for deduplication
+        u32 hash = 2166136261u;
+        for (int i = 0; i < param_count; ++i) {
+            hash ^= (u32)params[i].kind;
+            hash *= 16777619u;
+            if (params[i].kind == GENERIC_PARAM_TYPE) {
+                hash ^= (u32)(size_t)params[i].type_value;
+            } else if (params[i].kind == GENERIC_PARAM_COMPTIME_INT) {
+                hash ^= (u32)params[i].int_value;
+            }
+            hash *= 16777619u;
         }
 
         unit.getGenericCatalogue().addInstantiation(
             callee_name ? callee_name : "anonymous",
-            type_args,
-            type_count,
-            node->callee->loc
+            params,
+            param_count,
+            node->callee->loc,
+            unit.getCurrentModule(),
+            is_explicit,
+            hash
         );
     }
 }

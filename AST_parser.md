@@ -125,6 +125,7 @@ struct ASTNode {
     NodeType type;
     SourceLocation loc;
     Type* resolved_type;
+    const char* module;
 
     union {
         // Expressions
@@ -220,7 +221,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 
 | Node Struct                 | Size (bytes) | Stored in Union |
 | --------------------------- | ------------ | --------------- |
-| `ASTNode`                   | **28**       | -               |
+| `ASTNode`                   | **32**       | -               |
 | `ASTBinaryOpNode`           | 12           | Pointer (4)     |
 | `ASTIfStmtNode`             | 12           | Pointer (4)     |
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
@@ -1565,6 +1566,18 @@ This catalogue provides a comprehensive record of all generic features used in t
 All generic function calls are rejected by the `C89FeatureValidator` because:
 1.  Standard C89 does not support compile-time type parameters or generics.
 2.  Zig's `comptime` execution model has no direct equivalent in the target legacy environments.
+
+## 21. Multi-File Considerations for Milestone 6
+
+The current implementation assumes single-file compilation but includes data structures designed for modular compilation in Milestone 6.
+
+### 21.1 Module Field in ASTNode
+Every `ASTNode` stores a `module` field, which is a pointer to the interned logical name of the module (e.g., "main", "std"). This field is populated by the `Parser` using the module name provided by the `CompilationUnit`.
+
+### 21.2 Design for Milestone 6
+- **Import System**: `@import` will be processed during parsing to pull in external declarations.
+- **Catalogue Merging**: Specialized catalogues (e.g., `GenericCatalogue`) support merging to track cross-module feature usage.
+- See `docs/multi_file_considerations.md` and `docs/compilation_model.md` for more details.
 
 ## 20. Parser Path for Non-C89 Features (Task 150)
 

@@ -12,35 +12,34 @@ GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     definitions_ = new (def_mem) DynamicArray<GenericDefinitionInfo>(arena_);
 }
 
-void GenericCatalogue::addInstantiation(const char* name, Type** types, int count, SourceLocation loc) {
+void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* params, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
     if (!name) name = "anonymous";
 
-    // Deduplication
+    // Deduplication using hash and name
     for (size_t i = 0; i < instantiations_->length(); ++i) {
         const GenericInstantiation& existing = (*instantiations_)[i];
-        if (plat_strcmp(existing.function_name, name) == 0 && existing.type_count == count) {
-            bool match = true;
-            for (int j = 0; j < count; ++j) {
-                if (existing.type_arguments[j] != types[j]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) return;
+        if (existing.param_hash == param_hash && plat_strcmp(existing.function_name, name) == 0 &&
+            existing.param_count == count && plat_strcmp(existing.module, module) == 0) {
+            return;
         }
     }
 
     GenericInstantiation inst;
     inst.function_name = name;
-    inst.type_count = (count > 4) ? 4 : count;
-    for (int i = 0; i < inst.type_count; ++i) {
-        inst.type_arguments[i] = types[i];
+    inst.param_count = (count > 4) ? 4 : count;
+    for (int i = 0; i < inst.param_count; ++i) {
+        inst.params[i] = params[i];
     }
     inst.location = loc;
+    inst.module = module;
+    inst.is_explicit = is_explicit;
+    inst.param_hash = param_hash;
+    inst.specialization_id = (int)instantiations_->length();
+
     instantiations_->append(inst);
 }
 
-void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, GenericParamKind kind) {
+void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, GenericDefinitionKind kind) {
     if (!name) name = "anonymous";
 
     // Deduplication
@@ -57,6 +56,27 @@ void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, Gener
     info.location = loc;
     info.kind = kind;
     definitions_->append(info);
+}
+
+void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* module_prefix) {
+    // For instantiations
+    const DynamicArray<GenericInstantiation>* other_insts = other.getInstantiations();
+    for (size_t i = 0; i < other_insts->length(); ++i) {
+        const GenericInstantiation& other_inst = (*other_insts)[i];
+
+        // In a real merge, we might prefix the name if module_prefix is provided
+        // For now, we just add them to our own list, deduplicating
+        addInstantiation(other_inst.function_name, (GenericParamInfo*)other_inst.params,
+                         other_inst.param_count, other_inst.location,
+                         other_inst.module, other_inst.is_explicit, other_inst.param_hash);
+    }
+
+    // For definitions
+    const DynamicArray<GenericDefinitionInfo>* other_defs = other.getDefinitions();
+    for (size_t i = 0; i < other_defs->length(); ++i) {
+        const GenericDefinitionInfo& other_def = (*other_defs)[i];
+        addDefinition(other_def.function_name, other_def.location, other_def.kind);
+    }
 }
 
 bool GenericCatalogue::isFunctionGeneric(const char* name) const {
