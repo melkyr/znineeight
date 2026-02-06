@@ -1,5 +1,5 @@
 #include "symbol_table.hpp"
-#include <string.h>
+#include "platform.hpp"
 #include <new>
 #include "memory.hpp"
 
@@ -105,7 +105,7 @@ Symbol* Scope::find(const char* name) {
     size_t index = hash % bucket_count;
 
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
-        if (strcmp(entry->symbol.name, name) == 0) {
+        if (plat_strcmp(entry->symbol.name, name) == 0) {
             return &entry->symbol;
         }
     }

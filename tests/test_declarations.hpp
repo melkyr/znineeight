@@ -576,4 +576,11 @@ TEST_FUNC(Task154_CatalogueComptimeDefinition);
 TEST_FUNC(Task154_CatalogueAnytypeDefinition);
 TEST_FUNC(Task154_CatalogueTypeParamDefinition);
 
+// Forward declarations for Platform Abstraction Layer (PAL)
+TEST_FUNC(platform_alloc);
+TEST_FUNC(platform_realloc);
+TEST_FUNC(platform_string);
+TEST_FUNC(platform_file);
+TEST_FUNC(platform_print);
+
 #endif // TEST_DECLARATIONS_HPP

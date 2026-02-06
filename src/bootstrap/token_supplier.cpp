@@ -1,5 +1,5 @@
 #include "token_supplier.hpp"
-#include <cstring> // For memcpy
+#include "platform.hpp"
 
 TokenSupplier::TokenSupplier(SourceManager& source_manager, StringInterner& interner, ArenaAllocator& arena)
     : source_manager_(source_manager),
@@ -46,7 +46,7 @@ void TokenSupplier::tokenizeAndCache(u32 file_id) {
 
     // 3. Copy the tokens from the temporary array to the stable block.
     if (stable_tokens && num_tokens > 0) {
-        memcpy(stable_tokens, temp_tokens.getData(), total_size);
+        plat_memcpy(stable_tokens, temp_tokens.getData(), total_size);
     }
 
     // 4. Cache the stable pointer and count.

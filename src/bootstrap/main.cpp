@@ -8,29 +8,7 @@
 #include "type_system.hpp"
 #include "symbol_table.hpp"
 #include "utils.hpp"
-#include <iostream>
-#include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <new>
-
-// Helper to read a file into a buffer
-static char* readEntireFile(const char* path) {
-    FILE* file = fopen(path, "rb");
-    if (!file) return NULL;
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    char* buffer = (char*)malloc(length + 1);
-    if (!buffer) {
-        fclose(file);
-        return NULL;
-    }
-    size_t read = fread(buffer, 1, (size_t)length, file);
-    buffer[read] = '\0';
-    fclose(file);
-    return buffer;
-}
+#include "platform.hpp"
 
 /**
  * @brief Executes the full compilation pipeline for a single file.
@@ -41,9 +19,6 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
     }
 
     if (unit.getErrorHandler().hasErrors()) {
-        // Errors already printed by performFullPipeline calls if they were fatal,
-        // but performFullPipeline itself might have returned true after collecting errors.
-        // Actually CompilationUnit::performFullPipeline doesn't print errors, it just runs passes.
         unit.getErrorHandler().printErrors();
         return false;
     }
@@ -62,8 +37,8 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc >= 2 && strcmp(argv[1], "--self-test") == 0) {
-        std::cout << "Executing self-test..." << std::endl;
+    if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
+        plat_print_info("Executing self-test...\n");
 
         const char* source =
             "fn my_func() -> void {\n"
@@ -96,7 +71,7 @@ int main(int argc, char* argv[]) {
 
         if (runCompilationPipeline(unit, file_id)) {
             // We expect an error in this self-test because of the double free
-            std::cout << "Self-test failed: expected double free error not detected." << std::endl;
+            plat_print_error("Self-test failed: expected double free error not detected.\n");
             return 1;
         }
 
@@ -111,21 +86,24 @@ int main(int argc, char* argv[]) {
         }
 
         if (has_double_free && has_null_deref && has_lifetime_violation) {
-            std::cout << "Self-test passed: All memory safety violations correctly detected." << std::endl;
+            plat_print_info("Self-test passed: All memory safety violations correctly detected.\n");
             return 0;
         } else {
-            if (!has_double_free) std::cout << "Self-test failed: ERR_DOUBLE_FREE not detected." << std::endl;
-            if (!has_null_deref) std::cout << "Self-test failed: ERR_NULL_POINTER_DEREFERENCE not detected." << std::endl;
-            if (!has_lifetime_violation) std::cout << "Self-test failed: ERR_LIFETIME_VIOLATION not detected." << std::endl;
+            if (!has_double_free) plat_print_error("Self-test failed: ERR_DOUBLE_FREE not detected.\n");
+            if (!has_null_deref) plat_print_error("Self-test failed: ERR_NULL_POINTER_DEREFERENCE not detected.\n");
+            if (!has_lifetime_violation) plat_print_error("Self-test failed: ERR_LIFETIME_VIOLATION not detected.\n");
             return 1;
         }
     }
 
-    if (argc >= 3 && strcmp(argv[1], "--compile") == 0) {
+    if (argc >= 3 && plat_strcmp(argv[1], "--compile") == 0) {
         const char* filename = argv[2];
-        char* source = readEntireFile(filename);
-        if (!source) {
-            std::cerr << "Could not read file: " << filename << std::endl;
+        char* source = NULL;
+        size_t size = 0;
+        if (!plat_file_read(filename, &source, &size)) {
+            plat_print_error("Could not read file: ");
+            plat_print_error(filename);
+            plat_print_error("\n");
             return 1;
         }
 
@@ -144,15 +122,15 @@ int main(int argc, char* argv[]) {
         u32 file_id = unit.addSource(filename, source);
         bool success = runCompilationPipeline(unit, file_id);
 
-        free(source);
+        plat_free(source);
         return success ? 0 : 1;
     }
 
-    std::cout << "RetroZig Compiler v0.0.1" << std::endl;
-    std::cout << "Usage: retrozig [options]" << std::endl;
-    std::cout << "Options:" << std::endl;
-    std::cout << "  --self-test             Run internal self-tests" << std::endl;
-    std::cout << "  --compile <filename>    Compile a Zig source file" << std::endl;
+    plat_print_info("RetroZig Compiler v0.0.1\n");
+    plat_print_info("Usage: retrozig [options]\n");
+    plat_print_info("Options:\n");
+    plat_print_info("  --self-test             Run internal self-tests\n");
+    plat_print_info("  --compile <filename>    Compile a Zig source file\n");
 
     return 0;
 }

@@ -3,7 +3,6 @@
 #include "error_handler.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
-#include <string.h>
 
 SignatureAnalyzer::SignatureAnalyzer(CompilationUnit& unit)
     : unit_(unit), error_handler_(unit.getErrorHandler()), invalid_count_(0) {

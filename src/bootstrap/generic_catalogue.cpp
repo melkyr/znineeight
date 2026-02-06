@@ -1,7 +1,7 @@
 #include "generic_catalogue.hpp"
 #include "type_system.hpp"
+#include "platform.hpp"
 #include <new>
-#include <cstring>
 
 GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
@@ -18,7 +18,7 @@ void GenericCatalogue::addInstantiation(const char* name, Type** types, int coun
     // Deduplication
     for (size_t i = 0; i < instantiations_->length(); ++i) {
         const GenericInstantiation& existing = (*instantiations_)[i];
-        if (strcmp(existing.function_name, name) == 0 && existing.type_count == count) {
+        if (plat_strcmp(existing.function_name, name) == 0 && existing.type_count == count) {
             bool match = true;
             for (int j = 0; j < count; ++j) {
                 if (existing.type_arguments[j] != types[j]) {
@@ -45,7 +45,7 @@ void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, Gener
 
     // Deduplication
     for (size_t i = 0; i < definitions_->length(); ++i) {
-        if (strcmp((*definitions_)[i].function_name, name) == 0) {
+        if (plat_strcmp((*definitions_)[i].function_name, name) == 0) {
             // If already present, maybe we update the kind if it's more "generic"?
             // For now, first one wins or we don't care about multiple generic params of different kinds.
             return;
@@ -62,7 +62,7 @@ void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, Gener
 bool GenericCatalogue::isFunctionGeneric(const char* name) const {
     if (!name) return false;
     for (size_t i = 0; i < definitions_->length(); ++i) {
-        if (strcmp((*definitions_)[i].function_name, name) == 0) {
+        if (plat_strcmp((*definitions_)[i].function_name, name) == 0) {
             return true;
         }
     }

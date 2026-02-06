@@ -1,10 +1,7 @@
 #include "try_expression_catalogue.hpp"
 #include "utils.hpp"
+#include "platform.hpp"
 #include <new>
-
-#ifndef _WIN32
-#include <cstdio>
-#endif
 
 TryExpressionCatalogue::TryExpressionCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
@@ -33,11 +30,9 @@ int TryExpressionCatalogue::count() const {
 }
 
 void TryExpressionCatalogue::printSummary() const {
-#ifdef _WIN32
-    OutputDebugStringA("--- Try Expression Catalogue Summary ---\n");
+    plat_print_info("--- Try Expression Catalogue Summary ---\n");
     for (size_t i = 0; i < try_expressions_->length(); ++i) {
         const TryExpressionInfo& info = (*try_expressions_)[i];
-        char msg[256];
         char line[16], col[16], depth[16], strategy[16];
         arena_simple_itoa(info.location.line, line, sizeof(line));
         arena_simple_itoa(info.location.column, col, sizeof(col));
@@ -61,7 +56,8 @@ void TryExpressionCatalogue::printSummary() const {
         safe_append(current, remaining, strategy);
         safe_append(current, remaining, info.stack_safe ? " safe=yes\n" : " safe=no\n");
 
-        OutputDebugStringA(buffer);
+        plat_print_info(buffer);
+        plat_print_debug(buffer);
     }
     char total[16];
     arena_simple_itoa(count(), total, sizeof(total));
@@ -71,16 +67,6 @@ void TryExpressionCatalogue::printSummary() const {
     safe_append(cur, rem, "Total: ");
     safe_append(cur, rem, total);
     safe_append(cur, rem, "\n");
-    OutputDebugStringA(final_msg);
-#else
-    printf("--- Try Expression Catalogue Summary ---\n");
-    for (size_t i = 0; i < try_expressions_->length(); ++i) {
-        const TryExpressionInfo& info = (*try_expressions_)[i];
-        printf("Try at %u:%u context=%s depth=%d nested=%s strategy=%d safe=%s\n",
-               info.location.line, info.location.column,
-               info.context_type, info.depth, info.is_nested ? "yes" : "no",
-               (int)info.extraction_strategy, info.stack_safe ? "yes" : "no");
-    }
-    printf("Total: %d\n", count());
-#endif
+    plat_print_info(final_msg);
+    plat_print_debug(final_msg);
 }

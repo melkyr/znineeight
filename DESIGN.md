@@ -13,10 +13,12 @@
 To ensure compatibility with 1998-era hardware and software:
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
-* **Dependencies:** Win32 API (`kernel32.dll`) only. No third-party libs
+* **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
+* **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output) MUST go through the PAL (`platform.hpp`).
 * **C++ Standard Library Usage Policy:**
   * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
-  * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<string>` (`std::string`), and `<vector>` (`std::vector`).
+  * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<iostream>`, `<string>` (`std::string`), and `<vector>` (`std::vector`).
+  * **Exceptions:** `<cstdlib>` is allowed *only* for `abort()` and `strtol`/`strtod`.
 * **Specific MSVC 6.0 Hacks:**
   * Use `__int64` instead of `long long`
   * Define `bool`, `true`, `false` manually if missing
@@ -26,7 +28,8 @@ To ensure compatibility with 1998-era hardware and software:
 The compiler uses a layered architecture relying heavily on "Arena Allocation" to avoid `malloc`/`free` overhead on slow 90s allocators.
 
 ### 3.1 Memory Management (`memory.hpp`)
-**Concept:** A region-based allocator that frees all memory at once (e.g., after a compilation pass)
+**Concept:** A region-based allocator that frees all memory at once (e.g., after a compilation pass). It uses the PAL (`plat_alloc`) to acquire its initial buffer.
+
 ```cpp
 class ArenaAllocator {
     char* buffer;           // Large pre-allocated block (e.g., 1MB)

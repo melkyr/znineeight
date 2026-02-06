@@ -20,9 +20,11 @@ Responsibilities of the AI Agent
     Adhere to Constraints: Strictly follow all technical constraints (C++98, memory limits, dependencies) without deviation.
         C++ Standard Library Usage Policy:
         Allowed: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like <new> (for placement new), <cstddef> (for size_t), <cassert> (for assert), and <climits>.
-        Forbidden: Headers that depend on a C/C++ runtime library (like msvcrt.dll beyond kernel32.dll) or perform dynamic memory allocation. This includes headers like <cstdio> (fprintf), <string> (std::string), and <vector> (std::vector).
+        Forbidden: Headers that depend on a C/C++ runtime library (like msvcrt.dll beyond kernel32.dll) or perform dynamic memory allocation. This includes headers like <cstdio> (fprintf), <cstdlib> (malloc), <iostream>, <string> (std::string), and <vector> (std::vector).
         Exceptions:
-            - `<cstdlib>`: Allowed *only* for `abort()` (for fatal error handling in the parser), and `strtol`/`strtod` (for number parsing in the lexer). Direct memory management functions like `malloc` and `free` are strictly forbidden.
+            - `<cstdlib>`: Allowed *only* for `abort()` (for fatal error handling in the parser), and `strtol`/`strtod` (for number parsing in the lexer). Direct memory management functions like `malloc` and `free` are strictly forbidden; use `plat_alloc` and `plat_free` instead.
+        Platform Abstraction Layer (PAL):
+            All system-level operations (memory, files, console) MUST use the PAL (`platform.hpp`) to ensure compatibility and ease of development across Windows and Linux.
     Implement Code: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
     Document Changes: Update existing documentation (e.g., AST_parser.md) and add Doxygen-style comments to the generated code.
     Task Review: Review completed tasks for architectural alignment and completeness (e.g., Task 125: Lifetime Analysis Review).

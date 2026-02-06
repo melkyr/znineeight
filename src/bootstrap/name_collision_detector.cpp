@@ -2,7 +2,7 @@
 #include "compilation_unit.hpp"
 #include "error_handler.hpp"
 #include "utils.hpp"
-#include <string.h>
+#include "platform.hpp"
 #include <new>
 
 NameCollisionDetector::NameCollisionDetector(CompilationUnit& unit)
@@ -180,10 +180,10 @@ bool NameCollisionDetector::checkCollisionInCurrentScope(const char* name) {
     ScopeInfo* current = scope_stack_.back();
 
     for (size_t i = 0; i < current->function_names.length(); ++i) {
-        if (strcmp(current->function_names[i], name) == 0) return true;
+        if (plat_strcmp(current->function_names[i], name) == 0) return true;
     }
     for (size_t i = 0; i < current->variable_names.length(); ++i) {
-        if (strcmp(current->variable_names[i], name) == 0) return true;
+        if (plat_strcmp(current->variable_names[i], name) == 0) return true;
     }
     return false;
 }

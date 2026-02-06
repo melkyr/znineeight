@@ -3,8 +3,7 @@
 #include "symbol_table.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
-#include <cstdio>
-#include <string.h>
+#include "platform.hpp"
 #include <new>
 
 

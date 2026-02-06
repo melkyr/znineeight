@@ -1,8 +1,7 @@
 #include "c89_pattern_generator.hpp"
 #include "c89_type_mapping.hpp"
 #include "utils.hpp"
-#include <cstdio>
-#include <cstring>
+#include "platform.hpp"
 
 C89PatternGenerator::C89PatternGenerator(ArenaAllocator& arena) : arena_(arena) {}
 
@@ -19,7 +18,7 @@ const char* C89PatternGenerator::generatePattern(const ErrorFunctionInfo& info) 
 
 void C89PatternGenerator::typeToC89(Type* type, char* buffer, size_t buffer_size) {
     if (!type) {
-        strncpy(buffer, "void", buffer_size);
+        plat_strncpy(buffer, "void", buffer_size);
         return;
     }
 
@@ -34,23 +33,23 @@ void C89PatternGenerator::typeToC89(Type* type, char* buffer, size_t buffer_size
             break;
         }
         case TYPE_ARRAY:
-            strncpy(buffer, "struct PlaceholderArray", buffer_size);
+            plat_strncpy(buffer, "struct PlaceholderArray", buffer_size);
             break;
         case TYPE_STRUCT:
-            strncpy(buffer, "struct PlaceholderStruct", buffer_size);
+            plat_strncpy(buffer, "struct PlaceholderStruct", buffer_size);
             break;
         case TYPE_ENUM:
-            strncpy(buffer, "int", buffer_size); // Simplified
+            plat_strncpy(buffer, "int", buffer_size); // Simplified
             break;
         default: {
             const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);
             for (size_t i = 0; i < map_size; ++i) {
                 if (type->kind == c89_type_map[i].zig_type_kind) {
-                    strncpy(buffer, c89_type_map[i].c89_type_name, buffer_size);
+                    plat_strncpy(buffer, c89_type_map[i].c89_type_name, buffer_size);
                     return;
                 }
             }
-            strncpy(buffer, "void", buffer_size);
+            plat_strncpy(buffer, "void", buffer_size);
             break;
         }
     }
@@ -58,21 +57,21 @@ void C89PatternGenerator::typeToC89(Type* type, char* buffer, size_t buffer_size
 
 void C89PatternGenerator::getTypeSuffix(Type* type, char* buffer, size_t buffer_size) {
     if (!type) {
-        strncpy(buffer, "Void", buffer_size);
+        plat_strncpy(buffer, "Void", buffer_size);
         return;
     }
 
     switch (type->kind) {
-        case TYPE_I32: strncpy(buffer, "Int32", buffer_size); break;
-        case TYPE_U32: strncpy(buffer, "UInt32", buffer_size); break;
-        case TYPE_I8: strncpy(buffer, "Int8", buffer_size); break;
-        case TYPE_U8: strncpy(buffer, "UInt8", buffer_size); break;
-        case TYPE_BOOL: strncpy(buffer, "Bool", buffer_size); break;
-        case TYPE_VOID: strncpy(buffer, "Void", buffer_size); break;
-        case TYPE_POINTER: strncpy(buffer, "Ptr", buffer_size); break;
-        case TYPE_ARRAY: strncpy(buffer, "Array", buffer_size); break;
-        case TYPE_STRUCT: strncpy(buffer, "Struct", buffer_size); break;
-        default: strncpy(buffer, "Unknown", buffer_size); break;
+        case TYPE_I32: plat_strncpy(buffer, "Int32", buffer_size); break;
+        case TYPE_U32: plat_strncpy(buffer, "UInt32", buffer_size); break;
+        case TYPE_I8: plat_strncpy(buffer, "Int8", buffer_size); break;
+        case TYPE_U8: plat_strncpy(buffer, "UInt8", buffer_size); break;
+        case TYPE_BOOL: plat_strncpy(buffer, "Bool", buffer_size); break;
+        case TYPE_VOID: plat_strncpy(buffer, "Void", buffer_size); break;
+        case TYPE_POINTER: plat_strncpy(buffer, "Ptr", buffer_size); break;
+        case TYPE_ARRAY: plat_strncpy(buffer, "Array", buffer_size); break;
+        case TYPE_STRUCT: plat_strncpy(buffer, "Struct", buffer_size); break;
+        default: plat_strncpy(buffer, "Unknown", buffer_size); break;
     }
 }
 

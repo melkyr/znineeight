@@ -4,11 +4,8 @@
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include "utils.hpp"
+#include "platform.hpp"
 #include <cstdlib> // For abort()
-
-#if defined(_WIN32)
-#include <windows.h> // For OutputDebugStringA
-#endif
 
 // MSVC 6.0 compatibility
 #ifndef _MSC_VER
@@ -507,7 +504,7 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
             "strdup", "memcpy", "memset", "strcpy"
         };
         for (size_t i = 0; i < sizeof(banned_functions) / sizeof(banned_functions[0]); ++i) {
-            if (strcmp(callee_name, banned_functions[i]) == 0) {
+            if (plat_strcmp(callee_name, banned_functions[i]) == 0) {
                 char msg_buffer[256];
                 char* current = msg_buffer;
                 size_t remaining = sizeof(msg_buffer);
@@ -1495,9 +1492,7 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
     safe_append(current, remaining, col_str);
     safe_append(current, remaining, "\n");
 
-#ifdef _WIN32
-    OutputDebugStringA(buffer);
-#endif
+    plat_print_debug(buffer);
 }
 
 Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {
@@ -1793,11 +1788,7 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     safe_append(current, remaining, message);
     safe_append(current, remaining, "\n");
 
-#if defined(_WIN32)
-    OutputDebugStringA(buffer);
-#else
-    // No fprintf, as per constraints
-#endif
+    plat_print_debug(buffer);
 
     abort();
 }

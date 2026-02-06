@@ -2,15 +2,11 @@
 #define MEMORY_HPP
 
 #include "common.hpp"
+#include "platform.hpp"
 #include <cstddef> // For size_t
-#include <cstdlib> // For malloc, free
 #include <cassert> // For assert
-#include <cstring> // For memcpy
+#include <cstdlib> // For abort()
 #include <new>     // For placement new
-
-#ifdef _WIN32
-#include <windows.h> // For OutputDebugStringA
-#endif
 
 /**
  * @brief A simple integer-to-string conversion function.
@@ -43,7 +39,7 @@ static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
 
     // Shift the number to the start of the buffer
     size_t len = buffer_size - i;
-    memmove(buffer, buffer + i, len + 1);
+    plat_memmove(buffer, buffer + i, len + 1);
 }
 
 
@@ -75,12 +71,12 @@ static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
  */
 static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
     if (remaining <= 1) return; // Not enough space for content + null terminator
-    size_t len = strlen(src);
+    size_t len = plat_strlen(src);
     size_t to_copy = len;
     if (to_copy >= remaining) {
         to_copy = remaining - 1;
     }
-    memcpy(dest_ptr, src, to_copy);
+    plat_memcpy(dest_ptr, src, to_copy);
     dest_ptr += to_copy;
     remaining -= to_copy;
     *dest_ptr = '\0'; // Always keep the buffer null-terminated
@@ -88,7 +84,6 @@ static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
 
 #ifdef DEBUG
 static void report_out_of_memory(const char* context, size_t requested, size_t p1, size_t p2, size_t p3) {
-#ifdef _WIN32
     char buffer[256];
     char* current = buffer;
     size_t remaining = sizeof(buffer);
@@ -112,8 +107,7 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
     safe_append(current, remaining, n_p3);
     safe_append(current, remaining, "\n");
 
-    OutputDebugStringA(buffer);
-#endif
+    plat_print_debug(buffer);
 }
 
 /**
@@ -145,13 +139,13 @@ public:
      * @param capacity The total size of the memory arena in bytes.
      */
     ArenaAllocator(size_t capacity) : offset(0), capacity(capacity) {
-        buffer = (u8*)malloc(capacity);
+        buffer = (u8*)plat_alloc(capacity);
     }
     /**
      * @brief Destroys the ArenaAllocator, freeing the entire memory arena.
      */
     ~ArenaAllocator() {
-        free(buffer);
+        plat_free(buffer);
     }
 
     /**
@@ -228,10 +222,10 @@ public:
      */
     char* allocString(const char* str) {
         if (!str) return NULL;
-        size_t len = strlen(str);
+        size_t len = plat_strlen(str);
         char* mem = (char*)alloc(len + 1);
         if (mem) {
-            memcpy(mem, str, len + 1);
+            plat_memcpy(mem, str, len + 1);
         }
         return mem;
     }

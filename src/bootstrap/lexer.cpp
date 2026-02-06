@@ -61,7 +61,7 @@ double Lexer::parseDecimalFloat(const char* start, const char** end) {
 }
 #include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
-#include <cstring> // For memcmp, strncmp
+#include "platform.hpp"
 
 /**
  * @brief Parses an integer from a string slice into a u64, with overflow detection.
@@ -221,7 +221,7 @@ static TokenType lookupIdentifier(const char* name, size_t len) {
         size_t common_len = (len < k.len) ? len : k.len;
 
         // Compare the shared prefix bytes
-        int cmp = memcmp(name, k.name, common_len);
+        int cmp = plat_memcmp(name, k.name, common_len);
 
         if (cmp == 0) {
             // The prefixes match. Now distinguishing based on length.
@@ -690,7 +690,7 @@ Token Lexer::nextToken() {
             }
             break;
         case '@':
-            if (strncmp(this->current, "import", 6) == 0 && !isIdentifierChar(this->current[6])) {
+            if (plat_strncmp(this->current, "import", 6) == 0 && !isIdentifierChar(this->current[6])) {
                 this->current += 6;
                 this->column += 6;
                 token.type = TOKEN_AT_IMPORT;
