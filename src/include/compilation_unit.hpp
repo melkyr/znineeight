@@ -58,6 +58,9 @@ public:
     ErrDeferCatalogue& getErrDeferCatalogue();
     ArenaAllocator& getArena();
 
+    const char* getCurrentModule() const;
+    void setCurrentModule(const char* module_name);
+
     CompilationOptions& getOptions();
     const CompilationOptions& getOptions() const;
     void setOptions(const CompilationOptions& options);
@@ -121,6 +124,7 @@ private:
     OrelseExpressionCatalogue orelse_expression_catalogue_;
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     ErrDeferCatalogue errdefer_catalogue_;
+    const char* current_module_;
     CompilationOptions options_;
 
     C89PatternGenerator* pattern_generator_;

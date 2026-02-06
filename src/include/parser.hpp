@@ -40,8 +40,9 @@ public:
      * @param symbol_table A pointer to the SymbolTable for managing scopes.
      * @param catalogue A pointer to the ErrorSetCatalogue for tracking error sets.
      * @param generic_catalogue A pointer to the GenericCatalogue for tracking generic functions.
+     * @param module_name The name of the module being parsed.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue);
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, const char* module_name = "main");
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -307,6 +308,14 @@ private:
      */
     ASTNode* createNode(NodeType type);
 
+    /**
+     * @brief Allocates and initializes a new ASTNode at a specific location.
+     * @param type The NodeType for the new node.
+     * @param loc The source location for the new node.
+     * @return A pointer to the newly created node.
+     */
+    ASTNode* createNodeAt(NodeType type, SourceLocation loc);
+
     // Forward declarations for node types used in the parser
     struct ASTExpressionStmtNode;
 
@@ -317,6 +326,7 @@ private:
     SymbolTable* symbol_table_;
     ErrorSetCatalogue* catalogue_;
     GenericCatalogue* generic_catalogue_;
+    const char* module_name_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
     Token eof_token_; ///< A cached EOF token to return from peekNext()
 

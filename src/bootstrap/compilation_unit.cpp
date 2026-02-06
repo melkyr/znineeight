@@ -13,6 +13,7 @@
 #include "platform.hpp"
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
+#include <cstring>   // For strrchr, strcpy
 
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
@@ -38,9 +39,12 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       options_(),
       pattern_generator_(NULL),
       test_patterns_(NULL),
+      current_module_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
       c89_validation_passed_(false) {
+
+    current_module_ = interner_.intern("main");
 
     void* gen_mem = arena_.alloc(sizeof(C89PatternGenerator));
     pattern_generator_ = new (gen_mem) C89PatternGenerator(arena_);
@@ -50,7 +54,33 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
-    return source_manager_.addFile(filename, source, plat_strlen(source));
+    u32 file_id = source_manager_.addFile(filename, source, plat_strlen(source));
+
+    // Derive module name: "foo.zig" -> "foo"
+    const char* slash = strrchr(filename, '/');
+    const char* backslash = strrchr(filename, '\\');
+    const char* last_sep = (slash > backslash) ? slash : backslash;
+    const char* basename = last_sep ? last_sep + 1 : filename;
+
+    // Remove extension
+    char module_name_buf[256];
+    size_t basename_len = plat_strlen(basename);
+    if (basename_len >= sizeof(module_name_buf)) {
+        basename_len = sizeof(module_name_buf) - 1;
+    }
+    plat_strncpy(module_name_buf, basename, basename_len);
+    module_name_buf[basename_len] = '\0';
+
+    char* dot = strrchr(module_name_buf, '.');
+    if (dot) *dot = '\0';
+
+    if (module_name_buf[0] == '\0') {
+        setCurrentModule("main");
+    } else {
+        setCurrentModule(module_name_buf);
+    }
+
+    return file_id;
 }
 
 Parser* CompilationUnit::createParser(u32 file_id) {
@@ -61,7 +91,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_, current_module_);
 }
 
 /**
@@ -118,6 +148,14 @@ ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
 
 ArenaAllocator& CompilationUnit::getArena() {
     return arena_;
+}
+
+const char* CompilationUnit::getCurrentModule() const {
+    return current_module_;
+}
+
+void CompilationUnit::setCurrentModule(const char* module_name) {
+    current_module_ = interner_.intern(module_name);
 }
 
 CompilationOptions& CompilationUnit::getOptions() {

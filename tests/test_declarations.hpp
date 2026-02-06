@@ -583,4 +583,10 @@ TEST_FUNC(platform_string);
 TEST_FUNC(platform_file);
 TEST_FUNC(platform_print);
 
+// Forward declarations for Task 156 (Multi-file & Enhanced Generics)
+TEST_FUNC(Task156_ModuleDerivation);
+TEST_FUNC(Task156_ASTNodeModule);
+TEST_FUNC(Task156_EnhancedGenericDetection);
+TEST_FUNC(Task156_InternalErrorCode);
+
 #endif // TEST_DECLARATIONS_HPP

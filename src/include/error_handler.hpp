@@ -44,7 +44,8 @@ enum ErrorCode {
     ERR_DIVISION_BY_ZERO = 4002,
 
     // System Errors (5000-5999)
-    ERR_OUT_OF_MEMORY = 5000
+    ERR_OUT_OF_MEMORY = 5000,
+    ERR_INTERNAL_ERROR = 5001
 };
 
 /**

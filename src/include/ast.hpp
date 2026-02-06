@@ -693,6 +693,7 @@ struct ASTNode {
     NodeType type;
     SourceLocation loc;
     Type* resolved_type;
+    const char* module;
 
     union {
         // Expressions

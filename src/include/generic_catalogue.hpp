@@ -7,18 +7,39 @@
 
 struct Type;
 
+enum GenericParamKind {
+    GENERIC_PARAM_TYPE,          // e.g., `i32`
+    GENERIC_PARAM_COMPTIME_INT,  // e.g., `comptime n: i32 = 10`
+    GENERIC_PARAM_COMPTIME_FLOAT, // e.g., `comptime pi: f32 = 3.14`
+    GENERIC_PARAM_ANYTYPE        // `anytype`
+};
+
+struct GenericParamInfo {
+    GenericParamKind kind;
+    union {
+        Type* type_value;
+        i64 int_value;
+        double float_value;
+    };
+    const char* param_name;  // Interned string
+};
+
 /**
  * @struct GenericInstantiation
  * @brief Stores information about a generic function instantiation.
  */
 struct GenericInstantiation {
     const char* function_name;
-    Type* type_arguments[4];
-    int type_count;
+    GenericParamInfo params[4];
+    int param_count;
     SourceLocation location;
+    const char* module;  // NULL or logical name
+    bool is_explicit;    // explicit vs implicit
+    int specialization_id; // Unique per combination
+    u32 param_hash;      // Quick comparison
 };
 
-enum GenericParamKind {
+enum GenericDefinitionKind {
     GENERIC_KIND_COMPTIME,
     GENERIC_KIND_ANYTYPE,
     GENERIC_KIND_TYPE_PARAM
@@ -27,7 +48,7 @@ enum GenericParamKind {
 struct GenericDefinitionInfo {
     const char* function_name;
     SourceLocation location;
-    GenericParamKind kind;
+    GenericDefinitionKind kind;
 };
 
 /**
@@ -41,12 +62,17 @@ public:
     /**
      * @brief Adds a new generic instantiation to the catalogue.
      */
-    void addInstantiation(const char* name, Type** types, int count, SourceLocation loc);
+    void addInstantiation(const char* name, GenericParamInfo* params, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash);
 
     /**
      * @brief Adds a new generic function definition to the catalogue.
      */
-    void addDefinition(const char* name, SourceLocation loc, GenericParamKind kind);
+    void addDefinition(const char* name, SourceLocation loc, GenericDefinitionKind kind);
+
+    /**
+     * @brief Merges instantiations and definitions from another catalogue.
+     */
+    void mergeFrom(const GenericCatalogue& other, const char* module_prefix = "");
 
     /**
      * @brief Checks if a function is catalogued as generic.
