@@ -51,16 +51,18 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
 
 void plat_print_info(const char* message) {
     DWORD written;
-    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),
-              message, (DWORD)plat_strlen(message),
-              &written, NULL);
+    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hStdOut != INVALID_HANDLE_VALUE && hStdOut != NULL) {
+        WriteFile(hStdOut, message, (DWORD)plat_strlen(message), &written, NULL);
+    }
 }
 
 void plat_print_error(const char* message) {
     DWORD written;
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE),
-              message, (DWORD)plat_strlen(message),
-              &written, NULL);
+    HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hStdErr != INVALID_HANDLE_VALUE && hStdErr != NULL) {
+        WriteFile(hStdErr, message, (DWORD)plat_strlen(message), &written, NULL);
+    }
 }
 
 void plat_print_debug(const char* message) {
