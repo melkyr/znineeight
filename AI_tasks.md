@@ -743,10 +743,10 @@ Output: Runtime assertions in codegen module
         Recursive template instantiations
     Validation: Track all template instantiation sites
     Success criteria: All template usage is catalogued for processing
-156. **Task 156:** Detect explicit template instantiation 
-157. **Task 157:** Detect implicit template instantiation 
-158. **Task 158:** Track template specialization 
-159. **Task 159:** Catalog instantiation parameters 
+156. **Task 156:** Detect explicit template instantiation (DONE)
+157. **Task 157:** Detect implicit template instantiation (DONE)
+158. **Task 158:** Track template specialization (DONE)
+159. **Task 159:** Catalog instantiation parameters (DONE)
 160. **Task 160:** Validate instantiation safety 
 
 161. **Task 161:** NAME MANGLING ALGORITHM DESIGN (MEDIUM)

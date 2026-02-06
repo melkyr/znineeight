@@ -33,7 +33,9 @@ enum TypeKind {
     TYPE_ENUM,
     TYPE_STRUCT,
     TYPE_ERROR_UNION,
-    TYPE_ERROR_SET
+    TYPE_ERROR_SET,
+    TYPE_TYPE,
+    TYPE_ANYTYPE
 };
 
 /**
@@ -216,5 +218,7 @@ Type* get_g_type_usize();
 Type* get_g_type_f32();
 Type* get_g_type_f64();
 Type* get_g_type_null();
+Type* get_g_type_type();
+Type* get_g_type_anytype();
 
 #endif // TYPE_SYSTEM_HPP

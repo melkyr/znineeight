@@ -334,14 +334,14 @@ Represents an identifier, such as a variable or function name. The `name` field 
 
 #### `ASTUnaryOpNode`
 Represents an operation with a single operand.
-*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`
+*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`, `--y`
 *   **Structure:**
     ```cpp
     /**
      * @struct ASTUnaryOpNode
      * @brief Represents a unary operation.
      * @var ASTUnaryOpNode::operand The operand.
-     * @var ASTUnaryOpNode::op The token representing the operator (e.g., TOKEN_MINUS).
+     * @var ASTUnaryOpNode::op The token representing the operator (e.g., TOKEN_MINUS, TOKEN_MINUS2).
      */
     struct ASTUnaryOpNode {
         ASTNode* operand;
@@ -1556,7 +1556,7 @@ The `isTypeExpression` helper function is used by both the `C89FeatureValidator`
 
 Detected generic instantiations are recorded in the `GenericCatalogue` owned by the `CompilationUnit`. Each entry includes:
 -   The function name.
--   Up to 4 resolved type arguments.
+-   Up to 4 resolved type arguments (capturing the actual types passed at the call site).
 -   The source location of the call.
 
 This catalogue provides a comprehensive record of all generic features used in the source code, even though they are eventually rejected to maintain C89 compatibility.
@@ -1589,7 +1589,7 @@ To support accurate diagnostics and future translation planning, the RetroZig pa
 
 ### 20.2 Implementation Highlights
 - **Error Handling**: The parser handles `try`, `catch`, `orelse`, and `errdefer` using standard Zig precedence rules. Error sets and error unions (`!T`) are parsed as types. The `.?` operator is recognized by the lexer and strictly rejected as non-C89.
-- **Generics**: Function declarations support `comptime` parameters, and function calls support explicit type arguments. The `TypeChecker` populates the `GenericCatalogue` with resolved type arguments for each instantiation site.
+- **Generics**: Function declarations support `comptime` parameters, and function calls support explicit type arguments. The `TypeChecker` identifies both explicit and implicit generic calls and populates the `GenericCatalogue` with resolved argument types for each instantiation site, enabling detailed diagnostic reporting.
 - **Imports**: `@import` is recognized as a primary expression for the purpose of identifying external dependencies, though it is currently strictly rejected.
 
 ### 20.3 Rejection via Validation

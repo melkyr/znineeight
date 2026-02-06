@@ -27,6 +27,8 @@ DEFINE_GET_TYPE_FUNC(g_type_f32,  TYPE_F32,  4, 4)
 DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
 
 DEFINE_GET_TYPE_FUNC(g_type_null, TYPE_NULL, 0, 0)
+DEFINE_GET_TYPE_FUNC(g_type_type, TYPE_TYPE, 0, 0)
+DEFINE_GET_TYPE_FUNC(g_type_anytype, TYPE_ANYTYPE, 0, 0)
 
 Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "void") == 0) return get_g_type_void();
@@ -43,6 +45,8 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "usize") == 0) return get_g_type_usize();
     if (plat_strcmp(name, "f32") == 0) return get_g_type_f32();
     if (plat_strcmp(name, "f64") == 0) return get_g_type_f64();
+    if (plat_strcmp(name, "type") == 0) return get_g_type_type();
+    if (plat_strcmp(name, "anytype") == 0) return get_g_type_anytype();
 
     return NULL; // Not a known primitive type
 }
@@ -241,6 +245,8 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             }
             break;
         }
+        case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
+        case TYPE_ANYTYPE: safe_append(current, remaining, "anytype"); break;
         default:
             safe_append(current, remaining, "unknown");
             break;

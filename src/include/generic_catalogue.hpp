@@ -31,6 +31,7 @@ struct GenericParamInfo {
 struct GenericInstantiation {
     const char* function_name;
     GenericParamInfo params[4];
+    Type* arg_types[4];  // Captures the resolved type of each argument
     int param_count;
     SourceLocation location;
     const char* module;  // NULL or logical name
@@ -62,7 +63,7 @@ public:
     /**
      * @brief Adds a new generic instantiation to the catalogue.
      */
-    void addInstantiation(const char* name, GenericParamInfo* params, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash);
+    void addInstantiation(const char* name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash);
 
     /**
      * @brief Adds a new generic function definition to the catalogue.
@@ -78,6 +79,11 @@ public:
      * @brief Checks if a function is catalogued as generic.
      */
     bool isFunctionGeneric(const char* name) const;
+
+    /**
+     * @brief Finds an instantiation by name and location.
+     */
+    const GenericInstantiation* findInstantiation(const char* name, SourceLocation loc) const;
 
     /**
      * @brief Returns the number of catalogued instantiations.

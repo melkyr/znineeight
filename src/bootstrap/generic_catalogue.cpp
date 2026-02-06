@@ -12,8 +12,9 @@ GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     definitions_ = new (def_mem) DynamicArray<GenericDefinitionInfo>(arena_);
 }
 
-void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* params, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
+void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
     if (!name) name = "anonymous";
+    if (!module) module = "unknown";
 
     // Deduplication using hash and name
     for (size_t i = 0; i < instantiations_->length(); ++i) {
@@ -29,6 +30,11 @@ void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* para
     inst.param_count = (count > 4) ? 4 : count;
     for (int i = 0; i < inst.param_count; ++i) {
         inst.params[i] = params[i];
+        if (arg_types) {
+            inst.arg_types[i] = arg_types[i];
+        } else {
+            inst.arg_types[i] = NULL;
+        }
     }
     inst.location = loc;
     inst.module = module;
@@ -67,6 +73,7 @@ void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* modu
         // In a real merge, we might prefix the name if module_prefix is provided
         // For now, we just add them to our own list, deduplicating
         addInstantiation(other_inst.function_name, (GenericParamInfo*)other_inst.params,
+                         (Type**)other_inst.arg_types,
                          other_inst.param_count, other_inst.location,
                          other_inst.module, other_inst.is_explicit, other_inst.param_hash);
     }
@@ -87,6 +94,23 @@ bool GenericCatalogue::isFunctionGeneric(const char* name) const {
         }
     }
     return false;
+}
+
+const GenericInstantiation* GenericCatalogue::findInstantiation(const char* name, SourceLocation loc) const {
+    if (!name) return NULL;
+
+    for (size_t i = 0; i < instantiations_->length(); ++i) {
+        const GenericInstantiation& inst = (*instantiations_)[i];
+
+        if (plat_strcmp(inst.function_name, name) == 0) {
+            if (inst.location.line == loc.line &&
+                inst.location.column == loc.column &&
+                inst.location.file_id == loc.file_id) {
+                return &inst;
+            }
+        }
+    }
+    return NULL;
 }
 
 int GenericCatalogue::count() const {

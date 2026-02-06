@@ -1058,11 +1058,23 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
     bool all_params_valid = true;
+
+    unit.getSymbolTable().enterScope();
     for (size_t i = 0; i < node->params->length(); ++i) {
         ASTParamDeclNode* param_node = (*node->params)[i];
         Type* param_type = visit(param_node->type);
         if (param_type) {
             param_types->append(param_type);
+
+            // Register parameter in scope immediately so subsequent parameters can use it (e.g. comptime T: type)
+            Symbol param_symbol = SymbolBuilder(unit.getArena())
+                .withName(param_node->name)
+                .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
+                .withType(param_type)
+                .atLocation(param_node->type->loc)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
+                .build();
+            unit.getSymbolTable().insert(param_symbol);
         } else {
             all_params_valid = false;
         }
@@ -1071,6 +1083,7 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     // If any parameter type was invalid, don't create the function type
     // or check the body, as it will likely lead to cascading errors.
     if (!all_params_valid) {
+        unit.getSymbolTable().exitScope();
         current_fn_return_type = prev_fn_return_type;
         return NULL;
     }
@@ -1080,20 +1093,6 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
     if (fn_symbol) {
         fn_symbol->symbol_type = function_type;
-    }
-
-    unit.getSymbolTable().enterScope();
-    for (size_t i = 0; i < node->params->length(); ++i) {
-        ASTParamDeclNode* param_node = (*node->params)[i];
-        Type* param_type = (*param_types)[i];
-        Symbol param_symbol = SymbolBuilder(unit.getArena())
-            .withName(param_node->name)
-            .ofType(SYMBOL_VARIABLE)
-            .withType(param_type)
-            .atLocation(param_node->type->loc)
-            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
-            .build();
-        unit.getSymbolTable().insert(param_symbol);
     }
 
     visit(node->body);
@@ -1605,6 +1604,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return false;
     }
 
+    // anytype is compatible with anything
+    if (expected->kind == TYPE_ANYTYPE || actual->kind == TYPE_ANYTYPE) {
+        return true;
+    }
+
     // Handle null assignment to any pointer
     if (actual->kind == TYPE_NULL && expected->kind == TYPE_POINTER) {
         return true;
@@ -1970,23 +1974,34 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     if (is_explicit || is_implicit) {
         // Collect parameter info
         GenericParamInfo params[4];
+        Type* arg_types[4];
         int param_count = 0;
+
         for (size_t i = 0; i < node->args->length() && param_count < 4; ++i) {
             ASTNode* arg = (*node->args)[i];
+            Type* arg_type = visit(arg);
+            arg_types[param_count] = arg_type;
+
             if (isTypeExpression(arg, unit.getSymbolTable())) {
                 params[param_count].kind = GENERIC_PARAM_TYPE;
-                params[param_count].type_value = visit(arg);
+                params[param_count].type_value = arg_type;
                 params[param_count].param_name = NULL;
                 param_count++;
             } else {
+                // If it's not a type expression, it might be a value that infers a type
                 i64 int_val;
                 if (evaluateConstantExpression(arg, &int_val)) {
                     params[param_count].kind = GENERIC_PARAM_COMPTIME_INT;
                     params[param_count].int_value = int_val;
                     params[param_count].param_name = NULL;
                     param_count++;
+                } else {
+                    // Implicit inference from argument type
+                    params[param_count].kind = GENERIC_PARAM_TYPE;
+                    params[param_count].type_value = arg_type;
+                    params[param_count].param_name = NULL;
+                    param_count++;
                 }
-                // Handle float if needed, but for now int and type are primary
             }
         }
 
@@ -2006,6 +2021,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
         unit.getGenericCatalogue().addInstantiation(
             callee_name ? callee_name : "anonymous",
             params,
+            arg_types,
             param_count,
             node->callee->loc,
             unit.getCurrentModule(),
