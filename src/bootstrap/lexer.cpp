@@ -583,13 +583,15 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_PLUS;
             }
             break;
-        case '-': // Handles '-', '->', '-=', '-%'
+        case '-': // Handles '-', '->', '-=', '-%', '--'
             if (match('>')) {
                 token.type = TOKEN_ARROW;
             } else if (match('=')) {
                 token.type = TOKEN_MINUS_EQUAL;
             } else if (match('%')) {
                 token.type = TOKEN_MINUSPERCENT;
+            } else if (match('-')) {
+                token.type = TOKEN_MINUS2;
             } else {
                 token.type = TOKEN_MINUS;
             }

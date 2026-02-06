@@ -579,9 +579,29 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     // 2. Detect implicit generic call (call to generic function)
     if (call->callee->type == NODE_IDENTIFIER) {
         const char* name = call->callee->as.identifier.name;
-        Symbol* sym = unit.getSymbolTable().lookup(name);
-        if ((sym && sym->is_generic) || unit.getGenericCatalogue().isFunctionGeneric(name)) {
-            reportNonC89Feature(node->loc, "Calls to generic functions are not C89-compatible.");
+        const GenericInstantiation* inst = unit.getGenericCatalogue().findInstantiation(name, call->callee->loc);
+
+        if (inst && !inst->is_explicit) {
+            char msg[512];
+            char* cur = msg;
+            size_t rem = sizeof(msg);
+            safe_append(cur, rem, "Implicit generic instantiation of '");
+            safe_append(cur, rem, name);
+            safe_append(cur, rem, "' with argument types: ");
+
+            for (int i = 0; i < inst->param_count; i++) {
+                if (i > 0) safe_append(cur, rem, ", ");
+                char type_name[64];
+                typeToString(inst->arg_types[i], type_name, sizeof(type_name));
+                safe_append(cur, rem, type_name);
+            }
+            safe_append(cur, rem, " (non-C89)");
+            reportNonC89Feature(node->loc, msg, true);
+        } else {
+            Symbol* sym = unit.getSymbolTable().lookup(name);
+            if ((sym && sym->is_generic) || unit.getGenericCatalogue().isFunctionGeneric(name)) {
+                reportNonC89Feature(node->loc, "Calls to generic functions are not C89-compatible.");
+            }
         }
     }
 

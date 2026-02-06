@@ -737,6 +737,7 @@ The parser now supports "expression statements", which are statements that consi
 -   **`parseFnDecl()`:** When a function is parsed, this method:
     1.  Constructs a `Symbol` for the function itself.
     2.  Inserts this `Symbol` into the *current* scope (e.g., the global scope for a top-level function). This happens *before* a new scope is entered for the function's body.
+    3.  During type checking, parameters are registered in the function's scope immediately as they are resolved. This allows later parameters in the same signature to refer to earlier ones (e.g., `fn f(comptime T: type, x: T)`).
 
 ### Error Handling
 
@@ -1081,6 +1082,7 @@ The parser is equipped to identify generic function definitions by looking for t
 
 When a generic function is detected:
 1.  It is recorded in the `GenericCatalogue` with its name, location, and the kind of generic parameter that triggered the detection.
-2.  The `C89FeatureValidator` pass checks the catalogue and issues a fatal error: "Generic functions are not supported in C89 mode."
+2.  The `TypeChecker` identifies both explicit and implicit generic function calls and catalogues each instantiation site, capturing the resolved types of all arguments passed.
+3.  The `C89FeatureValidator` pass checks the catalogue and issues a fatal error. For implicit generic calls, it provides a detailed diagnostic including the inferred argument types (e.g., `Implicit generic instantiation of 'foo' with argument types: i32, f64`).
 
 For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](docs/generic_functions_c89.md).

@@ -109,6 +109,7 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_PLUSPERCENT`| `+%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_MINUSPERCENT`| `-%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_STARPERCENT`| `*%`   | Yes         | Implemented as part of Task 22. |
+| `TOKEN_MINUS2`     | `--`   | Yes         | Decrement operator.             |
 
 ### 2.3. Keywords
 
@@ -140,11 +141,12 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_LINKSECTION` | `linksection` |
 | `TOKEN_USINGNAMESPACE` | `usingnamespace` |
 | `TOKEN_ADDRSPACE` | `addrspace` |
-| `TOKEN_ALIGN` | `align` |
+| `TOKEN_ALIGN`     | `align` |
 | `TOKEN_ALLOWZERO` | `allowzero` |
 | `TOKEN_AND` | `and` |
 | `TOKEN_ANYFRAME` | `anyframe` |
 | `TOKEN_ANYTYPE` | `anytype` |
+| `TOKEN_TYPE` | `type` |
 | `TOKEN_CALLCONV` | `callconv` |
 | `TOKEN_NOALIAS` | `noalias` |
 | `TOKEN_NOSUSPEND` | `nosuspend` |

@@ -31,3 +31,14 @@ The lexer is responsible for resolving ambiguities in the source code. For examp
 #### Integer vs. Range Operator Ambiguity
 
 The lexer implements a two-character lookahead to resolve the ambiguity between a float literal and a range operator. When the lexer encounters a `.` after a number, it peeks at the next character. If the next character is also a `.`, the lexer treats the number as an integer and leaves the `..` to be tokenized as a `TOKEN_RANGE` in the next step.
+
+## New Keywords and Operators (Milestone 4)
+
+### Keywords
+- `type`: Used for type expressions and generic parameters.
+- `anytype`: Used for generic parameters where any type is accepted.
+- `comptime`: Used for compile-time constants and parameters.
+
+### Operators
+- `--`: Decrement operator (added for complete operator coverage).
+- `||`: Error set merging operator.
