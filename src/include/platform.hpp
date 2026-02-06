@@ -30,6 +30,8 @@ void plat_strcpy(char* dest, const char* src);
 void plat_strncpy(char* dest, const char* src, size_t n);
 int plat_strcmp(const char* s1, const char* s2);
 int plat_strncmp(const char* s1, const char* s2, size_t n);
+char* plat_strchr(const char* s, int c);
+char* plat_strrchr(const char* s, int c);
 int plat_memcmp(const void* s1, const void* s2, size_t n);
 void plat_memset(void* s, int c, size_t n);
 

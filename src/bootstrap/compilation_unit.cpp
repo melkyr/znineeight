@@ -13,7 +13,6 @@
 #include "platform.hpp"
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
-#include <cstring>   // For strrchr, strcpy
 
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
@@ -57,8 +56,8 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     u32 file_id = source_manager_.addFile(filename, source, plat_strlen(source));
 
     // Derive module name: "foo.zig" -> "foo"
-    const char* slash = strrchr(filename, '/');
-    const char* backslash = strrchr(filename, '\\');
+    const char* slash = plat_strrchr(filename, '/');
+    const char* backslash = plat_strrchr(filename, '\\');
     const char* last_sep = (slash > backslash) ? slash : backslash;
     const char* basename = last_sep ? last_sep + 1 : filename;
 
@@ -71,7 +70,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     plat_strncpy(module_name_buf, basename, basename_len);
     module_name_buf[basename_len] = '\0';
 
-    char* dot = strrchr(module_name_buf, '.');
+    char* dot = plat_strrchr(module_name_buf, '.');
     if (dot) *dot = '\0';
 
     if (module_name_buf[0] == '\0') {

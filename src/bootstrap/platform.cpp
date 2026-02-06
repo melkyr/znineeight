@@ -124,6 +124,22 @@ int plat_strncmp(const char* s1, const char* s2, size_t n) {
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
 
+char* plat_strchr(const char* s, int c) {
+    while (*s != (char)c) {
+        if (!*s) return NULL;
+        s++;
+    }
+    return (char*)s;
+}
+
+char* plat_strrchr(const char* s, int c) {
+    const char* last = NULL;
+    do {
+        if (*s == (char)c) last = s;
+    } while (*s++);
+    return (char*)last;
+}
+
 int plat_memcmp(const void* s1, const void* s2, size_t n) {
     const unsigned char* p1 = (const unsigned char*)s1;
     const unsigned char* p2 = (const unsigned char*)s2;
@@ -232,6 +248,14 @@ int plat_strcmp(const char* s1, const char* s2) {
 
 int plat_strncmp(const char* s1, const char* s2, size_t n) {
     return strncmp(s1, s2, n);
+}
+
+char* plat_strchr(const char* s, int c) {
+    return (char*)strchr(s, c);
+}
+
+char* plat_strrchr(const char* s, int c) {
+    return (char*)strrchr(s, c);
 }
 
 int plat_memcmp(const void* s1, const void* s2, size_t n) {
