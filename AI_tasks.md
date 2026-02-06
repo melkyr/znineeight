@@ -920,7 +920,109 @@ Output: Runtime assertions in codegen module
 200. **Task 200:** Handle Zig memory management with C89-compatible patterns.
 201. **Task 201:** Integrate CBackend to write complete C89 `.c` files.
 202. **Task 202:** Compile a "hello world" Zig program end-to-end.
+Phase 6A: Import System Foundation
 
+Task 203: Implement basic @import statement support (NEW, CRITICAL)
+
+    Add TOKEN_IMPORT to lexer (already exists)
+
+    Modify Parser::parseImportStmt() to actually read files
+
+    Implement simple file inclusion (not full module system)
+
+    Handle circular import detection (basic)
+
+    Update CompilationUnit to track multiple files
+
+Task 204: Create multi-file compilation pipeline (NEW)
+
+    Extend CompilationUnit::performFullPipeline() to handle imports
+
+    Merge symbol tables across imported files
+
+    Merge catalogues (GenericCatalogue, ErrorSetCatalogue, etc.)
+
+    Update SourceManager to manage multiple files with proper location mapping
+
+Task 205: Implement simple include path resolution (NEW)
+
+    Add -I flag to command line for include directories
+
+    Search paths for imported files
+
+    Default to current directory and a lib/ directory
+
+Phase 6B: C89 Code Generation with Modules
+
+Task 197: Implement the CBackend class skeleton for final code emission.
+
+    Enhancement: Support emitting multiple .c files from multiple Zig files
+
+    Add per-module code generation
+
+Task 198: Add logic to generate proper C89 headers and include guards.
+
+    Enhancement: Generate .h files for module interfaces
+
+    Create proper header guards for multi-file compilation
+
+    Export public symbols from modules
+
+Task 199: Implement wrappers for Zig runtime features to C library calls.
+
+    Enhancement: Make wrappers available to imported modules
+
+    Create a zig_runtime.h for shared runtime functions
+
+Task 200: Handle Zig memory management with C89-compatible patterns.
+
+    Enhancement: Make arena functions available across modules
+
+    Implement module initialization/cleanup for memory management
+
+Task 201: Integrate CBackend to write complete C89 .c files.
+
+    Enhancement: Generate one .c file per Zig source file
+
+    Create a main.c that includes all module .c files
+
+    Generate Makefile or build script
+
+Task 202: Compile a "hello world" Zig program end-to-end.
+
+    Enhancement: Test with multi-file "hello world"
+
+zig
+
+// main.zig
+const greetings = @import("greetings.zig");
+pub fn main() void {
+    greetings.sayHello();
+}
+
+// greetings.zig
+pub fn sayHello() void {
+    @import("std").debug.print("Hello, world!\n", .{});
+}
+
+Phase 6C: Bootstrap Compiler Integration
+
+Task 206: Build zig1.exe using modular Zig source (NEW)
+
+    Split zig1 compiler source into modules: lexer.zig, parser.zig, typechecker.zig
+
+    Compile with zig0.exe --import-path src/
+
+    Verify zig1.exe can compile modular programs
+
+Task 207: Create minimal std library for bootstrap (NEW)
+
+    Implement std.debug, std.mem, std.io basics
+
+    Keep it C89-compatible
+
+    Use in zig1 compiler source
+	
 ## Phase 1: The Cross-Compiler (Zig)
 203. **Task 203:** Translate the C++ compiler logic into the supported Zig subset.
 204. **Task 204:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
