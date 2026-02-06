@@ -243,10 +243,9 @@ private:
     /**
      * @brief Reports a fatal syntax error and terminates the compilation process.
      *
-     * In a Windows environment (`_WIN32`), this function prints the error message to
-     * the debug console using `OutputDebugStringA`. On other platforms, it has no
-     * output. In all cases, it calls `abort()` to halt execution, as parser errors
-     * are considered unrecoverable in this compiler.
+     * This function prints a diagnostic message using the Platform Abstraction Layer's
+     * `plat_print_debug` function and then calls `abort()` to halt execution, as
+     * parser errors are considered unrecoverable in this compiler.
      *
      * @param msg The error message to display.
      */

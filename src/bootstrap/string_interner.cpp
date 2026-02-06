@@ -1,5 +1,5 @@
 #include "../include/string_interner.hpp"
-#include <cstring>
+#include "platform.hpp"
 #include <cstdlib> // For exit
 #include <cassert>
 
@@ -49,20 +49,20 @@ const char* StringInterner::intern(const char* str) {
 
     // Check if the string already exists in the bucket's linked list.
     for (StringEntry* entry = buckets[index]; entry; entry = entry->next) {
-        if (strcmp(entry->str, str) == 0) {
+        if (plat_strcmp(entry->str, str) == 0) {
             // Found it, return the existing pointer.
             return entry->str;
         }
     }
 
     // The string was not found, so we need to create a new entry for it.
-    size_t len = strlen(str);
+    size_t len = plat_strlen(str);
     char* new_str = static_cast<char*>(allocator.alloc(len + 1));
     if (!new_str) {
         // Allocation failure is considered a fatal error for this project.
         exit(1);
     }
-    strcpy(new_str, str);
+    plat_memcpy(new_str, str, len + 1);
 
     // Create the new entry in the hash table.
     StringEntry* new_entry = static_cast<StringEntry*>(allocator.alloc(sizeof(StringEntry)));
@@ -86,7 +86,7 @@ const char* StringInterner::intern(const char* str, size_t length) {
 
     // Check if the string already exists in the bucket's linked list.
     for (StringEntry* entry = buckets[index]; entry; entry = entry->next) {
-        if (strncmp(entry->str, str, length) == 0 && entry->str[length] == '\0') {
+        if (plat_strncmp(entry->str, str, length) == 0 && entry->str[length] == '\0') {
             // Found it, return the existing pointer.
             return entry->str;
         }
@@ -98,7 +98,7 @@ const char* StringInterner::intern(const char* str, size_t length) {
         // Allocation failure is considered a fatal error for this project.
         exit(1);
     }
-    strncpy(new_str, str, length);
+    plat_strncpy(new_str, str, length);
     new_str[length] = '\0';
 
     // Create the new entry in the hash table.

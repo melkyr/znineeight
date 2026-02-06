@@ -10,22 +10,13 @@
 #include "type_system.hpp"
 #include "c89_pattern_generator.hpp"
 #include "utils.hpp"
-#include <cstring>   // For strlen
-#include <cstdio>    // For fprintf
+#include "platform.hpp"
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
 
-#if defined(_WIN32)
-#include <windows.h> // For OutputDebugStringA
-#endif
-
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
-#if defined(_WIN32)
-    OutputDebugStringA(message);
-#else
-    // On other platforms, no output, just abort.
-#endif
+    plat_print_debug(message);
     abort();
 }
 
@@ -59,7 +50,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
-    return source_manager_.addFile(filename, source, strlen(source));
+    return source_manager_.addFile(filename, source, plat_strlen(source));
 }
 
 Parser* CompilationUnit::createParser(u32 file_id) {

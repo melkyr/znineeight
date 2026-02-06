@@ -2,8 +2,8 @@
 #include "compilation_unit.hpp"
 #include "error_handler.hpp"
 #include "utils.hpp"
+#include "platform.hpp"
 #include <new>
-#include <cstdio>
 
 ExtractionAnalysisCatalogue::ExtractionAnalysisCatalogue(ArenaAllocator& arena)
     : arena_(arena), function_stack_(arena), current_stack_estimate_(0) {

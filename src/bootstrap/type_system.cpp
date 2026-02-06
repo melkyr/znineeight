@@ -1,8 +1,7 @@
 #include "type_system.hpp"
 #include "memory.hpp"
 #include "utils.hpp"
-#include <cstdio> // For sprintf
-#include <cstring> // For strcmp
+#include "platform.hpp"
 
 // Using functions with static locals to avoid the static initialization order fiasco.
 // This ensures that the type objects are created when they are first needed.
@@ -30,20 +29,20 @@ DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
 DEFINE_GET_TYPE_FUNC(g_type_null, TYPE_NULL, 0, 0)
 
 Type* resolvePrimitiveTypeName(const char* name) {
-    if (strcmp(name, "void") == 0) return get_g_type_void();
-    if (strcmp(name, "bool") == 0) return get_g_type_bool();
-    if (strcmp(name, "i8") == 0) return get_g_type_i8();
-    if (strcmp(name, "i16") == 0) return get_g_type_i16();
-    if (strcmp(name, "i32") == 0) return get_g_type_i32();
-    if (strcmp(name, "i64") == 0) return get_g_type_i64();
-    if (strcmp(name, "u8") == 0) return get_g_type_u8();
-    if (strcmp(name, "u16") == 0) return get_g_type_u16();
-    if (strcmp(name, "u32") == 0) return get_g_type_u32();
-    if (strcmp(name, "u64") == 0) return get_g_type_u64();
-    if (strcmp(name, "isize") == 0) return get_g_type_isize();
-    if (strcmp(name, "usize") == 0) return get_g_type_usize();
-    if (strcmp(name, "f32") == 0) return get_g_type_f32();
-    if (strcmp(name, "f64") == 0) return get_g_type_f64();
+    if (plat_strcmp(name, "void") == 0) return get_g_type_void();
+    if (plat_strcmp(name, "bool") == 0) return get_g_type_bool();
+    if (plat_strcmp(name, "i8") == 0) return get_g_type_i8();
+    if (plat_strcmp(name, "i16") == 0) return get_g_type_i16();
+    if (plat_strcmp(name, "i32") == 0) return get_g_type_i32();
+    if (plat_strcmp(name, "i64") == 0) return get_g_type_i64();
+    if (plat_strcmp(name, "u8") == 0) return get_g_type_u8();
+    if (plat_strcmp(name, "u16") == 0) return get_g_type_u16();
+    if (plat_strcmp(name, "u32") == 0) return get_g_type_u32();
+    if (plat_strcmp(name, "u64") == 0) return get_g_type_u64();
+    if (plat_strcmp(name, "isize") == 0) return get_g_type_isize();
+    if (plat_strcmp(name, "usize") == 0) return get_g_type_usize();
+    if (plat_strcmp(name, "f32") == 0) return get_g_type_f32();
+    if (plat_strcmp(name, "f64") == 0) return get_g_type_f64();
 
     return NULL; // Not a known primitive type
 }

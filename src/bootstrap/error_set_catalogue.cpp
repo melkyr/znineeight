@@ -1,10 +1,7 @@
 #include "error_set_catalogue.hpp"
 #include "utils.hpp"
+#include "platform.hpp"
 #include <new>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 ErrorSetCatalogue::ErrorSetCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
@@ -35,8 +32,8 @@ int ErrorSetCatalogue::count() const {
 }
 
 void ErrorSetCatalogue::printSummary() const {
-#ifdef _WIN32
-    OutputDebugStringA("--- Error Set Catalogue Summary ---\n");
+    plat_print_info("--- Error Set Catalogue Summary ---\n");
+    plat_print_debug("--- Error Set Catalogue Summary ---\n");
     for (size_t i = 0; i < error_sets_->length(); ++i) {
         const ErrorSetInfo& info = (*error_sets_)[i];
         char buffer[512];
@@ -60,7 +57,8 @@ void ErrorSetCatalogue::printSummary() const {
         safe_append(ptr, remaining, col_buf);
 
         safe_append(ptr, remaining, "\n");
-        OutputDebugStringA(buffer);
+        plat_print_info(buffer);
+        plat_print_debug(buffer);
 
         if (info.tags) {
             for (size_t j = 0; j < info.tags->length(); ++j) {
@@ -69,10 +67,11 @@ void ErrorSetCatalogue::printSummary() const {
                 safe_append(ptr, remaining, "  - ");
                 safe_append(ptr, remaining, (*info.tags)[j]);
                 safe_append(ptr, remaining, "\n");
-                OutputDebugStringA(buffer);
+                plat_print_info(buffer);
+                plat_print_debug(buffer);
             }
         }
     }
-    OutputDebugStringA("-----------------------------------\n");
-#endif
+    plat_print_info("-----------------------------------\n");
+    plat_print_debug("-----------------------------------\n");
 }

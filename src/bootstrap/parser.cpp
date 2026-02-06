@@ -3,13 +3,9 @@
 #include "generic_catalogue.hpp"
 #include "ast.hpp"
 #include "type_system.hpp"
+#include "platform.hpp"
 #include <cstdlib>   // For abort()
-#include <cstring>   // For strcmp
 #include <new>       // For placement new
-
-#ifdef _WIN32
-#include <windows.h> // For OutputDebugStringA
-#endif
 
 /**
  * @brief Constructs a new Parser instance.
@@ -65,16 +61,11 @@ Token Parser::expect(TokenType type, const char* msg) {
     return advance();
 }
 
-void Parser::error(const char* /*msg*/) {
-#ifdef _WIN32
-    // On Windows, use the debug output string function.
-    OutputDebugStringA("Parser Error: ");
-    OutputDebugStringA(msg);
-    OutputDebugStringA("\n");
-#endif
-    // For non-Windows builds, this will just abort.
-    // The test environment doesn't have a C runtime for fprintf,
-    // and for the bootstrap compiler, we only officially support Windows.
+void Parser::error(const char* msg) {
+    plat_print_debug("Parser Error: ");
+    plat_print_debug(msg);
+    plat_print_debug("\n");
+
     abort();
 }
 

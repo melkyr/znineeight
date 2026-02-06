@@ -4,6 +4,7 @@
 #include "compilation_unit.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
+#include "platform.hpp"
 #include <cstdlib> // For abort()
 
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
@@ -306,13 +307,13 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_TYPE_NAME:
-            if (strcmp(node->as.type_name.name, "anyerror") == 0) {
+            if (plat_strcmp(node->as.type_name.name, "anyerror") == 0) {
                 reportNonC89Feature(node->loc, "anyerror type is not supported in C89 mode");
             }
-            if (strcmp(node->as.type_name.name, "type") == 0) {
+            if (plat_strcmp(node->as.type_name.name, "type") == 0) {
                 reportNonC89Feature(node->loc, "Type parameters/variables are not supported in C89 mode");
             }
-            if (strcmp(node->as.type_name.name, "anytype") == 0) {
+            if (plat_strcmp(node->as.type_name.name, "anytype") == 0) {
                 reportNonC89Feature(node->loc, "anytype is not supported in C89 mode");
             }
             if (node->resolved_type && isErrorType(node->resolved_type)) {

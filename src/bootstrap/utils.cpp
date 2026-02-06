@@ -1,5 +1,5 @@
 #include "utils.hpp"
-#include <cstring> // For strlen, strcpy, strncat
+#include "platform.hpp"
 
 // Helper to reverse a string
 static void reverse(char* str, int length) {
@@ -16,13 +16,13 @@ static void reverse(char* str, int length) {
 
 void safe_append(char*& dest, size_t& remaining, const char* src) {
     if (!src) return;
-    size_t len = strlen(src);
+    size_t len = plat_strlen(src);
     if (len < remaining) {
-        strcpy(dest, src);
+        plat_strcpy(dest, src);
         dest += len;
         remaining -= len;
     } else if (remaining > 0) {
-        strncpy(dest, src, remaining - 1);
+        plat_strncpy(dest, src, remaining - 1);
         dest[remaining - 1] = '\0';
         dest += (remaining - 1);
         remaining = 0;
