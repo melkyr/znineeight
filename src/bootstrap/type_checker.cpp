@@ -31,6 +31,8 @@ static const char* getTokenSpelling(TokenType op) {
         case TOKEN_CARET: return "^";
         case TOKEN_LARROW2: return "<<";
         case TOKEN_RARROW2: return ">>";
+        case TOKEN_PLUS2: return "++";
+        case TOKEN_MINUS2: return "--";
         default: return "unknown";
     }
 }
@@ -182,11 +184,13 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             return NULL; // Unreachable
         }
         case TOKEN_MINUS:
-            // C89 Unary '-' is only valid for numeric types.
+        case TOKEN_PLUS2:
+        case TOKEN_MINUS2:
+            // C89 Unary '-', '++', '--' are only valid for numeric types.
             if (isNumericType(operand_type)) {
-                return operand_type; // Negation doesn't change numeric type.
+                return operand_type;
             }
-            fatalError(parent->loc, "Unary '-' operator cannot be applied to non-numeric types.");
+            fatalError(parent->loc, "Unary operator cannot be applied to non-numeric types.");
             return NULL; // Unreachable
 
         case TOKEN_BANG:
@@ -538,17 +542,27 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
     size_t actual_args = node->args->length();
 
     if (actual_args != expected_args) {
-        char msg_buffer[256];
-        char expected_buf[21], actual_buf[21];
-        simple_itoa(expected_args, expected_buf, sizeof(expected_buf));
-        simple_itoa(actual_args, actual_buf, sizeof(actual_buf));
-        char* current = msg_buffer;
-        size_t remaining = sizeof(msg_buffer);
-        safe_append(current, remaining, "wrong number of arguments to function call, expected ");
-        safe_append(current, remaining, expected_buf);
-        safe_append(current, remaining, ", got ");
-        safe_append(current, remaining, actual_buf);
-        fatalError(node->callee->loc, msg_buffer);
+        bool is_generic_call = false;
+        if (node->callee->type == NODE_IDENTIFIER) {
+            Symbol* sym = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
+            if (sym && sym->is_generic) {
+                is_generic_call = true;
+            }
+        }
+
+        if (!is_generic_call) {
+            char msg_buffer[256];
+            char expected_buf[21], actual_buf[21];
+            simple_itoa(expected_args, expected_buf, sizeof(expected_buf));
+            simple_itoa(actual_args, actual_buf, sizeof(actual_buf));
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "wrong number of arguments to function call, expected ");
+            safe_append(current, remaining, expected_buf);
+            safe_append(current, remaining, ", got ");
+            safe_append(current, remaining, actual_buf);
+            fatalError(node->callee->loc, msg_buffer);
+        }
     }
 
     for (size_t i = 0; i < actual_args; ++i) {
@@ -1046,20 +1060,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Type* prev_fn_return_type = current_fn_return_type;
 
-    // Resolve return type
-    current_fn_return_type = visit(node->return_type);
-    if (!current_fn_return_type) {
-        // If the return type is invalid (e.g., an undefined identifier),
-        // we can't proceed with checking the function body.
-        return NULL;
-    }
+    unit.getSymbolTable().enterScope();
 
-    // Resolve parameter types
+    // Resolve parameter types and register them immediately
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
     bool all_params_valid = true;
 
-    unit.getSymbolTable().enterScope();
     for (size_t i = 0; i < node->params->length(); ++i) {
         ASTParamDeclNode* param_node = (*node->params)[i];
         Type* param_type = visit(param_node->type);
@@ -1080,9 +1087,12 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
         }
     }
 
-    // If any parameter type was invalid, don't create the function type
+    // Resolve return type (now that parameters are in scope)
+    current_fn_return_type = visit(node->return_type);
+
+    // If any parameter type or the return type was invalid, don't create the function type
     // or check the body, as it will likely lead to cascading errors.
-    if (!all_params_valid) {
+    if (!all_params_valid || !current_fn_return_type) {
         unit.getSymbolTable().exitScope();
         current_fn_return_type = prev_fn_return_type;
         return NULL;
@@ -1384,9 +1394,11 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         Symbol* sym = unit.getSymbolTable().lookup(node->name);
         if (sym) {
             // A constant can hold a type in Zig.
-            // For now, we assume if it's in the symbol table and has a struct or enum type,
+            // For now, we assume if it's in the symbol table and has a struct, enum or is a type parameter,
             // it can be used as a type name.
-            if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT || sym->symbol_type->kind == TYPE_ENUM)) {
+            if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT ||
+                                     sym->symbol_type->kind == TYPE_ENUM ||
+                                     sym->symbol_type->kind == TYPE_TYPE)) {
                 resolved_type = sym->symbol_type;
             }
         }
@@ -1606,6 +1618,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // anytype is compatible with anything
     if (expected->kind == TYPE_ANYTYPE || actual->kind == TYPE_ANYTYPE) {
+        return true;
+    }
+
+    // type is compatible with any type (as a value)
+    if (expected->kind == TYPE_TYPE) {
         return true;
     }
 

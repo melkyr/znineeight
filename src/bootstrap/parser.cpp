@@ -336,6 +336,16 @@ ASTNode* Parser::parsePostfixExpression() {
             new_expr_node->as.unary_op.op = TOKEN_DOT_ASTERISK;
             new_expr_node->as.unary_op.operand = expr;
             expr = new_expr_node;
+        } else if (match(TOKEN_PLUS2) || match(TOKEN_MINUS2)) {
+            // Postfix increment/decrement: x++, x--
+            TokenType op = tokens_[current_index_ - 1].type;
+            ASTUnaryOpNode unary_op_node;
+            unary_op_node.op = op;
+            unary_op_node.operand = expr;
+
+            ASTNode* new_expr_node = createNodeAt(NODE_UNARY_OP, tokens_[current_index_ - 1].location);
+            new_expr_node->as.unary_op = unary_op_node;
+            expr = new_expr_node;
         } else {
             break;
         }
@@ -379,7 +389,8 @@ ASTNode* Parser::parseUnaryExpr() {
     }
     DynamicArray<Token> operators(*arena_);
 
-    while (peek().type == TOKEN_MINUS || peek().type == TOKEN_BANG || peek().type == TOKEN_TILDE || peek().type == TOKEN_AMPERSAND) {
+    while (peek().type == TOKEN_MINUS || peek().type == TOKEN_BANG || peek().type == TOKEN_TILDE ||
+           peek().type == TOKEN_AMPERSAND || peek().type == TOKEN_PLUS2 || peek().type == TOKEN_MINUS2) {
         operators.append(advance());
     }
 

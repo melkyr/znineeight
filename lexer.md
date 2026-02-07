@@ -40,5 +40,6 @@ The lexer implements a two-character lookahead to resolve the ambiguity between 
 - `comptime`: Used for compile-time constants and parameters.
 
 ### Operators
+- `++`: Increment operator (added for complete operator coverage).
 - `--`: Decrement operator (added for complete operator coverage).
 - `||`: Error set merging operator.

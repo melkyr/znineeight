@@ -28,8 +28,8 @@ fn makePointer(T: type) *T {
 
 ## Bootstrap Compiler Response
 - **Detect**: Parser identifies generic function definitions by looking for `comptime` or `anytype` prefixes, or parameters of type `type`.
-- **Catalogue**: Recorded in `GenericCatalogue` for documentation and future mapping strategies.
-- **Reject**: `C89FeatureValidator` reports a fatal error "Generic functions are not supported in C89 mode." and stops compilation.
+- **Catalogue**: Recorded in `GenericCatalogue` for documentation and future mapping strategies. Both definitions and call-site instantiations (Task 157) are catalogued.
+- **Reject**: `C89FeatureValidator` reports a fatal error "Generic functions are not supported in C89 mode." for definitions. For call sites, it reports "Generic function calls (with type arguments) are not C89-compatible" or "Implicit generic instantiation of 'foo' with argument types: T1, T2" for implicit calls.
 
 ## C89 Compatibility
 Generic functions cannot be directly translated to C89 because:

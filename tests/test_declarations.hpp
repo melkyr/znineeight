@@ -589,4 +589,12 @@ TEST_FUNC(Task156_ASTNodeModule);
 TEST_FUNC(Task156_EnhancedGenericDetection);
 TEST_FUNC(Task156_InternalErrorCode);
 
+// Forward declarations for Task 157
+TEST_FUNC(lex_decrement_operator);
+TEST_FUNC(lex_decrement_mixed);
+TEST_FUNC(lex_pipe_pipe_operator);
+TEST_FUNC(GenericCatalogue_ImplicitInstantiation);
+TEST_FUNC(TypeChecker_ImplicitGenericDetection);
+TEST_FUNC(TypeChecker_AnytypeImplicitDetection);
+
 #endif // TEST_DECLARATIONS_HPP

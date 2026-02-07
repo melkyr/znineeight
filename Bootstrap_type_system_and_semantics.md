@@ -1067,7 +1067,7 @@ Signature analysis is performed after type resolution (Pass 0), ensuring that ty
 
 Zig sized arrays (e.g., `[10]i32`) are allowed in function parameters but trigger a warning (`WARN_ARRAY_PARAMETER`), as they are treated as pointers in the generated C89 code, losing their size information in the signature.
 
-## 15. Generic Function Detection (Task 154)
+## 15. Generic Function Detection (Tasks 154-160)
 
 Zig supports generic functions through `comptime`, `anytype`, and `type` parameters. To maintain C89 compatibility, the bootstrap compiler detects and strictly rejects these features.
 
@@ -1078,11 +1078,13 @@ The parser is equipped to identify generic function definitions by looking for t
 2.  **`anytype` parameters**: Parameters that use the `anytype` keyword instead of an explicit type.
 3.  **`type` parameters**: Parameters whose type is the `type` keyword.
 
+To handle inter-parameter dependencies (e.g., `fn f(comptime T: type, x: T)`), the `TypeChecker` registers parameters in the function's local scope *immediately* after their type is resolved during Pass 0.
+
 ### 15.2 Cataloguing and Rejection
 
 When a generic function is detected:
 1.  It is recorded in the `GenericCatalogue` with its name, location, and the kind of generic parameter that triggered the detection.
-2.  The `TypeChecker` identifies both explicit and implicit generic function calls and catalogues each instantiation site, capturing the resolved types of all arguments passed.
-3.  The `C89FeatureValidator` pass checks the catalogue and issues a fatal error. For implicit generic calls, it provides a detailed diagnostic including the inferred argument types (e.g., `Implicit generic instantiation of 'foo' with argument types: i32, f64`).
+2.  The `TypeChecker` identifies both explicit and implicit generic function calls and catalogues each instantiation site (Task 157), capturing the exact resolved types of all arguments passed.
+3.  The `C89FeatureValidator` pass (Pass 1) checks the catalogue and issues a fatal error. For implicit generic calls, it provides a detailed diagnostic including the inferred argument types (e.g., `Implicit generic instantiation of 'foo' with argument types: i32, f64`).
 
 For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](docs/generic_functions_c89.md).

@@ -9,6 +9,7 @@ TEST_FUNC(TypeChecker_ImplicitGenericDetection) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
+    unit.injectRuntimeSymbols();
 
     const char* zig_source =
         "fn genericFn(comptime T: type, x: T) T {\n"
@@ -31,17 +32,8 @@ TEST_FUNC(TypeChecker_ImplicitGenericDetection) {
 
     const GenericCatalogue& catalogue = unit.getGenericCatalogue();
 
-    // Check if implicit instantiation was catalogued
-    // Note: Task 156 might have already catalogued it as explicit if it was foo(i32, 10),
-    // but here it's foo(10) which is implicit.
-
     bool found = false;
     const DynamicArray<GenericInstantiation>* insts = catalogue.getInstantiations();
-    char buf[128];
-    simple_itoa(insts->length(), buf, sizeof(buf));
-    plat_print_debug("Instantiations count: ");
-    plat_print_debug(buf);
-    plat_print_debug("\n");
 
     for (size_t i = 0; i < insts->length(); ++i) {
         const GenericInstantiation& inst = (*insts)[i];
@@ -49,8 +41,8 @@ TEST_FUNC(TypeChecker_ImplicitGenericDetection) {
             found = true;
             // Verify inferred types
             ASSERT_EQ(1, inst.param_count);
-            ASSERT_TRUE(inst.params[0].type_value != NULL);
-            ASSERT_EQ(TYPE_I32, inst.params[0].type_value->kind);
+            ASSERT_TRUE(inst.arg_types[0] != NULL);
+            ASSERT_EQ(TYPE_I32, inst.arg_types[0]->kind);
         }
     }
 
@@ -63,6 +55,7 @@ TEST_FUNC(TypeChecker_AnytypeImplicitDetection) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
+    unit.injectRuntimeSymbols();
 
     const char* zig_source =
         "fn anytypeFn(x: anytype) void {\n"
@@ -90,8 +83,8 @@ TEST_FUNC(TypeChecker_AnytypeImplicitDetection) {
         if (plat_strcmp(inst.function_name, "anytypeFn") == 0 && !inst.is_explicit) {
             found = true;
             ASSERT_EQ(1, inst.param_count);
-            ASSERT_TRUE(inst.params[0].type_value != NULL);
-            ASSERT_EQ(TYPE_F64, inst.params[0].type_value->kind);
+            ASSERT_TRUE(inst.arg_types[0] != NULL);
+            ASSERT_EQ(TYPE_F64, inst.arg_types[0]->kind);
         }
     }
 

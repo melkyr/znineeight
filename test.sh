@@ -172,7 +172,10 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_signature_analyzer.cpp \
     tests/task_154_test.cpp \
     tests/test_platform.cpp \
-    tests/task_156_multi_file_test.cpp"
+    tests/task_156_multi_file_test.cpp \
+    tests/lexer_decrement_test.cpp \
+    tests/task_157_catalogue_test.cpp \
+    tests/test_task_157_implicit_detection.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

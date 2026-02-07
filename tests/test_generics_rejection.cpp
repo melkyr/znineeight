@@ -23,7 +23,7 @@ TEST_FUNC(GenericCatalogue_TracksExplicit) {
     unit.injectRuntimeSymbols();
 
     // Use a source that doesn't abort if we skip validation
-    const char* source = "fn bar(a: i32, b: i32) void {}\n fn main() void { bar(i32, 1); }";
+    const char* source = "fn bar(comptime T: type, a: i32) void {}\n fn main() void { bar(i32, 1); }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* ast = parser->parse();
@@ -89,7 +89,7 @@ TEST_FUNC(GenericCatalogue_TracksImplicit) {
 }
 
 TEST_FUNC(C89Rejection_ComptimeValueParam) {
-    const char* source = "fn makeArray(comptime n: u32) void {}\n fn main() void { makeArray(10); }";
+    const char* source = "fn makeArray(comptime n: i32) void {}\n fn main() void { makeArray(10); }";
     ASSERT_TRUE(expect_type_checker_abort(source));
     return true;
 }
