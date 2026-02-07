@@ -334,7 +334,7 @@ Represents an identifier, such as a variable or function name. The `name` field 
 
 #### `ASTUnaryOpNode`
 Represents an operation with a single operand.
-*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`, `--y`
+*   **Zig Code:** `-x`, `!is_ready`, `p.*`, `&x`, `++x`, `x++`, `--y`, `y--`
 *   **Structure:**
     ```cpp
     /**

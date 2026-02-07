@@ -419,7 +419,7 @@ Given memory constraints, allocate:
     Validation: Test all binary operations compile in C89
     Success criteria: All binary operators behave identically in both languages
 
-106. **Task 106:** UNARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM)
+106. **Task 106:** UNARY OPERATOR COMPATIBILITY VALIDATION (MEDIUM) (DONE)
 
     What to implement: Validate unary operators map to C89
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -747,7 +747,7 @@ Output: Runtime assertions in codegen module
 157. **Task 157:** Detect implicit template instantiation (DONE)
 158. **Task 158:** Track template specialization (DONE)
 159. **Task 159:** Catalog instantiation parameters (DONE)
-160. **Task 160:** Validate instantiation safety 
+160. **Task 160:** Validate instantiation safety (DONE)
 
 161. **Task 161:** NAME MANGLING ALGORITHM DESIGN (MEDIUM)
 
