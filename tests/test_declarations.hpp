@@ -610,4 +610,11 @@ TEST_FUNC(OptionalType_ToString);
 TEST_FUNC(TypeChecker_OptionalType);
 TEST_FUNC(NameMangler_Milestone4Types);
 
+// Forward declarations for Tasks 163-164
+TEST_FUNC(CallSiteLookupTable_Basic);
+TEST_FUNC(CallSiteLookupTable_Unresolved);
+TEST_FUNC(TypeChecker_CallSiteRecording_Direct);
+TEST_FUNC(TypeChecker_CallSiteRecording_Recursive);
+TEST_FUNC(TypeChecker_CallSiteRecording_Generic);
+
 #endif // TEST_DECLARATIONS_HPP

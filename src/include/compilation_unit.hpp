@@ -17,6 +17,7 @@
 #include "extraction_analysis_catalogue.hpp"
 #include "errdefer_catalogue.hpp"
 #include "name_mangler.hpp"
+#include "call_site_lookup_table.hpp"
 
 /**
  * @struct CompilationOptions
@@ -58,6 +59,7 @@ public:
     ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
     ErrDeferCatalogue& getErrDeferCatalogue();
     NameMangler& getNameMangler();
+    CallSiteLookupTable& getCallSiteLookupTable();
     ArenaAllocator& getArena();
 
     const char* getCurrentModule() const;
@@ -127,6 +129,7 @@ private:
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     ErrDeferCatalogue errdefer_catalogue_;
     NameMangler name_mangler_;
+    CallSiteLookupTable call_site_table_;
     const char* current_module_;
     CompilationOptions options_;
 
