@@ -47,4 +47,28 @@ inline bool identifiers_equal(const char* a, const char* b) {
     return a == b;
 }
 
+/**
+ * @brief Checks if a string is a C language keyword.
+ * @param str The string to check.
+ * @return True if the string is a C keyword, false otherwise.
+ */
+bool isCKeyword(const char* str);
+
+/**
+ * @brief Checks if a string is a reserved name in C (e.g., starts with _[A-Z] or __).
+ * @param str The string to check.
+ * @return True if the string is reserved, false otherwise.
+ */
+bool isCReservedName(const char* str);
+
+/**
+ * @brief Sanitizes a string for use as a C89 identifier.
+ *
+ * This function replaces invalid characters with underscores and prefixes
+ * the string with 'z_' if it starts with a digit or matches a C keyword/reserved name.
+ *
+ * @param buffer The character buffer to sanitize (must be large enough to hold prefix).
+ */
+void sanitizeForC89(char* buffer);
+
 #endif // UTILS_HPP
