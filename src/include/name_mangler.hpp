@@ -28,10 +28,6 @@ public:
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
-
-    void sanitizeForC89(char* buffer);
-    bool isCKeyword(const char* str);
-    bool isReservedName(const char* str);
 };
 
 #endif // NAME_MANGLER_HPP
