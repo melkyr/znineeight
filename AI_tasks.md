@@ -743,7 +743,7 @@ Output: Runtime assertions in codegen module
 159. **Task 159:** Catalog instantiation parameters (DONE)
 160. **Task 160:** Validate instantiation safety (DONE)
 
-161. **Task 161:** NAME MANGLING ALGORITHM DESIGN (MEDIUM)
+161. **Task 161:** NAME MANGLING ALGORITHM DESIGN (DONE)
 
     What to implement: Design algorithm to create unique C89 function names
     Watch for: 
@@ -753,7 +753,7 @@ Output: Runtime assertions in codegen module
     Validation: Test algorithm with various function signatures
     Success criteria: Algorithm produces unique, C89-compliant names consistently
 
-162. **Task 162:** UNIQUE NAME GENERATION (MEDIUM)
+162. **Task 162:** UNIQUE NAME GENERATION (DONE)
 
     What to implement: Generate actual unique names for functions
     Watch for: 

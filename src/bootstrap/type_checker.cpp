@@ -1034,6 +1034,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (existing_sym) {
         existing_sym->symbol_type = declared_type;
         existing_sym->details = node;
+        existing_sym->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
 
         // If we are inside a function body, current_fn_return_type will be non-NULL
         bool is_local = (current_fn_return_type != NULL);
@@ -1044,6 +1045,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             bool is_local = (current_fn_return_type != NULL);
             Symbol var_symbol = SymbolBuilder(unit.getArena())
                 .withName(node->name)
+                .withMangledName(unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule()))
                 .ofType(SYMBOL_VARIABLE)
                 .withType(declared_type)
                 .atLocation(node->name_loc)
@@ -1103,6 +1105,7 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
     if (fn_symbol) {
         fn_symbol->symbol_type = function_type;
+        fn_symbol->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
     }
 
     visit(node->body);
@@ -2035,8 +2038,16 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             hash *= 16777619u;
         }
 
+        const char* mangled_name = unit.getNameMangler().mangleFunction(
+            callee_name ? callee_name : "anonymous",
+            params,
+            param_count,
+            unit.getCurrentModule()
+        );
+
         unit.getGenericCatalogue().addInstantiation(
             callee_name ? callee_name : "anonymous",
+            mangled_name,
             params,
             arg_types,
             param_count,

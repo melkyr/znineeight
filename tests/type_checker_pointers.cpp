@@ -28,11 +28,13 @@ TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     comp_unit.getSymbolTable().insert(p_symbol);
 
     // Manually create the '*p' expression to test
-    ASTNode* p_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* p_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(p_node, 0, sizeof(ASTNode));
     p_node->type = NODE_IDENTIFIER;
     p_node->as.identifier.name = interner.intern("p");
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = p_node;
@@ -57,7 +59,8 @@ TEST_FUNC(TypeChecker_Dereference_ZeroLiteral) {
     TypeChecker type_checker(comp_unit);
 
     // Manually create a '*0' expression
-    ASTNode* zero_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* zero_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(zero_node, 0, sizeof(ASTNode));
     zero_node->type = NODE_INTEGER_LITERAL;
     zero_node->as.integer_literal.value = 0;
     SourceLocation loc;
@@ -66,7 +69,8 @@ TEST_FUNC(TypeChecker_Dereference_ZeroLiteral) {
     loc.column = 2;
     zero_node->loc = loc;
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = zero_node;
@@ -107,7 +111,8 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     comp_unit.getSymbolTable().insert(x_symbol);
 
     // Manually create the '*x' expression
-    ASTNode* x_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* x_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(x_node, 0, sizeof(ASTNode));
     x_node->type = NODE_IDENTIFIER;
     x_node->as.identifier.name = interner.intern("x");
     SourceLocation loc;
@@ -117,7 +122,8 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     x_node->loc = loc;
 
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = x_node;
@@ -163,7 +169,8 @@ TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
     comp_unit.getSymbolTable().insert(p_symbol);
 
     // Manually create the '*p' expression
-    ASTNode* p_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* p_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(p_node, 0, sizeof(ASTNode));
     p_node->type = NODE_IDENTIFIER;
     p_node->as.identifier.name = interner.intern("p");
     SourceLocation loc;
@@ -172,7 +179,8 @@ TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
     loc.column = 1;
     p_node->loc = loc;
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = p_node;
@@ -202,7 +210,8 @@ TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
     TypeChecker type_checker(comp_unit);
 
     // Manually create a '*null' expression
-    ASTNode* null_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* null_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(null_node, 0, sizeof(ASTNode));
     null_node->type = NODE_NULL_LITERAL;
     SourceLocation loc;
     loc.file_id = file_id;
@@ -210,7 +219,8 @@ TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
     loc.column = 2;
     null_node->loc = loc;
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = null_node;
@@ -256,11 +266,13 @@ TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
     comp_unit.getSymbolTable().insert(p_symbol);
 
     // Manually create the '*p' expression
-    ASTNode* p_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* p_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(p_node, 0, sizeof(ASTNode));
     p_node->type = NODE_IDENTIFIER;
     p_node->as.identifier.name = interner.intern("p");
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = p_node;
@@ -292,11 +304,13 @@ TEST_FUNC(TypeChecker_AddressOf_Valid_LValues) {
     Symbol x_symbol = SymbolBuilder(arena).withName(interner.intern("x")).ofType(SYMBOL_VARIABLE).withType(i32_type).build();
     comp_unit.getSymbolTable().insert(x_symbol);
 
-    ASTNode* x_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* x_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(x_node, 0, sizeof(ASTNode));
     x_node->type = NODE_IDENTIFIER;
     x_node->as.identifier.name = interner.intern("x");
 
-    ASTNode* addrof_x_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* addrof_x_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(addrof_x_node, 0, sizeof(ASTNode));
     addrof_x_node->type = NODE_UNARY_OP;
     addrof_x_node->as.unary_op.op = TOKEN_AMPERSAND;
     addrof_x_node->as.unary_op.operand = x_node;
@@ -311,16 +325,19 @@ TEST_FUNC(TypeChecker_AddressOf_Valid_LValues) {
     Symbol p_symbol = SymbolBuilder(arena).withName(interner.intern("p")).ofType(SYMBOL_VARIABLE).withType(p_type).build();
     comp_unit.getSymbolTable().insert(p_symbol);
 
-    ASTNode* p_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* p_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(p_node, 0, sizeof(ASTNode));
     p_node->type = NODE_IDENTIFIER;
     p_node->as.identifier.name = interner.intern("p");
 
-    ASTNode* deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(deref_node, 0, sizeof(ASTNode));
     deref_node->type = NODE_UNARY_OP;
     deref_node->as.unary_op.op = TOKEN_STAR;
     deref_node->as.unary_op.operand = p_node;
 
-    ASTNode* addrof_deref_node = new (arena.alloc(sizeof(ASTNode))) ASTNode();
+    ASTNode* addrof_deref_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
+    plat_memset(addrof_deref_node, 0, sizeof(ASTNode));
     addrof_deref_node->type = NODE_UNARY_OP;
     addrof_deref_node->as.unary_op.op = TOKEN_AMPERSAND;
     addrof_deref_node->as.unary_op.operand = deref_node;

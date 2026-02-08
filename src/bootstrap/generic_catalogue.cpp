@@ -12,7 +12,7 @@ GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     definitions_ = new (def_mem) DynamicArray<GenericDefinitionInfo>(arena_);
 }
 
-void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
+void GenericCatalogue::addInstantiation(const char* name, const char* mangled_name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
     if (!name) name = "anonymous";
     if (!module) module = "unknown";
 
@@ -27,6 +27,7 @@ void GenericCatalogue::addInstantiation(const char* name, GenericParamInfo* para
 
     GenericInstantiation inst;
     inst.function_name = name;
+    inst.mangled_name = mangled_name;
     inst.param_count = (count > 4) ? 4 : count;
     for (int i = 0; i < inst.param_count; ++i) {
         inst.params[i] = params[i];
@@ -72,7 +73,8 @@ void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* modu
 
         // In a real merge, we might prefix the name if module_prefix is provided
         // For now, we just add them to our own list, deduplicating
-        addInstantiation(other_inst.function_name, (GenericParamInfo*)other_inst.params,
+        addInstantiation(other_inst.function_name, other_inst.mangled_name,
+                         (GenericParamInfo*)other_inst.params,
                          (Type**)other_inst.arg_types,
                          other_inst.param_count, other_inst.location,
                          other_inst.module, other_inst.is_explicit, other_inst.param_hash);

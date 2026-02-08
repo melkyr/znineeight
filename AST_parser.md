@@ -1595,6 +1595,18 @@ To support accurate diagnostics and future translation planning, the RetroZig pa
 ### 20.3 Rejection via Validation
 The `C89FeatureValidator` ensures that none of these modern constructs proceed to the code generation phase. It recursively traverses the AST and issues fatal errors for any node that represents a non-C89 feature or has an associated error-related type.
 
+## 21. Name Mangling for C89 Compatibility
+
+When a function is declared, the `TypeChecker` computes a mangled name:
+- **Non-generic functions**: same name (if valid) or prefixed/sanitized.
+- **Generic instantiations**: encode type parameters in the name.
+- **Module prefixes**: added when imports are implemented (Milestone 6).
+
+Example: `fn max(comptime T: type, a: T, b: T) T` called as `max(i32, x, y)`
+Mangled: `max__i32` (if i32 is the only type parameter).
+
+This mangled name is stored in the `Symbol` table and used by the code generator and catalogues.
+
 ---
 
 ## Deprecated

@@ -26,6 +26,7 @@ enum SymbolFlag {
 
 struct Symbol {
     const char* name;
+    const char* mangled_name;
     SymbolType kind;
     Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
@@ -42,6 +43,7 @@ class SymbolBuilder {
 public:
     SymbolBuilder(ArenaAllocator& arena);
     SymbolBuilder& withName(const char* name);
+    SymbolBuilder& withMangledName(const char* mangled_name);
     SymbolBuilder& ofType(SymbolType type);
     SymbolBuilder& withType(Type* symbol_type);
     SymbolBuilder& atLocation(const SourceLocation& loc);

@@ -167,17 +167,21 @@ TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
     Type* void_ptr_type = createPointerType(arena, get_g_type_void(), false);
 
     ASTNode left_node;
+    plat_memset(&left_node, 0, sizeof(ASTNode));
     left_node.resolved_type = void_ptr_type;
 
     ASTNode right_node;
+    plat_memset(&right_node, 0, sizeof(ASTNode));
     right_node.resolved_type = get_g_type_i32();
 
     ASTBinaryOpNode bin_op_node;
+    plat_memset(&bin_op_node, 0, sizeof(ASTBinaryOpNode));
     bin_op_node.left = &left_node;
     bin_op_node.right = &right_node;
     bin_op_node.op = TOKEN_PLUS;
 
     ASTNode root_node;
+    plat_memset(&root_node, 0, sizeof(ASTNode));
     root_node.type = NODE_BINARY_OP;
     root_node.as.binary_op = &bin_op_node;
 
