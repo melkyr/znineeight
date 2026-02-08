@@ -1534,9 +1534,9 @@ Both validators traverse type expressions recursively:
 1. C89FeatureValidator: Reports fatal errors
 2. TypeChecker: Logs locations for documentation
 
-## 19. Generic Function Detection (Tasks 137-141)
+## 19. Generic Function Detection (Tasks 156-160)
 
-Zig's compile-time generic functions (often called "templates" in older documentation) are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features.
+Zig's compile-time generic functions (often called "templates" in older documentation) are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features. This process fulfills Tasks 156 through 160 by identifying, tracking, and validating the safety (via rejection) of generic instantiations.
 
 ### Detection Mechanism
 
