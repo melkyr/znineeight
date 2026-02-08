@@ -491,7 +491,7 @@ TEST_FUNC(Task136_ErrorSet_Rejection);
 TEST_FUNC(Task136_ErrorSetMerge_Rejection);
 TEST_FUNC(Task136_Import_Rejection);
 
-// Forward declarations for Tasks 137-141 (Generics)
+// Forward declarations for Tasks 156-160 (Generics)
 TEST_FUNC(C89Rejection_ExplicitGeneric);
 TEST_FUNC(C89Rejection_ImplicitGeneric);
 TEST_FUNC(GenericCatalogue_TracksExplicit);
@@ -595,6 +595,9 @@ TEST_FUNC(lex_decrement_mixed);
 TEST_FUNC(lex_pipe_pipe_operator);
 TEST_FUNC(GenericCatalogue_ImplicitInstantiation);
 TEST_FUNC(TypeChecker_ImplicitGenericDetection);
+TEST_FUNC(TypeChecker_MultipleImplicitInstantiations);
 TEST_FUNC(TypeChecker_AnytypeImplicitDetection);
+TEST_FUNC(Milestone4_GenericsIntegration_MixedCalls);
+TEST_FUNC(Milestone4_GenericsIntegration_ComplexParams);
 
 #endif // TEST_DECLARATIONS_HPP

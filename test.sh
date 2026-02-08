@@ -175,7 +175,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/task_156_multi_file_test.cpp \
     tests/lexer_decrement_test.cpp \
     tests/task_157_catalogue_test.cpp \
-    tests/test_task_157_implicit_detection.cpp"
+    tests/test_task_157_implicit_detection.cpp \
+    tests/test_milestone4_generics_integration.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

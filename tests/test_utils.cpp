@@ -91,6 +91,7 @@ void run_type_checker_test_in_child(const char* source) {
     ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
+    comp_unit.injectRuntimeSymbols();
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* p = comp_unit.createParser(file_id);
     ASTNode* root = p->parse();

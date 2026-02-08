@@ -17,7 +17,10 @@ int main(int argc, char* argv[]) {
         test_lex_pipe_pipe_operator,
         test_GenericCatalogue_ImplicitInstantiation,
         test_TypeChecker_ImplicitGenericDetection,
-        test_TypeChecker_AnytypeImplicitDetection
+        test_TypeChecker_MultipleImplicitInstantiations,
+        test_TypeChecker_AnytypeImplicitDetection,
+        test_Milestone4_GenericsIntegration_MixedCalls,
+        test_Milestone4_GenericsIntegration_ComplexParams
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
