@@ -36,8 +36,11 @@ Types are mangled into short, safe strings:
 | `void` | `void` |
 | `*T` | `ptr_T` |
 | `[N]T` | `arr_T` |
+| `!T` | `err_T` |
+| `?T` | `opt_T` |
+| `error{A,B}` | `errset_A_B` |
 | `type` | `type` |
-| `anytype` | `any` |
+| `anytype` | `anytype` |
 
 ## Examples
 
@@ -47,6 +50,9 @@ Types are mangled into short, safe strings:
 | `max` | Generic(i32, i32) | `max__i32_i32` |
 | `if` | Function Name | `z_if` |
 | `_Test` | Function Name | `z_Test` |
+| `!i32` | Type | `err_i32` |
+| `?u8` | Type | `opt_u8` |
+| `error{A}` | Type | `errset_A` |
 | `my_long_function_name_exceeding_31` | - | `my_long_function_name_exceedin` |
 
 ## Integration

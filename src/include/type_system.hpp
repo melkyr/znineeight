@@ -34,6 +34,7 @@ enum TypeKind {
     TYPE_STRUCT,
     TYPE_ERROR_UNION,
     TYPE_ERROR_SET,
+    TYPE_OPTIONAL,
     TYPE_TYPE,
     TYPE_ANYTYPE
 };
@@ -107,6 +108,9 @@ struct Type {
             DynamicArray<const char*>* tags;
             bool is_anonymous;
         } error_set;
+        struct {
+            Type* payload;
+        } optional;
     } as;
 };
 
@@ -165,6 +169,14 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields)
  * @return A pointer to the newly allocated Type object.
  */
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred);
+
+/**
+ * @brief Creates a new optional Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param payload The payload type.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createOptionalType(ArenaAllocator& arena, Type* payload);
 
 /**
  * @brief Creates a new error set Type object from the arena.

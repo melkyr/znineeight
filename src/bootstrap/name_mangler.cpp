@@ -115,6 +115,40 @@ const char* NameMangler::mangleType(Type* type) {
         }
         case TYPE_TYPE: return "type";
         case TYPE_ANYTYPE: return "anytype";
+        case TYPE_ERROR_UNION: {
+            char buf[128];
+            char* ptr = buf;
+            size_t remaining = sizeof(buf);
+            safe_append(ptr, remaining, "err_");
+            const char* payload = mangleType(type->as.error_union.payload);
+            safe_append(ptr, remaining, payload);
+            return interner_.intern(buf);
+        }
+        case TYPE_OPTIONAL: {
+            char buf[128];
+            char* ptr = buf;
+            size_t remaining = sizeof(buf);
+            safe_append(ptr, remaining, "opt_");
+            const char* payload = mangleType(type->as.optional.payload);
+            safe_append(ptr, remaining, payload);
+            return interner_.intern(buf);
+        }
+        case TYPE_ERROR_SET: {
+            if (type->as.error_set.name) {
+                return type->as.error_set.name;
+            }
+            char buf[256];
+            char* ptr = buf;
+            size_t remaining = sizeof(buf);
+            safe_append(ptr, remaining, "errset");
+            if (type->as.error_set.tags) {
+                for (size_t i = 0; i < type->as.error_set.tags->length(); ++i) {
+                    safe_append(ptr, remaining, "_");
+                    safe_append(ptr, remaining, (*type->as.error_set.tags)[i]);
+                }
+            }
+            return interner_.intern(buf);
+        }
         default: return "type";
     }
 }

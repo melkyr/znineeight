@@ -1482,8 +1482,8 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
     logFeatureLocation("optional_type", node->loc);
-    visit(node->payload_type);
-    return NULL; // Optionals are not supported in the type system yet
+    Type* payload = visit(node->payload_type);
+    return createOptionalType(unit.getArena(), payload);
 }
 
 void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
