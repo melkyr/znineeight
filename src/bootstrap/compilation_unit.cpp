@@ -36,6 +36,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       extraction_analysis_catalogue_(arena),
       errdefer_catalogue_(arena),
       name_mangler_(arena, interner),
+      call_site_table_(arena),
       options_(),
       pattern_generator_(NULL),
       test_patterns_(NULL),
@@ -148,6 +149,10 @@ ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
 
 NameMangler& CompilationUnit::getNameMangler() {
     return name_mangler_;
+}
+
+CallSiteLookupTable& CompilationUnit::getCallSiteLookupTable() {
+    return call_site_table_;
 }
 
 ArenaAllocator& CompilationUnit::getArena() {
@@ -323,6 +328,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (options_.enable_double_free_analysis) {
         DoubleFreeAnalyzer analyzer(*this);
         analyzer.analyze(ast);
+    }
+
+    // Task 163: Report unresolved call sites
+    if (call_site_table_.getUnresolvedCount() > 0) {
+        call_site_table_.printUnresolved();
     }
 
     return true;

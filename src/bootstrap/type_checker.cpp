@@ -37,7 +37,7 @@ static const char* getTokenSpelling(TokenType op) {
     }
 }
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL) {
+TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -597,6 +597,41 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
         }
     }
 
+    // --- Task 163: Call Site Recording ---
+    int entry_id = unit.getCallSiteLookupTable().addEntry(
+        (ASTNode*)node, // This is fine as it's the node representing the call
+        current_fn_name ? current_fn_name : "global"
+    );
+
+    if (node->callee->type == NODE_IDENTIFIER) {
+        Symbol* sym = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
+        if (sym) {
+            CallType type = CALL_DIRECT;
+            if (current_fn_name && plat_strcmp(sym->name, current_fn_name) == 0) {
+                type = CALL_RECURSIVE;
+            }
+
+            if (sym->is_generic) {
+                type = CALL_GENERIC;
+                const GenericInstantiation* inst = unit.getGenericCatalogue().findInstantiation(sym->name, node->callee->loc);
+                if (inst && inst->mangled_name) {
+                    unit.getCallSiteLookupTable().resolveEntry(entry_id, inst->mangled_name, type);
+                } else {
+                    unit.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", type);
+                }
+            } else if (sym->mangled_name) {
+                unit.getCallSiteLookupTable().resolveEntry(entry_id, sym->mangled_name, type);
+            } else {
+                unit.getCallSiteLookupTable().markUnresolved(entry_id, "Mangled name not found", type);
+            }
+        } else {
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", CALL_DIRECT);
+        }
+    } else {
+        unit.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call", CALL_INDIRECT);
+    }
+    // --- End Task 163 ---
+
     return callee_type->as.function.return_type;
 }
 
@@ -1061,6 +1096,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     Type* prev_fn_return_type = current_fn_return_type;
+    const char* prev_fn_name = current_fn_name;
+    current_fn_name = node->name;
 
     unit.getSymbolTable().enterScope();
 
@@ -1119,6 +1156,7 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     unit.getSymbolTable().exitScope();
 
     current_fn_return_type = prev_fn_return_type;
+    current_fn_name = prev_fn_name;
     return NULL;
 }
 

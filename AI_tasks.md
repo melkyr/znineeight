@@ -763,7 +763,7 @@ Output: Runtime assertions in codegen module
     Validation: Verify all generated names are truly unique
     Success criteria: Every function gets a unique C89-safe name
 
-163. **Task 163:** CALL SITE RESOLUTION UPDATES (HIGH)
+163. **Task 163:** CALL SITE RESOLUTION UPDATES (DONE)
 
     What to implement: Update function calls to use new mangled names
     Watch for: 
@@ -772,7 +772,7 @@ Output: Runtime assertions in codegen module
         Indirect call handling
     Validation: Ensure all function calls point to correct mangled names
     Success criteria: All function calls resolve to the correct target functions
-164. **Task 164:** Build call site lookup table
+164. **Task 164:** Build call site lookup table (DONE)
 165. **Task 165:** Update direct function calls
 166. **Task 166:** Update indirect function calls
 167. **Task 167:** Update recursive calls

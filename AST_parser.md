@@ -1624,6 +1624,25 @@ Mangled: `max__i32` (if i32 is the only type parameter).
 
 This mangled name is stored in the `Symbol` table and used by the code generator and catalogues.
 
+## 22. Call Site Resolution (Task 163)
+
+During type checking, every function call is recorded in a `CallSiteLookupTable` owned by the `CompilationUnit`. This table serves as a central registry for mapping call nodes to their resolved C89-compatible mangled names, which is essential for correctly emitting code in later phases.
+
+### Call Types and Resolution Status
+
+| Call Type | Resolution Strategy | Status (Task 163) |
+|-----------|-------------------|-------------------|
+| **Direct** | Resolved using the target function's symbol `mangled_name`. | Recorded & Resolved |
+| **Generic** | Resolved using the specific instantiation's `mangled_name` from `GenericCatalogue`. | Recorded & Resolved |
+| **Recursive** | Resolved using the current function's `mangled_name`. | Recorded & Resolved |
+| **Indirect** | Function pointer calls are currently unsupported and marked as unresolved. | Recorded (Unresolved) |
+
+### Implementation Details
+
+- **Storage**: The `CallSiteLookupTable` is a side-table that stores `CallSiteEntry` objects. Each entry contains a pointer to the `ASTFunctionCallNode`, the resolved `mangled_name`, the calling context (function name), and resolution metadata.
+- **Timing**: Call sites are registered during the `TypeChecker::visitFunctionCall` pass.
+- **Validation**: At the end of the compilation pipeline, any unresolved call sites are reported as diagnostics to assist in debugging and feature implementation.
+
 ---
 
 ## Deprecated
