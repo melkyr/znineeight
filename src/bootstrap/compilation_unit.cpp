@@ -35,6 +35,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       orelse_expression_catalogue_(arena),
       extraction_analysis_catalogue_(arena),
       errdefer_catalogue_(arena),
+      name_mangler_(arena, interner),
       options_(),
       pattern_generator_(NULL),
       test_patterns_(NULL),
@@ -145,6 +146,10 @@ ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
     return errdefer_catalogue_;
 }
 
+NameMangler& CompilationUnit::getNameMangler() {
+    return name_mangler_;
+}
+
 ArenaAllocator& CompilationUnit::getArena() {
     return arena_;
 }
@@ -179,8 +184,10 @@ void CompilationUnit::injectRuntimeSymbols() {
     for (size_t i = 0; i < sizeof(primitives) / sizeof(primitives[0]); ++i) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
+            const char* name = interner_.intern(primitives[i]);
             Symbol sym = SymbolBuilder(arena_)
-                .withName(interner_.intern(primitives[i]))
+                .withName(name)
+                .withMangledName(name) // Primitives use their own name as mangled name
                 .ofType(SYMBOL_TYPE)
                 .withType(t)
                 .build();
@@ -195,8 +202,10 @@ void CompilationUnit::injectRuntimeSymbols() {
     Type* ret_type = createPointerType(arena_, get_g_type_u8(), false);
     Type* fn_type = createFunctionType(arena_, params, ret_type);
 
+    const char* alloc_name = interner_.intern("arena_alloc");
     Symbol sym_alloc = SymbolBuilder(arena_)
-        .withName(interner_.intern("arena_alloc"))
+        .withName(alloc_name)
+        .withMangledName(name_mangler_.mangleFunction(alloc_name, NULL, 0, current_module_))
         .ofType(SYMBOL_FUNCTION)
         .withType(fn_type)
         .build();
@@ -209,8 +218,10 @@ void CompilationUnit::injectRuntimeSymbols() {
     Type* ret_type2 = get_g_type_void();
     Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
 
+    const char* free_name = interner_.intern("arena_free");
     Symbol sym_free = SymbolBuilder(arena_)
-        .withName(interner_.intern("arena_free"))
+        .withName(free_name)
+        .withMangledName(name_mangler_.mangleFunction(free_name, NULL, 0, current_module_))
         .ofType(SYMBOL_FUNCTION)
         .withType(fn_type2)
         .build();

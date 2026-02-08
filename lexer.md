@@ -43,3 +43,13 @@ The lexer implements a two-character lookahead to resolve the ambiguity between 
 - `++`: Increment operator (added for complete operator coverage).
 - `--`: Decrement operator (added for complete operator coverage).
 - `||`: Error set merging operator.
+
+## Identifier Constraints for C89 Output
+
+The lexer supports Unicode identifiers and arbitrary length, but for C89 code generation:
+- Maximum 31 characters for external names (MSVC 6.0)
+- Only alphanumeric and underscore
+- Cannot start with underscore followed by uppercase (reserved)
+- Cannot conflict with C keywords
+
+The `NameMangler` ensures these constraints are met during the semantic analysis and code generation phases.

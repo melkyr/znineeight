@@ -88,7 +88,7 @@ void run_parser_test_in_child(const char* source) {
 }
 
 void run_type_checker_test_in_child(const char* source) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     comp_unit.injectRuntimeSymbols();

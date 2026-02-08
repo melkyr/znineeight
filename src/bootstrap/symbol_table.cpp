@@ -18,6 +18,7 @@ static u32 hash_string(const char* str) {
 SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     // Zero-initialize the temporary symbol to ensure all fields are set.
     temp_symbol_.name = NULL;
+    temp_symbol_.mangled_name = NULL;
     temp_symbol_.symbol_type = NULL;
     temp_symbol_.details = NULL;
     temp_symbol_.scope_level = 0;
@@ -28,6 +29,11 @@ SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
 
 SymbolBuilder& SymbolBuilder::withName(const char* name) {
     temp_symbol_.name = name;
+    return *this;
+}
+
+SymbolBuilder& SymbolBuilder::withMangledName(const char* mangled_name) {
+    temp_symbol_.mangled_name = mangled_name;
     return *this;
 }
 

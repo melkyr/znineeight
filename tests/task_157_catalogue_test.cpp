@@ -26,7 +26,7 @@ TEST_FUNC(GenericCatalogue_ImplicitInstantiation) {
 
     Type* arg_types[1] = { &type_i32 };
 
-    catalogue.addInstantiation("foo", params, arg_types, 1, loc, module, false, hash);
+    catalogue.addInstantiation("foo", "foo__i32", params, arg_types, 1, loc, module, false, hash);
 
     ASSERT_EQ(1, catalogue.count());
     const GenericInstantiation& inst = (*catalogue.getInstantiations())[0];

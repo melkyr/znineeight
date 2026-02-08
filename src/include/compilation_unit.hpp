@@ -16,6 +16,7 @@
 #include "orelse_expression_catalogue.hpp"
 #include "extraction_analysis_catalogue.hpp"
 #include "errdefer_catalogue.hpp"
+#include "name_mangler.hpp"
 
 /**
  * @struct CompilationOptions
@@ -56,6 +57,7 @@ public:
     OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
     ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
     ErrDeferCatalogue& getErrDeferCatalogue();
+    NameMangler& getNameMangler();
     ArenaAllocator& getArena();
 
     const char* getCurrentModule() const;
@@ -124,6 +126,7 @@ private:
     OrelseExpressionCatalogue orelse_expression_catalogue_;
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     ErrDeferCatalogue errdefer_catalogue_;
+    NameMangler name_mangler_;
     const char* current_module_;
     CompilationOptions options_;
 

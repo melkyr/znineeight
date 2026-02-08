@@ -23,16 +23,19 @@ TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue) {
     // 2. Create mock AST for '&x'
     // AST for 'x'
     ASTNode identifier_node;
+    plat_memset(&identifier_node, 0, sizeof(ASTNode));
     identifier_node.type = NODE_IDENTIFIER;
     identifier_node.as.identifier.name = symbol.name;
     identifier_node.resolved_type = symbol.symbol_type; // Pre-resolve for unit test
 
     // AST for '&' operator
     ASTUnaryOpNode unary_op_node;
+    plat_memset(&unary_op_node, 0, sizeof(ASTUnaryOpNode));
     unary_op_node.op = TOKEN_AMPERSAND;
     unary_op_node.operand = &identifier_node;
 
     ASTNode root_node;
+    plat_memset(&root_node, 0, sizeof(ASTNode));
     root_node.type = NODE_UNARY_OP;
     root_node.as.unary_op = unary_op_node;
 
@@ -61,16 +64,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     // Test: pointer + integer
     {
         ASTNode ptr_node;
+        plat_memset(&ptr_node, 0, sizeof(ASTNode));
         ptr_node.resolved_type = ptr_type;
         ASTNode int_node;
+        plat_memset(&int_node, 0, sizeof(ASTNode));
         int_node.resolved_type = int_type;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &ptr_node;
         bin_op.right = &int_node;
         bin_op.op = TOKEN_PLUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -81,16 +88,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     // Test: integer + pointer
     {
         ASTNode ptr_node;
+        plat_memset(&ptr_node, 0, sizeof(ASTNode));
         ptr_node.resolved_type = ptr_type;
         ASTNode int_node;
+        plat_memset(&int_node, 0, sizeof(ASTNode));
         int_node.resolved_type = int_type;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &int_node;
         bin_op.right = &ptr_node;
         bin_op.op = TOKEN_PLUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -101,16 +112,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     // Test: pointer - integer
     {
         ASTNode ptr_node;
+        plat_memset(&ptr_node, 0, sizeof(ASTNode));
         ptr_node.resolved_type = ptr_type;
         ASTNode int_node;
+        plat_memset(&int_node, 0, sizeof(ASTNode));
         int_node.resolved_type = int_type;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &ptr_node;
         bin_op.right = &int_node;
         bin_op.op = TOKEN_MINUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -135,16 +150,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer) {
     // Test: pointer - pointer (valid)
     {
         ASTNode ptr_node1;
+        plat_memset(&ptr_node1, 0, sizeof(ASTNode));
         ptr_node1.resolved_type = ptr_type1;
         ASTNode ptr_node2;
+        plat_memset(&ptr_node2, 0, sizeof(ASTNode));
         ptr_node2.resolved_type = ptr_type2;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &ptr_node1;
         bin_op.right = &ptr_node2;
         bin_op.op = TOKEN_MINUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -171,16 +190,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
     {
         comp_unit.getErrorHandler().reset();
         ASTNode ptr_node1;
+        plat_memset(&ptr_node1, 0, sizeof(ASTNode));
         ptr_node1.resolved_type = ptr_type1;
         ASTNode ptr_node2;
+        plat_memset(&ptr_node2, 0, sizeof(ASTNode));
         ptr_node2.resolved_type = ptr_type1;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &ptr_node1;
         bin_op.right = &ptr_node2;
         bin_op.op = TOKEN_PLUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -192,16 +215,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
     {
         comp_unit.getErrorHandler().reset();
         ASTNode ptr_node1;
+        plat_memset(&ptr_node1, 0, sizeof(ASTNode));
         ptr_node1.resolved_type = ptr_type1;
         ASTNode ptr_node2;
+        plat_memset(&ptr_node2, 0, sizeof(ASTNode));
         ptr_node2.resolved_type = ptr_type2;
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &ptr_node1;
         bin_op.right = &ptr_node2;
         bin_op.op = TOKEN_MINUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -213,16 +240,20 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
     {
         comp_unit.getErrorHandler().reset();
         ASTNode void_ptr_node;
+        plat_memset(&void_ptr_node, 0, sizeof(ASTNode));
         void_ptr_node.resolved_type = void_ptr_type;
         ASTNode int_node;
+        plat_memset(&int_node, 0, sizeof(ASTNode));
         int_node.resolved_type = get_g_type_i32();
 
         ASTBinaryOpNode bin_op;
+        plat_memset(&bin_op, 0, sizeof(ASTBinaryOpNode));
         bin_op.left = &void_ptr_node;
         bin_op.right = &int_node;
         bin_op.op = TOKEN_PLUS;
 
         ASTNode root_node;
+        plat_memset(&root_node, 0, sizeof(ASTNode));
         root_node.type = NODE_BINARY_OP;
         root_node.as.binary_op = &bin_op;
 
@@ -245,13 +276,16 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer) {
 
     // 2. Create mock AST for '*p'
     ASTNode pointer_node;
+    plat_memset(&pointer_node, 0, sizeof(ASTNode));
     pointer_node.resolved_type = ptr_type;
 
     ASTUnaryOpNode unary_op_node;
+    plat_memset(&unary_op_node, 0, sizeof(ASTUnaryOpNode));
     unary_op_node.op = TOKEN_STAR;
     unary_op_node.operand = &pointer_node;
 
     ASTNode root_node;
+    plat_memset(&root_node, 0, sizeof(ASTNode));
     root_node.type = NODE_UNARY_OP;
     root_node.as.unary_op = unary_op_node;
 
@@ -278,13 +312,16 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer) {
 
     // 2. Create mock AST for '*x' where x is an integer
     ASTNode integer_node;
+    plat_memset(&integer_node, 0, sizeof(ASTNode));
     integer_node.resolved_type = int_type;
 
     ASTUnaryOpNode unary_op_node;
+    plat_memset(&unary_op_node, 0, sizeof(ASTUnaryOpNode));
     unary_op_node.op = TOKEN_STAR;
     unary_op_node.operand = &integer_node;
 
     ASTNode root_node;
+    plat_memset(&root_node, 0, sizeof(ASTNode));
     root_node.type = NODE_UNARY_OP;
     root_node.as.unary_op = unary_op_node;
 

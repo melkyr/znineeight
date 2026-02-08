@@ -587,7 +587,12 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
             size_t rem = sizeof(msg);
             safe_append(cur, rem, "Implicit generic instantiation of '");
             safe_append(cur, rem, name);
-            safe_append(cur, rem, "' with argument types: ");
+            if (inst->mangled_name) {
+                safe_append(cur, rem, "' (mangled: ");
+                safe_append(cur, rem, inst->mangled_name);
+                safe_append(cur, rem, ")");
+            }
+            safe_append(cur, rem, " with argument types: ");
 
             for (int i = 0; i < inst->param_count; i++) {
                 if (i > 0) safe_append(cur, rem, ", ");

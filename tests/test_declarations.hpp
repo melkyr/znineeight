@@ -286,13 +286,6 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer);
 TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping);
 TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping);
 TEST_FUNC(TypeCheckerVoidTests_PointerAddition);
-TEST_FUNC(TypeChecker_PointerIntegerAddition);
-TEST_FUNC(TypeChecker_IntegerPointerAddition);
-TEST_FUNC(TypeChecker_PointerIntegerSubtraction);
-TEST_FUNC(TypeChecker_PointerPointerSubtraction);
-TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition);
-TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes);
-TEST_FUNC(TypeChecker_Invalid_PointerMultiplication);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer);
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations);
@@ -599,5 +592,14 @@ TEST_FUNC(TypeChecker_MultipleImplicitInstantiations);
 TEST_FUNC(TypeChecker_AnytypeImplicitDetection);
 TEST_FUNC(Milestone4_GenericsIntegration_MixedCalls);
 TEST_FUNC(Milestone4_GenericsIntegration_ComplexParams);
+
+// Forward declarations for Task 161 (Name Mangling)
+TEST_FUNC(simple_mangling);
+TEST_FUNC(generic_mangling);
+TEST_FUNC(multiple_generic_mangling);
+TEST_FUNC(c_keyword_collision);
+TEST_FUNC(reserved_name_collision);
+TEST_FUNC(length_limit);
+TEST_FUNC(determinism);
 
 #endif // TEST_DECLARATIONS_HPP

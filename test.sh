@@ -28,6 +28,7 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/errdefer_catalogue.cpp \
     src/bootstrap/name_collision_detector.cpp \
     src/bootstrap/signature_analyzer.cpp \
+    src/bootstrap/name_mangler.cpp \
     src/bootstrap/platform.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
@@ -77,6 +78,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_lexer_keywords.cpp \
     tests/test_lexer_operators.cpp \
     tests/test_lexer_special_ops.cpp \
+    tests/name_mangler_tests.cpp \
     tests/test_memory.cpp \
     tests/test_missing_keywords.cpp \
     tests/test_parser_array_slice.cpp \
@@ -180,7 +182,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
-for i in 1 2 3 4 5 6 7 8 9; do
+for i in 1 2 3 4 5 6 7 8 9 10; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then
