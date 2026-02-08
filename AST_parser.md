@@ -249,7 +249,24 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTErrorUnionTypeNode`     | 20           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 
-## 4. Implemented AST Node Types
+## 4. Name Mangling for Milestone 4 Types
+
+To ensure unique identification in C89 code, Milestone 4 types follow specific mangling rules:
+
+### Error Unions (!T)
+- **Mangled as**: `err_<payload_type>`
+- **Example**: `!i32` → `err_i32`
+
+### Optional Types (?T)
+- **Mangled as**: `opt_<payload_type>`
+- **Example**: `?*u8` → `opt_ptr_u8`
+
+### Error Sets
+- **Named**: Mangled as the set's name (e.g., `MyError`).
+- **Anonymous**: `errset_<tag1>_<tag2>...`
+- **Example**: `error{A, B}` → `errset_A_B`
+
+## 5. Implemented AST Node Types
 
 The following node types are defined and tested, forming the foundation for parsing expressions.
 

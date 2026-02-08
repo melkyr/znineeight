@@ -32,17 +32,23 @@ The lexer is responsible for resolving ambiguities in the source code. For examp
 
 The lexer implements a two-character lookahead to resolve the ambiguity between a float literal and a range operator. When the lexer encounters a `.` after a number, it peeks at the next character. If the next character is also a `.`, the lexer treats the number as an integer and leaves the `..` to be tokenized as a `TOKEN_RANGE` in the next step.
 
-## New Keywords and Operators (Milestone 4)
+## Milestone 4 Tokens
+
+### Error Handling Tokens
+- `||` (TOKEN_PIPE_PIPE): Error set merging operator.
+- `!` (TOKEN_BANG): Error union prefix (when used in type expressions).
+- `?` (TOKEN_QUESTION): Optional type prefix.
+- `error` (TOKEN_ERROR_SET): Error set keyword.
+- `@import` (TOKEN_AT_IMPORT): Compiler intrinsic for module imports.
+
+### Increment/Decrement Operators
+- `++` (TOKEN_PLUS2): Increment operator (numeric types).
+- `--` (TOKEN_MINUS2): Decrement operator (numeric types).
 
 ### Keywords
 - `type`: Used for type expressions and generic parameters.
 - `anytype`: Used for generic parameters where any type is accepted.
 - `comptime`: Used for compile-time constants and parameters.
-
-### Operators
-- `++`: Increment operator (added for complete operator coverage).
-- `--`: Decrement operator (added for complete operator coverage).
-- `||`: Error set merging operator.
 
 ## Identifier Constraints for C89 Output
 

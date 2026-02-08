@@ -602,4 +602,12 @@ TEST_FUNC(reserved_name_collision);
 TEST_FUNC(length_limit);
 TEST_FUNC(determinism);
 
+// Forward declarations for Milestone 4 Features
+TEST_FUNC(Milestone4_Lexer_Tokens);
+TEST_FUNC(Milestone4_Parser_AST);
+TEST_FUNC(OptionalType_Creation);
+TEST_FUNC(OptionalType_ToString);
+TEST_FUNC(TypeChecker_OptionalType);
+TEST_FUNC(NameMangler_Milestone4Types);
+
 #endif // TEST_DECLARATIONS_HPP

@@ -101,6 +101,15 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
     return new_type;
 }
 
+Type* createOptionalType(ArenaAllocator& arena, Type* payload) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+    new_type->kind = TYPE_OPTIONAL;
+    new_type->size = 8; // Placeholder: optional size is usually tag + payload
+    new_type->alignment = 4;
+    new_type->as.optional.payload = payload;
+    return new_type;
+}
+
 Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
     new_type->kind = TYPE_ERROR_SET;
@@ -243,6 +252,11 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             } else {
                 safe_append(current, remaining, "error{...}");
             }
+            break;
+        }
+        case TYPE_OPTIONAL: {
+            safe_append(current, remaining, "?");
+            typeToString(type->as.optional.payload, current, remaining);
             break;
         }
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;

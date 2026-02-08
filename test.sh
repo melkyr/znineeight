@@ -178,11 +178,15 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/lexer_decrement_test.cpp \
     tests/task_157_catalogue_test.cpp \
     tests/test_task_157_implicit_detection.cpp \
-    tests/test_milestone4_generics_integration.cpp"
+    tests/test_milestone4_generics_integration.cpp \
+    tests/test_milestone4_lexer_parser.cpp \
+    tests/test_optional_type.cpp \
+    tests/test_optional_type_checker.cpp \
+    tests/test_milestone4_name_mangling.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in 1 2 3 4 5 6 7 8 9 10 11; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then
