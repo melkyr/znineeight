@@ -17,6 +17,20 @@ enum CallType {
 };
 
 /**
+ * @enum ResolutionResult
+ * @brief Represents the outcome of an attempt to resolve a call site.
+ */
+enum ResolutionResult {
+    RESOLVED,
+    UNRESOLVED_SYMBOL,
+    UNRESOLVED_GENERIC,
+    INDIRECT_REJECTED,
+    C89_INCOMPATIBLE,
+    BUILTIN_REJECTED,
+    FORWARD_REFERENCE
+};
+
+/**
  * @struct CallSiteEntry
  * @brief Stores resolution information for a single function call site.
  */

@@ -1257,21 +1257,22 @@ ASTNode* Parser::parseFnDecl() {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
 
+    // Create the function declaration node early to hold the parameters
+    ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
+    if (!fn_decl) {
+        error("Out of memory");
+    }
+
     // Create and insert the symbol for the function itself into the current scope.
     Symbol fn_symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .ofType(SYMBOL_FUNCTION)
         .withType(NULL) // TODO: Create a function type object
         .atLocation(name_token.location)
+        .definedBy(fn_decl)
         .build();
 
     symbol_table_->insert(fn_symbol);
-
-    // Create the function declaration node early to hold the parameters
-    ASTFnDeclNode* fn_decl = (ASTFnDeclNode*)arena_->alloc(sizeof(ASTFnDeclNode));
-    if (!fn_decl) {
-        error("Out of memory");
-    }
     fn_decl->name = name_token.value.identifier;
     fn_decl->params = (DynamicArray<ASTParamDeclNode*>*)arena_->alloc(sizeof(DynamicArray<ASTParamDeclNode*>));
     if (!fn_decl->params) {

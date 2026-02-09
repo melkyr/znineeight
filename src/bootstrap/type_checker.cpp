@@ -42,14 +42,6 @@ TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_
 
 void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
-        // First pass: Process function declarations and global variables
-        for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
-            ASTNode* top_level_node = (*root->as.block_stmt.statements)[i];
-            if (top_level_node && top_level_node->type == NODE_FN_DECL) {
-                // We could do a pre-scan here, but visit() handles it for now.
-            }
-        }
-
         // Main pass: visit children directly to avoid root block scope level issue
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             visit((*root->as.block_stmt.statements)[i]);
@@ -70,7 +62,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_COMPOUND_ASSIGNMENT: resolved_type = visitCompoundAssignment(node->as.compound_assignment); break;
         case NODE_UNARY_OP:         resolved_type = visitUnaryOp(node, &node->as.unary_op); break;
         case NODE_BINARY_OP:        resolved_type = visitBinaryOp(node, node->as.binary_op); break;
-        case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node->as.function_call); break;
+        case NODE_FUNCTION_CALL:    resolved_type = visitFunctionCall(node, node->as.function_call); break;
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
@@ -495,7 +487,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
     }
 }
 
-Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
+Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node) {
     // Detect and catalogue generic instantiation if this is a generic call
     catalogGenericInstantiation(node);
 
@@ -523,18 +515,22 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
     // --- END NEW LOGIC FOR TASK 119 ---
 
     if (node->args->length() > 4) {
-        fatalError(node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
     }
 
     Type* callee_type = visit(node->callee);
     if (!callee_type) {
         // Error already reported (e.g., undefined function)
+        int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
+        unit.getCallSiteLookupTable().markUnresolved(entry_id, "Callee type could not be resolved", CALL_DIRECT);
         return NULL;
     }
 
     if (callee_type->kind != TYPE_FUNCTION) {
         // This also handles the function pointer case, as a variable holding a
         // function would have a symbol kind of VARIABLE, not FUNCTION.
+        int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
+        unit.getCallSiteLookupTable().markUnresolved(entry_id, "Called object is not a function", CALL_INDIRECT);
         fatalError(node->callee->loc, "called object is not a function");
     }
 
@@ -597,40 +593,50 @@ Type* TypeChecker::visitFunctionCall(ASTFunctionCallNode* node) {
         }
     }
 
-    // --- Task 163: Call Site Recording ---
-    int entry_id = unit.getCallSiteLookupTable().addEntry(
-        (ASTNode*)node, // This is fine as it's the node representing the call
-        current_fn_name ? current_fn_name : "global"
-    );
+    // --- Task 165: Call Site Resolution Refactored ---
+    CallSiteEntry entry;
+    entry.call_node = parent;
+    entry.context = current_fn_name ? current_fn_name : "global";
+    entry.mangled_name = NULL;
+    entry.call_type = CALL_DIRECT;
+    entry.resolved = false;
+    entry.error_if_unresolved = NULL;
 
-    if (node->callee->type == NODE_IDENTIFIER) {
-        Symbol* sym = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
-        if (sym) {
-            CallType type = CALL_DIRECT;
-            if (current_fn_name && plat_strcmp(sym->name, current_fn_name) == 0) {
-                type = CALL_RECURSIVE;
-            }
+    ResolutionResult res = resolveCallSite(node, entry);
+    int entry_id = unit.getCallSiteLookupTable().addEntry(parent, entry.context);
 
-            if (sym->is_generic) {
-                type = CALL_GENERIC;
-                const GenericInstantiation* inst = unit.getGenericCatalogue().findInstantiation(sym->name, node->callee->loc);
-                if (inst && inst->mangled_name) {
-                    unit.getCallSiteLookupTable().resolveEntry(entry_id, inst->mangled_name, type);
-                } else {
-                    unit.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", type);
-                }
-            } else if (sym->mangled_name) {
-                unit.getCallSiteLookupTable().resolveEntry(entry_id, sym->mangled_name, type);
-            } else {
-                unit.getCallSiteLookupTable().markUnresolved(entry_id, "Mangled name not found", type);
-            }
-        } else {
-            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", CALL_DIRECT);
+    switch (res) {
+        case RESOLVED:
+            unit.getCallSiteLookupTable().resolveEntry(entry_id, entry.mangled_name, entry.call_type);
+            break;
+        case UNRESOLVED_SYMBOL:
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", entry.call_type);
+            break;
+        case UNRESOLVED_GENERIC:
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", entry.call_type);
+            break;
+        case INDIRECT_REJECTED:
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call (not supported in bootstrap)", entry.call_type);
+            break;
+        case C89_INCOMPATIBLE:
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
+            break;
+        case BUILTIN_REJECTED: {
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", entry.call_type);
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "Built-in '");
+            safe_append(current, remaining, node->callee->as.identifier.name);
+            safe_append(current, remaining, "' not supported in bootstrap");
+            unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, msg_buffer, unit.getArena());
+            break;
         }
-    } else {
-        unit.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call", CALL_INDIRECT);
+        case FORWARD_REFERENCE:
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
+            break;
     }
-    // --- End Task 163 ---
+    // --- End Task 165 ---
 
     return callee_type->as.function.return_type;
 }
@@ -873,6 +879,16 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
         unit.getErrorHandler().report(ERR_UNDEFINED_VARIABLE, node->loc, "Use of undeclared identifier");
         return NULL;
     }
+
+    // Resolve on demand if needed
+    if (!sym->symbol_type && sym->details) {
+        if (sym->kind == SYMBOL_FUNCTION) {
+            visitFnSignature((ASTFnDeclNode*)sym->details);
+        } else if (sym->kind == SYMBOL_VARIABLE) {
+            visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+        }
+    }
+
     return sym->symbol_type;
 }
 
@@ -1022,6 +1038,12 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 }
 
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
+    // Avoid double resolution but ensure flags are set
+    Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+    if (existing_sym && existing_sym->symbol_type && (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL))) {
+        return existing_sym->symbol_type;
+    }
+
     Type* declared_type = node->type ? visit(node->type) : NULL;
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
@@ -1065,7 +1087,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     // Update the symbol in the current scope with flags
-    Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+    existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
         existing_sym->symbol_type = declared_type;
         existing_sym->details = node;
@@ -1094,10 +1116,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     return declared_type;
 }
 
-Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
-    Type* prev_fn_return_type = current_fn_return_type;
-    const char* prev_fn_name = current_fn_name;
-    current_fn_name = node->name;
+Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
+    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    if (fn_symbol && fn_symbol->symbol_type) {
+        return fn_symbol->symbol_type; // Already resolved
+    }
 
     unit.getSymbolTable().enterScope();
 
@@ -1127,22 +1150,53 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     }
 
     // Resolve return type (now that parameters are in scope)
-    current_fn_return_type = visit(node->return_type);
+    Type* return_type = visit(node->return_type);
+
+    unit.getSymbolTable().exitScope();
 
     // If any parameter type or the return type was invalid, don't create the function type
-    // or check the body, as it will likely lead to cascading errors.
-    if (!all_params_valid || !current_fn_return_type) {
-        unit.getSymbolTable().exitScope();
-        current_fn_return_type = prev_fn_return_type;
+    if (!all_params_valid || !return_type) {
         return NULL;
     }
 
     // Create the function type and update the symbol
-    Type* function_type = createFunctionType(unit.getArena(), param_types, current_fn_return_type);
-    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    Type* function_type = createFunctionType(unit.getArena(), param_types, return_type);
     if (fn_symbol) {
         fn_symbol->symbol_type = function_type;
         fn_symbol->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+    }
+
+    return function_type;
+}
+
+Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
+    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    if (!fn_symbol || !fn_symbol->symbol_type) {
+        // Try to resolve signature if not already done
+        if (!visitFnSignature(node)) return NULL;
+        fn_symbol = unit.getSymbolTable().lookup(node->name);
+    }
+
+    Type* prev_fn_return_type = current_fn_return_type;
+    const char* prev_fn_name = current_fn_name;
+    current_fn_name = node->name;
+    current_fn_return_type = fn_symbol->symbol_type->as.function.return_type;
+
+    unit.getSymbolTable().enterScope();
+
+    // Re-register parameters in the body scope
+    DynamicArray<Type*>* param_types = fn_symbol->symbol_type->as.function.params;
+    for (size_t i = 0; i < node->params->length(); ++i) {
+         ASTParamDeclNode* param_node = (*node->params)[i];
+         Type* param_type = (*param_types)[i];
+         Symbol param_symbol = SymbolBuilder(unit.getArena())
+                .withName(param_node->name)
+                .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
+                .withType(param_type)
+                .atLocation(param_node->type->loc)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
+                .build();
+            unit.getSymbolTable().insert(param_symbol);
     }
 
     visit(node->body);
@@ -1158,6 +1212,11 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     current_fn_return_type = prev_fn_return_type;
     current_fn_name = prev_fn_name;
     return NULL;
+}
+
+Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
+    visitFnSignature(node);
+    return visitFnBody(node);
 }
 
 Type* TypeChecker::visitStructDecl(ASTNode* /*parent*/, ASTStructDeclNode* node) {
@@ -1434,6 +1493,11 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         // Look up in symbol table for type aliases (e.g., const Point = struct { ... })
         Symbol* sym = unit.getSymbolTable().lookup(node->name);
         if (sym) {
+            // Resolve on demand if needed
+            if (!sym->symbol_type && sym->kind == SYMBOL_VARIABLE && sym->details) {
+                visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            }
+
             // A constant can hold a type in Zig.
             // For now, we assume if it's in the symbol table and has a struct, enum or is a type parameter,
             // it can be used as a type name.
@@ -2095,6 +2159,69 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             hash
         );
     }
+}
+
+ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry) {
+    // Guard 1: Must be identifier
+    if (call->callee->type != NODE_IDENTIFIER) {
+        entry.call_type = CALL_INDIRECT;
+        return INDIRECT_REJECTED;
+    }
+
+    const char* callee_name = call->callee->as.identifier.name;
+
+    // Guard 2: Built-in functions
+    if (callee_name[0] == '@') {
+        return BUILTIN_REJECTED;
+    }
+
+    // Guard 3: Symbol must exist
+    Symbol* sym = unit.getSymbolTable().lookup(callee_name);
+    if (!sym) {
+        return UNRESOLVED_SYMBOL;
+    }
+
+    // Guard 4: Forward Reference / Not resolved yet
+    if (!sym->symbol_type && sym->details) {
+        if (sym->kind == SYMBOL_FUNCTION) {
+            visitFnSignature((ASTFnDeclNode*)sym->details);
+        } else if (sym->kind == SYMBOL_VARIABLE) {
+            visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+        }
+    }
+
+    if (!sym->symbol_type) {
+        return FORWARD_REFERENCE;
+    }
+
+    // Guard 5: Handle generics
+    if (sym->is_generic) {
+        entry.call_type = CALL_GENERIC;
+        const GenericInstantiation* inst = unit.getGenericCatalogue().findInstantiation(sym->name, call->callee->loc);
+        if (inst && inst->mangled_name) {
+            entry.mangled_name = inst->mangled_name;
+            return RESOLVED;
+        } else {
+            return UNRESOLVED_GENERIC;
+        }
+    }
+
+    // Guard 6: Check C89 compatibility
+    if (sym->symbol_type && !is_c89_compatible(sym->symbol_type)) {
+        return C89_INCOMPATIBLE;
+    }
+
+    // Main path: Direct or Recursive call resolution
+    entry.mangled_name = sym->mangled_name;
+
+    // Check if recursive
+    if (current_fn_name && plat_strcmp(sym->name, current_fn_name) == 0) {
+        entry.call_type = CALL_RECURSIVE;
+    } else {
+        entry.call_type = CALL_DIRECT;
+    }
+
+    return RESOLVED;
 }
 
 bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {

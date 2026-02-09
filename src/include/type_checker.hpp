@@ -19,7 +19,7 @@ public:
     Type* visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node);
     Type* visitAssignment(ASTAssignmentNode* node);
     Type* visitCompoundAssignment(ASTCompoundAssignmentNode* node);
-    Type* visitFunctionCall(ASTFunctionCallNode* node);
+    Type* visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node);
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
     Type* visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node);
@@ -42,6 +42,8 @@ public:
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
+    Type* visitFnSignature(ASTFnDeclNode* node);
+    Type* visitFnBody(ASTFnDeclNode* node);
     Type* visitStructDecl(ASTNode* parent, ASTStructDeclNode* node);
     Type* visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node);
     Type* visitEnumDecl(ASTEnumDeclNode* node);
@@ -79,6 +81,7 @@ private:
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
+    ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
 
     CompilationUnit& unit;
     Type* current_fn_return_type;
