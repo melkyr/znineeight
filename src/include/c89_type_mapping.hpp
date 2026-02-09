@@ -32,15 +32,16 @@ static const TypeMapping c89_type_map[] = {
 };
 
 /**
- * @brief Checks if a given type is compatible with the C89 subset.
+ * @brief Checks if a given type is compatible with the bootstrap compiler's C89 subset.
  *
- * This function validates that a type adheres to C89 constraints. It accepts:
+ * This function validates that a type adheres to bootstrap constraints. It accepts:
  * - Whitelisted primitive types (as defined in c89_type_map).
  * - Single-level pointers to whitelisted primitive types.
  * - Function types, provided their parameters and return types are also C89-compatible.
+ * - Struct and Enum types (relying on TypeChecker for internal field validation).
  *
  * It rejects multi-level pointers, function pointers, functions with more than 4
- * parameters, and any types not in the primitive whitelist (e.g., isize).
+ * parameters, and any types not in the primitive whitelist (e.g., isize, usize).
  *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.
@@ -57,9 +58,8 @@ static inline bool is_c89_compatible(Type* type) {
             if (!base_type || base_type->kind == TYPE_POINTER || base_type->kind == TYPE_FUNCTION) {
                 return false;
             }
-            // A pointer is compatible only if its base type is a compatible primitive.
-            // We check this by recursively calling is_c89_compatible, which will handle
-            // the primitive type check in the default case.
+            // A pointer is compatible only if its base type is a compatible type.
+            // We check this by recursively calling is_c89_compatible.
             return is_c89_compatible(base_type);
         }
 
