@@ -617,4 +617,9 @@ TEST_FUNC(TypeChecker_CallSiteRecording_Direct);
 TEST_FUNC(TypeChecker_CallSiteRecording_Recursive);
 TEST_FUNC(TypeChecker_CallSiteRecording_Generic);
 
+// Forward declarations for Task 165
+TEST_FUNC(Task165_ForwardReference);
+TEST_FUNC(Task165_BuiltinRejection);
+TEST_FUNC(Task165_C89Incompatible);
+
 #endif // TEST_DECLARATIONS_HPP

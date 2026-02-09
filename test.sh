@@ -185,7 +185,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_optional_type_checker.cpp \
     tests/test_milestone4_name_mangling.cpp \
     tests/test_call_site_lookup.cpp \
-    tests/type_checker_call_site_tests.cpp"
+    tests/type_checker_call_site_tests.cpp \
+    tests/test_task_165_resolution.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

@@ -1624,9 +1624,24 @@ Mangled: `max__i32` (if i32 is the only type parameter).
 
 This mangled name is stored in the `Symbol` table and used by the code generator and catalogues.
 
-## 22. Call Site Resolution (Task 163)
+## 22. Call Site Resolution (Tasks 163 & 165)
 
 During type checking, every function call is recorded in a `CallSiteLookupTable` owned by the `CompilationUnit`. This table serves as a central registry for mapping call nodes to their resolved C89-compatible mangled names, which is essential for correctly emitting code in later phases.
+
+### 22.1 Resolution Algorithm (Task 165)
+
+Direct function calls are resolved during the semantic analysis phase using a robust algorithm that handles various edge cases:
+
+1.  **Identifier Check**: The callee must be a simple identifier. Indirect calls (via pointers) are currently rejected for bootstrap.
+2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features (often rejected in the bootstrap phase with specific errors).
+3.  **Symbol Lookup**: The compiler searches the hierarchical symbol table for the callee name.
+4.  **Forward Reference Resolution**: If the symbol is found but its type is not yet resolved (common for functions declared later in the same file), the compiler triggers an on-demand signature resolution.
+5.  **Generic Handling**: If the symbol is marked as generic, the compiler attempts to find the matching instantiation in the `GenericCatalogue` and uses its specialized mangled name.
+6.  **C89 Compatibility**: The resolved function signature is verified for C89 compatibility (e.g., parameter count, supported types).
+7.  **Recursion Detection**: The compiler checks if the call is recursive by comparing the callee name with the current function being checked.
+8.  **Recording**: The call site, its resolved mangled name, and its type (`DIRECT`, `RECURSIVE`, `GENERIC`) are recorded in the `CallSiteLookupTable`.
+
+Example: `foo()` → looks up `foo` → resolves signature → records `foo__mangled` as `CALL_DIRECT`.
 
 ### Call Types and Resolution Status
 
