@@ -37,7 +37,7 @@ for %%i in (1 2 3 4 5) do (
 
 echo.
 echo Running tests...
-call run_all_tests.bat
+call run_all_tests.bat %*
 if errorlevel 1 (
     echo Tests failed!
     exit /b 1

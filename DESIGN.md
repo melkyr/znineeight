@@ -585,6 +585,7 @@ To avoid arena fragmentation and out-of-memory errors during large-scale test ru
 - **Isolation**: Each batch runs in its own process, ensuring a clean memory heap and arena.
 - **Scalability**: New tests can be added to existing batches or new ones without increasing the memory footprint of a single run.
 - **Verification**: A master script (`run_all_tests.sh`) orchestrates the sequential execution of all batches and aggregates results.
+- **Cleanup**: By default, batch runner binaries are deleted after execution to maintain environment cleanliness. This can be disabled using the `--no-postclean` flag in the test scripts.
 
 ### Unit Test Framework
 ```cpp
