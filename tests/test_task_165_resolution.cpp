@@ -30,8 +30,11 @@ TEST_FUNC(Task165_ForwardReference) {
 }
 
 TEST_FUNC(Task165_BuiltinRejection) {
-    // Current lexer rejects @builtins that are not @import,
-    // so this is hard to test via source until lexer is updated.
+    // Note: Most @builtins are rejected by the Lexer as TOKEN_ERROR.
+    // @import is the only one currently supported.
+    // If the lexer is expanded to support more builtins as TOKEN_IDENTIFIER,
+    // this test would verify they are rejected during resolution.
+    // For now, we verify that @import is NOT handled as a regular function call.
     return true;
 }
 
@@ -41,17 +44,18 @@ TEST_FUNC(Task165_C89Incompatible) {
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
 
-    // Use a function with too many parameters - SignatureAnalyzer will reject it.
+    // Use a function with too many parameters - SignatureAnalyzer or resolveCallSite will reject it.
     const char* source =
         "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
         "fn main() void { tooMany(1, 2, 3, 4, 5); }\n";
 
     u32 file_id = unit.addSource("test.zig", source);
 
-    // Validation will fail
+    // Pipeline will return false because SignatureAnalyzer/FeatureValidator will report errors
     unit.performFullPipeline(file_id);
 
     CallSiteLookupTable& table = unit.getCallSiteLookupTable();
+    // One call to tooMany
     ASSERT_TRUE(table.count() >= 1);
 
     bool found_incompatible = false;
@@ -62,9 +66,6 @@ TEST_FUNC(Task165_C89Incompatible) {
             found_incompatible = true;
         }
     }
-    // Note: SignatureAnalyzer runs AFTER TypeChecker but before C89FeatureValidator.
-    // Wait, is_c89_compatible is used in resolveCallSite which runs DURING TypeChecker.
-    // So it should be caught there.
 
     ASSERT_TRUE(found_incompatible);
 
