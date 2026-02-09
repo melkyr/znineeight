@@ -189,7 +189,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/type_checker_call_site_tests.cpp \
     tests/test_task_165_resolution.cpp \
     tests/test_indirect_calls.cpp \
-    tests/test_forward_reference.cpp"
+    tests/test_forward_reference.cpp \
+    tests/test_recursive_calls.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

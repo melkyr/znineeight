@@ -165,3 +165,14 @@ If memory usage exceeds 8MB (50% of budget):
 ---
 
 *Last updated: Task 166 - Bootstrap Type System & Semantic Analysis*
+
+### Task 167: Update Recursive Calls
+**Status**: COMPLETE (Verification and Documentation)
+**Infrastructure**: The bootstrap compiler already supports recursion through its forward-reference-capable symbol table and unified call resolution logic.
+**Actions Taken**:
+1. Verified `TypeChecker::resolveCallSite` identifies `CALL_RECURSIVE` by comparing callee with `current_fn_name`.
+2. Confirmed that mangled names are correctly applied to all call sites.
+3. Added comprehensive tests in `tests/test_recursive_calls.cpp` covering simple recursion, mutual recursion, and forward references.
+4. Documented the resolution strategy and C89 compatibility considerations in `AST_parser.md` (Section 24).
+
+**Key Takeaway**: No architectural changes were needed; the existing design correctly handles recursive patterns in Milestone 4.

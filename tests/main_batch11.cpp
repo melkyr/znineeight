@@ -24,7 +24,10 @@ int main(int argc, char* argv[]) {
         test_IndirectCall_Complex,
         test_ForwardReference_GlobalVariable,
         test_ForwardReference_MutualFunction,
-        test_ForwardReference_StructType
+        test_ForwardReference_StructType,
+        test_Recursive_Factorial,
+        test_Recursive_Mutual_Mangled,
+        test_Recursive_Forward_Mangled
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

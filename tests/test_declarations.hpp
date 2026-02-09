@@ -632,4 +632,9 @@ TEST_FUNC(ForwardReference_GlobalVariable);
 TEST_FUNC(ForwardReference_MutualFunction);
 TEST_FUNC(ForwardReference_StructType);
 
+// Forward declarations for Task 167
+TEST_FUNC(Recursive_Factorial);
+TEST_FUNC(Recursive_Mutual_Mangled);
+TEST_FUNC(Recursive_Forward_Mangled);
+
 #endif // TEST_DECLARATIONS_HPP

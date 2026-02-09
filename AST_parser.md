@@ -1709,3 +1709,28 @@ A review of the Zig language specification has identified several language featu
 
 *   **Compile-Time Operations:**
     *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
+
+## 24. Recursive Call Resolution
+
+### 24.1 Detection Mechanism
+The `TypeChecker` identifies recursive function calls during the `resolveCallSite` process:
+1. When visiting a function call, the checker compares the callee name with the current function name (`current_fn_name`).
+2. If they match, the call is marked as `CALL_RECURSIVE` in the `CallSiteLookupTable`.
+3. The call site is recorded with the function's mangled name to ensure correct code generation in the C89 backend.
+
+### 24.2 Forward References
+The compiler robustly supports forward references in recursive scenarios:
+- Functions can call other functions declared later in the same file.
+- When an unresolved symbol is encountered at a call site, the `TypeChecker` triggers an on-demand signature resolution via `visitFnSignature`.
+- This ensures that mutual recursion (e.g., function A calls B, and B calls A) works regardless of declaration order.
+
+### 24.3 C89 Compatibility
+Recursive function calls are fully C89-compatible and are not rejected by the `C89FeatureValidator`. However, developers should be mindful of the following:
+- **Stack Usage**: Deep recursion can easily exceed the limited stack space (typically 1MB) of 1990s operating systems like Windows 95/98.
+- **No Tail-Call Optimization**: The bootstrap compiler and target C89 compilers do not guarantee tail-call optimization.
+- **Iterative Alternatives**: For performance-critical or deeply recursive logic, iterative solutions are preferred to ensure stability on legacy hardware.
+
+### 24.4 Implementation Details
+- **Mangled Names**: Both direct and recursive calls use the `mangled_name` stored in the function's `Symbol`.
+- **Generic Functions**: Recursive calls within generic functions use the specialized mangled name of the specific instantiation from the `GenericCatalogue`.
+- **Consistency**: The resolution logic is unified for all call types, ensuring that recursive calls follow the same ABI and naming conventions as regular calls.
