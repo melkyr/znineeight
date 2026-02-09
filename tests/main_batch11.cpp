@@ -16,7 +16,15 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_CallSiteRecording_Generic,
         test_Task165_ForwardReference,
         test_Task165_BuiltinRejection,
-        test_Task165_C89Incompatible
+        test_Task165_C89Incompatible,
+        test_IndirectCall_Variable,
+        test_IndirectCall_Member,
+        test_IndirectCall_Array,
+        test_IndirectCall_Returned,
+        test_IndirectCall_Complex,
+        test_ForwardReference_GlobalVariable,
+        test_ForwardReference_MutualFunction,
+        test_ForwardReference_StructType
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

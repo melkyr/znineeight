@@ -95,6 +95,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_TYPE:       resolved_type = visitArrayType(&node->as.array_type); break;
         case NODE_ERROR_UNION_TYPE: resolved_type = visitErrorUnionType(node->as.error_union_type); break;
         case NODE_OPTIONAL_TYPE:    resolved_type = visitOptionalType(node->as.optional_type); break;
+        case NODE_FUNCTION_TYPE:    resolved_type = visitFunctionType(node->as.function_type); break;
         case NODE_TRY_EXPR:         resolved_type = visitTryExpr(&node->as.try_expr); break;
         case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node->as.catch_expr); break;
         case NODE_ORELSE_EXPR:      resolved_type = visitOrelseExpr(node->as.orelse_expr); break;
@@ -490,6 +491,24 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node) {
     // Detect and catalogue generic instantiation if this is a generic call
     catalogGenericInstantiation(node);
+
+    // --- Task 166: Indirect Call Detection ---
+    IndirectType ind_type = detectIndirectType(node->callee);
+    if (ind_type != NOT_INDIRECT) {
+        IndirectCallInfo info;
+        info.location = node->callee->loc;
+        info.type = ind_type;
+        info.function_type = visit(node->callee);
+        info.context = current_fn_name ? current_fn_name : "global";
+        info.expr_string = exprToString(node->callee);
+
+        // Function pointers are C89 compatible (if they don't use unsupported features)
+        // But for now we mark them as potentially C89 for the diagnostic note.
+        info.could_be_c89 = true;
+
+        unit.getIndirectCallCatalogue().addIndirectCall(info);
+    }
+    // --- End Task 166 ---
 
     // --- NEW LOGIC FOR TASK 119 ---
     // Check if the callee is a direct identifier call to a banned function.
@@ -2294,4 +2313,83 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
         default:
             return false;
     }
+}
+
+IndirectType TypeChecker::detectIndirectType(ASTNode* callee) {
+    if (callee->type == NODE_IDENTIFIER) {
+        Symbol* sym = unit.getSymbolTable().lookup(callee->as.identifier.name);
+        if (sym && sym->kind == SYMBOL_VARIABLE) {
+            Type* type = sym->symbol_type;
+            if (!type && sym->details) {
+                type = visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            }
+            if (type && type->kind == TYPE_FUNCTION) {
+                return INDIRECT_VARIABLE;
+            }
+        }
+        return NOT_INDIRECT;
+    }
+
+    if (callee->type == NODE_MEMBER_ACCESS) {
+        return INDIRECT_MEMBER;
+    }
+
+    if (callee->type == NODE_ARRAY_ACCESS) {
+        return INDIRECT_ARRAY;
+    }
+
+    if (callee->type == NODE_FUNCTION_CALL) {
+        return INDIRECT_RETURNED;
+    }
+
+    return INDIRECT_COMPLEX;
+}
+
+const char* TypeChecker::exprToString(ASTNode* expr) {
+    if (!expr) return "";
+
+    switch (expr->type) {
+        case NODE_IDENTIFIER:
+            return expr->as.identifier.name;
+        case NODE_MEMBER_ACCESS: {
+            // Very simplified for now: base.field
+            const char* base = exprToString(expr->as.member_access->base);
+            const char* field = expr->as.member_access->field_name;
+            size_t len = plat_strlen(base) + 1 + plat_strlen(field) + 1;
+            char* buf = (char*)unit.getArena().alloc(len);
+            char* cur = buf;
+            size_t rem = len;
+            safe_append(cur, rem, base);
+            safe_append(cur, rem, ".");
+            safe_append(cur, rem, field);
+            return buf;
+        }
+        default:
+            return "complex expression";
+    }
+}
+
+Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
+    if (!mem) fatalError("Out of memory");
+    DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
+
+    for (size_t i = 0; i < node->params->length(); ++i) {
+        Type* param_type = visit((*node->params)[i]);
+        if (param_type) {
+            param_types->append(param_type);
+        }
+    }
+
+    Type* return_type = visit(node->return_type);
+    if (!return_type) return NULL;
+
+    return createFunctionType(unit.getArena(), param_types, return_type);
+}
+
+void TypeChecker::fatalError(const char* message) {
+    plat_print_debug("Fatal type error: ");
+    plat_print_debug(message);
+    plat_print_debug("\n");
+    abort();
 }

@@ -1595,6 +1595,8 @@ ASTNode* Parser::parseType() {
         left = parseErrorUnionType();
     } else if (peek().type == TOKEN_QUESTION) {
         left = parseOptionalType();
+    } else if (peek().type == TOKEN_FN) {
+        left = parseFunctionType();
     } else if (peek().type == TOKEN_ERROR_SET) {
         left = parseErrorSetDefinition();
     } else if (peek().type == TOKEN_IDENTIFIER) {
@@ -1706,5 +1708,32 @@ ASTNode* Parser::parseArrayType() {
     node->as.array_type.element_type = element_type;
     node->as.array_type.size = size_expr; // Will be NULL for slices
 
+    return node;
+}
+
+ASTNode* Parser::parseFunctionType() {
+    Token fn_token = expect(TOKEN_FN, "Expected 'fn'");
+    expect(TOKEN_LPAREN, "Expected '(' after 'fn'");
+
+    DynamicArray<ASTNode*>* params = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!params) error("Out of memory");
+    new (params) DynamicArray<ASTNode*>(*arena_);
+
+    if (peek().type != TOKEN_RPAREN) {
+        do {
+            params->append(parseType());
+        } while (match(TOKEN_COMMA));
+    }
+    expect(TOKEN_RPAREN, "Expected ')' after function type parameters");
+
+    ASTNode* return_type = parseType();
+
+    ASTFunctionTypeNode* ft_node = (ASTFunctionTypeNode*)arena_->alloc(sizeof(ASTFunctionTypeNode));
+    if (!ft_node) error("Out of memory");
+    ft_node->params = params;
+    ft_node->return_type = return_type;
+
+    ASTNode* node = createNodeAt(NODE_FUNCTION_TYPE, fn_token.location);
+    node->as.function_type = ft_node;
     return node;
 }

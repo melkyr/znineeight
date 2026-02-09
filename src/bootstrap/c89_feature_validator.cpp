@@ -568,6 +568,23 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     ASTFunctionCallNode* call = node->as.function_call;
     ASTNode* prev_parent = current_parent_;
 
+    // 0. Detect indirect call (Task 166)
+    const IndirectCallInfo* indirect_info = unit.getIndirectCallCatalogue().findByLocation(call->callee->loc);
+    if (indirect_info) {
+        char msg[512];
+        char* cur = msg;
+        size_t rem = sizeof(msg);
+        safe_append(cur, rem, "Indirect call via ");
+        safe_append(cur, rem, unit.getIndirectCallCatalogue().getReasonString(indirect_info->type));
+        safe_append(cur, rem, " is not supported in bootstrap compiler");
+        reportNonC89Feature(node->loc, msg, true);
+
+        if (indirect_info->could_be_c89) {
+            // Log as info/note if possible.
+            unit.getErrorHandler().reportInfo(INFO_INDIRECT_CALL_ADVICE, node->loc, "Note: Function pointers ARE C89 compatible but not yet implemented", unit.getArena());
+        }
+    }
+
     // 1. Detect explicit generic call (type expression as argument)
     for (size_t i = 0; i < call->args->length(); ++i) {
         if (isTypeExpression((*call->args)[i], unit.getSymbolTable())) {

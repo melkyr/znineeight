@@ -72,6 +72,7 @@ enum NodeType {
     NODE_ARRAY_TYPE,      ///< An array or slice type (e.g., `[8]u8`, `[]bool`).
     NODE_ERROR_UNION_TYPE, ///< An error union type (e.g., `!i32`).
     NODE_OPTIONAL_TYPE,    ///< An optional type (e.g., `?i32`).
+    NODE_FUNCTION_TYPE,    ///< A function type (e.g., `fn(i32) void`).
 
     // ~~~~~~~~~~~~~~~~ Error Handling ~~~~~~~~~~~~~~~~~
     NODE_TRY_EXPR,        ///< A try expression.
@@ -123,6 +124,7 @@ struct ASTPointerTypeNode;
 struct ASTArrayTypeNode;
 struct ASTErrorUnionTypeNode;
 struct ASTOptionalTypeNode;
+struct ASTFunctionTypeNode;
 struct ASTTryExprNode;
 struct ASTCatchExprNode;
 struct ASTOrelseExprNode;
@@ -676,6 +678,16 @@ struct ASTOptionalTypeNode {
     SourceLocation loc;
 };
 
+/**
+ * @struct ASTFunctionTypeNode
+ * @brief Represents a function type (e.g., `fn(i32, i32) void`).
+ * @var ASTFunctionTypeNode::params A dynamic array of pointers to the parameter type expressions.
+ * @var ASTFunctionTypeNode::return_type A pointer to the return type expression.
+ */
+struct ASTFunctionTypeNode {
+    DynamicArray<ASTNode*>* params;
+    ASTNode* return_type;
+};
 
 /**
  * @struct ASTNode
@@ -761,6 +773,7 @@ struct ASTNode {
         ASTArrayTypeNode array_type;
         ASTErrorUnionTypeNode* error_union_type; // Out-of-line
         ASTOptionalTypeNode* optional_type; // Out-of-line
+        ASTFunctionTypeNode* function_type; // Out-of-line
     } as;
 };
 

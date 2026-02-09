@@ -16,6 +16,7 @@
 #include "orelse_expression_catalogue.hpp"
 #include "extraction_analysis_catalogue.hpp"
 #include "errdefer_catalogue.hpp"
+#include "indirect_call_catalogue.hpp"
 #include "name_mangler.hpp"
 #include "call_site_lookup_table.hpp"
 
@@ -58,6 +59,7 @@ public:
     OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
     ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
     ErrDeferCatalogue& getErrDeferCatalogue();
+    IndirectCallCatalogue& getIndirectCallCatalogue();
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     ArenaAllocator& getArena();
@@ -128,6 +130,7 @@ private:
     OrelseExpressionCatalogue orelse_expression_catalogue_;
     ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
     ErrDeferCatalogue errdefer_catalogue_;
+    IndirectCallCatalogue indirect_call_catalogue_;
     NameMangler name_mangler_;
     CallSiteLookupTable call_site_table_;
     const char* current_module_;

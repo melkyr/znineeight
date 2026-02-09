@@ -49,6 +49,7 @@ The lexer implements a two-character lookahead to resolve the ambiguity between 
 - `type`: Used for type expressions and generic parameters.
 - `anytype`: Used for generic parameters where any type is accepted.
 - `comptime`: Used for compile-time constants and parameters.
+- `fn`: Used for function declarations and function type expressions.
 
 ## Identifier Constraints for C89 Output
 

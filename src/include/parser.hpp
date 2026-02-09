@@ -265,6 +265,9 @@ private:
     /** @brief Parses a pointer type (e.g., `*u8`, `**i32`). Helper for `parseType`. */
     ASTNode* parsePointerType();
 
+    /** @brief Parses a function type (e.g., `fn(i32) void`). Helper for `parseType`. */
+    ASTNode* parseFunctionType();
+
     /** @brief Parses an array or slice type (e.g., `[]bool`, `[8]u8`). Helper for `parseType`. */
     ASTNode* parseArrayType();
 
