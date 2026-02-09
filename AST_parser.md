@@ -1645,12 +1645,33 @@ Example: `foo()` → looks up `foo` → resolves signature → records `foo__man
 
 ### Call Types and Resolution Status
 
-| Call Type | Resolution Strategy | Status (Task 163) |
+| Call Type | Resolution Strategy | Status (Task 163/166) |
 |-----------|-------------------|-------------------|
 | **Direct** | Resolved using the target function's symbol `mangled_name`. | Recorded & Resolved |
 | **Generic** | Resolved using the specific instantiation's `mangled_name` from `GenericCatalogue`. | Recorded & Resolved |
 | **Recursive** | Resolved using the current function's `mangled_name`. | Recorded & Resolved |
-| **Indirect** | Function pointer calls are currently unsupported and marked as unresolved. | Recorded (Unresolved) |
+| **Indirect** | Detected and catalogued for future translation. Rejected in bootstrap. | Recorded & Catalogued |
+
+## 23. Indirect Function Calls (Task 166)
+
+### Detection Patterns
+The compiler identifies several patterns that result in an indirect function call (using a function pointer at the machine level):
+
+1. **Function pointer variables**: `const f = foo; f();` - Calling a variable that holds a function reference.
+2. **Member access**: `obj.method();` - Calling a function stored in a struct field.
+3. **Array access**: `func_table[0]();` - Calling a function stored in an array or slice.
+4. **Returned functions**: `getFunc()();` - Calling the result of another function call.
+5. **Complex expressions**: `(if (cond) f1 else f2)()` - Calling the result of any complex expression.
+
+### Catalogue (IndirectCallCatalogue)
+All detected indirect calls are recorded in the `IndirectCallCatalogue` with:
+- **Source location**: Exact position of the call.
+- **Indirect Type**: The pattern matched (VARIABLE, MEMBER, ARRAY, etc.).
+- **Function Type**: The resolved signature of the function being called.
+- **Expression**: The string representation of the callee (e.g., "s.f").
+
+### Bootstrap Rejection
+While function pointers are technically C89 compatible, they are strictly rejected in the Milestone 4 bootstrap compiler to simplify the initial translation and safety analysis. The `C89FeatureValidator` uses the catalogue to provide detailed diagnostic messages explaining why a specific call is indirect and thus unsupported.
 
 ### Implementation Details
 

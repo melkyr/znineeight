@@ -54,6 +54,7 @@ public:
     Type* visitArrayType(ASTArrayTypeNode* node);
     Type* visitErrorUnionType(ASTErrorUnionTypeNode* node);
     Type* visitOptionalType(ASTOptionalTypeNode* node);
+    Type* visitFunctionType(ASTFunctionTypeNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
     Type* visitCatchExpr(ASTCatchExprNode* node);
     Type* visitOrelseExpr(ASTOrelseExprNode* node);
@@ -82,6 +83,8 @@ private:
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
+    IndirectType detectIndirectType(ASTNode* callee);
+    const char* exprToString(ASTNode* expr);
 
     CompilationUnit& unit;
     Type* current_fn_return_type;

@@ -30,6 +30,7 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/signature_analyzer.cpp \
     src/bootstrap/name_mangler.cpp \
     src/bootstrap/call_site_lookup_table.cpp \
+    src/bootstrap/indirect_call_catalogue.cpp \
     src/bootstrap/platform.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
@@ -186,7 +187,9 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_milestone4_name_mangling.cpp \
     tests/test_call_site_lookup.cpp \
     tests/type_checker_call_site_tests.cpp \
-    tests/test_task_165_resolution.cpp"
+    tests/test_task_165_resolution.cpp \
+    tests/test_indirect_calls.cpp \
+    tests/test_forward_reference.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
 

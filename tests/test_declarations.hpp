@@ -622,4 +622,14 @@ TEST_FUNC(Task165_ForwardReference);
 TEST_FUNC(Task165_BuiltinRejection);
 TEST_FUNC(Task165_C89Incompatible);
 
+// Forward declarations for Task 166
+TEST_FUNC(IndirectCall_Variable);
+TEST_FUNC(IndirectCall_Member);
+TEST_FUNC(IndirectCall_Array);
+TEST_FUNC(IndirectCall_Returned);
+TEST_FUNC(IndirectCall_Complex);
+TEST_FUNC(ForwardReference_GlobalVariable);
+TEST_FUNC(ForwardReference_MutualFunction);
+TEST_FUNC(ForwardReference_StructType);
+
 #endif // TEST_DECLARATIONS_HPP

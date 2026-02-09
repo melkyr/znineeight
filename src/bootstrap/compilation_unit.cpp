@@ -35,6 +35,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       orelse_expression_catalogue_(arena),
       extraction_analysis_catalogue_(arena),
       errdefer_catalogue_(arena),
+      indirect_call_catalogue_(arena),
       name_mangler_(arena, interner),
       call_site_table_(arena),
       options_(),
@@ -145,6 +146,10 @@ ExtractionAnalysisCatalogue& CompilationUnit::getExtractionAnalysisCatalogue() {
 
 ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
     return errdefer_catalogue_;
+}
+
+IndirectCallCatalogue& CompilationUnit::getIndirectCallCatalogue() {
+    return indirect_call_catalogue_;
 }
 
 NameMangler& CompilationUnit::getNameMangler() {
