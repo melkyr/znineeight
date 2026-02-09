@@ -105,10 +105,10 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
         safe_append(cur, rem, node->name);
         safe_append(cur, rem, "' has too many parameters (");
         safe_append(cur, rem, num_buf);
-        safe_append(cur, rem, "), maximum is 4 for C89 compatibility");
+        safe_append(cur, rem, "), maximum is 4 for bootstrap compiler compatibility");
 
         SourceLocation loc = node->body ? node->body->loc : SourceLocation();
-        error_handler_.report(ERR_TYPE_MISMATCH, loc, buffer, unit_.getArena());
+        error_handler_.report(ERR_NON_C89_FEATURE, loc, buffer, unit_.getArena());
         invalid_count_++;
     }
 
@@ -155,7 +155,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
         case TYPE_POINTER:
             // Check for multi-level pointers
             if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in C89 mode", unit_.getArena());
+                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in bootstrap compiler", unit_.getArena());
                 return false;
             }
             return true;
@@ -168,11 +168,11 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union return type not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union return type not supported in bootstrap compiler", unit_.getArena());
             return false;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set return type not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set return type not supported in bootstrap compiler", unit_.getArena());
             return false;
 
         case TYPE_OPTIONAL:
@@ -201,13 +201,13 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ISIZE: case TYPE_USIZE:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in bootstrap compiler - use explicit integer sizes like i32/u32 instead", unit_.getArena());
             return false;
 
         case TYPE_POINTER:
             // Check for multi-level pointers
             if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in C89 mode", unit_.getArena());
+                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in bootstrap compiler", unit_.getArena());
                 return false;
             }
             return true;
@@ -221,11 +221,11 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union type in parameter not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union type in parameter not supported in bootstrap compiler", unit_.getArena());
             return false;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set type in parameter not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set type in parameter not supported in bootstrap compiler", unit_.getArena());
             return false;
 
         case TYPE_OPTIONAL:

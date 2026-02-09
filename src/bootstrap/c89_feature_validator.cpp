@@ -160,7 +160,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_SLICE:
-            reportNonC89Feature(node->loc, "Array slices are not supported in C89 mode");
+            reportNonC89Feature(node->loc, "Array slices are not supported in bootstrap compiler");
             current_parent_ = node;
             visit(node->as.array_slice->array);
             if (node->as.array_slice->start) visit(node->as.array_slice->start);
@@ -193,7 +193,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 safe_append(current, remaining, node->as.var_decl->name);
                 safe_append(current, remaining, "' has error type '");
                 safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' which is not supported in C89 mode");
+                safe_append(current, remaining, "' which is not supported in bootstrap compiler");
                 reportNonC89Feature(node->loc, msg_buffer, true);
             }
             visit(node->as.var_decl->type);
@@ -253,7 +253,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 safe_append(current, remaining, node->as.struct_field->name);
                 safe_append(current, remaining, "' has error type '");
                 safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' which is not supported in C89 mode");
+                safe_append(current, remaining, "' which is not supported in bootstrap compiler");
                 reportNonC89Feature(node->loc, msg_buffer, true);
             }
             visit(node->as.struct_field->type);
@@ -262,7 +262,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_POINTER_TYPE:
             current_parent_ = node;
             if (node->as.pointer_type.base && node->as.pointer_type.base->type == NODE_POINTER_TYPE) {
-                reportNonC89Feature(node->loc, "multi-level pointers are not supported in C89 mode");
+                reportNonC89Feature(node->loc, "multi-level pointers are not supported in bootstrap compiler");
             }
             visit(node->as.pointer_type.base);
             current_parent_ = prev_parent;
@@ -311,16 +311,16 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_TYPE_NAME:
             if (plat_strcmp(node->as.type_name.name, "anyerror") == 0) {
-                reportNonC89Feature(node->loc, "anyerror type is not supported in C89 mode");
+                reportNonC89Feature(node->loc, "anyerror type is not supported in bootstrap compiler");
             }
             if (plat_strcmp(node->as.type_name.name, "type") == 0) {
-                reportNonC89Feature(node->loc, "Type parameters/variables are not supported in C89 mode");
+                reportNonC89Feature(node->loc, "Type parameters/variables are not supported in bootstrap compiler");
             }
             if (plat_strcmp(node->as.type_name.name, "anytype") == 0) {
-                reportNonC89Feature(node->loc, "anytype is not supported in C89 mode");
+                reportNonC89Feature(node->loc, "anytype is not supported in bootstrap compiler");
             }
             if (plat_strcmp(node->as.type_name.name, "isize") == 0 || plat_strcmp(node->as.type_name.name, "usize") == 0) {
-                reportNonC89Feature(node->loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead");
+                reportNonC89Feature(node->loc, "isize/usize are not supported in bootstrap compiler - use explicit integer sizes like i32/u32 instead");
             }
             if (node->resolved_type && isErrorType(node->resolved_type)) {
                 char type_str[128];
@@ -330,7 +330,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 size_t remaining = sizeof(msg_buffer);
                 safe_append(current, remaining, "Error type '");
                 safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' is not supported in C89 mode");
+                safe_append(current, remaining, "' is not supported in bootstrap compiler");
                 reportNonC89Feature(node->loc, msg_buffer, true);
             }
             break;
@@ -369,7 +369,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
 
 void C89FeatureValidator::visitArrayType(ASTNode* node) {
     if (node->as.array_type.size == NULL) {
-        fatalError(node->loc, "Slices are not supported for C89 compatibility.");
+        reportNonC89Feature(node->loc, "Slices are not supported in bootstrap compiler. Consider using a pointer and length instead.");
     }
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;

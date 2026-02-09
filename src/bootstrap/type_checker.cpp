@@ -1568,7 +1568,7 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     // 1. Reject slices
     if (!node->size) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->element_type->loc, "Slices are not supported in C89 mode", unit.getArena());
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->element_type->loc, "Slices are not supported in bootstrap compiler. Consider using a pointer and length instead.");
         return NULL;
     }
 

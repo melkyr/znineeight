@@ -43,7 +43,10 @@ enum TypeKind {
     TYPE_ENUM,
     TYPE_STRUCT,
     TYPE_ERROR_UNION,
-    TYPE_ERROR_SET
+    TYPE_ERROR_SET,
+    TYPE_OPTIONAL,
+    TYPE_TYPE,
+    TYPE_ANYTYPE
 };
 ```
 
@@ -266,7 +269,7 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 
 When visiting an array type declaration (`ASTArrayTypeNode`), the `TypeChecker` enforces strict C89 compatibility rules:
 
-1.  **Slice Rejection:** Slices (e.g., `[]u8`) are not supported in C89. The `TypeChecker` identifies a slice by checking if the `size` expression in the `ASTArrayTypeNode` is `NULL`. If it is, compilation is aborted with a fatal error: "Slices are not supported in C89 mode".
+1.  **Slice Rejection:** Slices (e.g., `[]u8`) are not supported in the bootstrap compiler. The `TypeChecker` identifies a slice by checking if the `size` expression in the `ASTArrayTypeNode` is `NULL`. If it is, a non-C89 feature error is reported: "Slices are not supported in bootstrap compiler. Consider using a pointer and length instead.".
 
 2.  **Constant Size Enforcement:** C89 requires that array sizes be compile-time constants. The bootstrap compiler enforces a strict version of this rule: the size expression must be a single integer literal (e.g., `[8]i32`). If the size expression is any other kind of node (e.g., an identifier, a binary operation), compilation is aborted with a fatal error: "Array size must be a constant integer literal".
 
