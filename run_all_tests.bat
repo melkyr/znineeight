@@ -1,22 +1,49 @@
 @echo off
+setlocal enabledelayedexpansion
+
+set POSTCLEAN=true
+for %%a in (%*) do (
+    if "%%a"=="--no-postclean" set POSTCLEAN=false
+)
+
 echo Running RetroZig test batches...
 echo ================================
 
 set FAILED=0
 
-for %%i in (1 2 3 4 5 6 7) do (
+for %%i in (1 2 3 4 5 6 7 8 9 10 11 12) do (
     echo Batch %%i...
     if exist test_runner_batch%%i.exe (
         test_runner_batch%%i.exe
         if errorlevel 1 (
-            echo ^[Batch %%i failed^]
+            echo [Batch %%i failed]
             set FAILED=1
         ) else (
-            echo ^[Batch %%i passed^]
+            echo [Batch %%i passed]
+        )
+
+        if "%POSTCLEAN%"=="true" (
+            del /f /q test_runner_batch%%i.exe
+            echo Cleaned up test_runner_batch%%i.exe
         )
     ) else (
-        echo ^[test_runner_batch%%i.exe not found^]
-        set FAILED=1
+        if exist test_runner_batch%%i (
+            test_runner_batch%%i
+            if errorlevel 1 (
+                echo [Batch %%i failed]
+                set FAILED=1
+            ) else (
+                echo [Batch %%i passed]
+            )
+
+            if "%POSTCLEAN%"=="true" (
+                del /f /q test_runner_batch%%i
+                echo Cleaned up test_runner_batch%%i
+            )
+        ) else (
+            echo [test_runner_batch%%i not found]
+            set FAILED=1
+        )
     )
     echo.
 )

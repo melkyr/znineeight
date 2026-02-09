@@ -9,10 +9,13 @@ Unit tests are used to verify the correctness of individual compiler components 
 ### Batch Testing Strategy
 To prevent memory fragmentation and handle the large number of tests (~380+) within strict memory constraints (<16MB), the test suite is divided into multiple batches. Each batch runs in a fresh process with its own arena.
 
-Execute the `test.sh` script (or `test.bat` on Windows) to compile all batch runners and execute them sequentially via `run_all_tests.sh`:
+Execute the `test.sh` script (or `test.bat` on Windows) to compile all batch runners and execute them sequentially via `run_all_tests.sh`.
+
+By default, the test runner binaries (`test_runner_batch*`) are automatically deleted after successful execution to save space. To keep the binaries for debugging, use the `--no-postclean` flag:
 
 ```bash
-./test.sh
+./test.sh           # Compiles, runs, and cleans up binaries
+./test.sh --no-postclean  # Compiles, runs, and keeps binaries
 ```
 
 To run a specific batch:
