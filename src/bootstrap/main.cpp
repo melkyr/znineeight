@@ -10,6 +10,9 @@
 #include "utils.hpp"
 #include "platform.hpp"
 
+// Default arena size for the bootstrap compiler: 16MB
+static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
+
 /**
  * @brief Executes the full compilation pipeline for a single file.
  */
@@ -96,7 +99,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (argc >= 3 && plat_strcmp(argv[1], "--compile") == 0) {
+    if (argc >= 3 && (plat_strcmp(argv[1], "--compile") == 0 ||
+                     plat_strcmp(argv[1], "parse") == 0 ||
+                     plat_strcmp(argv[1], "full_pipeline") == 0)) {
         const char* filename = argv[2];
         char* source = NULL;
         size_t size = 0;
@@ -107,7 +112,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        ArenaAllocator arena(1024 * 1024); // 1MB for now
+        // Use default 16MB arena to match project goals
+        ArenaAllocator arena(DEFAULT_ARENA_SIZE);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
 
@@ -120,7 +126,15 @@ int main(int argc, char* argv[]) {
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource(filename, source);
-        bool success = runCompilationPipeline(unit, file_id);
+
+        bool success = false;
+        if (plat_strcmp(argv[1], "parse") == 0) {
+            Parser* parser = unit.createParser(file_id);
+            ASTNode* ast = parser->parse();
+            success = (ast != NULL);
+        } else {
+            success = runCompilationPipeline(unit, file_id);
+        }
 
         plat_free(source);
         return success ? 0 : 1;
@@ -131,6 +145,8 @@ int main(int argc, char* argv[]) {
     plat_print_info("Options:\n");
     plat_print_info("  --self-test             Run internal self-tests\n");
     plat_print_info("  --compile <filename>    Compile a Zig source file\n");
+    plat_print_info("  parse <filename>        Parse only\n");
+    plat_print_info("  full_pipeline <filename> Execute full pipeline\n");
 
     return 0;
 }

@@ -65,7 +65,7 @@ struct Scope {
     size_t bucket_count;
     ArenaAllocator& arena;
 
-    Scope(ArenaAllocator& arena, size_t initial_bucket_count = 16);
+    Scope(ArenaAllocator& arena, size_t initial_bucket_count = 4);
     void insert(Symbol& symbol);
     Symbol* find(const char* name);
     void resize();

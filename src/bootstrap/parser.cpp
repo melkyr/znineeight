@@ -4,6 +4,7 @@
 #include "ast.hpp"
 #include "type_system.hpp"
 #include "platform.hpp"
+#include "utils.hpp"
 #include <cstdlib>   // For abort()
 #include <new>       // For placement new
 
@@ -65,6 +66,16 @@ Token Parser::expect(TokenType type, const char* msg) {
 void Parser::error(const char* msg) {
     plat_print_debug("Parser Error: ");
     plat_print_debug(msg);
+    plat_print_debug(" at token ");
+    char buf[64];
+    Token t = peek();
+    simple_itoa((long)t.type, buf, sizeof(buf));
+    plat_print_debug(buf);
+    if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_STRING_LITERAL) {
+        plat_print_debug(" (");
+        plat_print_debug(t.value.identifier);
+        plat_print_debug(")");
+    }
     plat_print_debug("\n");
 
     abort();
@@ -72,6 +83,9 @@ void Parser::error(const char* msg) {
 
 ASTNode* Parser::createNode(NodeType type) {
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::ast_nodes++;
+#endif
     if (!node) {
         error("Out of memory");
     }
@@ -84,6 +98,9 @@ ASTNode* Parser::createNode(NodeType type) {
 
 ASTNode* Parser::createNodeAt(NodeType type, SourceLocation loc) {
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::ast_nodes++;
+#endif
     if (!node) {
         error("Out of memory");
     }
@@ -203,6 +220,8 @@ ASTNode* Parser::parsePrimaryExpr() {
             expect(TOKEN_RPAREN, "Expected ')' after parenthesized expression");
             return expr_node;
         }
+        case TOKEN_LBRACE:
+            return parseBlockStatement();
         case TOKEN_SWITCH:
             return parseSwitchExpression();
         case TOKEN_STRUCT:
@@ -1586,6 +1605,10 @@ ASTNode* Parser::parseReturnStatement() {
 }
 
 ASTNode* Parser::parseType() {
+    // Handle 'const' qualifier by skipping it for now in the bootstrap compiler
+    // or we could wrap it. For now, let's just skip to the actual type.
+    while (match(TOKEN_CONST)) {}
+
     ASTNode* left = NULL;
     if (peek().type == TOKEN_STAR) {
         left = parsePointerType();
@@ -1599,6 +1622,8 @@ ASTNode* Parser::parseType() {
         left = parseFunctionType();
     } else if (peek().type == TOKEN_ERROR_SET) {
         left = parseErrorSetDefinition();
+    } else if (peek().type == TOKEN_UNION || peek().type == TOKEN_STRUCT || peek().type == TOKEN_ENUM) {
+        left = parsePrimaryExpr();
     } else if (peek().type == TOKEN_IDENTIFIER) {
         Token type_name_token = advance();
         left = createNodeAt(NODE_TYPE_NAME, type_name_token.location);

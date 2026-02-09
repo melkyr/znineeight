@@ -54,6 +54,11 @@ public:
 
     void generateReport(class CompilationUnit* unit);
 
+    /**
+     * @brief Returns the number of catalogued extraction sites.
+     */
+    int count() const { return (int)sites_->length(); }
+
     const DynamicArray<ExtractionSiteInfo>* getSites() const { return sites_; }
 
     /**

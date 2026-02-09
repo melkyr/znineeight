@@ -53,6 +53,9 @@ Type* resolvePrimitiveTypeName(const char* name) {
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_POINTER;
     new_type->size = 4; // Assuming 32-bit pointers
     new_type->alignment = 4; // Assuming 32-bit pointers
@@ -63,6 +66,9 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
 
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_FUNCTION;
     new_type->size = 0; // Functions don't have a size in the same way
     new_type->alignment = 0;
@@ -73,6 +79,9 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
 
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_ARRAY;
     new_type->size = element_type->size * size;
     new_type->alignment = element_type->alignment;
@@ -83,6 +92,9 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
 
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
@@ -92,6 +104,9 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields)
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_ERROR_UNION;
     new_type->size = 8; // Placeholder: error union size is usually tag + payload
     new_type->alignment = 4;
@@ -103,6 +118,9 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
 
 Type* createOptionalType(ArenaAllocator& arena, Type* payload) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_OPTIONAL;
     new_type->size = 8; // Placeholder: optional size is usually tag + payload
     new_type->alignment = 4;
@@ -112,6 +130,9 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload) {
 
 Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_ERROR_SET;
     new_type->size = 2; // Placeholder: error sets are typically 16-bit integers
     new_type->alignment = 2;
@@ -159,6 +180,9 @@ void calculateStructLayout(Type* struct_type) {
 
 Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
     new_type->alignment = backing_type->alignment;
