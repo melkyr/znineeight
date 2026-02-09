@@ -31,6 +31,7 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/name_mangler.cpp \
     src/bootstrap/call_site_lookup_table.cpp \
     src/bootstrap/indirect_call_catalogue.cpp \
+    src/bootstrap/call_resolution_validator.cpp \
     src/bootstrap/platform.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
@@ -192,7 +193,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_forward_reference.cpp \
     tests/test_recursive_calls.cpp"
 
-FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include"
+FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include"
 
 for i in 1 2 3 4 5 6 7 8 9 10 11; do
     echo "Compiling Batch $i..."

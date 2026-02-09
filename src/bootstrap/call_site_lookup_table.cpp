@@ -56,6 +56,15 @@ const CallSiteEntry& CallSiteLookupTable::getEntry(int id) const {
     return (*entries_)[id];
 }
 
+const CallSiteEntry* CallSiteLookupTable::findByCallNode(ASTNode* call_node) const {
+    for (size_t i = 0; i < entries_->length(); ++i) {
+        if ((*entries_)[i].call_node == call_node) {
+            return &(*entries_)[i];
+        }
+    }
+    return NULL;
+}
+
 void CallSiteLookupTable::printUnresolved() const {
     for (size_t i = 0; i < entries_->length(); ++i) {
         const CallSiteEntry& entry = (*entries_)[i];

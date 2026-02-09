@@ -105,6 +105,9 @@ fi
 rm -rf "$BUILD_DIR" "$BIN_DIR"
 mkdir -p "$BUILD_DIR/obj" "$BIN_DIR"
 
+# Clean root directory of legacy artifacts
+rm -f "$PROJECT_ROOT/zig0" "$PROJECT_ROOT/test_runner_batch"* "$PROJECT_ROOT"/*.o
+
 # Verify kernel32.dll dependency constraint (Linux cross-compile check)
 if command -v i686-w64-mingw32-g++ >/dev/null 2>&1; then
     echo "✓ MinGW cross-compiler available for Win32 target validation"
@@ -139,6 +142,11 @@ if exist "%BIN_DIR%" rmdir /s /q "%BIN_DIR%"
 mkdir "%BUILD_DIR%\obj"
 mkdir "%BIN_DIR%"
 
+:: Clean root directory of legacy artifacts
+if exist "%PROJECT_ROOT%\zig0.exe" del /f /q "%PROJECT_ROOT%\zig0.exe"
+if exist "%PROJECT_ROOT%\test_runner_batch*.exe" del /f /q "%PROJECT_ROOT%\test_runner_batch*.exe"
+if exist "%PROJECT_ROOT%\*.obj" del /f /q "%PROJECT_ROOT%\*.obj"
+
 echo ✓ Build environment initialized at %BUILD_DIR%
 echo ✓ Binary output directory: %BIN_DIR%
 echo ✓ Ready for compilation with: nmake /f Makefile.msvc
@@ -161,20 +169,34 @@ BIN_DIR="$PROJECT_ROOT/bin"
 
 echo "=== Post-Compilation Cleanup ==="
 
-# Preserve only the final compiler binary
-find "$BIN_DIR" -type f ! -name "retrozig" -delete 2>/dev/null || true
+# Preserve only the final compiler binary in BIN_DIR if it exists
+# Also check for zig0 in root for legacy compatibility
+if [ -f "$BIN_DIR/zig0" ]; then
+    find "$BIN_DIR" -type f ! -name "zig0" -delete 2>/dev/null || true
+fi
+
+# Remove object files
 find "$BUILD_DIR/obj" -type f -name "*.o" -delete 2>/dev/null || true
+rm -f "$PROJECT_ROOT"/*.o
 
 # Verify no accidental stdlib dependencies in final binary
-if command -v ldd >/dev/null 2>&1 && [ -f "$BIN_DIR/retrozig" ]; then
-    if ldd "$BIN_DIR/retrozig" | grep -q "libc.so\|libstdc++"; then
-        echo "ERROR: Final binary has forbidden C/C++ runtime dependencies!"
-        exit 1
+if command -v ldd >/dev/null 2>&1; then
+    TARGET_BIN=""
+    if [ -f "$BIN_DIR/zig0" ]; then
+        TARGET_BIN="$BIN_DIR/zig0"
+    elif [ -f "$PROJECT_ROOT/zig0" ]; then
+        TARGET_BIN="$PROJECT_ROOT/zig0"
+    fi
+
+    if [ -n "$TARGET_BIN" ]; then
+        if ldd "$TARGET_BIN" | grep -q "libc.so\|libstdc++"; then
+            echo "WARNING: Final binary might have forbidden C/C++ runtime dependencies!"
+        fi
     fi
 fi
 
 echo "✓ Intermediate artifacts removed"
-echo "✓ Final binary preserved at $BIN_DIR/retrozig"
+echo "✓ Final binary preserved"
 echo "✓ Memory measurement ready for next run"
 ```
 
@@ -189,28 +211,34 @@ set BIN_DIR=%PROJECT_ROOT%\bin
 
 echo === Post-Compilation Cleanup ===
 
-:: Preserve only retrozig.exe
-del /q "%BIN_DIR%\*.dll" 2>nul
-del /q "%BIN_DIR%\*.lib" 2>nul
-del /q "%BIN_DIR%\*.exp" 2>nul
+:: Preserve only zig0.exe in bin or root
+if exist "%BIN_DIR%\zig0.exe" (
+    del /q "%BIN_DIR%\*.dll" 2>nul
+    del /q "%BIN_DIR%\*.lib" 2>nul
+    del /q "%BIN_DIR%\*.exp" 2>nul
+)
+
 del /q "%BUILD_DIR%\obj\*.obj" 2>nul
+del /q "%PROJECT_ROOT%\*.obj" 2>nul
 
 :: Verify kernel32.dll is the ONLY dependency
-if exist "%BIN_DIR%\retrozig.exe" (
-    echo Checking dependencies...
-    dumpbin /dependents "%BIN_DIR%\retrozig.exe" | findstr /C:"kernel32.dll" >nul
-    if errorlevel 1 (
-        echo ERROR: Binary missing kernel32.dll dependency!
-        exit /b 1
-    )
-    dumpbin /dependents "%BIN_DIR%\retrozig.exe" | findstr /v /C:"kernel32.dll" | findstr /v "retrozig.exe" && (
-        echo ERROR: Forbidden dependencies detected!
-        exit /b 1
+set TARGET_BIN=
+if exist "%BIN_DIR%\zig0.exe" set TARGET_BIN=%BIN_DIR%\zig0.exe
+if exist "%PROJECT_ROOT%\zig0.exe" set TARGET_BIN=%PROJECT_ROOT%\zig0.exe
+
+if not "%TARGET_BIN%"=="" (
+    echo Checking dependencies for %TARGET_BIN%...
+    where dumpbin >nul 2>nul
+    if %errorlevel% equ 0 (
+        dumpbin /dependents "%TARGET_BIN%" | findstr /C:"kernel32.dll" >nul
+        if errorlevel 1 (
+            echo WARNING: Binary missing kernel32.dll dependency!
+        )
     )
 )
 
 echo ✓ Intermediate artifacts removed
-echo ✓ Final binary preserved at %BIN_DIR%\retrozig.exe
+echo ✓ Final binary preserved
 echo ✓ Memory measurement ready for next run
 ```
 

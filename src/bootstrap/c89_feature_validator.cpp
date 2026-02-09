@@ -568,6 +568,15 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     ASTFunctionCallNode* call = node->as.function_call;
     ASTNode* prev_parent = current_parent_;
 
+    // Handle built-ins (Task 168)
+    if (call->callee->type == NODE_IDENTIFIER) {
+        const char* name = call->callee->as.identifier.name;
+        if (name[0] == '@') {
+            reportNonC89Feature(node->loc, "Built-in functions (@) are not supported in the bootstrap phase.");
+            return;
+        }
+    }
+
     // 0. Detect indirect call (Task 166)
     const IndirectCallInfo* indirect_info = unit.getIndirectCallCatalogue().findByLocation(call->callee->loc);
     if (indirect_info) {

@@ -1,5 +1,6 @@
 #include "../src/include/test_framework.hpp"
 #include "../src/include/memory.hpp"
+#include "../src/include/utils.hpp"
 
 static int copy_assignment_calls = 0;
 struct AssignmentLogger {

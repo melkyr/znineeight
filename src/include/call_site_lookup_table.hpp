@@ -83,6 +83,12 @@ public:
     const CallSiteEntry& getEntry(int id) const;
 
     /**
+     * @brief Finds an entry by its ASTNode pointer.
+     * @return A pointer to the entry, or NULL if not found.
+     */
+    const CallSiteEntry* findByCallNode(ASTNode* call_node) const;
+
+    /**
      * @brief Prints all unresolved call sites for diagnostic purposes.
      */
     void printUnresolved() const;

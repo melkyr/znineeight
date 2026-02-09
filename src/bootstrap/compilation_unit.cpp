@@ -1,5 +1,6 @@
 #include "compilation_unit.hpp"
 #include "parser.hpp" // For Parser class definition
+#include "call_resolution_validator.hpp"
 #include "name_collision_detector.hpp"
 #include "signature_analyzer.hpp"
 #include "type_checker.hpp"
@@ -101,6 +102,7 @@ public:
 #endif
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
+#include <cstdio>    // For fprintf()
 
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
@@ -442,6 +444,17 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     checker.check(ast);
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
+#endif
+
+#ifdef DEBUG
+    fprintf(stderr, "[DEBUG] CompilationUnit: DEBUG is defined. Calling CallResolutionValidator...\n");
+    // Task 168: Run call resolution validation
+    if (!CallResolutionValidator::validate(*this, ast)) {
+        error_handler_.report(ERR_INTERNAL_ERROR, ast->loc, "Call resolution validation failed");
+        return false;
+    }
+#else
+    fprintf(stderr, "[INFO] CompilationUnit: DEBUG is NOT defined. Skipping CallResolutionValidator.\n");
 #endif
 
     // Pass 0.5: Signature Analysis
