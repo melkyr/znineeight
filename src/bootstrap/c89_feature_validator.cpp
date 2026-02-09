@@ -261,6 +261,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_POINTER_TYPE:
             current_parent_ = node;
+            if (node->as.pointer_type.base && node->as.pointer_type.base->type == NODE_POINTER_TYPE) {
+                reportNonC89Feature(node->loc, "multi-level pointers are not supported in C89 mode");
+            }
             visit(node->as.pointer_type.base);
             current_parent_ = prev_parent;
             break;
@@ -315,6 +318,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
             }
             if (plat_strcmp(node->as.type_name.name, "anytype") == 0) {
                 reportNonC89Feature(node->loc, "anytype is not supported in C89 mode");
+            }
+            if (plat_strcmp(node->as.type_name.name, "isize") == 0 || plat_strcmp(node->as.type_name.name, "usize") == 0) {
+                reportNonC89Feature(node->loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead");
             }
             if (node->resolved_type && isErrorType(node->resolved_type)) {
                 char type_str[128];
@@ -380,7 +386,7 @@ void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitOptionalType(ASTNode* node) {
-    reportNonC89Feature(node->loc, "Optional types (?T) are not C89-compatible.");
+    reportNonC89Feature(node->loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.");
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
     visit(node->as.optional_type->payload_type);
@@ -542,7 +548,7 @@ void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
     size_t remaining = sizeof(msg);
     safe_append(current, remaining, "Orelse expression in ");
     safe_append(current, remaining, getExpressionContext(node));
-    safe_append(current, remaining, " context is not C89-compatible.");
+    safe_append(current, remaining, " context is not supported in bootstrap compiler. Consider using an 'if' statement for null checks.");
     reportNonC89Feature(node->loc, msg, true);
 
     ASTNode* prev_parent = current_parent_;

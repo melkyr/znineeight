@@ -129,8 +129,8 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the Initial AST.
-    2.  **Pass 0: Type Checking:** Resolves all types, including non-C89 types like error unions, to enable accurate semantic analysis.
-    3.  **Pass 1: C89 Feature Validation:** Rejects non-C89 features using resolved semantic information.
+    2.  **Pass 0: Type Checking (Permissive):** Resolves all types, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
+    3.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0. This is where descriptive error messages for unsupported features are reported.
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
@@ -289,9 +289,23 @@ The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-fr
 - **Conservative Merging Strategy:** This analyzer prioritizes avoiding false positives (definite errors reported when no error is possible) by transitioning divergent states (e.g., freed on one path but not another) to `AS_UNKNOWN`. This effectively implements a "path-blind" effect at join points while maintaining path-sensitivity within branches.
 
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
+
+**Bootstrap Type Subset Philosophy:**
+The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifically chosen for their direct compatibility with C89 and the simplified memory model of the bootstrap environment. It is NOT intended to support the full range of modern Zig types.
+
 **Supported Types (Bootstrap Phase):**
-* **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`
-* **Pointers:** `*T` (Single level)
+* **Primitives:** `i8`-`i64`, `u8`-`u64`, `bool`, `f32`, `f64`, `void`.
+* **Pointers:** `*T` (Single level only).
+* **Arrays:** `[N]T` (Constant size only).
+* **Structs/Enums:** C-style declarations only.
+
+**Explicitly Rejected Types (Bootstrap Phase):**
+* **Pointer-sized integers:** `isize`, `usize` (rejected to ensure predictable cross-compilation behavior and C89 alignment).
+* **Multi-level pointers:** `**T`, `***T` (rejected to simplify memory management and signature analysis).
+* **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
+* **Optionals:** `?T` (Rejected until Milestone 5 translation).
+* **Error Unions:** `!T` (Rejected until Milestone 5 translation).
+* **Function Pointers:** `fn(...) T` as a value or variable (rejected to simplify the type system).
 
 **Type Representation:**
 ```cpp

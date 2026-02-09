@@ -604,6 +604,31 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 *Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
 
+### Bootstrap Type Compatibility Matrix
+
+The following table defines the allowed and rejected types in the bootstrap compiler, along with their C89 equivalents and bootstrap-specific notes.
+
+| Zig Type | Bootstrap Allowed? | C89 Equivalent | Notes |
+|---|---|---|---|
+| `i8`-`i32` | ✓ | `signed char`-`int` | Direct mapping. |
+| `i64` | ✓ | `__int64` | MSVC 6.0 specific hack for 64-bit integers. |
+| `u8`-`u32` | ✓ | `unsigned char`-`unsigned int` | Direct mapping. |
+| `u64` | ✓ | `unsigned __int64` | MSVC 6.0 specific hack. |
+| `isize`/`usize` | ✗ | - | **Rejected.** Use explicit sizes like `i32`/`u32` for predictability. |
+| `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
+| `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
+| `void` | ✓ | `void` | Used for function returns and `*void`. |
+| `*T` | Conditional | `T*` | Allowed only if `T` is an allowed primitive or struct/enum. |
+| `**T` | ✗ | - | **Rejected.** Multi-level pointers are not supported in bootstrap. |
+| `[]T` | ✗ | - | **Rejected.** Slices require runtime support not available in bootstrap. |
+| `!T` | ✗ | - | **Rejected.** Error unions are rejected until Milestone 5 translation. |
+| `?T` | ✗ | - | **Rejected.** Optionals are rejected until Milestone 5 translation. |
+| `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
+| `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
+| `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
+| `fn` | ✗ | - | Function pointers are rejected as values or variables. |
+| `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
+
 ### The `is_c89_compatible` Function
 
 A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. Its behavior is as follows:

@@ -1283,10 +1283,6 @@ Type* TypeChecker::visitStructDecl(ASTNode* /*parent*/, ASTStructDeclNode* node)
              return NULL; // Error already reported
         }
 
-        if (!is_c89_compatible(field_type)) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, "struct field type is not C89 compatible.", unit.getArena());
-            return NULL;
-        }
 
         StructField sf;
         sf.name = field_data->name;
@@ -1903,6 +1899,9 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
         case TYPE_U32: return (value >= 0 && (unsigned __int64)value <= 4294967295ULL);
         case TYPE_I64: return true; // Any i64 fits in i64
         case TYPE_U64: return value >= 0;
+        // For isize/usize, we assume 32-bit for the bootstrap compiler.
+        case TYPE_ISIZE: return (value >= -2147483647 - 1 && value <= 2147483647);
+        case TYPE_USIZE: return value >= 0 && (unsigned __int64)value <= 4294967295ULL;
         // C89 allows implicit conversion from integer literals to floats.
         case TYPE_F32: return true;
         case TYPE_F64: return true;
@@ -2017,15 +2016,6 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
         // Resolve the field's type by visiting its type node.
         Type* field_type = visit(field->type);
 
-        // If the type was resolved, check if it's C89 compatible.
-        if (field_type && !is_c89_compatible(field_type)) {
-            char msg_buffer[256];
-            char* current = msg_buffer;
-            size_t remaining = sizeof(msg_buffer);
-            safe_append(current, remaining, container_type_str);
-            safe_append(current, remaining, " field type is not C89 compatible.");
-            fatalError(field->type->loc, msg_buffer);
-        }
     }
 }
 
