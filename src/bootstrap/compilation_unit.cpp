@@ -11,6 +11,94 @@
 #include "c89_pattern_generator.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+
+#ifdef MEASURE_MEMORY
+class PhaseMemoryTracker {
+    struct PhaseStats {
+        const char* phase_name;
+        size_t arena_before;
+        size_t arena_after;
+        size_t ast_nodes;
+        size_t types;
+        size_t symbols;
+        size_t catalogue_entries;
+    };
+
+    DynamicArray<PhaseStats> phases;
+    CompilationUnit& unit;
+
+public:
+    PhaseMemoryTracker(CompilationUnit& u) : phases(u.getArena()), unit(u) {}
+
+    void begin_phase(const char* name) {
+        PhaseStats stats;
+        stats.phase_name = name;
+        stats.arena_before = unit.getArena().getOffset();
+        // Count current objects
+        stats.ast_nodes = 0;
+        stats.types = 0;
+        stats.symbols = 0;
+        stats.catalogue_entries = 0;
+        phases.append(stats);
+    }
+
+    void end_phase() {
+        if (phases.length() > 0) {
+            PhaseStats& last = phases[phases.length() - 1];
+            last.arena_after = unit.getArena().getOffset();
+            last.ast_nodes = MemoryTracker::ast_nodes;
+            last.types = MemoryTracker::types;
+            last.symbols = MemoryTracker::symbols;
+            last.catalogue_entries = unit.getTotalCatalogueEntries();
+        }
+    }
+
+    void print_report() {
+        plat_print_info("\n=== PHASE MEMORY REPORT ===\n");
+        for (size_t i = 0; i < phases.length(); i++) {
+            PhaseStats& s = phases[i];
+            size_t delta = s.arena_after - s.arena_before;
+
+            char buffer[512];
+            char* cur = buffer;
+            size_t rem = sizeof(buffer);
+            char num_buf[32];
+
+            safe_append(cur, rem, "Phase: ");
+            safe_append(cur, rem, s.phase_name);
+            safe_append(cur, rem, "\n");
+
+            safe_append(cur, rem, "  Arena delta: ");
+            simple_itoa((long)delta, num_buf, sizeof(num_buf));
+            safe_append(cur, rem, num_buf);
+            safe_append(cur, rem, " bytes\n");
+
+            safe_append(cur, rem, "  AST nodes: ");
+            simple_itoa((long)s.ast_nodes, num_buf, sizeof(num_buf));
+            safe_append(cur, rem, num_buf);
+            safe_append(cur, rem, "\n");
+
+            safe_append(cur, rem, "  Types: ");
+            simple_itoa((long)s.types, num_buf, sizeof(num_buf));
+            safe_append(cur, rem, num_buf);
+            safe_append(cur, rem, "\n");
+
+            safe_append(cur, rem, "  Symbols: ");
+            simple_itoa((long)s.symbols, num_buf, sizeof(num_buf));
+            safe_append(cur, rem, num_buf);
+            safe_append(cur, rem, "\n");
+
+            safe_append(cur, rem, "  Catalogue entries: ");
+            simple_itoa((long)s.catalogue_entries, num_buf, sizeof(num_buf));
+            safe_append(cur, rem, num_buf);
+            safe_append(cur, rem, "\n");
+
+            plat_print_info(buffer);
+        }
+        plat_print_info("===========================\n");
+    }
+};
+#endif
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
 
@@ -288,34 +376,102 @@ void CompilationUnit::setTestMode(bool test_mode) {
     is_test_mode_ = test_mode;
 }
 
+size_t CompilationUnit::getASTNodeCount() const {
+#ifdef MEASURE_MEMORY
+    return MemoryTracker::ast_nodes;
+#else
+    return 0;
+#endif
+}
+
+size_t CompilationUnit::getTypeCount() const {
+#ifdef MEASURE_MEMORY
+    return MemoryTracker::types;
+#else
+    return 0;
+#endif
+}
+
+size_t CompilationUnit::getTotalCatalogueEntries() const {
+    size_t total = 0;
+    total += error_set_catalogue_.count();
+    total += generic_catalogue_.count();
+    total += error_function_catalogue_.count();
+    total += try_expression_catalogue_.count();
+    total += catch_expression_catalogue_.count();
+    total += orelse_expression_catalogue_.count();
+    total += extraction_analysis_catalogue_.count();
+    total += errdefer_catalogue_.count();
+    total += indirect_call_catalogue_.count();
+    return total;
+}
+
 bool CompilationUnit::performFullPipeline(u32 file_id) {
+#ifdef MEASURE_MEMORY
+    PhaseMemoryTracker tracker(*this);
+#endif
+
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Parsing");
+#endif
     Parser* parser = createParser(file_id);
     ASTNode* ast = parser->parse();
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
     if (!ast) return false;
 
     // Name Collision Detection
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Name Collision Detection");
+#endif
     NameCollisionDetector name_detector(*this);
     name_detector.check(ast);
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
     if (name_detector.hasCollisions()) {
         return false;
     }
 
     // Pass 0: Type Checking
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Type Checking");
+#endif
     TypeChecker checker(*this);
     checker.check(ast);
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
 
     // Pass 0.5: Signature Analysis
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Signature Analysis");
+#endif
     SignatureAnalyzer sig_analyzer(*this);
     sig_analyzer.analyze(ast);
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
 
     // Pass 1: C89 feature validation
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("C89 Validation");
+#endif
     C89FeatureValidator validator(*this);
     bool success = validator.validate(ast);
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
 
     validation_completed_ = true;
     c89_validation_passed_ = success && !sig_analyzer.hasInvalidSignatures();
 
     if (!c89_validation_passed_) {
+#ifdef MEASURE_MEMORY
+        tracker.print_report();
+        MemoryTracker::reset_counts();
+#endif
         return false;
     }
 
@@ -340,6 +496,10 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         call_site_table_.printUnresolved();
     }
 
+#ifdef MEASURE_MEMORY
+    tracker.print_report();
+    MemoryTracker::reset_counts();
+#endif
     return true;
 }
 

@@ -115,6 +115,11 @@ public:
      */
     void setTestMode(bool test_mode);
 
+    // Memory tracking helpers
+    size_t getASTNodeCount() const;
+    size_t getTypeCount() const;
+    size_t getTotalCatalogueEntries() const;
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;

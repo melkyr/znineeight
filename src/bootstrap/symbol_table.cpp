@@ -98,6 +98,9 @@ void Scope::insert(Symbol& symbol) {
 
     // Allocate a new entry from the arena
     SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::symbols++;
+#endif
     new_entry->symbol = symbol;
 
     // Insert at the head of the bucket's linked list

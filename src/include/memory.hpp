@@ -82,6 +82,40 @@ static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
     *dest_ptr = '\0'; // Always keep the buffer null-terminated
 }
 
+#ifdef MEASURE_MEMORY
+class MemoryTracker {
+public:
+    static size_t total_allocated;
+    static size_t peak_usage;
+    static size_t ast_nodes;
+    static size_t types;
+    static size_t symbols;
+    static size_t catalogue_entries;
+
+    static void record_allocation(size_t size) {
+        total_allocated += size;
+        if (total_allocated > peak_usage) {
+            peak_usage = total_allocated;
+        }
+    }
+
+    static void record_free(size_t size) {
+        if (size <= total_allocated) {
+            total_allocated -= size;
+        } else {
+            total_allocated = 0;
+        }
+    }
+
+    static void reset_counts() {
+        ast_nodes = 0;
+        types = 0;
+        symbols = 0;
+        catalogue_entries = 0;
+    }
+};
+#endif
+
 #ifdef DEBUG
 static void report_out_of_memory(const char* context, size_t requested, size_t p1, size_t p2, size_t p3) {
     char buffer[256];
@@ -187,6 +221,10 @@ public:
         }
 
         u8* ptr = buffer + new_offset;
+#ifdef MEASURE_MEMORY
+        size_t actual_size = (new_offset - offset) + size;
+        MemoryTracker::record_allocation(actual_size);
+#endif
         offset = new_offset + size;
         return ptr;
     }
@@ -196,6 +234,9 @@ public:
      * This simply resets the offset pointer to the beginning of the arena.
      */
     void reset() {
+#ifdef MEASURE_MEMORY
+        MemoryTracker::record_free(offset);
+#endif
         offset = 0;
     }
 
@@ -204,6 +245,11 @@ public:
      * @param checkpoint The offset to restore the arena to.
      */
     void reset(size_t checkpoint) {
+#ifdef MEASURE_MEMORY
+        if (checkpoint < offset) {
+            MemoryTracker::record_free(offset - checkpoint);
+        }
+#endif
         offset = checkpoint;
     }
 
@@ -213,6 +259,13 @@ public:
      */
     size_t getOffset() const {
         return offset;
+    }
+
+    /**
+     * @brief Returns the total capacity of the arena.
+     */
+    size_t getCapacity() const {
+        return capacity;
     }
 
     /**

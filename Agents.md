@@ -1,95 +1,187 @@
-Agents.md - Interaction Guidelines for AI Code Assistants
+# RetroZig Compiler - AI Agent Guidelines
 
-This document outlines the roles, responsibilities, and communication protocols for interacting with AI agents during the development of this legacy-compatible C++98 compiler. It serves as a guide for both human developers initiating requests and the AI agents executing them.
-Project Context
+## Overview
 
-    Goal: Develop a C++98 compatible compiler capable of running on circa 1998 hardware/software environments.
-    Constraints:
-        Language Standard: C++98.
-        Memory Limit: Significantly less than 16MB peak usage.
-        Dependencies: Win32 API (kernel32.dll) only. No third-party libraries.
-        Compiler Compatibility: Must work with older toolchains (e.g., MSVC 6.0 quirks like __int64).
+This document outlines the development methodology, constraints, and communication protocols for AI agents working on the RetroZig compiler project.
 
-AI Agent Role: Specialized Compiler Implementer
+## Current Status: Milestone 4 (Task 166)
 
-The AI agent acts as a focused, knowledgeable assistant for implementing specific, well-defined tasks within the compiler project.
-Responsibilities of the AI Agent
+We are implementing the bootstrap type system and semantic analysis with strict C89 compatibility constraints.
 
-    Interpret Tasks: Accurately parse and understand the task description provided in AI_tasks.md.
-    Consult Documentation: Read and comprehend relevant project documents (Design.md, lexer.md, AST_parser.md, etc.) before implementing.
-    Adhere to Constraints: Strictly follow all technical constraints (C++98, memory limits, dependencies) without deviation.
-        C++ Standard Library Usage Policy:
-        Allowed: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like <new> (for placement new), <cstddef> (for size_t), <cassert> (for assert), and <climits>.
-        Forbidden: Headers that depend on a C/C++ runtime library (like msvcrt.dll beyond kernel32.dll) or perform dynamic memory allocation. This includes headers like <cstdio> (fprintf), <cstdlib> (malloc), <iostream>, <string> (std::string), and <vector> (std::vector).
-        Exceptions:
-            - `<cstdlib>`: Allowed *only* for `abort()` (for fatal error handling in the parser), and `strtol`/`strtod` (for number parsing in the lexer). Direct memory management functions like `malloc` and `free` are strictly forbidden; use `plat_alloc` and `plat_free` instead.
-        Platform Abstraction Layer (PAL):
-            All system-level operations (memory, files, console) MUST use the PAL (`platform.hpp`) to ensure compatibility and ease of development across Windows and Linux.
-    Implement Code: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
-    Document Changes: Update existing documentation (e.g., AST_parser.md) and add Doxygen-style comments to the generated code.
-    Task Review: Review completed tasks for architectural alignment and completeness (e.g., Task 125: Lifetime Analysis Review).
-    Seek Clarification: When encountering ambiguity in task specifications or required decisions not covered by documentation, explicitly ask for clarification rather than making assumptions.
-    Follow Methodology: Implement code with a Test-Driven Development (TDD) mindset, ensuring modularity and correctness for future testing phases.
+### Key Architectural Components
 
-Communication Protocol for Human Developers
+1. **Multi-Phase Compilation Pipeline** (`CompilationUnit::performFullPipeline`)
+2. **Feature Detection & Rejection** (`C89FeatureValidator`)
+3. **Comprehensive Cataloguing** (9 specialized catalogues)
+4. **Pass-Based Semantic Analysis** (Type checking → Validation → Lifetime → Null pointer → Double free)
 
-When instructing the AI agent, provide a structured prompt that includes:
+### Memory Constraints
 
-    Clear Objective: State the specific task number and name (e.g., "Implement Task 40: Foundational Parser/AST").
-    Reference Materials: Explicitly list the key documents the agent should consult (e.g., Design.md, lexer.md, AST_parser.md, AI_tasks.md).
-    Reiterate Constraints: Remind the agent of the critical technical limitations (C++98, memory, dependencies).
-    Specify Deliverables: Outline the expected outputs (new/modified files, updated docs, comments).
-    Encourage Questions: Invite the agent to ask for clarification if needed.
+- **Target**: < 16MB peak usage for compiling zig1 (self-hosted compiler)
+- **Current estimate**: ~2.3MB data + overhead
+- **Critical path**: Must handle 10,000 lines of zig1 source code
 
-Example Prompt Structure (as used previously)
-        Objective: Act as a specialized code implementer focusing on Task 40 within AI_tasks.md. Your primary goal is to implement the foundational components of the Parser/AST based on the preceding lexer output, strictly adhering to the project's historical technical constraints.
-        
-        Pre-Implementation Analysis:
-        
-            Read Core Documentation:
-                Thoroughly review Design.md to grasp the overall project structure and the principles outlined in Section 3 ("Architecture & Memory Strategy"), especially Arena Allocation.
-                Consult lexer.md to understand the token format and types generated by the lexer (e.g lexer.cpp).
-                Examine AST_parser.md to understand the desired structure and goals for the Abstract Syntax Tree (AST) and the parser.
-                Re-read Task 40 in AI_tasks.md for precise requirements and specifications.
-            Comprehend Constraints:
-                Language: C++98 standard maximum.
-                Memory: Peak usage must stay significantly under 16MB.
-                Dependencies: Only the core C runtime and Win32 API (kernel32.dll) are allowed. No external libraries.
-                C++ Features: Avoid std::vector, std::string, smart pointers, complex templates, and modern C++ features not available in C++98. Manually define bool, true, false if needed. Use __int64.
-            Formulate Plan & Seek Clarification:
-                Based on lexer.md tokens and AST_parser.md requirements, draft a high-level plan for the initial AST node structures and the parser's entry point logic.
-                If any aspect of AI_tasks.md, lexer.md, or AST_parser.md is ambiguous or requires specific decisions not explicitly covered, ask clarifying questions before proceeding with the code.
-        
-        Implementation Requirements (TDD Approach):
-        
-            Foundational AST Structures:
-                Define core data structures for the AST nodes in ast.hpp. Consider nodes like BinaryOp, UnaryOp, Literal (Int, Float, String), Identifier, FunctionCall, etc., based on anticipated language constructs and token types from the lexer.
-                Implement basic arena allocation mechanisms (if not already present in a dedicated header like memory_arena.h) within ast.cpp or a new file. This allocator should handle bulk allocation and deallocation for AST nodes efficiently.
-                Integrate string interning into the AST construction process (or prepare the mechanism) to manage string literals and identifiers efficiently within the tight memory constraints.
-            Basic Parser Skeleton:
-                Begin implementing the main parser logic in parser.cpp. Create the initial function(s) responsible for taking the list of tokens produced by the lexer and recursively building the corresponding AST.
-                Start simple: focus on parsing primary expressions, then unary operators, then binary operator precedence correctly (using Pratt Parsing or a similar efficient method suitable for C++98).
-                Ensure the AST structure allows for easy traversal (e.g., storing child node pointers). Consider how future components (like the semantic analyzer and code generator) will interact with this tree.
-            Documentation & Comments:
-                Update AST_parser.md: Add sections detailing the defined AST node types, their members, the chosen parsing strategy, and how arena allocation and string interning are utilized.
-                Code Comments: Add comprehensive Doxygen-style comments to all newly defined functions and structures in .h and .cpp files, explaining their purpose, arguments, and return values.
-            Testing Mindset:
-                While full unit tests might not be written immediately, structure the code with testability in mind. Keep functions focused and potentially mockable where necessary. Write code assuming tests will validate its correctness against various token inputs derived from the lexer.
-        
-        Deliverables:
-        
-            Updated ast.h with AST node definitions.
-            Updated ast.cpp with arena allocation and potentially basic AST creation helpers.
-            Initial parser.cpp with skeleton/core parsing logic.
-            Updated AST_parser.md reflecting the implemented structure and strategy.
-            Detailed Doxygen-style comments within the codebase.
-        
-        Action: Begin by confirming your understanding of the documentation points and asking any necessary clarifying questions regarding Task 40's specifics or the intended AST structure based on the lexer output. Once clear, proceed with the implementation following the guidelines above.
+## Memory Management Protocol (Updated)
 
-Expected AI Agent Behavior
+### Persistent Instrumentation
+The codebase now contains persistent memory instrumentation guarded by `#ifdef MEASURE_MEMORY`. This instrumentation MUST remain in the codebase to facilitate ongoing memory analysis and regression testing.
 
-    Precise: Code generated must be syntactically correct C++98 and functionally align with the task.
-    Constrained: Solutions must inherently respect the memory and dependency constraints.
-    Context-Aware: The agent should demonstrate understanding of the project's layered architecture (Lexer -> Parser/AST -> ...).
-    Proactive: Offer suggestions for improving maintainability or adherence to architectural principles (like Arena Allocation) where applicable, but always within the constraints.
-    Collaborative: Engage in a clarifying dialogue if the initial prompt lacks sufficient detail.
+### Phase-Aware Analysis Required
+
+All memory-related work must track usage across compilation phases:
+
+1. **Lexing & Parsing**: AST node creation, string interning
+2. **Type Checking**: Type objects, symbol table expansion
+3. **C89 Validation**: Catalogue population
+4. **Semantic Analysis**: Analysis state tracking
+5. **Code Generation**: Output buffers
+
+### Catalogue Memory Overhead
+
+The compiler maintains 9 catalogues for feature tracking. Memory impact:
+- ErrorSetCatalogue: Error set definitions and merges
+- GenericCatalogue: Generic function instantiations
+- ErrorFunctionCatalogue: Error-returning functions
+- Try/Catch/Orelse catalogues: Error handling patterns
+- ExtractionAnalysisCatalogue: C89 translation strategies
+- ErrDeferCatalogue: Errdefer statements
+- IndirectCallCatalogue: Function pointer calls
+
+**Guideline**: When implementing catalogue features, estimate memory per entry (≈ 32-64 bytes).
+
+### Measurement Commands
+
+```bash
+# Build with memory instrumentation
+g++ -std=c++98 -DMEASURE_MEMORY -I./src/include src/bootstrap/*.cpp -o build/zig0_instrumented
+
+# Run phase-aware analysis
+./scripts/memory/analyze_compiler_memory.sh
+
+# Quick memory check
+valgrind --tool=massif --stacks=yes ./build/zig0_instrumented full_pipeline test/compiler_subset.zig
+
+# Catalogue-specific analysis
+# (Future work) DEBUG_CATALOGUES=1 ./zig0 full_pipeline input.zig
+```
+
+### Optimization Priority List
+
+When memory exceeds thresholds, optimize in this order:
+
+1. **Catalogue entries** (largest potential savings)
+2. **AST node allocations** (biggest baseline consumer)
+3. **Type object sharing** (reduce duplication)
+4. **String interning** (hash table optimization)
+5. **Phase memory reuse** (arena reset between phases)
+
+### Memory Budget Per Phase
+
+| Phase | Budget | Current | Status |
+|-------|--------|---------|--------|
+| Lexing | 512KB | ~300KB | ✅ |
+| Parsing | 1MB | ~700KB | ✅ |
+| Type Checking | 2MB | ~1.2MB | ✅ |
+| Catalogues | 1MB | ~800KB | ⚠️ |
+| Analysis | 1MB | ~600KB | ✅ |
+| **Total** | **5.5MB** | **~3.6MB** | **✅** |
+
+*Note: 5.5MB target leaves 10.5MB headroom for zig1 compilation*
+
+## Implementation Guidelines
+
+### For New Features
+
+1. **Memory Estimate First**: Calculate expected memory impact before coding
+2. **Phase Placement**: Place features in appropriate compilation phase
+3. **Catalogue Strategy**: Decide if feature needs cataloguing or can be rejected immediately
+4. **Testing**: Include memory assertions in unit tests
+
+### For Memory Optimization
+
+1. **Profile Before Optimizing**: Use `MEASURE_MEMORY` to identify hotspots
+2. **Focus on Catalogue Growth**: Largest potential for savings
+3. **Consider Lazy Allocation**: Only allocate when feature is actually used
+4. **Shared Structures**: Reuse common objects (types, error sets)
+
+### Critical Files for Memory Analysis
+
+- `src/include/compilation_unit.hpp` - Pipeline orchestration
+- `src/include/type_checker.hpp` - Type system memory
+- `src/include/c89_feature_validator.hpp` - Rejection framework
+- `src/include/memory.hpp` - Arena allocator
+- All catalogue header files
+
+## Communication Protocol
+
+### When Reporting Memory Issues
+
+Include:
+1. Phase where issue occurs
+2. Catalogue growth patterns
+3. Arena fragmentation percentage
+4. Comparison to budget thresholds
+
+### When Implementing Memory Optimizations
+
+Document:
+1. Before/after memory measurements
+2. Impact on compilation speed
+3. Any functional trade-offs
+4. Test coverage for edge cases
+
+## Testing Requirements
+
+All memory-related changes require:
+
+1. **Unit tests** with memory assertions
+2. **Integration test** with compiler subset
+3. **Valgrind clean** (no leaks)
+4. **Performance regression check** (< 10% slowdown)
+
+## Emergency Procedures
+
+If memory usage exceeds 8MB (50% of budget):
+
+1. Immediately pause feature development
+2. Run comprehensive memory analysis
+3. Identify top 3 memory consumers
+4. Implement targeted optimizations
+5. Verify back under 6MB before resuming
+
+## Phase-Specific Guidelines
+
+### Parsing Phase
+- AST nodes: 28 bytes each, aim for < 5 nodes per line of code
+- String interning: Track duplication ratio (target < 30%)
+
+### Type Checking Phase
+- Type objects: Share common primitives (i32, i64, etc.)
+- Symbol table: Use efficient hash table resizing
+
+### Validation Phase
+- Catalogues: Lazy allocation, prune rejected entries
+- Error messages: Reuse string buffers
+
+### Analysis Phase
+- State tracking: Use bit flags over boolean arrays
+- Control flow: Conservative merging to avoid state explosion
+
+## Tools and Scripts
+
+Available in `scripts/memory/`:
+- `analyze_compiler_memory.sh` - Comprehensive analysis
+- `phase_tracker.py` - Phase-by-phase breakdown  (Planned)
+- `catalogue_analyzer.py` - Catalogue memory impact (Planned)
+- `budget_calculator.py` - Theoretical maximums (Planned)
+
+## Success Criteria for Milestone 4
+
+1. Compile 1000-line test program in < 4MB
+2. Catalogue memory < 1MB for typical programs
+3. No memory leaks in full pipeline
+4. Ready for zig1 compilation (estimated 10K lines)
+
+---
+
+*Last updated: Task 166 - Bootstrap Type System & Semantic Analysis*
