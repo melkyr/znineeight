@@ -78,20 +78,7 @@ When memory exceeds thresholds, optimize in this order:
 3. **Type object sharing** (reduce duplication)
 4. **String interning** (hash table optimization)
 5. **Phase memory reuse** (arena reset between phases)
-
-### Memory Budget Per Phase
-
-| Phase | Budget | Status |
-|-------|--------|--------|
-| Lexing | 512KB | ✅ |
-| Parsing | 1MB | ✅ |
-| Type Checking | 2MB | ✅ |
-| Catalogues | 1MB | ⚠️ |
-| Analysis | 1MB | ✅ |
-| **Total** | **5.5MB** | **✅** |
-
-*Note: 5.5MB target leaves 10.5MB headroom for zig1 compilation within the 16MB absolute limit.*
-
+   
 ## Communication Protocol for Human Developers
 
 When instructing the AI agent, provide a structured prompt that includes:
@@ -127,52 +114,3 @@ All memory-related changes require:
 1. **Unit tests** with memory assertions.
 2. **Integration test** with compiler subset (`test/compiler_subset.zig`).
 3. **Valgrind clean** (no leaks).
-4. **Performance regression check** (< 10% slowdown).
-
-## Emergency Procedures
-If memory usage exceeds 8MB (50% of budget):
-1. Immediately pause feature development.
-2. Run comprehensive memory analysis.
-3. Identify top 3 memory consumers.
-4. Implement targeted optimizations.
-5. Verify back under 6MB before resuming.
-
-## Phase-Specific Guidelines
-
-### Parsing Phase
-- **AST nodes**: 32-56 bytes each, aim for < 5 nodes per line of code.
-- **String interning**: Track duplication ratio (target < 30%).
-
-### Type Checking Phase
-- **Type objects**: Share common primitives (i32, i64, etc.).
-- **Symbol table**: Use efficient initial bucket sizes (currently 4).
-
-### Validation Phase
-- **Catalogues**: Lazy allocation, prune rejected entries.
-- **Error messages**: Reuse string buffers.
-
-### Analysis Phase
-- **State tracking**: Use bit flags over boolean arrays.
-- **Control flow**: Conservative merging to avoid state explosion.
-
-## Success Criteria for Milestone 4
-
-1. Compile 1000-line test program in < 4MB.
-2. Catalogue memory < 1MB for typical programs.
-3. No memory leaks in full pipeline.
-4. Ready for `zig1` compilation (estimated 10K lines).
-
----
-
-*Last updated: Task 166 - Bootstrap Type System & Semantic Analysis*
-
-### Task 167: Update Recursive Calls
-**Status**: COMPLETE (Verification and Documentation)
-**Infrastructure**: The bootstrap compiler already supports recursion through its forward-reference-capable symbol table and unified call resolution logic.
-**Actions Taken**:
-1. Verified `TypeChecker::resolveCallSite` identifies `CALL_RECURSIVE` by comparing callee with `current_fn_name`.
-2. Confirmed that mangled names are correctly applied to all call sites.
-3. Added comprehensive tests in `tests/test_recursive_calls.cpp` covering simple recursion, mutual recursion, and forward references.
-4. Documented the resolution strategy and C89 compatibility considerations in `AST_parser.md` (Section 24).
-
-**Key Takeaway**: No architectural changes were needed; the existing design correctly handles recursive patterns in Milestone 4.
