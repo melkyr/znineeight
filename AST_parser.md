@@ -1633,7 +1633,7 @@ During type checking, every function call is recorded in a `CallSiteLookupTable`
 Direct function calls are resolved during the semantic analysis phase using a robust algorithm that handles various edge cases:
 
 1.  **Identifier Check**: The callee must be a simple identifier. Indirect calls (via pointers) are currently rejected for bootstrap.
-2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features (often rejected in the bootstrap phase with specific errors).
+2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features (strictly rejected in the bootstrap phase with specific errors).
 3.  **Symbol Lookup**: The compiler searches the hierarchical symbol table for the callee name.
 4.  **Forward Reference Resolution**: If the symbol is found but its type is not yet resolved (common for functions declared later in the same file), the compiler triggers an on-demand signature resolution.
 5.  **Generic Handling**: If the symbol is marked as generic, the compiler attempts to find the matching instantiation in the `GenericCatalogue` and uses its specialized mangled name.
@@ -1641,7 +1641,7 @@ Direct function calls are resolved during the semantic analysis phase using a ro
 7.  **Recursion Detection**: The compiler checks if the call is recursive by comparing the callee name with the current function being checked.
 8.  **Recording**: The call site, its resolved mangled name, and its type (`DIRECT`, `RECURSIVE`, `GENERIC`) are recorded in the `CallSiteLookupTable`.
 
-Example: `foo()` → looks up `foo` → resolves signature → records `foo__mangled` as `CALL_DIRECT`.
+Example: `foo()` → looks up `foo` → resolves signature → records `foo` as `CALL_DIRECT`.
 
 ### Call Types and Resolution Status
 
@@ -1679,6 +1679,53 @@ While function pointers are technically C89 compatible, they are strictly reject
 - **Timing**: Call sites are registered during the `TypeChecker::visitFunctionCall` pass.
 - **Validation**: At the end of the compilation pipeline, any unresolved call sites are reported as diagnostics to assist in debugging and feature implementation.
 
+## 24. Recursive Call Resolution (Task 167)
+
+### 24.1 Detection Mechanism
+The `TypeChecker` identifies recursive function calls during the `resolveCallSite` process:
+1. When visiting a function call, the checker compares the callee name with the current function name (`current_fn_name`).
+2. If they match, the call is marked as `CALL_RECURSIVE` in the `CallSiteLookupTable`.
+3. The call site is recorded with the function's mangled name to ensure correct code generation in the C89 backend.
+
+### 24.2 Forward References
+The compiler robustly supports forward references in recursive scenarios:
+- Functions can call other functions declared later in the same file.
+- When an unresolved symbol is encountered at a call site, the `TypeChecker` triggers an on-demand signature resolution via `visitFnSignature`.
+- This ensures that mutual recursion (e.g., function A calls B, and B calls A) works regardless of declaration order.
+
+### 24.3 C89 Compatibility
+Recursive function calls are fully C89-compatible and are not rejected by the `C89FeatureValidator`. However, developers should be mindful of the following:
+- **Stack Usage**: Deep recursion can easily exceed the limited stack space (typically 1MB) of 1990s operating systems like Windows 95/98.
+- **No Tail-Call Optimization**: The bootstrap compiler and target C89 compilers do not guarantee tail-call optimization.
+- **Iterative Alternatives**: For performance-critical or deeply recursive logic, iterative solutions are preferred to ensure stability on legacy hardware.
+
+### 24.4 Implementation Details
+- **Mangled Names**: Both direct and recursive calls use the `mangled_name` stored in the function's `Symbol`.
+- **Generic Functions**: Recursive calls within generic functions use the specialized mangled name of the specific instantiation from the `GenericCatalogue`.
+- **Consistency**: The resolution logic is unified for all call types, ensuring that recursive calls follow the same ABI and naming conventions as regular calls.
+
+## 25. Call Resolution Validation Strategy (Task 168)
+
+### 25.1 Validation Test Suite
+The compiler includes comprehensive validation for call resolution covering:
+
+1. **Direct Calls**: Standard function calls with 0-4 arguments.
+2. **Generic Calls**: Explicit (`max(i32, a, b)`) and implicit instantiation.
+3. **Recursive Calls**: Self-recursion and mutual recursion.
+4. **Indirect Calls**: Function pointers (rejected in bootstrap).
+5. **Complex Contexts**: Calls in `defer` blocks, `switch` prongs, loop conditions, nested arguments, and struct initializers.
+
+### 25.2 Expected Behavior Matrix
+| Call Type | Resolution | Catalogue | C89 Status | Codegen |
+|-----------|------------|-----------|------------|---------|
+| Direct    | Successful | CallSiteLookupTable | Allowed | Generated |
+| Generic   | Successful | GenericCatalogue | Rejected | Not generated |
+| Recursive | Successful | CallSiteLookupTable | Allowed | Generated |
+| Indirect  | Successful | IndirectCallCatalogue | Rejected | Not generated |
+
+### 25.3 Validation Outcomes
+All call resolution tests pass as of Milestone 4 completion. The `CallResolutionValidator` class integrated into the pipeline (DEBUG mode) ensures every call site is either correctly resolved or catalogued for rejection.
+
 ---
 
 ## Deprecated
@@ -1709,28 +1756,3 @@ A review of the Zig language specification has identified several language featu
 
 *   **Compile-Time Operations:**
     *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
-
-## 24. Recursive Call Resolution
-
-### 24.1 Detection Mechanism
-The `TypeChecker` identifies recursive function calls during the `resolveCallSite` process:
-1. When visiting a function call, the checker compares the callee name with the current function name (`current_fn_name`).
-2. If they match, the call is marked as `CALL_RECURSIVE` in the `CallSiteLookupTable`.
-3. The call site is recorded with the function's mangled name to ensure correct code generation in the C89 backend.
-
-### 24.2 Forward References
-The compiler robustly supports forward references in recursive scenarios:
-- Functions can call other functions declared later in the same file.
-- When an unresolved symbol is encountered at a call site, the `TypeChecker` triggers an on-demand signature resolution via `visitFnSignature`.
-- This ensures that mutual recursion (e.g., function A calls B, and B calls A) works regardless of declaration order.
-
-### 24.3 C89 Compatibility
-Recursive function calls are fully C89-compatible and are not rejected by the `C89FeatureValidator`. However, developers should be mindful of the following:
-- **Stack Usage**: Deep recursion can easily exceed the limited stack space (typically 1MB) of 1990s operating systems like Windows 95/98.
-- **No Tail-Call Optimization**: The bootstrap compiler and target C89 compilers do not guarantee tail-call optimization.
-- **Iterative Alternatives**: For performance-critical or deeply recursive logic, iterative solutions are preferred to ensure stability on legacy hardware.
-
-### 24.4 Implementation Details
-- **Mangled Names**: Both direct and recursive calls use the `mangled_name` stored in the function's `Symbol`.
-- **Generic Functions**: Recursive calls within generic functions use the specialized mangled name of the specific instantiation from the `GenericCatalogue`.
-- **Consistency**: The resolution logic is unified for all call types, ensuring that recursive calls follow the same ABI and naming conventions as regular calls.

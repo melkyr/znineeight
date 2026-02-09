@@ -27,7 +27,16 @@ int main(int argc, char* argv[]) {
         test_ForwardReference_StructType,
         test_Recursive_Factorial,
         test_Recursive_Mutual_Mangled,
-        test_Recursive_Forward_Mangled
+        test_Recursive_Forward_Mangled,
+        test_CallSyntax_AtImport,
+        test_CallSyntax_AtImport_Rejection,
+        test_CallSyntax_ComplexPostfix,
+        test_CallSyntax_MethodCall,
+        test_Task168_ComplexContexts,
+        test_Task168_MutualRecursion,
+        test_Task168_IndirectCallRejection,
+        test_Task168_GenericCallChain,
+        test_Task168_BuiltinCall
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -773,10 +773,15 @@ Output: Runtime assertions in codegen module
     Validation: Ensure all function calls point to correct mangled names
     Success criteria: All function calls resolve to the correct target functions
 164. **Task 164:** Build call site lookup table (DONE)
-165. **Task 165:** Update direct function calls
-166. **Task 166:** Update indirect function calls
-167. **Task 167:** Update recursive calls
-168. **Task 168:** Validate all call resolutions work correctly
+165. **Task 165:** Update direct function calls (COMPLETE)
+166. **Task 166:** Update indirect function calls (COMPLETE)
+167. **Task 167:** Update recursive calls (COMPLETE)
+168. **Task 168:** Validate all call resolutions work correctly (COMPLETE)
+    - Created comprehensive integration test suite for nested call contexts.
+    - Verified lexer/parser handle all call syntax, including @import as a call.
+    - Implemented and integrated CallResolutionValidator for pipeline verification.
+    - Updated documentation in AST_parser.md and type system docs.
+    - Confirmed all call types are correctly resolved or catalogued for rejection.
 
 169. **Task 169:** Write bootstrap-specific unit tests
     - Risk Level: MEDIUM

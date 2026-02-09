@@ -545,6 +545,27 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         return NULL;
     }
 
+    // Handle built-ins early (Task 168)
+    if (node->callee->type == NODE_IDENTIFIER) {
+        const char* name = node->callee->as.identifier.name;
+        if (name[0] == '@') {
+            // Register in call site table as builtin
+            int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
+            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
+
+            // Report error but don't abort, let validation continue
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "Built-in '");
+            safe_append(current, remaining, name);
+            safe_append(current, remaining, "' not supported in bootstrap");
+            unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, msg_buffer, unit.getArena());
+
+            return get_g_type_void();
+        }
+    }
+
     if (callee_type->kind != TYPE_FUNCTION) {
         // This also handles the function pointer case, as a variable holding a
         // function would have a symbol kind of VARIABLE, not FUNCTION.
@@ -640,17 +661,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         case C89_INCOMPATIBLE:
             unit.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
             break;
-        case BUILTIN_REJECTED: {
-            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", entry.call_type);
-            char msg_buffer[256];
-            char* current = msg_buffer;
-            size_t remaining = sizeof(msg_buffer);
-            safe_append(current, remaining, "Built-in '");
-            safe_append(current, remaining, node->callee->as.identifier.name);
-            safe_append(current, remaining, "' not supported in bootstrap");
-            unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, msg_buffer, unit.getArena());
+        case BUILTIN_REJECTED:
+            // Handled early in visitFunctionCall
             break;
-        }
         case FORWARD_REFERENCE:
             unit.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
             break;
@@ -893,7 +906,14 @@ Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode*
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
-    Symbol* sym = unit.getSymbolTable().lookup(node->as.identifier.name);
+    const char* name = node->as.identifier.name;
+
+    // Built-ins starting with @ are handled specially in visitFunctionCall
+    if (name[0] == '@') {
+        return get_g_type_void(); // Placeholder type for built-ins
+    }
+
+    Symbol* sym = unit.getSymbolTable().lookup(name);
     if (!sym) {
         unit.getErrorHandler().report(ERR_UNDEFINED_VARIABLE, node->loc, "Use of undeclared identifier");
         return NULL;

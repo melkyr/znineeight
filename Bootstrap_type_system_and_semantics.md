@@ -396,6 +396,17 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 
 4.  **C89 Argument Limit:** To maintain compatibility with legacy C89 compilers and calling conventions, the type checker enforces a hard limit of a maximum of 4 arguments per function call. Any call with five or more arguments will result in a fatal error.
 
+5.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
+
+6.  **Built-in Detection:** Calls to built-ins starting with `@` (e.g., `@import`) are recognized and strictly rejected in the bootstrap phase.
+
+#### Call Resolution Completeness (Task 168)
+
+The bootstrap compiler includes a `CallResolutionValidator` (active in DEBUG builds) that verifies the following after Pass 0 (Type Checking):
+- Every function call in the AST has a corresponding entry in either the `CallSiteLookupTable` (resolved) or the `IndirectCallCatalogue` (rejected).
+- Direct and recursive calls to known functions are successfully resolved to their mangled names.
+- All non-C89 call patterns (indirect, too many arguments, built-ins) are correctly identified and flagged for rejection by the `C89FeatureValidator`.
+
 ### Expression Type Checking
 
 When visiting expressions, the `TypeChecker` determines the resulting type of the expression.

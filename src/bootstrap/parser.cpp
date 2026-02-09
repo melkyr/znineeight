@@ -1016,13 +1016,25 @@ ASTNode* Parser::parseImport() {
     Token module_token = expect(TOKEN_STRING_LITERAL, "Expected module name string after '@import('");
     expect(TOKEN_RPAREN, "Expected ')' after module name");
 
-    ASTImportStmtNode* import_stmt = (ASTImportStmtNode*)arena_->alloc(sizeof(ASTImportStmtNode));
-    if (!import_stmt) error("Out of memory");
-    import_stmt->module_name = module_token.value.identifier;
+    // Parse as a function call to "@import"
+    ASTNode* callee = createNodeAt(NODE_IDENTIFIER, import_token.location);
+    callee->as.identifier.name = "@import";
 
-    ASTNode* node = createNode(NODE_IMPORT_STMT);
-    node->loc = import_token.location;
-    node->as.import_stmt = import_stmt;
+    ASTFunctionCallNode* call_node = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+    if (!call_node) error("Out of memory");
+    call_node->callee = callee;
+
+    void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!array_mem) error("Out of memory");
+    call_node->args = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+
+    // The argument is the string literal
+    ASTNode* arg = createNodeAt(NODE_STRING_LITERAL, module_token.location);
+    arg->as.string_literal.value = module_token.value.identifier;
+    call_node->args->append(arg);
+
+    ASTNode* node = createNodeAt(NODE_FUNCTION_CALL, import_token.location);
+    node->as.function_call = call_node;
     return node;
 }
 

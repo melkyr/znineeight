@@ -637,4 +637,17 @@ TEST_FUNC(Recursive_Factorial);
 TEST_FUNC(Recursive_Mutual_Mangled);
 TEST_FUNC(Recursive_Forward_Mangled);
 
+// Task 168: Call Syntax Verification
+TEST_FUNC(CallSyntax_AtImport);
+TEST_FUNC(CallSyntax_AtImport_Rejection);
+TEST_FUNC(CallSyntax_ComplexPostfix);
+TEST_FUNC(CallSyntax_MethodCall);
+
+// Task 168: Final Validation Tests
+TEST_FUNC(Task168_ComplexContexts);
+TEST_FUNC(Task168_MutualRecursion);
+TEST_FUNC(Task168_IndirectCallRejection);
+TEST_FUNC(Task168_GenericCallChain);
+TEST_FUNC(Task168_BuiltinCall);
+
 #endif // TEST_DECLARATIONS_HPP
