@@ -144,15 +144,18 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
         case TYPE_BOOL:
         case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
-        case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_F32: case TYPE_F64:
         case TYPE_ENUM:
             return true;
 
+        case TYPE_ISIZE: case TYPE_USIZE:
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead", unit_.getArena());
+            return false;
+
         case TYPE_POINTER:
             // Check for multi-level pointers
             if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_TYPE_MISMATCH, loc, "Multi-level pointers in return types are not supported in C89 mode", unit_.getArena());
+                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in C89 mode", unit_.getArena());
                 return false;
             }
             return true;
@@ -165,15 +168,19 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Error union return type not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union return type not supported in C89", unit_.getArena());
             return false;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Error set return type not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set return type not supported in C89", unit_.getArena());
+            return false;
+
+        case TYPE_OPTIONAL:
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
             return false;
 
         default:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Non-C89 return type not supported", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Non-C89 return type not supported", unit_.getArena());
             return false;
     }
 }
@@ -189,15 +196,18 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
         case TYPE_BOOL:
         case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
-        case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_F32: case TYPE_F64:
         case TYPE_ENUM:
             return true;
 
+        case TYPE_ISIZE: case TYPE_USIZE:
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead", unit_.getArena());
+            return false;
+
         case TYPE_POINTER:
             // Check for multi-level pointers
             if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_TYPE_MISMATCH, loc, "Multi-level pointers in parameters are not supported in C89 mode", unit_.getArena());
+                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in C89 mode", unit_.getArena());
                 return false;
             }
             return true;
@@ -211,15 +221,19 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Error union type in parameter not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union type in parameter not supported in C89", unit_.getArena());
             return false;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Error set type in parameter not supported in C89", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set type in parameter not supported in C89", unit_.getArena());
+            return false;
+
+        case TYPE_OPTIONAL:
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
             return false;
 
         default:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Non-C89 type in parameter not supported", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Non-C89 type in parameter not supported", unit_.getArena());
             return false;
     }
 }

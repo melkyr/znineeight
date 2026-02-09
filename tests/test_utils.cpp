@@ -2,6 +2,8 @@
 #include "type_checker.hpp"
 #include "lifetime_analyzer.hpp"
 #include "c89_feature_validator.hpp"
+#include "name_collision_detector.hpp"
+#include "signature_analyzer.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -96,9 +98,17 @@ void run_type_checker_test_in_child(const char* source) {
     Parser* p = comp_unit.createParser(file_id);
     ASTNode* root = p->parse();
 
+    // Run Name Collision Detector
+    NameCollisionDetector name_detector(comp_unit);
+    name_detector.check(root);
+
     // Run the type checker before the C89 feature validator.
     TypeChecker tc(comp_unit);
     tc.check(root);
+
+    // Run Signature Analyzer
+    SignatureAnalyzer sig_analyzer(comp_unit);
+    sig_analyzer.analyze(root);
 
     C89FeatureValidator validator(comp_unit);
     validator.validate(root);

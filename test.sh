@@ -191,11 +191,15 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_task_165_resolution.cpp \
     tests/test_indirect_calls.cpp \
     tests/test_forward_reference.cpp \
-    tests/test_recursive_calls.cpp"
+    tests/test_recursive_calls.cpp \
+    tests/test_call_syntax.cpp \
+    tests/task_168_validation.cpp \
+    tests/test_bootstrap_types.cpp \
+    tests/test_msvc_types.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include"
 
-for i in 1 2 3 4 5 6 7 8 9 10 11; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then

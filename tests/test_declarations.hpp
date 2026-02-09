@@ -650,4 +650,26 @@ TEST_FUNC(Task168_IndirectCallRejection);
 TEST_FUNC(Task168_GenericCallChain);
 TEST_FUNC(Task168_BuiltinCall);
 
+// Task 169: Bootstrap Type System Tests
+TEST_FUNC(BootstrapTypes_Allowed_Primitives);
+TEST_FUNC(BootstrapTypes_Allowed_Pointers);
+TEST_FUNC(BootstrapTypes_Allowed_Arrays);
+TEST_FUNC(BootstrapTypes_Allowed_Structs);
+TEST_FUNC(BootstrapTypes_Allowed_Enums);
+TEST_FUNC(BootstrapTypes_Rejected_Isize);
+TEST_FUNC(BootstrapTypes_Rejected_Usize);
+TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer);
+TEST_FUNC(BootstrapTypes_Rejected_Slice);
+TEST_FUNC(BootstrapTypes_Rejected_ErrorUnion);
+TEST_FUNC(BootstrapTypes_Rejected_Optional);
+TEST_FUNC(BootstrapTypes_Rejected_FunctionPointer);
+TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs);
+TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer_StructField);
+TEST_FUNC(BootstrapTypes_Rejected_Isize_Param);
+TEST_FUNC(BootstrapTypes_Rejected_VoidVariable);
+
+// Task 169: MSVC Compatibility Tests
+TEST_FUNC(MsvcCompatibility_Int64Mapping);
+TEST_FUNC(MsvcCompatibility_TypeSizes);
+
 #endif // TEST_DECLARATIONS_HPP

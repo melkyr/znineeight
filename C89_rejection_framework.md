@@ -28,7 +28,8 @@ The following table details the Zig features that are rejected and provides the 
 | **`try` Expression**    | `try fallible_func();`          | **Yes**             | **Rejected.** Directly tied to error unions. Rejected by the AST Pre-Scan.                                                                                |
 | **`catch` Expression**  | `fallible_func() catch 0;`      | **Yes**             | **Rejected.** Directly tied to error unions. Rejected by the AST Pre-Scan.                                                                                |
 | **`orelse` Expression** | `optional_val orelse default;`  | **Yes**             | **Rejected.** Tied to optionals and error unions. Rejected by the AST Pre-Scan.                                                                           |
-| **`isize`/`usize`**     | `var x: isize = -1;`            | **Yes**             | **Rejected.** These types are pointer-sized integers, which are not a concept in C89 where `int` or `long` is used. Rejected by the Type System.           |
+| **`isize`/`usize`**     | `var x: isize = -1;`            | **Yes**             | **Rejected.** These types are pointer-sized integers, which are not supported in the bootstrap phase to ensure predictable behavior. Rejected by the Type System. |
+| **Multi-level Pointers**| `var p: **i32 = null;`          | **Yes**             | **Rejected.** Multi-level pointers add unnecessary complexity to the bootstrap type system. Only single-level pointers (`*T`) are allowed. |
 | **Function Pointers**   | `var fn_ptr = &my_func;`        | No                  | **Rejected.** While C89 supports function pointers, they are rejected by the bootstrap to simplify the type system and code generation.                  |
 | **Struct Methods**      | `my_struct.my_method()`         | No                  | **Rejected.** C89 structs do not have associated functions. The equivalent is passing a struct pointer to a global function.                              |
 | **`async`/`await`**     | `async my_func();`              | No                  | **Rejected.** Asynchronous programming is a modern concept with no C89 equivalent.                                                                        |
@@ -48,3 +49,12 @@ The following table details the Zig features that are rejected and provides the 
 | `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
 | `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
 | Generics | Rejected | Template Specialization / Mangling | Mangled Functions |
+
+## Bootstrap-specific restrictions beyond C89
+
+The bootstrap compiler imposes several restrictions that are stricter than C89 itself to simplify the implementation and ensure the robustness of the first compilation stage:
+
+1. **Parameter Count**: Functions are strictly limited to a maximum of **4 parameters**. This ensures compatibility across various legacy calling conventions and stack models.
+2. **No Multi-level Pointers**: Even though C89 supports `int**`, the bootstrap compiler only supports `int*` (single-level pointers) to simplify memory analysis and code generation.
+3. **No Function Pointers**: Function pointers are rejected as values or parameters to keep the type system minimal.
+4. **Explicit Integer Sizes**: `isize` and `usize` are rejected in favor of explicit-width types like `i32` and `u32`, preventing platform-dependent behavior during bootstrapping.
