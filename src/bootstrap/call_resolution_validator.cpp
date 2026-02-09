@@ -2,10 +2,8 @@
 #include "ast_utils.hpp"
 #include "platform.hpp"
 
-#include <cstdio>
-
 bool CallResolutionValidator::validate(CompilationUnit& unit, ASTNode* root) {
-    fprintf(stderr, "Running CallResolutionValidator...\n");
+    plat_print_debug("Running CallResolutionValidator...\n");
     if (!root) return true;
 
     Context ctx(unit);
@@ -114,7 +112,14 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
         char msg[256];
         char* cur = msg;
         size_t rem = sizeof(msg);
-        safe_append(cur, rem, "Call resolution validation failed: call site not found in lookup table");
+        safe_append(cur, rem, "Call resolution validation failed: call site not found in lookup table for '");
+        if (call->callee->type == NODE_IDENTIFIER) {
+            safe_append(cur, rem, call->callee->as.identifier.name);
+        } else {
+            safe_append(cur, rem, "<complex>");
+        }
+        safe_append(cur, rem, "'");
+
         ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, msg, ctx.unit.getArena());
         ctx.success = false;
         return;
@@ -130,7 +135,14 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
                 Symbol* sym = ctx.unit.getSymbolTable().lookup(name);
                 if (sym && sym->kind == SYMBOL_FUNCTION) {
                     // Should be resolved!
-                    ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, "Call resolution validation failed: direct function call remains unresolved");
+                    char msg[256];
+                    char* cur = msg;
+                    size_t rem = sizeof(msg);
+                    safe_append(cur, rem, "Call resolution validation failed: direct function call remains unresolved for '");
+                    safe_append(cur, rem, name);
+                    safe_append(cur, rem, "'");
+
+                    ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, msg, ctx.unit.getArena());
                     ctx.success = false;
                 }
             }

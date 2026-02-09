@@ -102,7 +102,6 @@ public:
 #endif
 #include <new>       // For placement new
 #include <cstdlib>   // For abort()
-#include <cstdio>    // For fprintf()
 
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
@@ -447,14 +446,14 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
 
 #ifdef DEBUG
-    fprintf(stderr, "[DEBUG] CompilationUnit: DEBUG is defined. Calling CallResolutionValidator...\n");
+    plat_print_debug("CompilationUnit: DEBUG is defined. Calling CallResolutionValidator...\n");
     // Task 168: Run call resolution validation
     if (!CallResolutionValidator::validate(*this, ast)) {
         error_handler_.report(ERR_INTERNAL_ERROR, ast->loc, "Call resolution validation failed");
         return false;
     }
 #else
-    fprintf(stderr, "[INFO] CompilationUnit: DEBUG is NOT defined. Skipping CallResolutionValidator.\n");
+    plat_print_info("CompilationUnit: DEBUG is NOT defined. Skipping CallResolutionValidator.\n");
 #endif
 
     // Pass 0.5: Signature Analysis
