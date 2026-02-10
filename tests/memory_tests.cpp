@@ -65,9 +65,10 @@ TEST_FUNC(simple_itoa_conversion) {
         simple_itoa(4294967295UL, buffer, sizeof(buffer));
         ASSERT_TRUE(strcmp(buffer, "4294967295") == 0);
     } else if (sizeof(size_t) == 8) {
-        // This will be a large number, let's just test a boundary case
-        simple_itoa(18446744073709551615ULL, buffer, sizeof(buffer));
-        ASSERT_TRUE(strcmp(buffer, "18446744073709551615") == 0);
+        // Use a large positive value that fits in a signed 64-bit long.
+        // 18446744073709551615ULL is -1 when cast to long, so simple_itoa would yield "-1".
+        simple_itoa(9223372036854775807LL, buffer, sizeof(buffer));
+        ASSERT_TRUE(strcmp(buffer, "9223372036854775807") == 0);
     }
 
     return true;

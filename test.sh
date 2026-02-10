@@ -195,9 +195,10 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_call_syntax.cpp \
     tests/task_168_validation.cpp \
     tests/test_bootstrap_types.cpp \
-    tests/test_msvc_types.cpp"
+    tests/test_msvc_types.cpp \
+    tests/integration/literal_tests.cpp"
 
-FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include"
+FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include -Itests/integration"
 
 for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     echo "Compiling Batch $i..."

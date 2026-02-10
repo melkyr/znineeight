@@ -672,4 +672,22 @@ TEST_FUNC(BootstrapTypes_Rejected_VoidVariable);
 TEST_FUNC(MsvcCompatibility_Int64Mapping);
 TEST_FUNC(MsvcCompatibility_TypeSizes);
 
+// Task 170: Literal Integration Tests
+TEST_FUNC(LiteralIntegration_IntegerDecimal);
+TEST_FUNC(LiteralIntegration_IntegerHex);
+TEST_FUNC(LiteralIntegration_IntegerUnsigned);
+TEST_FUNC(LiteralIntegration_IntegerLong);
+TEST_FUNC(LiteralIntegration_IntegerUnsignedLong);
+TEST_FUNC(LiteralIntegration_FloatSimple);
+TEST_FUNC(LiteralIntegration_FloatScientific);
+TEST_FUNC(LiteralIntegration_FloatExplicitF64);
+TEST_FUNC(LiteralIntegration_CharBasic);
+TEST_FUNC(LiteralIntegration_CharEscape);
+TEST_FUNC(LiteralIntegration_StringBasic);
+TEST_FUNC(LiteralIntegration_StringEscape);
+TEST_FUNC(LiteralIntegration_BoolTrue);
+TEST_FUNC(LiteralIntegration_BoolFalse);
+TEST_FUNC(LiteralIntegration_NullLiteral);
+TEST_FUNC(LiteralIntegration_ExpressionStatement);
+
 #endif // TEST_DECLARATIONS_HPP

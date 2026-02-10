@@ -44,32 +44,38 @@ TEST_FUNC(TypeChecker_C89IntegerCompatibility) {
 
     // Test cases for signed integers
     ASTIntegerLiteralNode node1;
+    plat_memset(&node1, 0, sizeof(node1));
     node1.value = 127;
     node1.is_unsigned = false;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node1)->kind, TYPE_I32);
 
     ASTIntegerLiteralNode node2;
+    plat_memset(&node2, 0, sizeof(node2));
     node2.value = 32767;
     node2.is_unsigned = false;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node2)->kind, TYPE_I32);
 
     ASTIntegerLiteralNode node3;
+    plat_memset(&node3, 0, sizeof(node3));
     node3.value = 2147483647;
     node3.is_unsigned = false;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node3)->kind, TYPE_I32);
 
     // Test cases for unsigned integers
     ASTIntegerLiteralNode node4;
+    plat_memset(&node4, 0, sizeof(node4));
     node4.value = 255;
     node4.is_unsigned = true;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node4)->kind, TYPE_U32);
 
     ASTIntegerLiteralNode node5;
+    plat_memset(&node5, 0, sizeof(node5));
     node5.value = 65535;
     node5.is_unsigned = true;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node5)->kind, TYPE_U32);
 
     ASTIntegerLiteralNode node6;
+    plat_memset(&node6, 0, sizeof(node6));
     node6.value = 4294967295;
     node6.is_unsigned = true;
     ASSERT_EQ(checker.visitIntegerLiteral(NULL, &node6)->kind, TYPE_U32);
@@ -127,6 +133,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
 
     // Test case for i32 max
     ASTIntegerLiteralNode node_i32_max;
+    plat_memset(&node_i32_max, 0, sizeof(node_i32_max));
     node_i32_max.value = 2147483647;
     node_i32_max.is_unsigned = false;
     node_i32_max.is_long = false;
@@ -135,6 +142,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
 
     // Test case for i32 min
     ASTIntegerLiteralNode node_i32_min;
+    plat_memset(&node_i32_min, 0, sizeof(node_i32_min));
     node_i32_min.value = -2147483648;
     node_i32_min.is_unsigned = false;
     node_i32_min.is_long = false;
@@ -143,6 +151,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
 
     // Test case for value just over i32 max
     ASTIntegerLiteralNode node_i64_over;
+    plat_memset(&node_i64_over, 0, sizeof(node_i64_over));
     node_i64_over.value = 2147483648;
     node_i64_over.is_unsigned = false;
     node_i64_over.is_long = false;
@@ -151,6 +160,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
 
     // Test case for value just under i32 min
     ASTIntegerLiteralNode node_i64_under;
+    plat_memset(&node_i64_under, 0, sizeof(node_i64_under));
     node_i64_under.value = -2147483649LL; // Use LL for long long
     node_i64_under.is_unsigned = false;
     node_i64_under.is_long = false;
