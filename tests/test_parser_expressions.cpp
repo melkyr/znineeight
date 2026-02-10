@@ -328,6 +328,10 @@ TEST_FUNC(Parser_ParsePrimaryExpr_ParenthesizedExpression) {
     ASTNode* node = parser->parsePrimaryExpr();
 
     ASSERT_TRUE(node != NULL);
+    // Should be NODE_PAREN_EXPR if parser preserves parentheses
+    if (node->type == NODE_PAREN_EXPR) {
+        node = node->as.paren_expr.expr;
+    }
     ASSERT_EQ(node->type, NODE_INTEGER_LITERAL);
     ASSERT_EQ(node->as.integer_literal.value, 42);
 

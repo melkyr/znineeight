@@ -375,9 +375,12 @@ TEST_FUNC(ParserIntegration_IfWithComplexCondition) {
     ASSERT_TRUE(and_left->type == NODE_IDENTIFIER);
     ASSERT_STREQ(and_left->as.identifier.name, "a");
 
-    // 6. Check right operand of 'and' is another binary op (or)
+    // 6. Check right operand of 'and' is another binary op (or) inside parentheses
     ASTNode* and_right = and_op->right;
     ASSERT_TRUE(and_right != NULL);
+    if (and_right->type == NODE_PAREN_EXPR) {
+        and_right = and_right->as.paren_expr.expr;
+    }
     ASSERT_TRUE(and_right->type == NODE_BINARY_OP);
 
     // 7. Check the 'or' expression details
