@@ -36,7 +36,20 @@ int main(int argc, char* argv[]) {
         test_LiteralIntegration_BoolTrue,
         test_LiteralIntegration_BoolFalse,
         test_LiteralIntegration_NullLiteral,
-        test_LiteralIntegration_ExpressionStatement
+        test_LiteralIntegration_ExpressionStatement,
+        test_VariableIntegration_BasicI32,
+        test_VariableIntegration_BasicConstF64,
+        test_VariableIntegration_GlobalVar,
+        test_VariableIntegration_LocalVar,
+        test_VariableIntegration_InferredInt,
+        test_VariableIntegration_InferredFloat,
+        test_VariableIntegration_InferredBool,
+        test_VariableIntegration_MangleKeyword,
+        test_VariableIntegration_MangleReserved,
+        test_VariableIntegration_MangleLongName,
+        test_VariableIntegration_DuplicateNameError,
+        test_VariableIntegration_RejectSlice,
+        test_VariableIntegration_PointerToVoid
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

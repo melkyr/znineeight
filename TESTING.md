@@ -44,7 +44,7 @@ Integration tests verify that multiple compiler stages work together correctly. 
 For Milestone 4, a mock emitter is used to validate C89-compatible representations. See [Integration Tests Documentation](docs/testing/integration_tests.md) for details on the current infrastructure.
 
 ### Integration Test Examples
-Existing integration tests can be found in `tests/integration_tests.cpp` and `tests/integration/literal_tests.cpp`. They demonstrate how to set up a `CompilationUnit`, add source code, and run the full pipeline with all analyzers enabled.
+Existing integration tests can be found in `tests/integration_tests.cpp`, `tests/integration/literal_tests.cpp`, and `tests/integration/variable_decl_tests.cpp`. They demonstrate how to set up a `CompilationUnit`, add source code, and run the full pipeline with all analyzers enabled.
 
 ## 3. Self-Tests
 
