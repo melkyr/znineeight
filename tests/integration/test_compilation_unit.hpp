@@ -73,12 +73,15 @@ public:
             ASTNode* item = (*top_levels)[i];
             if (item->type == NODE_FN_DECL) {
                 ASTNode* body = item->as.fn_decl->body;
-                if (body && body->type == NODE_BLOCK_STMT && body->as.block_stmt.statements->length() > 0) {
-                    ASTNode* stmt = (*body->as.block_stmt.statements)[0];
-                    if (stmt->type == NODE_EXPRESSION_STMT) {
-                        return stmt->as.expression_stmt.expression;
-                    } else if (stmt->type == NODE_RETURN_STMT) {
-                        return stmt->as.return_stmt.expression;
+                if (body && body->type == NODE_BLOCK_STMT) {
+                    DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
+                    for (size_t j = 0; j < stmts->length(); ++j) {
+                        ASTNode* stmt = (*stmts)[j];
+                        if (stmt->type == NODE_EXPRESSION_STMT) {
+                            return stmt->as.expression_stmt.expression;
+                        } else if (stmt->type == NODE_RETURN_STMT) {
+                            return stmt->as.return_stmt.expression;
+                        }
                     }
                 }
             }
@@ -133,6 +136,50 @@ public:
      */
     const ASTVarDeclNode* extractVariableDeclaration(const char* name) const {
         return findVariableDeclaration(last_ast, name);
+    }
+
+    /**
+     * @brief Validates that the first expression in the test source has the expected type kind.
+     */
+    bool validateExpressionType(TypeKind expected_kind) {
+        const ASTNode* expr = extractTestExpression();
+        if (!expr) {
+            printf("FAIL: Could not extract test expression.\n");
+            return false;
+        }
+
+        if (!expr->resolved_type) {
+            printf("FAIL: Expression has no resolved type.\n");
+            return false;
+        }
+
+        if (expr->resolved_type->kind != expected_kind) {
+            printf("FAIL: Type kind mismatch.\nExpected: %d\nActual:   %d\n", (int)expected_kind, (int)expr->resolved_type->kind);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @brief Validates that the first expression in the test source emits the expected C89 string.
+     */
+    bool validateExpressionEmission(const std::string& expectedC89) {
+        const ASTNode* expr = extractTestExpression();
+        if (!expr) {
+            printf("FAIL: Could not extract test expression.\n");
+            return false;
+        }
+
+        MockC89Emitter emitter;
+        std::string actual = emitter.emitExpression(expr);
+
+        if (actual != expectedC89) {
+            printf("FAIL: Expression emission mismatch.\nExpected: %s\nActual:   %s\n", expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
     }
 
     /**

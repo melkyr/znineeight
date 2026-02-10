@@ -216,9 +216,11 @@ ASTNode* Parser::parsePrimaryExpr() {
         }
         case TOKEN_LPAREN: {
             advance(); // consume '('
-            ASTNode* expr_node = parseExpression();
+            ASTNode* inner_expr = parseExpression();
             expect(TOKEN_RPAREN, "Expected ')' after parenthesized expression");
-            return expr_node;
+            ASTNode* node = createNode(NODE_PAREN_EXPR);
+            node->as.paren_expr.expr = inner_expr;
+            return node;
         }
         case TOKEN_LBRACE:
             return parseBlockStatement();

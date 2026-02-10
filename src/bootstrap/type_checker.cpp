@@ -82,6 +82,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_DEFER_STMT:       resolved_type = visitDeferStmt(&node->as.defer_stmt); break;
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
+        case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
@@ -217,7 +218,34 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         return NULL; // Error already reported
     }
 
-    return checkBinaryOperation(left_type, right_type, node->op, parent->loc);
+    // Special handling for literals to support promotion in binary operations.
+    // We only use TYPE_INTEGER_LITERAL for mixed cases (literal + non-literal)
+    // because literal + literal is already handled correctly by visit() returning i32/i64.
+    Type* l_ptr = left_type;
+    Type* r_ptr = right_type;
+    Type left_lit, right_lit;
+    bool used_left_lit = false;
+    bool used_right_lit = false;
+
+    if (node->left->type == NODE_INTEGER_LITERAL && node->right->type != NODE_INTEGER_LITERAL) {
+        left_lit.kind = TYPE_INTEGER_LITERAL;
+        left_lit.as.integer_literal.value = (i64)node->left->as.integer_literal.value;
+        l_ptr = &left_lit;
+        used_left_lit = true;
+    } else if (node->right->type == NODE_INTEGER_LITERAL && node->left->type != NODE_INTEGER_LITERAL) {
+        right_lit.kind = TYPE_INTEGER_LITERAL;
+        right_lit.as.integer_literal.value = (i64)node->right->as.integer_literal.value;
+        r_ptr = &right_lit;
+        used_right_lit = true;
+    }
+
+    Type* result = checkBinaryOperation(l_ptr, r_ptr, node->op, parent->loc);
+
+    // Ensure we don't return a pointer to our stack-allocated literal types.
+    if (used_left_lit && result == &left_lit) return left_type;
+    if (used_right_lit && result == &right_lit) return right_type;
+
+    return result;
 }
 
 Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
@@ -228,6 +256,14 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT: {
+            // Modulo is only defined for integer types
+            if (op == TOKEN_PERCENT && isNumericType(left_type) && isNumericType(right_type)) {
+                if (!isIntegerType(left_type) || !isIntegerType(right_type)) {
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "modulo operator '%' is only defined for integer types", unit.getArena());
+                    return NULL;
+                }
+            }
+
             Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
             if (promoted_type) {
                 return promoted_type;
@@ -300,6 +336,11 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
         {
+            Type* promoted = checkComparisonWithLiteralPromotion(left_type, right_type);
+            if (promoted) {
+                return promoted;
+            }
+
             // Check for compatible types for comparison
             if (isNumericType(left_type) && isNumericType(right_type)) {
                 if (left_type == right_type) {
@@ -1830,14 +1871,14 @@ bool TypeChecker::isNumericType(Type* type) {
     if (!type) {
         return false;
     }
-    return type->kind >= TYPE_I8 && type->kind <= TYPE_F64;
+    return (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) || type->kind == TYPE_INTEGER_LITERAL;
 }
 
 bool TypeChecker::isIntegerType(Type* type) {
     if (!type) {
         return false;
     }
-    return type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE;
+    return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) || type->kind == TYPE_INTEGER_LITERAL;
 }
 
 Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
@@ -1871,6 +1912,18 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
     // with an unsupported operator (e.g., ptr * int, ptr + ptr).
     // The calling function, checkBinaryOperation, will handle the final error reporting
     // if no valid arithmetic operation is found.
+    return NULL;
+}
+
+Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* right_type) {
+    if (isNumericType(left_type) && isNumericType(right_type)) {
+        if (left_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(left_type, right_type)) {
+            return get_g_type_bool();
+        }
+        if (right_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(right_type, left_type)) {
+            return get_g_type_bool();
+        }
+    }
     return NULL;
 }
 

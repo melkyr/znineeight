@@ -48,7 +48,7 @@ public:
     }
 
     /**
-     * @brief Emits a C89 string representation of a literal expression.
+     * @brief Emits a C89 string representation of an expression.
      * @param node The ASTNode to emit.
      * @return A std::string containing the C89 representation.
      */
@@ -70,6 +70,12 @@ public:
                 return "((void*)0)";
             case NODE_IDENTIFIER:
                 return node->as.identifier.name;
+            case NODE_BINARY_OP:
+                return emitBinaryOp(node->as.binary_op);
+            case NODE_UNARY_OP:
+                return emitUnaryOp(&node->as.unary_op);
+            case NODE_PAREN_EXPR:
+                return "(" + emitExpression(node->as.paren_expr.expr) + ")";
             default:
                 return "/* unsupported node type */";
         }
@@ -179,6 +185,46 @@ private:
         }
         ss << "'";
         return ss.str();
+    }
+
+    std::string emitBinaryOp(const ASTBinaryOpNode* node) {
+        std::string left = emitExpression(node->left);
+        std::string right = emitExpression(node->right);
+        const char* op_str = binaryOpToString(node->op);
+        return left + " " + op_str + " " + right;
+    }
+
+    std::string emitUnaryOp(const ASTUnaryOpNode* node) {
+        std::string operand = emitExpression(node->operand);
+        const char* op_str = unaryOpToString(node->op);
+        return std::string(op_str) + operand;
+    }
+
+    const char* binaryOpToString(TokenType op) {
+        switch (op) {
+            case TOKEN_PLUS: return "+";
+            case TOKEN_MINUS: return "-";
+            case TOKEN_STAR: return "*";
+            case TOKEN_SLASH: return "/";
+            case TOKEN_PERCENT: return "%";
+            case TOKEN_EQUAL_EQUAL: return "==";
+            case TOKEN_BANG_EQUAL: return "!=";
+            case TOKEN_LESS: return "<";
+            case TOKEN_LESS_EQUAL: return "<=";
+            case TOKEN_GREATER: return ">";
+            case TOKEN_GREATER_EQUAL: return ">=";
+            case TOKEN_AND: return "&&";
+            case TOKEN_OR: return "||";
+            default: return "??";
+        }
+    }
+
+    const char* unaryOpToString(TokenType op) {
+        switch (op) {
+            case TOKEN_MINUS: return "-";
+            case TOKEN_BANG: return "!";
+            default: return "??";
+        }
     }
 
     std::string emitStringLiteral(const ASTStringLiteralNode* node, Type* /*type*/) {

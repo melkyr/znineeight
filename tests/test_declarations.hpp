@@ -705,4 +705,31 @@ TEST_FUNC(VariableIntegration_DuplicateNameError);
 TEST_FUNC(VariableIntegration_RejectSlice);
 TEST_FUNC(VariableIntegration_PointerToVoid);
 
+// Task 172: Arithmetic Integration Tests
+TEST_FUNC(ArithmeticIntegration_IntAdd);
+TEST_FUNC(ArithmeticIntegration_IntSub);
+TEST_FUNC(ArithmeticIntegration_IntMul);
+TEST_FUNC(ArithmeticIntegration_IntDiv);
+TEST_FUNC(ArithmeticIntegration_IntMod);
+TEST_FUNC(ArithmeticIntegration_FloatAdd);
+TEST_FUNC(ArithmeticIntegration_FloatSub);
+TEST_FUNC(ArithmeticIntegration_FloatMul);
+TEST_FUNC(ArithmeticIntegration_FloatDiv);
+TEST_FUNC(ArithmeticIntegration_IntEq);
+TEST_FUNC(ArithmeticIntegration_IntNe);
+TEST_FUNC(ArithmeticIntegration_IntLt);
+TEST_FUNC(ArithmeticIntegration_IntLe);
+TEST_FUNC(ArithmeticIntegration_IntGt);
+TEST_FUNC(ArithmeticIntegration_IntGe);
+TEST_FUNC(ArithmeticIntegration_LogicalAnd);
+TEST_FUNC(ArithmeticIntegration_LogicalOr);
+TEST_FUNC(ArithmeticIntegration_LogicalNot);
+TEST_FUNC(ArithmeticIntegration_UnaryMinus);
+TEST_FUNC(ArithmeticIntegration_Parentheses);
+TEST_FUNC(ArithmeticIntegration_NestedParentheses);
+TEST_FUNC(ArithmeticIntegration_Int8LiteralPromotion);
+TEST_FUNC(ArithmeticIntegration_TypeMismatchError);
+TEST_FUNC(ArithmeticIntegration_FloatModuloError);
+TEST_FUNC(ArithmeticIntegration_BoolArithmeticError);
+
 #endif // TEST_DECLARATIONS_HPP

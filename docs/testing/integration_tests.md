@@ -56,3 +56,29 @@ TEST_FUNC(LiteralIntegration_IntegerDecimal) {
 The `MockC89Emitter` (in `tests/integration/mock_emitter.hpp`) is a temporary utility for Milestone 4. It translates AST literal nodes into C89 string representations following the rules defined in `Bootstrap_type_system_and_semantics.md`.
 
 It will be replaced by the real `C89Emitter` in Milestone 5, but the integration tests will remain to ensure the frontend continues to produce the correct AST and types for the backend.
+
+## Arithmetic Expression Tests (Task 172)
+
+Arithmetic expression tests verify that Zig expressions involving operators are correctly parsed, typed, and mapped to C89.
+
+### Operator Mapping (Zig -> C89):
+
+| Zig Operator | C89 Operator | Category |
+|--------------|--------------|----------|
+| `+`, `-`, `*`, `/`, `%` | `+`, `-`, `*`, `/`, `%` | Arithmetic |
+| `==`, `!=`, `<`, `<=`, `>`, `>=` | `==`, `!=`, `<`, `<=`, `>`, `>=` | Comparison |
+| `and`, `or`, `!` | `&&`, `||`, `!` | Logical |
+| `-` (unary) | `-` | Unary |
+
+### Test Categories:
+1. **Integer Arithmetic**: Basic operations with `i32` and literal promotion.
+2. **Floating-Point**: Operations with `f64`.
+3. **Comparisons**: Relational and equality operators returning `bool`.
+4. **Logical Operations**: Boolean logic with `and`, `or`, and `!`.
+5. **Precedence & Parentheses**: Explicit grouping with `()` to ensure correct evaluation order.
+6. **Negative Tests**: Type mismatches (e.g., mixing `i32` and `f64` without casts) and invalid operations (e.g., modulo on floats).
+
+### Expected C89 Output Patterns:
+- Zig `1 + 2` -> C `1 + 2`
+- Zig `true and false` -> C `1 && 0` (bool mapped to 0/1)
+- Zig `(1 + 2) * 3` -> C `(1 + 2) * 3`
