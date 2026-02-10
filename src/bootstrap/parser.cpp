@@ -1548,7 +1548,11 @@ ASTNode* Parser::parseIfStatement() {
     ASTNode* else_block = NULL;
 
     if (match(TOKEN_ELSE)) {
-        else_block = parseBlockStatement();
+        if (peek().type == TOKEN_IF) {
+            else_block = parseIfStatement();
+        } else {
+            else_block = parseBlockStatement();
+        }
     }
 
     ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));

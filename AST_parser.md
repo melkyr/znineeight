@@ -694,11 +694,15 @@ Represents an `if` statement with an optional `else` clause.
 
 #### Parsing Logic (`parseIfStatement`)
 The `parseIfStatement` function handles the `if-else` control flow structure. It adheres to the grammar:
-`'if' '(' expr ')' block_statement ('else' block_statement)?`
+`'if' '(' expr ')' block_statement ('else' (block_statement | if_statement))?`
 
 - It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
 - It then requires a block statement (`{...}`) for the `then` branch, parsed by `parseBlockStatement`.
-- It checks for an optional `else` token. If found, it requires a subsequent block statement for the `else` branch.
+- It checks for an optional `else` token.
+- If an `else` is found, it looks ahead:
+    - If the next token is `if`, it recursively calls `parseIfStatement` to handle an `else if` chain.
+    - Otherwise, it requires a block statement (`{...}`) for the `else` branch.
+- **Strict Bracing**: While `else if` is supported, bare statements (without braces) are NOT allowed in any branch of an `if` statement.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTWhileStmtNode`
