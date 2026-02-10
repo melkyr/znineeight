@@ -88,9 +88,18 @@ public:
             if (callee->type == NODE_IDENTIFIER && strings_equal(callee->as.identifier.name, name)) {
                 return node;
             }
+
+            // Recurse into arguments in case it's a nested call (e.g. foo(bar()))
+            DynamicArray<ASTNode*>* args = node->as.function_call->args;
+            if (args) {
+                for (size_t i = 0; i < args->length(); ++i) {
+                    const ASTNode* found = findFunctionCall((*args)[i], name);
+                    if (found) return found;
+                }
+            }
         }
 
-        // Search in children
+        // Search in other children
         if (node->type == NODE_BLOCK_STMT) {
             DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
             for (size_t i = 0; i < stmts->length(); ++i) {
