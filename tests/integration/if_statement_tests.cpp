@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_compilation_unit.hpp"
+#include "../test_utils.hpp"
 #include "mock_emitter.hpp"
 #include <cstdio>
 #include <cstring>

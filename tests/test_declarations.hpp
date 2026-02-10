@@ -773,4 +773,17 @@ TEST_FUNC(IfStatementIntegration_ReturnFromBranches);
 TEST_FUNC(IfStatementIntegration_RejectFloatCondition);
 TEST_FUNC(IfStatementIntegration_RejectBracelessIf);
 
+// Task 176: While Loop Integration Tests
+TEST_FUNC(WhileLoopIntegration_BoolCondition);
+TEST_FUNC(WhileLoopIntegration_IntCondition);
+TEST_FUNC(WhileLoopIntegration_PointerCondition);
+TEST_FUNC(WhileLoopIntegration_WithBreak);
+TEST_FUNC(WhileLoopIntegration_WithContinue);
+TEST_FUNC(WhileLoopIntegration_NestedWhile);
+TEST_FUNC(WhileLoopIntegration_Scoping);
+TEST_FUNC(WhileLoopIntegration_ComplexCondition);
+TEST_FUNC(WhileLoopIntegration_RejectFloatCondition);
+TEST_FUNC(WhileLoopIntegration_RejectBracelessWhile);
+TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock);
+
 #endif // TEST_DECLARATIONS_HPP

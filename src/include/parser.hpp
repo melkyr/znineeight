@@ -156,6 +156,20 @@ public:
     ASTNode* parseWhileStatement();
 
     /**
+     * @brief Parses a break statement.
+     *        Grammar: `'break' ';'`
+     * @return A pointer to the ASTNode representing the break statement.
+     */
+    ASTNode* parseBreakStatement();
+
+    /**
+     * @brief Parses a continue statement.
+     *        Grammar: `'continue' ';'`
+     * @return A pointer to the ASTNode representing the continue statement.
+     */
+    ASTNode* parseContinueStatement();
+
+    /**
      * @brief Parses a for statement.
      *        Grammar: `'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
      * @return A pointer to the ASTNode representing the for statement.

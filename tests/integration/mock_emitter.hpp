@@ -23,10 +23,11 @@
  */
 class MockC89Emitter {
     const CallSiteLookupTable* call_table_;
+    SymbolTable* symbol_table_;
 
 public:
-    MockC89Emitter(const CallSiteLookupTable* call_table = NULL)
-        : call_table_(call_table) {}
+    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
+        : call_table_(call_table), symbol_table_(symbol_table) {}
 
     /**
      * @brief Emits a C89 variable declaration.
@@ -88,10 +89,27 @@ public:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
+            case NODE_WHILE_STMT:
+                return emitWhileStatement(&node->as.while_stmt);
+            case NODE_BREAK_STMT:
+                return emitBreakStatement(&node->as.break_stmt);
+            case NODE_CONTINUE_STMT:
+                return emitContinueStatement(&node->as.continue_stmt);
             case NODE_RETURN_STMT:
                 return "return" + (node->as.return_stmt.expression ? " " + emitExpression(node->as.return_stmt.expression) : "") + ";";
             case NODE_EXPRESSION_STMT:
                 return emitExpression(node->as.expression_stmt.expression) + ";";
+            case NODE_ASSIGNMENT:
+                return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
+            case NODE_VAR_DECL: {
+                if (symbol_table_) {
+                    Symbol* sym = symbol_table_->findInAnyScope(node->as.var_decl->name);
+                    if (sym) {
+                        return emitVariableDeclaration(node->as.var_decl, sym);
+                    }
+                }
+                return "/* var " + std::string(node->as.var_decl->name) + " */";
+            }
             default:
                 return "/* unsupported node type */";
         }
@@ -133,6 +151,37 @@ public:
         }
 
         return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 while statement.
+     */
+    std::string emitWhileStatement(const ASTWhileStmtNode* node) {
+        if (!node) return "/* INVALID WHILE */";
+        std::stringstream ss;
+        ss << "while (" << emitExpression(node->condition) << ") ";
+
+        if (node->body && node->body->type == NODE_BLOCK_STMT) {
+            ss << emitBlockStatement(&node->body->as.block_stmt);
+        } else {
+            ss << emitExpression(node->body);
+        }
+
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 break statement.
+     */
+    std::string emitBreakStatement(const ASTBreakStmtNode* /*node*/) {
+        return "break;";
+    }
+
+    /**
+     * @brief Emits a C89 continue statement.
+     */
+    std::string emitContinueStatement(const ASTContinueStmtNode* /*node*/) {
+        return "continue;";
     }
 
     /**

@@ -1484,6 +1484,10 @@ ASTNode* Parser::parseStatement() {
             return parseForStatement();
         case TOKEN_WHILE:
             return parseWhileStatement();
+        case TOKEN_BREAK:
+            return parseBreakStatement();
+        case TOKEN_CONTINUE:
+            return parseContinueStatement();
         case TOKEN_LBRACE:
             return parseBlockStatement();
         case TOKEN_SEMICOLON: {
@@ -1571,6 +1575,36 @@ ASTNode* Parser::parseIfStatement() {
     node->loc = if_token.location;
     node->resolved_type = NULL;
     node->as.if_stmt = if_stmt_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses a break statement.
+ *        Grammar: `'break' ';'`
+ * @return A pointer to the ASTNode representing the break statement.
+ */
+ASTNode* Parser::parseBreakStatement() {
+    Token break_token = expect(TOKEN_BREAK, "Expected 'break' keyword");
+    expect(TOKEN_SEMICOLON, "Expected ';' after 'break'");
+
+    ASTNode* node = createNodeAt(NODE_BREAK_STMT, break_token.location);
+    // ASTBreakStmtNode is empty, so no fields to set.
+
+    return node;
+}
+
+/**
+ * @brief Parses a continue statement.
+ *        Grammar: `'continue' ';'`
+ * @return A pointer to the ASTNode representing the continue statement.
+ */
+ASTNode* Parser::parseContinueStatement() {
+    Token continue_token = expect(TOKEN_CONTINUE, "Expected 'continue' keyword");
+    expect(TOKEN_SEMICOLON, "Expected ';' after 'continue'");
+
+    ASTNode* node = createNodeAt(NODE_CONTINUE_STMT, continue_token.location);
+    // ASTContinueStmtNode is empty, so no fields to set.
 
     return node;
 }

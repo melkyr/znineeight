@@ -146,3 +146,25 @@ If statement tests verify that Zig `if` and `else` blocks are correctly parsed, 
 - Zig `if (b) { }` -> C `if (b) { }`
 - Zig `if (x > 0) { return 1; } else { return 0; }` -> C `if (x > 0) { return 1; } else { return 0; }`
 - Zig `if (a) { } else if (b) { }` -> C `if (a) { } else if (b) { }`
+
+## While Loop Tests (Task 176)
+
+While loop tests verify that Zig `while` loops are correctly parsed, condition types are validated, and the resulting control flow (including `break` and `continue`) is correctly mapped to C89.
+
+### Test Categories:
+1. **Condition Types**:
+   - **Boolean**: `while (flag) { ... }`
+   - **Integer**: `while (count) { ... }` (non-zero treated as true)
+   - **Pointer**: `while (ptr) { ... }` (non-null treated as true)
+2. **Break and Continue**: Basic support for `break;` and `continue;` statements.
+3. **Nesting**: Nested `while` loops and their interaction with scoping.
+4. **Scoping**: Verification that variables declared within the loop body are correctly scoped (using `MockC89Emitter`'s symbol table support).
+5. **Complex Conditions**: Conditions using logical operators (`and`, `or`, `!`) and comparisons.
+6. **Negative Tests**:
+   - **Invalid Conditions**: Rejecting floats, structs, or void conditions.
+   - **Syntax Enforcement**: Rejecting braceless `while` loops.
+
+### Expected C89 Output Patterns:
+- Zig `while (true) { break; }` -> C `while (1) { break; }`
+- Zig `while (i < 10) { i = i + 1; continue; }` -> C `while (i < 10) { i = i + 1; continue; }`
+- Zig `while (ptr) { ptr = null; }` -> C `while (ptr) { ptr = ((void*)0); }`
