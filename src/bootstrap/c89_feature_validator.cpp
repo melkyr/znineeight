@@ -297,6 +297,20 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.comptime_block.expression);
             current_parent_ = prev_parent;
             break;
+        case NODE_PAREN_EXPR:
+            visit(node->as.paren_expr.expr);
+            break;
+        case NODE_FUNCTION_TYPE:
+            reportNonC89Feature(node->loc, "Function types (fn(...) T) are not supported in bootstrap compiler");
+            current_parent_ = node;
+            if (node->as.function_type->params) {
+                for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
+                    visit((*node->as.function_type->params)[i]);
+                }
+            }
+            visit(node->as.function_type->return_type);
+            current_parent_ = prev_parent;
+            break;
         case NODE_ASYNC_EXPR:
             reportNonC89Feature(node->loc, "Async expressions are not supported in C89 mode");
             current_parent_ = node;

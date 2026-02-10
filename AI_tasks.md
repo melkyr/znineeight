@@ -599,7 +599,7 @@ Output: Runtime assertions in codegen module
         Imported error sets
     Validation: List all error sets found in source
     Success criteria: All error set definitions are catalogued
-142. **Task 142:** ERROR FUNCTION SIGNATURE DETECTION (LOW)
+142. **Task 142:** ERROR FUNCTION SIGNATURE DETECTION (LOW) (COMPLETE)
 
     What to implement: Identify functions that return errors
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -609,7 +609,7 @@ Output: Runtime assertions in codegen module
     Validation: Flag all functions with error return types
     Success criteria: All error-returning functions are identified
 
-143. **Task 143:** TRY EXPRESSION DETECTION (LOW)
+143. **Task 143:** TRY EXPRESSION DETECTION (LOW) (COMPLETE)
 
     What to implement: Find all try expressions in code
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -619,7 +619,7 @@ Output: Runtime assertions in codegen module
     Validation: Log location and context of all try expressions
     Success criteria: All try expressions are located and catalogued
 
-144. **Task 144:** CATCH EXPRESSION DETECTION (DONE)
+144. **Task 144:** CATCH EXPRESSION DETECTION (COMPLETE)
 
     What to implement: Find all catch expressions
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -639,7 +639,7 @@ Output: Runtime assertions in codegen module
     Validation: Create mapping table example
     Success criteria: Clear strategy for converting all errors to integers. Documented in `Bootstrap_type_system_and_semantics.md`.
 
-146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (MEDIUM)
+146. **Task 146:** SUCCESS VALUE EXTRACTION MAPPING (MEDIUM) (COMPLETE)
 
     What to implement: Strategy to extract success values from error unions
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -649,7 +649,7 @@ Output: Runtime assertions in codegen module
     Validation: Design sample success value extraction patterns
     Success criteria: Clear method for separating success from error paths
 
-147. **Task 147:** ERROR PROPAGATION ALTERNATIVE DESIGN (MEDIUM)
+147. **Task 147:** ERROR PROPAGATION ALTERNATIVE DESIGN (MEDIUM) (COMPLETE)
 
     What to implement: Design C89 alternative to error propagation
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
