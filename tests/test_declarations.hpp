@@ -732,4 +732,17 @@ TEST_FUNC(ArithmeticIntegration_TypeMismatchError);
 TEST_FUNC(ArithmeticIntegration_FloatModuloError);
 TEST_FUNC(ArithmeticIntegration_BoolArithmeticError);
 
+// Task 173: Function Declaration Integration Tests
+TEST_FUNC(FunctionIntegration_NoParams);
+TEST_FUNC(FunctionIntegration_FourParams);
+TEST_FUNC(FunctionIntegration_PointerTypes);
+TEST_FUNC(FunctionIntegration_MangleKeyword);
+TEST_FUNC(FunctionIntegration_MangleLongName);
+TEST_FUNC(FunctionIntegration_Recursion);
+TEST_FUNC(FunctionIntegration_ForwardReference);
+TEST_FUNC(FunctionIntegration_RejectFiveParams);
+TEST_FUNC(FunctionIntegration_RejectSliceReturn);
+TEST_FUNC(FunctionIntegration_RejectMultiLevelPointer);
+TEST_FUNC(FunctionIntegration_RejectDuplicateName);
+
 #endif // TEST_DECLARATIONS_HPP
