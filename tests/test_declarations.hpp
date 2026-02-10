@@ -758,4 +758,19 @@ TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer);
 TEST_FUNC(FunctionCallIntegration_TypeMismatch);
 TEST_FUNC(FunctionCallIntegration_UndefinedFunction);
 
+// Task 175: If Statement Integration Tests
+TEST_FUNC(IfStatementIntegration_BoolCondition);
+TEST_FUNC(IfStatementIntegration_IntCondition);
+TEST_FUNC(IfStatementIntegration_PointerCondition);
+TEST_FUNC(IfStatementIntegration_IfElse);
+TEST_FUNC(IfStatementIntegration_ElseIfChain);
+TEST_FUNC(IfStatementIntegration_NestedIf);
+TEST_FUNC(IfStatementIntegration_LogicalAnd);
+TEST_FUNC(IfStatementIntegration_LogicalOr);
+TEST_FUNC(IfStatementIntegration_LogicalNot);
+TEST_FUNC(IfStatementIntegration_EmptyBlocks);
+TEST_FUNC(IfStatementIntegration_ReturnFromBranches);
+TEST_FUNC(IfStatementIntegration_RejectFloatCondition);
+TEST_FUNC(IfStatementIntegration_RejectBracelessIf);
+
 #endif // TEST_DECLARATIONS_HPP

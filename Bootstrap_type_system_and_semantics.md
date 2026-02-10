@@ -387,6 +387,13 @@ Function calls are subject to the following strict limitations:
     -   Any pointer type (`*T`)
     If the condition is of any other type (e.g., `void`, `f32`, a struct), a non-fatal `ERR_TYPE_MISMATCH` error is reported.
 
+#### If Statement Rules (Task 175)
+
+To ensure generated code is compatible with C89 and to maintain parser simplicity:
+1.  **Braced Blocks Only**: Both `then` and `else` branches MUST be enclosed in braces `{ ... }`, with the exception of `else if` chains.
+2.  **Else-If Support**: The parser supports `else if (cond) { ... }` which is internally represented as an `if` statement in the `else` branch.
+3.  **Condition Types**: Strictly enforced to be `bool`, `int`, or `pointer`. Floating-point types are rejected as conditions to avoid ambiguity with zero comparisons in legacy environments.
+
 ### Function Calls
 
 When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` performs a series of critical validations to ensure the call is well-formed and adheres to the bootstrap compiler's constraints.

@@ -124,3 +124,25 @@ Function call tests verify that calls to Zig functions are correctly resolved, a
 - Zig `add(1, 2)` -> C `add(1, 2)` (Note: mangling depends on whether it's generic or a keyword)
 - Zig `int()` -> C `z_int()`
 - Zig `outer(inner())` -> C `outer(inner())`
+
+## If Statement Tests (Task 175)
+
+If statement tests verify that Zig `if` and `else` blocks are correctly parsed, condition types are validated, and the resulting control flow is correctly mapped to C89.
+
+### Test Categories:
+1. **Condition Types**:
+   - **Boolean**: `if (b) { ... }`
+   - **Integer**: `if (x) { ... }` (non-zero treated as true)
+   - **Pointer**: `if (ptr) { ... }` (non-null treated as true)
+2. **If-Else**: Basic `if (cond) { ... } else { ... }` structure.
+3. **Else-If Chains**: Support for `else if` chains (e.g., `if (a) { } else if (b) { } else { }`).
+4. **Nesting**: Nested `if` statements within `then` or `else` blocks.
+5. **Complex Conditions**: Conditions using logical operators (`and`, `or`, `!`) and comparisons.
+6. **Negative Tests**:
+   - **Invalid Conditions**: Rejecting floats, structs, or void conditions.
+   - **Syntax Enforcement**: Rejecting braceless `if` statements (the bootstrap parser requires braces for all blocks).
+
+### Expected C89 Output Patterns:
+- Zig `if (b) { }` -> C `if (b) { }`
+- Zig `if (x > 0) { return 1; } else { return 0; }` -> C `if (x > 0) { return 1; } else { return 0; }`
+- Zig `if (a) { } else if (b) { }` -> C `if (a) { } else if (b) { }`

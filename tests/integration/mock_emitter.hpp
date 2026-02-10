@@ -84,17 +84,10 @@ public:
                 return emitUnaryOp(&node->as.unary_op);
             case NODE_PAREN_EXPR:
                 return "(" + emitExpression(node->as.paren_expr.expr) + ")";
-            case NODE_BLOCK_STMT: {
-                std::stringstream ss;
-                ss << "{ ";
-                if (node->as.block_stmt.statements) {
-                    for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-                        ss << emitExpression((*node->as.block_stmt.statements)[i]) << " ";
-                    }
-                }
-                ss << "}";
-                return ss.str();
-            }
+            case NODE_BLOCK_STMT:
+                return emitBlockStatement(&node->as.block_stmt);
+            case NODE_IF_STMT:
+                return emitIfStatement(node->as.if_stmt);
             case NODE_RETURN_STMT:
                 return "return" + (node->as.return_stmt.expression ? " " + emitExpression(node->as.return_stmt.expression) : "") + ";";
             case NODE_EXPRESSION_STMT:
@@ -102,6 +95,60 @@ public:
             default:
                 return "/* unsupported node type */";
         }
+    }
+
+    /**
+     * @brief Emits a C89 if statement.
+     */
+    std::string emitIfStatement(const ASTIfStmtNode* node) {
+        if (!node) return "/* INVALID IF */";
+        std::stringstream ss;
+
+        ss << "if (" << emitExpression(node->condition) << ") ";
+
+        // Then block (assumed to be NODE_BLOCK_STMT per bootstrap parser rules)
+        if (node->then_block && node->then_block->type == NODE_BLOCK_STMT) {
+            ss << emitBlockStatement(&node->then_block->as.block_stmt);
+        } else {
+            ss << emitExpression(node->then_block);
+        }
+
+        if (node->else_block) {
+            ss << " else ";
+
+            // Check for else-if chain
+            // In our AST, if else_block is a block with exactly one if statement,
+            // we can emit it as "else if"
+            if (node->else_block->type == NODE_BLOCK_STMT &&
+                node->else_block->as.block_stmt.statements &&
+                node->else_block->as.block_stmt.statements->length() == 1 &&
+                (*node->else_block->as.block_stmt.statements)[0]->type == NODE_IF_STMT) {
+
+                ss << emitIfStatement((*node->else_block->as.block_stmt.statements)[0]->as.if_stmt);
+            } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&node->else_block->as.block_stmt);
+            } else {
+                ss << emitExpression(node->else_block);
+            }
+        }
+
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 block statement.
+     */
+    std::string emitBlockStatement(const ASTBlockStmtNode* block) {
+        if (!block) return "{ }";
+        std::stringstream ss;
+        ss << "{ ";
+        if (block->statements) {
+            for (size_t i = 0; i < block->statements->length(); ++i) {
+                ss << emitExpression((*block->statements)[i]) << " ";
+            }
+        }
+        ss << "}";
+        return ss.str();
     }
 
     /**
