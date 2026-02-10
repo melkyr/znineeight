@@ -49,7 +49,32 @@ int main(int argc, char* argv[]) {
         test_VariableIntegration_MangleLongName,
         test_VariableIntegration_DuplicateNameError,
         test_VariableIntegration_RejectSlice,
-        test_VariableIntegration_PointerToVoid
+        test_VariableIntegration_PointerToVoid,
+        test_ArithmeticIntegration_IntAdd,
+        test_ArithmeticIntegration_IntSub,
+        test_ArithmeticIntegration_IntMul,
+        test_ArithmeticIntegration_IntDiv,
+        test_ArithmeticIntegration_IntMod,
+        test_ArithmeticIntegration_FloatAdd,
+        test_ArithmeticIntegration_FloatSub,
+        test_ArithmeticIntegration_FloatMul,
+        test_ArithmeticIntegration_FloatDiv,
+        test_ArithmeticIntegration_IntEq,
+        test_ArithmeticIntegration_IntNe,
+        test_ArithmeticIntegration_IntLt,
+        test_ArithmeticIntegration_IntLe,
+        test_ArithmeticIntegration_IntGt,
+        test_ArithmeticIntegration_IntGe,
+        test_ArithmeticIntegration_LogicalAnd,
+        test_ArithmeticIntegration_LogicalOr,
+        test_ArithmeticIntegration_LogicalNot,
+        test_ArithmeticIntegration_UnaryMinus,
+        test_ArithmeticIntegration_Parentheses,
+        test_ArithmeticIntegration_NestedParentheses,
+        test_ArithmeticIntegration_Int8LiteralPromotion,
+        test_ArithmeticIntegration_TypeMismatchError,
+        test_ArithmeticIntegration_FloatModuloError,
+        test_ArithmeticIntegration_BoolArithmeticError
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

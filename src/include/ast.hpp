@@ -46,6 +46,7 @@ enum NodeType {
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
+    NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -107,6 +108,7 @@ struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
 struct ASTForStmtNode;
 struct ASTExpressionStmtNode;
+struct ASTParenExprNode;
 struct ASTSwitchExprNode;
 struct ASTSwitchProngNode;
 struct ASTVarDeclNode;
@@ -397,6 +399,15 @@ struct ASTForStmtNode {
  */
 struct ASTExpressionStmtNode {
     ASTNode* expression;
+};
+
+/**
+ * @struct ASTParenExprNode
+ * @brief Represents a parenthesized expression (e.g., `(expr)`).
+ * @var ASTParenExprNode::expr The inner expression.
+ */
+struct ASTParenExprNode {
+    ASTNode* expr;
 };
 
 /**
@@ -736,6 +747,7 @@ struct ASTNode {
         ASTDeferStmtNode defer_stmt;
         ASTForStmtNode* for_stmt; // Out-of-line
         ASTExpressionStmtNode expression_stmt;
+        ASTParenExprNode paren_expr;
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line

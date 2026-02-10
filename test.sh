@@ -197,7 +197,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/test_bootstrap_types.cpp \
     tests/test_msvc_types.cpp \
     tests/integration/literal_tests.cpp \
-    tests/integration/variable_decl_tests.cpp"
+    tests/integration/variable_decl_tests.cpp \
+    tests/integration/arithmetic_tests.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include -Itests/integration"
 
