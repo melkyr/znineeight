@@ -876,13 +876,16 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
     // This logic is intentionally C-like. Integer literals are inferred as i32
-    // by default, unless the value is too large. This was changed from a
-    // "smallest possible type" inference to fix a large number of test failures
-    // after stricter assignment rules were put in place.
+    // by default, unless the value is too large or has a long suffix.
     if (node->is_unsigned) {
-        if (node->value <= 4294967295U) return resolvePrimitiveTypeName("u32");
-        return resolvePrimitiveTypeName("u64");
+        if (node->is_long || node->value > 4294967295ULL) {
+            return resolvePrimitiveTypeName("u64");
+        }
+        return resolvePrimitiveTypeName("u32");
     } else {
+        if (node->is_long) {
+            return resolvePrimitiveTypeName("i64");
+        }
         i64 signed_value = (i64)node->value;
         if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
             return resolvePrimitiveTypeName("i32");

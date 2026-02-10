@@ -462,22 +462,36 @@ To clarify the current capabilities of the type checker and guide future develop
 
 -   **Literals:**
     -   **`true`, `false`:** Inferred as type `bool`.
-    -   **Integer Literals:** The type is determined by the literal's value and suffix to be the smallest possible C89-compatible type that can hold the value.
+    -   **Integer Literals:** The type is determined by the literal's value and suffix. Small values default to `i32` or `u32` for C compatibility, while larger values or those with `l`/`LL` suffixes are inferred as `i64`/`u64`.
         -   **Unsigned Literals (e.g., `123u`):**
-            -   `0` to `255`: `u8`
-            -   `256` to `65535`: `u16`
-            -   `65536` to `4294967295`: `u32`
-            -   Larger values: `u64`
+            -   `0` to `4294967295`: `u32`
+            -   Larger values or with `ul` suffix: `u64`
         -   **Signed Literals (e.g., `123`, `-45`):**
-            -   `-128` to `127`: `i8`
-            -   `-32768` to `32767`: `i16`
             -   `-2147483648` to `2147483647`: `i32`
-            -   Larger values: `i64`
-        -   The `L` suffix is parsed by the lexer for C89 compatibility but does not currently affect the type inference logic, as the system already selects the smallest possible type.
+            -   Larger values or with `l` suffix: `i64`
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
     -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
     -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters).
     -   **Memory Overhead:** The validation of literal types is a stateless process within the `TypeChecker`. It is based on the value and syntax of the literal itself and does not require the creation of any new, persistent data structures or heap allocations, thus adhering to the project's strict memory constraints.
+
+### Literal Type Mapping Table (Task 170)
+
+The following table defines the expected C89 representation for Zig literals, as verified by integration tests using the `MockC89Emitter`.
+
+| Zig Literal | Bootstrap Type | C89 Representation | Notes |
+|-------------|----------------|--------------------|-------|
+| `42`        | `i32`          | `42`               | Default integer |
+| `0x1F`      | `i32`          | `31`               | Hex mapped to decimal |
+| `123u`      | `u32`          | `123U`             | Unsigned suffix |
+| `123l`      | `i64`          | `123LL`            | Long suffix maps to LL |
+| `123ul`     | `u64`          | `123ULL`           | Unsigned long suffix |
+| `3.14`      | `f64`          | `3.14`             | Default float |
+| `2.0e1`     | `f64`          | `20.0`             | Scientific notation |
+| `'A'`       | `u8`           | `'A'`              | ASCII only |
+| `'\\n'`     | `u8`           | `'\\n'`            | Escape sequence |
+| `"hello"`   | `*const u8`    | `"hello"`          | Null-terminated string |
+| `true`      | `bool`         | `1`                | Bool as int |
+| `null`      | `null`         | `((void*)0)`       | Null literal |
 
 ### Control Flow Statements
 
