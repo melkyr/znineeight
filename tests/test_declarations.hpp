@@ -745,4 +745,17 @@ TEST_FUNC(FunctionIntegration_RejectSliceReturn);
 TEST_FUNC(FunctionIntegration_RejectMultiLevelPointer);
 TEST_FUNC(FunctionIntegration_RejectDuplicateName);
 
+// Task 174: Function Call Integration Tests
+TEST_FUNC(FunctionCallIntegration_NoParams);
+TEST_FUNC(FunctionCallIntegration_TwoArgs);
+TEST_FUNC(FunctionCallIntegration_FourArgs);
+TEST_FUNC(FunctionCallIntegration_Nested);
+TEST_FUNC(FunctionCallIntegration_MangleKeyword);
+TEST_FUNC(FunctionCallIntegration_VoidStatement);
+TEST_FUNC(FunctionCallIntegration_CallResolution);
+TEST_FUNC(FunctionCallIntegration_RejectFiveArgs);
+TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer);
+TEST_FUNC(FunctionCallIntegration_TypeMismatch);
+TEST_FUNC(FunctionCallIntegration_UndefinedFunction);
+
 #endif // TEST_DECLARATIONS_HPP

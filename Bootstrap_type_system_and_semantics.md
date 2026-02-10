@@ -1141,3 +1141,33 @@ When a generic function is detected:
 3.  The `C89FeatureValidator` pass (Pass 1) checks the catalogue and issues a fatal error. For implicit generic calls, it provides a detailed diagnostic including the inferred argument types (e.g., `Implicit generic instantiation of 'foo' with argument types: i32, f64`).
 
 For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](docs/generic_functions_c89.md).
+
+## 16. Function Call Resolution and Validation (Task 174)
+
+The bootstrap compiler performs comprehensive validation of function calls to ensure they are both semantically correct and compatible with C89 backend constraints.
+
+### 16.1 Resolution Algorithm
+
+Function calls are resolved during the Type Checking phase (Pass 0) using the following steps:
+1. **Callee Resolution**: The expression being called (typically an identifier) is visited to determine its type.
+2. **Function Type Verification**: The callee's type must be a `TYPE_FUNCTION`. This prevents calling non-function entities, effectively rejecting function pointer variables in the bootstrap phase.
+3. **Argument Validation**: Each argument expression is visited and its type is compared against the corresponding parameter type from the function's signature.
+4. **Call Site Registration**: Once validated, the call is recorded in the `CallSiteLookupTable`. This table stores the mapping between the AST call node and the resolved function's mangled name, which is crucial for code generation.
+
+### 16.2 Argument Type Checking Rules
+
+The `TypeChecker` enforces strict type compatibility for arguments:
+- **Exact Match**: The argument type must ideally match the parameter type exactly.
+- **Implicit Widening**: Safe integer widening (e.g., `i8` to `i32`) is allowed for arguments.
+- **Literal Promotion**: Integer literals are promoted to the parameter's type if the value fits within its range.
+- **Pointer Compatibility**: Standard C89 pointer rules apply (e.g., passing `*T` to `*const T` or `*void` parameters).
+
+### 16.3 C89 Compatibility Rejections
+
+The following call patterns are strictly rejected to maintain C89 compatibility:
+1. **Parameter Count**: Calls with more than **4 arguments** are rejected.
+2. **Indirect Calls**: Calling functions via variables or other non-identifier expressions is rejected with an informational note about C89 compatibility.
+3. **Built-ins**: Calls to Zig built-in functions (starting with `@`) are rejected.
+4. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
+
+For verification details, see the integration tests in `tests/integration/function_call_tests.cpp`.

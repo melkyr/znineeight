@@ -1756,3 +1756,16 @@ A review of the Zig language specification has identified several language featu
 
 *   **Compile-Time Operations:**
     *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
+
+## 26. Function Call Integration Testing (Task 174)
+
+Task 174 introduced comprehensive integration testing for function calls, verifying the entire pipeline from Lexer to `CallSiteLookupTable`.
+
+### Verified Scenarios
+- **Argument Limits**: Strict enforcement of the 4-argument limit for bootstrap.
+- **Nested Calls**: Correct recursive parsing and resolution of calls within argument lists.
+- **Mangled Naming**: Integration with the `NameMangler` to ensure C-keyword conflicts are resolved at call sites.
+- **Return Type Integration**: Verification that returned values are correctly typed and can be used in complex expressions.
+- **Error Condition Rejection**: Robust detection and rejection of non-C89 call patterns like variadics and indirect calls.
+
+For more details, see the integration test suite in `tests/integration/function_call_tests.cpp`.

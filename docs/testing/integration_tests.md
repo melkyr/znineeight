@@ -103,3 +103,24 @@ Function declaration tests verify that Zig function signatures and names are cor
 - Zig `fn foo() void` -> C `void foo(void)`
 - Zig `fn if() void` -> C `void z_if(void)`
 - Zig `fn test(p: *i32) *f64` -> C `double* test(int* p)`
+
+## Function Call Tests (Task 174)
+
+Function call tests verify that calls to Zig functions are correctly resolved, argument types are checked, and mangled names are used in the generated C89 output.
+
+### Test Categories:
+1. **Simple Calls**: 0-4 arguments, various return types (void, i32, f64, pointers).
+2. **Nested Calls**: Functions used as arguments to other functions (e.g., `foo(bar())`).
+3. **Name Mangling**: Verification that calls to functions with C keyword names (e.g., `int()`) use the mangled name (e.g., `z_int()`).
+4. **Void Statements**: Verification that void-returning functions can be called as standalone statements.
+5. **Call Resolution**: Direct verification of the `CallSiteLookupTable` entries.
+6. **Negative Tests**:
+   - Argument count limit (rejecting 5+ arguments).
+   - Type mismatches (passing incompatible types to parameters).
+   - Undefined functions (calling a function that hasn't been declared).
+   - Function pointers (rejecting indirect calls via variables in bootstrap).
+
+### Expected C89 Output Patterns:
+- Zig `add(1, 2)` -> C `add(1, 2)` (Note: mangling depends on whether it's generic or a keyword)
+- Zig `int()` -> C `z_int()`
+- Zig `outer(inner())` -> C `outer(inner())`
