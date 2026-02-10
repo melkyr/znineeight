@@ -85,7 +85,18 @@ int main(int argc, char* argv[]) {
         test_FunctionIntegration_RejectFiveParams,
         test_FunctionIntegration_RejectSliceReturn,
         test_FunctionIntegration_RejectMultiLevelPointer,
-        test_FunctionIntegration_RejectDuplicateName
+        test_FunctionIntegration_RejectDuplicateName,
+        test_FunctionCallIntegration_NoParams,
+        test_FunctionCallIntegration_TwoArgs,
+        test_FunctionCallIntegration_FourArgs,
+        test_FunctionCallIntegration_Nested,
+        test_FunctionCallIntegration_MangleKeyword,
+        test_FunctionCallIntegration_VoidStatement,
+        test_FunctionCallIntegration_CallResolution,
+        test_FunctionCallIntegration_RejectFiveArgs,
+        test_FunctionCallIntegration_RejectFunctionPointer,
+        test_FunctionCallIntegration_TypeMismatch,
+        test_FunctionCallIntegration_UndefinedFunction
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

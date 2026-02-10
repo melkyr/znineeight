@@ -78,6 +78,64 @@ public:
     }
 
     /**
+     * @brief Recursively searches for a function call to the given name in the AST.
+     */
+    const ASTNode* findFunctionCall(const ASTNode* node, const char* name) const {
+        if (!node) return NULL;
+
+        if (node->type == NODE_FUNCTION_CALL) {
+            ASTNode* callee = node->as.function_call->callee;
+            if (callee->type == NODE_IDENTIFIER && strings_equal(callee->as.identifier.name, name)) {
+                return node;
+            }
+        }
+
+        // Search in children
+        if (node->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                const ASTNode* found = findFunctionCall((*stmts)[i], name);
+                if (found) return found;
+            }
+        } else if (node->type == NODE_FN_DECL) {
+            return findFunctionCall(node->as.fn_decl->body, name);
+        } else if (node->type == NODE_IF_STMT) {
+            const ASTNode* found = findFunctionCall(node->as.if_stmt->condition, name);
+            if (found) return found;
+            found = findFunctionCall(node->as.if_stmt->then_block, name);
+            if (found) return found;
+            return findFunctionCall(node->as.if_stmt->else_block, name);
+        } else if (node->type == NODE_WHILE_STMT) {
+            const ASTNode* found = findFunctionCall(node->as.while_stmt.condition, name);
+            if (found) return found;
+            return findFunctionCall(node->as.while_stmt.body, name);
+        } else if (node->type == NODE_RETURN_STMT) {
+            return findFunctionCall(node->as.return_stmt.expression, name);
+        } else if (node->type == NODE_EXPRESSION_STMT) {
+            return findFunctionCall(node->as.expression_stmt.expression, name);
+        } else if (node->type == NODE_BINARY_OP) {
+            const ASTNode* found = findFunctionCall(node->as.binary_op->left, name);
+            if (found) return found;
+            return findFunctionCall(node->as.binary_op->right, name);
+        } else if (node->type == NODE_UNARY_OP) {
+            return findFunctionCall(node->as.unary_op.operand, name);
+        } else if (node->type == NODE_PAREN_EXPR) {
+            return findFunctionCall(node->as.paren_expr.expr, name);
+        } else if (node->type == NODE_VAR_DECL) {
+            return findFunctionCall(node->as.var_decl->initializer, name);
+        }
+
+        return NULL;
+    }
+
+    /**
+     * @brief Extracts a function call node by name.
+     */
+    const ASTNode* extractFunctionCall(const char* name) const {
+        return findFunctionCall(last_ast, name);
+    }
+
+    /**
      * @brief Validates that a function signature emits the expected C89 string.
      */
     bool validateFunctionSignature(const char* name, const std::string& expectedC89) {
@@ -93,7 +151,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter;
+        MockC89Emitter emitter(&getCallSiteLookupTable());
         std::string actual = emitter.emitFunctionSignature(fn, sym);
 
         if (actual != expectedC89) {
@@ -227,7 +285,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter;
+        MockC89Emitter emitter(&getCallSiteLookupTable());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
         if (actual != expectedC89) {
@@ -271,7 +329,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter;
+        MockC89Emitter emitter(&getCallSiteLookupTable());
         std::string actual = emitter.emitExpression(expr);
 
         if (actual != expectedC89) {
@@ -292,11 +350,40 @@ public:
         Symbol* sym = getSymbolTable().findInAnyScope(name);
         if (!sym) return false;
 
-        MockC89Emitter emitter;
+        MockC89Emitter emitter(&getCallSiteLookupTable());
         std::string actual = emitter.emitVariableDeclaration(decl, sym);
 
         if (actual != expectedC89) {
             printf("FAIL: Emission mismatch for variable '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @brief Validates that a call site was correctly resolved in the lookup table.
+     */
+    bool validateCallResolution(const char* name, CallType expected_type) {
+        const ASTNode* call_node = extractFunctionCall(name);
+        if (!call_node) {
+            printf("FAIL: Could not find call to '%s'.\n", name);
+            return false;
+        }
+
+        const CallSiteEntry* entry = getCallSiteLookupTable().findByCallNode(const_cast<ASTNode*>(call_node));
+        if (!entry) {
+            printf("FAIL: Call to '%s' not found in CallSiteLookupTable.\n", name);
+            return false;
+        }
+
+        if (entry->call_type != expected_type) {
+            printf("FAIL: Call type mismatch for '%s'. Expected %d, got %d.\n", name, (int)expected_type, (int)entry->call_type);
+            return false;
+        }
+
+        if (!entry->resolved) {
+            printf("FAIL: Call to '%s' is not resolved. Reason: %s\n", name, entry->error_if_unresolved ? entry->error_if_unresolved : "unknown");
             return false;
         }
 

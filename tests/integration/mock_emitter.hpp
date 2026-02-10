@@ -9,6 +9,7 @@
 #include "type_system.hpp"
 #include "symbol_table.hpp"
 #include "c89_type_mapping.hpp"
+#include "call_site_lookup_table.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -21,7 +22,12 @@
  * parsed and typed, and can be mapped to valid C89 syntax.
  */
 class MockC89Emitter {
+    const CallSiteLookupTable* call_table_;
+
 public:
+    MockC89Emitter(const CallSiteLookupTable* call_table = NULL)
+        : call_table_(call_table) {}
+
     /**
      * @brief Emits a C89 variable declaration.
      * @param decl The variable declaration node.
@@ -70,6 +76,8 @@ public:
                 return "((void*)0)";
             case NODE_IDENTIFIER:
                 return node->as.identifier.name;
+            case NODE_FUNCTION_CALL:
+                return emitFunctionCall(node);
             case NODE_BINARY_OP:
                 return emitBinaryOp(node->as.binary_op);
             case NODE_UNARY_OP:
@@ -133,6 +141,45 @@ public:
     std::string emitFunctionDeclaration(const ASTFnDeclNode* fn, const Symbol* symbol) {
         std::stringstream ss;
         ss << emitFunctionSignature(fn, symbol) << " " << emitExpression(fn->body);
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 function call.
+     */
+    std::string emitFunctionCall(const ASTNode* node) {
+        if (!node || node->type != NODE_FUNCTION_CALL) return "/* INVALID CALL */";
+        const ASTFunctionCallNode* call = node->as.function_call;
+
+        std::stringstream ss;
+
+        // Use mangled name from call table if available
+        const char* name = "/* UNKNOWN */";
+        if (call->callee->type == NODE_IDENTIFIER) {
+            name = call->callee->as.identifier.name;
+            if (call_table_) {
+                const CallSiteEntry* entry = call_table_->findByCallNode(const_cast<ASTNode*>(node));
+                if (entry && entry->mangled_name) {
+                    name = entry->mangled_name;
+                }
+            }
+        } else {
+            // Complex callee (e.g. pointer)
+            ss << emitExpression(call->callee);
+            name = NULL;
+        }
+
+        if (name) ss << name;
+
+        ss << "(";
+        if (call->args) {
+            for (size_t i = 0; i < call->args->length(); ++i) {
+                if (i > 0) ss << ", ";
+                ss << emitExpression((*call->args)[i]);
+            }
+        }
+        ss << ")";
+
         return ss.str();
     }
 
