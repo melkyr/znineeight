@@ -32,6 +32,79 @@ public:
     }
 
     /**
+     * @brief Recursively searches for a function declaration with the given name in the AST.
+     * @param node The AST node to start searching from.
+     * @param name The name of the function to find.
+     * @return The ASTFnDeclNode if found, NULL otherwise.
+     */
+    const ASTFnDeclNode* findFunctionDeclaration(const ASTNode* node, const char* name) const {
+        if (!node) return NULL;
+
+        if (node->type == NODE_FN_DECL) {
+            if (strings_equal(node->as.fn_decl->name, name)) {
+                return node->as.fn_decl;
+            }
+        }
+
+        // Search in children
+        if (node->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                const ASTFnDeclNode* found = findFunctionDeclaration((*stmts)[i], name);
+                if (found) return found;
+            }
+        } else if (node->type == NODE_STRUCT_DECL) {
+            DynamicArray<ASTNode*>* fields = node->as.struct_decl->fields;
+            for (size_t i = 0; i < fields->length(); ++i) {
+                const ASTFnDeclNode* found = findFunctionDeclaration((*fields)[i], name);
+                if (found) return found;
+            }
+        } else if (node->type == NODE_UNION_DECL) {
+            DynamicArray<ASTNode*>* fields = node->as.union_decl->fields;
+            for (size_t i = 0; i < fields->length(); ++i) {
+                const ASTFnDeclNode* found = findFunctionDeclaration((*fields)[i], name);
+                if (found) return found;
+            }
+        }
+
+        return NULL;
+    }
+
+    /**
+     * @brief Extracts a function declaration by name.
+     */
+    const ASTFnDeclNode* extractFunctionDeclaration(const char* name) const {
+        return findFunctionDeclaration(last_ast, name);
+    }
+
+    /**
+     * @brief Validates that a function signature emits the expected C89 string.
+     */
+    bool validateFunctionSignature(const char* name, const std::string& expectedC89) {
+        const ASTFnDeclNode* fn = extractFunctionDeclaration(name);
+        if (!fn) {
+            printf("FAIL: Could not find function declaration for '%s'.\n", name);
+            return false;
+        }
+
+        Symbol* sym = getSymbolTable().findInAnyScope(name);
+        if (!sym) {
+            printf("FAIL: Could not find symbol for function '%s'.\n", name);
+            return false;
+        }
+
+        MockC89Emitter emitter;
+        std::string actual = emitter.emitFunctionSignature(fn, sym);
+
+        if (actual != expectedC89) {
+            printf("FAIL: Signature emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @brief Performs the full compilation pipeline for a given file and stores the AST.
      * @param file_id The ID of the file to compile.
      * @return True if the pipeline finished without errors.
@@ -136,6 +209,33 @@ public:
      */
     const ASTVarDeclNode* extractVariableDeclaration(const char* name) const {
         return findVariableDeclaration(last_ast, name);
+    }
+
+    /**
+     * @brief Validates that a function declaration (signature + body) emits the expected C89 string.
+     */
+    bool validateFunctionEmission(const char* name, const std::string& expectedC89) {
+        const ASTFnDeclNode* fn = extractFunctionDeclaration(name);
+        if (!fn) {
+            printf("FAIL: Could not find function declaration for '%s'.\n", name);
+            return false;
+        }
+
+        Symbol* sym = getSymbolTable().findInAnyScope(name);
+        if (!sym) {
+            printf("FAIL: Could not find symbol for function '%s'.\n", name);
+            return false;
+        }
+
+        MockC89Emitter emitter;
+        std::string actual = emitter.emitFunctionDeclaration(fn, sym);
+
+        if (actual != expectedC89) {
+            printf("FAIL: Emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
     }
 
     /**

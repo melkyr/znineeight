@@ -76,9 +76,64 @@ public:
                 return emitUnaryOp(&node->as.unary_op);
             case NODE_PAREN_EXPR:
                 return "(" + emitExpression(node->as.paren_expr.expr) + ")";
+            case NODE_BLOCK_STMT: {
+                std::stringstream ss;
+                ss << "{ ";
+                if (node->as.block_stmt.statements) {
+                    for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+                        ss << emitExpression((*node->as.block_stmt.statements)[i]) << " ";
+                    }
+                }
+                ss << "}";
+                return ss.str();
+            }
+            case NODE_RETURN_STMT:
+                return "return" + (node->as.return_stmt.expression ? " " + emitExpression(node->as.return_stmt.expression) : "") + ";";
+            case NODE_EXPRESSION_STMT:
+                return emitExpression(node->as.expression_stmt.expression) + ";";
             default:
                 return "/* unsupported node type */";
         }
+    }
+
+    /**
+     * @brief Emits a C89 function signature.
+     * @param fn The function declaration node.
+     * @param symbol The associated symbol.
+     * @return A std::string containing the C89 signature.
+     */
+    std::string emitFunctionSignature(const ASTFnDeclNode* fn, const Symbol* symbol) {
+        if (!fn || !symbol || !symbol->symbol_type || symbol->symbol_type->kind != TYPE_FUNCTION) {
+            return "/* INVALID FN */";
+        }
+
+        std::stringstream ss;
+        Type* fn_type = symbol->symbol_type;
+        ss << getC89TypeName(fn_type->as.function.return_type) << " ";
+        ss << (symbol->mangled_name ? symbol->mangled_name : fn->name);
+        ss << "(";
+
+        DynamicArray<Type*>* params = fn_type->as.function.params;
+        if (params && params->length() > 0) {
+            for (size_t i = 0; i < params->length(); ++i) {
+                if (i > 0) ss << ", ";
+                ss << getC89TypeName((*params)[i]) << " " << (*fn->params)[i]->name;
+            }
+        } else {
+            ss << "void";
+        }
+        ss << ")";
+
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 function declaration (signature + body).
+     */
+    std::string emitFunctionDeclaration(const ASTFnDeclNode* fn, const Symbol* symbol) {
+        std::stringstream ss;
+        ss << emitFunctionSignature(fn, symbol) << " " << emitExpression(fn->body);
+        return ss.str();
     }
 
 private:
@@ -86,7 +141,11 @@ private:
         if (!type) return "/* unknown type */";
 
         if (type->kind == TYPE_POINTER) {
-            return getC89TypeName(type->as.pointer.base) + "*";
+            std::string base = getC89TypeName(type->as.pointer.base);
+            if (type->as.pointer.is_const) {
+                return "const " + base + "*";
+            }
+            return base + "*";
         }
 
         const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);

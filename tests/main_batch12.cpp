@@ -74,7 +74,18 @@ int main(int argc, char* argv[]) {
         test_ArithmeticIntegration_Int8LiteralPromotion,
         test_ArithmeticIntegration_TypeMismatchError,
         test_ArithmeticIntegration_FloatModuloError,
-        test_ArithmeticIntegration_BoolArithmeticError
+        test_ArithmeticIntegration_BoolArithmeticError,
+        test_FunctionIntegration_NoParams,
+        test_FunctionIntegration_FourParams,
+        test_FunctionIntegration_PointerTypes,
+        test_FunctionIntegration_MangleKeyword,
+        test_FunctionIntegration_MangleLongName,
+        test_FunctionIntegration_Recursion,
+        test_FunctionIntegration_ForwardReference,
+        test_FunctionIntegration_RejectFiveParams,
+        test_FunctionIntegration_RejectSliceReturn,
+        test_FunctionIntegration_RejectMultiLevelPointer,
+        test_FunctionIntegration_RejectDuplicateName
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -82,3 +82,24 @@ Arithmetic expression tests verify that Zig expressions involving operators are 
 - Zig `1 + 2` -> C `1 + 2`
 - Zig `true and false` -> C `1 && 0` (bool mapped to 0/1)
 - Zig `(1 + 2) * 3` -> C `(1 + 2) * 3`
+
+## Function Declaration Tests (Task 173)
+
+Function declaration tests verify that Zig function signatures and names are correctly handled, including mangling and bootstrap constraints.
+
+### Test Categories:
+1. **Basic Signatures**: Functions with 0 to 4 parameters.
+2. **Type Mapping**: Correct translation of parameter and return types (e.g., `*const u8` -> `const unsigned char*`).
+3. **Name Mangling**:
+   - C keywords (e.g., `fn if()` -> `void z_if(void)`).
+   - Long names (truncated to 31 characters).
+4. **Scoping**: Forward references and mutual recursion support.
+5. **Negative Tests**:
+   - Parameter count limit (rejecting 5+ parameters).
+   - Invalid bootstrap types (slices, error unions, multi-level pointers).
+   - Duplicate function names in the same scope.
+
+### Expected C89 Output Patterns:
+- Zig `fn foo() void` -> C `void foo(void)`
+- Zig `fn if() void` -> C `void z_if(void)`
+- Zig `fn test(p: *i32) *f64` -> C `double* test(int* p)`
