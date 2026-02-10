@@ -15,7 +15,24 @@ Integration tests are designed to:
 Integration tests are located in `tests/integration/`. They are typically grouped by feature:
 
 - `literal_tests.cpp`: Tests for all literal types (integers, floats, characters, strings, booleans, null).
+- `variable_decl_tests.cpp`: Tests for variable and constant declarations, including type inference, scoping, and name mangling.
 - `test_compilation_unit.hpp`: A specialized subclass of `CompilationUnit` that provides access to the AST and internal metadata for validation.
+
+## Variable Declaration Tests (Task 171)
+
+Variable declaration tests verify that Zig `var` and `const` declarations are correctly mapped to C89.
+
+### Test Categories:
+1. **Basic Declarations**: `var`, `const` with explicit types.
+2. **Type Inference**: Variables without explicit types (inferring type from literal).
+3. **Name Mangling**: Verification that C89 keyword conflicts (e.g., `var int: i32`) are resolved by the mangler (e.g., `int z_int`).
+4. **Scope Testing**: Coverage for both global and local (function-scope) variables.
+5. **Negative Tests**: Verification that duplicate names in the same scope or unsupported bootstrap types (like slices) are rejected.
+
+### Expected C89 Output Patterns:
+- Zig `var x: i32 = 42;` -> C `int x = 42;`
+- Zig `const y: f64 = 3.14;` -> C `const double y = 3.14;`
+- Zig `var int: i32 = 0;` -> C `int z_int = 0;` (mangled because `int` is a C keyword)
 
 ## Adding New Integration Tests
 

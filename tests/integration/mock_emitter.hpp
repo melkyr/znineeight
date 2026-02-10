@@ -7,6 +7,8 @@
 
 #include "ast.hpp"
 #include "type_system.hpp"
+#include "symbol_table.hpp"
+#include "c89_type_mapping.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -20,6 +22,31 @@
  */
 class MockC89Emitter {
 public:
+    /**
+     * @brief Emits a C89 variable declaration.
+     * @param decl The variable declaration node.
+     * @param symbol The associated symbol.
+     * @return A std::string containing the C89 declaration.
+     */
+    std::string emitVariableDeclaration(const ASTVarDeclNode* decl, const Symbol* symbol) {
+        if (!decl || !symbol) return "/* INVALID DECL */";
+
+        std::stringstream ss;
+        if (decl->is_const) {
+            ss << "const ";
+        }
+
+        ss << getC89TypeName(symbol->symbol_type) << " ";
+        ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+
+        if (decl->initializer) {
+            ss << " = " << emitExpression(decl->initializer);
+        }
+        ss << ";";
+
+        return ss.str();
+    }
+
     /**
      * @brief Emits a C89 string representation of a literal expression.
      * @param node The ASTNode to emit.
@@ -49,6 +76,26 @@ public:
     }
 
 private:
+    std::string getC89TypeName(Type* type) {
+        if (!type) return "/* unknown type */";
+
+        if (type->kind == TYPE_POINTER) {
+            return getC89TypeName(type->as.pointer.base) + "*";
+        }
+
+        const size_t map_size = sizeof(c89_type_map) / sizeof(c89_type_map[0]);
+        for (size_t i = 0; i < map_size; ++i) {
+            if (type->kind == c89_type_map[i].zig_type_kind) {
+                return c89_type_map[i].c89_type_name;
+            }
+        }
+
+        if (type->kind == TYPE_STRUCT) return "struct /* ... */";
+        if (type->kind == TYPE_ENUM) return "enum /* ... */";
+
+        return "/* unsupported type */";
+    }
+
     std::string emitIntegerLiteral(const ASTIntegerLiteralNode* node, Type* type) {
         std::stringstream ss;
         ss << node->value;

@@ -11,6 +11,8 @@
 #include "signature_analyzer.hpp"
 #include "c89_feature_validator.hpp"
 #include "ast.hpp"
+#include "utils.hpp"
+#include "mock_emitter.hpp"
 
 /**
  * @class TestCompilationUnit
@@ -89,6 +91,69 @@ public:
      */
     Type* resolveType(const ASTNode* node) const {
         return node ? node->resolved_type : NULL;
+    }
+
+    /**
+     * @brief Recursively searches for a variable declaration with the given name in the AST.
+     * @param node The AST node to start searching from.
+     * @param name The name of the variable to find.
+     * @return The ASTVarDeclNode if found, NULL otherwise.
+     */
+    const ASTVarDeclNode* findVariableDeclaration(const ASTNode* node, const char* name) const {
+        if (!node) return NULL;
+
+        if (node->type == NODE_VAR_DECL) {
+            if (strings_equal(node->as.var_decl->name, name)) {
+                return node->as.var_decl;
+            }
+        }
+
+        // Search in children
+        if (node->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                const ASTVarDeclNode* found = findVariableDeclaration((*stmts)[i], name);
+                if (found) return found;
+            }
+        } else if (node->type == NODE_FN_DECL) {
+            return findVariableDeclaration(node->as.fn_decl->body, name);
+        } else if (node->type == NODE_IF_STMT) {
+            const ASTVarDeclNode* found = findVariableDeclaration(node->as.if_stmt->then_block, name);
+            if (found) return found;
+            return findVariableDeclaration(node->as.if_stmt->else_block, name);
+        } else if (node->type == NODE_WHILE_STMT) {
+            return findVariableDeclaration(node->as.while_stmt.body, name);
+        }
+
+        return NULL;
+    }
+
+    /**
+     * @brief Extracts a variable declaration by name.
+     */
+    const ASTVarDeclNode* extractVariableDeclaration(const char* name) const {
+        return findVariableDeclaration(last_ast, name);
+    }
+
+    /**
+     * @brief Validates that a variable declaration emits the expected C89 string.
+     */
+    bool validateVariableEmission(const char* name, const std::string& expectedC89) {
+        const ASTVarDeclNode* decl = extractVariableDeclaration(name);
+        if (!decl) return false;
+
+        Symbol* sym = getSymbolTable().findInAnyScope(name);
+        if (!sym) return false;
+
+        MockC89Emitter emitter;
+        std::string actual = emitter.emitVariableDeclaration(decl, sym);
+
+        if (actual != expectedC89) {
+            printf("FAIL: Emission mismatch for variable '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
     }
 };
 

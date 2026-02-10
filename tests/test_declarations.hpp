@@ -690,4 +690,19 @@ TEST_FUNC(LiteralIntegration_BoolFalse);
 TEST_FUNC(LiteralIntegration_NullLiteral);
 TEST_FUNC(LiteralIntegration_ExpressionStatement);
 
+// Task 171: Variable Declaration Integration Tests
+TEST_FUNC(VariableIntegration_BasicI32);
+TEST_FUNC(VariableIntegration_BasicConstF64);
+TEST_FUNC(VariableIntegration_GlobalVar);
+TEST_FUNC(VariableIntegration_LocalVar);
+TEST_FUNC(VariableIntegration_InferredInt);
+TEST_FUNC(VariableIntegration_InferredFloat);
+TEST_FUNC(VariableIntegration_InferredBool);
+TEST_FUNC(VariableIntegration_MangleKeyword);
+TEST_FUNC(VariableIntegration_MangleReserved);
+TEST_FUNC(VariableIntegration_MangleLongName);
+TEST_FUNC(VariableIntegration_DuplicateNameError);
+TEST_FUNC(VariableIntegration_RejectSlice);
+TEST_FUNC(VariableIntegration_PointerToVoid);
+
 #endif // TEST_DECLARATIONS_HPP
