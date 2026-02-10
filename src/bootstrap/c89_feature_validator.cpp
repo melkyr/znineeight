@@ -119,6 +119,10 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.while_stmt.body);
             current_parent_ = prev_parent;
             break;
+        case NODE_BREAK_STMT:
+        case NODE_CONTINUE_STMT:
+            // Allowed in standard C89
+            break;
         case NODE_DEFER_STMT:
             current_parent_ = node;
             visit(node->as.defer_stmt.statement);

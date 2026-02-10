@@ -35,6 +35,8 @@ public:
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
+    Type* visitBreakStmt(ASTBreakStmtNode* node);
+    Type* visitContinueStmt(ASTContinueStmtNode* node);
     Type* visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node);
     Type* visitDeferStmt(ASTDeferStmtNode* node);
     Type* visitForStmt(ASTForStmtNode* node);

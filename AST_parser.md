@@ -705,6 +705,14 @@ The `parseIfStatement` function handles the `if-else` control flow structure. It
 - **Strict Bracing**: While `else if` is supported, bare statements (without braces) are NOT allowed in any branch of an `if` statement.
 - Any deviation from this structure results in a fatal error.
 
+### While Statements (Bootstrap) (Task 176)
+
+- **Syntax**: `while (condition) { statements... }`
+- **Conditions**: bool, integer, or pointer only.
+- **Body**: Always braced (required by bootstrap parser).
+- **Break/Continue**: Basic support only (no labels or expressions).
+- **Not supported in bootstrap**: `while-else`, optional/error captures, continue expressions.
+
 ### `ASTWhileStmtNode`
 Represents a `while` loop.
 *   **Zig Code:** `while (condition) { ... }`

@@ -160,7 +160,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitFunctionSignature(fn, sym);
 
         if (actual != expectedC89) {
@@ -294,7 +294,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
         if (actual != expectedC89) {
@@ -338,7 +338,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitExpression(expr);
 
         if (actual != expectedC89) {
@@ -359,7 +359,7 @@ public:
         Symbol* sym = getSymbolTable().findInAnyScope(name);
         if (!sym) return false;
 
-        MockC89Emitter emitter(&getCallSiteLookupTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitVariableDeclaration(decl, sym);
 
         if (actual != expectedC89) {

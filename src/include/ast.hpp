@@ -42,6 +42,8 @@ enum NodeType {
     NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_BREAK_STMT,      ///< A break statement.
+    NODE_CONTINUE_STMT,   ///< A continue statement.
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
@@ -104,6 +106,8 @@ struct ASTBlockStmtNode;
 struct ASTEmptyStmtNode;
 struct ASTIfStmtNode;
 struct ASTWhileStmtNode;
+struct ASTBreakStmtNode;
+struct ASTContinueStmtNode;
 struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
 struct ASTForStmtNode;
@@ -357,6 +361,22 @@ struct ASTIfStmtNode {
 struct ASTWhileStmtNode {
     ASTNode* condition;
     ASTNode* body;
+};
+
+/**
+ * @struct ASTBreakStmtNode
+ * @brief Represents a break statement.
+ */
+struct ASTBreakStmtNode {
+    // No data needed.
+};
+
+/**
+ * @struct ASTContinueStmtNode
+ * @brief Represents a continue statement.
+ */
+struct ASTContinueStmtNode {
+    // No data needed.
 };
 
 /**
@@ -743,6 +763,8 @@ struct ASTNode {
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
+        ASTBreakStmtNode break_stmt;
+        ASTContinueStmtNode continue_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
         ASTForStmtNode* for_stmt; // Out-of-line

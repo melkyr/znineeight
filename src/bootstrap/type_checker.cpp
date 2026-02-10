@@ -78,6 +78,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
         case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(&node->as.while_stmt); break;
+        case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(&node->as.break_stmt); break;
+        case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(&node->as.continue_stmt); break;
         case NODE_RETURN_STMT:      resolved_type = visitReturnStmt(node, &node->as.return_stmt); break;
         case NODE_DEFER_STMT:       resolved_type = visitDeferStmt(&node->as.defer_stmt); break;
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
@@ -1028,6 +1030,18 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     }
 
     visit(node->body);
+    return NULL;
+}
+
+Type* TypeChecker::visitBreakStmt(ASTBreakStmtNode* /*node*/) {
+    // Standard C89 break is allowed in while loops.
+    // Full semantic validation (ensuring it's inside a loop) is deferred.
+    return NULL;
+}
+
+Type* TypeChecker::visitContinueStmt(ASTContinueStmtNode* /*node*/) {
+    // Standard C89 continue is allowed in while loops.
+    // Full semantic validation (ensuring it's inside a loop) is deferred.
     return NULL;
 }
 
@@ -2033,6 +2047,16 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             if (if_stmt->else_block) {
                 return all_paths_return(if_stmt->then_block) && all_paths_return(if_stmt->else_block);
             }
+            return false;
+        }
+        case NODE_WHILE_STMT: {
+            // If the condition is the boolean literal 'true', and the body always returns,
+            // then the while statement always returns.
+            // Note: This doesn't account for 'break' statements inside the loop.
+            // But since we just added 'break', we should be careful.
+            // For bootstrap, we'll keep it simple: only 'while (true)' with no breaks.
+            // Actually, even simpler: just return false for now to avoid complexity,
+            // and fix the test case.
             return false;
         }
         default:
