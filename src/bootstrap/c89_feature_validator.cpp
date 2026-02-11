@@ -337,9 +337,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
             if (plat_strcmp(node->as.type_name.name, "anytype") == 0) {
                 reportNonC89Feature(node->loc, "anytype is not supported in bootstrap compiler");
             }
-            if (plat_strcmp(node->as.type_name.name, "isize") == 0 || plat_strcmp(node->as.type_name.name, "usize") == 0) {
-                reportNonC89Feature(node->loc, "isize/usize are not supported in bootstrap compiler - use explicit integer sizes like i32/u32 instead");
-            }
             if (node->resolved_type && isErrorType(node->resolved_type)) {
                 char type_str[128];
                 typeToString(node->resolved_type, type_str, sizeof(type_str));

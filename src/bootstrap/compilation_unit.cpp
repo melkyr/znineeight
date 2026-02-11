@@ -312,11 +312,11 @@ void CompilationUnit::injectRuntimeSymbols() {
         }
     }
 
-    // arena_alloc(size: u32) -> *u8
+    // arena_alloc(size: usize) -> *void
     void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
-    params->append(get_g_type_u32());
-    Type* ret_type = createPointerType(arena_, get_g_type_u8(), false, &type_interner_);
+    params->append(get_g_type_usize());
+    Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
     Type* fn_type = createFunctionType(arena_, params, ret_type);
 
     const char* alloc_name = interner_.intern("arena_alloc");
@@ -328,10 +328,10 @@ void CompilationUnit::injectRuntimeSymbols() {
         .build();
     symbol_table_.insert(sym_alloc);
 
-    // arena_free(ptr: *u8) -> void
+    // arena_free(ptr: *void) -> void
     void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
-    params2->append(createPointerType(arena_, get_g_type_u8(), false, &type_interner_));
+    params2->append(createPointerType(arena_, get_g_type_void(), false, &type_interner_));
     Type* ret_type2 = get_g_type_void();
     Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
 

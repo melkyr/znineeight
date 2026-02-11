@@ -895,7 +895,7 @@ Output: Runtime assertions in codegen module
     - List unsupported Zig features and document C89 mapping decisions
     - Constraint Risk: Documentation must be accurate to prevent false expectations
 
-182. **Task 182:** Implicit `*void` → `*T` Conversion
+ 182. **Task 182:** Implicit `*void` → `*T` Conversion (DONE)
     **Risk:** LOW
     **Goal:** Allow assignment of an expression of type `*void` to any typed pointer variable, exactly as C89 does.
     **Why:** Without this, `arena_alloc(16)` cannot be assigned to `*i32`, `*MyStruct`, etc. – you are forced to use `*void` everywhere, which breaks type checking and makes code generation impossible.
@@ -925,7 +925,7 @@ Output: Runtime assertions in codegen module
     var ptr: *i32 = buf;           // should be accepted, no error
     ```
 
-183. **Task 183:** Introduce `usize` as a Supported Primitive
+183. **Task 183:** Introduce `usize` as a Supported Primitive (DONE)
     **Risk:** LOW
     **Goal:** Add `usize` as a distinct `TypeKind` (size = 4, alignment = 4 on 32‑bit targets) and allow it in:
     - Pointer arithmetic (`ptr + usize`, `usize + ptr`, `ptr - usize`).

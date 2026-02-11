@@ -159,8 +159,8 @@ Pointer assignments follow a specific set of C89-compatible rules:
 2.  **Implicit Cast to `void*`:** Any typed pointer (`*T`) can be implicitly assigned to a `void` pointer (`*void`).
     -   `var p_void: *void = my_i32_ptr;` // ✓ OK
 
-3.  **No Implicit Cast from `void*`:** A `void` pointer cannot be implicitly assigned to a typed pointer. This would require an explicit cast, which is not supported in the bootstrap compiler.
-    -   `var p_i32: *i32 = my_void_ptr;` // ✗ **Error**
+3.  **Implicit Cast from `void*`:** A `void` pointer can be implicitly assigned to any typed pointer (`*T`), provided that `T` is C89-compatible. This matches C89 behavior for `void*`.
+    -   `var p: *i32 = arena_alloc(4u);` // ✓ OK
 
 4.  **Const Correctness:**
     -   A mutable pointer (`*T`) can be assigned to a constant pointer (`*const T`). This is a safe, "const-adding" conversion.
@@ -185,7 +185,7 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `integer_literal`       | `any_numeric`          | ✓ (if value fits) | C89 exception for literals.                                        |
 | `null`                  | `*T` (any pointer)     | ✓           | `null` is compatible with all pointers.                            |
 | `*T`                    | `*void`                | ✓           | Implicit "up-cast" to void pointer.                                |
-| `*void`                 | `*T`                   | ✗           | Requires an explicit cast.                                         |
+| `*void`                 | `*T`                   | ✓           | Implicit "down-cast" if T is C89-compatible.                       |
 | `*T`                    | `*const T`             | ✓           | Safe to add `const`.                                               |
 | `*const T`              | `*T`                   | ✗           | Unsafe to remove `const`.                                          |
 | `*T`                    | `*U` (different types) | ✗           | Incompatible pointer base types.                                   |
@@ -311,7 +311,6 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 - **Max 4 Parameters**: Function declarations and calls are limited to 4 parameters/arguments to ensure stability in legacy calling conventions.
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
-- **Explicit Integer Sizes**: `isize` and `usize` are rejected. Use `i32` and `u32` to avoid platform-dependent ambiguity during bootstrap.
 - **Single-level Pointers**: Multi-level pointers like `**T` are rejected to simplify memory safety analysis.
 - **Braces Required**: All control flow blocks (`if`, `while`, `for`) must use curly braces `{}`.
 
@@ -629,11 +628,11 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_U64`        | `"unsigned __int64"`   | Size: 8, Align: 8. For MSVC 6.0 compatibility. |
 | `TYPE_F32`        | `"float"`              | Size: 4, Align: 4              |
 | `TYPE_F64`        | `"double"`             | Size: 8, Align: 8              |
+| `TYPE_ISIZE`      | `"int"`                | Size: 4, Align: 4              |
+| `TYPE_USIZE`      | `"unsigned int"`       | Size: 4, Align: 4              |
 | `TYPE_ENUM`       | `"typedef T"`          | Dependent on backing type.      |
 | `TYPE_ERROR_UNION` | No equivalent         | Internal; rejected by validator |
 | `TYPE_ERROR_SET`   | No equivalent         | Internal; rejected by validator |
-
-*Note: `isize` and `usize` are intentionally excluded from this mapping as they do not have a direct, platform-independent equivalent in C89.*
 
 ### Bootstrap Type Compatibility Matrix
 
@@ -645,7 +644,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `i64` | ✓ | `__int64` | MSVC 6.0 specific hack for 64-bit integers. |
 | `u8`-`u32` | ✓ | `unsigned char`-`unsigned int` | Direct mapping. |
 | `u64` | ✓ | `unsigned __int64` | MSVC 6.0 specific hack. |
-| `isize`/`usize` | ✗ | - | **Rejected.** Use explicit sizes like `i32`/`u32` for predictability. |
+| `isize`/`usize` | ✓ | `int`/`unsigned int` | Supported for pointer arithmetic and sizes. |
 | `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
@@ -708,7 +707,7 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
     -   All parameter types must be C89-compatible.
     -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
 -   **Returns `false`** for `NULL` types.
--   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`, `anyerror`).
+-   **Returns `false`** for any type not in the mapping table (e.g., `anyerror`).
 -   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).
 -   **Returns `false`** for anonymous composite types (structs/unions/enums not assigned to a `const`).
 
@@ -734,7 +733,6 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `**T` (multi-ptr) | No equivalent | REJECTED | `C89FeatureValidator` / `TypeChecker` |
 | `anyerror` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `@import` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `isize`/`usize` | `int`/`unsigned int` | REJECTED | `C89FeatureValidator` |
 
 These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 

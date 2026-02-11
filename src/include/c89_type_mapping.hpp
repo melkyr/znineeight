@@ -28,7 +28,9 @@ static const TypeMapping c89_type_map[] = {
     { TYPE_U32, "unsigned int" },
     { TYPE_U64, "unsigned __int64" }, // MSVC 6.0 specific
     { TYPE_F32, "float" },
-    { TYPE_F64, "double" }
+    { TYPE_F64, "double" },
+    { TYPE_ISIZE, "int" },
+    { TYPE_USIZE, "unsigned int" }
 };
 
 /**
@@ -40,8 +42,8 @@ static const TypeMapping c89_type_map[] = {
  * - Function types, provided their parameters and return types are also C89-compatible.
  * - Struct and Enum types (relying on TypeChecker for internal field validation).
  *
- * It rejects multi-level pointers, function pointers, functions with more than 4
- * parameters, and any types not in the primitive whitelist (e.g., isize, usize).
+ * It rejects multi-level pointers, function pointers, and functions with more than 4
+ * parameters.
  *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.

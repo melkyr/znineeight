@@ -838,4 +838,15 @@ TEST_FUNC(RejectionIntegration_ErrorUnion);
 TEST_FUNC(RejectionIntegration_Optional);
 TEST_FUNC(RejectionIntegration_TryExpression);
 
+// Task 182 & 183: Implicit *void conversion and usize/isize
+TEST_FUNC(Task183_USizeISizeSupported);
+TEST_FUNC(Task182_ArenaAllocReturnsVoidPtr);
+TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrAssignment);
+TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrArgument);
+TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrReturn);
+TEST_FUNC(Task182_ConstCorrectness_AddConst);
+TEST_FUNC(Task182_ConstCorrectness_PreserveConst);
+TEST_FUNC(Task182_ConstCorrectness_DiscardConst_REJECT);
+TEST_FUNC(Task182_NonC89Target_REJECT);
+
 #endif // TEST_DECLARATIONS_HPP
