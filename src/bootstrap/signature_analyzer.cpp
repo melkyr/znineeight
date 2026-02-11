@@ -149,8 +149,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ISIZE: case TYPE_USIZE:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in C89 - use explicit integer sizes like i32/u32 instead", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_POINTER:
             // Check for multi-level pointers
@@ -202,8 +201,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ISIZE: case TYPE_USIZE:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "isize/usize are not supported in bootstrap compiler - use explicit integer sizes like i32/u32 instead", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_POINTER:
             // Check for multi-level pointers

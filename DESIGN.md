@@ -299,7 +299,7 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 
 **Supported Types (Bootstrap Phase):**
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`.
-* **Pointers:** `*T` (Single level only).
+* **Pointers:** `*T` (Single level only). Supports pointer arithmetic with `usize`/`isize`.
 * **Arrays:** `[N]T` (Constant size only).
 * **Structs/Enums:** C-style declarations only.
 
