@@ -890,226 +890,278 @@ Output: Runtime assertions in codegen module
     - Risk Level: LOW
     - Implemented lazy chunked arena allocation, transient token arena, and type interning.
     - Achieved >50% reduction in peak memory usage.
-181. **Task 181:** Document bootstrap limitations clearly
+181. **Task 181:** Document bootstrap limitations clearly (DONE)
     - Risk Level: MEDIUM
     - List unsupported Zig features and document C89 mapping decisions
     - Constraint Risk: Documentation must be accurate to prevent false expectations
-### Task 182 – Implicit `*void` → `*T` Conversion  
-**Risk:** LOW  
-**Goal:** Allow assignment of an expression of type `*void` to any typed pointer variable, exactly as C89 does.  
-**Why:** Without this, `arena_alloc(16)` cannot be assigned to `*i32`, `*MyStruct`, etc. – you are forced to use `*void` everywhere, which breaks type checking and makes code generation impossible.  
 
-**Implementation:**  
-Modify `IsTypeAssignableTo` (or `areTypesCompatible`) to add a special case:  
+182. **Task 182:** Implicit `*void` → `*T` Conversion
+    **Risk:** LOW
+    **Goal:** Allow assignment of an expression of type `*void` to any typed pointer variable, exactly as C89 does.
+    **Why:** Without this, `arena_alloc(16)` cannot be assigned to `*i32`, `*MyStruct`, etc. – you are forced to use `*void` everywhere, which breaks type checking and makes code generation impossible.
 
-```cpp
-bool IsTypeAssignableTo(Type* src, Type* dst, bool is_implicit) {
-    // existing strict equality, integer literal rule, null rule, const‑adding rule ...
+    **Implementation:**
+    Modify `IsTypeAssignableTo` (or `areTypesCompatible`) to add a special case:
 
-    // NEW: *void → *T  (C89 implicit conversion)
-    if (src->kind == TYPE_POINTER && dst->kind == TYPE_POINTER &&
-        src->as.pointer.base->kind == TYPE_VOID &&
-        is_c89_compatible(dst->as.pointer.base))   // only allow if target base type is C89‑compatible
-    {
-        return true;
-    }
+    ```cpp
+    bool IsTypeAssignableTo(Type* src, Type* dst, bool is_implicit) {
+        // existing strict equality, integer literal rule, null rule, const‑adding rule ...
 
-    // ... rest of rules
-}
-```
-
-**Test:**  
-```zig
-const buf = arena_alloc(16);   // *void
-var ptr: *i32 = buf;           // should be accepted, no error
-```
-
----
-
-### Task 183 – Introduce `usize` as a Supported Primitive  
-**Risk:** LOW  
-**Goal:** Add `usize` as a distinct `TypeKind` (size = 4, alignment = 4 on 32‑bit targets) and allow it in:  
-- Pointer arithmetic (`ptr + usize`, `usize + ptr`, `ptr - usize`).  
-- Result type of pointer subtraction (`ptr - ptr` → `isize`).  
-- Variable declarations and function parameters.  
-
-**Why:** You cannot represent the size of allocated memory, array indices, or pointer differences without a dedicated unsigned size type. C89 uses `size_t` (usually `unsigned int`).  
-
-**Implementation steps:**  
-1. Add `TYPE_USIZE` and `TYPE_ISIZE` to `TypeKind` enum.  
-2. Set their size/alignment in the type initialisation.  
-3. Extend `is_c89_compatible()` to return `true` for `usize`/`isize` (they map to `unsigned int` / `int` in C89).  
-4. Update `resolvePrimitiveTypeName` to recognise `"usize"` and `"isize"`.  
-5. Extend pointer arithmetic validation (Task 182‑M4.3) to accept `usize` as the integer operand.  
-
-**Test:**  
-```zig
-var len: usize = 16;
-var buf = arena_alloc(len);
-var ptr: *i32 = buf;   // now works after Task 182-M4.1
-ptr += 1;              // pointer arithmetic with usize
-```
-
----
-
-### Task 184 – Full Pointer Arithmetic Validation  
-**Risk:** MEDIUM  
-**Goal:** Implement a complete, C89‑compliant pointer arithmetic validator in `TypeChecker::visitBinaryOp`.  
-**Why:** Task 93 is marked “Partially Implemented”. You need a final, exhaustive implementation that rejects all invalid forms.  
-
-**Complete rules (C89):**  
-| Expression        | Result Type                | Validity Condition                          |
-|-------------------|----------------------------|---------------------------------------------|
-| `ptr + int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
-| `int + ptr`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
-| `ptr - int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
-| `ptr1 - ptr2`     | `isize` (`ptrdiff_t`)      | both pointers have **identical** base type  |
-| any other combination | **error**             | e.g., `ptr + ptr`, `ptr * int`, etc.        |
-
-**Pseudocode (in `visitBinaryOp`):**  
-```cpp
-void visitBinaryOp(BinaryOpNode* expr) {
-    Type* left = getType(expr->left);
-    Type* right = getType(expr->right);
-    TokenType op = expr->op;
-
-    if (isPointerType(left) && isPointerType(right)) {
-        if (op == TOKEN_MINUS && areSamePointerType(left, right)) {
-            expr->type = getISizeType();   // isize
-        } else {
-            error(ERR_INVALID_POINTER_ARITHMETIC);
+        // NEW: *void → *T  (C89 implicit conversion)
+        if (src->kind == TYPE_POINTER && dst->kind == TYPE_POINTER &&
+            src->as.pointer.base->kind == TYPE_VOID &&
+            is_c89_compatible(dst->as.pointer.base))   // only allow if target base type is C89‑compatible
+        {
+            return true;
         }
+
+        // ... rest of rules
     }
-    else if (isPointerType(left) && isIntegerType(right)) {
-        if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
-            expr->type = left->type;
-        } else {
-            error(ERR_INVALID_OPERATOR_FOR_POINTER);
+    ```
+
+    **Test:**
+    ```zig
+    const buf = arena_alloc(16);   // *void
+    var ptr: *i32 = buf;           // should be accepted, no error
+    ```
+
+183. **Task 183:** Introduce `usize` as a Supported Primitive
+    **Risk:** LOW
+    **Goal:** Add `usize` as a distinct `TypeKind` (size = 4, alignment = 4 on 32‑bit targets) and allow it in:
+    - Pointer arithmetic (`ptr + usize`, `usize + ptr`, `ptr - usize`).
+    - Result type of pointer subtraction (`ptr - ptr` → `isize`).
+    - Variable declarations and function parameters.
+
+    **Why:** You cannot represent the size of allocated memory, array indices, or pointer differences without a dedicated unsigned size type. C89 uses `size_t` (usually `unsigned int`).
+
+    **Implementation steps:**
+    1. Add `TYPE_USIZE` and `TYPE_ISIZE` to `TypeKind` enum.
+    2. Set their size/alignment in the type initialisation.
+    3. Extend `is_c89_compatible()` to return `true` for `usize`/`isize` (they map to `unsigned int` / `int` in C89).
+    4. Update `resolvePrimitiveTypeName` to recognise `"usize"` and `"isize"`.
+    5. Extend pointer arithmetic validation (Task 182‑M4.3) to accept `usize` as the integer operand.
+
+    **Test:**
+    ```zig
+    var len: usize = 16;
+    var buf = arena_alloc(len);
+    var ptr: *i32 = buf;   // now works after Task 182-M4.1
+    ptr += 1;              // pointer arithmetic with usize
+    ```
+
+184. **Task 184:** Full Pointer Arithmetic Validation
+    **Risk:** MEDIUM
+    **Goal:** Implement a complete, C89‑compliant pointer arithmetic validator in `TypeChecker::visitBinaryOp`.
+    **Why:** Task 93 is marked “Partially Implemented”. You need a final, exhaustive implementation that rejects all invalid forms.
+
+    **Complete rules (C89):**
+    | Expression        | Result Type                | Validity Condition                          |
+    |-------------------|----------------------------|---------------------------------------------|
+    | `ptr + int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+    | `int + ptr`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+    | `ptr - int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+    | `ptr1 - ptr2`     | `isize` (`ptrdiff_t`)      | both pointers have **identical** base type  |
+    | any other combination | **error**             | e.g., `ptr + ptr`, `ptr * int`, etc.        |
+
+    **Pseudocode (in `visitBinaryOp`):**
+    ```cpp
+    void visitBinaryOp(BinaryOpNode* expr) {
+        Type* left = getType(expr->left);
+        Type* right = getType(expr->right);
+        TokenType op = expr->op;
+
+        if (isPointerType(left) && isPointerType(right)) {
+            if (op == TOKEN_MINUS && areSamePointerType(left, right)) {
+                expr->type = getISizeType();   // isize
+            } else {
+                error(ERR_INVALID_POINTER_ARITHMETIC);
+            }
         }
-    }
-    else if (isIntegerType(left) && isPointerType(right)) {
-        if (op == TOKEN_PLUS) {
-            expr->type = right->type;
-        } else {
-            error(ERR_INVALID_OPERATOR_FOR_POINTER);
+        else if (isPointerType(left) && isIntegerType(right)) {
+            if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
+                expr->type = left->type;
+            } else {
+                error(ERR_INVALID_OPERATOR_FOR_POINTER);
+            }
         }
+        else if (isIntegerType(left) && isPointerType(right)) {
+            if (op == TOKEN_PLUS) {
+                expr->type = right->type;
+            } else {
+                error(ERR_INVALID_OPERATOR_FOR_POINTER);
+            }
+        }
+        // ... existing numeric handling ...
     }
-    // ... existing numeric handling ...
-}
-```
+    ```
 
-**Test suite:**  
-- `ptr + 1` → `*T`  
-- `1 + ptr` → `*T`  
-- `ptr - 1` → `*T`  
-- `ptr1 - ptr2` → `isize` (only when same base type)  
-- `ptr + ptr` → error  
-- `ptr * 2` → error  
+    **Test suite:**
+    - `ptr + 1` → `*T`
+    - `1 + ptr` → `*T`
+    - `ptr - 1` → `*T`
+    - `ptr1 - ptr2` → `isize` (only when same base type)
+    - `ptr + ptr` → error
+    - `ptr * 2` → error
 
----
+185. **Task 185:** Explicit Cast / `@ptrCast` Support
+    **Risk:** MEDIUM
+    **Goal:** Add a minimal, parser‑recognised built‑in `@ptrCast(T, expr)` that performs an explicit pointer cast.
+    **Why:** While implicit `*void` → `*T` covers many cases, you still need to cast between typed pointers (e.g., `*u8` → `*i32`). Without this, you cannot reinterpret memory.
 
-### Task 185 – Explicit Cast / `@ptrCast` Support  
-**Risk:** MEDIUM  
-**Goal:** Add a minimal, parser‑recognised built‑in `@ptrCast(T, expr)` that performs an explicit pointer cast.  
-**Why:** While implicit `*void` → `*T` covers many cases, you still need to cast between typed pointers (e.g., `*u8` → `*i32`). Without this, you cannot reinterpret memory.  
+    **Design constraints:**
+    - Must be recognised by the parser (add `TOKEN_BUILTIN_PTRCAST` or special‑case `@ptrCast`).
+    - During type checking, verify that the destination type is a pointer and the source expression is a pointer.
+    - Emit a simple C cast `(T*)expr` during code generation.
 
-**Design constraints:**  
-- Must be recognised by the parser (add `TOKEN_BUILTIN_PTRCAST` or special‑case `@ptrCast`).  
-- During type checking, verify that the destination type is a pointer and the source expression is a pointer.  
-- Emit a simple C cast `(T*)expr` during code generation.  
+    **Implementation sketch:**
 
-**Implementation sketch:**  
+    1. **Lexer:** recognise `@ptrCast` as a token (or extend built‑in detection).
+    2. **Parser:** `parsePrimaryExpr` → if token is `@ptrCast`, parse `(TargetType, expr)` and create `ASTPtrCastNode`.
+    3. **TypeChecker::visitPtrCast:**
+       ```cpp
+       void visitPtrCast(PtrCastNode* node) {
+           Type* dest = resolveType(node->target_type);
+           Type* src = getType(node->expr);
+           if (dest->kind != TYPE_POINTER)
+               error(ERR_CAST_TARGET_NOT_POINTER);
+           if (src->kind != TYPE_POINTER)
+               error(ERR_CAST_SOURCE_NOT_POINTER);
+           node->type = dest;   // result type is dest
+       }
+       ```
+    4. **Code generation** (Milestone 5): emit `(CType*)expr`.
 
-1. **Lexer:** recognise `@ptrCast` as a token (or extend built‑in detection).  
-2. **Parser:** `parsePrimaryExpr` → if token is `@ptrCast`, parse `(TargetType, expr)` and create `ASTPtrCastNode`.  
-3. **TypeChecker::visitPtrCast:**  
-   ```cpp
-   void visitPtrCast(PtrCastNode* node) {
-       Type* dest = resolveType(node->target_type);
-       Type* src = getType(node->expr);
-       if (dest->kind != TYPE_POINTER)
-           error(ERR_CAST_TARGET_NOT_POINTER);
-       if (src->kind != TYPE_POINTER)
-           error(ERR_CAST_SOURCE_NOT_POINTER);
-       node->type = dest;   // result type is dest
-   }
-   ```
-4. **Code generation** (Milestone 5): emit `(CType*)expr`.  
+    **Test:**
+    ```zig
+    var bytes = arena_alloc(16);   // *void
+    var ptr: *i32 = bytes;         // implicit conversion (Task 182-M4.1)
+    var byte_ptr: *u8 = @ptrCast(*u8, ptr);   // explicit cast
+    ```
 
-**Test:**  
-```zig
-var bytes = arena_alloc(16);   // *void
-var ptr: *i32 = bytes;         // implicit conversion (Task 182-M4.1)
-var byte_ptr: *u8 = @ptrCast(*u8, ptr);   // explicit cast
-```
+186. **Task 186:** Compile-time Size & Alignment Introspection
+    **Risk:** LOW
+    **Goal:** Add built‑ins @sizeOf(T) and @alignOf(T) that return usize constants.
+    **Why:** Without them, you must hardcode sizes (e.g., 16 for *i32) or use fragile @ptrCast workarounds. This is essential for writing portable allocators and low‑level runtime code.
 
+    **Implementation:**
+    - **Parser:** Recognise @sizeOf and @alignOf as primary expressions, parse (TypeName). Create ASTSizeOfNode / ASTAlignOfNode.
+    - **TypeChecker:**
+        - Resolve the type argument.
+        - Ensure the type is C89‑compatible (or at least has a known size/alignment).
+        - Replace the node with an ASTIntegerLiteralNode containing the computed size/alignment.
+        - No runtime code generation needed – the value is embedded as a literal.
+    - **C89 emission:** Emit the integer literal directly (e.g., 4 for @sizeOf(i32)).
 
+    **Test:**
+    ```zig
+    const i32_size = @sizeOf(i32);   // 4
+    const i32_align = @alignOf(i32); // 4
+    var bytes = arena_alloc(10 * @sizeOf(MyStruct));
+    ```
+
+    **C89 output:**
+    ```c
+    const int i32_size = 4;
+    const int i32_align = 4;
+    char* bytes = arena_alloc(10 * 4);
+    ```
+
+187. **Task 187:** Checked Numeric Casts (@intCast, @floatCast)
+    **Risk:** LOW
+    **Goal:** Provide explicit, range‑checked conversions between numeric types, analogous to Zig’s @intCast.
+    **Why:** Without them, you cannot safely convert usize → i32, i64 → i32, etc., even when the value is known to fit. This forces either dangerous punning through pointers or ignoring type safety.
+
+    **Implementation:**
+    - **Parser:** Recognise @intCast(T, expr) and @floatCast(T, expr).
+    - **TypeChecker:**
+        - Verify that T is a numeric type and expr is numeric.
+        - If the expression is a compile‑time integer literal, verify that its value fits in the target type (same logic as canLiteralFitInType).
+        - For non‑constant expressions, insert a runtime assertion in the generated C code (e.g., assert(expr >= T_MIN && expr <= T_MAX)).
+    - **C89 emission:**
+        - For constant‑fitted cases: emit (T)expr.
+        - For runtime‑checked cases: emit ( { check; (T)expr; } ) using C89 comma operator and assert (or a custom panic).
+
+    **Test:**
+    ```zig
+    const x: i64 = 1000;
+    const y: i32 = @intCast(i32, x);   // ok, known to fit
+    const z: u8 = @intCast(u8, 300);   // compile‑time error (overflow)
+    ```
+
+188. **Task 188:** @offsetOf for Struct Fields
+    **Risk:** MEDIUM
+    **Goal:** Provide @offsetOf(StructType, "field") → usize constant.
+    **Why:** Essential for manual serialisation, device drivers, or any code that needs to know field offsets at compile time.
+
+    **Implementation:**
+    - **Parser:** @offsetOf(StructType, "field") → ASTOffsetOfNode.
+    - **TypeChecker:**
+        - Resolve StructType to a TYPE_STRUCT.
+        - Find the field by name.
+        - Compute the offset using the same layout rules already implemented in TypeChecker::visitStructDecl.
+        - Replace node with integer literal.
+    - **C89 emission:** Emit the constant integer.
+
+    **Test:**
+    ```zig
+    const Point = struct { x: i32, y: i32 };
+    const y_off = @offsetOf(Point, "y");   // 4
+    ```
 
 ### Milestone 5: Code Generation (C89)
-182. **Task 182:** Implement a basic C89 emitter class in `codegen.hpp`.
-183. **Task 183:** Implement `CVariableAllocator` to manage C variable names.
-184. **Task 184:** Generate C89 function declarations.
-185. **Task 185:** Generate C89 code for integer literals.
-186. **Task 186:** Generate C89 code for local variable declarations.
-187. **Task 187:** Generate C89 code for basic arithmetic operations.
-188. **Task 188:** Generate C89 code for comparison and logical operations.
-189. **Task 189:** Generate C89 code for if statements.
-190. **Task 190:** Generate C89 code for while and for loops.
-191. **Task 191:** Generate C89 code for return statements.
-192. **Task 192:** Implement C89 function call generation.
-193. **Task 193:** Implement C89 code generation for defer statements.
-194. **Task 194:** Generate C89 code for slice types.
-195. **Task 195:** Generate C89 code for error unions.
-196. **Task 196:** Write integration tests for the C89 code generator.
+189. **Task 189:** Implement a basic C89 emitter class in `codegen.hpp`.
+190. **Task 190:** Implement `CVariableAllocator` to manage C variable names.
+191. **Task 191:** Generate C89 function declarations.
+192. **Task 192:** Generate C89 code for integer literals.
+193. **Task 193:** Generate C89 code for local variable declarations.
+194. **Task 194:** Generate C89 code for basic arithmetic operations.
+195. **Task 195:** Generate C89 code for comparison and logical operations.
+196. **Task 196:** Generate C89 code for if statements.
+197. **Task 197:** Generate C89 code for while and for loops.
+198. **Task 198:** Generate C89 code for return statements.
+199. **Task 199:** Implement C89 function call generation.
+200. **Task 200:** Implement C89 code generation for defer statements.
+201. **Task 201:** Generate C89 code for slice types.
+202. **Task 202:** Generate C89 code for error unions.
+203. **Task 203:** Write integration tests for the C89 code generator.
 
 ### Milestone 6: C Library Integration & Final Bootstrap
-197. **Task 197:** Implement the CBackend class skeleton for final code emission.
-198. **Task 198:** Add logic to generate proper C89 headers and include guards.
-199. **Task 199:** Implement wrappers for Zig runtime features to C library calls.
-200. **Task 200:** Handle Zig memory management with C89-compatible patterns.
-201. **Task 201:** Integrate CBackend to write complete C89 `.c` files.
-202. **Task 202:** Compile a "hello world" Zig program end-to-end.
+204. **Task 204:** Implement the CBackend class skeleton for final code emission.
+205. **Task 205:** Add logic to generate proper C89 headers and include guards.
+206. **Task 206:** Implement wrappers for Zig runtime features to C library calls.
+207. **Task 207:** Handle Zig memory management with C89-compatible patterns.
+208. **Task 208:** Integrate CBackend to write complete C89 `.c` files.
+209. **Task 209:** Compile a "hello world" Zig program end-to-end.
+
 Phase 6A: Import System Foundation
 
-Task 203: Implement basic @import statement support (NEW, CRITICAL)
+210. **Task 210:** Implement basic @import statement support (NEW, CRITICAL)
+    - Add TOKEN_IMPORT to lexer (already exists)
+    - Modify Parser::parseImportStmt() to actually read files
+    - Implement simple file inclusion (not full module system)
+    - Handle circular import detection (basic)
+    - Update CompilationUnit to track multiple files
 
-    Add TOKEN_IMPORT to lexer (already exists)
+211. **Task 211:** Create multi-file compilation pipeline (NEW)
+    - Extend CompilationUnit::performFullPipeline() to handle imports
+    - Merge symbol tables across imported files
+    - Merge catalogues (GenericCatalogue, ErrorSetCatalogue, etc.)
+    - Update SourceManager to manage multiple files with proper location mapping
 
-    Modify Parser::parseImportStmt() to actually read files
-
-    Implement simple file inclusion (not full module system)
-
-    Handle circular import detection (basic)
-
-    Update CompilationUnit to track multiple files
-
-Task 204: Create multi-file compilation pipeline (NEW)
-
-    Extend CompilationUnit::performFullPipeline() to handle imports
-
-    Merge symbol tables across imported files
-
-    Merge catalogues (GenericCatalogue, ErrorSetCatalogue, etc.)
-
-    Update SourceManager to manage multiple files with proper location mapping
-
-Task 205: Implement simple include path resolution (NEW)
-
-    Add -I flag to command line for include directories
-
-    Search paths for imported files
-
-    Default to current directory and a lib/ directory
+212. **Task 212:** Implement simple include path resolution (NEW)
+    - Add -I flag to command line for include directories
+    - Search paths for imported files
+    - Default to current directory and a lib/ directory
 
 Phase 6B: C89 Code Generation with Modules
 
-Task 197: Implement the CBackend class skeleton for final code emission.
+Task 204: Implement the CBackend class skeleton for final code emission.
 
     Enhancement: Support emitting multiple .c files from multiple Zig files
 
     Add per-module code generation
 
-Task 198: Add logic to generate proper C89 headers and include guards.
+Task 205: Add logic to generate proper C89 headers and include guards.
 
     Enhancement: Generate .h files for module interfaces
 
@@ -1117,19 +1169,19 @@ Task 198: Add logic to generate proper C89 headers and include guards.
 
     Export public symbols from modules
 
-Task 199: Implement wrappers for Zig runtime features to C library calls.
+Task 206: Implement wrappers for Zig runtime features to C library calls.
 
     Enhancement: Make wrappers available to imported modules
 
     Create a zig_runtime.h for shared runtime functions
 
-Task 200: Handle Zig memory management with C89-compatible patterns.
+Task 207: Handle Zig memory management with C89-compatible patterns.
 
     Enhancement: Make arena functions available across modules
 
     Implement module initialization/cleanup for memory management
 
-Task 201: Integrate CBackend to write complete C89 .c files.
+Task 208: Integrate CBackend to write complete C89 .c files.
 
     Enhancement: Generate one .c file per Zig source file
 
@@ -1137,7 +1189,7 @@ Task 201: Integrate CBackend to write complete C89 .c files.
 
     Generate Makefile or build script
 
-Task 202: Compile a "hello world" Zig program end-to-end.
+Task 209: Compile a "hello world" Zig program end-to-end.
 
     Enhancement: Test with multi-file "hello world"
 
@@ -1156,27 +1208,21 @@ pub fn sayHello() void {
 
 Phase 6C: Bootstrap Compiler Integration
 
-Task 206: Build zig1.exe using modular Zig source (NEW)
+213. **Task 213:** Build zig1.exe using modular Zig source (NEW)
+    - Split zig1 compiler source into modules: lexer.zig, parser.zig, typechecker.zig
+    - Compile with zig0.exe --import-path src/
+    - Verify zig1.exe can compile modular programs
 
-    Split zig1 compiler source into modules: lexer.zig, parser.zig, typechecker.zig
-
-    Compile with zig0.exe --import-path src/
-
-    Verify zig1.exe can compile modular programs
-
-Task 207: Create minimal std library for bootstrap (NEW)
-
-    Implement std.debug, std.mem, std.io basics
-
-    Keep it C89-compatible
-
-    Use in zig1 compiler source
+214. **Task 214:** Create minimal std library for bootstrap (NEW)
+    - Implement std.debug, std.mem, std.io basics
+    - Keep it C89-compatible
+    - Use in zig1 compiler source
 	
 ## Phase 1: The Cross-Compiler (Zig)
-203. **Task 203:** Translate the C++ compiler logic into the supported Zig subset.
-204. **Task 204:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
-205. **Task 205:** Verify `zig1.exe` by using it to compile the test suite.
+215. **Task 215:** Translate the C++ compiler logic into the supported Zig subset.
+216. **Task 216:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
+217. **Task 217:** Verify `zig1.exe` by using it to compile the test suite.
 
 ## Phase 2: Self-Hosting
-206. **Task 206:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
-207. **Task 207:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
+218. **Task 218:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
+219. **Task 219:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
