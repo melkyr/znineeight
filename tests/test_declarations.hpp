@@ -795,4 +795,21 @@ TEST_FUNC(StructIntegration_RejectStructMethods);
 TEST_FUNC(StructIntegration_RejectSliceField);
 TEST_FUNC(StructIntegration_RejectMultiLevelPointerField);
 
+// Task 178: Pointer Integration Tests
+TEST_FUNC(PointerIntegration_AddressOfDereference);
+TEST_FUNC(PointerIntegration_DereferenceExpression);
+TEST_FUNC(PointerIntegration_PointerArithmeticAdd);
+TEST_FUNC(PointerIntegration_PointerArithmeticSub);
+TEST_FUNC(PointerIntegration_NullLiteral);
+TEST_FUNC(PointerIntegration_NullComparison);
+TEST_FUNC(PointerIntegration_PointerToStruct);
+TEST_FUNC(PointerIntegration_VoidPointerAssignment);
+TEST_FUNC(PointerIntegration_ConstAdding);
+TEST_FUNC(PointerIntegration_ReturnLocalAddressError);
+TEST_FUNC(PointerIntegration_DereferenceNullError);
+TEST_FUNC(PointerIntegration_PointerPlusPointerError);
+TEST_FUNC(PointerIntegration_DereferenceNonPointerError);
+TEST_FUNC(PointerIntegration_AddressOfNonLValue);
+TEST_FUNC(PointerIntegration_IncompatiblePointerAssignment);
+
 #endif // TEST_DECLARATIONS_HPP

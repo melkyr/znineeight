@@ -10,6 +10,9 @@
 #include "name_collision_detector.hpp"
 #include "signature_analyzer.hpp"
 #include "c89_feature_validator.hpp"
+#include "lifetime_analyzer.hpp"
+#include "null_pointer_analyzer.hpp"
+#include "double_free_analyzer.hpp"
 #include "ast.hpp"
 #include "utils.hpp"
 #include "mock_emitter.hpp"
@@ -199,7 +202,27 @@ public:
         C89FeatureValidator validator(*this);
         bool success = validator.validate(last_ast);
 
-        return success && !sig_analyzer.hasInvalidSignatures() && !getErrorHandler().hasErrors();
+        if (!success || sig_analyzer.hasInvalidSignatures() || getErrorHandler().hasErrors()) {
+            return false;
+        }
+
+        // Pass 2+: Static Analyzers (if enabled)
+        if (getOptions().enable_lifetime_analysis) {
+            LifetimeAnalyzer analyzer(*this);
+            analyzer.analyze(last_ast);
+        }
+
+        if (getOptions().enable_null_pointer_analysis) {
+            NullPointerAnalyzer analyzer(*this);
+            analyzer.analyze(last_ast);
+        }
+
+        if (getOptions().enable_double_free_analysis) {
+            DoubleFreeAnalyzer analyzer(*this);
+            analyzer.analyze(last_ast);
+        }
+
+        return !getErrorHandler().hasErrors();
     }
 
     /**
