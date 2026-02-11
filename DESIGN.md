@@ -473,24 +473,52 @@ public:
 };
 ```
 
-## 5. The "Zig Subset" Language Specification
-This is the restricted version of Zig this compiler will support.
+## 5. The "Zig Subset" Language Specification (Milestone 4)
+This is the restricted version of Zig the bootstrap compiler supports as of Milestone 4.
 
-**Grammar:**
-```ebnf
-program      ::= (fn_decl | var_decl)*
-fn_decl      ::= 'fn' IDENT '(' param_list ')' type_expr block
-var_decl     ::= ('var'|'const') IDENT ':' type_expr '=' expr ';'
-statement    ::= block | if_stmt | while_stmt | defer_stmt | return_stmt | expr ';'
-defer_stmt   ::= 'defer' statement
-slice_expr   ::= '[' ']' type_expr
-```
+### 5.1 Supported Syntax & Features
+*   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
+*   **Primitive Types**: `i8` through `i64`, `u8` through `u64`, `f32`, `f64`, `bool`, `void`.
+*   **Pointers**: Single-level pointers `*T` and `*const T`. Supports address-of `&`, dereference `ptr.*`, and pointer-to-struct access `ptr.field`.
+*   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
+*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
+*   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
+*   **Unions**: Named bare unions via `const U = union { ... };`.
+*   **Functions**: Function declarations with up to 4 parameters. Supports recursion and forward references.
+*   **Control Flow**:
+    *   `if (cond) { ... } else { ... }` (Braced blocks required).
+    *   `while (cond) { ... }` (Supports `break` and `continue`).
+    *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+    *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+*   **Defer**: `defer statement;` or `defer { ... }`.
+*   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 
-**Features explicitly EXCLUDED in Phase 1:**
-* Async/Await
-* Closures/Captures
-* Complex Comptime (only basic integer math allowed)
-* SIMD Vectors
+### 5.2 Explicit Limitations & Rejections
+To maintain C89 compatibility and compiler simplicity:
+*   **No Slices**: `[]T` is strictly rejected.
+*   **No Error Handling**: `!T`, `try`, `catch`, `orelse`, and `errdefer` are rejected (though catalogued for future use).
+*   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
+*   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
+*   **No Struct Methods**: Functions cannot be declared inside a struct.
+*   **No Multi-level Pointers**: `**T` and deeper are rejected.
+*   **No isize/usize**: Use `i32` or `u32` for predictability.
+*   **No Tagged Unions**: Only bare (untagged) unions are supported.
+*   **No Variadic Functions**: Ellipsis `...` is not supported.
+*   **No Function Pointers**: Functions cannot be treated as first-class values (variables/parameters).
+*   **Parameter Limit**: Maximum of 4 parameters per function.
+*   **No Built-ins/Imports**: `@import` and other `@` built-ins are rejected.
+*   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
+
+### 5.3 C89 Mapping Decisions
+*   **Boolean**: Mapped to `int` (1 for true, 0 for false).
+*   **Integer 64-bit**: Mapped to `__int64` (and `unsigned __int64`) for MSVC 6.0 compatibility.
+*   **Null**: Mapped to `((void*)0)`.
+*   **Strings**: String literals are mapped to `const char*`.
+*   **Name Mangling**:
+    *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
+    *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
+    *   Enum members are mangled as `EnumName_MemberName`.
+*   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
 **Defer Statement Semantics:**
 ```zig
