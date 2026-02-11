@@ -73,7 +73,7 @@ TEST_FUNC(Assignment_PointerToVoidPointer_Valid) {
     return true;
 }
 
-TEST_FUNC(Assignment_VoidPointerToPointer_Invalid) {
+TEST_FUNC(Assignment_VoidPointerToPointer_Valid) {
     ArenaAllocator arena(16384);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
@@ -82,10 +82,9 @@ TEST_FUNC(Assignment_VoidPointerToPointer_Invalid) {
     Type* ptr_void_type = createPointerType(arena, get_g_type_void(), false);
     Type* ptr_i32_type = createPointerType(arena, resolvePrimitiveTypeName("i32"), false);
     SourceLocation loc(0, 1, 1);
-    ASSERT_FALSE(checker.IsTypeAssignableTo(ptr_void_type, ptr_i32_type, loc));
-    ErrorHandler& eh = unit.getErrorHandler();
-    ASSERT_TRUE(eh.hasErrors());
-    ASSERT_STREQ(eh.getErrors()[0].message, "C89: Cannot assign void* to typed pointer without cast");
+    // Task 182: *void -> *T is now valid implicitly
+    ASSERT_TRUE(checker.IsTypeAssignableTo(ptr_void_type, ptr_i32_type, loc));
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
     return true;
 }
 

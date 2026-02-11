@@ -57,19 +57,19 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         ASSERT_FALSE(is_c89_compatible(outer_func_type));
     }
 
-    // Test Case 6: Invalid function with a non-C89-compatible parameter
+    // Test Case 6: Valid function with isize parameter
     {
         DynamicArray<Type*>* params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
-        params->append(get_g_type_isize()); // isize is not C89 compatible
+        params->append(get_g_type_isize()); // isize is now C89 compatible
         Type* func_type = createFunctionType(arena, params, get_g_type_void());
-        ASSERT_FALSE(is_c89_compatible(func_type));
+        ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
-    // Test Case 7: Invalid function with a non-C89-compatible return type
+    // Test Case 7: Valid function with usize return type
     {
         DynamicArray<Type*>* params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
-        Type* func_type = createFunctionType(arena, params, get_g_type_usize()); // usize is not C89 compatible
-        ASSERT_FALSE(is_c89_compatible(func_type));
+        Type* func_type = createFunctionType(arena, params, get_g_type_usize()); // usize is now C89 compatible
+        ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
     return true;

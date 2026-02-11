@@ -11,7 +11,8 @@ TEST_FUNC(BootstrapTypes_Allowed_Primitives) {
     const char* primitives[] = {
         "var a: i8 = 0;", "var b: i16 = 0;", "var c: i32 = 0;", "var d: i64 = 0;",
         "var e: u8 = 0;", "var f: u16 = 0;", "var g: u32 = 0;", "var h: u64 = 0;",
-        "var i: f32 = 0;", "var j: f64 = 0.0;", "var k: bool = true;"
+        "var i: f32 = 0;", "var j: f64 = 0.0;", "var k: bool = true;",
+        "var l: isize = 0;", "var m: usize = 0;"
     };
 
     for (size_t i = 0; i < sizeof(primitives) / sizeof(primitives[0]); ++i) {
@@ -52,16 +53,6 @@ TEST_FUNC(BootstrapTypes_Allowed_Enums) {
 }
 
 // --- Negative Tests: Rejected Types ---
-
-TEST_FUNC(BootstrapTypes_Rejected_Isize) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: isize = 0;"));
-    return true;
-}
-
-TEST_FUNC(BootstrapTypes_Rejected_Usize) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: usize = 0;"));
-    return true;
-}
 
 TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer) {
     ASSERT_TRUE(expect_type_checker_abort("var x: * * i32 = null;"));
@@ -106,12 +97,6 @@ TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs) {
 
 TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer_StructField) {
     const char* source = "const S = struct { x: * * i32 };";
-    ASSERT_TRUE(expect_type_checker_abort(source));
-    return true;
-}
-
-TEST_FUNC(BootstrapTypes_Rejected_Isize_Param) {
-    const char* source = "fn f(x: isize) void {}";
     ASSERT_TRUE(expect_type_checker_abort(source));
     return true;
 }

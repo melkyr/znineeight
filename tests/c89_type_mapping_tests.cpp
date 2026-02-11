@@ -59,9 +59,9 @@ TEST_FUNC(C89TypeMapping_Validation) {
     // 5. Verify that invalid or unsupported types are NOT compatible
     ASSERT_FALSE(is_c89_compatible(NULL));
 
-    // isize and usize are not in the C89 map
-    ASSERT_FALSE(is_c89_compatible(get_g_type_isize()));
-    ASSERT_FALSE(is_c89_compatible(get_g_type_usize()));
+    // isize and usize ARE now in the C89 map
+    ASSERT_TRUE(is_c89_compatible(get_g_type_isize()));
+    ASSERT_TRUE(is_c89_compatible(get_g_type_usize()));
 
     // Function types are not C89 compatible in this context
     Type func_type;
