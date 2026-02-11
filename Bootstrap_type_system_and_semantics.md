@@ -304,9 +304,16 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently performs basic field name uniqueness validation. Full union type creation and layout are deferred to future milestones.
 
-### Known Limitations
+### Known Limitations (Milestone 4)
 
 - **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
+- **No Function Pointers**: Functions cannot be stored in variables or passed as arguments. Call sites are strictly resolved to direct function names at compile time.
+- **Max 4 Parameters**: Function declarations and calls are limited to 4 parameters/arguments to ensure stability in legacy calling conventions.
+- **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
+- **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
+- **Explicit Integer Sizes**: `isize` and `usize` are rejected. Use `i32` and `u32` to avoid platform-dependent ambiguity during bootstrap.
+- **Single-level Pointers**: Multi-level pointers like `**T` are rejected to simplify memory safety analysis.
+- **Braces Required**: All control flow blocks (`if`, `while`, `for`) must use curly braces `{}`.
 
 ### Enum Type Declarations
 
@@ -653,12 +660,47 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `fn` | ✗ | - | Function pointers are rejected as values or variables. |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
 
+### Supported Type Syntax Examples
+
+```zig
+// Primitives
+var a: i32 = 42;
+const b: f64 = 3.14;
+var c: bool = true;
+
+// Pointers
+var x: i32 = 10;
+var p: *i32 = &x;
+var val: i32 = p.*;
+
+// Arrays
+fn processArray(arr: [5]i32) void {
+    var first: i32 = arr[0];
+}
+
+// Structs
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+var pt = Point { .x = 1, .y = 2 };
+
+// Enums
+const Color = enum {
+    Red,
+    Green,
+    Blue,
+};
+var col = Color.Red;
+```
+
 ### The `is_c89_compatible` Function
 
 A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. Its behavior is as follows:
 
 -   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
 -   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
+-   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
     -   The function must not have more than 4 parameters.
@@ -666,12 +708,13 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
     -   All parameter types must be C89-compatible.
     -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
 -   **Returns `false`** for `NULL` types.
--   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`).
+-   **Returns `false`** for any type not in the mapping table (e.g., `isize`, `usize`, `anyerror`).
 -   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).
+-   **Returns `false`** for anonymous composite types (structs/unions/enums not assigned to a `const`).
 
-This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` to reject unsupported Zig features early in the compilation process.
+This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` and `C89FeatureValidator` to reject unsupported Zig features early in the compilation process.
 
-## Rejected Zig Features
+## Rejected Zig Features (Milestone 4)
 
 ### Error Handling Types
 | Zig Feature | C89 Equivalent | Status | Rejection Point |
@@ -683,6 +726,15 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `try expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `catch expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `orelse expr` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `errdefer` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `anytype` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `type` (as type) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `[]T` (slice) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `**T` (multi-ptr) | No equivalent | REJECTED | `C89FeatureValidator` / `TypeChecker` |
+| `anyerror` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `@import` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `isize`/`usize` | `int`/`unsigned int` | REJECTED | `C89FeatureValidator` |
 
 These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
 
