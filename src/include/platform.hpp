@@ -35,4 +35,18 @@ char* plat_strrchr(const char* s, int c);
 int plat_memcmp(const void* s1, const void* s2, size_t n);
 void plat_memset(void* s, int c, size_t n);
 
+// Process execution
+// Runs command, captures output into a buffer allocated with plat_alloc.
+// The caller is responsible for calling plat_free on *output.
+// Returns the process exit code, or -1 on failure.
+int plat_run_command(const char* cmd, char** output, size_t* output_size);
+
+// Temporary files
+// Creates a unique temporary file and returns its path allocated with plat_alloc.
+// The caller is responsible for calling plat_free on the returned string.
+char* plat_create_temp_file(const char* prefix, const char* suffix);
+
+// Deletes a file. Returns 0 on success, -1 on failure.
+int plat_delete_file(const char* path);
+
 #endif // PLATFORM_HPP

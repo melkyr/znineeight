@@ -812,4 +812,12 @@ TEST_FUNC(PointerIntegration_DereferenceNonPointerError);
 TEST_FUNC(PointerIntegration_AddressOfNonLValue);
 TEST_FUNC(PointerIntegration_IncompatiblePointerAssignment);
 
+// Task 179: C89 Validation Framework Tests
+TEST_FUNC(C89Validator_GCC_KnownGood);
+TEST_FUNC(C89Validator_GCC_KnownBad);
+TEST_FUNC(C89Validator_MSVC6_LongIdentifier);
+TEST_FUNC(C89Validator_MSVC6_CppComment);
+TEST_FUNC(C89Validator_MSVC6_LongLong);
+TEST_FUNC(C89Validator_MSVC6_KnownGood);
+
 #endif // TEST_DECLARATIONS_HPP
