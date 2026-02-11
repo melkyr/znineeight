@@ -1,8 +1,6 @@
 #ifndef MEMORY_HPP
 #define MEMORY_HPP
 
-#include <cstdio>
-
 #include "common.hpp"
 #include "platform.hpp"
 #include <cstddef> // For size_t
@@ -223,7 +221,22 @@ public:
         if (total_used_for_stats + size > total_cap) {
 #ifdef DEBUG
             char dbg[256];
-            sprintf(dbg, "DEBUG: total_used=%lu, size=%lu, cap=%lu\n", (unsigned long)total_used_for_stats, (unsigned long)size, (unsigned long)total_cap);
+            char* cur = dbg;
+            size_t rem = sizeof(dbg);
+            char n_used[21], n_size[21], n_cap[21];
+            arena_simple_itoa(total_used_for_stats, n_used, sizeof(n_used));
+            arena_simple_itoa(size, n_size, sizeof(n_size));
+            arena_simple_itoa(total_cap, n_cap, sizeof(n_cap));
+
+            dbg[0] = '\0';
+            safe_append(cur, rem, "DEBUG: total_used=");
+            safe_append(cur, rem, n_used);
+            safe_append(cur, rem, ", size=");
+            safe_append(cur, rem, n_size);
+            safe_append(cur, rem, ", cap=");
+            safe_append(cur, rem, n_cap);
+            safe_append(cur, rem, "\n");
+
             plat_print_debug(dbg);
             report_out_of_memory("ArenaAllocator::alloc_aligned (total_cap)", size, total_used_for_stats, 0, total_cap);
 #endif
