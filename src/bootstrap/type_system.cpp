@@ -51,7 +51,11 @@ Type* resolvePrimitiveTypeName(const char* name) {
     return NULL; // Not a known primitive type
 }
 
-Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const) {
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, TypeInterner* interner) {
+    if (interner) {
+        return interner->getPointerType(base_type, is_const);
+    }
+
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
     MemoryTracker::types++;
@@ -77,7 +81,11 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
     return new_type;
 }
 
-Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
+Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner) {
+    if (interner) {
+        return interner->getArrayType(element_type, size);
+    }
+
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
     MemoryTracker::types++;
@@ -147,7 +155,11 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
     return new_type;
 }
 
-Type* createOptionalType(ArenaAllocator& arena, Type* payload) {
+Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* interner) {
+    if (interner) {
+        return interner->getOptionalType(payload);
+    }
+
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
     MemoryTracker::types++;
@@ -223,6 +235,81 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
     return new_type;
+}
+
+// --- TypeInterner Implementation ---
+
+TypeInterner::TypeInterner(ArenaAllocator& arena)
+    : arena_(arena), unique_count(0), dedupe_count(0) {
+    for (int i = 0; i < 256; i++) {
+        buckets[i] = NULL;
+    }
+}
+
+u32 TypeInterner::hashType(TypeKind kind, void* p1, u64 v1) {
+    u32 h = (u32)kind;
+    h ^= (u32)((size_t)p1 & 0xFFFFFFFF);
+    h ^= (u32)(v1 & 0xFFFFFFFF);
+    return h % 256;
+}
+
+Type* TypeInterner::getPointerType(Type* base_type, bool is_const) {
+    u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const);
+    for (Entry* e = buckets[h]; e; e = e->next) {
+        if (e->type->kind == TYPE_POINTER &&
+            e->type->as.pointer.base == base_type &&
+            e->type->as.pointer.is_const == is_const) {
+            dedupe_count++;
+            return e->type;
+        }
+    }
+
+    Type* t = createPointerType(arena_, base_type, is_const, NULL);
+    Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+    e->type = t;
+    e->next = buckets[h];
+    buckets[h] = e;
+    unique_count++;
+    return t;
+}
+
+Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
+    u32 h = hashType(TYPE_ARRAY, element_type, size);
+    for (Entry* e = buckets[h]; e; e = e->next) {
+        if (e->type->kind == TYPE_ARRAY &&
+            e->type->as.array.element_type == element_type &&
+            e->type->as.array.size == size) {
+            dedupe_count++;
+            return e->type;
+        }
+    }
+
+    Type* t = createArrayType(arena_, element_type, size, NULL);
+    Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+    e->type = t;
+    e->next = buckets[h];
+    buckets[h] = e;
+    unique_count++;
+    return t;
+}
+
+Type* TypeInterner::getOptionalType(Type* payload) {
+    u32 h = hashType(TYPE_OPTIONAL, payload, 0);
+    for (Entry* e = buckets[h]; e; e = e->next) {
+        if (e->type->kind == TYPE_OPTIONAL &&
+            e->type->as.optional.payload == payload) {
+            dedupe_count++;
+            return e->type;
+        }
+    }
+
+    Type* t = createOptionalType(arena_, payload, NULL);
+    Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+    e->type = t;
+    e->next = buckets[h];
+    buckets[h] = e;
+    unique_count++;
+    return t;
 }
 
 void typeToString(Type* type, char* buffer, size_t buffer_size) {

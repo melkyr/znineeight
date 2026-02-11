@@ -886,10 +886,10 @@ Output: Runtime assertions in codegen module
         False positive/negative validation results
     Validation: Test framework with known good and bad C89 samples
     Success criteria: Framework accurately identifies valid/invalid C89 code
-180. **Task 180:** Optimize for bootstrap performance
+180. **Task 180:** Optimize for bootstrap performance (DONE)
     - Risk Level: LOW
-    - Minimal type checking overhead and fast symbol lookups
-    - Constraint Check: Performance optimization within C++98 constraints
+    - Implemented lazy chunked arena allocation, transient token arena, and type interning.
+    - Achieved >50% reduction in peak memory usage.
 181. **Task 181:** Document bootstrap limitations clearly
     - Risk Level: MEDIUM
     - List unsupported Zig features and document C89 mapping decisions

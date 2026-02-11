@@ -128,13 +128,40 @@ Type* resolvePrimitiveTypeName(const char* name);
 class ArenaAllocator;
 
 /**
+ * @class TypeInterner
+ * @brief Deduplicates complex types to save memory.
+ */
+class TypeInterner {
+public:
+    TypeInterner(ArenaAllocator& arena);
+    Type* getPointerType(Type* base_type, bool is_const);
+    Type* getArrayType(Type* element_type, u64 size);
+    Type* getOptionalType(Type* payload);
+
+    size_t getUniqueCount() const { return unique_count; }
+    size_t getDeduplicationCount() const { return dedupe_count; }
+
+private:
+    ArenaAllocator& arena_;
+    struct Entry {
+        Type* type;
+        Entry* next;
+    };
+    Entry* buckets[256];
+    size_t unique_count;
+    size_t dedupe_count;
+
+    u32 hashType(TypeKind kind, void* p1, u64 v1);
+};
+
+/**
  * @brief Creates a new pointer Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param base_type A pointer to the Type that the new pointer type should point to.
  * @param is_const True if the pointer type is const-qualified.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const);
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new function Type object from the arena.
@@ -152,7 +179,7 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  * @param size The number of elements in the array.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
+Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new struct Type object from the arena.
@@ -188,7 +215,7 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
  * @param payload The payload type.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createOptionalType(ArenaAllocator& arena, Type* payload);
+Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new error set Type object from the arena.

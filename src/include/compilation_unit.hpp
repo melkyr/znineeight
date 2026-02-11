@@ -62,7 +62,9 @@ public:
     IndirectCallCatalogue& getIndirectCallCatalogue();
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
+    TypeInterner& getTypeInterner();
     ArenaAllocator& getArena();
+    ArenaAllocator& getTokenArena();
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);
@@ -122,6 +124,8 @@ public:
 
 private:
     ArenaAllocator& arena_;
+    ArenaAllocator token_arena_;
+    TypeInterner type_interner_;
     StringInterner& interner_;
     SourceManager source_manager_;
     SymbolTable symbol_table_;

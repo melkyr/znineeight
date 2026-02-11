@@ -163,45 +163,41 @@ static void report_out_of_memory() {
  * memory management, such as during different stages of a compiler.
  */
 class ArenaAllocator {
-    u8* buffer;
-    size_t offset;
-    size_t capacity;
+    struct Chunk {
+        Chunk* next;
+        size_t capacity;
+        size_t offset;
+    };
+
+    Chunk* head;
+    size_t total_cap;
+    size_t total_allocated_from_os;
+    size_t total_used_for_stats; // To maintain compatibility with old getOffset() behavior
 
 public:
     /**
-     * @brief Constructs an ArenaAllocator with a given capacity.
-     * @param capacity The total size of the memory arena in bytes.
+     * @brief Constructs an ArenaAllocator with a maximum capacity cap.
+     * @param capacity_cap The maximum total size of the memory arena in bytes.
      */
-    ArenaAllocator(size_t capacity) : offset(0), capacity(capacity) {
-        buffer = (u8*)plat_alloc(capacity);
-    }
+    ArenaAllocator(size_t capacity_cap)
+        : head(NULL), total_cap(capacity_cap), total_allocated_from_os(0), total_used_for_stats(0) {}
+
     /**
-     * @brief Destroys the ArenaAllocator, freeing the entire memory arena.
+     * @brief Destroys the ArenaAllocator, freeing all memory chunks.
      */
     ~ArenaAllocator() {
-        plat_free(buffer);
+        freeAllChunks();
     }
 
     /**
      * @brief Allocates a block of memory with a default 8-byte alignment.
-     *
-     * This method is the primary, simplified interface for allocation. It guarantees
-     * that the returned pointer is aligned to at least 8 bytes, which is safe for
-     * most data types, including `double` and `__int64`. For specific alignment
-     * needs, use `alloc_aligned`.
-     *
-     * @param size The number of bytes to allocate.
-     * @return A pointer to the allocated memory, or nullptr if the allocation fails.
      */
     void* alloc(size_t size) {
-        return alloc_aligned(size, 8);  // Default to 8-byte alignment
+        return alloc_aligned(size, 8);
     }
 
     /**
      * @brief Allocates a block of memory with a specific alignment and overflow protection.
-     * @param size The number of bytes to allocate.
-     * @param align The desired alignment of the memory block. Must be a power of two.
-     * @return A pointer to the allocated, aligned memory, or nullptr if the arena is full.
      */
     void* alloc_aligned(size_t size, size_t align) {
         if (size == 0) {
@@ -209,63 +205,104 @@ public:
         }
         assert(align != 0 && (align & (align - 1)) == 0);
 
-        const size_t mask = align - 1;
-        size_t new_offset = (offset + mask) & ~mask;
-
-        // Check overflow and capacity
-        if (new_offset < offset || new_offset > capacity - size) {
+        // Check if this request would exceed total_cap regardless of chunking
+        // This maintains compatibility with tests using small capacities.
+        if (total_used_for_stats + size > total_cap) {
 #ifdef DEBUG
-            report_out_of_memory("ArenaAllocator::alloc_aligned", size, new_offset, offset, capacity);
+            report_out_of_memory("ArenaAllocator::alloc_aligned (total_cap)", size, total_used_for_stats, 0, total_cap);
 #endif
             return NULL;
         }
 
-        u8* ptr = buffer + new_offset;
-#ifdef MEASURE_MEMORY
-        size_t actual_size = (new_offset - offset) + size;
-        MemoryTracker::record_allocation(actual_size);
-#endif
-        offset = new_offset + size;
-        return ptr;
+        // Try current chunk
+        if (head) {
+            void* p = try_alloc_in_chunk(head, size, align);
+            if (p) return p;
+        }
+
+        // Need new chunk. For small caps, don't use 1MB chunks.
+        size_t chunk_size = 1024 * 1024; // 1MB default
+        if (chunk_size > total_cap && total_cap > 0) {
+            chunk_size = total_cap + sizeof(Chunk) + 32; // Allow some slack for headers/alignment
+        }
+
+        // Ensure the chunk is large enough for the requested size plus header
+        size_t min_needed = size + align + sizeof(Chunk);
+        if (chunk_size < min_needed) {
+            chunk_size = min_needed;
+        }
+
+        void* mem = plat_alloc(chunk_size);
+        if (!mem) return NULL;
+
+        Chunk* new_chunk = (Chunk*)mem;
+        new_chunk->next = head;
+        new_chunk->capacity = chunk_size;
+        new_chunk->offset = sizeof(Chunk);
+
+        head = new_chunk;
+        total_allocated_from_os += chunk_size;
+
+        return try_alloc_in_chunk(head, size, align);
     }
 
     /**
-     * @brief Resets the allocator, effectively freeing all allocated memory.
-     * This simply resets the offset pointer to the beginning of the arena.
+     * @brief Resets the allocator, freeing all chunks and resetting capacity.
      */
     void reset() {
 #ifdef MEASURE_MEMORY
-        MemoryTracker::record_free(offset);
+        MemoryTracker::record_free(getOffset());
 #endif
-        offset = 0;
+        freeAllChunks();
     }
 
     /**
      * @brief Resets the allocator to a specific offset.
-     * @param checkpoint The offset to restore the arena to.
+     * NOTE: This is complex with multiple chunks, currently only supports
+     * resetting to 0 (which is equivalent to reset()).
      */
     void reset(size_t checkpoint) {
-#ifdef MEASURE_MEMORY
-        if (checkpoint < offset) {
-            MemoryTracker::record_free(offset - checkpoint);
+        if (checkpoint == 0) {
+            reset();
+        } else {
+            // For bootstrap, full reset is usually what's needed.
+            // If we really need partial reset, we'd need to track chunks better.
+            assert(false && "Partial reset not supported in chunked arena");
         }
-#endif
-        offset = checkpoint;
     }
 
     /**
-     * @brief Returns the current memory offset within the arena.
-     * @return The number of bytes currently allocated.
+     * @brief Returns the current memory offset (total bytes used across all chunks).
      */
     size_t getOffset() const {
-        return offset;
+        return total_used_for_stats;
     }
 
     /**
-     * @brief Returns the total capacity of the arena.
+     * @brief Returns the total capacity cap of the arena.
      */
     size_t getCapacity() const {
-        return capacity;
+        return total_cap;
+    }
+
+    /**
+     * @brief Returns true if any memory has been allocated from the OS.
+     */
+    bool isAllocated() const {
+        return head != NULL;
+    }
+
+    /**
+     * @brief Returns the number of chunks currently allocated.
+     */
+    size_t getChunkCount() const {
+        size_t count = 0;
+        Chunk* c = head;
+        while (c) {
+            count++;
+            c = c->next;
+        }
+        return count;
     }
 
     /**
@@ -284,6 +321,41 @@ public:
     }
 
 private:
+    void* try_alloc_in_chunk(Chunk* chunk, size_t size, size_t align) {
+        const size_t mask = align - 1;
+        size_t aligned_offset = (chunk->offset + mask) & ~mask;
+
+        // Note: we still need to check total_cap here because of alignment padding
+        size_t padding = aligned_offset - chunk->offset;
+        if (total_used_for_stats + padding + size > total_cap) {
+            return NULL;
+        }
+
+        if (aligned_offset + size <= chunk->capacity) {
+#ifdef MEASURE_MEMORY
+            size_t actual_size = padding + size;
+            MemoryTracker::record_allocation(actual_size);
+#endif
+            void* ptr = (u8*)chunk + aligned_offset;
+            chunk->offset = aligned_offset + size;
+            total_used_for_stats += (padding + size);
+            return ptr;
+        }
+        return NULL;
+    }
+
+    void freeAllChunks() {
+        Chunk* c = head;
+        while (c) {
+            Chunk* next = c->next;
+            plat_free(c);
+            c = next;
+        }
+        head = NULL;
+        total_allocated_from_os = 0;
+        total_used_for_stats = 0;
+    }
+
     // Make the class non-copyable to prevent accidental copies of the buffer.
     ArenaAllocator(const ArenaAllocator&);
     ArenaAllocator& operator=(const ArenaAllocator&);

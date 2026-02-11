@@ -53,3 +53,12 @@ void TokenSupplier::tokenizeAndCache(u32 file_id) {
     TokenStream final_stream = { stable_tokens, num_tokens };
     token_cache_[file_id] = final_stream;
 }
+
+void TokenSupplier::reset() {
+    token_cache_.clear();
+    // Note: the DynamicArray itself still has its old data/cap pointers,
+    // which point into the now-reset token arena.
+    // We should ideally re-initialize the array or use a non-arena allocator for it.
+    // For bootstrap, re-initializing using placement new is a safe hack.
+    new (&token_cache_) DynamicArray<TokenStream>(arena_);
+}
