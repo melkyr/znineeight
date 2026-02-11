@@ -79,6 +79,10 @@ public:
                 return node->as.identifier.name;
             case NODE_FUNCTION_CALL:
                 return emitFunctionCall(node);
+            case NODE_MEMBER_ACCESS:
+                return emitMemberAccess(node->as.member_access);
+            case NODE_STRUCT_INITIALIZER:
+                return emitStructInitializer(node->as.struct_initializer);
             case NODE_BINARY_OP:
                 return emitBinaryOp(node->as.binary_op);
             case NODE_UNARY_OP:
@@ -241,6 +245,47 @@ public:
     }
 
     /**
+     * @brief Emits a C89 member access expression.
+     */
+    std::string emitMemberAccess(const ASTMemberAccessNode* node) {
+        if (!node) return "/* INVALID MEMBER ACCESS */";
+        return emitExpression(node->base) + "." + node->field_name;
+    }
+
+    /**
+     * @brief Emits a C89 struct initializer (positional).
+     */
+    std::string emitStructInitializer(const ASTStructInitializerNode* node) {
+        if (!node || !node->type_expr || !node->type_expr->resolved_type) return "{ /* INVALID */ }";
+        Type* struct_type = node->type_expr->resolved_type;
+        if (struct_type->kind != TYPE_STRUCT) return "{ /* NOT A STRUCT */ }";
+
+        DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+        std::stringstream ss;
+        ss << "{";
+
+        for (size_t i = 0; i < fields->length(); ++i) {
+            if (i > 0) ss << ", ";
+            const char* field_name = (*fields)[i].name;
+
+            // Find initializer for this field
+            bool found = false;
+            if (node->fields) {
+                for (size_t j = 0; j < node->fields->length(); ++j) {
+                    if (plat_strcmp(field_name, (*node->fields)[j]->field_name) == 0) {
+                        ss << emitExpression((*node->fields)[j]->value);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) ss << "0";
+        }
+        ss << "}";
+        return ss.str();
+    }
+
+    /**
      * @brief Emits a C89 function call.
      */
     std::string emitFunctionCall(const ASTNode* node) {
@@ -298,7 +343,12 @@ private:
             }
         }
 
-        if (type->kind == TYPE_STRUCT) return "struct /* ... */";
+        if (type->kind == TYPE_STRUCT) {
+            if (type->as.struct_details.name) {
+                return "struct " + std::string(type->as.struct_details.name);
+            }
+            return "struct /* anonymous */";
+        }
         if (type->kind == TYPE_ENUM) return "enum /* ... */";
 
         return "/* unsupported type */";

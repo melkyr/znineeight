@@ -90,7 +90,7 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size) {
     return new_type;
 }
 
-Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields) {
+Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
     MemoryTracker::types++;
@@ -98,6 +98,7 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields)
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
+    new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
     return new_type;
 }
@@ -258,7 +259,12 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             safe_append(current, remaining, "enum");
             break;
         case TYPE_STRUCT:
-            safe_append(current, remaining, "struct");
+            safe_append(current, remaining, "struct ");
+            if (type->as.struct_details.name) {
+                safe_append(current, remaining, type->as.struct_details.name);
+            } else {
+                safe_append(current, remaining, "{...}");
+            }
             break;
         case TYPE_ERROR_UNION: {
             if (type->as.error_union.is_inferred) {

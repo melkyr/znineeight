@@ -37,7 +37,7 @@ static const char* getTokenSpelling(TokenType op) {
     }
 }
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL) {
+TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -1141,6 +1141,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         return existing_sym->symbol_type;
     }
 
+    // Capture struct/union name if it's a const declaration
+    const char* prev_struct_name = current_struct_name_;
+    if (node->is_const && node->initializer &&
+        (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
+        current_struct_name_ = node->name;
+    }
+
     Type* declared_type = node->type ? visit(node->type) : NULL;
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
@@ -1182,6 +1189,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             declared_type = initializer_type;
         }
     }
+
+    current_struct_name_ = prev_struct_name;
 
     // Update the symbol in the current scope with flags
     existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
@@ -1316,7 +1325,14 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
     return visitFnBody(node);
 }
 
-Type* TypeChecker::visitStructDecl(ASTNode* /*parent*/, ASTStructDeclNode* node) {
+Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
+    const char* struct_name = current_struct_name_;
+    current_struct_name_ = NULL; // Reset for nested structs
+
+    if (!struct_name) {
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, "anonymous structs are not supported in bootstrap compiler");
+    }
+
     // 1. Check for duplicate field names
     for (size_t i = 0; i < node->fields->length(); ++i) {
         const char* name = (*node->fields)[i]->as.struct_field->name;
@@ -1352,13 +1368,20 @@ Type* TypeChecker::visitStructDecl(ASTNode* /*parent*/, ASTStructDeclNode* node)
     }
 
     // 3. Create struct type and calculate layout
-    Type* struct_type = createStructType(unit.getArena(), fields);
+    Type* struct_type = createStructType(unit.getArena(), fields, struct_name);
     calculateStructLayout(struct_type);
 
     return struct_type;
 }
 
-Type* TypeChecker::visitUnionDecl(ASTNode* /*parent*/, ASTUnionDeclNode* node) {
+Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
+    const char* union_name = current_struct_name_;
+    current_struct_name_ = NULL; // Reset
+
+    if (!union_name) {
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, "anonymous unions are not supported in bootstrap compiler");
+    }
+
     // Basic validation for unions as well
     for (size_t i = 0; i < node->fields->length(); ++i) {
         const char* name = (*node->fields)[i]->as.struct_field->name;
