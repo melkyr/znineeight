@@ -172,7 +172,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
             if (is_lvalue) {
-                return createPointerType(unit.getArena(), operand_type, false);
+                return createPointerType(unit.getArena(), operand_type, false, &unit.getTypeInterner());
             }
 
             unit.getErrorHandler().report(ERR_LVALUE_EXPECTED, node->operand->loc, "l-value expected as operand of address-of operator '&'");
@@ -948,7 +948,7 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
 Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
     Type* char_type = resolvePrimitiveTypeName("u8");
     // String literals are pointers to constant characters.
-    return createPointerType(unit.getArena(), char_type, true);
+    return createPointerType(unit.getArena(), char_type, true, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
@@ -1705,7 +1705,7 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
         // Error already reported by the base type visit
         return NULL;
     }
-    return createPointerType(unit.getArena(), base_type, node->is_const);
+    return createPointerType(unit.getArena(), base_type, node->is_const, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
@@ -1729,7 +1729,7 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 
     // 4. Create and return the new array type
     u64 array_size = node->size->as.integer_literal.value;
-    return createArrayType(unit.getArena(), element_type, array_size);
+    return createArrayType(unit.getArena(), element_type, array_size, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {
@@ -1763,7 +1763,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
     logFeatureLocation("optional_type", node->loc);
     Type* payload = visit(node->payload_type);
-    return createOptionalType(unit.getArena(), payload);
+    return createOptionalType(unit.getArena(), payload, &unit.getTypeInterner());
 }
 
 void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {

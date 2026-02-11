@@ -37,6 +37,12 @@ public:
      */
     TokenStream getTokensForFile(u32 file_id);
 
+    /**
+     * @brief Resets the token supplier, clearing all cached token streams.
+     * This should be called after resetting the arena used by the supplier.
+     */
+    void reset();
+
 private:
     SourceManager& source_manager_;
     StringInterner& interner_;

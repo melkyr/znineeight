@@ -28,21 +28,25 @@ To ensure compatibility with 1998-era hardware and software:
 The compiler uses a layered architecture relying heavily on "Arena Allocation" to avoid `malloc`/`free` overhead on slow 90s allocators.
 
 ### 3.1 Memory Management (`memory.hpp`)
-**Concept:** A region-based allocator that frees all memory at once (e.g., after a compilation pass). It uses the PAL (`plat_alloc`) to acquire its initial buffer.
+**Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
 
 ```cpp
 class ArenaAllocator {
-    char* buffer;           // Large pre-allocated block (e.g., 1MB)
-    size_t offset;          // Current "bump" pointer
-    size_t capacity;        // Max size
+    struct Chunk {
+        Chunk* next;
+        size_t capacity;
+        size_t offset;
+    };
+    Chunk* head;            // Linked list of allocated chunks
+    size_t total_cap;       // Maximum allowed total capacity (e.g., 16MB)
 public:
-    void* alloc(size_t size); // Returns &buffer[offset] and increments offset
+    void* alloc(size_t size); // Allocs in current chunk or creates new one
     void* alloc_aligned(size_t size, size_t align);
-    void reset();           // Sets offset = 0 (fast free)
+    void reset();           // Frees all chunks from OS
 };
 ```
-* **Usage:** AST Nodes, Types, and Symbols are allocated here
-* **Alignment:** The `alloc()` method now guarantees 8-byte alignment for all allocations, which is safe for most data types. For specific alignment needs, `alloc_aligned()` is available.
+* **Usage:** AST Nodes, Types, and Symbols are allocated here. A transient `token_arena` is used during parsing and reset immediately after to free memory early.
+* **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 
 ### 3.2 Utility Functions (`utils.hpp`)

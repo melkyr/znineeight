@@ -11,7 +11,7 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, const char* module_name)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, const char* module_name)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
@@ -19,6 +19,7 @@ Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolT
       symbol_table_(symbol_table),
       catalogue_(catalogue),
       generic_catalogue_(generic_catalogue),
+      type_interner_(type_interner),
       module_name_(module_name),
       recursion_depth_(0)
 {
@@ -1459,7 +1460,7 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
         if (base_type == NULL) {
             return NULL; // Propagate the failure
         }
-        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const);
+        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const, type_interner_);
     }
     // Let the TypeChecker handle unsupported types.
     return NULL;

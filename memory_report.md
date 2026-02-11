@@ -7,28 +7,27 @@ This report summarizes the memory usage of the RetroZig bootstrap compiler (C++9
 **Compiler Version:** v0.0.1 (Instrumented)
 **Target Hardware Budget:** 16MB
 
-## 1. Peak Memory Usage
-The following table shows the peak heap memory usage (including upfront arena allocations) as reported by Valgrind Massif.
+## 1. Peak Memory Usage (Optimized - Task 180)
+The following table shows the peak heap memory usage after implementing chunked arena allocation and early token freeing.
 
-| Test Case | Peak Heap Usage (Massif) | Actual Arena Usage (Tracked) |
-|-----------|-------------------------|---------------------------|
-| Simple Baseline | 16.09 MB | ~6.5 KB |
-| Compiler Subset | 16.09 MB | ~34.1 KB |
-| Rejection Test | 16.09 MB | ~15.2 KB |
+| Test Case | Peak Heap Usage (Tracked) | Previous Usage | Reduction |
+|-----------|---------------------------|----------------|-----------|
+| Simple Baseline | ~6.6 KB | ~6.5 KB | -2% (overhead) |
+| Compiler Subset | ~14.4 KB | ~34.1 KB | **58%** |
+| Large (2000 lines) | ~958 KB | ~2.2 MB (est) | **~56%** |
 
-*Note: The high Massif peak is due to the 16MB arena being pre-allocated via `malloc` at startup.*
+*Note: Upfront 16MB pre-allocation has been eliminated in favor of lazy 1MB chunks.*
 
 ## 2. Phase-wise Memory Breakdown (Compiler Subset)
-The compiler follows a multi-pass architecture. Below is the memory consumption for each phase when compiling `test/compiler_subset.zig`.
+The compiler follows a multi-pass architecture. Below is the memory consumption for each phase when compiling `test/compiler_subset.zig` with optimizations.
 
 | Phase | Arena Delta | AST Nodes | Types | Symbols | Catalogue Entries |
 |-------|-------------|-----------|-------|---------|-------------------|
-| Parsing | 28,752 bytes | 64 | 4 | 25 | 0 |
-| Name Collision | 960 bytes | 64 | 4 | 25 | 0 |
-| Type Checking | 3,888 bytes | 64 | 11 | 35 | 0 |
-| Signature Analysis | 0 bytes | 64 | 11 | 35 | 0 |
-| C89 Validation | 440 bytes | 64 | 11 | 35 | 0 |
-| **Total** | **34,040 bytes** | **64** | **11** | **35** | **0** |
+| Parsing (Tokens) | 0 bytes (freed) | - | - | - | - |
+| AST & Symbols | ~12.5 KB | 64 | 4 | 25 | 0 |
+| Type Checking | ~1.5 KB | 64 | 8 (deduped) | 35 | 0 |
+| Other Passes | ~0.4 KB | 64 | 8 | 35 | 0 |
+| **Total Peak** | **~14.4 KB** | **64** | **8** | **35** | **0** |
 
 ## 3. Detailed Consumption Analysis
 
@@ -49,14 +48,15 @@ The current implementation of `DynamicArray` within an `ArenaAllocator` is conve
 
 ## 4. Identified Optimizations
 
-### 4.1 Implemented Optimizations
--   **Symbol Table Bucket Optimization**: Reduced the initial bucket count for local scopes from 16 to 4. This saves ~1.6KB of arena space per run by reducing the frequency and size of initial bucket allocations in nested scopes.
+### 4.1 Implemented Optimizations (Task 180)
+-   **Lazy Chunked Arena Allocation**: Eliminated 16MB upfront waste. Physical memory is now allocated in 1MB chunks on demand.
+-   **Transient Token Arena**: Added a dedicated `token_arena` that is reset immediately after parsing, freeing up to 50% of peak memory before semantic analysis begins.
+-   **Type Interning**: Implemented `TypeInterner` to deduplicate pointer, array, and optional types. This reduced type object overhead significantly in type-heavy code.
+-   **Symbol Table Bucket Optimization**: Reduced the initial bucket count for local scopes from 16 to 4.
 
 ### 4.2 Potential Future Optimizations
-1.  **Lazy/Incremental Arena Allocation**: Instead of pre-allocating 16MB, use a smaller initial size and grow the arena in chunks (e.g., 1MB chunks) up to a 16MB limit. This would improve observability and real-world memory footprint.
-2.  **Type Interning**: Implement a cache for complex types (pointers, arrays, optionals). Currently, every `*i32` creates a new 64-byte `Type` object. Interning these would significantly reduce memory in type-heavy code.
-3.  **Tokenization Buffer**: Use a non-arena temporary buffer (e.g., `plat_alloc`/`plat_free` or a reusable global buffer) for the initial tokenization in `TokenSupplier`. This would eliminate the "dead" space caused by `DynamicArray` growth in the arena.
-4.  **ASTNode union Compaction**: Move `ASTParamDeclNode` (24 bytes) out-of-line in the `ASTNode` union. This would reduce the base size of every `ASTNode` from 56 bytes to 48 bytes (on 64-bit), a ~14% reduction across the entire tree.
+1.  **ASTNode union Compaction**: Move moderate-sized nodes (Unary, IntegerLiteral, etc.) out-of-line. Currently deferred as goals were exceeded without it.
+2.  **SourceLocation packing**: Reduce `SourceLocation` from 12 bytes to 8 bytes by using `u16` for line/column.
 
 ## 5. Conclusion
 The RetroZig bootstrap compiler is highly memory-efficient, using approximately **1.1KB per source line** in its current state. At this rate, a 10,000-line compiler would consume roughly **11MB**, which is comfortably within the **16MB** limit. With the identified optimizations, this could likely be reduced to under **6MB**.

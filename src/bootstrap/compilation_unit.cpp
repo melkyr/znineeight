@@ -56,6 +56,14 @@ public:
 
     void print_report() {
         plat_print_info("\n=== PHASE MEMORY REPORT ===\n");
+        char stat_buf[256];
+        char num_buf_stat[32];
+
+        simple_itoa((long)unit.getTypeInterner().getDeduplicationCount(), num_buf_stat, sizeof(num_buf_stat));
+        plat_print_info("Total Type Deduplications: ");
+        plat_print_info(num_buf_stat);
+        plat_print_info("\n");
+
         for (size_t i = 0; i < phases.length(); i++) {
             PhaseStats& s = phases[i];
             size_t delta = s.arena_after - s.arena_before;
@@ -111,11 +119,13 @@ static void fatalError(const char* message) {
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
+      token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
+      type_interner_(arena),
       interner_(interner),
       source_manager_(arena),
       symbol_table_(arena),
       error_handler_(source_manager_, arena),
-      token_supplier_(source_manager_, interner_, arena),
+      token_supplier_(source_manager_, interner_, token_arena_),
       error_set_catalogue_(arena),
       generic_catalogue_(arena),
       error_function_catalogue_(arena),
@@ -182,7 +192,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_, current_module_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_, &type_interner_, current_module_);
 }
 
 /**
@@ -253,6 +263,14 @@ ArenaAllocator& CompilationUnit::getArena() {
     return arena_;
 }
 
+ArenaAllocator& CompilationUnit::getTokenArena() {
+    return token_arena_;
+}
+
+TypeInterner& CompilationUnit::getTypeInterner() {
+    return type_interner_;
+}
+
 const char* CompilationUnit::getCurrentModule() const {
     return current_module_;
 }
@@ -298,7 +316,7 @@ void CompilationUnit::injectRuntimeSymbols() {
     void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
     params->append(get_g_type_u32());
-    Type* ret_type = createPointerType(arena_, get_g_type_u8(), false);
+    Type* ret_type = createPointerType(arena_, get_g_type_u8(), false, &type_interner_);
     Type* fn_type = createFunctionType(arena_, params, ret_type);
 
     const char* alloc_name = interner_.intern("arena_alloc");
@@ -313,7 +331,7 @@ void CompilationUnit::injectRuntimeSymbols() {
     // arena_free(ptr: *u8) -> void
     void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
-    params2->append(createPointerType(arena_, get_g_type_u8(), false));
+    params2->append(createPointerType(arena_, get_g_type_u8(), false, &type_interner_));
     Type* ret_type2 = get_g_type_void();
     Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
 
@@ -419,6 +437,24 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     ASTNode* ast = parser->parse();
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
+#endif
+
+    // Reset token arena early to free memory!
+    // After parsing, AST doesn't need the tokens anymore.
+#ifdef MEASURE_MEMORY
+    size_t token_mem = token_arena_.getOffset();
+    char num_buf[32];
+    simple_itoa((long)token_mem, num_buf, sizeof(num_buf));
+    plat_print_info("Token arena before reset: ");
+    plat_print_info(num_buf);
+    plat_print_info(" bytes\n");
+#endif
+
+    token_arena_.reset();
+    token_supplier_.reset();
+
+#ifdef MEASURE_MEMORY
+    plat_print_info("Token arena after reset: 0 bytes\n");
 #endif
     if (!ast) return false;
 
