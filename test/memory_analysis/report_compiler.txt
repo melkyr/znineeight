@@ -1,0 +1,230 @@
+--------------------------------------------------------------------------------
+Command:            ./build/zig0_instrumented full_pipeline test/compiler_subset.zig
+Massif arguments:   --massif-out-file=test/memory_analysis/massif_compiler.out --stacks=yes --time-unit=i --detailed-freq=5
+ms_print arguments: test/memory_analysis/massif_compiler.out
+--------------------------------------------------------------------------------
+
+
+    MB
+2.085^                                                                  @
+     |                                                             ##:::@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                             # : :@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+     |                                                            :# : :@::::@
+   0 +----------------------------------------------------------------------->Mi
+     0                                                                   2.293
+
+Number of snapshots: 58
+ Detailed snapshots: [1, 5, 6, 9, 21, 22, 32, 36, 40, 47 (peak), 51, 56]
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+  0              0                0                0             0            0
+  1         39,299            7,680                0             0        7,680
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+  2        100,788            1,088                0             0        1,088
+  3        152,017            1,528                0             0        1,528
+  4        193,097            1,768                0             0        1,768
+  5        222,114            1,304                0             0        1,304
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+  6        261,582            1,768                0             0        1,768
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+  7        320,184            1,528                0             0        1,528
+  8        354,026            1,304                0             0        1,304
+  9        392,191            1,528                0             0        1,528
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 10        446,814            1,528                0             0        1,528
+ 11        483,043            1,304                0             0        1,304
+ 12        526,338            1,304                0             0        1,304
+ 13        574,573            1,528                0             0        1,528
+ 14        610,505            1,768                0             0        1,768
+ 15        663,091            1,304                0             0        1,304
+ 16        703,211            1,768                0             0        1,768
+ 17        757,811            1,528                0             0        1,528
+ 18        801,704            1,768                0             0        1,768
+ 19        842,405            1,768                0             0        1,768
+ 20        890,245            1,304                0             0        1,304
+ 21        952,708            1,528                0             0        1,528
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 22      1,004,416            1,528                0             0        1,528
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 23      1,045,575            1,528                0             0        1,528
+ 24      1,098,405            1,528                0             0        1,528
+ 25      1,139,992            1,528                0             0        1,528
+ 26      1,181,583            1,768                0             0        1,768
+ 27      1,222,678            1,528                0             0        1,528
+ 28      1,274,035            1,528                0             0        1,528
+ 29      1,305,013            1,760                0             0        1,760
+ 30      1,346,751            1,304                0             0        1,304
+ 31      1,394,574            1,368                0             0        1,368
+ 32      1,445,264            1,528                0             0        1,528
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 33      1,479,021            1,304                0             0        1,304
+ 34      1,546,271            1,768                0             0        1,768
+ 35      1,579,934            1,880                0             0        1,880
+ 36      1,613,779            1,304                0             0        1,304
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 37      1,647,467            1,528                0             0        1,528
+ 38      1,714,575            1,528                0             0        1,528
+ 39      1,748,229            1,528                0             0        1,528
+ 40      1,782,169            1,768                0             0        1,768
+00.00% (0B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 41      1,816,312            1,768                0             0        1,768
+ 42      1,849,893            1,304                0             0        1,304
+ 43      1,883,736            1,768                0             0        1,768
+ 44      1,934,175              656                0             0          656
+ 45      1,967,943              312                0             0          312
+ 46      2,005,584        1,135,048        1,122,899            37       12,112
+ 47      2,037,756        2,184,256        2,171,475            45       12,736
+99.41% (2,171,475B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->96.04% (2,097,747B) 0x130B51: plat_alloc(unsigned long) (platform.cpp:195)
+| ->96.01% (2,097,152B) 0x10FA15: ArenaAllocator::alloc_aligned(unsigned long, unsigned long) (memory.hpp:264)
+| | ->96.01% (2,097,152B) 0x10F6C7: ArenaAllocator::alloc(unsigned long) (memory.hpp:202)
+| |   ->48.01% (1,048,576B) 0x1342BA: SymbolTable::enterScope() (symbol_table.cpp:166)
+| |   | ->48.01% (1,048,576B) 0x13426B: SymbolTable::SymbolTable(ArenaAllocator&) (symbol_table.cpp:160)
+| |   |   ->48.01% (1,048,576B) 0x11247E: CompilationUnit::CompilationUnit(ArenaAllocator&, StringInterner&) (compilation_unit.cpp:126)
+| |   |     ->48.01% (1,048,576B) 0x124F64: main (main.cpp:118)
+| |   |
+| |   ->48.01% (1,048,576B) 0x13545E: DynamicArray<TokenStream>::ensure_capacity(unsigned long) (memory.hpp:451)
+| |     ->48.01% (1,048,576B) 0x135316: DynamicArray<TokenStream>::append(TokenStream const&) (memory.hpp:480)
+| |       ->48.01% (1,048,576B) 0x135032: TokenSupplier::getTokensForFile(unsigned int) (token_supplier.cpp:15)
+| |         ->48.01% (1,048,576B) 0x11297F: CompilationUnit::createParser(unsigned int) (compilation_unit.cpp:188)
+| |           ->48.01% (1,048,576B) 0x11383D: CompilationUnit::performFullPipeline(unsigned int) (compilation_unit.cpp:436)
+| |             ->48.01% (1,048,576B) 0x1249C8: runCompilationPipeline(CompilationUnit&, unsigned int) (main.cpp:20)
+| |               ->48.01% (1,048,576B) 0x125064: main (main.cpp:136)
+| |
+| ->00.03% (595B) in 1+ places, all below ms_print's threshold (01.00%)
+|
+->03.38% (73,728B) 0x491438E: ??? (in /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+  ->03.38% (73,728B) 0x400571E: call_init.part.0 (dl-init.c:74)
+    ->03.38% (73,728B) 0x4005823: call_init (dl-init.c:120)
+      ->03.38% (73,728B) 0x4005823: _dl_init (dl-init.c:121)
+        ->03.38% (73,728B) 0x401F59F: ??? (in /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+          ->03.38% (73,728B) 0x2: ???
+            ->03.38% (73,728B) 0x1FFF000232: ???
+              ->03.38% (73,728B) 0x1FFF00024C: ???
+                ->03.38% (73,728B) 0x1FFF00025A: ???
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 48      2,104,826        2,183,848        2,171,475            45       12,328
+ 49      2,171,848        2,184,032        2,171,475            45       12,512
+ 50      2,200,871        2,184,704        2,171,475            45       13,184
+ 51      2,229,905        2,185,968        2,171,475            45       14,448
+99.34% (2,171,475B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->95.96% (2,097,747B) 0x130B51: plat_alloc(unsigned long) (platform.cpp:195)
+| ->95.94% (2,097,152B) 0x10FA15: ArenaAllocator::alloc_aligned(unsigned long, unsigned long) (memory.hpp:264)
+| | ->95.94% (2,097,152B) 0x10F6C7: ArenaAllocator::alloc(unsigned long) (memory.hpp:202)
+| |   ->47.97% (1,048,576B) 0x1342BA: SymbolTable::enterScope() (symbol_table.cpp:166)
+| |   | ->47.97% (1,048,576B) 0x13426B: SymbolTable::SymbolTable(ArenaAllocator&) (symbol_table.cpp:160)
+| |   |   ->47.97% (1,048,576B) 0x11247E: CompilationUnit::CompilationUnit(ArenaAllocator&, StringInterner&) (compilation_unit.cpp:126)
+| |   |     ->47.97% (1,048,576B) 0x124F64: main (main.cpp:118)
+| |   |
+| |   ->47.97% (1,048,576B) 0x13545E: DynamicArray<TokenStream>::ensure_capacity(unsigned long) (memory.hpp:451)
+| |     ->47.97% (1,048,576B) 0x135316: DynamicArray<TokenStream>::append(TokenStream const&) (memory.hpp:480)
+| |       ->47.97% (1,048,576B) 0x135032: TokenSupplier::getTokensForFile(unsigned int) (token_supplier.cpp:15)
+| |         ->47.97% (1,048,576B) 0x11297F: CompilationUnit::createParser(unsigned int) (compilation_unit.cpp:188)
+| |           ->47.97% (1,048,576B) 0x11383D: CompilationUnit::performFullPipeline(unsigned int) (compilation_unit.cpp:436)
+| |             ->47.97% (1,048,576B) 0x1249C8: runCompilationPipeline(CompilationUnit&, unsigned int) (main.cpp:20)
+| |               ->47.97% (1,048,576B) 0x125064: main (main.cpp:136)
+| |
+| ->00.03% (595B) in 1+ places, all below ms_print's threshold (01.00%)
+|
+->03.37% (73,728B) 0x491438E: ??? (in /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+  ->03.37% (73,728B) 0x400571E: call_init.part.0 (dl-init.c:74)
+    ->03.37% (73,728B) 0x4005823: call_init (dl-init.c:120)
+      ->03.37% (73,728B) 0x4005823: _dl_init (dl-init.c:121)
+        ->03.37% (73,728B) 0x401F59F: ??? (in /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+          ->03.37% (73,728B) 0x2: ???
+            ->03.37% (73,728B) 0x1FFF000232: ???
+              ->03.37% (73,728B) 0x1FFF00024C: ???
+                ->03.37% (73,728B) 0x1FFF00025A: ???
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 52      2,258,935        1,135,232        1,122,899            37       12,296
+ 53      2,287,966        1,135,184        1,122,899            37       12,248
+ 54      2,317,070        1,136,240        1,122,899            37       13,304
+ 55      2,346,091        1,135,016        1,122,899            37       12,080
+ 56      2,375,149        1,135,712        1,122,899            37       12,776
+98.87% (1,122,899B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.38% (1,049,171B) 0x130B51: plat_alloc(unsigned long) (platform.cpp:195)
+| ->92.33% (1,048,576B) 0x10FA15: ArenaAllocator::alloc_aligned(unsigned long, unsigned long) (memory.hpp:264)
+| | ->92.33% (1,048,576B) 0x10F6C7: ArenaAllocator::alloc(unsigned long) (memory.hpp:202)
+| |   ->92.33% (1,048,576B) 0x1342BA: SymbolTable::enterScope() (symbol_table.cpp:166)
+| |   | ->92.33% (1,048,576B) 0x13426B: SymbolTable::SymbolTable(ArenaAllocator&) (symbol_table.cpp:160)
+| |   |   ->92.33% (1,048,576B) 0x11247E: CompilationUnit::CompilationUnit(ArenaAllocator&, StringInterner&) (compilation_unit.cpp:126)
+| |   |     ->92.33% (1,048,576B) 0x124F64: main (main.cpp:118)
+| |   |
+| |   ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
+| |
+| ->00.05% (595B) in 1+ places, all below ms_print's threshold (01.00%)
+|
+->06.49% (73,728B) 0x491438E: ??? (in /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+  ->06.49% (73,728B) 0x400571E: call_init.part.0 (dl-init.c:74)
+    ->06.49% (73,728B) 0x4005823: call_init (dl-init.c:120)
+      ->06.49% (73,728B) 0x4005823: _dl_init (dl-init.c:121)
+        ->06.49% (73,728B) 0x401F59F: ??? (in /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+          ->06.49% (73,728B) 0x2: ???
+            ->06.49% (73,728B) 0x1FFF000232: ???
+              ->06.49% (73,728B) 0x1FFF00024C: ???
+                ->06.49% (73,728B) 0x1FFF00025A: ???
+
+--------------------------------------------------------------------------------
+  n        time(i)         total(B)   useful-heap(B) extra-heap(B)    stacks(B)
+--------------------------------------------------------------------------------
+ 57      2,404,233           75,792           73,728             8        2,056

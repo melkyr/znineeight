@@ -787,7 +787,7 @@ Output: Runtime assertions in codegen module
     - Risk Level: MEDIUM
     - Test basic type checking functionality and verify C89 compatibility of generated types
     - Constraint Risk: Tests must cover all rejected features, not just accepted ones
-170. **Task 170:** LITERAL EXPRESSION INTEGRATION TEST (LOW)
+170. [COMPLETE] **Task 170:** LITERAL EXPRESSION INTEGRATION TEST (LOW) (DONE)
 
     What to implement: Test literal expressions end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -797,7 +797,7 @@ Output: Runtime assertions in codegen module
     Validation: Run generated C through C89 compiler
     Success criteria: All literal expressions generate and compile successfully
 
-171. **Task 171:** VARIABLE DECLARATION INTEGRATION TEST (LOW)
+171. [COMPLETE] **Task 171:** VARIABLE DECLARATION INTEGRATION TEST (LOW) (DONE)
 
     What to implement: Test variable declarations end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -827,7 +827,7 @@ Output: Runtime assertions in codegen module
     Validation: Ensure C89 compiler accepts function declarations
     Success criteria: All function declarations compile successfully
 
-174. **Task 174:** SIMPLE FUNCTION CALL INTEGRATION TEST (MEDIUM)
+174. [COMPLETE] **Task 174:** SIMPLE FUNCTION CALL INTEGRATION TEST (MEDIUM) (DONE)
 
     What to implement: Test function calls end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -837,7 +837,7 @@ Output: Runtime assertions in codegen module
     Validation: Execute generated C code and verify correctness
     Success criteria: Function calls work identically in both versions
 
-175. **Task 175:** IF STATEMENT INTEGRATION TEST (MEDIUM)
+175. [COMPLETE] **Task 175:** IF STATEMENT INTEGRATION TEST (MEDIUM) (DONE)
 
     What to implement: Test if statements end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -847,7 +847,7 @@ Output: Runtime assertions in codegen module
     Validation: Test all if statement variations compile and run
     Success criteria: Control flow behaves identically in both languages
 
-176. **Task 176:** WHILE LOOP INTEGRATION TEST (MEDIUM)
+176. [COMPLETE] **Task 176:** WHILE LOOP INTEGRATION TEST (MEDIUM) (DONE)
 
     What to implement: Test while loops end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -857,7 +857,7 @@ Output: Runtime assertions in codegen module
     Validation: Ensure loops execute correctly in C89
     Success criteria: Loops produce identical results in both implementations
 
-177. **Task 177:** BASIC STRUCT INTEGRATION TEST (MEDIUM)
+177. [COMPLETE] **Task 177:** BASIC STRUCT INTEGRATION TEST (MEDIUM) (DONE)
 
     What to implement: Test struct usage end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"
@@ -867,7 +867,7 @@ Output: Runtime assertions in codegen module
     Validation: Verify struct operations compile and work in C89
     Success criteria: Struct operations function identically in both languages
 
-178. **Task 178:** POINTER OPERATION INTEGRATION TEST (HIGH)
+178. [COMPLETE] **Task 178:** POINTER OPERATION INTEGRATION TEST (HIGH) (DONE)
 
     What to implement: Test pointer operations end-to-end
     Watch for: "Memory overhead of validation data structures", "Avoid heap allocations in validation logic"

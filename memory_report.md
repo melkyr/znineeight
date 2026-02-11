@@ -1,62 +1,48 @@
-# Memory Analysis Report - Milestone 4 (Task 166)
+# Memory Analysis Report - Milestone 4 (Task 180 Final)
 
 ## Overview
-This report summarizes the memory usage of the RetroZig bootstrap compiler (C++98) during various stages of compilation. The analysis was performed using a representative subset of the compiler source code and standard benchmark programs.
+This report summarizes the memory usage of the RetroZig bootstrap compiler (C++98) after the performance and memory optimizations of Task 180. The analysis uses both internal instrumentation and external profiling with Valgrind Massif.
 
-**Date:** Mon Feb 9 14:40:00 UTC 2026
-**Compiler Version:** v0.0.1 (Instrumented)
+**Date:** Wed Feb 11 19:10:00 UTC 2026
+**Compiler Version:** v0.0.1-opt (Task 180)
 **Target Hardware Budget:** 16MB
 
-## 1. Peak Memory Usage (Optimized - Task 180)
-The following table shows the peak heap memory usage after implementing chunked arena allocation and early token freeing.
+## 1. Peak Memory Usage (System Level - Valgrind Massif)
+Valgrind Massif tracks all OS-level heap allocations. This represents the true physical memory footprint of the compiler process.
 
-| Test Case | Peak Heap Usage (Tracked) | Previous Usage | Reduction |
-|-----------|---------------------------|----------------|-----------|
-| Simple Baseline | ~6.6 KB | ~6.5 KB | -2% (overhead) |
-| Compiler Subset | ~14.4 KB | ~34.1 KB | **58%** |
-| Large (2000 lines) | ~958 KB | ~2.2 MB (est) | **~56%** |
+| Test Case | Peak Heap Usage (Valgrind) | Previous Baseline (Est.) | Status |
+|-----------|----------------------------|-------------------------|--------|
+| Simple Program | 2.17 MB | ~18.1 MB | **PASS** |
+| Compiler Subset | 2.17 MB | ~18.1 MB | **PASS** |
 
-*Note: Upfront 16MB pre-allocation has been eliminated in favor of lazy 1MB chunks.*
+*Note: The previous baseline included a fixed 16MB upfront arena allocation plus ~2.1MB of system/CRT overhead.*
 
-## 2. Phase-wise Memory Breakdown (Compiler Subset)
-The compiler follows a multi-pass architecture. Below is the memory consumption for each phase when compiling `test/compiler_subset.zig` with optimizations.
+## 2. Phase-wise Memory Breakdown (Internal Instrumentation)
+These metrics track allocations within the `ArenaAllocator` and the transient `token_arena`.
 
-| Phase | Arena Delta | AST Nodes | Types | Symbols | Catalogue Entries |
-|-------|-------------|-----------|-------|---------|-------------------|
-| Parsing (Tokens) | 0 bytes (freed) | - | - | - | - |
-| AST & Symbols | ~12.5 KB | 64 | 4 | 25 | 0 |
-| Type Checking | ~1.5 KB | 64 | 8 (deduped) | 35 | 0 |
-| Other Passes | ~0.4 KB | 64 | 8 | 35 | 0 |
-| **Total Peak** | **~14.4 KB** | **64** | **8** | **35** | **0** |
+| Phase | Arena Delta | AST Nodes | Types | Symbols |
+|-------|-------------|-----------|-------|---------|
+| Parsing (Tokens) | ~20 KB (freed) | - | - | - |
+| AST Construction | ~8.1 KB | 64 | 3 | 25 |
+| Type Checking | ~3.8 KB | 64 | 9 (interned) | 35 |
+| **Total Peak Arena** | **~13.3 KB** | **64** | **9** | **35** |
 
-## 3. Detailed Consumption Analysis
+## 3. Key Optimization Impact
 
-### 3.1 Hotspots by Method
-Based on code instrumentation and analysis, the following methods are the primary contributors to memory consumption:
+### 3.1 Lazy Chunked Allocation
+- **Impact**: Reduced upfront physical memory waste from 16MB to 0B.
+- **Mechanism**: ArenaAllocator now allocates 1MB chunks from the OS only when needed. For small compilations, only a single chunk (or none if the target is very small) is ever requested.
+- **Valgrind Evidence**: Massif shows no large blocks being allocated at startup.
 
-1.  **`TokenSupplier::tokenizeAndCache`**: This is the single largest consumer in the Parsing phase. It uses a `DynamicArray<Token>` that grows multiple times in the arena. Because the arena never frees memory, each growth leaves behind a "dead" buffer.
-    -   *Consumption*: ~14KB for a 30-line file (including temporary growth and final stable array).
-2.  **`Parser::createNode`**: Allocates `ASTNode` structures.
-    -   *Consumption*: ~3.5KB (64 nodes * 56 bytes).
-3.  **`Scope::insert`**: Allocates `SymbolEntry` and grows the symbol table bucket array.
-    -   *Consumption*: ~3KB (25 symbols * 80 bytes + bucket arrays).
-4.  **`createPointerType` / `createStructType`**: Allocates `Type` objects in the arena.
-    -   *Consumption*: ~0.7KB (11 types * 64 bytes).
+### 3.2 Transient Token Arena
+- **Impact**: Tokens no longer contribute to peak memory during semantic analysis.
+- **Mechanism**: A dedicated `token_arena` is reset immediately after the parsing phase.
+- **Verification**: Logs show `Token arena before reset: 20640 bytes` and `Token arena after reset: 0 bytes` before Type Checking begins.
 
-### 3.2 Arena Waste
-The current implementation of `DynamicArray` within an `ArenaAllocator` is convenient but wasteful during the "growth" phase. For a 300-token file, approximately 8KB of arena space is occupied by old, unused token buffers that cannot be reclaimed until the arena is reset.
+### 3.3 Type Interning
+- **Impact**: Identical composite types (pointers, arrays) share a single instance.
+- **Mechanism**: `TypeInterner` hash-consing.
+- **Verification**: `Total Type Deduplications: 2` reported for the compiler subset.
 
-## 4. Identified Optimizations
-
-### 4.1 Implemented Optimizations (Task 180)
--   **Lazy Chunked Arena Allocation**: Eliminated 16MB upfront waste. Physical memory is now allocated in 1MB chunks on demand.
--   **Transient Token Arena**: Added a dedicated `token_arena` that is reset immediately after parsing, freeing up to 50% of peak memory before semantic analysis begins.
--   **Type Interning**: Implemented `TypeInterner` to deduplicate pointer, array, and optional types. This reduced type object overhead significantly in type-heavy code.
--   **Symbol Table Bucket Optimization**: Reduced the initial bucket count for local scopes from 16 to 4.
-
-### 4.2 Potential Future Optimizations
-1.  **ASTNode union Compaction**: Move moderate-sized nodes (Unary, IntegerLiteral, etc.) out-of-line. Currently deferred as goals were exceeded without it.
-2.  **SourceLocation packing**: Reduce `SourceLocation` from 12 bytes to 8 bytes by using `u16` for line/column.
-
-## 5. Conclusion
-The RetroZig bootstrap compiler is highly memory-efficient, using approximately **1.1KB per source line** in its current state. At this rate, a 10,000-line compiler would consume roughly **11MB**, which is comfortably within the **16MB** limit. With the identified optimizations, this could likely be reduced to under **6MB**.
+## 4. Conclusion
+The Task 180 optimizations have successfully transformed the bootstrap compiler into a highly memory-efficient tool. By moving away from fixed-size buffers and implementing phase-aware memory management, the compiler now easily fits within its 16MB target budget with massive headroom. The system-level peak footprint is now dominated by standard library/OS overhead rather than the compiler's own data structures.
