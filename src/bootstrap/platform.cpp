@@ -156,6 +156,29 @@ void plat_memset(void* s, int c, size_t n) {
     while (n--) *p++ = (unsigned char)c;
 }
 
+int plat_run_command(const char* cmd, char** output, size_t* output_size) {
+    // Windows implementation using CreateProcess would go here
+    // For now, let's use _popen for simplicity if it were allowed,
+    // but the instruction says kernel32 only.
+    // Stubs for now.
+    (void)cmd;
+    (void)output;
+    (void)output_size;
+    return -1;
+}
+
+char* plat_create_temp_file(const char* prefix, const char* suffix) {
+    // GetTempPath + GetTempFileName + rename to add suffix
+    (void)prefix;
+    (void)suffix;
+    return NULL;
+}
+
+int plat_delete_file(const char* path) {
+    if (DeleteFileA(path)) return 0;
+    return -1;
+}
+
 #else
 // --- Linux/POSIX Implementation ---
 
@@ -165,6 +188,7 @@ void plat_memset(void* s, int c, size_t n) {
 #include <sys/stat.h>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 void* plat_alloc(size_t size) {
     return malloc(size);
@@ -264,6 +288,76 @@ int plat_memcmp(const void* s1, const void* s2, size_t n) {
 
 void plat_memset(void* s, int c, size_t n) {
     memset(s, c, n);
+}
+
+int plat_run_command(const char* cmd, char** output, size_t* output_size) {
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) return -1;
+
+    char buffer[1024];
+    size_t total_size = 0;
+    char* full_output = NULL;
+
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        size_t len = strlen(buffer);
+        char* next = (char*)plat_realloc(full_output, total_size + len + 1);
+        if (!next) {
+            plat_free(full_output);
+            pclose(pipe);
+            return -1;
+        }
+        full_output = next;
+        memcpy(full_output + total_size, buffer, len);
+        total_size += len;
+        full_output[total_size] = '\0';
+    }
+
+    if (output) *output = full_output;
+    else plat_free(full_output);
+
+    if (output_size) *output_size = total_size;
+
+    int status = pclose(pipe);
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return -1;
+}
+
+char* plat_create_temp_file(const char* prefix, const char* suffix) {
+    char template_path[256];
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir) tmpdir = "/tmp";
+
+    plat_strncpy(template_path, tmpdir, sizeof(template_path) - 64);
+    plat_strcpy(template_path + plat_strlen(template_path), "/");
+    if (prefix) plat_strcpy(template_path + plat_strlen(template_path), prefix);
+    plat_strcpy(template_path + plat_strlen(template_path), "XXXXXX");
+
+    int fd = mkstemp(template_path);
+    if (fd == -1) return NULL;
+    close(fd);
+
+    char final_path[256];
+    plat_strcpy(final_path, template_path);
+    if (suffix) {
+        plat_strcpy(final_path + plat_strlen(final_path), suffix);
+        if (rename(template_path, final_path) != 0) {
+            unlink(template_path);
+            return NULL;
+        }
+    }
+
+    size_t final_len = plat_strlen(final_path);
+    char* result = (char*)plat_alloc(final_len + 1);
+    if (result) {
+        plat_strcpy(result, final_path);
+    }
+    return result;
+}
+
+int plat_delete_file(const char* path) {
+    return unlink(path);
 }
 
 #endif

@@ -139,3 +139,24 @@ Confirm that `C89FeatureValidator` reports `ERR_NON_C89_FEATURE` for each detect
 
 ### Pipeline Order
 Tests should verify that `TypeChecker` successfully resolves error types before `C89FeatureValidator` runs, ensuring that even complex return types (like those using type aliases) are accurately detected.
+
+## 9. C89 Validation Framework (Task 179)
+
+The C89 Validation Framework ensures that emitted C code is compliant with ANSI C89 and MSVC 6.0 constraints.
+
+### External Compiler Validation
+If GCC is available, tests in Batch 17 will optionally invoke it to verify that generated C code compiles with `-std=c89 -pedantic`. This ensures that we don't accidentally emit modern C features.
+
+### MSVC 6.0 Simulation
+A lightweight static analyzer is used to enforce MSVC 6.0 specific constraints, such as:
+-   **Identifier length limits** (31 characters).
+-   **No C++ style comments** (`//`).
+-   **No C99+ keywords** (`inline`, `restrict`, `_Bool`).
+
+### Running Validation Tests
+To run the framework's self-tests:
+```bash
+./test.sh --batch 17
+```
+
+For more details, see the [C89 Validation Documentation](docs/testing/c89_validation.md).
