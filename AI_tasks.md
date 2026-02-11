@@ -894,6 +894,156 @@ Output: Runtime assertions in codegen module
     - Risk Level: MEDIUM
     - List unsupported Zig features and document C89 mapping decisions
     - Constraint Risk: Documentation must be accurate to prevent false expectations
+### Task 182 – Implicit `*void` → `*T` Conversion  
+**Risk:** LOW  
+**Goal:** Allow assignment of an expression of type `*void` to any typed pointer variable, exactly as C89 does.  
+**Why:** Without this, `arena_alloc(16)` cannot be assigned to `*i32`, `*MyStruct`, etc. – you are forced to use `*void` everywhere, which breaks type checking and makes code generation impossible.  
+
+**Implementation:**  
+Modify `IsTypeAssignableTo` (or `areTypesCompatible`) to add a special case:  
+
+```cpp
+bool IsTypeAssignableTo(Type* src, Type* dst, bool is_implicit) {
+    // existing strict equality, integer literal rule, null rule, const‑adding rule ...
+
+    // NEW: *void → *T  (C89 implicit conversion)
+    if (src->kind == TYPE_POINTER && dst->kind == TYPE_POINTER &&
+        src->as.pointer.base->kind == TYPE_VOID &&
+        is_c89_compatible(dst->as.pointer.base))   // only allow if target base type is C89‑compatible
+    {
+        return true;
+    }
+
+    // ... rest of rules
+}
+```
+
+**Test:**  
+```zig
+const buf = arena_alloc(16);   // *void
+var ptr: *i32 = buf;           // should be accepted, no error
+```
+
+---
+
+### Task 183 – Introduce `usize` as a Supported Primitive  
+**Risk:** LOW  
+**Goal:** Add `usize` as a distinct `TypeKind` (size = 4, alignment = 4 on 32‑bit targets) and allow it in:  
+- Pointer arithmetic (`ptr + usize`, `usize + ptr`, `ptr - usize`).  
+- Result type of pointer subtraction (`ptr - ptr` → `isize`).  
+- Variable declarations and function parameters.  
+
+**Why:** You cannot represent the size of allocated memory, array indices, or pointer differences without a dedicated unsigned size type. C89 uses `size_t` (usually `unsigned int`).  
+
+**Implementation steps:**  
+1. Add `TYPE_USIZE` and `TYPE_ISIZE` to `TypeKind` enum.  
+2. Set their size/alignment in the type initialisation.  
+3. Extend `is_c89_compatible()` to return `true` for `usize`/`isize` (they map to `unsigned int` / `int` in C89).  
+4. Update `resolvePrimitiveTypeName` to recognise `"usize"` and `"isize"`.  
+5. Extend pointer arithmetic validation (Task 182‑M4.3) to accept `usize` as the integer operand.  
+
+**Test:**  
+```zig
+var len: usize = 16;
+var buf = arena_alloc(len);
+var ptr: *i32 = buf;   // now works after Task 182-M4.1
+ptr += 1;              // pointer arithmetic with usize
+```
+
+---
+
+### Task 184 – Full Pointer Arithmetic Validation  
+**Risk:** MEDIUM  
+**Goal:** Implement a complete, C89‑compliant pointer arithmetic validator in `TypeChecker::visitBinaryOp`.  
+**Why:** Task 93 is marked “Partially Implemented”. You need a final, exhaustive implementation that rejects all invalid forms.  
+
+**Complete rules (C89):**  
+| Expression        | Result Type                | Validity Condition                          |
+|-------------------|----------------------------|---------------------------------------------|
+| `ptr + int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+| `int + ptr`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+| `ptr - int`       | `typeof(ptr)`              | `ptr` is pointer, `int` is integer          |
+| `ptr1 - ptr2`     | `isize` (`ptrdiff_t`)      | both pointers have **identical** base type  |
+| any other combination | **error**             | e.g., `ptr + ptr`, `ptr * int`, etc.        |
+
+**Pseudocode (in `visitBinaryOp`):**  
+```cpp
+void visitBinaryOp(BinaryOpNode* expr) {
+    Type* left = getType(expr->left);
+    Type* right = getType(expr->right);
+    TokenType op = expr->op;
+
+    if (isPointerType(left) && isPointerType(right)) {
+        if (op == TOKEN_MINUS && areSamePointerType(left, right)) {
+            expr->type = getISizeType();   // isize
+        } else {
+            error(ERR_INVALID_POINTER_ARITHMETIC);
+        }
+    }
+    else if (isPointerType(left) && isIntegerType(right)) {
+        if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
+            expr->type = left->type;
+        } else {
+            error(ERR_INVALID_OPERATOR_FOR_POINTER);
+        }
+    }
+    else if (isIntegerType(left) && isPointerType(right)) {
+        if (op == TOKEN_PLUS) {
+            expr->type = right->type;
+        } else {
+            error(ERR_INVALID_OPERATOR_FOR_POINTER);
+        }
+    }
+    // ... existing numeric handling ...
+}
+```
+
+**Test suite:**  
+- `ptr + 1` → `*T`  
+- `1 + ptr` → `*T`  
+- `ptr - 1` → `*T`  
+- `ptr1 - ptr2` → `isize` (only when same base type)  
+- `ptr + ptr` → error  
+- `ptr * 2` → error  
+
+---
+
+### Task 185 – Explicit Cast / `@ptrCast` Support  
+**Risk:** MEDIUM  
+**Goal:** Add a minimal, parser‑recognised built‑in `@ptrCast(T, expr)` that performs an explicit pointer cast.  
+**Why:** While implicit `*void` → `*T` covers many cases, you still need to cast between typed pointers (e.g., `*u8` → `*i32`). Without this, you cannot reinterpret memory.  
+
+**Design constraints:**  
+- Must be recognised by the parser (add `TOKEN_BUILTIN_PTRCAST` or special‑case `@ptrCast`).  
+- During type checking, verify that the destination type is a pointer and the source expression is a pointer.  
+- Emit a simple C cast `(T*)expr` during code generation.  
+
+**Implementation sketch:**  
+
+1. **Lexer:** recognise `@ptrCast` as a token (or extend built‑in detection).  
+2. **Parser:** `parsePrimaryExpr` → if token is `@ptrCast`, parse `(TargetType, expr)` and create `ASTPtrCastNode`.  
+3. **TypeChecker::visitPtrCast:**  
+   ```cpp
+   void visitPtrCast(PtrCastNode* node) {
+       Type* dest = resolveType(node->target_type);
+       Type* src = getType(node->expr);
+       if (dest->kind != TYPE_POINTER)
+           error(ERR_CAST_TARGET_NOT_POINTER);
+       if (src->kind != TYPE_POINTER)
+           error(ERR_CAST_SOURCE_NOT_POINTER);
+       node->type = dest;   // result type is dest
+   }
+   ```
+4. **Code generation** (Milestone 5): emit `(CType*)expr`.  
+
+**Test:**  
+```zig
+var bytes = arena_alloc(16);   // *void
+var ptr: *i32 = bytes;         // implicit conversion (Task 182-M4.1)
+var byte_ptr: *u8 = @ptrCast(*u8, ptr);   // explicit cast
+```
+
+
 
 ### Milestone 5: Code Generation (C89)
 182. **Task 182:** Implement a basic C89 emitter class in `codegen.hpp`.
