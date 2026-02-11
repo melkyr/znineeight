@@ -1,6 +1,8 @@
 #ifndef MEMORY_HPP
 #define MEMORY_HPP
 
+#include <cstdio>
+
 #include "common.hpp"
 #include "platform.hpp"
 #include <cstddef> // For size_t
@@ -43,20 +45,6 @@ static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
 }
 
 
-/**
- * @brief Reports a detailed out-of-memory error before aborting.
- *
- * This function provides a centralized way to report memory exhaustion with
- * contextual information. On Windows, it uses the Win32 API to output a
- * detailed message to the debugger. On other platforms, it does nothing to
- * adhere to project constraints.
- *
- * @param context A string describing the context of the failure (e.g., function name).
- * @param requested The amount of memory requested.
- * @param p1 Optional parameter 1 for context.
- * @param p2 Optional parameter 2 for context.
- * @param p3 Optional parameter 3 for context.
- */
 /**
  * @brief Safely appends a source string to a destination buffer.
  *
@@ -117,6 +105,20 @@ public:
 #endif
 
 #ifdef DEBUG
+/**
+ * @brief Reports a detailed out-of-memory error before aborting.
+ *
+ * This function provides a centralized way to report memory exhaustion with
+ * contextual information. On Windows, it uses the Win32 API to output a
+ * detailed message to the debugger. On other platforms, it does nothing to
+ * adhere to project constraints.
+ *
+ * @param context A string describing the context of the failure (e.g., function name).
+ * @param requested The amount of memory requested.
+ * @param p1 Optional parameter 1 for context.
+ * @param p2 Optional parameter 2 for context.
+ * @param p3 Optional parameter 3 for context.
+ */
 static void report_out_of_memory(const char* context, size_t requested, size_t p1, size_t p2, size_t p3) {
     char buffer[256];
     char* current = buffer;
@@ -191,6 +193,12 @@ public:
 
     /**
      * @brief Allocates a block of memory with a default 8-byte alignment.
+     *
+     * This method is the primary interface for allocation. It guarantees
+     * that the returned pointer is aligned to at least 8 bytes.
+     *
+     * @param size The number of bytes to allocate.
+     * @return A pointer to the allocated memory, or NULL if the allocation fails.
      */
     void* alloc(size_t size) {
         return alloc_aligned(size, 8);
@@ -198,6 +206,11 @@ public:
 
     /**
      * @brief Allocates a block of memory with a specific alignment and overflow protection.
+     *
+     * @param size The number of bytes to allocate.
+     * @param align The desired alignment of the memory block. Must be a power of two.
+     * @return A pointer to the allocated, aligned memory, or NULL if the arena is full or
+     *         allocation fails.
      */
     void* alloc_aligned(size_t size, size_t align) {
         if (size == 0) {
@@ -209,6 +222,9 @@ public:
         // This maintains compatibility with tests using small capacities.
         if (total_used_for_stats + size > total_cap) {
 #ifdef DEBUG
+            char dbg[256];
+            sprintf(dbg, "DEBUG: total_used=%lu, size=%lu, cap=%lu\n", (unsigned long)total_used_for_stats, (unsigned long)size, (unsigned long)total_cap);
+            plat_print_debug(dbg);
             report_out_of_memory("ArenaAllocator::alloc_aligned (total_cap)", size, total_used_for_stats, 0, total_cap);
 #endif
             return NULL;
@@ -248,6 +264,9 @@ public:
 
     /**
      * @brief Resets the allocator, freeing all chunks and resetting capacity.
+     *
+     * Unlike the previous simple bump-pointer implementation, this version
+     * actually frees the memory chunks back to the operating system.
      */
     void reset() {
 #ifdef MEASURE_MEMORY
@@ -258,8 +277,11 @@ public:
 
     /**
      * @brief Resets the allocator to a specific offset.
-     * NOTE: This is complex with multiple chunks, currently only supports
-     * resetting to 0 (which is equivalent to reset()).
+     *
+     * NOTE: This is complex with multiple chunks. Currently, only a checkpoint
+     * of 0 is supported, which is equivalent to calling reset().
+     *
+     * @param checkpoint The offset to restore the arena to. Must be 0.
      */
     void reset(size_t checkpoint) {
         if (checkpoint == 0) {
@@ -272,14 +294,20 @@ public:
     }
 
     /**
-     * @brief Returns the current memory offset (total bytes used across all chunks).
+     * @brief Returns the current memory offset within the arena.
+     *
+     * This returns the total number of bytes currently served to callers,
+     * including alignment padding, across all allocated chunks.
+     *
+     * @return The number of bytes currently used.
      */
     size_t getOffset() const {
         return total_used_for_stats;
     }
 
     /**
-     * @brief Returns the total capacity cap of the arena.
+     * @brief Returns the maximum total capacity cap of the arena.
+     * @return The total capacity limit in bytes.
      */
     size_t getCapacity() const {
         return total_cap;
@@ -287,13 +315,15 @@ public:
 
     /**
      * @brief Returns true if any memory has been allocated from the OS.
+     * @return True if at least one chunk exists.
      */
     bool isAllocated() const {
         return head != NULL;
     }
 
     /**
-     * @brief Returns the number of chunks currently allocated.
+     * @brief Returns the number of chunks currently allocated from the OS.
+     * @return The count of chunks.
      */
     size_t getChunkCount() const {
         size_t count = 0;

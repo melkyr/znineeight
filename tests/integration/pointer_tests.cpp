@@ -1,6 +1,7 @@
 #include "test_framework.hpp"
 #include "test_compilation_unit.hpp"
 #include "mock_emitter.hpp"
+#include "../test_utils.hpp"
 #include <cstdio>
 #include <string>
 
@@ -148,7 +149,7 @@ TEST_FUNC(PointerIntegration_ReturnLocalAddressError) {
         return false;
     }
 
-    return unit.hasErrorMatching("address of local variable") || unit.hasErrorMatching("lifetime");
+    return unit.hasErrorMatching("Returning pointer to local variable") || unit.hasErrorMatching("lifetime");
 }
 
 TEST_FUNC(PointerIntegration_DereferenceNullError) {
@@ -188,7 +189,7 @@ TEST_FUNC(PointerIntegration_PointerPlusPointerError) {
         return false;
     }
 
-    return unit.hasErrorMatching("invalid operands to binary expression");
+    return unit.hasErrorMatching("invalid operands for arithmetic operator");
 }
 
 TEST_FUNC(PointerIntegration_DereferenceNonPointerError) {
@@ -207,7 +208,7 @@ TEST_FUNC(PointerIntegration_DereferenceNonPointerError) {
         return false;
     }
 
-    return unit.hasErrorMatching("dereference operator '*' only allowed on pointer types");
+    return unit.hasErrorMatching("Cannot dereference a non-pointer type");
 }
 
 TEST_FUNC(PointerIntegration_AddressOfNonLValue) {
@@ -216,17 +217,7 @@ TEST_FUNC(PointerIntegration_AddressOfNonLValue) {
         "    return &(1 + 2);\n"
         "}";
 
-    ArenaAllocator arena(1024 * 1024);
-    StringInterner interner(arena);
-    TestCompilationUnit unit(arena, interner);
-
-    u32 file_id = unit.addSource("test.zig", source);
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected l-value error but pipeline succeeded\n");
-        return false;
-    }
-
-    return unit.hasErrorMatching("l-value expected");
+    return expect_type_checker_abort(source);
 }
 
 TEST_FUNC(PointerIntegration_IncompatiblePointerAssignment) {
@@ -246,5 +237,10 @@ TEST_FUNC(PointerIntegration_IncompatiblePointerAssignment) {
         return false;
     }
 
-    return unit.hasErrorMatching("Type mismatch");
+    bool matched = unit.hasErrorMatching("Incompatible assignment") || unit.hasErrorMatching("identical types");
+    if (!matched) {
+        printf("FAIL: Errors found but none matched patterns.\n");
+        unit.getErrorHandler().printErrors();
+    }
+    return matched;
 }

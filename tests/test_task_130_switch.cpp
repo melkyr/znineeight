@@ -13,7 +13,7 @@ TEST_FUNC(DoubleFree_SwitchPathAware) {
         "    var p: *u8 = arena_alloc(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
-        "        else => p\n"
+        "        else => {}\n"
         "    };\n"
         "    // After switch, p should be AS_UNKNOWN\n"
         "    arena_free(p); // Should NOT be a definite double free error\n"
