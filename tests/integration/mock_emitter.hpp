@@ -249,6 +249,12 @@ public:
      */
     std::string emitMemberAccess(const ASTMemberAccessNode* node) {
         if (!node) return "/* INVALID MEMBER ACCESS */";
+
+        // Use -> for pointer member access
+        if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_POINTER) {
+            return emitExpression(node->base) + "->" + node->field_name;
+        }
+
         return emitExpression(node->base) + "." + node->field_name;
     }
 
@@ -475,6 +481,8 @@ private:
         switch (op) {
             case TOKEN_MINUS: return "-";
             case TOKEN_BANG: return "!";
+            case TOKEN_AMPERSAND: return "&";
+            case TOKEN_DOT_ASTERISK: return "*";
             default: return "??";
         }
     }

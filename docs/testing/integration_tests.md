@@ -168,3 +168,32 @@ While loop tests verify that Zig `while` loops are correctly parsed, condition t
 - Zig `while (true) { break; }` -> C `while (1) { break; }`
 - Zig `while (i < 10) { i = i + 1; continue; }` -> C `while (i < 10) { i = i + 1; continue; }`
 - Zig `while (ptr) { ptr = null; }` -> C `while (ptr) { ptr = ((void*)0); }`
+
+## Pointer Operation Tests (Task 178)
+
+Pointer operation tests verify that Zig pointer operations are correctly parsed, typed, and mapped to C89, while also validating the safety analyzers (Lifetime and Null Pointer).
+
+### Test Categories:
+1. **Address-of and Dereference**: `&x` (address-of) and `ptr.*` (dereference).
+2. **Pointer Arithmetic**:
+   - `ptr + integer` / `integer + pointer` -> `ptr`
+   - `ptr - integer` -> `ptr`
+   - `ptr1 - ptr2` -> `isize` (Note: `isize` is rejected in bootstrap but handled by TypeChecker).
+3. **Null Pointers**: `null` literal, pointer comparison with `null`, and assignment.
+4. **Pointer-to-Struct**: Accessing members through pointers (e.g., `ptr.field` -> `ptr->field`).
+5. **Type Compatibility**:
+   - Implicit conversion from `*T` to `*void`.
+   - Const-adding conversions (e.g., `*i32` to `*const i32`).
+6. **Negative Tests**:
+   - **LifetimeAnalyzer**: Returning the address of a local variable or parameter.
+   - **NullPointerAnalyzer**: Dereferencing a pointer that is definitely `null`.
+   - **Invalid Arithmetic**: Adding two pointers or adding a float to a pointer.
+   - **Invalid Dereference**: Attempting to dereference a non-pointer type.
+   - **Address-of Non-LValue**: Attempting to take the address of a temporary expression like `&(1 + 2)`.
+
+### Expected C89 Output Patterns:
+- Zig `&x` -> C `&x`
+- Zig `ptr.*` -> C `*ptr`
+- Zig `ptr.field` -> C `ptr->field` (when `ptr` is a pointer)
+- Zig `null` -> C `((void*)0)`
+- Zig `ptr + 1` -> C `ptr + 1`
