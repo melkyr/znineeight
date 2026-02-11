@@ -298,13 +298,12 @@ The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-fr
 The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifically chosen for their direct compatibility with C89 and the simplified memory model of the bootstrap environment. It is NOT intended to support the full range of modern Zig types.
 
 **Supported Types (Bootstrap Phase):**
-* **Primitives:** `i8`-`i64`, `u8`-`u64`, `bool`, `f32`, `f64`, `void`.
+* **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`.
 * **Pointers:** `*T` (Single level only).
 * **Arrays:** `[N]T` (Constant size only).
 * **Structs/Enums:** C-style declarations only.
 
 **Explicitly Rejected Types (Bootstrap Phase):**
-* **Pointer-sized integers:** `isize`, `usize` (rejected to ensure predictable cross-compilation behavior and C89 alignment).
 * **Multi-level pointers:** `**T`, `***T` (rejected to simplify memory management and signature analysis).
 * **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
 * **Optionals:** `?T` (Rejected until Milestone 5 translation).
@@ -323,8 +322,8 @@ enum TypeKind {
     TYPE_I8, TYPE_I16, TYPE_I32, TYPE_I64,
     TYPE_U8, TYPE_U16, TYPE_U32, TYPE_U64,
     // Platform-dependent Integer Types
-    TYPE_ISIZE, // Maps to i32 on 32-bit target
-    TYPE_USIZE, // Maps to u32 on 32-bit target
+    TYPE_ISIZE, // Maps to int in C89 (32-bit)
+    TYPE_USIZE, // Maps to unsigned int in C89 (32-bit)
     // Floating-Point Types
     TYPE_F32,
     TYPE_F64,
@@ -501,7 +500,6 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
 *   **No Multi-level Pointers**: `**T` and deeper are rejected.
-*   **No isize/usize**: Use `i32` or `u32` for predictability.
 *   **No Tagged Unions**: Only bare (untagged) unions are supported.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Function Pointers**: Functions cannot be treated as first-class values (variables/parameters).

@@ -1193,7 +1193,32 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     // Special handling for integer literal initializers to support C89-style assignments.
-    if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
+    i64 const_val;
+    if (node->initializer && evaluateConstantExpression(node->initializer, &const_val)) {
+        // Create a temporary literal type to pass to the checker.
+        Type literal_type;
+        literal_type.kind = TYPE_INTEGER_LITERAL;
+        literal_type.as.integer_literal.value = const_val;
+
+        if (declared_type) {
+            if (isNumericType(declared_type)) {
+                if (!canLiteralFitInType(&literal_type, declared_type)) {
+                    // Report a more specific error for overflow.
+                    char msg_buffer[256];
+                    char* current = msg_buffer;
+                    size_t remaining = sizeof(msg_buffer);
+                    safe_append(current, remaining, "integer literal overflows declared type");
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, msg_buffer, unit.getArena());
+                }
+            } else if (!IsTypeAssignableTo(visit(node->initializer), declared_type, node->initializer->loc)) {
+                 // Error already reported
+            }
+        } else {
+            // Infer type from integer literal
+            declared_type = visit(node->initializer);
+        }
+    } else if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
+        // Fallback for NODE_INTEGER_LITERAL if evaluateConstantExpression somehow failed (should not happen for literals)
         ASTIntegerLiteralNode* literal_node = &node->initializer->as.integer_literal;
 
         // Create a temporary literal type to pass to the checker.
@@ -1920,14 +1945,20 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     }
 
     // Widening for signed integers
-    if (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64 &&
-        expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) {
+    if ((actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64 || actual->kind == TYPE_ISIZE) &&
+        (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64 || expected->kind == TYPE_ISIZE)) {
+        if (actual->kind == expected->kind) return true;
+        if (actual->kind == TYPE_ISIZE) return expected->kind >= TYPE_I32; // isize can widen to i32, i64
+        if (expected->kind == TYPE_ISIZE) return actual->kind <= TYPE_I32; // i8, i16, i32 can widen to isize
         return actual->kind <= expected->kind;
     }
 
     // Widening for unsigned integers
-    if (actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64 &&
-        expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64) {
+    if ((actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64 || actual->kind == TYPE_USIZE) &&
+        (expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64 || expected->kind == TYPE_USIZE)) {
+        if (actual->kind == expected->kind) return true;
+        if (actual->kind == TYPE_USIZE) return expected->kind >= TYPE_U32; // usize can widen to u32, u64
+        if (expected->kind == TYPE_USIZE) return actual->kind <= TYPE_U32; // u8, u16, u32 can widen to usize
         return actual->kind <= expected->kind;
     }
 
@@ -1952,8 +1983,22 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // Pointer compatibility
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
+        Type* actual_base = actual->as.pointer.base;
+        Type* expected_base = expected->as.pointer.base;
+
+        // C89 exception: *void -> *T (implicit conversion)
+        if (actual_base->kind == TYPE_VOID && expected_base->kind != TYPE_VOID) {
+            // Only allow if target base type is C89-compatible
+            if (is_c89_compatible(expected_base)) {
+                // Const correctness: cannot discard const during conversion
+                // *const void -> *T (Error)
+                // *void -> *const T (OK)
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
+        }
+
         // Must have the same base type
-        if (actual->as.pointer.base != expected->as.pointer.base) {
+        if (actual_base != expected_base) {
             return false;
         }
         // A mutable pointer can be assigned to a const pointer,
@@ -2230,24 +2275,27 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         // Allow T* -> void* (implicit)
         if (tgt_base->kind == TYPE_VOID && src_base->kind != TYPE_VOID) return true;
 
-        // Disallow void* -> T* (requires cast)
+        // C89 exception: *void -> *T (implicit conversion)
         if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "C89: Cannot assign void* to typed pointer without cast");
-            return false;
+            if (is_c89_compatible(tgt_base)) {
+                // Const correctness: cannot discard const during conversion
+                if (target_type->as.pointer.is_const || !source_type->as.pointer.is_const) {
+                    return true;
+                } else {
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const void pointer to non-const typed pointer");
+                    return false;
+                }
+            }
         }
 
         // Const correctness check
-        if (target_type->as.pointer.is_const && !source_type->as.pointer.is_const) {
-            return true; // T* -> const T* allowed
-        }
-        if (!target_type->as.pointer.is_const && source_type->as.pointer.is_const) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to non-const");
-            return false;
-        }
+        bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
 
         // Base types must match
         if (src_base == tgt_base) {
-            return true;
+            if (const_compatible) return true;
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to non-const");
+            return false;
         }
     }
 
