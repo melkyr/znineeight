@@ -43,8 +43,15 @@ public:
             ss << "const ";
         }
 
-        ss << getC89TypeName(symbol->symbol_type) << " ";
-        ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+        Type* type = symbol->symbol_type;
+        if (type && type->kind == TYPE_ARRAY) {
+            ss << getC89TypeName(type->as.array.element_type) << " ";
+            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            ss << "[" << (unsigned long)type->as.array.size << "]";
+        } else {
+            ss << getC89TypeName(type) << " ";
+            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+        }
 
         if (decl->initializer) {
             ss << " = " << emitExpression(decl->initializer);
@@ -79,6 +86,8 @@ public:
                 return node->as.identifier.name;
             case NODE_FUNCTION_CALL:
                 return emitFunctionCall(node);
+            case NODE_ARRAY_ACCESS:
+                return emitArrayAccess(node->as.array_access);
             case NODE_MEMBER_ACCESS:
                 return emitMemberAccess(node->as.member_access);
             case NODE_STRUCT_INITIALIZER:
@@ -89,12 +98,18 @@ public:
                 return emitUnaryOp(&node->as.unary_op);
             case NODE_PAREN_EXPR:
                 return "(" + emitExpression(node->as.paren_expr.expr) + ")";
+            case NODE_DEFER_STMT:
+                return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
+            case NODE_SWITCH_EXPR:
+                return "/* switch expression */";
             case NODE_BLOCK_STMT:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
             case NODE_WHILE_STMT:
                 return emitWhileStatement(&node->as.while_stmt);
+            case NODE_FOR_STMT:
+                return "/* for loop */";
             case NODE_BREAK_STMT:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:
@@ -225,7 +240,12 @@ public:
         if (params && params->length() > 0) {
             for (size_t i = 0; i < params->length(); ++i) {
                 if (i > 0) ss << ", ";
-                ss << getC89TypeName((*params)[i]) << " " << (*fn->params)[i]->name;
+                Type* param_type = (*params)[i];
+                if (param_type->kind == TYPE_ARRAY) {
+                    ss << getC89TypeName(param_type->as.array.element_type) << " " << (*fn->params)[i]->name << "[" << (unsigned long)param_type->as.array.size << "]";
+                } else {
+                    ss << getC89TypeName(param_type) << " " << (*fn->params)[i]->name;
+                }
             }
         } else {
             ss << "void";
@@ -253,6 +273,14 @@ public:
         // Use -> for pointer member access
         if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_POINTER) {
             return emitExpression(node->base) + "->" + node->field_name;
+        }
+
+        // Enum member access Color.Red -> Color_Red
+        if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_ENUM) {
+            if (node->base->resolved_type->as.enum_details.name) {
+                return std::string(node->base->resolved_type->as.enum_details.name) + "_" + node->field_name;
+            }
+            return std::string("/* enum */_") + node->field_name;
         }
 
         return emitExpression(node->base) + "." + node->field_name;
@@ -289,6 +317,14 @@ public:
         }
         ss << "}";
         return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 array access expression.
+     */
+    std::string emitArrayAccess(const ASTArrayAccessNode* node) {
+        if (!node) return "/* INVALID ARRAY ACCESS */";
+        return emitExpression(node->array) + "[" + emitExpression(node->index) + "]";
     }
 
     /**
@@ -355,7 +391,25 @@ private:
             }
             return "struct /* anonymous */";
         }
-        if (type->kind == TYPE_ENUM) return "enum /* ... */";
+        if (type->kind == TYPE_UNION) {
+            if (type->as.struct_details.name) {
+                return "union " + std::string(type->as.struct_details.name);
+            }
+            return "union /* anonymous */";
+        }
+        if (type->kind == TYPE_ENUM) {
+            if (type->as.enum_details.name) {
+                return "enum " + std::string(type->as.enum_details.name);
+            }
+            return "enum /* ... */";
+        }
+
+        if (type->kind == TYPE_ARRAY) {
+            std::stringstream ss;
+            ss << getC89TypeName(type->as.array.element_type);
+            ss << "[" << (unsigned long)type->as.array.size << "]";
+            return ss.str();
+        }
 
         return "/* unsupported type */";
     }

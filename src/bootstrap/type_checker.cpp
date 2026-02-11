@@ -1081,8 +1081,44 @@ Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
 }
 
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
-    visit(node->iterable_expr);
+    Type* iterable_type = visit(node->iterable_expr);
+
+    Type* item_type = get_g_type_void();
+    if (iterable_type) {
+        if (iterable_type->kind == TYPE_ARRAY) {
+            item_type = iterable_type->as.array.element_type;
+        } else if (iterable_type->kind == TYPE_POINTER && iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
+            item_type = iterable_type->as.pointer.base->as.array.element_type;
+        }
+    }
+
+    unit.getSymbolTable().enterScope();
+
+    if (node->item_name) {
+        Symbol sym = SymbolBuilder(unit.getArena())
+            .withName(node->item_name)
+            .ofType(SYMBOL_VARIABLE)
+            .withType(item_type)
+            .atLocation(node->iterable_expr->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL)
+            .build();
+        unit.getSymbolTable().insert(sym);
+    }
+
+    if (node->index_name) {
+        Symbol sym = SymbolBuilder(unit.getArena())
+            .withName(node->index_name)
+            .ofType(SYMBOL_VARIABLE)
+            .withType(resolvePrimitiveTypeName("u32")) // usize placeholder
+            .atLocation(node->iterable_expr->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL)
+            .build();
+        unit.getSymbolTable().insert(sym);
+    }
+
     visit(node->body);
+
+    unit.getSymbolTable().exitScope();
     return NULL;
 }
 
@@ -1128,6 +1164,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             result_type = prong_type;
         } else if (prong_type && result_type != prong_type) {
             // Require exact match for switch expression resulting type for now.
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
         }
     }
 
@@ -1382,18 +1419,38 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, "anonymous unions are not supported in bootstrap compiler");
     }
 
-    // Basic validation for unions as well
+    // Process fields
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
+    DynamicArray<StructField>* fields = new (mem) DynamicArray<StructField>(unit.getArena());
+
     for (size_t i = 0; i < node->fields->length(); ++i) {
-        const char* name = (*node->fields)[i]->as.struct_field->name;
-        for (size_t j = i + 1; j < node->fields->length(); ++j) {
-            if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
-                unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, "duplicate field name in union", unit.getArena());
-                return NULL;
+        ASTNode* field_node_wrapper = (*node->fields)[i];
+        ASTStructFieldNode* field_node = field_node_wrapper->as.struct_field;
+
+        Type* field_type = visit(field_node->type);
+        if (field_type && !is_c89_compatible(field_type)) {
+            unit.getErrorHandler().report(ERR_NON_C89_FEATURE, field_node->type->loc, "Union field type is not C89-compatible");
+        }
+
+        // Check for duplicate names
+        for (size_t j = 0; j < fields->length(); ++j) {
+            if (identifiers_equal(field_node->name, (*fields)[j].name)) {
+                unit.getErrorHandler().report(ERR_REDEFINITION, field_node_wrapper->loc, "duplicate field name in union", unit.getArena());
             }
         }
+
+        if (field_type) {
+            StructField field;
+            field.name = field_node->name;
+            field.type = field_type;
+            field.offset = 0;
+            field.size = field_type->size;
+            field.alignment = field_type->alignment;
+            fields->append(field);
+        }
     }
-    // Note: We don't fully implement Union type creation yet, but we validate fields
-    return NULL;
+
+    return createUnionType(unit.getArena(), fields, union_name);
 }
 
 Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
@@ -1599,8 +1656,11 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         }
     }
 
+    const char* enum_name = current_struct_name_;
+    current_struct_name_ = NULL; // Reset for nested enums
+
     // 4. Create and return the new enum type.
-    return createEnumType(unit.getArena(), NULL, backing_type, members, min_val, max_val);
+    return createEnumType(unit.getArena(), enum_name, backing_type, members, min_val, max_val);
 }
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
@@ -1615,10 +1675,12 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
             }
 
             // A constant can hold a type in Zig.
-            // For now, we assume if it's in the symbol table and has a struct, enum or is a type parameter,
+            // For now, we assume if it's in the symbol table and has a struct, union, enum, array or is a type parameter,
             // it can be used as a type name.
             if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT ||
+                                     sym->symbol_type->kind == TYPE_UNION ||
                                      sym->symbol_type->kind == TYPE_ENUM ||
+                                     sym->symbol_type->kind == TYPE_ARRAY ||
                                      sym->symbol_type->kind == TYPE_TYPE)) {
                 resolved_type = sym->symbol_type;
             }

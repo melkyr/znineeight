@@ -161,7 +161,8 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_STRUCT:
-            // Check struct size for return
+        case TYPE_UNION:
+            // Check struct/union size for return
             if (type->size > 64) {
                 error_handler_.reportWarning(WARN_EXTRACTION_LARGE_PAYLOAD, loc, "Struct return size > 64 bytes may be problematic for MSVC 6.0");
             }
@@ -213,6 +214,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_STRUCT:
+        case TYPE_UNION:
             return true;
 
         case TYPE_ARRAY:

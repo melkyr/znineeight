@@ -103,6 +103,36 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
     return new_type;
 }
 
+Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
+    new_type->kind = TYPE_UNION;
+    new_type->size = 0; // Should be max field size
+    new_type->alignment = 1; // Should be max field alignment
+    new_type->as.struct_details.name = name;
+    new_type->as.struct_details.fields = fields;
+
+    // Calculate union size and alignment
+    size_t max_size = 0;
+    size_t max_align = 1;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        StructField& field = (*fields)[i];
+        if (field.type->size > max_size) max_size = field.type->size;
+        if (field.type->alignment > max_align) max_align = field.type->alignment;
+        field.offset = 0; // All union fields are at offset 0
+    }
+    // Pad total size to max_align
+    if (max_size % max_align != 0) {
+        max_size += (max_align - (max_size % max_align));
+    }
+    new_type->size = max_size;
+    new_type->alignment = max_align;
+
+    return new_type;
+}
+
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred) {
     Type* new_type = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
@@ -260,6 +290,14 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             break;
         case TYPE_STRUCT:
             safe_append(current, remaining, "struct ");
+            if (type->as.struct_details.name) {
+                safe_append(current, remaining, type->as.struct_details.name);
+            } else {
+                safe_append(current, remaining, "{...}");
+            }
+            break;
+        case TYPE_UNION:
+            safe_append(current, remaining, "union ");
             if (type->as.struct_details.name) {
                 safe_append(current, remaining, type->as.struct_details.name);
             } else {

@@ -32,6 +32,7 @@ enum TypeKind {
     TYPE_FUNCTION,
     TYPE_ENUM,
     TYPE_STRUCT,
+    TYPE_UNION,
     TYPE_ERROR_UNION,
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
@@ -161,6 +162,15 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
  * @return A pointer to the newly allocated Type object.
  */
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL);
+
+/**
+ * @brief Creates a new union Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param fields A dynamic array of the union's fields.
+ * @param name The optional name of the union type.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL);
 
 /**
  * @brief Creates a new error union Type object from the arena.

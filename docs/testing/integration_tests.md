@@ -197,3 +197,61 @@ Pointer operation tests verify that Zig pointer operations are correctly parsed,
 - Zig `ptr.field` -> C `ptr->field` (when `ptr` is a pointer)
 - Zig `null` -> C `((void*)0)`
 - Zig `ptr + 1` -> C `ptr + 1`
+
+## Array Tests (Task 180)
+
+Array tests verify that Zig fixed-size arrays are correctly parsed, typed, and mapped to C89.
+
+### Test Categories:
+1. **Fixed-Size Declarations**: Functions taking arrays as parameters (emitted as `type name[size]`).
+2. **Indexing**: Accessing elements using `arr[index]`.
+3. **Multi-dimensional Indexing**: Support for `matrix[i][j]`.
+
+### Expected C89 Output Patterns:
+- Zig `arr: [5]i32` -> C `int arr[5]`
+- Zig `arr[0]` -> C `arr[0]`
+- Zig `matrix[0][1]` -> C `matrix[0][1]`
+
+## Enum Tests (Task 180)
+
+Enum tests verify that Zig enums are correctly parsed and that member access is mangled for C89 compatibility.
+
+### Test Categories:
+1. **Basic Enums**: `const Color = enum { Red, Blue };`.
+2. **Member Access**: Verification that `Color.Red` is mangled to `Color_Red`.
+3. **Negative Tests**: Rejection of non-integer backing types (e.g., `enum(f64)`).
+
+### Expected C89 Output Patterns:
+- Zig `const Color = enum { Red };` -> C `enum Color { ... };`
+- Zig `Color.Red` -> C `Color_Red`
+
+## Union Tests (Task 180)
+
+Union tests verify that Zig untagged unions are correctly parsed and typed.
+
+### Test Categories:
+1. **Bare Unions**: `const U = union { a: i32, b: f32 };`.
+2. **Negative Tests**: Rejection of tagged unions (`union(Enum) { ... }`).
+
+### Expected C89 Output Patterns:
+- Zig `const U = union { a: i32 };` -> C `union U { int a; };`
+
+## Feature-Specific Placeholder Emission
+
+For complex Zig features that are not yet fully lowered to C89 in Milestone 4, the `MockC89Emitter` uses placeholder comments to verify AST presence and type-checking.
+
+| Zig Feature | Mock C89 Output | Notes |
+|-------------|-----------------|-------|
+| `switch (x) { ... }` | `/* switch expression */` | Only verify type‑checking |
+| `for (items) |i| { }` | `/* for loop */` | Parsing and scoping only |
+| `defer { ... }` | `/* defer { ... } */` | AST presence |
+
+## Feature Rejection and Cataloguing Tests (Task 180)
+
+These tests verify that modern Zig features are correctly rejected by the `C89FeatureValidator` while being accurately recorded in the compiler's specialized catalogues for Milestone 5 planning.
+
+### Verified Features:
+1. **Error Unions (`!T`)**: Recorded in `ErrorFunctionCatalogue` or `TryExpressionCatalogue`.
+2. **Optional Types (`?T`)**: Rejected with diagnostic.
+3. **Try Expressions**: Recorded in `TryExpressionCatalogue` with context and type information.
+4. **Generics**: Recorded in `GenericCatalogue` (definitions and instantiations).

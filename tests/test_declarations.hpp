@@ -820,4 +820,22 @@ TEST_FUNC(C89Validator_MSVC6_CppComment);
 TEST_FUNC(C89Validator_MSVC6_LongLong);
 TEST_FUNC(C89Validator_MSVC6_KnownGood);
 
+// Task 180: Integration Test Suite Expansion
+TEST_FUNC(ArrayIntegration_FixedSizeDecl);
+TEST_FUNC(ArrayIntegration_Indexing);
+TEST_FUNC(ArrayIntegration_MultiDimensionalIndexing);
+TEST_FUNC(EnumIntegration_BasicEnum);
+TEST_FUNC(EnumIntegration_MemberAccess);
+TEST_FUNC(EnumIntegration_RejectNonIntBacking);
+TEST_FUNC(UnionIntegration_BareUnion);
+TEST_FUNC(UnionIntegration_RejectTaggedUnion);
+TEST_FUNC(SwitchIntegration_Basic);
+TEST_FUNC(SwitchIntegration_InferredType);
+TEST_FUNC(ForIntegration_Basic);
+TEST_FUNC(ForIntegration_Scoping);
+TEST_FUNC(DeferIntegration_Basic);
+TEST_FUNC(RejectionIntegration_ErrorUnion);
+TEST_FUNC(RejectionIntegration_Optional);
+TEST_FUNC(RejectionIntegration_TryExpression);
+
 #endif // TEST_DECLARATIONS_HPP

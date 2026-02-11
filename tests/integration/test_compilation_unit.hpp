@@ -303,6 +303,42 @@ public:
     }
 
     /**
+     * @brief Recursively searches for the ASTNode representing a variable declaration.
+     */
+    const ASTNode* findVariableDeclarationNode(const ASTNode* node, const char* name) const {
+        if (!node) return NULL;
+
+        if (node->type == NODE_VAR_DECL) {
+            if (strings_equal(node->as.var_decl->name, name)) {
+                return node;
+            }
+        }
+
+        // Search in children
+        if (node->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                const ASTNode* found = findVariableDeclarationNode((*stmts)[i], name);
+                if (found) return found;
+            }
+        } else if (node->type == NODE_FN_DECL) {
+            return findVariableDeclarationNode(node->as.fn_decl->body, name);
+        } else if (node->type == NODE_IF_STMT) {
+            const ASTNode* found = findVariableDeclarationNode(node->as.if_stmt->then_block, name);
+            if (found) return found;
+            return findVariableDeclarationNode(node->as.if_stmt->else_block, name);
+        } else if (node->type == NODE_WHILE_STMT) {
+            return findVariableDeclarationNode(node->as.while_stmt.body, name);
+        }
+
+        return NULL;
+    }
+
+    const ASTNode* extractVariableDeclarationNode(const char* name) const {
+        return findVariableDeclarationNode(last_ast, name);
+    }
+
+    /**
      * @brief Validates that a function declaration (signature + body) emits the expected C89 string.
      */
     bool validateFunctionEmission(const char* name, const std::string& expectedC89) {
@@ -430,6 +466,34 @@ public:
         const DynamicArray<ErrorReport>& errors = getErrorHandler().getErrors();
         for (size_t i = 0; i < errors.length(); ++i) {
             if (strstr(errors[i].message, substring) != NULL) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @brief Checks if a generic function definition exists in the catalogue.
+     */
+    bool hasGenericDefinition(const char* name) {
+        const DynamicArray<GenericDefinitionInfo>* defs = getGenericCatalogue().getDefinitions();
+        if (!defs) return false;
+        for (size_t i = 0; i < defs->length(); ++i) {
+            if (strings_equal((*defs)[i].function_name, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @brief Checks if an error function exists in the catalogue.
+     */
+    bool hasErrorFunction(const char* name) {
+        const DynamicArray<ErrorFunctionInfo>* fns = getErrorFunctionCatalogue().getFunctions();
+        if (!fns) return false;
+        for (size_t i = 0; i < fns->length(); ++i) {
+            if (strings_equal((*fns)[i].name, name)) {
                 return true;
             }
         }
