@@ -238,12 +238,11 @@ TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
     return true;
 }
 
-TEST_FUNC(TypeChecker_Dereference_NestedPointer) {
+TEST_FUNC(TypeChecker_Dereference_NestedPointer_REJECT) {
     const char* source = "var x: i32 = 0; var p1: *i32 = &x; var p2: **i32 = &p1; var y: i32 = **p2;";
 
-    // This is a regression test to ensure that valid nested dereferences are handled correctly.
-    // It should compile with no errors or warnings.
-    run_type_checker_test_successfully(source);
+    // Multi-level pointers are NOT supported in bootstrap compiler (Task 169)
+    ASSERT_TRUE(expect_type_checker_abort(source));
 
     return true;
 }
