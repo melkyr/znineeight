@@ -186,6 +186,7 @@ int plat_delete_file(const char* path) {
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>

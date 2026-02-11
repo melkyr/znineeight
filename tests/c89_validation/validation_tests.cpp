@@ -77,8 +77,7 @@ TEST_FUNC(C89Validator_MSVC6_LongIdentifier) {
 
 TEST_FUNC(C89Validator_MSVC6_CppComment) {
     C89Validator* validator = createMSVC6StaticAnalyzer();
-    std::string code = read_file_content("tests/c89_validation/known_bad_samples/comments not allowed"); // Wait, substring
-    code = read_file_content("tests/c89_validation/known_bad_samples/cpp_comment.c");
+    std::string code = read_file_content("tests/c89_validation/known_bad_samples/cpp_comment.c");
     ValidationResult result = validator->validate(code);
     delete validator;
     return !result.isValid && contains_substring(result.errors, "comments not allowed");

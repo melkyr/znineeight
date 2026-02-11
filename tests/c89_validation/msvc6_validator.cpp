@@ -102,8 +102,6 @@ public:
                 if (ident == "long") {
                     const char* next = p;
                     while (*next && isspace(*next)) {
-                        if (*next == '\n') line++; // Wait, this might double count if I'm not careful.
-                        // Better to not update 'line' here if I don't update 'p'.
                         next++;
                     }
                     if (strncmp(next, "long", 4) == 0 && !isalnum(next[4]) && next[4] != '_') {
