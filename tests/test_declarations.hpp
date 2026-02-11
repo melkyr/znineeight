@@ -786,4 +786,13 @@ TEST_FUNC(WhileLoopIntegration_RejectFloatCondition);
 TEST_FUNC(WhileLoopIntegration_RejectBracelessWhile);
 TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock);
 
+// Task 177: Struct Integration Tests
+TEST_FUNC(StructIntegration_BasicNamedStruct);
+TEST_FUNC(StructIntegration_MemberAccess);
+TEST_FUNC(StructIntegration_NamedInitializerOrder);
+TEST_FUNC(StructIntegration_RejectAnonymousStruct);
+TEST_FUNC(StructIntegration_RejectStructMethods);
+TEST_FUNC(StructIntegration_RejectSliceField);
+TEST_FUNC(StructIntegration_RejectMultiLevelPointerField);
+
 #endif // TEST_DECLARATIONS_HPP

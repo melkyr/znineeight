@@ -92,7 +92,7 @@ private:
     CompilationUnit& unit;
     Type* current_fn_return_type;
     const char* current_fn_name;
-
+    const char* current_struct_name_;
 };
 
 #endif // TYPE_CHECKER_HPP

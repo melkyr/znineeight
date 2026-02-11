@@ -13,6 +13,7 @@
 #include "ast.hpp"
 #include "utils.hpp"
 #include "mock_emitter.hpp"
+#include <cstring>
 
 /**
  * @class TestCompilationUnit
@@ -397,6 +398,19 @@ public:
         }
 
         return true;
+    }
+
+    /**
+     * @brief Checks if any reported error matches the given substring.
+     */
+    bool hasErrorMatching(const char* substring) {
+        const DynamicArray<ErrorReport>& errors = getErrorHandler().getErrors();
+        for (size_t i = 0; i < errors.length(); ++i) {
+            if (strstr(errors[i].message, substring) != NULL) {
+                return true;
+            }
+        }
+        return false;
     }
 };
 

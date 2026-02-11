@@ -96,6 +96,7 @@ struct Type {
             i64 max_value;
         } enum_details;
         struct {
+            const char* name;
             DynamicArray<StructField>* fields;
         } struct_details;
         struct {
@@ -156,9 +157,10 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size);
  * @brief Creates a new struct Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param fields A dynamic array of the struct's fields.
+ * @param name The optional name of the struct type.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields);
+Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL);
 
 /**
  * @brief Creates a new error union Type object from the arena.
