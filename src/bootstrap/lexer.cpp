@@ -697,7 +697,19 @@ Token Lexer::nextToken() {
                 this->column += 6;
                 token.type = TOKEN_AT_IMPORT;
             } else {
-                token.type = TOKEN_ERROR;
+                // Support other built-ins like @sizeOf, @alignOf
+                const char* start = this->current;
+                while (isIdentifierChar(*(this->current))) {
+                    this->current++;
+                    this->column++;
+                }
+                size_t len = (size_t)(this->current - start);
+                char* name = (char*)arena.alloc(len + 2);
+                name[0] = '@';
+                plat_memcpy(name + 1, start, len);
+                name[len + 1] = '\0';
+                token.type = TOKEN_IDENTIFIER;
+                token.as.identifier = interner.intern(name);
             }
             break;
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;

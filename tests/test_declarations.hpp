@@ -845,5 +845,21 @@ TEST_FUNC(Task182_ConstCorrectness_AddConst);
 TEST_FUNC(Task182_ConstCorrectness_PreserveConst);
 TEST_FUNC(Task182_ConstCorrectness_DiscardConst_REJECT);
 TEST_FUNC(Task182_NonC89Target_REJECT);
+TEST_FUNC(PointerArithmetic_PtrPlusUSize);
+TEST_FUNC(PointerArithmetic_USizePlusPtr);
+TEST_FUNC(PointerArithmetic_PtrMinusUSize);
+TEST_FUNC(PointerArithmetic_PtrMinusPtr);
+TEST_FUNC(PointerArithmetic_PtrPlusISize);
+TEST_FUNC(PointerArithmetic_SizeOfUSize);
+TEST_FUNC(PointerArithmetic_AlignOfISize);
+TEST_FUNC(PointerArithmetic_PtrPlusPtr_Error);
+TEST_FUNC(PointerArithmetic_PtrMulInt_Error);
+TEST_FUNC(PointerArithmetic_DiffDifferentTypes_Error);
+TEST_FUNC(IntegerWidening_Args_Signed);
+TEST_FUNC(IntegerWidening_Args_ISize);
+TEST_FUNC(IntegerNarrowing_Args_Error);
+TEST_FUNC(IntegerNarrowing_ISize_Error);
+TEST_FUNC(IntegerWidening_Args_Unsigned);
+TEST_FUNC(IntegerWidening_Args_USize);
 
 #endif // TEST_DECLARATIONS_HPP

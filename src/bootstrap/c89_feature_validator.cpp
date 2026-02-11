@@ -589,10 +589,14 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     ASTFunctionCallNode* call = node->as.function_call;
     ASTNode* prev_parent = current_parent_;
 
-    // Handle built-ins (Task 168)
+    // Handle built-ins (Task 168/186)
     if (call->callee->type == NODE_IDENTIFIER) {
         const char* name = call->callee->as.identifier.name;
         if (name[0] == '@') {
+            // Allow @sizeOf and @alignOf as they are now partially supported for Task 183/186
+            if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
+                return;
+            }
             reportNonC89Feature(node->loc, "Built-in functions (@) are not supported in the bootstrap phase.");
             return;
         }

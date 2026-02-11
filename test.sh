@@ -213,6 +213,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/integration/for_tests.cpp \
     tests/integration/defer_tests.cpp \
     tests/integration/task182_183_tests.cpp \
+    tests/integration/pointer_arithmetic_tests.cpp \
+    tests/integer_widening_tests.cpp \
     tests/c89_validation/gcc_validator.cpp \
     tests/c89_validation/msvc6_validator.cpp \
     tests/c89_validation/validation_tests.cpp"

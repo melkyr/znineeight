@@ -588,10 +588,21 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         return NULL;
     }
 
-    // Handle built-ins early (Task 168)
+    // Handle built-ins early (Task 168/186)
     if (node->callee->type == NODE_IDENTIFIER) {
         const char* name = node->callee->as.identifier.name;
         if (name[0] == '@') {
+            if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
+                if (node->args->length() != 1) {
+                    fatalError(node->callee->loc, "built-in expects 1 argument");
+                }
+                // Arguments to @sizeOf/@alignOf are types.
+                // TypeChecker::visit should handle it.
+                /* Type* arg_type = */ visit((*node->args)[0]);
+
+                return get_g_type_usize();
+            }
+
             // Register in call site table as builtin
             int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
             unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
@@ -954,6 +965,13 @@ Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode*
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
     const char* name = node->as.identifier.name;
 
+    // Handle primitive types as values (e.g. @sizeOf(i32))
+    Type* prim = resolvePrimitiveTypeName(name);
+    if (prim) {
+        node->resolved_type = prim; // Store the actual type for built-ins to use
+        return get_g_type_type();
+    }
+
     // Built-ins starting with @ are handled specially in visitFunctionCall
     if (name[0] == '@') {
         return get_g_type_void(); // Placeholder type for built-ins
@@ -1109,7 +1127,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         Symbol sym = SymbolBuilder(unit.getArena())
             .withName(node->index_name)
             .ofType(SYMBOL_VARIABLE)
-            .withType(resolvePrimitiveTypeName("u32")) // usize placeholder
+            .withType(get_g_type_usize())
             .atLocation(node->iterable_expr->loc)
             .withFlags(SYMBOL_FLAG_LOCAL)
             .build();
@@ -1945,21 +1963,19 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     }
 
     // Widening for signed integers
-    if ((actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64 || actual->kind == TYPE_ISIZE) &&
-        (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64 || expected->kind == TYPE_ISIZE)) {
-        if (actual->kind == expected->kind) return true;
-        if (actual->kind == TYPE_ISIZE) return expected->kind >= TYPE_I32; // isize can widen to i32, i64
-        if (expected->kind == TYPE_ISIZE) return actual->kind <= TYPE_I32; // i8, i16, i32 can widen to isize
-        return actual->kind <= expected->kind;
+    bool actual_is_signed = (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64) || actual->kind == TYPE_ISIZE;
+    bool expected_is_signed = (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) || expected->kind == TYPE_ISIZE;
+    if (actual_is_signed && expected_is_signed) {
+        // bit-width based widening
+        return actual->size <= expected->size;
     }
 
     // Widening for unsigned integers
-    if ((actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64 || actual->kind == TYPE_USIZE) &&
-        (expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64 || expected->kind == TYPE_USIZE)) {
-        if (actual->kind == expected->kind) return true;
-        if (actual->kind == TYPE_USIZE) return expected->kind >= TYPE_U32; // usize can widen to u32, u64
-        if (expected->kind == TYPE_USIZE) return actual->kind <= TYPE_U32; // u8, u16, u32 can widen to usize
-        return actual->kind <= expected->kind;
+    bool actual_is_unsigned = (actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64) || actual->kind == TYPE_USIZE;
+    bool expected_is_unsigned = (expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64) || expected->kind == TYPE_USIZE;
+    if (actual_is_unsigned && expected_is_unsigned) {
+        // bit-width based widening
+        return actual->size <= expected->size;
     }
 
     // Widening for floats

@@ -1423,14 +1423,14 @@ The `parseComptimeBlock` function is responsible for parsing a `comptime` block.
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
 
 `type = primitive | pointer_type | array_type | slice_type`
-`primitive = IDENTIFIER`
+`primitive = IDENTIFIER` (e.g., `i32`, `u8`, `usize`, `isize`, `bool`)
 `pointer_type = '*' type`
 `array_type = '[' <expr> ']' type`
 `slice_type = '[]' type`
 
 ### AST Node Structures
 
-- **`ASTTypeNameNode`**: Represents a primitive or named type (e.g., `i32`, `MyStruct`).
+- **`ASTTypeNameNode`**: Represents a primitive or named type (e.g., `i32`, `usize`, `MyStruct`).
 - **`ASTPointerTypeNode`**: Represents a pointer to a base type.
 - **`ASTArrayTypeNode`**: Represents both fixed-size arrays and slices. For slices, the `size` field is `NULL`.
 
