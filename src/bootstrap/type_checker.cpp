@@ -625,6 +625,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 parent->as.integer_literal.value = value;
                 parent->as.integer_literal.is_unsigned = true;
                 parent->as.integer_literal.is_long = false;
+                parent->as.integer_literal.resolved_type = get_g_type_usize();
                 parent->resolved_type = get_g_type_usize();
 
                 return parent->resolved_type;
@@ -978,21 +979,27 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
     // This logic is intentionally C-like. Integer literals are inferred as i32
     // by default, unless the value is too large or has a long suffix.
+    Type* result = NULL;
     if (node->is_unsigned) {
         if (node->is_long || node->value > 4294967295ULL) {
-            return resolvePrimitiveTypeName("u64");
+            result = resolvePrimitiveTypeName("u64");
+        } else {
+            result = resolvePrimitiveTypeName("u32");
         }
-        return resolvePrimitiveTypeName("u32");
     } else {
         if (node->is_long) {
-            return resolvePrimitiveTypeName("i64");
+            result = resolvePrimitiveTypeName("i64");
+        } else {
+            i64 signed_value = (i64)node->value;
+            if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
+                result = resolvePrimitiveTypeName("i32");
+            } else {
+                result = resolvePrimitiveTypeName("i64");
+            }
         }
-        i64 signed_value = (i64)node->value;
-        if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
-            return resolvePrimitiveTypeName("i32");
-        }
-        return resolvePrimitiveTypeName("i64");
     }
+    node->resolved_type = result;
+    return result;
 }
 
 Type* TypeChecker::visitFloatLiteral(ASTNode* /*parent*/, ASTFloatLiteralNode* /*node*/) {
@@ -2811,6 +2818,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
         parent->as.integer_literal.value = (u64)val;
         parent->as.integer_literal.is_unsigned = isUnsignedIntegerType(target_type);
         parent->as.integer_literal.is_long = (target_type->size > 4);
+        parent->as.integer_literal.resolved_type = target_type;
         parent->resolved_type = target_type;
         return target_type;
     }
@@ -2888,6 +2896,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
     parent->as.integer_literal.value = offset;
     parent->as.integer_literal.is_unsigned = true;
     parent->as.integer_literal.is_long = false;
+    parent->as.integer_literal.resolved_type = get_g_type_usize();
     parent->resolved_type = get_g_type_usize();
 
     return parent->resolved_type;

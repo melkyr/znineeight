@@ -1,5 +1,6 @@
 #include "codegen.hpp"
 #include "platform.hpp"
+#include "utils.hpp"
 
 C89Emitter::C89Emitter(ArenaAllocator& arena)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false), var_alloc_(arena) {
@@ -86,5 +87,45 @@ void C89Emitter::close() {
     if (owns_file_ && output_file_ != PLAT_INVALID_FILE) {
         plat_close_file(output_file_);
         output_file_ = PLAT_INVALID_FILE;
+    }
+}
+
+void C89Emitter::emitExpression(const ASTNode* node) {
+    if (!node) return;
+    switch (node->type) {
+        case NODE_INTEGER_LITERAL:
+            emitIntegerLiteral(&node->as.integer_literal);
+            break;
+        case NODE_PAREN_EXPR:
+            writeString("(");
+            emitExpression(node->as.paren_expr.expr);
+            writeString(")");
+            break;
+        default:
+            writeString("/* [Unimplemented Expression] */");
+            break;
+    }
+}
+
+void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
+    char buf[32];
+    u64_to_decimal(node->value, buf, sizeof(buf));
+    writeString(buf);
+
+    if (node->resolved_type) {
+        switch (node->resolved_type->kind) {
+            case TYPE_U32:
+                writeString("U");
+                break;
+            case TYPE_I64:
+                writeString("i64");
+                break;
+            case TYPE_U64:
+                writeString("ui64");
+                break;
+            default:
+                // i32, u8, i8, u16, i16, usize, isize get no suffix
+                break;
+        }
     }
 }

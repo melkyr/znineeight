@@ -256,6 +256,7 @@ struct ASTIntegerLiteralNode {
     u64 value;
     bool is_unsigned;
     bool is_long;
+    Type* resolved_type;
 };
 
 /**

@@ -544,7 +544,7 @@ To maintain C89 compatibility and compiler simplicity:
 
 ### 5.3 C89 Mapping Decisions
 *   **Boolean**: Mapped to `int` (1 for true, 0 for false).
-*   **Integer 64-bit**: Mapped to `__int64` (and `unsigned __int64`) for MSVC 6.0 compatibility.
+*   **Integer 64-bit**: Mapped to `__int64` (and `unsigned __int64`) for MSVC 6.0 compatibility. Literals use MSVC-specific suffixes `i64` and `ui64` (see `docs/reference/c89_emission.md`).
 *   **Null**: Mapped to `((void*)0)`.
 *   **Strings**: String literals are mapped to `const char*`.
 *   **Name Mangling**:

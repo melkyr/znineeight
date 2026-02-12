@@ -502,7 +502,7 @@ To clarify the current capabilities of the type checker and guide future develop
 
 ### Literal Type Mapping Table (Task 170)
 
-The following table defines the expected C89 representation for Zig literals, as verified by integration tests using the `MockC89Emitter`.
+The following table defines the expected C89 representation for Zig literals, as verified by integration tests using the `MockC89Emitter`. For definitive emission rules used by the production `C89Emitter`, see [C89 Code Generation Strategy](../reference/c89_emission.md).
 
 | Zig Literal | Bootstrap Type | C89 Representation | Notes |
 |-------------|----------------|--------------------|-------|
