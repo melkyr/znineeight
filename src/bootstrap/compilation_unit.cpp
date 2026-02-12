@@ -428,7 +428,7 @@ size_t CompilationUnit::getTotalCatalogueEntries() const {
 
 bool CompilationUnit::generateCode(const char* output_path) {
     void* mem = arena_.alloc(sizeof(C89Emitter));
-    C89Emitter* emitter = new (mem) C89Emitter();
+    C89Emitter* emitter = new (mem) C89Emitter(arena_);
     if (!emitter->open(output_path)) {
         error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open output file for code generation");
         return false;

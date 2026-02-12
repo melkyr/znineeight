@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "platform.hpp"
+#include "c_variable_allocator.hpp"
 #include <cstddef>
 
 /**
@@ -16,20 +17,23 @@ class C89Emitter {
 public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
+     * @param arena The ArenaAllocator for CVariableAllocator.
      */
-    C89Emitter();
+    C89Emitter(ArenaAllocator& arena);
 
     /**
      * @brief Constructs an emitter that writes to the specified file.
+     * @param arena The ArenaAllocator for CVariableAllocator.
      * @param path The path to the output file.
      */
-    C89Emitter(const char* path);
+    C89Emitter(ArenaAllocator& arena, const char* path);
 
     /**
      * @brief Constructs an emitter that writes to an already open file.
+     * @param arena The ArenaAllocator for CVariableAllocator.
      * @param file The open file handle.
      */
-    C89Emitter(PlatFile file);
+    C89Emitter(ArenaAllocator& arena, PlatFile file);
 
     /**
      * @brief Destructor. Flushes and closes the file if it was opened by the constructor.
@@ -88,6 +92,16 @@ public:
     void close();
 
     /**
+     * @brief Prepares the emitter for a new function.
+     */
+    void beginFunction();
+
+    /**
+     * @brief Returns the variable allocator.
+     */
+    CVariableAllocator& getVarAlloc() { return var_alloc_; }
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
@@ -98,6 +112,7 @@ private:
     PlatFile output_file_;
     int indent_level_;
     bool owns_file_;
+    CVariableAllocator var_alloc_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

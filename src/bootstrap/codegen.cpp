@@ -1,17 +1,17 @@
 #include "codegen.hpp"
 #include "platform.hpp"
 
-C89Emitter::C89Emitter()
-    : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false) {
+C89Emitter::C89Emitter(ArenaAllocator& arena)
+    : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false), var_alloc_(arena) {
 }
 
-C89Emitter::C89Emitter(const char* path)
-    : buffer_pos_(0), indent_level_(0), owns_file_(true) {
+C89Emitter::C89Emitter(ArenaAllocator& arena, const char* path)
+    : buffer_pos_(0), indent_level_(0), owns_file_(true), var_alloc_(arena) {
     output_file_ = plat_open_file(path, true);
 }
 
-C89Emitter::C89Emitter(PlatFile file)
-    : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false) {
+C89Emitter::C89Emitter(ArenaAllocator& arena, PlatFile file)
+    : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false), var_alloc_(arena) {
 }
 
 C89Emitter::~C89Emitter() {
@@ -32,6 +32,10 @@ void C89Emitter::writeIndent() {
     for (int i = 0; i < indent_level_; ++i) {
         write("    ", 4);
     }
+}
+
+void C89Emitter::beginFunction() {
+    var_alloc_.reset();
 }
 
 void C89Emitter::write(const char* data, size_t len) {
