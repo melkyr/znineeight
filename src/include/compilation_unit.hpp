@@ -102,6 +102,13 @@ public:
     bool performFullPipeline(u32 file_id);
 
     /**
+     * @brief Generates C89 code from the AST and writes it to the specified file.
+     * @param output_path The path to the output .c file.
+     * @return True if code generation was successful.
+     */
+    bool generateCode(const char* output_path);
+
+    /**
      * @brief Checks if error types have been effectively eliminated from the final output
      *        (by ensuring they were all rejected by the validator).
      */
