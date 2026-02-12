@@ -155,6 +155,12 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_THREADLOCAL` | `threadlocal` |
 | `TOKEN_VOLATILE` | `volatile` |
 | `TOKEN_AT_IMPORT` | `@import` |
+| `TOKEN_AT_SIZEOF` | `@sizeOf` |
+| `TOKEN_AT_ALIGNOF` | `@alignOf` |
+| `TOKEN_AT_PTRCAST` | `@ptrCast` |
+| `TOKEN_AT_INTCAST` | `@intCast` |
+| `TOKEN_AT_FLOATCAST` | `@floatCast` |
+| `TOKEN_AT_OFFSETOF` | `@offsetOf` |
 
 The following keywords for compile-time and special functions are also implemented:
 

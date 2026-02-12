@@ -868,4 +868,13 @@ TEST_FUNC(IntegerNarrowing_ISize_Error);
 TEST_FUNC(IntegerWidening_Args_Unsigned);
 TEST_FUNC(IntegerWidening_Args_USize);
 
+// Task 185: Explicit Cast (@ptrCast)
+TEST_FUNC(PtrCast_Basic);
+TEST_FUNC(PtrCast_ToConst);
+TEST_FUNC(PtrCast_FromVoid);
+TEST_FUNC(PtrCast_ToVoid);
+TEST_FUNC(PtrCast_TargetNotPointer_Error);
+TEST_FUNC(PtrCast_SourceNotPointer_Error);
+TEST_FUNC(PtrCast_Nested);
+
 #endif // TEST_DECLARATIONS_HPP

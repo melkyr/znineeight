@@ -423,7 +423,7 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 6.  **Built-in Support (Task 186):** While most Zig built-ins are rejected in the bootstrap phase, a core set of intrinsics is supported to enable low-level operations and metadata access:
     -   **`@sizeOf(T)`**: Returns a `usize` constant representing the size of type `T` in bytes.
     -   **`@alignOf(T)`**: Returns a `usize` constant representing the alignment of type `T` in bytes.
-    -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast.
+    -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast. Both `T` and the type of `val` must be pointer types.
     -   **`@intCast(T, val)`**: Converts an integer `val` to type `T`. Mapped to a C-style cast.
     -   **`@floatCast(T, val)`**: Converts a float `val` to type `T`. Mapped to a C-style cast.
     -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct `T`. Mapped to C `offsetof()`.

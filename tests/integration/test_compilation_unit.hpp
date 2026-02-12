@@ -460,6 +460,19 @@ public:
     }
 
     /**
+     * @brief Checks if any reported error has the given code.
+     */
+    bool hasErrorCode(ErrorCode code) const {
+        const DynamicArray<ErrorReport>& errors = getErrorHandler().getErrors();
+        for (size_t i = 0; i < errors.length(); ++i) {
+            if (errors[i].code == code) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @brief Checks if any reported error matches the given substring.
      */
     bool hasErrorMatching(const char* substring) {

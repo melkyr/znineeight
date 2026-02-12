@@ -317,6 +317,9 @@ private:
     /** @brief Parses an @import statement. */
     ASTNode* parseImport();
 
+    /** @brief Parses a @ptrCast expression. */
+    ASTNode* parsePtrCastExpr();
+
     /** @brief Parses a top-level item. Helper for `parse`. */
     ASTNode* parseTopLevelItem();
 

@@ -86,6 +86,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
+        case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
@@ -603,7 +604,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 return get_g_type_usize();
             }
 
-            if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+            if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
                 if (node->args->length() != 2) {
                     fatalError(node->callee->loc, "built-in expects 2 arguments");
                 }
@@ -2718,6 +2719,31 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
         default:
             return "complex expression";
     }
+}
+
+Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
+    if (!node) return NULL;
+
+    Type* target_type = visit(node->target_type);
+    if (!target_type) return NULL;
+
+    // If it's a TYPE_TYPE (from visitTypeName), we need the actual type it represents.
+    if (target_type->kind == TYPE_TYPE) {
+        target_type = node->target_type->resolved_type;
+    }
+
+    Type* expr_type = visit(node->expr);
+    if (!expr_type) return NULL;
+
+    if (target_type && target_type->kind != TYPE_POINTER) {
+        unit.getErrorHandler().report(ERR_CAST_TARGET_NOT_POINTER, node->target_type->loc, "Target type of @ptrCast must be a pointer type");
+    }
+
+    if (expr_type && expr_type->kind != TYPE_POINTER) {
+        unit.getErrorHandler().report(ERR_CAST_SOURCE_NOT_POINTER, node->expr->loc, "Source expression of @ptrCast must be a pointer type");
+    }
+
+    return target_type;
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
