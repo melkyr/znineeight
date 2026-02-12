@@ -53,11 +53,12 @@ public:
     ASTNode* parseType();
 
     /**
-     * @brief Parses a top-level variable declaration (`var` or `const`).
+     * @brief Parses a variable declaration (`var` or `const`).
      *        Grammar: `('var'|'const') IDENT ':' type_expr '=' expr ';'`
+     * @param is_pub True if the declaration is prefixed with 'pub'.
      * @return A pointer to the ASTNode representing the variable declaration.
      */
-    ASTNode* parseVarDecl();
+    ASTNode* parseVarDecl(bool is_pub = false);
 
     /**
      * @brief Parses an assignment expression.
@@ -114,11 +115,12 @@ public:
     ASTNode* parsePrecedenceExpr(int min_precedence);
 
     /**
-     * @brief Parses a top-level function declaration.
+     * @brief Parses a function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
+     * @param is_pub True if the declaration is prefixed with 'pub'.
      * @return A pointer to the ASTNode representing the function declaration.
      */
-    ASTNode* parseFnDecl();
+    ASTNode* parseFnDecl(bool is_pub = false);
 
     /**
      * @brief Parses the entire source file as a series of top-level declarations.

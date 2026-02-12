@@ -605,6 +605,7 @@ struct ASTVarDeclNode {
     ASTNode* initializer;
     bool is_const;
     bool is_mut;
+    bool is_pub;
 };
 
 /**
@@ -620,6 +621,7 @@ struct ASTFnDeclNode {
     DynamicArray<ASTParamDeclNode*>* params;
     ASTNode* return_type; // Can be NULL
     ASTNode* body;
+    bool is_pub;
 };
 
 // --- Container Declaration Nodes ---

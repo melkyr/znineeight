@@ -13,7 +13,18 @@ int main(int argc, char* argv[]) {
         test_Codegen_CharDoubleQuote,
         test_Codegen_CharOctal,
         test_Codegen_StringSymbolicEscapes,
-        test_Codegen_StringAllC89Escapes
+        test_Codegen_StringAllC89Escapes,
+        test_Codegen_Global_PubConst,
+        test_Codegen_Global_PrivateConst,
+        test_Codegen_Global_PubVar,
+        test_Codegen_Global_PrivateVar,
+        test_Codegen_Global_Array,
+        test_Codegen_Global_Array_WithInit,
+        test_Codegen_Global_Pointer,
+        test_Codegen_Global_ConstPointer,
+        test_Codegen_Global_KeywordCollision,
+        test_Codegen_Global_LongName,
+        test_Codegen_Global_NonConstantInit_Error
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

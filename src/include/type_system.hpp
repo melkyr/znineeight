@@ -70,6 +70,7 @@ struct Type {
     TypeKind kind;
     size_t size;
     size_t alignment;
+    const char* c_name; // Mangled C89 name for structs, unions, enums
 
     union {
         struct {

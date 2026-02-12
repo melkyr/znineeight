@@ -6,6 +6,7 @@
 #include "c_variable_allocator.hpp"
 #include "ast.hpp"
 #include "type_system.hpp"
+#include "error_handler.hpp"
 #include <cstddef>
 
 /**
@@ -20,22 +21,25 @@ public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
      * @param arena The ArenaAllocator for CVariableAllocator.
+     * @param error_handler The error handler for reporting errors during codegen.
      */
-    C89Emitter(ArenaAllocator& arena);
+    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler);
 
     /**
      * @brief Constructs an emitter that writes to the specified file.
      * @param arena The ArenaAllocator for CVariableAllocator.
+     * @param error_handler The error handler for reporting errors during codegen.
      * @param path The path to the output file.
      */
-    C89Emitter(ArenaAllocator& arena, const char* path);
+    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path);
 
     /**
      * @brief Constructs an emitter that writes to an already open file.
      * @param arena The ArenaAllocator for CVariableAllocator.
+     * @param error_handler The error handler for reporting errors during codegen.
      * @param file The open file handle.
      */
-    C89Emitter(ArenaAllocator& arena, PlatFile file);
+    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, PlatFile file);
 
     /**
      * @brief Destructor. Flushes and closes the file if it was opened by the constructor.
@@ -94,9 +98,34 @@ public:
     void close();
 
     /**
+     * @brief Writes the standard C89 prologue (comments and includes).
+     */
+    void emitPrologue();
+
+    /**
      * @brief Prepares the emitter for a new function.
      */
     void beginFunction();
+
+    /**
+     * @brief Emits a C89 type representation.
+     * @param type The type to emit.
+     * @param name The name of the variable/field (optional).
+     */
+    void emitType(Type* type, const char* name = NULL);
+
+    /**
+     * @brief Emits a global variable declaration.
+     * @param node The variable declaration AST node.
+     * @param is_public True if the variable should have external linkage.
+     */
+    void emitGlobalVarDecl(const ASTNode* node, bool is_public);
+
+    /**
+     * @brief Returns true if the expression is a C89 constant initializer.
+     * @param node The expression node.
+     */
+    bool isConstantInitializer(const ASTNode* node) const;
 
     /**
      * @brief Returns the variable allocator.
@@ -146,12 +175,27 @@ private:
      */
     void emitEscapedByte(unsigned char c, bool is_char_literal);
 
+    /**
+     * @brief Gets a C89-compatible global name for a Zig name.
+     * @param zig_name The Zig identifier name.
+     * @return The sanitized and uniquified C89 name.
+     */
+    const char* getC89GlobalName(const char* zig_name);
+
+    struct GlobalNameEntry {
+        const char* zig_name;
+        const char* c89_name;
+    };
+
     char buffer_[4096];
     size_t buffer_pos_;
     PlatFile output_file_;
     int indent_level_;
     bool owns_file_;
     CVariableAllocator var_alloc_;
+    ErrorHandler& error_handler_;
+    ArenaAllocator& arena_;
+    DynamicArray<GlobalNameEntry> global_names_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

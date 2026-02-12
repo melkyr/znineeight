@@ -946,4 +946,17 @@ TEST_FUNC(Codegen_CharOctal);
 TEST_FUNC(Codegen_StringSymbolicEscapes);
 TEST_FUNC(Codegen_StringAllC89Escapes);
 
+// Task 194: Global Variable Codegen
+TEST_FUNC(Codegen_Global_PubConst);
+TEST_FUNC(Codegen_Global_PrivateConst);
+TEST_FUNC(Codegen_Global_PubVar);
+TEST_FUNC(Codegen_Global_PrivateVar);
+TEST_FUNC(Codegen_Global_Array);
+TEST_FUNC(Codegen_Global_Array_WithInit);
+TEST_FUNC(Codegen_Global_Pointer);
+TEST_FUNC(Codegen_Global_ConstPointer);
+TEST_FUNC(Codegen_Global_KeywordCollision);
+TEST_FUNC(Codegen_Global_LongName);
+TEST_FUNC(Codegen_Global_NonConstantInit_Error);
+
 #endif // TEST_DECLARATIONS_HPP

@@ -1,11 +1,14 @@
 #include "codegen.hpp"
 #include "platform.hpp"
 #include "test_framework.hpp"
+#include "test_compilation_unit.hpp"
 
 TEST_FUNC(c89_emitter_basic) {
     ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
     const char* filename = "test_emitter_basic.c";
-    C89Emitter emitter(arena, filename);
+    C89Emitter emitter(arena, unit.getErrorHandler(), filename);
     ASSERT_TRUE(emitter.isValid());
 
     emitter.emitComment("Hello World");
@@ -33,8 +36,10 @@ TEST_FUNC(c89_emitter_basic) {
 
 TEST_FUNC(c89_emitter_buffering) {
     ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
     const char* filename = "test_emitter_buffering.c";
-    C89Emitter emitter(arena, filename);
+    C89Emitter emitter(arena, unit.getErrorHandler(), filename);
     ASSERT_TRUE(emitter.isValid());
 
     // Write exactly 4096 bytes to fill the buffer

@@ -227,7 +227,8 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/c89_validation/validation_tests.cpp \
     tests/integration/codegen_integer_tests.cpp \
     tests/integration/codegen_float_tests.cpp \
-    tests/integration/codegen_literal_tests.cpp"
+    tests/integration/codegen_literal_tests.cpp \
+    tests/integration/codegen_global_tests.cpp"
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include -Itests/integration -Itests/c89_validation"
 
