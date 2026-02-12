@@ -1103,21 +1103,206 @@ Output: Runtime assertions in codegen module
     ```
 
 ### Milestone 5: Code Generation (C89)
-189. **Task 189:** Implement a basic C89 emitter class in `codegen.hpp`.
-190. **Task 190:** Implement `CVariableAllocator` to manage C variable names.
-191. **Task 191:** Generate C89 function declarations.
-192. **Task 192:** Generate C89 code for integer literals.
-193. **Task 193:** Generate C89 code for local variable declarations.
-194. **Task 194:** Generate C89 code for basic arithmetic operations.
-195. **Task 195:** Generate C89 code for comparison and logical operations.
-196. **Task 196:** Generate C89 code for if statements.
-197. **Task 197:** Generate C89 code for while and for loops.
-198. **Task 198:** Generate C89 code for return statements.
-199. **Task 199:** Implement C89 function call generation.
-200. **Task 200:** Implement C89 code generation for defer statements.
-201. **Task 201:** Generate C89 code for slice types.
-202. **Task 202:** Generate C89 code for error unions.
-203. **Task 203:** Write integration tests for the C89 code generator.
+Phase 1 – Core Infrastructure & Primitive Emission
+
+    Task 189: C89Emitter class skeleton
+
+        Header: codegen.hpp, source: codegen.cpp
+
+        Owns output stream, indentation, line tracking.
+
+        Constraint: No heap allocations in hot path; use stack buffers.
+
+        Test: Can open and close file, write a comment.
+
+    Task 190: CVariableAllocator
+
+        Manages C variable names (mangling, uniquification, C89 keyword avoidance).
+
+        Reuses Symbol::mangled_name where available.
+
+        Test: Allocate local variable, ensure name is unique and ≤31 chars.
+
+    Task 191: Generate integer literals
+
+        Emit 42, 0x1F, 123U, 123ULL, 123i64 (MSVC).
+
+        Respect is_unsigned, is_long from AST node.
+
+        Test: emitExpression(42) → "42".
+
+    Task 192: Generate float literals
+
+        Emit 3.14, 2.0e10.
+
+        For f32, append f suffix? (C89 double is default, but we can omit suffix; MSVC accepts f as extension – decide to omit for strict C89).
+
+        Test: 3.14f32 → "3.14" (no suffix).
+
+    Task 193: Generate string literals
+
+        Emit "hello", properly escaped.
+
+        Test: "line1\nline2" → "line1\nline2".
+
+Phase 2 – Variables & Functions
+
+    Task 194: Global variable declarations
+
+        Emit at file scope.
+
+        Handle const → const.
+
+        Test: const x: i32 = 42; → const int x = 42;
+
+    Task 195: Local variable declarations
+
+        C89 requires declarations at the beginning of a block.
+
+        Crucial: We must collect all locals in a block and emit them first.
+
+        Use CVariableAllocator to assign names.
+
+        Test: { var a = 1; var b = 2; } → { int a = 1; int b = 2; }
+
+    Task 196: Function declarations & definitions
+
+        Emit return type, mangled name, parameter list.
+
+        Body: { ... } with statements.
+
+        Test: fn add(a: i32, b: i32) i32 { return a + b; } →
+        int add_i32_i32(int a, int b) { return a + b; }
+
+Phase 3 – Expressions & Operators
+
+    Task 197: Binary operators (arithmetic, comparisons, logical)
+
+        Map Zig operators to C: +, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||.
+
+        Parentheses handled automatically by emitExpression (no extra logic needed if we emit infix with spaces).
+
+        Test: 1 + 2 * 3 → 1 + 2 * 3 (correct precedence relies on Zig parser, not emitter).
+
+    Task 198: Unary operators
+
+        -x, !x, &x, *x.
+
+        Test: *ptr → *ptr.
+
+    Task 199: Member access
+
+        .field → .field (for structs)
+
+        ptr.field → ptr->field (auto‑dereference)
+
+        Test: p.x → p.x, ptr.y → ptr->y.
+
+    Task 200: Array indexing
+
+        arr[idx] → arr[idx].
+
+        Test: arr[0] → arr[0].
+
+Phase 4 – Control Flow
+
+    Task 201: if statement
+
+        if (cond) { ... } else { ... }
+
+        Condition must be parenthesised.
+
+        Test: if (x > 0) { return 1; } else { return 0; }
+
+    Task 202: while loop
+
+        while (cond) { ... }
+
+        Test: while (i < 10) { i = i + 1; }
+
+    Task 203: return statement
+
+        return; (void) or return expr;.
+
+        Test: return 42;
+
+Phase 5 – Built‑ins & Casts
+
+    Task 204: @ptrCast
+
+        Emit (T*)expr.
+
+        Test: @ptrCast(*u8, ptr) → (unsigned char*)ptr.
+
+    Task 205: @intCast / @floatCast (runtime checked)
+
+        Emit __bootstrap_T_from_U(expr) (call to runtime helper).
+
+        Test: @intCast(i32, u32_expr) → __bootstrap_i32_from_u32(u32_expr).
+
+        Constraint: The helper functions are not yet implemented in the runtime header. For now, just emit the call; actual compilation will fail until we provide the header. That’s acceptable – we are testing the compiler’s output, not running it.
+
+Phase 6 – Advanced (Optional / Deferred)
+
+    Task 206: defer (placeholder)
+
+        For now, emit /* defer */ comment.
+
+        Full implementation requires complex CFG transform – defer to Milestone 6.
+
+    Task 207: Integration tests with real C89 compiler
+
+        Use the C89Validator framework from Task 179 to compile the generated code with gcc -std=c89 -pedantic.
+
+        Start with small programs, gradually increase complexity.
+
+What to Watch For – Critical Technical Constraints
+1. C89 Variable Declaration Placement
+
+    All local variables must be declared at the top of a block, before any statements.
+
+    Our AST has declarations interspersed with statements (Zig style).
+
+    Solution: In emitBlock, first collect all VarDecl nodes in the block, emit them, then emit the remaining statements.
+
+2. Name Mangling & Identifier Length
+
+    C89 only guarantees 31 significant characters; MSVC 6.0 is strict.
+
+    Use CVariableAllocator to enforce length limits and avoid collisions.
+
+3. No // Comments
+
+    Emit only /* ... */ comments.
+
+4. __int64 for 64‑bit integers
+
+    MSVC 6.0 does not have long long; we must emit __int64 and unsigned __int64.
+
+    For GCC/clang compatibility, we can also emit long long and rely on the runtime header to typedef __int64 to long long.
+
+    Recommendation: Emit __int64 / unsigned __int64 unconditionally, and provide a #ifndef _MSC_VER fallback in the runtime header.
+
+5. Boolean as int
+
+    bool → int, true → 1, false → 0.
+
+    Ensure comparisons like if (flag) work (C interprets any non‑zero as true).
+
+6. No inline, no restrict, no //
+7. Struct/Union Layout
+
+    Our layout algorithm already matches MSVC 6.0 (no pack).
+
+    Emit struct definitions exactly as computed.
+
+8. Memory Usage
+
+    Keep codegen single‑pass, no large intermediate representations.
+
+    Use the existing ArenaAllocator for any persistent data (e.g., string buffers).
+
+    Target <16MB total memory for the compiler itself, not for generated output.
 
 ### Milestone 6: C Library Integration & Final Bootstrap
 204. **Task 204:** Implement the CBackend class skeleton for final code emission.
