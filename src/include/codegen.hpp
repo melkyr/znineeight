@@ -116,6 +116,12 @@ public:
     void emitIntegerLiteral(const ASTIntegerLiteralNode* node);
 
     /**
+     * @brief Emits a float literal expression.
+     * @param node The float literal node.
+     */
+    void emitFloatLiteral(const ASTFloatLiteralNode* node);
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }

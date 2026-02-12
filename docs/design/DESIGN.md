@@ -735,8 +735,8 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ### Milestone 5: Code Generation (C89)
 - [x] Task 189: Implement `C89Emitter` class skeleton with buffered file I/O
 - [x] Task 190: Implement `CVariableAllocator` for C89-compliant local name management
-- [ ] Task 191: Generate integer literals
-- [ ] Task 192: Generate float literals
+- [x] Task 191: Generate integer literals
+- [x] Task 192: Generate float literals
 - [ ] Task 193: Generate string literals
 
 ### Week 1: MSVC 6.0 Env Setup
