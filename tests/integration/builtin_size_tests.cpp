@@ -53,12 +53,12 @@ static bool run_size_error_test(const char* zig_code, const char* error_substrin
 
 TEST_FUNC(SizeOf_Primitive) {
     const char* source = "fn foo() usize { return @sizeOf(i32); }";
-    return run_size_test(source, "4");
+    return run_size_test(source, "4U");
 }
 
 TEST_FUNC(AlignOf_Primitive) {
     const char* source = "fn foo() usize { return @alignOf(i64); }";
-    return run_size_test(source, "8");
+    return run_size_test(source, "8U");
 }
 
 TEST_FUNC(AlignOf_Struct) {
@@ -66,24 +66,24 @@ TEST_FUNC(AlignOf_Struct) {
         "const S = struct { a: u8, b: i64 };\n"
         "fn foo() usize { return @alignOf(S); }";
     // i64 has alignment 8, so S has alignment 8
-    return run_size_test(source, "8");
+    return run_size_test(source, "8U");
 }
 
 TEST_FUNC(SizeOf_Struct) {
     const char* source =
         "const S = struct { a: i32, b: i32 };\n"
         "fn foo() usize { return @sizeOf(S); }";
-    return run_size_test(source, "8");
+    return run_size_test(source, "8U");
 }
 
 TEST_FUNC(SizeOf_Array) {
     const char* source = "fn foo() usize { return @sizeOf([10]i32); }";
-    return run_size_test(source, "40");
+    return run_size_test(source, "40U");
 }
 
 TEST_FUNC(SizeOf_Pointer) {
     const char* source = "fn foo() usize { return @sizeOf(*i32); }";
-    return run_size_test(source, "4");
+    return run_size_test(source, "4U");
 }
 
 TEST_FUNC(SizeOf_Incomplete_Error) {

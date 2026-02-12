@@ -321,6 +321,9 @@ private:
     /** @brief Parses a @ptrCast expression. */
     ASTNode* parsePtrCastExpr();
 
+    /** @brief Parses an @offsetOf expression. */
+    ASTNode* parseOffsetOfExpr();
+
     /** @brief Parses a top-level item. Helper for `parse`. */
     ASTNode* parseTopLevelItem();
 

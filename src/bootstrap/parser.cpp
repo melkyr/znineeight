@@ -248,7 +248,7 @@ ASTNode* Parser::parsePrimaryExpr() {
         case TOKEN_AT_FLOATCAST:
             return parseNumericCastExpr(NODE_FLOAT_CAST);
         case TOKEN_AT_OFFSETOF:
-            return parseBuiltinCall("@offsetOf", advance().location);
+            return parseOffsetOfExpr();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -1885,7 +1885,7 @@ ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
     if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
         call_data->args->append(parseType());
     } else if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 ||
-               plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@offsetOf") == 0) {
+               plat_strcmp(name, "@floatCast") == 0) {
         call_data->args->append(parseType());
         expect(TOKEN_COMMA, "Expected ',' after first argument of built-in");
         call_data->args->append(parseExpression());
@@ -1895,5 +1895,28 @@ ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
 
     ASTNode* node = createNodeAt(NODE_FUNCTION_CALL, loc);
     node->as.function_call = call_data;
+    return node;
+}
+
+ASTNode* Parser::parseOffsetOfExpr() {
+    SourceLocation loc = advance().location; // Consume @offsetOf
+    expect(TOKEN_LPAREN, "Expected '(' after '@offsetOf'");
+
+    ASTNode* type_expr = parseType();
+    expect(TOKEN_COMMA, "Expected ',' after type argument of '@offsetOf'");
+
+    Token field_token = expect(TOKEN_STRING_LITERAL, "Expected string literal for field name in '@offsetOf'");
+    const char* field_name = field_token.value.identifier;
+
+    expect(TOKEN_RPAREN, "Expected ')' after '@offsetOf' arguments");
+
+    ASTOffsetOfNode* offset_data = (ASTOffsetOfNode*)arena_->alloc(sizeof(ASTOffsetOfNode));
+    if (!offset_data) error("Out of memory");
+
+    offset_data->type_expr = type_expr;
+    offset_data->field_name = field_name;
+
+    ASTNode* node = createNodeAt(NODE_OFFSET_OF, loc);
+    node->as.offset_of = offset_data;
     return node;
 }

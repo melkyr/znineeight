@@ -89,6 +89,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
         case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
+        case NODE_OFFSET_OF:        resolved_type = visitOffsetOf(node, node->as.offset_of); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
@@ -647,15 +648,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 visit((*node->args)[1]); // Visit the value being cast
 
                 return target_type;
-            }
-
-            if (plat_strcmp(name, "@offsetOf") == 0) {
-                if (node->args->length() != 2) {
-                    fatalError(node->callee->loc, "built-in expects 2 arguments");
-                }
-                visit((*node->args)[0]); // Visit struct type
-                visit((*node->args)[1]); // Visit field name string
-                return get_g_type_usize();
             }
 
             // Register in call site table as builtin
@@ -2823,7 +2815,82 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
         return target_type;
     }
 
+    parent->resolved_type = target_type;
     return target_type;
+}
+
+Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
+    Type* arg_type = visit(node->type_expr);
+    if (!arg_type) return NULL;
+
+    if (arg_type->kind == TYPE_TYPE) {
+        arg_type = node->type_expr->resolved_type;
+    }
+
+    if (arg_type->kind != TYPE_STRUCT && arg_type->kind != TYPE_UNION) {
+        char buf[128];
+        char type_name[64];
+        typeToString(arg_type, type_name, sizeof(type_name));
+        char* cur = buf;
+        size_t rem = sizeof(buf);
+        safe_append(cur, rem, "@offsetOf called on non-aggregate type '");
+        safe_append(cur, rem, type_name);
+        safe_append(cur, rem, "'");
+        unit.getErrorHandler().report(ERR_OFFSETOF_NON_AGGREGATE, parent->loc, buf, unit.getArena());
+        return NULL;
+    }
+
+    if (!isTypeComplete(arg_type)) {
+        char buf[128];
+        char type_name[64];
+        typeToString(arg_type, type_name, sizeof(type_name));
+        char* cur = buf;
+        size_t rem = sizeof(buf);
+        safe_append(cur, rem, "@offsetOf cannot be used on incomplete type '");
+        safe_append(cur, rem, type_name);
+        safe_append(cur, rem, "'");
+        unit.getErrorHandler().report(ERR_OFFSETOF_INCOMPLETE_TYPE, parent->loc, buf, unit.getArena());
+        return NULL;
+    }
+
+    size_t offset = 0;
+    bool found = false;
+
+    DynamicArray<StructField>* fields = arg_type->as.struct_details.fields;
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            if (plat_strcmp((*fields)[i].name, node->field_name) == 0) {
+                offset = (*fields)[i].offset;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found) {
+        char buf[128];
+        char type_name[64];
+        typeToString(arg_type, type_name, sizeof(type_name));
+        char* cur = buf;
+        size_t rem = sizeof(buf);
+        safe_append(cur, rem, "field '");
+        safe_append(cur, rem, node->field_name);
+        safe_append(cur, rem, "' not found in ");
+        safe_append(cur, rem, (arg_type->kind == TYPE_STRUCT ? "struct '" : "union '"));
+        safe_append(cur, rem, type_name);
+        safe_append(cur, rem, "'");
+        unit.getErrorHandler().report(ERR_OFFSETOF_FIELD_NOT_FOUND, parent->loc, buf, unit.getArena());
+        return NULL;
+    }
+
+    // Constant fold to integer literal
+    parent->type = NODE_INTEGER_LITERAL;
+    parent->as.integer_literal.value = offset;
+    parent->as.integer_literal.is_unsigned = true;
+    parent->as.integer_literal.is_long = false;
+    parent->resolved_type = get_g_type_usize();
+
+    return parent->resolved_type;
 }
 
 Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {

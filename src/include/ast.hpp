@@ -55,6 +55,7 @@ enum NodeType {
     NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
     NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
+    NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -143,6 +144,7 @@ struct ASTAwaitExprNode;
 struct ASTComptimeBlockNode;
 struct ASTPtrCastNode;
 struct ASTNumericCastNode;
+struct ASTOffsetOfNode;
 struct ASTFunctionCallNode;
 struct ASTArrayAccessNode;
 struct ASTArraySliceNode;
@@ -556,6 +558,17 @@ struct ASTNumericCastNode {
     ASTNode* expr;
 };
 
+/**
+ * @struct ASTOffsetOfNode
+ * @brief Represents an explicit field offset expression (@offsetOf).
+ * @var ASTOffsetOfNode::type_expr The aggregate type expression.
+ * @var ASTOffsetOfNode::field_name The name of the field.
+ */
+struct ASTOffsetOfNode {
+    ASTNode* type_expr;
+    const char* field_name;
+};
+
 
 // --- Declaration Nodes ---
 
@@ -802,6 +815,7 @@ struct ASTNode {
         ASTSwitchExprNode* switch_expr; // Out-of-line
         ASTPtrCastNode* ptr_cast; // Out-of-line
         ASTNumericCastNode* numeric_cast; // Out-of-line
+        ASTOffsetOfNode* offset_of; // Out-of-line
 
         // Error Handling
         ASTTryExprNode try_expr;

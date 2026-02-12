@@ -426,7 +426,7 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
     -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast. Both `T` and the type of `val` must be pointer types.
     -   **`@intCast(T, val)`**: Converts an integer `val` to type `T`. Mapped to a C-style cast.
     -   **`@floatCast(T, val)`**: Converts a float `val` to type `T`. Mapped to a C-style cast.
-    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct `T`. Mapped to C `offsetof()`.
+    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct or union `T`. Evaluated at compile-time and replaced with a literal.
     -   **`@import("module")`**: Still strictly REJECTED as the bootstrap compiler is single-file only.
 
 #### Call Resolution Completeness (Task 168)

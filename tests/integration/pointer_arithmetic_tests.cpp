@@ -72,7 +72,7 @@ TEST_FUNC(PointerArithmetic_SizeOfUSize) {
         "    return @sizeOf(usize);\n"
         "}";
     // Now it should return the constant literal 4
-    return run_ptr_arith_test(source, TYPE_USIZE, "4");
+    return run_ptr_arith_test(source, TYPE_USIZE, "4U");
 }
 
 TEST_FUNC(PointerArithmetic_AlignOfISize) {
@@ -81,7 +81,7 @@ TEST_FUNC(PointerArithmetic_AlignOfISize) {
         "    return @alignOf(isize);\n"
         "}";
     // Now it should return the constant literal 4
-    return run_ptr_arith_test(source, TYPE_USIZE, "4");
+    return run_ptr_arith_test(source, TYPE_USIZE, "4U");
 }
 
 TEST_FUNC(PointerArithmetic_PtrCast) {
@@ -98,7 +98,8 @@ TEST_FUNC(PointerArithmetic_OffsetOf) {
         "fn foo() usize {\n"
         "    return @offsetOf(Point, \"y\");\n"
         "}";
-    return run_ptr_arith_test(source, TYPE_USIZE, "offsetof(struct Point, y)");
+    // Now constant-folded to literal 4
+    return run_ptr_arith_test(source, TYPE_USIZE, "4U");
 }
 
 TEST_FUNC(PointerArithmetic_USizePlusPtr) {
