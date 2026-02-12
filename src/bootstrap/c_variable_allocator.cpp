@@ -3,6 +3,38 @@
 #include "platform.hpp"
 #include "utils.hpp"
 
+// Hardcoded C89 keyword list (32 keywords) sorted alphabetically for binary search.
+static const char* c89_keywords[] = {
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if",
+    "int", "long", "register", "return", "short", "signed", "sizeof", "static",
+    "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while"
+};
+static const int c89_keyword_count = 32;
+
+static bool is_c89_keyword(const char* name) {
+    int low = 0;
+    int high = c89_keyword_count - 1;
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        int cmp = plat_strcmp(name, c89_keywords[mid]);
+        if (cmp == 0) return true;
+        if (cmp < 0) high = mid - 1;
+        else low = mid + 1;
+    }
+    return false;
+}
+
+static bool is_c_reserved_name(const char* name) {
+    if (name[0] == '_') {
+        // Starts with _ followed by Uppercase or another _
+        if ((name[1] >= 'A' && name[1] <= 'Z') || name[1] == '_') {
+            return true;
+        }
+    }
+    return false;
+}
+
 CVariableAllocator::CVariableAllocator(ArenaAllocator& arena)
     : arena_(arena), assigned_names_(arena) {}
 
@@ -45,7 +77,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     bool needs_prefix = false;
     if (base_buffer[0] >= '0' && base_buffer[0] <= '9') {
         needs_prefix = true;
-    } else if (isCKeyword(base_buffer) || isCReservedName(base_buffer)) {
+    } else if (is_c89_keyword(base_buffer) || is_c_reserved_name(base_buffer)) {
         needs_prefix = true;
     }
 
