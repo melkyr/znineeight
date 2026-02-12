@@ -908,4 +908,12 @@ TEST_FUNC(c89_emitter_basic);
 TEST_FUNC(c89_emitter_buffering);
 TEST_FUNC(plat_file_raw_io);
 
+// Task 190: C Variable Allocator
+TEST_FUNC(CVariableAllocator_Basic);
+TEST_FUNC(CVariableAllocator_Keywords);
+TEST_FUNC(CVariableAllocator_Truncation);
+TEST_FUNC(CVariableAllocator_MangledReuse);
+TEST_FUNC(CVariableAllocator_Generate);
+TEST_FUNC(CVariableAllocator_Reset);
+
 #endif // TEST_DECLARATIONS_HPP
