@@ -113,3 +113,78 @@ TEST_FUNC(PtrCast_Nested) {
         "}";
     return run_cast_test(source, TYPE_POINTER, "(unsigned char*)(int*)ptr");
 }
+
+TEST_FUNC(IntCast_Constant_Fold) {
+    const char* source =
+        "fn foo() u8 {\n"
+        "    return @intCast(u8, 100);\n"
+        "}";
+    return run_cast_test(source, TYPE_U8, "100U");
+}
+
+TEST_FUNC(IntCast_Constant_Overflow_Error) {
+    const char* source =
+        "fn foo() u8 {\n"
+        "    return @intCast(u8, 300);\n"
+        "}";
+    return run_cast_error_test(source, ERR_INT_CAST_OVERFLOW);
+}
+
+TEST_FUNC(IntCast_Runtime) {
+    const char* source =
+        "fn foo(x: u32) i32 {\n"
+        "    return @intCast(i32, x);\n"
+        "}";
+    // x is u32, target is i32. Sizes are both 4. Not widening.
+    return run_cast_test(source, TYPE_I32, "__bootstrap_i32_from_u32(x)");
+}
+
+TEST_FUNC(IntCast_Widening) {
+    const char* source =
+        "fn foo(x: u8) i32 {\n"
+        "    return @intCast(i32, x);\n"
+        "}";
+    // u8 to i32 is widening (1 to 4 bytes).
+    return run_cast_test(source, TYPE_I32, "(int)x");
+}
+
+TEST_FUNC(IntCast_Bool) {
+    const char* source =
+        "fn foo(b: bool) u8 {\n"
+        "    return @intCast(u8, b);\n"
+        "}";
+    // bool is i32 (4 bytes) in our system. target u8 (1 byte). Narrowing.
+    return run_cast_test(source, TYPE_U8, "__bootstrap_u8_from_bool(b)");
+}
+
+TEST_FUNC(FloatCast_Constant_Fold) {
+    const char* source =
+        "fn foo() f32 {\n"
+        "    return @floatCast(f32, 3.14);\n"
+        "}";
+    return run_cast_test(source, TYPE_F32, "3.14f");
+}
+
+TEST_FUNC(FloatCast_Runtime_Widening) {
+    const char* source =
+        "fn foo(x: f32) f64 {\n"
+        "    return @floatCast(f64, x);\n"
+        "}";
+    return run_cast_test(source, TYPE_F64, "(double)x");
+}
+
+TEST_FUNC(FloatCast_Runtime_Narrowing) {
+    const char* source =
+        "fn foo(x: f64) f32 {\n"
+        "    return @floatCast(f32, x);\n"
+        "}";
+    return run_cast_test(source, TYPE_F32, "__bootstrap_f32_from_f64(x)");
+}
+
+TEST_FUNC(Cast_Invalid_Types_Error) {
+    const char* source =
+        "fn foo(x: f32) i32 {\n"
+        "    return @intCast(i32, x);\n"
+        "}";
+    return run_cast_error_test(source, ERR_CAST_SOURCE_NOT_INTEGER);
+}

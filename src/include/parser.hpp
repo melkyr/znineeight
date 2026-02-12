@@ -84,6 +84,7 @@ public:
      * @return A pointer to the ASTNode representing the primary expression.
      */
     ASTNode* parsePrimaryExpr();
+    ASTNode* parseNumericCastExpr(NodeType type);
     ASTNode* parseBuiltinCall(const char* name, SourceLocation loc);
 
     /**

@@ -53,6 +53,8 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
     NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
+    NODE_INT_CAST,        ///< An integer cast expression (@intCast).
+    NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -140,6 +142,7 @@ struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
 struct ASTComptimeBlockNode;
 struct ASTPtrCastNode;
+struct ASTNumericCastNode;
 struct ASTFunctionCallNode;
 struct ASTArrayAccessNode;
 struct ASTArraySliceNode;
@@ -542,6 +545,17 @@ struct ASTPtrCastNode {
     ASTNode* expr;
 };
 
+/**
+ * @struct ASTNumericCastNode
+ * @brief Represents an explicit numeric cast (@intCast, @floatCast).
+ * @var ASTNumericCastNode::target_type The target numeric type expression.
+ * @var ASTNumericCastNode::expr The expression being cast.
+ */
+struct ASTNumericCastNode {
+    ASTNode* target_type;
+    ASTNode* expr;
+};
+
 
 // --- Declaration Nodes ---
 
@@ -787,6 +801,7 @@ struct ASTNode {
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line
         ASTPtrCastNode* ptr_cast; // Out-of-line
+        ASTNumericCastNode* numeric_cast; // Out-of-line
 
         // Error Handling
         ASTTryExprNode try_expr;

@@ -834,6 +834,16 @@ Returns a `usize` constant representing the alignment of type `T` in bytes.
 - **Target Assumption:** 32-bit (e.g., `@alignOf(i64)` is `8`).
 - **In-place Replacement:** The `NODE_FUNCTION_CALL` is replaced with a `NODE_INTEGER_LITERAL`.
 
+#### Numeric Casts (Task 187)
+- **`@intCast(T, expr)`**: Checked conversion between integer types.
+- **`@floatCast(T, expr)`**: Checked conversion between floating-point types.
+
+**Evaluation Strategy:**
+1. **Constant Folding:** If `expr` is a constant literal and fits in `T`, it is replaced with a literal node in-place.
+2. **Compile-time Error:** If `expr` is a constant literal but exceeds the range of `T`, a fatal error is reported.
+3. **Safe Widening:** If the conversion is a guaranteed safe widening (e.g., `u8` to `i32`), a simple C-style cast is emitted.
+4. **Runtime Check:** Otherwise, a call to a runtime helper function `__bootstrap_<target>_from_<source>(expr)` is emitted. These helpers (to be implemented in Milestone 5) perform range checks and panic on overflow.
+
 #### Target Platform Assumptions (32-bit)
 To maintain simplicity, the bootstrap compiler assumes a 32-bit little-endian target platform with the following characteristics:
 

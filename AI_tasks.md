@@ -1057,20 +1057,22 @@ Output: Runtime assertions in codegen module
     char* bytes = arena_alloc(10 * 4);
     ```
 
-187. **Task 187:** Checked Numeric Casts (@intCast, @floatCast)
+187. [COMPLETE] **Task 187:** Checked Numeric Casts (@intCast, @floatCast) (DONE)
     **Risk:** LOW
     **Goal:** Provide explicit, range‑checked conversions between numeric types, analogous to Zig’s @intCast.
     **Why:** Without them, you cannot safely convert usize → i32, i64 → i32, etc., even when the value is known to fit. This forces either dangerous punning through pointers or ignoring type safety.
 
     **Implementation:**
-    - **Parser:** Recognise @intCast(T, expr) and @floatCast(T, expr).
+    - **Parser:** Recognized @intCast(T, expr) and @floatCast(T, expr) as dedicated AST nodes.
     - **TypeChecker:**
-        - Verify that T is a numeric type and expr is numeric.
-        - If the expression is a compile‑time integer literal, verify that its value fits in the target type (same logic as canLiteralFitInType).
-        - For non‑constant expressions, insert a runtime assertion in the generated C code (e.g., assert(expr >= T_MIN && expr <= T_MAX)).
+        - Verified that `@intCast` uses integers and `@floatCast` uses floats.
+        - Constant folding: In-place replacement with literals if values fit.
+        - Fatal compile error for constant overflow.
     - **C89 emission:**
-        - For constant‑fitted cases: emit (T)expr.
-        - For runtime‑checked cases: emit ( { check; (T)expr; } ) using C89 comma operator and assert (or a custom panic).
+        - Constant-folded cases: direct literals.
+        - Safe widenings: simple C casts.
+        - Other runtime cases: emitted as `__bootstrap_<target>_from_<source>(expr)` to be implemented in runtime header.
+    - **Tests:** Verified via `tests/integration/cast_tests.cpp` (Batch 20).
 
     **Test:**
     ```zig

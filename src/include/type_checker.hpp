@@ -58,6 +58,8 @@ public:
     Type* visitOptionalType(ASTOptionalTypeNode* node);
     Type* visitFunctionType(ASTFunctionTypeNode* node);
     Type* visitPtrCast(ASTPtrCastNode* node);
+    Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
+    Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
     Type* visitCatchExpr(ASTCatchExprNode* node);
     Type* visitOrelseExpr(ASTOrelseExprNode* node);

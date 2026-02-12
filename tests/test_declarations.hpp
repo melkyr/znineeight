@@ -876,6 +876,15 @@ TEST_FUNC(PtrCast_ToVoid);
 TEST_FUNC(PtrCast_TargetNotPointer_Error);
 TEST_FUNC(PtrCast_SourceNotPointer_Error);
 TEST_FUNC(PtrCast_Nested);
+TEST_FUNC(IntCast_Constant_Fold);
+TEST_FUNC(IntCast_Constant_Overflow_Error);
+TEST_FUNC(IntCast_Runtime);
+TEST_FUNC(IntCast_Widening);
+TEST_FUNC(IntCast_Bool);
+TEST_FUNC(FloatCast_Constant_Fold);
+TEST_FUNC(FloatCast_Runtime_Widening);
+TEST_FUNC(FloatCast_Runtime_Narrowing);
+TEST_FUNC(Cast_Invalid_Types_Error);
 
 // Task 186: Compile-time Size & Alignment Introspection
 TEST_FUNC(SizeOf_Primitive);

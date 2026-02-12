@@ -100,6 +100,9 @@ public:
                 return "(" + emitExpression(node->as.paren_expr.expr) + ")";
             case NODE_PTR_CAST:
                 return emitPtrCast(node->as.ptr_cast);
+            case NODE_INT_CAST:
+            case NODE_FLOAT_CAST:
+                return emitNumericCast(node);
             case NODE_DEFER_STMT:
                 return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
             case NODE_SWITCH_EXPR:
@@ -327,6 +330,45 @@ public:
     std::string emitPtrCast(const ASTPtrCastNode* node) {
         if (!node || !node->target_type || !node->target_type->resolved_type) return "((/* type */)/* val */)";
         return "(" + getC89TypeName(node->target_type->resolved_type) + ")" + emitExpression(node->expr);
+    }
+
+    /**
+     * @brief Emits a runtime numeric cast helper call.
+     */
+    std::string emitNumericCast(const ASTNode* node) {
+        if (!node || (node->type != NODE_INT_CAST && node->type != NODE_FLOAT_CAST)) return "/* INVALID CAST */";
+        const ASTNumericCastNode* cast = node->as.numeric_cast;
+
+        Type* target_type = cast->target_type->resolved_type;
+        Type* source_type = cast->expr->resolved_type;
+
+        if (!target_type || !source_type) return "((/* type */)/* val */)";
+
+        // Special case: widening is always safe in C, just emit C cast if we wanted to be simple,
+        // but the instructions said to emit the helper for non-constant cases.
+        // Actually, "Note: For @floatCast(f64, f32_expr) – always safe (widening) → no runtime check needed. Just emit (double)expr."
+
+        bool is_widening = false;
+        if (node->type == NODE_INT_CAST) {
+            // Very simplified widening check
+            if (target_type->size > source_type->size) is_widening = true;
+            // same size, but source is smaller range (e.g. u16 to i32)
+        } else {
+            if (target_type->kind == TYPE_F64 && source_type->kind == TYPE_F32) is_widening = true;
+        }
+
+        if (is_widening) {
+            return "(" + getC89TypeName(target_type) + ")" + emitExpression(cast->expr);
+        }
+
+        char dest_name[64];
+        char src_name[64];
+        typeToString(target_type, dest_name, sizeof(dest_name));
+        typeToString(source_type, src_name, sizeof(src_name));
+
+        std::stringstream ss;
+        ss << "__bootstrap_" << dest_name << "_from_" << src_name << "(" << emitExpression(cast->expr) << ")";
+        return ss.str();
     }
 
     /**

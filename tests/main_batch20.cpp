@@ -9,7 +9,16 @@ int main(int argc, char* argv[]) {
         test_PtrCast_ToVoid,
         test_PtrCast_TargetNotPointer_Error,
         test_PtrCast_SourceNotPointer_Error,
-        test_PtrCast_Nested
+        test_PtrCast_Nested,
+        test_IntCast_Constant_Fold,
+        test_IntCast_Constant_Overflow_Error,
+        test_IntCast_Runtime,
+        test_IntCast_Widening,
+        test_IntCast_Bool,
+        test_FloatCast_Constant_Fold,
+        test_FloatCast_Runtime_Widening,
+        test_FloatCast_Runtime_Narrowing,
+        test_Cast_Invalid_Types_Error
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
