@@ -23,6 +23,19 @@ Returns the alignment requirement of type `T` in bytes as a `usize` constant.
   - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
 
+### `@offsetOf(T, field_name)`
+Returns the byte offset of a field within a struct or union as a `usize` constant.
+- **Syntax:** `@offsetOf(AggregateType, "field")`
+- **Constraints:**
+  - `AggregateType` must be a struct or union.
+  - `field_name` must be a string literal.
+  - The type must be fully defined (not incomplete).
+- **Compile-time evaluation:**
+  - Always constant-folded to a `usize` integer literal.
+  - For unions, always returns `0`.
+  - For structs, returns the pre-calculated byte offset from the beginning of the struct.
+- **C89 Emission:** Emitted directly as the integer literal (e.g., `4`).
+
 ## Code Generation Built-ins
 
 These built-ins are validated during type checking but are emitted as specific C89 code patterns.
@@ -47,11 +60,6 @@ Performs an explicit floating-point cast.
 - **Constraints:** Both must be floating-point types.
 - **Compile-time:** Constant folding for float literals.
 - **Runtime:** Range checking for `f64` to `f32`. safe widening (e.g., `f32` to `f64`) uses a simple C cast.
-
-### `@offsetOf(T, field_name)`
-Returns the byte offset of a field within a struct.
-- **Syntax:** `@offsetOf(StructType, "field")`
-- **C89 Emission:** `offsetof(struct StructType, field)`
 
 ---
 

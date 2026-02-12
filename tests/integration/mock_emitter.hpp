@@ -406,18 +406,6 @@ public:
                 return "((/* type */)/* val */)";
             }
 
-            if (plat_strcmp(name, "@offsetOf") == 0) {
-                if (call->args->length() == 2) {
-                    ASTNode* type_arg = (*call->args)[0];
-                    ASTNode* field_arg = (*call->args)[1];
-                    Type* struct_type = type_arg->resolved_type;
-                    if (struct_type && field_arg->type == NODE_STRING_LITERAL) {
-                        return "offsetof(" + getC89TypeName(struct_type) + ", " + field_arg->as.string_literal.value + ")";
-                    }
-                }
-                return "offsetof(/* struct */, /* field */)";
-            }
-
             if (call_table_) {
                 const CallSiteEntry* entry = call_table_->findByCallNode(const_cast<ASTNode*>(node));
                 if (entry && entry->mangled_name) {
@@ -501,7 +489,7 @@ private:
                 ss << "ULL";
             } else if (type->kind == TYPE_I64) {
                 ss << "LL";
-            } else if (type->kind == TYPE_U32) {
+            } else if (type->kind == TYPE_U32 || type->kind == TYPE_USIZE) {
                 ss << "U";
             } else if (type->kind == TYPE_U8 || type->kind == TYPE_U16) {
                 // Technically C89 might not need U for small types, but it's safer

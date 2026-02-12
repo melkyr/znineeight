@@ -895,4 +895,12 @@ TEST_FUNC(SizeOf_Pointer);
 TEST_FUNC(SizeOf_Incomplete_Error);
 TEST_FUNC(AlignOf_Struct);
 
+// Task 188: @offsetOf
+TEST_FUNC(BuiltinOffsetOf_StructBasic);
+TEST_FUNC(BuiltinOffsetOf_StructPadding);
+TEST_FUNC(BuiltinOffsetOf_Union);
+TEST_FUNC(BuiltinOffsetOf_NonAggregate_Error);
+TEST_FUNC(BuiltinOffsetOf_FieldNotFound_Error);
+TEST_FUNC(BuiltinOffsetOf_IncompleteType_Error);
+
 #endif // TEST_DECLARATIONS_HPP

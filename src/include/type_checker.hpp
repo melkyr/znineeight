@@ -60,6 +60,7 @@ public:
     Type* visitPtrCast(ASTPtrCastNode* node);
     Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
+    Type* visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node);
     Type* visitTryExpr(ASTTryExprNode* node);
     Type* visitCatchExpr(ASTCatchExprNode* node);
     Type* visitOrelseExpr(ASTOrelseExprNode* node);

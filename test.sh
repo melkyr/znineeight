@@ -214,6 +214,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/integration/defer_tests.cpp \
     tests/integration/task182_183_tests.cpp \
     tests/integration/pointer_arithmetic_tests.cpp \
+    tests/integration/builtin_offsetof_tests.cpp \
     tests/integration/cast_tests.cpp \
     tests/integration/builtin_size_tests.cpp \
     tests/integer_widening_tests.cpp \

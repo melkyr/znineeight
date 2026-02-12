@@ -1081,19 +1081,20 @@ Output: Runtime assertions in codegen module
     const z: u8 = @intCast(u8, 300);   // compile‑time error (overflow)
     ```
 
-188. **Task 188:** @offsetOf for Struct Fields
+188. [COMPLETE] **Task 188:** @offsetOf for Struct Fields (DONE)
     **Risk:** MEDIUM
     **Goal:** Provide @offsetOf(StructType, "field") → usize constant.
     **Why:** Essential for manual serialisation, device drivers, or any code that needs to know field offsets at compile time.
 
     **Implementation:**
-    - **Parser:** @offsetOf(StructType, "field") → ASTOffsetOfNode.
+    - **Parser:** @offsetOf(StructType, "field") → NODE_OFFSET_OF. Enforces string literal for field name.
     - **TypeChecker:**
-        - Resolve StructType to a TYPE_STRUCT.
+        - Resolve StructType to a TYPE_STRUCT or TYPE_UNION.
         - Find the field by name.
-        - Compute the offset using the same layout rules already implemented in TypeChecker::visitStructDecl.
-        - Replace node with integer literal.
-    - **C89 emission:** Emit the constant integer.
+        - Compute the offset (pre-calculated in visitStructDecl/visitUnionDecl).
+        - Replace node with integer literal (usize).
+    - **C89 emission:** No special handling needed due to constant folding.
+    - **Tests:** Verified via `tests/integration/builtin_offsetof_tests.cpp` (Batch 21).
 
     **Test:**
     ```zig

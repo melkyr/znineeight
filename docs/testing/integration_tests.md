@@ -16,6 +16,8 @@ Integration tests are located in `tests/integration/`. They are typically groupe
 
 - `literal_tests.cpp`: Tests for all literal types (integers, floats, characters, strings, booleans, null).
 - `variable_decl_tests.cpp`: Tests for variable and constant declarations, including type inference, scoping, and name mangling.
+- `builtin_size_tests.cpp`: Tests for `@sizeOf` and `@alignOf` constant folding.
+- `builtin_offsetof_tests.cpp`: Tests for `@offsetOf` constant folding.
 - `test_compilation_unit.hpp`: A specialized subclass of `CompilationUnit` that provides access to the AST and internal metadata for validation.
 
 ## Variable Declaration Tests (Task 171)
@@ -211,6 +213,20 @@ Array tests verify that Zig fixed-size arrays are correctly parsed, typed, and m
 - Zig `arr: [5]i32` -> C `int arr[5]`
 - Zig `arr[0]` -> C `arr[0]`
 - Zig `matrix[0][1]` -> C `matrix[0][1]`
+
+## Compile-time Introspection Tests (Task 188)
+
+These tests verify that Zig's compile-time introspection built-ins are correctly constant-folded by the TypeChecker.
+
+### Test Categories:
+1. **@sizeOf**: Returns `usize` literal with the size of the type.
+2. **@alignOf**: Returns `usize` literal with the alignment of the type.
+3. **@offsetOf**: Returns `usize` literal with the byte offset of a field in a struct or union.
+4. **Error Handling**: Rejection of incomplete types, non-aggregate types for `@offsetOf`, or non-existent fields.
+
+### Expected C89 Output Patterns:
+- Zig `@sizeOf(i32)` -> C `4U`
+- Zig `@offsetOf(Point, "y")` -> C `4U` (assuming `x: i32` precedes `y`)
 
 ## Enum Tests (Task 180)
 
