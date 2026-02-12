@@ -71,9 +71,8 @@ TEST_FUNC(PointerArithmetic_SizeOfUSize) {
         "fn foo() usize {\n"
         "    return @sizeOf(usize);\n"
         "}";
-    // For now we just check that it parses and types correctly.
-    // It returns get_g_type_usize().
-    return run_ptr_arith_test(source, TYPE_USIZE, NULL);
+    // Now it should return the constant literal 4
+    return run_ptr_arith_test(source, TYPE_USIZE, "4");
 }
 
 TEST_FUNC(PointerArithmetic_AlignOfISize) {
@@ -81,7 +80,8 @@ TEST_FUNC(PointerArithmetic_AlignOfISize) {
         "fn foo() usize {\n"
         "    return @alignOf(isize);\n"
         "}";
-    return run_ptr_arith_test(source, TYPE_USIZE, NULL);
+    // Now it should return the constant literal 4
+    return run_ptr_arith_test(source, TYPE_USIZE, "4");
 }
 
 TEST_FUNC(PointerArithmetic_PtrCast) {

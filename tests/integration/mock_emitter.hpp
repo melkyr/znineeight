@@ -352,35 +352,6 @@ public:
             name = call->callee->as.identifier.name;
 
             // Handle built-ins
-            if (plat_strcmp(name, "@sizeOf") == 0) {
-                if (call->args->length() == 1) {
-                    ASTNode* arg = (*call->args)[0];
-                    if (arg->type == NODE_IDENTIFIER) {
-                        Type* t = resolvePrimitiveTypeName(arg->as.identifier.name);
-                        if (t) {
-                            char buf[32];
-                            simple_itoa((long)t->size, buf, sizeof(buf));
-                            return buf;
-                        }
-                    }
-                }
-                return "sizeof(/* type */)";
-            }
-            if (plat_strcmp(name, "@alignOf") == 0) {
-                if (call->args->length() == 1) {
-                    ASTNode* arg = (*call->args)[0];
-                    if (arg->type == NODE_IDENTIFIER) {
-                        Type* t = resolvePrimitiveTypeName(arg->as.identifier.name);
-                        if (t) {
-                            char buf[32];
-                            simple_itoa((long)t->alignment, buf, sizeof(buf));
-                            return buf;
-                        }
-                    }
-                }
-                return "alignof(/* type */)";
-            }
-
             if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
                 if (call->args->length() == 2) {
                     ASTNode* type_arg = (*call->args)[0];
