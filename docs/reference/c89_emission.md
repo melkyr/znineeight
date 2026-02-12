@@ -44,8 +44,37 @@ Float literals are emitted using `sprintf` with the `%.15g` format specifier to 
 - **Hexadecimal Floats**: Zig's hexadecimal floating-point literals are converted to their decimal equivalents during emission, as MSVC 6.0 does not support hex floats.
 - **Scientific Notation**: Large or small values are automatically emitted in scientific notation by `sprintf` when appropriate.
 
-## 3. Rationale
+## 3. String Literals
+
+String literals are emitted wrapped in double quotes (`"`).
+
+### 3.1 Escaping Rules
+
+The decoded string content from the AST is re-encoded into C89-compliant syntax.
+
+- **Symbolic Escapes**: Standard C89 symbolic escapes are used for common control characters:
+  - `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\\`, `\"`.
+- **Octal Escapes**: For any other non-printable character (ASCII 0-31 and 127) or byte values outside the printable ASCII range (32-126), a three-digit zero-padded octal escape is used (e.g., `\033` for ESC).
+- **Printable ASCII**: Characters in the range 32-126 (inclusive) are emitted directly, except for the double quote (`"`) and backslash (`\`), which are escaped.
+
+### 3.2 MSVC 6.0 Limitations
+
+MSVC 6.0 has a limit of approximately 2048 characters for a single string literal. The bootstrap compiler currently does not automatically split long strings into multiple concatenated literals. Avoid using extremely long string literals in the Stage 1 compiler source.
+
+## 4. Character Literals
+
+Character literals are emitted wrapped in single quotes (`'`).
+
+### 4.1 Escaping Rules
+
+Character literals use the same escaping logic as string literals, with the following difference:
+- The single quote character (`'`) is escaped (`\'`), while the double quote (`"`) is emitted directly.
+
+Only ASCII codepoints (0-127) are supported in character literals during the bootstrap phase.
+
+## 5. Rationale
 
 - **Decimal-only emission**: Simplifies the internal implementation of the emitter and avoids the need to store the original literal format in the AST.
 - **MSVC-first suffixes**: Prioritizes the primary target for bootstrapping (MSVC 6.0) while providing a path for cross-platform testing via the compatibility header.
 - **Type-based emission**: Using the resolved type instead of raw lexer flags ensures consistency with the rest of the semantic analysis phase.
+- **Octal escapes for non-printable characters**: Ensures maximum portability across C89 compilers, as hex escapes were not standardized until C90/C99.

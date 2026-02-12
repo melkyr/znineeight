@@ -933,4 +933,17 @@ TEST_FUNC(Codegen_Float_WholeNumber);
 TEST_FUNC(Codegen_Float_Scientific);
 TEST_FUNC(Codegen_Float_HexConversion);
 
+// Task 193: String and Char Literal Codegen
+TEST_FUNC(Codegen_StringSimple);
+TEST_FUNC(Codegen_StringEscape);
+TEST_FUNC(Codegen_StringQuotes);
+TEST_FUNC(Codegen_StringOctal);
+TEST_FUNC(Codegen_CharSimple);
+TEST_FUNC(Codegen_CharEscape);
+TEST_FUNC(Codegen_CharSingleQuote);
+TEST_FUNC(Codegen_CharDoubleQuote);
+TEST_FUNC(Codegen_CharOctal);
+TEST_FUNC(Codegen_StringSymbolicEscapes);
+TEST_FUNC(Codegen_StringAllC89Escapes);
+
 #endif // TEST_DECLARATIONS_HPP
