@@ -55,7 +55,7 @@ TEST_FUNC(LiteralIntegration_IntegerDecimal) {
 
 ## Mock C89 Emitter
 
-The `MockC89Emitter` (in `tests/integration/mock_emitter.hpp`) is a temporary utility for Milestone 4. It translates AST literal nodes into C89 string representations following the rules defined in `Bootstrap_type_system_and_semantics.md`.
+The `MockC89Emitter` (in `tests/integration/mock_emitter.hpp`) is a temporary utility for Milestone 4. It translates AST literal nodes into C89 string representations following the rules defined in [Bootstrap Type System & Semantic Analysis](../design/Bootstrap_type_system_and_semantics.md).
 
 It will be replaced by the real `C89Emitter` in Milestone 5, but the integration tests will remain to ensure the frontend continues to produce the correct AST and types for the backend.
 

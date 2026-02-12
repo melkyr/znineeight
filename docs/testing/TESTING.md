@@ -41,7 +41,7 @@ The project uses a custom, minimal unit testing framework defined in `src/includ
 Integration tests verify that multiple compiler stages work together correctly. The full pipeline typically consists of:
 `Lexing -> Parsing -> Type Checking -> [Analyzers] -> Code Generation`
 
-For Milestone 4, a mock emitter is used to validate C89-compatible representations. See [Integration Tests Documentation](docs/testing/integration_tests.md) for details on the current infrastructure.
+For Milestone 4, a mock emitter is used to validate C89-compatible representations. See [Integration Tests Documentation](integration_tests.md) for details on the current infrastructure.
 
 ### Integration Test Examples
 Existing integration tests can be found in `tests/integration_tests.cpp`, `tests/integration/literal_tests.cpp`, and `tests/integration/variable_decl_tests.cpp`. They demonstrate how to set up a `CompilationUnit`, add source code, and run the full pipeline with all analyzers enabled.
@@ -159,4 +159,4 @@ To run the framework's self-tests:
 ./test.sh --batch 17
 ```
 
-For more details, see the [C89 Validation Documentation](docs/testing/c89_validation.md).
+For more details, see the [C89 Validation Documentation](c89_validation.md).

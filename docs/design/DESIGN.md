@@ -512,11 +512,19 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
     *   `@sizeOf(T)` -> `usize` literal
     *   `@alignOf(T)` -> `usize` literal
-*   **Built-ins (Codegen)**: Intrinsics mapped to C constructs:
-    *   `@ptrCast(T, v)`, `@intCast(T, v)`, `@floatCast(T, v)` -> C-style casts
-    *   `@offsetOf(T, "f")` -> `offsetof()`
+    *   `@offsetOf(T, "f")` -> `usize` literal
+    *   Numeric casts (`@intCast`, `@floatCast`) when operands are constant.
+*   **Built-ins (Codegen)**: Intrinsics mapped to C constructs or runtime helpers:
+    *   `@ptrCast(T, v)` -> C-style cast `(T*)v`.
+    *   `@intCast(T, v)`, `@floatCast(T, v)` -> C-style casts (for safe widening) or runtime checked conversion functions.
 
-### 5.2 Explicit Limitations & Rejections
+### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
+For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
+- **Panic Handler**: A global panic handler `__bootstrap_panic(const char* msg, const char* file, int line)` will be implemented in the bootstrap runtime library.
+- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` will perform bounds checks and call the panic handler on failure.
+- **Historical Compatibility**: The panic handler will use `OutputDebugStringA` (on Windows) or `stderr` (on other platforms) and then call `abort()`, ensuring compatibility with 1998-era hardware.
+
+### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **No Slices**: `[]T` is strictly rejected.
 *   **No Error Handling**: `!T`, `try`, `catch`, `orelse`, and `errdefer` are rejected (though catalogued for future use).
@@ -529,6 +537,9 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Function Pointers**: Functions cannot be treated as first-class values (variables/parameters).
 *   **Parameter Limit**: Maximum of 4 parameters per function.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
+*   **No SIMD Vectors**: SIMD vector types and operations are not supported.
+*   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.
+*   **No Async/Await**: Asynchronous programming constructs (`async`, `await`, `suspend`, `resume`) are not supported.
 *   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
 
 ### 5.3 C89 Mapping Decisions
@@ -743,19 +754,19 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
   - [x] Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`)
 
 ### Week 3: Parser & AST
-- [ ] Implement recursive descent parser
-- [ ] Handle expressions with precedence
-- [ ] Parse function declarations
-- [ ] Implement defer statement handling
+- [x] Implement recursive descent parser
+- [x] Handle expressions with precedence
+- [x] Parse function declarations
+- [x] Implement defer statement handling
 
 ### Week 4: Type System
-- [ ] Define type representation (Primitives, Pointers, Slices, Error Unions)
-- [ ] Implement type compatibility rules
-- [ ] Create symbol table system
+- [x] Define type representation (Primitives, Pointers, Slices, Error Unions)
+- [x] Implement type compatibility rules
+- [x] Create symbol table system
 
 ### Week 5: Basic Code Generation (C89)
-- [ ] Design C89 emitter
-- [ ] Implement C89 code generation for functions
+- [x] Design C89 emitter (Mock emitter for Milestone 4)
+- [ ] Implement full C89 code generation for functions
 - [ ] Generate code for variable declarations
 - [ ] Handle basic expressions
 
