@@ -189,6 +189,7 @@ ASTNode* Parser::parsePrimaryExpr() {
             node->as.integer_literal.value = token.value.integer_literal.value;
             node->as.integer_literal.is_unsigned = token.value.integer_literal.is_unsigned;
             node->as.integer_literal.is_long = token.value.integer_literal.is_long;
+            node->as.integer_literal.resolved_type = NULL;
             return node;
         }
         case TOKEN_FLOAT_LITERAL: {

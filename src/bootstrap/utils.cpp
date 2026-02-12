@@ -63,6 +63,27 @@ void simple_itoa(long value, char* buffer, size_t buffer_size) {
     reverse(buffer, i);
 }
 
+void u64_to_decimal(u64 value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    if (value == 0) {
+        if (buffer_size > 1) {
+            buffer[0] = '0';
+            buffer[1] = '\0';
+        } else {
+            buffer[0] = '\0';
+        }
+        return;
+    }
+
+    int i = 0;
+    while (value > 0 && (size_t)i < buffer_size - 1) {
+        buffer[i++] = (char)((value % 10) + '0');
+        value /= 10;
+    }
+    buffer[i] = '\0';
+    reverse(buffer, i);
+}
+
 bool strings_equal(const char* a, const char* b) {
     if (a == b) return true;
     if (!a || !b) return false;

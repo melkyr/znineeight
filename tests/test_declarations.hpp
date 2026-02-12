@@ -916,4 +916,14 @@ TEST_FUNC(CVariableAllocator_MangledReuse);
 TEST_FUNC(CVariableAllocator_Generate);
 TEST_FUNC(CVariableAllocator_Reset);
 
+// Task 191: Integer Literal Codegen
+TEST_FUNC(Codegen_Int_i32);
+TEST_FUNC(Codegen_Int_u32);
+TEST_FUNC(Codegen_Int_i64);
+TEST_FUNC(Codegen_Int_u64);
+TEST_FUNC(Codegen_Int_usize);
+TEST_FUNC(Codegen_Int_u8);
+TEST_FUNC(Codegen_Int_HexToDecimal);
+TEST_FUNC(Codegen_Int_LargeU64);
+
 #endif // TEST_DECLARATIONS_HPP

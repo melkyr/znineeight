@@ -4,6 +4,8 @@
 #include "common.hpp"
 #include "platform.hpp"
 #include "c_variable_allocator.hpp"
+#include "ast.hpp"
+#include "type_system.hpp"
 #include <cstddef>
 
 /**
@@ -100,6 +102,18 @@ public:
      * @brief Returns the variable allocator.
      */
     CVariableAllocator& getVarAlloc() { return var_alloc_; }
+
+    /**
+     * @brief Emits a general expression.
+     * @param node The expression node.
+     */
+    void emitExpression(const ASTNode* node);
+
+    /**
+     * @brief Emits an integer literal expression.
+     * @param node The integer literal node.
+     */
+    void emitIntegerLiteral(const ASTIntegerLiteralNode* node);
 
     /**
      * @brief Returns true if the emitter is in a valid state (file open).
