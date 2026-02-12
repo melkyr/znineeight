@@ -877,4 +877,13 @@ TEST_FUNC(PtrCast_TargetNotPointer_Error);
 TEST_FUNC(PtrCast_SourceNotPointer_Error);
 TEST_FUNC(PtrCast_Nested);
 
+// Task 186: Compile-time Size & Alignment Introspection
+TEST_FUNC(SizeOf_Primitive);
+TEST_FUNC(AlignOf_Primitive);
+TEST_FUNC(SizeOf_Struct);
+TEST_FUNC(SizeOf_Array);
+TEST_FUNC(SizeOf_Pointer);
+TEST_FUNC(SizeOf_Incomplete_Error);
+TEST_FUNC(AlignOf_Struct);
+
 #endif // TEST_DECLARATIONS_HPP

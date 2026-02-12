@@ -1028,19 +1028,20 @@ Output: Runtime assertions in codegen module
     var byte_ptr: *u8 = @ptrCast(*u8, ptr);   // explicit cast
     ```
 
-186. **Task 186:** Compile-time Size & Alignment Introspection
+186. [COMPLETE] **Task 186:** Compile-time Size & Alignment Introspection (DONE)
     **Risk:** LOW
     **Goal:** Add built‑ins @sizeOf(T) and @alignOf(T) that return usize constants.
     **Why:** Without them, you must hardcode sizes (e.g., 16 for *i32) or use fragile @ptrCast workarounds. This is essential for writing portable allocators and low‑level runtime code.
 
     **Implementation:**
-    - **Parser:** Recognise @sizeOf and @alignOf as primary expressions, parse (TypeName). Create ASTSizeOfNode / ASTAlignOfNode.
+    - **Parser:** Recognized @sizeOf and @alignOf as primary expressions.
     - **TypeChecker:**
         - Resolve the type argument.
-        - Ensure the type is C89‑compatible (or at least has a known size/alignment).
-        - Replace the node with an ASTIntegerLiteralNode containing the computed size/alignment.
-        - No runtime code generation needed – the value is embedded as a literal.
-    - **C89 emission:** Emit the integer literal directly (e.g., 4 for @sizeOf(i32)).
+        - Ensure the type is complete via `isTypeComplete()`.
+        - Perform in-place replacement of the AST node with a `NODE_INTEGER_LITERAL`.
+        - Supports all complete types (primitives, pointers, arrays, structs, unions, enums).
+    - **C89 emission:** No special handling needed in codegen as nodes are replaced with literals.
+    - **Tests:** Verified via `tests/integration/builtin_size_tests.cpp` (Batch 21).
 
     **Test:**
     ```zig

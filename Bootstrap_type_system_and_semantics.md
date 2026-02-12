@@ -819,6 +819,36 @@ In summary, while the new `SymbolTable` has a slightly larger memory footprint, 
 
 To bridge the gap between the parser, which sees types as identifiers (e.g., `"i32"`), and the semantic analysis phase, which requires structured `Type` objects, a simple type resolution system has been implemented.
 
+### Compile-Time Built-ins (Task 186)
+
+The bootstrap compiler supports several built-in functions (starting with `@`) that are evaluated at compile time. These functions are replaced in the AST with constant values during the Type Checking phase.
+
+#### `@sizeOf(T)`
+Returns a `usize` constant representing the size of type `T` in bytes.
+- **Target Assumption:** 32-bit (e.g., `@sizeOf(*i32)` is `4`).
+- **Supported Types:** All complete types (primitives, pointers, arrays, structs, unions, enums).
+- **In-place Replacement:** The `NODE_FUNCTION_CALL` is replaced with a `NODE_INTEGER_LITERAL`.
+
+#### `@alignOf(T)`
+Returns a `usize` constant representing the alignment of type `T` in bytes.
+- **Target Assumption:** 32-bit (e.g., `@alignOf(i64)` is `8`).
+- **In-place Replacement:** The `NODE_FUNCTION_CALL` is replaced with a `NODE_INTEGER_LITERAL`.
+
+#### Target Platform Assumptions (32-bit)
+To maintain simplicity, the bootstrap compiler assumes a 32-bit little-endian target platform with the following characteristics:
+
+| Type | Size (bytes) | Alignment |
+|------|--------------|-----------|
+| `usize` / `isize` | 4 | 4 |
+| Pointers (`*T`) | 4 | 4 |
+| `i8` / `u8` | 1 | 1 |
+| `i16` / `u16` | 2 | 2 |
+| `i32` / `u32` | 4 | 4 |
+| `i64` / `u64` | 8 | 8 |
+| `f32` | 4 | 4 |
+| `f64` | 8 | 8 |
+| `bool` | 4 | 4 (C89 `int`) |
+
 ### `resolvePrimitiveTypeName`
 
 A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduced. Its responsibilities are:

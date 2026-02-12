@@ -253,6 +253,13 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
  */
 void typeToString(Type* type, char* buffer, size_t buffer_size);
 
+    /**
+     * @brief Checks if a type is complete (has a known size and alignment).
+     * @param type The type to check.
+     * @return True if the type is complete, false otherwise.
+     */
+    bool isTypeComplete(Type* type);
+
 // Accessor functions for global primitive types to prevent static init order fiasco.
 Type* get_g_type_void();
 Type* get_g_type_bool();

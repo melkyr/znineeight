@@ -11,6 +11,24 @@
 
 ## 2. Technical Constraints
 To ensure compatibility with 1998-era hardware and software:
+
+### 2.1 Target Platform (Bootstrap)
+The bootstrap compiler assumes a **32-bit little-endian** platform with the following characteristics:
+
+| Type | Size (bytes) | Alignment |
+|------|--------------|-----------|
+| `usize` / `isize` | 4 | 4 |
+| Pointers (`*T`) | 4 | 4 |
+| `i8` / `u8` | 1 | 1 |
+| `i16` / `u16` | 2 | 2 |
+| `i32` / `u32` | 4 | 4 |
+| `i64` / `u64` | 8 | 8 |
+| `f32` | 4 | 4 |
+| `f64` | 8 | 8 |
+| `bool` | 4 | 4 (C89 `int`) |
+
+This matches the target Win32/x86 environment of the late 90s.
+
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
@@ -491,7 +509,12 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
-*   **Built-ins**: Basic intrinsics like `@sizeOf(T)`, `@alignOf(T)`, `@ptrCast(T, v)`, `@intCast(T, v)`, `@floatCast(T, v)`, and `@offsetOf(T, "f")`.
+*   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
+    *   `@sizeOf(T)` -> `usize` literal
+    *   `@alignOf(T)` -> `usize` literal
+*   **Built-ins (Codegen)**: Intrinsics mapped to C constructs:
+    *   `@ptrCast(T, v)`, `@intCast(T, v)`, `@floatCast(T, v)` -> C-style casts
+    *   `@offsetOf(T, "f")` -> `offsetof()`
 
 ### 5.2 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:

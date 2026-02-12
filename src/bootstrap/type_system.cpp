@@ -312,6 +312,39 @@ Type* TypeInterner::getOptionalType(Type* payload) {
     return t;
 }
 
+bool isTypeComplete(Type* type) {
+    if (!type) return false;
+    switch (type->kind) {
+        case TYPE_VOID:
+        case TYPE_BOOL:
+        case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
+        case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_F32: case TYPE_F64:
+        case TYPE_POINTER:
+        case TYPE_NULL:
+        case TYPE_ENUM:
+            return true;
+        case TYPE_ARRAY:
+            return isTypeComplete(type->as.array.element_type);
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            // calculateStructLayout sets size > 0 for non-empty structs
+            // Zig allows 0-sized structs, but they are "complete" once layout is calculated.
+            // For bootstrap, we'll consider it complete if it has a valid fields pointer
+            // and we've at least attempted layout.
+            // A simple proxy for "layout calculated" in this compiler is size > 0
+            // OR it being a explicitly defined empty struct.
+            // Given calculateStructLayout is called after fields are processed,
+            // let's use a heuristic: if it's a struct/union, it must have fields (even if empty)
+            // and calculateStructLayout must have been called.
+            // Since calculateStructLayout sets alignment >= 1, we can check that.
+            return type->alignment >= 1 && type->as.struct_details.fields != NULL;
+        default:
+            return false;
+    }
+}
+
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
     if (!type || buffer_size == 0) {
         if (buffer_size > 0) buffer[0] = '\0';

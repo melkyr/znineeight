@@ -597,11 +597,34 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 if (node->args->length() != 1) {
                     fatalError(node->callee->loc, "built-in expects 1 argument");
                 }
-                // Arguments to @sizeOf/@alignOf are types.
-                // TypeChecker::visit should handle it.
-                /* Type* arg_type = */ visit((*node->args)[0]);
 
-                return get_g_type_usize();
+                ASTNode* arg_node = (*node->args)[0];
+                Type* arg_type = visit(arg_node);
+                if (!arg_type) return NULL;
+
+                // If the identifier was a type name, visitIdentifier returned TYPE_TYPE
+                // and stored the actual type in node->resolved_type.
+                // If it was a pointer type or other type expression, visit returned the type itself.
+                if (arg_type->kind == TYPE_TYPE) {
+                    arg_type = arg_node->resolved_type;
+                }
+
+                if (!isTypeComplete(arg_type)) {
+                    unit.getErrorHandler().report(ERR_SIZE_OF_INCOMPLETE_TYPE, node->callee->loc, "built-in applied to incomplete type");
+                    return NULL;
+                }
+
+                u64 value = (plat_strcmp(name, "@sizeOf") == 0) ? arg_type->size : arg_type->alignment;
+
+                // Perform in-place modification to integer literal (Task 186)
+                // 'parent' is the actual ASTNode for the NODE_FUNCTION_CALL
+                parent->type = NODE_INTEGER_LITERAL;
+                parent->as.integer_literal.value = value;
+                parent->as.integer_literal.is_unsigned = true;
+                parent->as.integer_literal.is_long = false;
+                parent->resolved_type = get_g_type_usize();
+
+                return parent->resolved_type;
             }
 
             if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
