@@ -266,6 +266,7 @@ struct ASTIntegerLiteralNode {
  */
 struct ASTFloatLiteralNode {
     double value;
+    Type* resolved_type;
 };
 
 /**

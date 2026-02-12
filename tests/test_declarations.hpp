@@ -926,4 +926,11 @@ TEST_FUNC(Codegen_Int_u8);
 TEST_FUNC(Codegen_Int_HexToDecimal);
 TEST_FUNC(Codegen_Int_LargeU64);
 
+// Task 192: Float Literal Codegen
+TEST_FUNC(Codegen_Float_f64);
+TEST_FUNC(Codegen_Float_f32);
+TEST_FUNC(Codegen_Float_WholeNumber);
+TEST_FUNC(Codegen_Float_Scientific);
+TEST_FUNC(Codegen_Float_HexConversion);
+
 #endif // TEST_DECLARATIONS_HPP

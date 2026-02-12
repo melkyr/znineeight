@@ -1002,8 +1002,10 @@ Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNod
     return result;
 }
 
-Type* TypeChecker::visitFloatLiteral(ASTNode* /*parent*/, ASTFloatLiteralNode* /*node*/) {
-    return resolvePrimitiveTypeName("f64");
+Type* TypeChecker::visitFloatLiteral(ASTNode* /*parent*/, ASTFloatLiteralNode* node) {
+    Type* result = resolvePrimitiveTypeName("f64");
+    node->resolved_type = result;
+    return result;
 }
 
 Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*node*/) {
@@ -2936,6 +2938,7 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
         // In-place replace @floatCast node with float literal
         parent->type = NODE_FLOAT_LITERAL;
         parent->as.float_literal.value = val;
+        parent->as.float_literal.resolved_type = target_type;
         parent->resolved_type = target_type;
         return target_type;
     }

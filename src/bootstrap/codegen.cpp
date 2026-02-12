@@ -1,6 +1,7 @@
 #include "codegen.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
+#include <cstdio>
 
 C89Emitter::C89Emitter(ArenaAllocator& arena)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false), var_alloc_(arena) {
@@ -96,6 +97,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_INTEGER_LITERAL:
             emitIntegerLiteral(&node->as.integer_literal);
             break;
+        case NODE_FLOAT_LITERAL:
+            emitFloatLiteral(&node->as.float_literal);
+            break;
         case NODE_PAREN_EXPR:
             writeString("(");
             emitExpression(node->as.paren_expr.expr);
@@ -127,5 +131,27 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
                 // i32, u8, i8, u16, i16, usize, isize get no suffix
                 break;
         }
+    }
+}
+
+void C89Emitter::emitFloatLiteral(const ASTFloatLiteralNode* node) {
+    char buffer[64];
+    sprintf(buffer, "%.15g", node->value);
+
+    // Ensure it's treated as a float by C (add .0 if no '.' or 'e')
+    bool has_dot = false;
+    bool has_exp = false;
+    for (char* p = buffer; *p; ++p) {
+        if (*p == '.') has_dot = true;
+        if (*p == 'e' || *p == 'E') has_exp = true;
+    }
+
+    writeString(buffer);
+    if (!has_dot && !has_exp) {
+        writeString(".0");
+    }
+
+    if (node->resolved_type && node->resolved_type->kind == TYPE_F32) {
+        writeString("f");
     }
 }

@@ -27,7 +27,24 @@ The suffixes `i64` and `ui64` are specific to **MSVC 6.0**. To support other com
 
 Every generated `.c` file should include `zig_runtime.h` at the top.
 
-## 2. Rationale
+## 2. Float Literals
+
+Float literals are emitted using `sprintf` with the `%.15g` format specifier to ensure full precision for `double` values while maintaining a concise representation.
+
+### 2.1 Mapping Table
+
+| Zig Type | C89 Emission | Example |
+|----------|--------------|---------|
+| `f32`    | Decimal + `f` suffix | `3.14f` |
+| `f64`    | Decimal, no suffix | `3.14` |
+
+### 2.2 Formatting Rules
+
+- **Whole Numbers**: To ensure C treats a literal as a float, if the generated string lacks a decimal point (`.`) or an exponent (`e`), a `.0` suffix is automatically appended (e.g., `2.0`).
+- **Hexadecimal Floats**: Zig's hexadecimal floating-point literals are converted to their decimal equivalents during emission, as MSVC 6.0 does not support hex floats.
+- **Scientific Notation**: Large or small values are automatically emitted in scientific notation by `sprintf` when appropriate.
+
+## 3. Rationale
 
 - **Decimal-only emission**: Simplifies the internal implementation of the emitter and avoids the need to store the original literal format in the AST.
 - **MSVC-first suffixes**: Prioritizes the primary target for bootstrapping (MSVC 6.0) while providing a path for cross-platform testing via the compatibility header.

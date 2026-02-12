@@ -196,6 +196,7 @@ ASTNode* Parser::parsePrimaryExpr() {
             ASTNode* node = createNode(NODE_FLOAT_LITERAL);
             advance();
             node->as.float_literal.value = token.value.floating_point;
+            node->as.float_literal.resolved_type = NULL;
             return node;
         }
         case TOKEN_CHAR_LITERAL: {
