@@ -39,6 +39,25 @@ static bool run_ptr_arith_test(const char* zig_code, TypeKind expected_kind, con
     return true;
 }
 
+static bool run_ptr_arith_error_test(const char* zig_code, const char* error_substring) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", zig_code);
+    if (unit.performTestPipeline(file_id)) {
+        printf("FAIL: Pipeline execution succeeded for (expected failure):\n%s\n", zig_code);
+        return false;
+    }
+
+    bool matched = unit.hasErrorMatching(error_substring);
+    if (!matched) {
+        printf("FAIL: Expected error matching '%s' but got other errors for:\n%s\n", error_substring, zig_code);
+        unit.getErrorHandler().printErrors();
+    }
+    return matched;
+}
+
 TEST_FUNC(PointerArithmetic_PtrPlusUSize) {
     const char* source =
         "fn foo(ptr: *i32, offset: usize) *i32 {\n"
@@ -63,6 +82,23 @@ TEST_FUNC(PointerArithmetic_AlignOfISize) {
         "    return @alignOf(isize);\n"
         "}";
     return run_ptr_arith_test(source, TYPE_USIZE, NULL);
+}
+
+TEST_FUNC(PointerArithmetic_PtrCast) {
+    const char* source =
+        "fn foo(ptr: *void) *i32 {\n"
+        "    return @ptrCast(*i32, ptr);\n"
+        "}";
+    return run_ptr_arith_test(source, TYPE_POINTER, "(int*)ptr");
+}
+
+TEST_FUNC(PointerArithmetic_OffsetOf) {
+    const char* source =
+        "const Point = struct { x: i32, y: i32 };\n"
+        "fn foo() usize {\n"
+        "    return @offsetOf(Point, \"y\");\n"
+        "}";
+    return run_ptr_arith_test(source, TYPE_USIZE, "offsetof(struct Point, y)");
 }
 
 TEST_FUNC(PointerArithmetic_USizePlusPtr) {
@@ -95,7 +131,43 @@ TEST_FUNC(PointerArithmetic_PtrPlusISize) {
         "fn foo(ptr: *i32, offset: isize) *i32 {\n"
         "    return ptr + offset;\n"
         "}";
-    return run_ptr_arith_test(source, TYPE_POINTER, "ptr + offset");
+    // isize is signed, so this should fail!
+    // Wait, Task 183 tests showed it passing earlier?
+    // User guidance: "Only allow unsigned integer types (including usize, u8…u64). ... Zig itself requires usize for pointer arithmetic"
+    // So ptr + isize SHOULD FAIL.
+    return run_ptr_arith_error_test(source, "requires an unsigned integer offset");
+}
+
+TEST_FUNC(PointerArithmetic_PtrMinusPtr_ConstCompatible) {
+    const char* source =
+        "fn foo(ptr1: *i32, ptr2: *const i32) isize {\n"
+        "    return ptr1 - ptr2;\n"
+        "}";
+    return run_ptr_arith_test(source, TYPE_ISIZE, "ptr1 - ptr2");
+}
+
+TEST_FUNC(PointerArithmetic_PtrPlusSigned_Error) {
+    const char* source =
+        "fn foo(ptr: *i32, offset: i32) void {\n"
+        "    var res: *i32 = ptr + offset;\n"
+        "}";
+    return run_ptr_arith_error_test(source, "requires an unsigned integer offset");
+}
+
+TEST_FUNC(PointerArithmetic_VoidPtr_Error) {
+    const char* source =
+        "fn foo(ptr: *void, offset: usize) void {\n"
+        "    var res: *void = ptr + offset;\n"
+        "}";
+    return run_ptr_arith_error_test(source, "pointer arithmetic on 'void*' is not allowed");
+}
+
+TEST_FUNC(PointerArithmetic_MultiLevel_Error) {
+    const char* source =
+        "fn foo(ptr: * * i32, offset: usize) void {\n"
+        "    var res: * * i32 = ptr + offset;\n"
+        "}";
+    return run_ptr_arith_error_test(source, "multi-level pointer is not allowed");
 }
 
 // --- Negative Tests ---
@@ -158,9 +230,9 @@ TEST_FUNC(PointerArithmetic_DiffDifferentTypes_Error) {
         printf("FAIL: Expected pointer difference type mismatch error but pipeline succeeded\n");
         return false;
     }
-    bool matched = unit.hasErrorMatching("cannot subtract pointers to different types");
+    bool matched = unit.hasErrorMatching("Cannot subtract pointers to different types");
     if (!matched) {
-        printf("FAIL: Expected error 'cannot subtract pointers to different types' but got other errors:\n");
+        printf("FAIL: Expected error 'Cannot subtract pointers to different types' but got other errors:\n");
         unit.getErrorHandler().printErrors();
     }
     return matched;

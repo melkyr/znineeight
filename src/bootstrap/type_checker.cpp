@@ -603,6 +603,35 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 return get_g_type_usize();
             }
 
+            if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+                if (node->args->length() != 2) {
+                    fatalError(node->callee->loc, "built-in expects 2 arguments");
+                }
+                Type* target_type = visit((*node->args)[0]);
+                if (!target_type) {
+                    return NULL;
+                }
+                // If the identifier was a type name, visitIdentifier returned TYPE_TYPE
+                // and stored the actual type in node->resolved_type.
+                // If it was a pointer type or other type expression, visit returned the type itself.
+                if (target_type->kind == TYPE_TYPE) {
+                    target_type = (*node->args)[0]->resolved_type;
+                }
+
+                visit((*node->args)[1]); // Visit the value being cast
+
+                return target_type;
+            }
+
+            if (plat_strcmp(name, "@offsetOf") == 0) {
+                if (node->args->length() != 2) {
+                    fatalError(node->callee->loc, "built-in expects 2 arguments");
+                }
+                visit((*node->args)[0]); // Visit struct type
+                visit((*node->args)[1]); // Visit field name string
+                return get_g_type_usize();
+            }
+
             // Register in call site table as builtin
             int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
             unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
@@ -2041,38 +2070,121 @@ bool TypeChecker::isIntegerType(Type* type) {
     return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) || type->kind == TYPE_INTEGER_LITERAL;
 }
 
+bool TypeChecker::isUnsignedIntegerType(Type* type) {
+    if (!type) {
+        return false;
+    }
+    // unsigned integers: u8..u64 and usize
+    if (type->kind >= TYPE_U8 && type->kind <= TYPE_U64) return true;
+    if (type->kind == TYPE_USIZE) return true;
+
+    // Non-negative integer literals can be coerced to unsigned
+    if (type->kind == TYPE_INTEGER_LITERAL && type->as.integer_literal.value >= 0) {
+        return true;
+    }
+
+    return false;
+}
+
+bool TypeChecker::isCompletePointerType(Type* type) {
+    if (!type || type->kind != TYPE_POINTER) return false;
+    Type* base = type->as.pointer.base;
+    if (!base) return false;
+
+    // void is incomplete
+    if (base->kind == TYPE_VOID) return false;
+
+    // Multi-level pointers are considered incomplete for arithmetic purposes in our bootstrap subset
+    if (base->kind == TYPE_POINTER) return false;
+
+    // Structs/Unions must have size calculated
+    if (base->kind == TYPE_STRUCT || base->kind == TYPE_UNION) {
+        return base->size != 0;
+    }
+
+    return base->size != 0;
+}
+
+bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
+    if (!a || !b || a->kind != TYPE_POINTER || b->kind != TYPE_POINTER) return false;
+
+    Type* baseA = a->as.pointer.base;
+    Type* baseB = b->as.pointer.base;
+
+    // In our bootstrap compiler, primitive types are singletons (get_g_type_*)
+    // So pointer equality works for them.
+    // For structs/unions/enums, they are also unique per declaration.
+    return baseA == baseB;
+}
+
 Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
-    bool left_is_int = isIntegerType(left_type);
-    bool right_is_int = isIntegerType(right_type);
 
-    if (op == TOKEN_PLUS) {
-        if (left_is_ptr && right_is_int) return left_type;  // ptr + int
-        if (left_is_int && right_is_ptr) return right_type; // int + ptr
-    } else if (op == TOKEN_MINUS) {
-        if (left_is_ptr && right_is_int) return left_type; // ptr - int
-        if (left_is_ptr && right_is_ptr) { // ptr - ptr
-            // For subtraction, the pointer types must be identical, not just compatible.
-            if (left_type->as.pointer.base == right_type->as.pointer.base) {
-                Type* isize_type = resolvePrimitiveTypeName("isize");
-                if (!isize_type) {
-                    unit.getErrorHandler().report(ERR_UNDECLARED_TYPE, loc, "Internal Error: 'isize' type not found for pointer difference", unit.getArena());
-                    return NULL;
-                }
-                return isize_type;
-            } else {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot subtract pointers to different types", unit.getArena());
-                return NULL;
-            }
+    if (!left_is_ptr && !right_is_ptr) return NULL; // Not pointer arithmetic
+
+    // Case 1: ptr - ptr
+    if (left_is_ptr && right_is_ptr) {
+        if (op != TOKEN_MINUS) {
+            unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, "Cannot use this operator on two pointers");
+            return NULL;
         }
+
+        // Both must be complete pointers (not void*, not multi-level)
+        if (!isCompletePointerType(left_type)) {
+            unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
+            return NULL;
+        }
+        if (!isCompletePointerType(right_type)) {
+            unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
+            return NULL;
+        }
+
+        if (!areSamePointerTypeIgnoringConst(left_type, right_type)) {
+            unit.getErrorHandler().report(ERR_POINTER_SUBTRACTION_INCOMPATIBLE, loc, "Cannot subtract pointers to different types");
+            return NULL;
+        }
+
+        return get_g_type_isize();
     }
 
-    // If we are here, it means some combination involving a pointer was used
-    // with an unsupported operator (e.g., ptr * int, ptr + ptr).
-    // The calling function, checkBinaryOperation, will handle the final error reporting
-    // if no valid arithmetic operation is found.
-    return NULL;
+    // Case 2: ptr +/- int or int + ptr
+    Type* ptr_type = left_is_ptr ? left_type : right_type;
+    Type* int_type = left_is_ptr ? right_type : left_type;
+
+    if (!isIntegerType(int_type)) {
+        // Pointer and something non-integer (and not another pointer).
+        unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, "Pointers can only be added to/subtracted from integers");
+        return NULL;
+    }
+
+    // Check operator
+    if (op == TOKEN_PLUS) {
+        // OK: ptr + int, int + ptr
+    } else if (op == TOKEN_MINUS) {
+        if (!left_is_ptr) {
+            unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, "Cannot subtract pointer from integer");
+            return NULL;
+        }
+        // OK: ptr - int
+    } else {
+        unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, "Invalid operator for pointer arithmetic");
+        return NULL;
+    }
+
+    // Check if pointer is complete
+    if (!isCompletePointerType(ptr_type)) {
+        unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
+        return NULL;
+    }
+
+    // Check if integer is unsigned (including non-negative literals)
+    if (!isUnsignedIntegerType(int_type)) {
+        unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_NON_UNSIGNED, loc, "Pointer arithmetic requires an unsigned integer offset");
+        return NULL;
+    }
+
+    return ptr_type;
 }
 
 Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* right_type) {

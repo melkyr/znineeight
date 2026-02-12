@@ -237,6 +237,18 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseErrorSetDefinition();
         case TOKEN_AT_IMPORT:
             return parseImport();
+        case TOKEN_AT_SIZEOF:
+            return parseBuiltinCall("@sizeOf", advance().location);
+        case TOKEN_AT_ALIGNOF:
+            return parseBuiltinCall("@alignOf", advance().location);
+        case TOKEN_AT_PTRCAST:
+            return parseBuiltinCall("@ptrCast", advance().location);
+        case TOKEN_AT_INTCAST:
+            return parseBuiltinCall("@intCast", advance().location);
+        case TOKEN_AT_FLOATCAST:
+            return parseBuiltinCall("@floatCast", advance().location);
+        case TOKEN_AT_OFFSETOF:
+            return parseBuiltinCall("@offsetOf", advance().location);
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -1813,5 +1825,35 @@ ASTNode* Parser::parseFunctionType() {
 
     ASTNode* node = createNodeAt(NODE_FUNCTION_TYPE, fn_token.location);
     node->as.function_type = ft_node;
+    return node;
+}
+
+ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
+    expect(TOKEN_LPAREN, "Expected '(' after built-in");
+
+    ASTFunctionCallNode* call_data = (ASTFunctionCallNode*)arena_->alloc(sizeof(ASTFunctionCallNode));
+    if (!call_data) error("Out of memory");
+
+    ASTNode* callee = createNodeAt(NODE_IDENTIFIER, loc);
+    callee->as.identifier.name = name;
+    call_data->callee = callee;
+
+    void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!array_mem) error("Out of memory");
+    call_data->args = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+
+    if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
+        call_data->args->append(parseType());
+    } else if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 ||
+               plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@offsetOf") == 0) {
+        call_data->args->append(parseType());
+        expect(TOKEN_COMMA, "Expected ',' after first argument of built-in");
+        call_data->args->append(parseExpression());
+    }
+
+    expect(TOKEN_RPAREN, "Expected ')' after built-in arguments");
+
+    ASTNode* node = createNodeAt(NODE_FUNCTION_CALL, loc);
+    node->as.function_call = call_data;
     return node;
 }

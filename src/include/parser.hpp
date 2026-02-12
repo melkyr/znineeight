@@ -84,6 +84,7 @@ public:
      * @return A pointer to the ASTNode representing the primary expression.
      */
     ASTNode* parsePrimaryExpr();
+    ASTNode* parseBuiltinCall(const char* name, SourceLocation loc);
 
     /**
      * @brief Parses a postfix expression, which includes function calls and array accesses.
