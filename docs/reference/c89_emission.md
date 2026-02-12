@@ -78,3 +78,20 @@ Only ASCII codepoints (0-127) are supported in character literals during the boo
 - **MSVC-first suffixes**: Prioritizes the primary target for bootstrapping (MSVC 6.0) while providing a path for cross-platform testing via the compatibility header.
 - **Type-based emission**: Using the resolved type instead of raw lexer flags ensures consistency with the rest of the semantic analysis phase.
 - **Octal escapes for non-printable characters**: Ensures maximum portability across C89 compilers, as hex escapes were not standardized until C90/C99.
+
+## 6. Global Variables
+
+Global variables are emitted at file scope.
+
+### 6.1 Visibility and Linkage
+
+- **`pub` symbols**: Emitted without the `static` keyword, giving them external linkage.
+- **Private symbols**: Emitted with the `static` keyword, limiting their scope to the current translation unit.
+
+### 6.2 Initializers
+
+All global variables must have constant initializers. The bootstrap compiler rejects non-constant initializers at code generation time if they were not already caught by the semantic analyzer.
+
+### 6.3 Name Mangling
+
+Global identifiers are sanitized to avoid C89 keywords and reserved names (using a `z_` prefix). They are also truncated to 31 characters to ensure compatibility with MSVC 6.0 and other strict C89 compilers.

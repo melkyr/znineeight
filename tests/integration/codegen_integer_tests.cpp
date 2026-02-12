@@ -39,7 +39,7 @@ static bool run_codegen_int_test(const char* zig_code, const char* expected_c89)
 
     // Use C89Emitter to emit to a temp file
     const char* temp_file = "temp_codegen_int.c";
-    C89Emitter emitter(arena, temp_file);
+    C89Emitter emitter(arena, unit.getErrorHandler(), temp_file);
     if (!emitter.isValid()) {
         printf("FAIL: Could not open temp file\n");
         return false;

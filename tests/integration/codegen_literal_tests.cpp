@@ -31,7 +31,7 @@ static bool run_codegen_test(const char* zig_code, const char* expected_c89) {
 
     const char* temp_filename = "temp_codegen_test.c";
     {
-        C89Emitter emitter(arena, temp_filename);
+        C89Emitter emitter(arena, unit.getErrorHandler(), temp_filename);
         if (!emitter.isValid()) {
             printf("FAIL: Could not open temp file for writing\n");
             return false;

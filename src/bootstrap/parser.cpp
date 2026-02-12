@@ -1056,12 +1056,13 @@ ASTNode* Parser::parseImport() {
 }
 
 ASTNode* Parser::parseTopLevelItem() {
+    bool is_pub = match(TOKEN_PUB);
     switch (peek().type) {
         case TOKEN_FN:
-            return parseFnDecl();
+            return parseFnDecl(is_pub);
         case TOKEN_VAR:
         case TOKEN_CONST:
-            return parseVarDecl();
+            return parseVarDecl(is_pub);
         case TOKEN_STRUCT: {
             ASTNode* struct_decl = parseStructDeclaration();
             expect(TOKEN_SEMICOLON, "Expected ';' after top-level struct declaration");
@@ -1157,7 +1158,7 @@ ASTNode* Parser::parseStructDeclaration() {
  * @note This parser currently only supports integer literals for the initializer expression.
  * @return A pointer to the ASTNode representing the variable declaration.
  */
-ASTNode* Parser::parseVarDecl() {
+ASTNode* Parser::parseVarDecl(bool is_pub) {
     Token keyword_token = advance(); // Consume 'var' or 'const'
     bool is_const = keyword_token.type == TOKEN_CONST;
     bool is_mut = keyword_token.type == TOKEN_VAR;
@@ -1203,6 +1204,7 @@ ASTNode* Parser::parseVarDecl() {
     var_decl->initializer = initializer_node;
     var_decl->is_const = is_const;
     var_decl->is_mut = is_mut;
+    var_decl->is_pub = is_pub;
 
     // Create the top-level ASTNode for the declaration *before* creating the symbol,
     // so we can link the symbol to its declaration node.
@@ -1301,7 +1303,7 @@ ASTNode* Parser::parseDeferStatement() {
  * @note This parser currently enforces that the parameter list is empty.
  * @return A pointer to the ASTNode representing the function declaration.
  */
-ASTNode* Parser::parseFnDecl() {
+ASTNode* Parser::parseFnDecl(bool is_pub) {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
 
@@ -1443,6 +1445,7 @@ ASTNode* Parser::parseFnDecl() {
 
     fn_decl->return_type = return_type_node;
     fn_decl->body = body_node;
+    fn_decl->is_pub = is_pub;
 
     ASTNode* node = createNode(NODE_FN_DECL);
     node->loc = fn_token.location;
@@ -1484,7 +1487,7 @@ ASTNode* Parser::parseStatement() {
     switch (peek().type) {
         case TOKEN_CONST:
         case TOKEN_VAR:
-            return parseVarDecl();
+            return parseVarDecl(false);
         case TOKEN_DEFER:
             return parseDeferStatement();
         case TOKEN_ERRDEFER:
