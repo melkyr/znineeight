@@ -98,6 +98,8 @@ public:
                 return emitUnaryOp(&node->as.unary_op);
             case NODE_PAREN_EXPR:
                 return "(" + emitExpression(node->as.paren_expr.expr) + ")";
+            case NODE_PTR_CAST:
+                return emitPtrCast(node->as.ptr_cast);
             case NODE_DEFER_STMT:
                 return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
             case NODE_SWITCH_EXPR:
@@ -320,6 +322,14 @@ public:
     }
 
     /**
+     * @brief Emits a C89 @ptrCast expression.
+     */
+    std::string emitPtrCast(const ASTPtrCastNode* node) {
+        if (!node || !node->target_type || !node->target_type->resolved_type) return "((/* type */)/* val */)";
+        return "(" + getC89TypeName(node->target_type->resolved_type) + ")" + emitExpression(node->expr);
+    }
+
+    /**
      * @brief Emits a C89 array access expression.
      */
     std::string emitArrayAccess(const ASTArrayAccessNode* node) {
@@ -371,7 +381,7 @@ public:
                 return "alignof(/* type */)";
             }
 
-            if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+            if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
                 if (call->args->length() == 2) {
                     ASTNode* type_arg = (*call->args)[0];
                     ASTNode* val_arg = (*call->args)[1];

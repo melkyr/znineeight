@@ -1003,33 +1003,23 @@ Output: Runtime assertions in codegen module
     - `ptr + ptr` → error
     - `ptr * 2` → error
 
-185. **Task 185:** Explicit Cast / `@ptrCast` Support
+185. **Task 185:** Explicit Cast / `@ptrCast` Support (DONE)
     **Risk:** MEDIUM
     **Goal:** Add a minimal, parser‑recognised built‑in `@ptrCast(T, expr)` that performs an explicit pointer cast.
     **Why:** While implicit `*void` → `*T` covers many cases, you still need to cast between typed pointers (e.g., `*u8` → `*i32`). Without this, you cannot reinterpret memory.
 
     **Design constraints:**
-    - Must be recognised by the parser (add `TOKEN_BUILTIN_PTRCAST` or special‑case `@ptrCast`).
+    - Must be recognised by the parser.
     - During type checking, verify that the destination type is a pointer and the source expression is a pointer.
     - Emit a simple C cast `(T*)expr` during code generation.
 
-    **Implementation sketch:**
-
-    1. **Lexer:** recognise `@ptrCast` as a token (or extend built‑in detection).
-    2. **Parser:** `parsePrimaryExpr` → if token is `@ptrCast`, parse `(TargetType, expr)` and create `ASTPtrCastNode`.
-    3. **TypeChecker::visitPtrCast:**
-       ```cpp
-       void visitPtrCast(PtrCastNode* node) {
-           Type* dest = resolveType(node->target_type);
-           Type* src = getType(node->expr);
-           if (dest->kind != TYPE_POINTER)
-               error(ERR_CAST_TARGET_NOT_POINTER);
-           if (src->kind != TYPE_POINTER)
-               error(ERR_CAST_SOURCE_NOT_POINTER);
-           node->type = dest;   // result type is dest
-       }
-       ```
-    4. **Code generation** (Milestone 5): emit `(CType*)expr`.
+    **Implementation details:**
+    - Added `NODE_PTR_CAST` AST node and `ASTPtrCastNode` structure.
+    - Implemented `Parser::parsePtrCastExpr` for dedicated parsing.
+    - Added `TypeChecker::visitPtrCast` with strict pointer-to-pointer validation.
+    - Defined `ERR_CAST_TARGET_NOT_POINTER` and `ERR_CAST_SOURCE_NOT_POINTER` error codes.
+    - Updated `MockC89Emitter` and `C89FeatureValidator`.
+    - Verified via integration tests in `tests/integration/cast_tests.cpp` (Batch 20).
 
     **Test:**
     ```zig

@@ -282,6 +282,12 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.for_stmt->body);
             current_parent_ = prev_parent;
             break;
+        case NODE_PTR_CAST:
+            current_parent_ = node;
+            visit(node->as.ptr_cast->target_type);
+            visit(node->as.ptr_cast->expr);
+            current_parent_ = prev_parent;
+            break;
         case NODE_SWITCH_EXPR:
             current_parent_ = node;
             visit(node->as.switch_expr->expression);
