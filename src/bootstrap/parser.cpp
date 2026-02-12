@@ -244,9 +244,9 @@ ASTNode* Parser::parsePrimaryExpr() {
         case TOKEN_AT_PTRCAST:
             return parsePtrCastExpr();
         case TOKEN_AT_INTCAST:
-            return parseBuiltinCall("@intCast", advance().location);
+            return parseNumericCastExpr(NODE_INT_CAST);
         case TOKEN_AT_FLOATCAST:
-            return parseBuiltinCall("@floatCast", advance().location);
+            return parseNumericCastExpr(NODE_FLOAT_CAST);
         case TOKEN_AT_OFFSETOF:
             return parseBuiltinCall("@offsetOf", advance().location);
         default:
@@ -1845,6 +1845,26 @@ ASTNode* Parser::parsePtrCastExpr() {
 
     ASTNode* node = createNodeAt(NODE_PTR_CAST, ptr_cast_token.location);
     node->as.ptr_cast = ptr_cast_data;
+    return node;
+}
+
+ASTNode* Parser::parseNumericCastExpr(NodeType type) {
+    Token cast_token = advance(); // Consume @intCast or @floatCast
+    expect(TOKEN_LPAREN, "Expected '(' after built-in");
+
+    ASTNode* target_type = parseType();
+    expect(TOKEN_COMMA, "Expected ',' after target type in built-in");
+
+    ASTNode* expr = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after built-in expression");
+
+    ASTNumericCastNode* cast_data = (ASTNumericCastNode*)arena_->alloc(sizeof(ASTNumericCastNode));
+    if (!cast_data) error("Out of memory");
+    cast_data->target_type = target_type;
+    cast_data->expr = expr;
+
+    ASTNode* node = createNodeAt(type, cast_token.location);
+    node->as.numeric_cast = cast_data;
     return node;
 }
 

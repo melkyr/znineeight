@@ -87,6 +87,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
+        case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
+        case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
@@ -2091,7 +2093,9 @@ bool TypeChecker::isIntegerType(Type* type) {
     if (!type) {
         return false;
     }
-    return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) || type->kind == TYPE_INTEGER_LITERAL;
+    return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
+           type->kind == TYPE_INTEGER_LITERAL ||
+           type->kind == TYPE_BOOL;
 }
 
 bool TypeChecker::isUnsignedIntegerType(Type* type) {
@@ -2764,6 +2768,100 @@ Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
 
     if (expr_type && expr_type->kind != TYPE_POINTER) {
         unit.getErrorHandler().report(ERR_CAST_SOURCE_NOT_POINTER, node->expr->loc, "Source expression of @ptrCast must be a pointer type");
+    }
+
+    return target_type;
+}
+
+Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
+    Type* target_type = visit(node->target_type);
+    if (!target_type) return NULL;
+    if (target_type->kind == TYPE_TYPE) target_type = node->target_type->resolved_type;
+
+    if (!isIntegerType(target_type)) {
+        unit.getErrorHandler().report(ERR_CAST_TARGET_NOT_INTEGER, node->target_type->loc, "target type of @intCast must be an integer type");
+        return NULL;
+    }
+
+    Type* source_type = visit(node->expr);
+    if (!source_type) return NULL;
+
+    if (!isIntegerType(source_type)) {
+        unit.getErrorHandler().report(ERR_CAST_SOURCE_NOT_INTEGER, node->expr->loc, "source expression of @intCast must be an integer type");
+        return NULL;
+    }
+
+    // Constant folding
+    if (node->expr->type == NODE_INTEGER_LITERAL) {
+        i64 val = (i64)node->expr->as.integer_literal.value;
+        if (!checkIntegerLiteralFit(val, target_type)) {
+            char msg[256];
+            char* curr = msg;
+            size_t rem = sizeof(msg);
+            char val_str[32];
+            char type_str[64];
+
+            simple_itoa((long)val, val_str, sizeof(val_str));
+            typeToString(target_type, type_str, sizeof(type_str));
+
+            safe_append(curr, rem, "cast of value ");
+            safe_append(curr, rem, val_str);
+            safe_append(curr, rem, " to type '");
+            safe_append(curr, rem, type_str);
+            safe_append(curr, rem, "' overflows");
+
+            unit.getErrorHandler().report(ERR_INT_CAST_OVERFLOW, node->expr->loc, msg, unit.getArena());
+            return NULL;
+        }
+
+        // In-place replace @intCast node with integer literal
+        parent->type = NODE_INTEGER_LITERAL;
+        parent->as.integer_literal.value = (u64)val;
+        parent->as.integer_literal.is_unsigned = isUnsignedIntegerType(target_type);
+        parent->as.integer_literal.is_long = (target_type->size > 4);
+        parent->resolved_type = target_type;
+        return target_type;
+    }
+
+    return target_type;
+}
+
+Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
+    Type* target_type = visit(node->target_type);
+    if (!target_type) return NULL;
+    if (target_type->kind == TYPE_TYPE) target_type = node->target_type->resolved_type;
+
+    if (target_type->kind != TYPE_F32 && target_type->kind != TYPE_F64) {
+        unit.getErrorHandler().report(ERR_CAST_TARGET_NOT_FLOAT, node->target_type->loc, "target type of @floatCast must be a floating-point type");
+        return NULL;
+    }
+
+    Type* source_type = visit(node->expr);
+    if (!source_type) return NULL;
+
+    if (source_type->kind != TYPE_F32 && source_type->kind != TYPE_F64) {
+        unit.getErrorHandler().report(ERR_CAST_SOURCE_NOT_FLOAT, node->expr->loc, "source expression of @floatCast must be a floating-point type");
+        return NULL;
+    }
+
+    // Constant folding
+    if (node->expr->type == NODE_FLOAT_LITERAL) {
+        double val = node->expr->as.float_literal.value;
+
+        // Simple range check for f64 -> f32
+        if (target_type->kind == TYPE_F32) {
+            // FLT_MAX is approx 3.4e38
+            if (val > 3.40282347e+38 || val < -3.40282347e+38) {
+                unit.getErrorHandler().report(ERR_FLOAT_CAST_OVERFLOW, node->expr->loc, "float cast overflow");
+                return NULL;
+            }
+        }
+
+        // In-place replace @floatCast node with float literal
+        parent->type = NODE_FLOAT_LITERAL;
+        parent->as.float_literal.value = val;
+        parent->resolved_type = target_type;
+        return target_type;
     }
 
     return target_type;

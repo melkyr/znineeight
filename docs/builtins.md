@@ -36,14 +36,17 @@ Performs an explicit pointer cast.
 ### `@intCast(T, expr)`
 Performs an explicit integer cast with range checking.
 - **Syntax:** `@intCast(IntegerType, integer_expression)`
-- **Constraints:** Both must be integer types.
-- **C89 Emission:** `(IntegerType)integer_expression` (plus assertions if not constant)
+- **Constraints:** Both must be integer types (including `bool`).
+- **Compile-time:** If `expr` is a constant literal and fits in `T`, it is folded into a constant. Overflow is a compile error.
+- **Runtime:** If not constant, emits a call to a runtime helper: `__bootstrap_<target>_from_<source>(expr)`. The helper performs range checking and panics on overflow.
+- **Widenings:** If the cast is a safe widening (e.g., `u8` to `i32`), a simple C cast `(target_type)expr` is emitted without runtime checks.
 
 ### `@floatCast(T, expr)`
 Performs an explicit floating-point cast.
 - **Syntax:** `@floatCast(FloatType, float_expression)`
 - **Constraints:** Both must be floating-point types.
-- **C89 Emission:** `(FloatType)float_expression`
+- **Compile-time:** Constant folding for float literals.
+- **Runtime:** Range checking for `f64` to `f32`. safe widening (e.g., `f32` to `f64`) uses a simple C cast.
 
 ### `@offsetOf(T, field_name)`
 Returns the byte offset of a field within a struct.
