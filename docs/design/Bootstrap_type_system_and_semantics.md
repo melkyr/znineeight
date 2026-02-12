@@ -657,7 +657,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `i64` | ✓ | `__int64` | MSVC 6.0 specific hack for 64-bit integers. |
 | `u8`-`u32` | ✓ | `unsigned char`-`unsigned int` | Direct mapping. |
 | `u64` | ✓ | `unsigned __int64` | MSVC 6.0 specific hack. |
-| `isize`/`usize` | ✓ | `int`/`unsigned int` | Supported for pointer arithmetic and sizes. |
+| `isize`/`usize` | ✓ | `int`/`unsigned int` | Supported for pointer arithmetic and sizes. Mapping to 32-bit `int` in Milestone 4. |
 | `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
@@ -1250,7 +1250,7 @@ When a generic function is detected:
 2.  The `TypeChecker` identifies both explicit and implicit generic function calls and catalogues each instantiation site (Task 157), capturing the exact resolved types of all arguments passed.
 3.  The `C89FeatureValidator` pass (Pass 1) checks the catalogue and issues a fatal error. For implicit generic calls, it provides a detailed diagnostic including the inferred argument types (e.g., `Implicit generic instantiation of 'foo' with argument types: i32, f64`).
 
-For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](docs/generic_functions_c89.md).
+For more details on the detected patterns and C89 compatibility considerations, see [Generic Function Detection](../reference/generic_functions_c89.md).
 
 ## 16. Function Call Resolution and Validation (Task 174)
 
@@ -1281,3 +1281,88 @@ The following call patterns are strictly rejected to maintain C89 compatibility:
 4. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
 
 For verification details, see the integration tests in `tests/integration/function_call_tests.cpp`.
+
+## 18. Compile-Time Built-ins
+
+The bootstrap compiler supports a core set of built-in functions (intrinsics) that are evaluated at compile-time or mapped to specialized C89 constructs. These built-ins enable low-level operations and metadata access that would otherwise be difficult in a restricted subset of Zig.
+
+### Summary of Supported Built-ins
+- **`@sizeOf(T)`**: Returns the size of type `T` in bytes.
+- **`@alignOf(T)`**: Returns the alignment requirement of type `T` in bytes.
+- **`@offsetOf(T, "field")`**: Returns the byte offset of a field within a struct or union.
+- **`@ptrCast(T, expr)`**: Performs an explicit pointer-to-pointer cast.
+- **`@intCast(T, expr)`**: Performs a range-checked integer conversion.
+- **`@floatCast(T, expr)`**: Performs a range-checked floating-point conversion.
+
+For detailed specifications, syntax, and implementation details for each built-in, please see the [Built-ins Reference](../reference/builtins.md).
+
+## 19. Pointer Arithmetic & Casting Rules
+
+### Pointer Arithmetic
+To ensure C89 compatibility and maintain Zig's safety guarantees, the following rules apply to pointer arithmetic:
+- **`ptr + unsigned` / `unsigned + ptr`**: Result is a pointer of the same type as `ptr`. The offset must be an unsigned integer type (`u8`, `u32`, `usize`).
+- **`ptr - unsigned`**: Result is a pointer of the same type.
+- **`ptr1 - ptr2`**: Result is an `isize` representing the distance between the two pointers. This is only valid if both pointers point to the same base type (ignoring `const`).
+- **Prohibited**: Arithmetic on `*void`, multi-level pointers (`**T`), or incomplete types is strictly rejected.
+
+### Implicit Pointer Conversions
+- **`*void` to `*T`**: The bootstrap compiler allows implicit conversion from a `void` pointer to any typed pointer, provided the target base type is C89-compatible. This matches standard C89 behavior and is essential for using `arena_alloc`.
+- **Adding `const`**: Conversion from `*T` to `*const T` is implicit and safe.
+
+### Explicit Casting
+- **`@ptrCast(*T, ptr)`**: Used to convert between different pointer types (e.g., `*u8` to `*i32`). Both the source and target must be pointer types.
+
+## 20. Milestone 4 Target Platform Assumptions
+
+The Stage 0 bootstrap compiler assumes a **32-bit little-endian** target environment, which informs the constant-folding of `@sizeOf`, `@alignOf`, and `@offsetOf`.
+
+| Type | Size (bytes) | Alignment | C89 Equivalent |
+|------|--------------|-----------|----------------|
+| `isize` / `usize` | 4 | 4 | `int` / `unsigned int` |
+| Pointers (`*T`) | 4 | 4 | `T*` |
+| `i8` / `u8` | 1 | 1 | `signed char` / `unsigned char` |
+| `i16` / `u16` | 2 | 2 | `short` / `unsigned short` |
+| `i32` / `u32` | 4 | 4 | `int` / `unsigned int` |
+| `i64` / `u64` | 8 | 8 | `__int64` / `unsigned __int64` |
+| `f32` | 4 | 4 | `float` |
+| `f64` | 8 | 8 | `double` |
+| `bool` | 4 | 4 | `int` (0 or 1) |
+
+## 21. C89 Rejection Framework
+
+The rejection process is a key part of the compiler's design, preventing the use of modern language constructs that have no direct or simple equivalent in C89.
+
+### AST Pre-Scan Validator
+
+The `C89FeatureValidator` is a visitor class that traverses the entire Abstract Syntax Tree immediately after the parsing stage is complete. Its sole responsibility is to detect AST nodes that represent language features not supported in the C89-compatible subset.
+
+When an unsupported feature is found, the validator performs the following actions:
+1.  It uses the `ErrorHandler` to report a fatal error, providing a clear message indicating why the feature is not supported.
+2.  It sets an internal `error_found_` flag, which causes the `validate()` method to eventually return `false`.
+
+To maintain stability in test environments, child processes explicitly call `abort()` if the error handler reports any errors.
+
+### Feature Compatibility & Rationale
+
+| Feature | Zig Syntax Example | Rationale |
+|---------|-------------------|-----------|
+| **Slices** | `var s: []u8;` | Slices require a struct (`{ptr, len}`) and runtime support that do not exist in C89. |
+| **Error Unions** | `var v: !i32;` | C89 uses error codes or `errno`. |
+| **Optionals** | `var v: ?*i32;` | Optionals are implemented as tagged unions or pointers, which is a higher-level concept. |
+| **Multi-level Pointers**| `var p: **i32;` | Adds unnecessary complexity to the bootstrap type system. |
+| **Function Pointers** | `var f = &func;` | Rejected to simplify the type system and code generation. |
+| **Struct Methods** | `s.method()` | C89 structs do not have associated functions. Equivalent is passing a struct pointer to a global function. |
+| **Variadic Functions** | `fn f(args: ...)` | Not supported to simplify calling convention and type checking. |
+| **Generics** | `comptime T: type`| C89 does not support compile-time type parameters or templates. |
+
+### Milestone 5 Integration & Translation Strategy
+
+| Zig Feature | Milestone 4 Status | Milestone 5 Translation Strategy | C89 Equivalent |
+|-------------|--------------------|-----------------------------------|----------------|
+| Error Unions | Rejected | Extraction Strategy (Stack/Arena/Out) | Struct + Union |
+| Error Sets | Rejected | Global Integer Registry | #define constants |
+| `try` | Rejected | Pattern-based Generation | `if (err) return err;` |
+| `catch` | Rejected | Fallback Pattern Generation | `if (err) { val = fallback; }` |
+| `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
+| `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
+| Generics | Rejected | Template Specialization / Mangling | Mangled Functions |

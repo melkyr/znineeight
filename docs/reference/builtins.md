@@ -9,18 +9,22 @@ These built-ins are evaluated during the Type Checking phase and are replaced in
 ### `@sizeOf(T)`
 Returns the size of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@sizeOf(TypeName)`
-- **Constraints:** `T` must be a complete type.
-- **Target (32-bit):**
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
+- **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
+- **Target (32-bit little-endian):**
+  - `i8`, `u8`: 1 byte
+  - `i16`, `u16`: 2 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
   - `struct`: Sum of field sizes plus padding for alignment.
 
 ### `@alignOf(T)`
 Returns the alignment requirement of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@alignOf(TypeName)`
-- **Constraints:** `T` must be a complete type.
-- **Target (32-bit):**
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
+- **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
+- **Target (32-bit little-endian):**
+  - `i8`, `u8`: 1 byte
+  - `i16`, `u16`: 2 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
 
 ### `@offsetOf(T, field_name)`
@@ -51,16 +55,24 @@ Performs an explicit pointer cast.
 Performs an explicit integer cast with range checking.
 - **Syntax:** `@intCast(IntegerType, integer_expression)`
 - **Constraints:** Both must be integer types (including `bool`).
-- **Compile-time:** If `expr` is a constant literal and fits in `T`, it is folded into a constant. Overflow is a compile error.
-- **Runtime:** If not constant, emits a call to a runtime helper: `__bootstrap_<target>_from_<source>(expr)`. The helper performs range checking and panics on overflow.
-- **Widenings:** If the cast is a safe widening (e.g., `u8` to `i32`), a simple C cast `(target_type)expr` is emitted without runtime checks.
+- **Compile-time Evaluation:**
+  - If `expr` is a constant integer literal, the compiler checks if the value fits within the target type's range.
+  - If it fits, the `@intCast` call is replaced by a new `NODE_INTEGER_LITERAL` in the AST.
+  - If it overflows, a fatal compile-time error is reported.
+- **C89 Emission Strategy:**
+  - **Constant cases**: Emitted as raw literals.
+  - **Safe widenings** (e.g., `u8` to `i32`): Emitted as a direct C-style cast: `(int)expr`.
+  - **Potentially unsafe narrowing/conversion**: Emitted as a call to a runtime helper function: `__bootstrap_<target>_from_<source>(expr)`.
+  - **Runtime Helpers (Milestone 5)**: These functions (e.g., `__bootstrap_i32_from_i64`) will perform bounds checks at runtime and call a panic handler if the value is out of range.
 
 ### `@floatCast(T, expr)`
-Performs an explicit floating-point cast.
+Performs an explicit floating-point cast with range checking.
 - **Syntax:** `@floatCast(FloatType, float_expression)`
-- **Constraints:** Both must be floating-point types.
-- **Compile-time:** Constant folding for float literals.
-- **Runtime:** Range checking for `f64` to `f32`. safe widening (e.g., `f32` to `f64`) uses a simple C cast.
+- **Constraints:** Both must be floating-point types (`f32`, `f64`).
+- **Compile-time Evaluation:** Constant folding for constant float literals.
+- **C89 Emission Strategy:**
+  - **Safe widenings** (e.g., `f32` to `f64`): Emitted as a direct C-style cast: `(double)expr`.
+  - **Potentially unsafe narrowing** (`f64` to `f32`): Emitted as a call to a runtime helper: `__bootstrap_f32_from_f64(expr)`.
 
 ---
 

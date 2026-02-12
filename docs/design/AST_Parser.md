@@ -62,13 +62,20 @@ enum NodeType {
     NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_BREAK_STMT,      ///< A break statement.
+    NODE_CONTINUE_STMT,   ///< A continue statement.
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
+    NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
     NODE_SWITCH_EXPR,     ///< A switch expression.
+    NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
+    NODE_INT_CAST,        ///< An integer cast expression (@intCast).
+    NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
+    NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -151,6 +158,8 @@ struct ASTNode {
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
         ASTWhileStmtNode while_stmt;
+        ASTBreakStmtNode break_stmt;
+        ASTContinueStmtNode continue_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
         ASTExpressionStmtNode expression_stmt;
@@ -174,6 +183,12 @@ struct ASTNode {
         ASTArrayTypeNode array_type;
         ASTErrorUnionTypeNode* error_union_type; // Out-of-line
         ASTOptionalTypeNode* optional_type; // Out-of-line
+
+        // Casts and Built-ins
+        ASTPtrCastNode* ptr_cast; // Out-of-line
+        ASTIntCastNode* int_cast; // Out-of-line
+        ASTFloatCastNode* float_cast; // Out-of-line
+        ASTOffsetOfNode* offset_of; // Out-of-line
 
         // Compile-Time Operations
         ASTComptimeBlockNode comptime_block;
@@ -1606,7 +1621,7 @@ Every `ASTNode` stores a `module` field, which is a pointer to the interned logi
 ### 21.2 Design for Milestone 6
 - **Import System**: `@import` will be processed during parsing to pull in external declarations.
 - **Catalogue Merging**: Specialized catalogues (e.g., `GenericCatalogue`) support merging to track cross-module feature usage.
-- See `docs/multi_file_considerations.md` and `docs/compilation_model.md` for more details.
+- See the [multi-file considerations](../reference/multi_file_considerations.md) and [compilation model](../reference/compilation_model.md) for more details.
 
 ## 20. Parser Path for Non-C89 Features (Task 150)
 

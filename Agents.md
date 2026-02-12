@@ -31,7 +31,7 @@ The AI agent acts as a focused, knowledgeable assistant for implementing specifi
 ### Responsibilities of the AI Agent
 
 1. **Interpret Tasks**: Accurately parse and understand the task description provided in `AI_tasks.md`.
-2. **Consult Documentation**: Read and comprehend relevant project documents (`Design.md`, `lexer.md`, `AST_parser.md`, etc.) before implementing.
+2. **Consult Documentation**: Read and comprehend relevant project documents (`docs/design/DESIGN.md`, `docs/design/Lexer.md`, `docs/design/AST_Parser.md`, etc.) before implementing.
 3. **Adhere to Constraints**: Strictly follow all technical constraints (C++98, memory limits, dependencies) without deviation.
     - **C++ Standard Library Usage Policy**:
         - **Allowed**: Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for size_t), `<cassert>` (for assert), and `<climits>`.
@@ -41,7 +41,7 @@ The AI agent acts as a focused, knowledgeable assistant for implementing specifi
     - **Platform Abstraction Layer (PAL)**:
         - All system-level operations (memory, files, console) MUST use the PAL (`platform.hpp`) to ensure compatibility and ease of development across Windows and Linux.
 4. **Implement Code**: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
-5. **Document Changes**: Update existing documentation (e.g., `AST_parser.md`) and add Doxygen-style comments to the generated code.
+5. **Document Changes**: Update existing documentation (e.g., `docs/design/AST_Parser.md`) and add Doxygen-style comments to the generated code.
 6. **Task Review**: Review completed tasks for architectural alignment and completeness.
 7. **Seek Clarification**: When encountering ambiguity in task specifications or required decisions not covered by documentation, explicitly ask for clarification rather than making assumptions.
 8. **Follow Methodology**: Implement code with a Test-Driven Development (TDD) mindset, ensuring modularity and correctness for future testing phases.
