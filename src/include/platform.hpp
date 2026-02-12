@@ -15,6 +15,18 @@ void plat_free(void* ptr);
 void* plat_realloc(void* ptr, size_t new_size);
 
 // File I/O
+#ifdef _WIN32
+typedef HANDLE PlatFile;
+#define PLAT_INVALID_FILE INVALID_HANDLE_VALUE
+#else
+typedef int PlatFile;
+#define PLAT_INVALID_FILE (-1)
+#endif
+
+PlatFile plat_open_file(const char* path, bool write);
+void plat_write_file(PlatFile file, const void* data, size_t size);
+size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size);
+void plat_close_file(PlatFile file);
 bool plat_file_read(const char* path, char** buffer, size_t* size);
 
 // Console output

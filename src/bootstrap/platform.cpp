@@ -18,6 +18,33 @@ void* plat_realloc(void* ptr, size_t new_size) {
     return HeapReAlloc(GetProcessHeap(), 0, ptr, new_size);
 }
 
+PlatFile plat_open_file(const char* path, bool write) {
+    DWORD access = write ? GENERIC_WRITE : GENERIC_READ;
+    DWORD creation = write ? CREATE_ALWAYS : OPEN_EXISTING;
+    return CreateFileA(path, access, FILE_SHARE_READ, NULL, creation, FILE_ATTRIBUTE_NORMAL, NULL);
+}
+
+void plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return;
+    DWORD written;
+    WriteFile(file, data, (DWORD)size, &written, NULL);
+}
+
+size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
+    if (file == PLAT_INVALID_FILE) return 0;
+    DWORD read;
+    if (ReadFile(file, buffer, (DWORD)size, &read, NULL)) {
+        return (size_t)read;
+    }
+    return 0;
+}
+
+void plat_close_file(PlatFile file) {
+    if (file != PLAT_INVALID_FILE) {
+        CloseHandle(file);
+    }
+}
+
 bool plat_file_read(const char* path, char** buffer, size_t* size) {
     HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -201,6 +228,35 @@ void plat_free(void* ptr) {
 
 void* plat_realloc(void* ptr, size_t new_size) {
     return realloc(ptr, new_size);
+}
+
+PlatFile plat_open_file(const char* path, bool write) {
+    int flags = write ? (O_WRONLY | O_CREAT | O_TRUNC) : O_RDONLY;
+    int mode = write ? 0644 : 0;
+    return open(path, flags, mode);
+}
+
+void plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return;
+    size_t total_written = 0;
+    while (total_written < size) {
+        ssize_t written = write(file, (const char*)data + total_written, size - total_written);
+        if (written <= 0) break;
+        total_written += written;
+    }
+}
+
+size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
+    if (file == PLAT_INVALID_FILE) return 0;
+    ssize_t bytes_read = read(file, buffer, size);
+    if (bytes_read < 0) return 0;
+    return (size_t)bytes_read;
+}
+
+void plat_close_file(PlatFile file) {
+    if (file != PLAT_INVALID_FILE) {
+        close(file);
+    }
 }
 
 bool plat_file_read(const char* path, char** buffer, size_t* size) {

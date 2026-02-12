@@ -903,4 +903,9 @@ TEST_FUNC(BuiltinOffsetOf_NonAggregate_Error);
 TEST_FUNC(BuiltinOffsetOf_FieldNotFound_Error);
 TEST_FUNC(BuiltinOffsetOf_IncompleteType_Error);
 
+// Task 189: C89 Emitter
+TEST_FUNC(c89_emitter_basic);
+TEST_FUNC(c89_emitter_buffering);
+TEST_FUNC(plat_file_raw_io);
+
 #endif // TEST_DECLARATIONS_HPP

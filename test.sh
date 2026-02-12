@@ -32,6 +32,7 @@ BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
     src/bootstrap/call_site_lookup_table.cpp \
     src/bootstrap/indirect_call_catalogue.cpp \
     src/bootstrap/call_resolution_validator.cpp \
+    src/bootstrap/codegen.cpp \
     src/bootstrap/platform.cpp"
 
 TEST_SRCS="tests/test_c89_rejection.cpp \
@@ -217,6 +218,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
     tests/integration/builtin_offsetof_tests.cpp \
     tests/integration/cast_tests.cpp \
     tests/integration/builtin_size_tests.cpp \
+    tests/test_c89_emitter.cpp \
     tests/integer_widening_tests.cpp \
     tests/c89_validation/gcc_validator.cpp \
     tests/c89_validation/msvc6_validator.cpp \
@@ -224,7 +226,7 @@ TEST_SRCS="tests/test_c89_rejection.cpp \
 
 FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include -Itests/integration -Itests/c89_validation"
 
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do
     echo "Compiling Batch $i..."
     g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
     if [ $? -ne 0 ]; then
