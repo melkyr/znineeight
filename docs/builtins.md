@@ -35,6 +35,7 @@ Returns the byte offset of a field within a struct or union as a `usize` constan
   - For unions, always returns `0`.
   - For structs, returns the pre-calculated byte offset from the beginning of the struct.
 - **C89 Emission:** Emitted directly as the integer literal (e.g., `4`).
+- **Known Limitation:** `@offsetOf` on incomplete types (e.g., forward declarations) is not currently testable in the bootstrap compiler as it does not support forward-declared structs. The error handling logic is implemented for robustness.
 
 ## Code Generation Built-ins
 
