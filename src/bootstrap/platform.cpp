@@ -184,10 +184,6 @@ void plat_memset(void* s, int c, size_t n) {
 }
 
 int plat_run_command(const char* cmd, char** output, size_t* output_size) {
-    // Windows implementation using CreateProcess would go here
-    // For now, let's use _popen for simplicity if it were allowed,
-    // but the instruction says kernel32 only.
-    // Stubs for now.
     (void)cmd;
     (void)output;
     (void)output_size;
@@ -195,7 +191,6 @@ int plat_run_command(const char* cmd, char** output, size_t* output_size) {
 }
 
 char* plat_create_temp_file(const char* prefix, const char* suffix) {
-    // GetTempPath + GetTempFileName + rename to add suffix
     (void)prefix;
     (void)suffix;
     return NULL;
@@ -232,7 +227,7 @@ void* plat_realloc(void* ptr, size_t new_size) {
 
 PlatFile plat_open_file(const char* path, bool write) {
     int flags = write ? (O_WRONLY | O_CREAT | O_TRUNC) : O_RDONLY;
-    int mode = write ? 0644 : 0;
+    mode_t mode = write ? 0644 : 0;
     return open(path, flags, mode);
 }
 
@@ -298,7 +293,6 @@ void plat_print_error(const char* message) {
 }
 
 void plat_print_debug(const char* message) {
-    // On Linux, we just print to stderr for "debug"
     plat_print_error("[DEBUG] ");
     plat_print_error(message);
 }

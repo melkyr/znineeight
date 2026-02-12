@@ -49,13 +49,13 @@ void simple_itoa(long value, char* buffer, size_t buffer_size) {
         n = -n;
     }
 
-    while (n != 0 && i < (int)buffer_size - (is_negative ? 2 : 1)) {
-        int rem = n % 10;
+    while (n != 0 && (size_t)i < buffer_size - (is_negative ? 2 : 1)) {
+        int rem = (int)(n % 10);
         buffer[i++] = rem + '0';
         n = n / 10;
     }
 
-    if (is_negative && i < (int)buffer_size - 1) {
+    if (is_negative && (size_t)i < buffer_size - 1) {
         buffer[i++] = '-';
     }
 

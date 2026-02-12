@@ -732,6 +732,13 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 
 ## 10. Detailed Implementation Checklist
 
+### Milestone 5: Code Generation (C89)
+- [x] Task 189: Implement `C89Emitter` class skeleton with buffered file I/O
+- [x] Task 190: Implement `CVariableAllocator` for C89-compliant local name management
+- [ ] Task 191: Generate integer literals
+- [ ] Task 192: Generate float literals
+- [ ] Task 193: Generate string literals
+
 ### Week 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
 - [ ] Create `PEBuilder` skeleton (generating a valid empty .exe)
@@ -820,7 +827,22 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 └── DESIGN.md           # This document
 ```
 
-## 13. Compatibility Layer (`common.hpp`)
+## 13. Code Generation Infrastructure (`codegen.hpp`, `c_variable_allocator.hpp`)
+The compiler utilizes a buffered emission system and a robust variable name allocator to ensure valid C89 output.
+
+### 13.1 C89Emitter
+- **Buffering**: 4KB stack-based buffer to minimize system call overhead.
+- **Indentation**: Automatic indentation management (4 spaces).
+- **Comments**: Standard C89 `/* ... */` comment emission.
+- **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
+
+### 13.2 CVariableAllocator
+- **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.
+- **MSVC 6.0 Compatibility**: Enforces a strict 31-character limit for all identifiers.
+- **Uniquification**: Appends numeric suffixes to resolve name collisions within a function scope.
+- **Temporary Generation**: Provides safe generation of compiler-internal temporary variables.
+
+## 14. Compatibility Layer (`common.hpp`)
 ```cpp
 #ifndef COMMON_HPP
 #define COMMON_HPP
