@@ -77,6 +77,9 @@ private:
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
+    bool isUnsignedIntegerType(Type* type);
+    bool isCompletePointerType(Type* type);
+    bool areSamePointerTypeIgnoringConst(Type* a, Type* b);
     bool checkIntegerLiteralFit(i64 value, Type* int_type);
     bool all_paths_return(ASTNode* node);
     Type* checkComparisonWithLiteralPromotion(Type* left_type, Type* right_type);

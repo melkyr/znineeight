@@ -477,8 +477,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 
 ### 5.1 Supported Syntax & Features
 *   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
-*   **Primitive Types**: `i8` through `i64`, `u8` through `u64`, `f32`, `f64`, `bool`, `void`.
-*   **Pointers**: Single-level pointers `*T` and `*const T`. Supports address-of `&`, dereference `ptr.*`, and pointer-to-struct access `ptr.field`.
+*   **Primitive Types**: `i8` through `i64`, `u8` through `u64`, `isize`, `usize`, `f32`, `f64`, `bool`, `void`.
+*   **Pointers**: Single-level pointers `*T` and `*const T`. Supports address-of `&`, dereference `ptr.*`, pointer-to-struct access `ptr.field`, and arithmetic (`ptr + offset`, `ptr - offset`, `ptr1 - ptr2`).
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
 *   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
@@ -491,6 +491,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
+*   **Built-ins**: Basic intrinsics like `@sizeOf(T)`, `@alignOf(T)`, `@ptrCast(T, v)`, `@intCast(T, v)`, `@floatCast(T, v)`, and `@offsetOf(T, "f")`.
 
 ### 5.2 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
@@ -504,7 +505,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Function Pointers**: Functions cannot be treated as first-class values (variables/parameters).
 *   **Parameter Limit**: Maximum of 4 parameters per function.
-*   **No Built-ins/Imports**: `@import` and other `@` built-ins are rejected.
+*   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
 
 ### 5.3 C89 Mapping Decisions

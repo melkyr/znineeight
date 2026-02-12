@@ -371,6 +371,30 @@ public:
                 return "alignof(/* type */)";
             }
 
+            if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+                if (call->args->length() == 2) {
+                    ASTNode* type_arg = (*call->args)[0];
+                    ASTNode* val_arg = (*call->args)[1];
+                    Type* target_type = type_arg->resolved_type;
+                    if (target_type) {
+                        return "(" + getC89TypeName(target_type) + ")" + emitExpression(val_arg);
+                    }
+                }
+                return "((/* type */)/* val */)";
+            }
+
+            if (plat_strcmp(name, "@offsetOf") == 0) {
+                if (call->args->length() == 2) {
+                    ASTNode* type_arg = (*call->args)[0];
+                    ASTNode* field_arg = (*call->args)[1];
+                    Type* struct_type = type_arg->resolved_type;
+                    if (struct_type && field_arg->type == NODE_STRING_LITERAL) {
+                        return "offsetof(" + getC89TypeName(struct_type) + ", " + field_arg->as.string_literal.value + ")";
+                    }
+                }
+                return "offsetof(/* struct */, /* field */)";
+            }
+
             if (call_table_) {
                 const CallSiteEntry* entry = call_table_->findByCallNode(const_cast<ASTNode*>(node));
                 if (entry && entry->mangled_name) {

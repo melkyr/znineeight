@@ -691,27 +691,41 @@ Token Lexer::nextToken() {
                 token.type = match('=') ? TOKEN_PIPE_EQUAL : TOKEN_PIPE;
             }
             break;
-        case '@':
-            if (plat_strncmp(this->current, "import", 6) == 0 && !isIdentifierChar(this->current[6])) {
-                this->current += 6;
-                this->column += 6;
+        case '@': {
+            const char* start = this->current;
+            while (isIdentifierChar(*this->current)) {
+                this->current++;
+            }
+            size_t len = (size_t)(this->current - start);
+
+            if (len == 6 && plat_strncmp(start, "import", 6) == 0) {
                 token.type = TOKEN_AT_IMPORT;
+            } else if (len == 6 && plat_strncmp(start, "sizeOf", 6) == 0) {
+                token.type = TOKEN_AT_SIZEOF;
+            } else if (len == 7 && plat_strncmp(start, "alignOf", 7) == 0) {
+                token.type = TOKEN_AT_ALIGNOF;
+            } else if (len == 7 && plat_strncmp(start, "ptrCast", 7) == 0) {
+                token.type = TOKEN_AT_PTRCAST;
+            } else if (len == 7 && plat_strncmp(start, "intCast", 7) == 0) {
+                token.type = TOKEN_AT_INTCAST;
+            } else if (len == 9 && plat_strncmp(start, "floatCast", 9) == 0) {
+                token.type = TOKEN_AT_FLOATCAST;
+            } else if (len == 8 && plat_strncmp(start, "offsetOf", 8) == 0) {
+                token.type = TOKEN_AT_OFFSETOF;
             } else {
-                // Support other built-ins like @sizeOf, @alignOf
-                const char* start = this->current;
-                while (isIdentifierChar(*(this->current))) {
-                    this->current++;
-                    this->column++;
-                }
-                size_t len = (size_t)(this->current - start);
-                char* name = (char*)arena.alloc(len + 2);
+                // Unknown built-in: treat as generic identifier starting with @
+                char* name = (char*)this->arena.alloc(len + 2);
                 name[0] = '@';
-                plat_memcpy(name + 1, start, len);
+                if (len > 0) {
+                    plat_memcpy(name + 1, start, len);
+                }
                 name[len + 1] = '\0';
                 token.type = TOKEN_IDENTIFIER;
-                token.as.identifier = interner.intern(name);
+                token.value.identifier = this->interner.intern(name);
             }
+            this->column += (u32)len;
             break;
+        }
         case '^': token.type = match('=') ? TOKEN_CARET_EQUAL : TOKEN_CARET; break;
         case '.': // Handles '.', '..', '...', '.*', '.?'
             if (match('.')) {

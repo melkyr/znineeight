@@ -378,12 +378,18 @@ Function calls are subject to the following strict limitations:
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
     -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
-    -   **Pointer Arithmetic:** To ensure C89 compatibility, the type checker enforces the following rules for pointer arithmetic:
-        -   `pointer + integer` -> `pointer`: The result is a pointer of the same type.
-        -   `integer + pointer` -> `pointer`: The result is a pointer of the same type.
-        -   `pointer - integer` -> `pointer`: The result is a pointer of the same type.
-        -   `pointer - pointer` -> `isize`: The result is a signed integer of type `isize`. This is only valid if both pointers are of the exact same type (e.g., `*i32` and `*i32`, but not `*i32` and `*const i32`).
-        -   Any other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered a type error.
+    -   **Pointer Arithmetic (Task 184):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules for pointer arithmetic:
+        -   **Supported Operations:**
+            -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward.
+            -   `unsigned_int + ptr` -> `ptr`: Commutative addition.
+            -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward.
+            -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types.
+        -   **Safety Rules:**
+            -   **No Void Pointers:** Arithmetic on `*void` or `*const void` is strictly forbidden.
+            -   **Complete Types Only:** The base type of the pointer must be a "complete" type (not `void`, and single-level pointers only). Multi-level pointers (`**T`) are rejected for arithmetic to avoid complexity in the bootstrap phase.
+            -   **Unsigned Offsets Only:** Offsets used in `+` or `-` must be of an unsigned integer type (e.g., `u8`, `u32`, `usize`). This matches Zig's requirement for explicit casting and prevents common signed-overflow bugs in C.
+            -   **Compatible Pointer Subtraction:** Subtraction is allowed if both pointers point to the same base type, ignoring `const` qualification (e.g., `*i32` - `*const i32` is valid, matching C89 standard behavior).
+        -   **Rejected Operations:** Any other operations (e.g., `ptr + ptr`, `ptr * int`, `ptr / int`) are considered type errors and rejected.
 
 ### Control Flow Statements
 
@@ -414,7 +420,14 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 
 5.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
 
-6.  **Built-in Detection:** Calls to built-ins starting with `@` (e.g., `@import`) are recognized and strictly rejected in the bootstrap phase.
+6.  **Built-in Support (Task 186):** While most Zig built-ins are rejected in the bootstrap phase, a core set of intrinsics is supported to enable low-level operations and metadata access:
+    -   **`@sizeOf(T)`**: Returns a `usize` constant representing the size of type `T` in bytes.
+    -   **`@alignOf(T)`**: Returns a `usize` constant representing the alignment of type `T` in bytes.
+    -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast.
+    -   **`@intCast(T, val)`**: Converts an integer `val` to type `T`. Mapped to a C-style cast.
+    -   **`@floatCast(T, val)`**: Converts a float `val` to type `T`. Mapped to a C-style cast.
+    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct `T`. Mapped to C `offsetof()`.
+    -   **`@import("module")`**: Still strictly REJECTED as the bootstrap compiler is single-file only.
 
 #### Call Resolution Completeness (Task 168)
 
@@ -1224,7 +1237,7 @@ The `TypeChecker` enforces strict type compatibility for arguments:
 The following call patterns are strictly rejected to maintain C89 compatibility:
 1. **Parameter Count**: Calls with more than **4 arguments** are rejected.
 2. **Indirect Calls**: Calling functions via variables or other non-identifier expressions is rejected with an informational note about C89 compatibility.
-3. **Built-ins**: Calls to Zig built-in functions (starting with `@`) are rejected.
+3. **Built-ins**: Most Zig built-in functions (starting with `@`) are rejected, except for the supported subset: `@sizeOf`, `@alignOf`, `@ptrCast`, `@intCast`, `@floatCast`, and `@offsetOf`.
 4. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
 
 For verification details, see the integration tests in `tests/integration/function_call_tests.cpp`.
