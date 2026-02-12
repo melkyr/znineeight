@@ -100,6 +100,12 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_FLOAT_LITERAL:
             emitFloatLiteral(&node->as.float_literal);
             break;
+        case NODE_STRING_LITERAL:
+            emitStringLiteral(&node->as.string_literal);
+            break;
+        case NODE_CHAR_LITERAL:
+            emitCharLiteral(&node->as.char_literal);
+            break;
         case NODE_PAREN_EXPR:
             writeString("(");
             emitExpression(node->as.paren_expr.expr);
@@ -153,5 +159,56 @@ void C89Emitter::emitFloatLiteral(const ASTFloatLiteralNode* node) {
 
     if (node->resolved_type && node->resolved_type->kind == TYPE_F32) {
         writeString("f");
+    }
+}
+
+void C89Emitter::emitStringLiteral(const ASTStringLiteralNode* node) {
+    if (!node || !node->value) return;
+
+    // TODO: Split long strings if needed for MSVC 6.0
+    write("\"", 1);
+    const char* p = node->value;
+    while (*p) {
+        emitEscapedByte((unsigned char)*p, false);
+        p++;
+    }
+    write("\"", 1);
+}
+
+void C89Emitter::emitCharLiteral(const ASTCharLiteralNode* node) {
+    if (!node) return;
+    write("'", 1);
+    emitEscapedByte((unsigned char)node->value, true);
+    write("'", 1);
+}
+
+void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
+    switch (c) {
+        case '\a': write("\\a", 2); return;
+        case '\b': write("\\b", 2); return;
+        case '\f': write("\\f", 2); return;
+        case '\n': write("\\n", 2); return;
+        case '\r': write("\\r", 2); return;
+        case '\t': write("\\t", 2); return;
+        case '\v': write("\\v", 2); return;
+        case '\\': write("\\\\", 2); return;
+        case '\'':
+            if (is_char_literal) write("\\'", 2);
+            else write("'", 1);
+            return;
+        case '\"':
+            if (!is_char_literal) write("\\\"", 2);
+            else write("\"", 1);
+            return;
+        default:
+            if (c >= 32 && c <= 126) {
+                char ch = (char)c;
+                write(&ch, 1);
+            } else {
+                char buf[8];
+                // Use octal escape \ooo (three digits zero-padded)
+                sprintf(buf, "\\%03o", c);
+                writeString(buf);
+            }
     }
 }

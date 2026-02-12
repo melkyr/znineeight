@@ -122,11 +122,30 @@ public:
     void emitFloatLiteral(const ASTFloatLiteralNode* node);
 
     /**
+     * @brief Emits a string literal expression.
+     * @param node The string literal node.
+     */
+    void emitStringLiteral(const ASTStringLiteralNode* node);
+
+    /**
+     * @brief Emits a character literal expression.
+     * @param node The character literal node.
+     */
+    void emitCharLiteral(const ASTCharLiteralNode* node);
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
 
 private:
+    /**
+     * @brief Emits a byte with proper C89 escaping.
+     * @param c The byte to emit.
+     * @param is_char_literal True if emitting inside a character literal.
+     */
+    void emitEscapedByte(unsigned char c, bool is_char_literal);
+
     char buffer_[4096];
     size_t buffer_pos_;
     PlatFile output_file_;
