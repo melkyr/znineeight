@@ -175,6 +175,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
+    // Use flags from node, but allow override from is_public for now to avoid breaking tests
+    bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
+
     // Skip type declarations (e.g. const T = struct { ... })
     if (decl->is_const && decl->initializer) {
         Type* init_type = decl->initializer->resolved_type;
@@ -191,7 +194,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     }
 
     writeIndent();
-    if (!is_public) {
+    if (decl->is_extern) {
+        writeString("extern ");
+    } else if (!external) {
         writeString("static ");
     }
 
@@ -252,7 +257,9 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     beginFunction();
 
     writeIndent();
-    if (!node->is_pub) {
+    if (node->is_extern) {
+        writeString("extern ");
+    } else if (!node->is_pub && !node->is_export) {
         writeString("static ");
     }
 
@@ -274,9 +281,10 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             }
         }
     }
-    writeString(") ");
+    writeString(")");
 
     if (node->body) {
+        writeString(" ");
         emitBlock(&node->body->as.block_stmt);
         writeString("\n\n");
     } else {

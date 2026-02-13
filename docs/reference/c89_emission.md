@@ -222,14 +222,38 @@ Every local variable within a function is given a unique C name by appending a n
 
 ## 9. Functions
 
-Function declarations are emitted as standard C89 function definitions.
+Function declarations and definitions are emitted as standard C89 constructs.
 
-### 9.1 Return Types and Parameters
+### 9.1 Signature Emission
 
 - **Return Types**: Emitted before the function name. `void` is used for functions with no return value.
 - **Parameters**: Emitted within parentheses. If a function has no parameters, `(void)` is emitted to be C89-compliant.
-- **Mangling**: Function names are mangled using the same rules as global variables. Parameters also use the `CVariableAllocator` to ensure unique names.
+- **Parameter Names**: Parameter names are uniquified and sanitized using the `CVariableAllocator` for each function.
 
-### 9.2 Function Bodies
+### 9.2 Linkage and Visibility
 
-Function bodies are emitted as a single block statement (enclosed in `{}`). The internal logic for blocks (declaration splitting, etc.) ensures that the body is valid C89.
+The emitter determines the C linkage based on Zig keywords:
+
+| Zig Construct | C89 Linkage | Notes |
+|---------------|-------------|-------|
+| `pub fn foo() {}` | External (no `static`) | Accessible from other translation units. |
+| `export fn foo() {}` | External (no `static`) | Same as `pub` in bootstrap phase. |
+| `fn foo() {}` | Internal (`static`) | Limited to the current translation unit. |
+| `extern fn foo();` | External (`extern` prefix) | Prototype only, no body allowed. |
+
+### 9.3 Name Mangling
+
+Function names follow the global name mangling rules:
+- **Keyword Avoidance**: Conflicting names (e.g., `register`, `int`) are prefixed with `z_`.
+- **Length Limit**: Truncated to 31 characters for MSVC 6.0 compatibility.
+- **Uniquification**: Suffixes are added to resolve collisions within the file.
+
+### 9.4 Body Emission
+
+Function bodies are emitted as a compound statement (`{ ... }`). The emitter uses a **two-pass block emission** strategy (see Section 8.1) to ensure all local variable declarations appear at the top of the block, satisfying C89 requirements.
+
+### 9.5 Restrictions and Rejections
+
+- **Array Return Types**: Functions returning arrays (e.g., `fn f() [3]i32`) are strictly rejected by the `TypeChecker` as C89 does not support returning arrays by value.
+- **Extern with Body**: `extern fn` declarations must end with a semicolon and cannot have a body.
+- **Calling Conventions**: Custom calling conventions (e.g., `callconv(.Stdcall)`) are currently ignored and fallback to the default `__cdecl` for MSVC 6.0.

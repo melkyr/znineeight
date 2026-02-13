@@ -940,8 +940,11 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
     struct ASTFnDeclNode {
         const char* name;
         DynamicArray<ASTParamDeclNode*>* params;
-        ASTNode* return_type;
-        ASTNode* body;
+        ASTNode* return_type; // Can be NULL
+        ASTNode* body; // NULL for extern
+        bool is_pub;
+        bool is_extern;
+        bool is_export;
     };
     ```
 
