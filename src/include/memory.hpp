@@ -144,12 +144,6 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
     plat_print_debug(buffer);
 }
 
-/**
- * @brief Generic out-of-memory reporter for callsites that do not provide context.
- */
-static void report_out_of_memory() {
-    report_out_of_memory("Unknown", 0, 0, 0, 0);
-}
 #endif // DEBUG
 
 
