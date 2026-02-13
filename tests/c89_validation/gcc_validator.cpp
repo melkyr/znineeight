@@ -12,7 +12,26 @@ public:
     ValidationResult validate(const std::string& source) {
         ValidationResult result;
 
-        std::string full_source = wrapInTranslationUnit(source);
+        // Pre-process source to handle MSVC suffixes for GCC validation
+        std::string processed_source = source;
+        size_t pos = 0;
+        while ((pos = processed_source.find("ui64", pos)) != std::string::npos) {
+            processed_source.replace(pos, 4, "ULL");
+            pos += 3;
+        }
+        pos = 0;
+        while ((pos = processed_source.find("i64", pos)) != std::string::npos) {
+            // Avoid matching 'ui64' which was already handled or 'int64' etc.
+            // Check if preceding character is a digit
+            if (pos > 0 && isdigit(processed_source[pos-1])) {
+                processed_source.replace(pos, 3, "LL");
+                pos += 2;
+            } else {
+                pos += 3;
+            }
+        }
+
+        std::string full_source = wrapInTranslationUnit(processed_source);
 
         char* temp_path = plat_create_temp_file("c89test", ".c");
         if (!temp_path) {
@@ -35,7 +54,7 @@ public:
         // Invoke GCC
         // -std=c89 -pedantic -Wall -Wextra -c
         // We use -Wno-long-long if we want to support __int64 simulation
-        std::string cmd = "gcc -std=c89 -pedantic -Wall -Wextra -Wno-long-long -c ";
+        std::string cmd = "gcc -std=c89 -pedantic -Wall -Wextra -Wno-long-long -Isrc/include -c ";
         cmd += temp_path;
         cmd += " -o /dev/null 2>&1";
 
@@ -73,26 +92,9 @@ public:
 
 protected:
     virtual std::string bootstrapRuntimeHeader() {
-        return
-            "#ifndef __BOOTSTRAP_RUNTIME_H\n"
-            "#define __BOOTSTRAP_RUNTIME_H\n"
-            "typedef unsigned char bool_t;\n"
-            "#define true 1\n"
-            "#define false 0\n"
-            "#ifndef NULL\n"
-            "#define NULL ((void*)0)\n"
-            "#endif\n"
-            "/* Basic types used by RetroZig, simulated for GCC C89 */\n"
-            "typedef signed char i8;\n"
-            "typedef short i16;\n"
-            "typedef int i32;\n"
-            "typedef long long __int64;\n"
-            "typedef unsigned char u8;\n"
-            "typedef unsigned short u16;\n"
-            "typedef unsigned int u32;\n"
-            "typedef unsigned long long unsigned_int64_t;\n"
-            "typedef unsigned_int64_t unsigned__int64;\n"
-            "#endif\n";
+        // C89Emitter already includes "zig_runtime.h" in emitPrologue().
+        // We just need to make sure we don't duplicate definitions.
+        return "/* Using zig_runtime.h from include path */\n";
     }
 };
 

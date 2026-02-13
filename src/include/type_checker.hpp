@@ -23,6 +23,7 @@ public:
     Type* visitArrayAccess(ASTArrayAccessNode* node);
     Type* visitArraySlice(ASTArraySliceNode* node);
     Type* visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node);
+    bool checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc);
     Type* visitStructInitializer(ASTStructInitializerNode* node);
     Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
     Type* visitNullLiteral(ASTNode* node);

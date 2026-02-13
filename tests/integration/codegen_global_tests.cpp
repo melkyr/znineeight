@@ -2,6 +2,7 @@
 #include "test_compilation_unit.hpp"
 #include "codegen.hpp"
 #include "platform.hpp"
+#include "c89_validator.hpp"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -23,6 +24,7 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
         return false;
     }
 
+    std::string generated_c;
     const char* temp_filename = "temp_global_test.c";
     {
         C89Emitter emitter(arena, unit.getErrorHandler(), temp_filename);
@@ -31,10 +33,17 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
             return false;
         }
 
-        // Find and emit all top-level variables
+        emitter.emitPrologue();
+
+        // Find and emit all top-level declarations
         ASTNode* root = unit.last_ast;
         if (root && root->type == NODE_BLOCK_STMT) {
             DynamicArray<ASTNode*>* stmts = root->as.block_stmt.statements;
+            // First pass: type definitions
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                emitter.emitTypeDefinition((*stmts)[i]);
+            }
+            // Second pass: variables
             for (size_t i = 0; i < stmts->length(); ++i) {
                 if ((*stmts)[i]->type == NODE_VAR_DECL) {
                     emitter.emitGlobalVarDecl((*stmts)[i], (*stmts)[i]->as.var_decl->is_pub);
@@ -50,11 +59,26 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
         printf("FAIL: Could not read back temp file\n");
         return false;
     }
+    generated_c = std::string(buffer, size);
 
-    bool found = (strstr(buffer, expected_c89_substring) != NULL);
+    // 1. Textual verification
+    bool found = (generated_c.find(expected_c89_substring) != std::string::npos);
     if (!found) {
         printf("FAIL: Codegen mismatch for '%s'.\nExpected to find: %s\nActual output:   %.*s\n", zig_code, expected_c89_substring, (int)size, buffer);
     }
+
+    // 2. Real C89 compiler verification
+    C89Validator* validator = createGCCValidator();
+    ValidationResult res = validator->validate(generated_c);
+    if (!res.isValid) {
+        printf("FAIL: Generated C code is not valid C89 for: %s\n", zig_code);
+        for (size_t i = 0; i < res.errors.size(); ++i) {
+            printf("  Error: %s\n", res.errors[i].c_str());
+        }
+        printf("--- Generated Code ---\n%s\n----------------------\n", generated_c.c_str());
+        found = false;
+    }
+    delete validator;
 
     plat_free(buffer);
     plat_delete_file(temp_filename);
@@ -83,8 +107,9 @@ TEST_FUNC(Codegen_Global_Array) {
 }
 
 TEST_FUNC(Codegen_Global_Array_WithInit) {
-    // Just a placeholder since the previous test covers it.
-    return true;
+    // Zig doesn't support positional array literals in current parser yet, but we can test if we have them.
+    // For now, testing that it produces a constant initializer.
+    return run_global_codegen_test("pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };", "const int x[3] = {1, 2, 3};");
 }
 
 TEST_FUNC(Codegen_Global_Pointer) {
@@ -101,6 +126,37 @@ TEST_FUNC(Codegen_Global_KeywordCollision) {
 
 TEST_FUNC(Codegen_Global_LongName) {
     return run_global_codegen_test("pub var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 0;", "int this_is_a_very_long_variable_na = 0;");
+}
+
+TEST_FUNC(Codegen_Global_PointerToGlobal) {
+    return run_global_codegen_test("var x: i32 = 0; pub var p: *i32 = &x;", "int* p = &x;");
+}
+
+TEST_FUNC(Codegen_Global_Arithmetic) {
+    return run_global_codegen_test("pub const x: i32 = 1 + 2 * 3;", "const int x = 1 + 2 * 3;");
+}
+
+TEST_FUNC(Codegen_Global_Enum) {
+    // Enum constants are folded to integers for C89 emission simplicity
+    return run_global_codegen_test("const Color = enum { Red, Green }; pub var c: Color = Color.Red;", "enum Color c = 0;");
+}
+
+TEST_FUNC(Codegen_Global_Struct) {
+    return run_global_codegen_test("const Point = struct { x: i32, y: i32 }; pub var pt: Point = .{ .x = 1, .y = 2 };", "struct Point pt = {1, 2};");
+}
+
+TEST_FUNC(Codegen_Global_AnonymousContainer_Error) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    // var s: struct { x: i32 } = .{ .x = 1 };
+    u32 file_id = unit.addSource("test.zig", "var s: struct { x: i32 } = .{ .x = 1 };");
+
+    if (!unit.performTestPipeline(file_id)) {
+        return unit.hasErrorMatching("anonymous structs/enums not allowed in variable declarations");
+    }
+    return false;
 }
 
 TEST_FUNC(Codegen_Global_NonConstantInit_Error) {

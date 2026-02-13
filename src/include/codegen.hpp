@@ -122,6 +122,12 @@ public:
     void emitGlobalVarDecl(const ASTNode* node, bool is_public);
 
     /**
+     * @brief Emits a top-level type definition (struct, union, enum).
+     * @param node The declaration node.
+     */
+    void emitTypeDefinition(const ASTNode* node);
+
+    /**
      * @brief Returns true if the expression is a C89 constant initializer.
      * @param node The expression node.
      */

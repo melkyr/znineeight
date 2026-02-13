@@ -80,7 +80,7 @@ static bool parseInteger(const char* start, const char* end, u64* out_value) {
     u64 result = 0;
     int base = 10;
     const char* p = start;
-    const u64 u64_max = 0xFFFFFFFFFFFFFFFFULL;
+    const u64 u64_max = ~(u64)0;
 
     if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
         base = 16;

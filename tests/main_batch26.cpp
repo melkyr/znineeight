@@ -24,6 +24,11 @@ int main(int argc, char* argv[]) {
         test_Codegen_Global_ConstPointer,
         test_Codegen_Global_KeywordCollision,
         test_Codegen_Global_LongName,
+        test_Codegen_Global_PointerToGlobal,
+        test_Codegen_Global_Arithmetic,
+        test_Codegen_Global_Enum,
+        test_Codegen_Global_Struct,
+        test_Codegen_Global_AnonymousContainer_Error,
         test_Codegen_Global_NonConstantInit_Error
     };
 

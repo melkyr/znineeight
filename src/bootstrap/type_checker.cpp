@@ -7,10 +7,6 @@
 #include "platform.hpp"
 #include <cstdlib> // For abort()
 
-// MSVC 6.0 compatibility
-#ifndef _MSC_VER
-    typedef long long __int64;
-#endif
 
 // Helper to get the string representation of a binary operator token.
 static const char* getTokenSpelling(TokenType op) {
@@ -981,7 +977,7 @@ Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNod
     // by default, unless the value is too large or has a long suffix.
     Type* result = NULL;
     if (node->is_unsigned) {
-        if (node->is_long || node->value > 4294967295ULL) {
+        if (node->is_long || node->value > 0xFFFFFFFFU) {
             result = resolvePrimitiveTypeName("u64");
         } else {
             result = resolvePrimitiveTypeName("u32");
@@ -991,7 +987,7 @@ Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNod
             result = resolvePrimitiveTypeName("i64");
         } else {
             i64 signed_value = (i64)node->value;
-            if (signed_value >= -2147483648LL && signed_value <= 2147483647LL) {
+            if (signed_value >= (i64)-2147483647 - 1 && signed_value <= 2147483647) {
                 result = resolvePrimitiveTypeName("i32");
             } else {
                 result = resolvePrimitiveTypeName("i64");
@@ -1261,6 +1257,15 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     Type* declared_type = node->type ? visit(node->type) : NULL;
 
+    // Reject anonymous structs/enums in variable declarations
+    if (declared_type && !node->is_const) {
+        if ((declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION || declared_type->kind == TYPE_ENUM) &&
+            !declared_type->as.struct_details.name) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type->loc, "anonymous structs/enums not allowed in variable declarations");
+            return NULL;
+        }
+    }
+
     if (declared_type && declared_type->kind == TYPE_VOID) {
         unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'void'");
         return NULL; // Stop processing this declaration
@@ -1315,7 +1320,28 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     } else {
         // For all other cases, use the standard assignment validation.
-        Type* initializer_type = visit(node->initializer);
+        Type* initializer_type = NULL;
+
+        // Special case for anonymous struct/array initializers
+        if (node->initializer && node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
+            if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY)) {
+                node->initializer->resolved_type = declared_type;
+                if (declared_type->kind == TYPE_STRUCT) {
+                    if (checkStructInitializerFields(node->initializer->as.struct_initializer, declared_type, node->initializer->loc)) {
+                        initializer_type = declared_type;
+                    }
+                } else {
+                    // Array initialization via .{ ._0 = ... }
+                    // For now, we assume it's valid for simplicity in bootstrap
+                    initializer_type = declared_type;
+                }
+            } else {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, "anonymous struct initializer requires a declared struct or array type", unit.getArena());
+            }
+        } else {
+            initializer_type = visit(node->initializer);
+        }
+
         if (declared_type) {
             if (initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
                 // IsTypeAssignableTo already reports a detailed error.
@@ -1565,9 +1591,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         // Enum member access
         DynamicArray<EnumMember>* members = base_type->as.enum_details.members;
         bool found = false;
+        size_t member_idx = 0;
         for (size_t i = 0; i < members->length(); ++i) {
             if (identifiers_equal((*members)[i].name, node->field_name)) {
                 found = true;
+                member_idx = i;
                 break;
             }
         }
@@ -1582,6 +1610,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
             fatalError(parent->loc, msg_buffer);
             return NULL;
         }
+
+        // --- ENUM CONSTANT FOLDING ---
+        // Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL
+        parent->type = NODE_INTEGER_LITERAL;
+        parent->as.integer_literal.value = (*members)[member_idx].value;
+        parent->as.integer_literal.is_unsigned = false;
+        parent->as.integer_literal.is_long = false;
+        parent->as.integer_literal.resolved_type = base_type;
+        parent->resolved_type = base_type;
 
         return base_type; // Result type is the enum type itself
     }
@@ -1606,18 +1643,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     return field_type;
 }
 
-Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
-    Type* struct_type = visit(node->type_expr);
-    if (!struct_type) return NULL;
-
-    if (struct_type->kind != TYPE_STRUCT) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct type for initialization", unit.getArena());
-        return NULL;
-    }
+bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
+    if (!struct_type || struct_type->kind != TYPE_STRUCT) return false;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
 
-    // 1. Check for missing or extra fields
+    // 1. Check for missing fields
     for (size_t i = 0; i < fields->length(); ++i) {
         const char* expected_name = (*fields)[i].name;
         bool found = false;
@@ -1634,8 +1665,8 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
              safe_append(current, remaining, "missing field '");
              safe_append(current, remaining, expected_name);
              safe_append(current, remaining, "' in struct initializer");
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, msg_buffer, unit.getArena());
-             return NULL;
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
+             return false;
         }
     }
 
@@ -1650,14 +1681,14 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             safe_append(current, remaining, init->field_name);
             safe_append(current, remaining, "' in struct");
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, init->loc, msg_buffer, unit.getArena());
-            return NULL;
+            return false;
         }
 
         // Check for duplicates in initializer
         for (size_t j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(init->field_name, (*node->fields)[j]->field_name)) {
                 unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, "duplicate field initializer", unit.getArena());
-                return NULL;
+                return false;
             }
         }
 
@@ -1667,8 +1698,27 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
              // IsTypeAssignableTo already reports the error
         }
     }
+    return true;
+}
 
-    return struct_type;
+Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
+    if (node->type_expr) {
+        Type* struct_type = visit(node->type_expr);
+        if (!struct_type) return NULL;
+
+        if (struct_type->kind != TYPE_STRUCT) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct type for initialization", unit.getArena());
+            return NULL;
+        }
+
+        if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
+            return struct_type;
+        }
+        return NULL;
+    }
+
+    // For anonymous structs, we return NULL and wait for context (e.g. visitVarDecl)
+    return NULL;
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
@@ -2246,19 +2296,19 @@ Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* ri
 bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
     if (literal_type->kind != TYPE_INTEGER_LITERAL)
          return false;
-    __int64 value = literal_type->as.integer_literal.value;
+    i64 value = (i64)literal_type->as.integer_literal.value;
     switch (target_type->kind) {
         case TYPE_I8:  return (value >= -128 && value <= 127);
         case TYPE_U8:  return (value >= 0 && value <= 255);
         case TYPE_I16: return (value >= -32768 && value <= 32767);
         case TYPE_U16: return (value >= 0 && value <= 65535);
         case TYPE_I32: return (value >= -2147483647 - 1 && value <= 2147483647);
-        case TYPE_U32: return (value >= 0 && (unsigned __int64)value <= 4294967295ULL);
+        case TYPE_U32: return (value >= 0 && (u64)value <= 0xFFFFFFFFU);
         case TYPE_I64: return true; // Any i64 fits in i64
         case TYPE_U64: return value >= 0;
         // For isize/usize, we assume 32-bit for the bootstrap compiler.
-        case TYPE_ISIZE: return (value >= -2147483647 - 1 && value <= 2147483647);
-        case TYPE_USIZE: return value >= 0 && (unsigned __int64)value <= 4294967295ULL;
+        case TYPE_ISIZE: return (value >= (i64)-2147483647 - 1 && value <= 2147483647);
+        case TYPE_USIZE: return value >= 0 && (u64)value <= 0xFFFFFFFFU;
         // C89 allows implicit conversion from integer literals to floats.
         case TYPE_F32: return true;
         case TYPE_F64: return true;
@@ -2276,14 +2326,14 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
         case TYPE_U8:   return value >= 0 && value <= 255;
         case TYPE_I16:  return value >= -32768 && value <= 32767;
         case TYPE_U16:  return value >= 0 && value <= 65535;
-        case TYPE_I32:  return value >= -2147483648LL && value <= 2147483647LL;
-        case TYPE_U32:  return value >= 0 && (u64)value <= 4294967295ULL;
+        case TYPE_I32:  return value >= (i64)-2147483647 - 1 && value <= 2147483647;
+        case TYPE_U32:  return value >= 0 && (u64)value <= 0xFFFFFFFFU;
         // For 64-bit types, i64 can hold all values, so we only check unsigned.
         case TYPE_I64:  return true;
         case TYPE_U64:  return value >= 0;
         // For isize/usize, we assume 32-bit for the bootstrap compiler.
-        case TYPE_ISIZE: return value >= -2147483648LL && value <= 2147483647LL;
-        case TYPE_USIZE: return value >= 0 && (u64)value <= 4294967295ULL;
+        case TYPE_ISIZE: return value >= (i64)-2147483647 - 1 && value <= 2147483647;
+        case TYPE_USIZE: return value >= 0 && (u64)value <= 0xFFFFFFFFU;
         default: return false; // Not an integer type
     }
 }
@@ -2357,14 +2407,11 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
     }
 
     DynamicArray<ASTNode*>* fields = NULL;
-    const char* container_type_str = "";
 
     if (decl_node->type == NODE_STRUCT_DECL) {
         fields = decl_node->as.struct_decl->fields;
-        container_type_str = "Struct";
     } else if (decl_node->type == NODE_UNION_DECL) {
         fields = decl_node->as.union_decl->fields;
-        container_type_str = "Union";
     } else {
         return; // Should not happen if called correctly
     }
@@ -2381,8 +2428,7 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 
         ASTStructFieldNode* field = field_node->as.struct_field;
         // Resolve the field's type by visiting its type node.
-        Type* field_type = visit(field->type);
-
+        visit(field->type);
     }
 }
 

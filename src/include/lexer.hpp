@@ -187,7 +187,7 @@ enum TokenType {
     TOKEN_STAR2,            ///< '**' operator.
     TOKEN_PLUSPERCENT,      ///< '+%' operator.
     TOKEN_MINUSPERCENT,     ///< '-%' operator.
-    TOKEN_STARPERCENT,      ///< '*%' operator.
+    TOKEN_STARPERCENT       ///< '*%' operator.
 };
 
 /**

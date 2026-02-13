@@ -95,3 +95,15 @@ All global variables must have constant initializers. The bootstrap compiler rej
 ### 6.3 Name Mangling
 
 Global identifiers are sanitized to avoid C89 keywords and reserved names (using a `z_` prefix). They are also truncated to 31 characters to ensure compatibility with MSVC 6.0 and other strict C89 compilers.
+
+### 6.4 Enum Constants
+
+Enum constants are **constant-folded** to their integer values during type checking. This avoids ordering issues in the generated C code where a global variable might be defined before its enum type. Consequently, the emitted C code for an enum initialization will use the literal integer value rather than the mangled name (e.g., `0` instead of `Color_Red`).
+
+### 6.5 Struct and Array Initializers
+
+Global struct and array initializers are emitted as positional C-style initializers (e.g., `{1, 2, 3}`). The emitter ensures that fields are emitted in the order they were declared in the Zig struct definition.
+
+### 6.6 Anonymous Containers Rejection
+
+To maintain simplicity and avoid generating synthetic names, the bootstrap compiler **rejects anonymous structs, unions, or enums** when used directly in a variable declaration (e.g., `var s: struct { x: i32 } = ...`). All such types must be defined using a named `const` declaration (e.g., `const S = struct { x: i32 }; var s: S = ...`).
