@@ -27,6 +27,7 @@ public:
     Type* visitStructInitializer(ASTStructInitializerNode* node);
     Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
     Type* visitNullLiteral(ASTNode* node);
+    Type* visitUndefinedLiteral(ASTNode* node);
     Type* visitIntegerLiteral(ASTNode* parent, ASTIntegerLiteralNode* node);
     Type* visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node);
     Type* visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node);

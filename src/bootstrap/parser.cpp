@@ -171,6 +171,11 @@ ASTNode* Parser::parsePrimaryExpr() {
             advance();
             return node;
         }
+        case TOKEN_UNDEFINED: {
+            ASTNode* node = createNode(NODE_UNDEFINED_LITERAL);
+            advance();
+            return node;
+        }
         case TOKEN_TRUE: {
             ASTNode* node = createNode(NODE_BOOL_LITERAL);
             advance();

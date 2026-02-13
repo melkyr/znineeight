@@ -1,6 +1,7 @@
 #include "codegen.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
+#include "symbol_table.hpp"
 #include <cstdio>
 
 static const char* getTokenSpelling(TokenType op) {
@@ -220,6 +221,196 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     writeString(";\n");
 }
 
+void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
+    if (!node || node->type != NODE_VAR_DECL) return;
+    const ASTVarDeclNode* decl = node->as.var_decl;
+
+    if (!decl->symbol) return;
+    const char* c_name = var_alloc_.allocate(decl->symbol);
+
+    if (!emit_assignment) {
+        writeIndent();
+        emitType(node->resolved_type, c_name);
+        writeString(";\n");
+    } else {
+        if (decl->initializer) {
+            bool is_undefined = (decl->initializer->type == NODE_UNDEFINED_LITERAL);
+
+            if (!is_undefined) {
+                writeIndent();
+                writeString(c_name);
+                writeString(" = ");
+                emitExpression(decl->initializer);
+                writeString(";\n");
+            }
+        }
+    }
+}
+
+void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
+    if (!node) return;
+    beginFunction();
+
+    writeIndent();
+    if (!node->is_pub) {
+        writeString("static ");
+    }
+
+    Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+    const char* mangled_name = getC89GlobalName(node->name);
+
+    emitType(return_type, mangled_name);
+    writeString("(");
+
+    if (!node->params || node->params->length() == 0) {
+        writeString("void");
+    } else {
+        for (size_t i = 0; i < node->params->length(); ++i) {
+            ASTParamDeclNode* param = (*node->params)[i];
+            const char* c_param_name = var_alloc_.allocate(param->symbol);
+            emitType(param->type->resolved_type, c_param_name);
+            if (i < node->params->length() - 1) {
+                writeString(", ");
+            }
+        }
+    }
+    writeString(") ");
+
+    if (node->body) {
+        emitBlock(&node->body->as.block_stmt);
+        writeString("\n\n");
+    } else {
+        writeString(";\n\n");
+    }
+}
+
+void C89Emitter::emitBlock(const ASTBlockStmtNode* node) {
+    if (!node) return;
+
+    writeString("{\n");
+    indent();
+
+    // Pass 1: Local declarations
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, false);
+        }
+    }
+
+    // Pass 2: Statements
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, true);
+        } else {
+            emitStatement(stmt);
+        }
+    }
+
+    dedent();
+    writeIndent();
+    writeString("}");
+}
+
+void C89Emitter::emitStatement(const ASTNode* node) {
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_BLOCK_STMT:
+            writeIndent();
+            emitBlock(&node->as.block_stmt);
+            writeString("\n");
+            break;
+        case NODE_IF_STMT:
+            emitIf(node->as.if_stmt);
+            break;
+        case NODE_WHILE_STMT:
+            emitWhile(&node->as.while_stmt);
+            break;
+        case NODE_RETURN_STMT:
+            emitReturn(&node->as.return_stmt);
+            break;
+        case NODE_EXPRESSION_STMT:
+            writeIndent();
+            emitExpression(node->as.expression_stmt.expression);
+            writeString(";\n");
+            break;
+        case NODE_ASSIGNMENT:
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
+            break;
+        case NODE_EMPTY_STMT:
+            writeIndent();
+            writeString(";\n");
+            break;
+        default:
+            writeIndent();
+            writeString("/* Unimplemented statement type ");
+            char num[16];
+            simple_itoa(node->type, num, sizeof(num));
+            writeString(num);
+            writeString(" */\n");
+            break;
+    }
+}
+
+void C89Emitter::emitIf(const ASTIfStmtNode* node) {
+    if (!node) return;
+
+    writeIndent();
+    writeString("if (");
+    emitExpression(node->condition);
+    writeString(") ");
+
+    if (node->then_block->type == NODE_BLOCK_STMT) {
+        emitBlock(&node->then_block->as.block_stmt);
+    } else {
+        emitStatement(node->then_block);
+    }
+
+    if (node->else_block) {
+        writeString(" else ");
+        if (node->else_block->type == NODE_IF_STMT) {
+            emitIf(node->else_block->as.if_stmt);
+        } else if (node->else_block->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->else_block->as.block_stmt);
+        } else {
+            emitStatement(node->else_block);
+        }
+    }
+    writeString("\n");
+}
+
+void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
+    if (!node) return;
+
+    writeIndent();
+    writeString("while (");
+    emitExpression(node->condition);
+    writeString(") ");
+
+    if (node->body->type == NODE_BLOCK_STMT) {
+        emitBlock(&node->body->as.block_stmt);
+    } else {
+        emitStatement(node->body);
+    }
+    writeString("\n");
+}
+
+void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
+    if (!node) return;
+
+    writeIndent();
+    writeString("return");
+    if (node->expression) {
+        writeString(" ");
+        emitExpression(node->expression);
+    }
+    writeString(";\n");
+}
+
 bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
     if (!node) return true;
     switch (node->type) {
@@ -348,8 +539,16 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("((void*)0)");
             break;
         case NODE_IDENTIFIER:
-            // For globals, use the global name
-            writeString(getC89GlobalName(node->as.identifier.name));
+            if (node->as.identifier.symbol) {
+                Symbol* sym = node->as.identifier.symbol;
+                if (sym->flags & SYMBOL_FLAG_LOCAL) {
+                    writeString(var_alloc_.allocate(sym));
+                } else {
+                    writeString(getC89GlobalName(sym->name));
+                }
+            } else {
+                writeString(getC89GlobalName(node->as.identifier.name));
+            }
             break;
         case NODE_PAREN_EXPR:
             writeString("(");
@@ -406,6 +605,26 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             emitType(node->as.ptr_cast->target_type->resolved_type);
             writeString(")");
             emitExpression(node->as.ptr_cast->expr);
+            break;
+        case NODE_FUNCTION_CALL: {
+            const ASTFunctionCallNode* call = node->as.function_call;
+            emitExpression(call->callee);
+            writeString("(");
+            if (call->args) {
+                for (size_t i = 0; i < call->args->length(); ++i) {
+                    emitExpression((*call->args)[i]);
+                    if (i < call->args->length() - 1) {
+                        writeString(", ");
+                    }
+                }
+            }
+            writeString(")");
+            break;
+        }
+        case NODE_ASSIGNMENT:
+            emitExpression(node->as.assignment->lvalue);
+            writeString(" = ");
+            emitExpression(node->as.assignment->rvalue);
             break;
         case NODE_STRUCT_INITIALIZER: {
             writeString("{");

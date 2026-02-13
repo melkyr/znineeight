@@ -159,6 +159,7 @@ const Keyword keywords[] = {
     {"true", 4, TOKEN_TRUE},
     {"try", 3, TOKEN_TRY},
     {"type", 4, TOKEN_TYPE},
+    {"undefined", 9, TOKEN_UNDEFINED},
     {"union", 5, TOKEN_UNION},
     {"unreachable", 11, TOKEN_UNREACHABLE},
     {"usingnamespace", 14, TOKEN_USINGNAMESPACE},

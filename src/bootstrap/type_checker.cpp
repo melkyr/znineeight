@@ -65,6 +65,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
+        case NODE_UNDEFINED_LITERAL: resolved_type = visitUndefinedLiteral(node); break;
         case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(node, &node->as.integer_literal); break;
         case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
         case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
@@ -972,6 +973,11 @@ Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
     return get_g_type_null();
 }
 
+Type* TypeChecker::visitUndefinedLiteral(ASTNode* node) {
+    node->resolved_type = get_g_type_undefined();
+    return node->resolved_type;
+}
+
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
     // This logic is intentionally C-like. Integer literals are inferred as i32
     // by default, unless the value is too large or has a long suffix.
@@ -1034,6 +1040,8 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
         unit.getErrorHandler().report(ERR_UNDEFINED_VARIABLE, node->loc, "Use of undeclared identifier");
         return NULL;
     }
+
+    node->as.identifier.symbol = sym;
 
     // Resolve on demand if needed
     if (!sym->symbol_type && sym->details) {
@@ -1364,6 +1372,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         // If we are inside a function body, current_fn_return_type will be non-NULL
         bool is_local = (current_fn_return_type != NULL);
         existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        node->symbol = existing_sym;
     } else {
         // If not found (e.g. injected in tests), create and insert
         if (declared_type) {
@@ -1378,6 +1387,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
                 .build();
             unit.getSymbolTable().insert(var_symbol);
+            node->symbol = unit.getSymbolTable().lookupInCurrentScope(node->name);
         }
     }
 
@@ -1412,6 +1422,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
                 .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
                 .build();
             unit.getSymbolTable().insert(param_symbol);
+            param_node->symbol = unit.getSymbolTable().lookupInCurrentScope(param_node->name);
         } else {
             all_params_valid = false;
         }
@@ -1465,6 +1476,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                 .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
                 .build();
             unit.getSymbolTable().insert(param_symbol);
+            param_node->symbol = unit.getSymbolTable().lookupInCurrentScope(param_node->name);
     }
 
     visit(node->body);
@@ -2433,6 +2445,8 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 }
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
+    if (source_type->kind == TYPE_UNDEFINED) return true;
+
     // Null literal handling
     if (source_type->kind == TYPE_NULL) {
         return (target_type->kind == TYPE_POINTER);

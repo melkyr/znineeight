@@ -737,7 +737,10 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 - [x] Task 190: Implement `CVariableAllocator` for C89-compliant local name management
 - [x] Task 191: Generate integer literals
 - [x] Task 192: Generate float literals
-- [ ] Task 193: Generate string literals
+- [x] Task 193: Generate string literals
+- [x] Task 194: Generate global variable declarations
+- [x] Task 195: Generate local variable declarations (with two-pass block logic)
+- [x] Task 196: Generate function definitions
 
 ### Week 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0

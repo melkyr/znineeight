@@ -1147,7 +1147,7 @@ Phase 1 – Core Infrastructure & Primitive Emission
 
 Phase 2 – Variables & Functions
 
-    Task 194: Global variable declarations
+    Task 194: Global variable declarations (DONE)
 
         Emit at file scope.
 
@@ -1155,7 +1155,7 @@ Phase 2 – Variables & Functions
 
         Test: const x: i32 = 42; → const int x = 42;
 
-    Task 195: Local variable declarations
+    Task 195: Local variable declarations (DONE)
 
         C89 requires declarations at the beginning of a block.
 
@@ -1165,7 +1165,7 @@ Phase 2 – Variables & Functions
 
         Test: { var a = 1; var b = 2; } → { int a = 1; int b = 2; }
 
-    Task 196: Function declarations & definitions
+    Task 196: Function declarations & definitions (DONE)
 
         Emit return type, mangled name, parameter list.
 
