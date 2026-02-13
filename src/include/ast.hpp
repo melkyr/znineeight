@@ -610,6 +610,8 @@ struct ASTVarDeclNode {
     bool is_const;
     bool is_mut;
     bool is_pub;
+    bool is_extern;
+    bool is_export;
     Symbol* symbol;
 };
 
@@ -627,6 +629,8 @@ struct ASTFnDeclNode {
     ASTNode* return_type; // Can be NULL
     ASTNode* body;
     bool is_pub;
+    bool is_extern;
+    bool is_export;
 };
 
 // --- Container Declaration Nodes ---

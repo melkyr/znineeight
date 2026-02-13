@@ -1438,6 +1438,12 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         return NULL;
     }
 
+    if (return_type->kind == TYPE_ARRAY) {
+        unit.getErrorHandler().report(ERR_FUNCTION_CANNOT_RETURN_ARRAY, node->return_type->loc,
+            "functions cannot return arrays in C89; return a pointer or wrap it in a struct instead");
+        return NULL;
+    }
+
     // Create the function type and update the symbol
     Type* function_type = createFunctionType(unit.getArena(), param_types, return_type);
     if (fn_symbol) {

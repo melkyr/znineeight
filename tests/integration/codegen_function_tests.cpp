@@ -38,6 +38,11 @@ static bool run_function_codegen_test(const char* zig_code, const char* expected
         ASTNode* root = unit.last_ast;
         if (root && root->type == NODE_BLOCK_STMT) {
             DynamicArray<ASTNode*>* stmts = root->as.block_stmt.statements;
+            // First pass: emit type definitions
+            for (size_t i = 0; i < stmts->length(); ++i) {
+                emitter.emitTypeDefinition((*stmts)[i]);
+            }
+            // Second pass: emit function declarations
             for (size_t i = 0; i < stmts->length(); ++i) {
                 if ((*stmts)[i]->type == NODE_FN_DECL) {
                     emitter.emitFnDecl((*stmts)[i]->as.fn_decl);
@@ -119,4 +124,52 @@ TEST_FUNC(Codegen_Fn_MangledCall) {
         "fn register() void {} fn my_test() void { register(); }",
         "static void z_register(void) {\n}\n\nstatic void my_test(void) {\n    z_register();\n}"
     );
+}
+
+TEST_FUNC(Codegen_Fn_StructReturn) {
+    // Note: We use individual field assignments because C89 doesn't support struct literal assignments,
+    // and the RetroZig emitter splits declarations and assignments for local variables.
+    return run_function_codegen_test(
+        "const Point = struct { x: i32, y: i32 }; fn getOrigin() Point { var p: Point = undefined; p.x = 0; p.y = 0; return p; }",
+        "static struct Point getOrigin(void) {\n    struct Point p;\n    p.x = 0;\n    p.y = 0;\n    return p;\n}"
+    );
+}
+
+TEST_FUNC(Codegen_Fn_Extern) {
+    return run_function_codegen_test(
+        "extern fn foo(a: i32) void;",
+        "extern void foo(int a);"
+    );
+}
+
+TEST_FUNC(Codegen_Fn_Export) {
+    return run_function_codegen_test(
+        "export fn bar() void {}",
+        "void bar(void) {"
+    );
+}
+
+TEST_FUNC(Codegen_Fn_LongName) {
+    // Should be truncated to 31 chars
+    return run_function_codegen_test(
+        "fn this_is_a_very_long_function_name_exceeding_31_chars() void {}",
+        "static void this_is_a_very_long_function_na(void) {"
+    );
+}
+
+TEST_FUNC(Codegen_Fn_RejectArrayReturn) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    const char* zig_code = "fn foo() [3]i32 { return .{._0=1, ._1=2, ._2=3}; }";
+    u32 file_id = unit.addSource("test.zig", zig_code);
+
+    // We expect this to fail
+    if (unit.performTestPipeline(file_id)) {
+        printf("FAIL: Expected array return to be rejected, but it passed\n");
+        return false;
+    }
+
+    return unit.hasErrorMatching("functions cannot return arrays");
 }

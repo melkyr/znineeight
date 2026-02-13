@@ -56,9 +56,11 @@ public:
      * @brief Parses a variable declaration (`var` or `const`).
      *        Grammar: `('var'|'const') IDENT ':' type_expr '=' expr ';'`
      * @param is_pub True if the declaration is prefixed with 'pub'.
+     * @param is_extern True if the declaration is prefixed with 'extern'.
+     * @param is_export True if the declaration is prefixed with 'export'.
      * @return A pointer to the ASTNode representing the variable declaration.
      */
-    ASTNode* parseVarDecl(bool is_pub = false);
+    ASTNode* parseVarDecl(bool is_pub = false, bool is_extern = false, bool is_export = false);
 
     /**
      * @brief Parses an assignment expression.
@@ -118,9 +120,11 @@ public:
      * @brief Parses a function declaration.
      *        Grammar: `fn IDENT '(' ')' '->' type_expr '{' '}'`
      * @param is_pub True if the declaration is prefixed with 'pub'.
+     * @param is_extern True if the declaration is prefixed with 'extern'.
+     * @param is_export True if the declaration is prefixed with 'export'.
      * @return A pointer to the ASTNode representing the function declaration.
      */
-    ASTNode* parseFnDecl(bool is_pub = false);
+    ASTNode* parseFnDecl(bool is_pub = false, bool is_extern = false, bool is_export = false);
 
     /**
      * @brief Parses the entire source file as a series of top-level declarations.

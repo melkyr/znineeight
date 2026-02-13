@@ -964,4 +964,29 @@ TEST_FUNC(Codegen_Global_Struct);
 TEST_FUNC(Codegen_Global_AnonymousContainer_Error);
 TEST_FUNC(Codegen_Global_NonConstantInit_Error);
 
+// Task 195: Local Variable Codegen
+TEST_FUNC(Codegen_Local_Simple);
+TEST_FUNC(Codegen_Local_AfterStatement);
+TEST_FUNC(Codegen_Local_Const);
+TEST_FUNC(Codegen_Local_Undefined);
+TEST_FUNC(Codegen_Local_Shadowing);
+TEST_FUNC(Codegen_Local_IfStatement);
+TEST_FUNC(Codegen_Local_WhileLoop);
+TEST_FUNC(Codegen_Local_Return);
+TEST_FUNC(Codegen_Local_MultipleBlocks);
+
+// Task 196: Function Codegen
+TEST_FUNC(Codegen_Fn_Simple);
+TEST_FUNC(Codegen_Fn_Public);
+TEST_FUNC(Codegen_Fn_Params);
+TEST_FUNC(Codegen_Fn_Pointers);
+TEST_FUNC(Codegen_Fn_Call);
+TEST_FUNC(Codegen_Fn_KeywordParam);
+TEST_FUNC(Codegen_Fn_MangledCall);
+TEST_FUNC(Codegen_Fn_StructReturn);
+TEST_FUNC(Codegen_Fn_Extern);
+TEST_FUNC(Codegen_Fn_Export);
+TEST_FUNC(Codegen_Fn_LongName);
+TEST_FUNC(Codegen_Fn_RejectArrayReturn);
+
 #endif // TEST_DECLARATIONS_HPP

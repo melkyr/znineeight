@@ -1069,12 +1069,15 @@ ASTNode* Parser::parseImport() {
 
 ASTNode* Parser::parseTopLevelItem() {
     bool is_pub = match(TOKEN_PUB);
+    bool is_extern = match(TOKEN_EXTERN);
+    bool is_export = match(TOKEN_EXPORT);
+
     switch (peek().type) {
         case TOKEN_FN:
-            return parseFnDecl(is_pub);
+            return parseFnDecl(is_pub, is_extern, is_export);
         case TOKEN_VAR:
         case TOKEN_CONST:
-            return parseVarDecl(is_pub);
+            return parseVarDecl(is_pub, is_extern, is_export);
         case TOKEN_STRUCT: {
             ASTNode* struct_decl = parseStructDeclaration();
             expect(TOKEN_SEMICOLON, "Expected ';' after top-level struct declaration");
@@ -1170,7 +1173,7 @@ ASTNode* Parser::parseStructDeclaration() {
  * @note This parser currently only supports integer literals for the initializer expression.
  * @return A pointer to the ASTNode representing the variable declaration.
  */
-ASTNode* Parser::parseVarDecl(bool is_pub) {
+ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
     Token keyword_token = advance(); // Consume 'var' or 'const'
     bool is_const = keyword_token.type == TOKEN_CONST;
     bool is_mut = keyword_token.type == TOKEN_VAR;
@@ -1217,6 +1220,8 @@ ASTNode* Parser::parseVarDecl(bool is_pub) {
     var_decl->is_const = is_const;
     var_decl->is_mut = is_mut;
     var_decl->is_pub = is_pub;
+    var_decl->is_extern = is_extern;
+    var_decl->is_export = is_export;
 
     // Create the top-level ASTNode for the declaration *before* creating the symbol,
     // so we can link the symbol to its declaration node.
@@ -1315,7 +1320,7 @@ ASTNode* Parser::parseDeferStatement() {
  * @note This parser currently enforces that the parameter list is empty.
  * @return A pointer to the ASTNode representing the function declaration.
  */
-ASTNode* Parser::parseFnDecl(bool is_pub) {
+ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
     Token fn_token = expect(TOKEN_FN, "Expected 'fn' keyword");
     Token name_token = expect(TOKEN_IDENTIFIER, "Expected function name after 'fn'");
 
@@ -1343,7 +1348,9 @@ ASTNode* Parser::parseFnDecl(bool is_pub) {
     new (fn_decl->params) DynamicArray<ASTParamDeclNode*>(*arena_);
     fn_decl->return_type = NULL;
     fn_decl->body = NULL;
-
+    fn_decl->is_pub = is_pub;
+    fn_decl->is_extern = is_extern;
+    fn_decl->is_export = is_export;
 
     bool is_generic = false;
     GenericDefinitionKind first_generic_kind = GENERIC_KIND_COMPTIME;
@@ -1433,12 +1440,15 @@ ASTNode* Parser::parseFnDecl(bool is_pub) {
     }
 
     ASTNode* return_type_node = NULL;
-    // A return type is optional. If the next token is not a '{',
-    // we assume it's a type expression. It might have `->` or not.
-    if (peek().type != TOKEN_LBRACE) {
-        if(peek().type == TOKEN_ARROW) {
-            match(TOKEN_ARROW);
-        }
+    bool has_explicit_return_type = false;
+    if (peek().type == TOKEN_ARROW) {
+        match(TOKEN_ARROW);
+        has_explicit_return_type = true;
+    } else if (peek().type != TOKEN_LBRACE && (!is_extern || peek().type != TOKEN_SEMICOLON)) {
+        has_explicit_return_type = true;
+    }
+
+    if (has_explicit_return_type) {
         return_type_node = parseType();
     } else {
         // If there's no type, it defaults to void.
@@ -1450,14 +1460,18 @@ ASTNode* Parser::parseFnDecl(bool is_pub) {
         return_type_node->as.type_name.name = "void";
     }
 
-    ASTNode* body_node = parseBlockStatement();
-    if (body_node == NULL) {
-        error("Failed to parse function body");
+    ASTNode* body_node = NULL;
+    if (is_extern) {
+        expect(TOKEN_SEMICOLON, "Expected ';' after extern function declaration");
+    } else {
+        body_node = parseBlockStatement();
+        if (body_node == NULL) {
+            error("Failed to parse function body");
+        }
     }
 
     fn_decl->return_type = return_type_node;
     fn_decl->body = body_node;
-    fn_decl->is_pub = is_pub;
 
     ASTNode* node = createNode(NODE_FN_DECL);
     node->loc = fn_token.location;
