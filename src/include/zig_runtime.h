@@ -16,11 +16,29 @@
 
 /* Standard types for the target C89 environment */
 #ifdef _MSC_VER
-typedef __int64 i64_t;
-typedef unsigned __int64 u64_t;
+/* MSVC 6.0 already has __int64 */
 #else
-typedef long long i64_t;
-typedef unsigned long long u64_t;
+/* Fallback for GCC/Clang in C89 mode */
+#define __int64 long long
+/* Provide i8, u8 etc if they aren't already available */
+typedef signed char i8;
+typedef unsigned char u8;
+typedef short i16;
+typedef unsigned short u16;
+typedef int i32;
+typedef unsigned int u32;
+typedef __int64 i64;
+typedef unsigned __int64 u64;
+typedef unsigned int usize;
+typedef int isize;
 #endif
+
+/* Runtime panic stub */
+#include <stdlib.h>
+#include <stdio.h>
+static void __bootstrap_panic(const char* msg, const char* file, int line) {
+    fprintf(stderr, "PANIC: %s at %s:%d\n", msg, file, line);
+    abort();
+}
 
 #endif /* ZIG_RUNTIME_H */

@@ -3,6 +3,32 @@
 #include "utils.hpp"
 #include <cstdio>
 
+static const char* getTokenSpelling(TokenType op) {
+    switch (op) {
+        case TOKEN_PLUS: return "+";
+        case TOKEN_MINUS: return "-";
+        case TOKEN_STAR: return "*";
+        case TOKEN_SLASH: return "/";
+        case TOKEN_PERCENT: return "%";
+        case TOKEN_EQUAL_EQUAL: return "==";
+        case TOKEN_BANG_EQUAL: return "!=";
+        case TOKEN_LESS: return "<";
+        case TOKEN_LESS_EQUAL: return "<=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_GREATER_EQUAL: return ">=";
+        case TOKEN_AMPERSAND: return "&";
+        case TOKEN_PIPE: return "|";
+        case TOKEN_CARET: return "^";
+        case TOKEN_LARROW2: return "<<";
+        case TOKEN_RARROW2: return ">>";
+        case TOKEN_BANG: return "!";
+        case TOKEN_TILDE: return "~";
+        case TOKEN_AND: return "&&";
+        case TOKEN_OR: return "||";
+        default: return "/* unknown op */";
+    }
+}
+
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
@@ -50,11 +76,12 @@ void C89Emitter::beginFunction() {
 
 void C89Emitter::emitType(Type* type, const char* name) {
     if (!type) {
-        writeString("/* unknown_type */");
+        writeString("void");
         if (name) { writeString(" "); writeString(name); }
         return;
     }
 
+    // Handle recursion for pointers and arrays
     if (type->kind == TYPE_POINTER) {
         if (type->as.pointer.is_const) {
             writeString("const ");
@@ -73,14 +100,14 @@ void C89Emitter::emitType(Type* type, const char* name) {
         if (name) {
             writeString(" ");
             writeString(name);
-            char buf[32];
-            sprintf(buf, "[%lu]", (unsigned long)type->as.array.size);
-            writeString(buf);
-        } else {
-            char buf[32];
-            sprintf(buf, "[%lu]", (unsigned long)type->as.array.size);
-            writeString(buf);
         }
+        char buf[64];
+        plat_strcpy(buf, "[");
+        char num_buf[32];
+        u64_to_decimal(type->as.array.size, num_buf, sizeof(num_buf));
+        plat_strcat(buf, num_buf);
+        plat_strcat(buf, "]");
+        writeString(buf);
         return;
     }
 
@@ -147,23 +174,43 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
-    if (!isConstantInitializer(decl->initializer)) {
+    // Skip type declarations (e.g. const T = struct { ... })
+    if (decl->is_const && decl->initializer) {
+        Type* init_type = decl->initializer->resolved_type;
+        if (init_type && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM)) {
+            return;
+        }
+    }
+
+    if (decl->initializer && !isConstantInitializer(decl->initializer)) {
         error_handler_.report(ERR_GLOBAL_VAR_NON_CONSTANT_INIT, decl->name_loc,
             "Global variable must have a constant initializer for C89 compatibility",
             "Try using a literal or a constant expression");
         return;
     }
 
+    writeIndent();
     if (!is_public) {
         writeString("static ");
     }
 
-    if (decl->is_const) {
-        writeString("const ");
-    }
-
+    Type* type = node->resolved_type;
     const char* c_name = getC89GlobalName(decl->name);
-    emitType(node->resolved_type, c_name);
+
+    if (type && type->kind == TYPE_POINTER) {
+        // For pointers: Type* const Name or const Type* const Name
+        emitType(type); // Emits e.g. "int*" or "const int*"
+        if (decl->is_const) {
+            writeString(" const");
+        }
+        writeString(" ");
+        writeString(c_name);
+    } else {
+        if (decl->is_const) {
+            writeString("const ");
+        }
+        emitType(type, c_name);
+    }
 
     if (decl->initializer) {
         writeString(" = ");
@@ -186,10 +233,43 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
         case NODE_PAREN_EXPR:
             return isConstantInitializer(node->as.paren_expr.expr);
         case NODE_UNARY_OP:
+            if (node->as.unary_op.op == TOKEN_AMPERSAND) {
+                // Address-of is constant if operand is a global variable or member of one
+                ASTNode* operand = node->as.unary_op.operand;
+                if (operand->type == NODE_IDENTIFIER) return true; // Assuming identifier is global
+                if (operand->type == NODE_MEMBER_ACCESS) return isConstantInitializer(operand->as.member_access->base);
+                if (operand->type == NODE_ARRAY_ACCESS) return isConstantInitializer(operand->as.array_access->array);
+                return false;
+            }
             return isConstantInitializer(node->as.unary_op.operand);
         case NODE_BINARY_OP:
             return isConstantInitializer(node->as.binary_op->left) &&
                    isConstantInitializer(node->as.binary_op->right);
+        case NODE_IDENTIFIER:
+            // Identifiers are generally not constant initializers unless they are enum members or similar.
+            // For now, we assume they might be global addresses if they are operands of '&'.
+            return false;
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+            return isConstantInitializer(node->as.ptr_cast->expr); // All cast nodes have expr at same offset
+        case NODE_STRUCT_INITIALIZER: {
+            DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
+            for (size_t i = 0; i < fields->length(); ++i) {
+                if (!isConstantInitializer((*fields)[i]->value)) return false;
+            }
+            return true;
+        }
+        case NODE_MEMBER_ACCESS: {
+            // Enum member access is constant
+            if (node->as.member_access->base->resolved_type) {
+                Type* t = node->as.member_access->base->resolved_type;
+                if (t->kind == TYPE_ENUM) {
+                    return true;
+                }
+            }
+            return false;
+        }
         default:
             return false;
     }
@@ -261,14 +341,201 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_CHAR_LITERAL:
             emitCharLiteral(&node->as.char_literal);
             break;
+        case NODE_BOOL_LITERAL:
+            writeString(node->as.bool_literal.value ? "1" : "0");
+            break;
+        case NODE_NULL_LITERAL:
+            writeString("((void*)0)");
+            break;
+        case NODE_IDENTIFIER:
+            // For globals, use the global name
+            writeString(getC89GlobalName(node->as.identifier.name));
+            break;
         case NODE_PAREN_EXPR:
             writeString("(");
             emitExpression(node->as.paren_expr.expr);
             writeString(")");
             break;
-        default:
-            writeString("/* [Unimplemented Expression] */");
+        case NODE_UNARY_OP:
+            writeString(getTokenSpelling(node->as.unary_op.op));
+            emitExpression(node->as.unary_op.operand);
             break;
+        case NODE_BINARY_OP:
+            emitExpression(node->as.binary_op->left);
+            writeString(" ");
+            writeString(getTokenSpelling(node->as.binary_op->op));
+            writeString(" ");
+            emitExpression(node->as.binary_op->right);
+            break;
+        case NODE_MEMBER_ACCESS:
+            if (node->as.member_access->base->resolved_type) {
+                Type* actual_type = node->as.member_access->base->resolved_type;
+
+                if (actual_type->kind == TYPE_ENUM) {
+                    // Enum member access: EnumName_MemberName
+                    const char* enum_name = actual_type->as.enum_details.name;
+                    if (enum_name) {
+                        writeString(getC89GlobalName(enum_name));
+                    } else {
+                        writeString("/* anonymous enum */");
+                    }
+                    writeString("_");
+                    writeString(node->as.member_access->field_name);
+                    break;
+                }
+            }
+            emitExpression(node->as.member_access->base);
+            // Auto-dereference for pointer to struct:
+            // if base is a pointer, use ->, else use .
+            if (node->as.member_access->base->resolved_type &&
+                node->as.member_access->base->resolved_type->kind == TYPE_POINTER) {
+                writeString("->");
+            } else {
+                writeString(".");
+            }
+            writeString(node->as.member_access->field_name);
+            break;
+        case NODE_ARRAY_ACCESS:
+            emitExpression(node->as.array_access->array);
+            writeString("[");
+            emitExpression(node->as.array_access->index);
+            writeString("]");
+            break;
+        case NODE_PTR_CAST:
+            writeString("(");
+            emitType(node->as.ptr_cast->target_type->resolved_type);
+            writeString(")");
+            emitExpression(node->as.ptr_cast->expr);
+            break;
+        case NODE_STRUCT_INITIALIZER: {
+            writeString("{");
+            Type* struct_type = node->resolved_type;
+            if (struct_type && struct_type->kind == TYPE_STRUCT) {
+                DynamicArray<StructField>* type_fields = struct_type->as.struct_details.fields;
+                DynamicArray<ASTNamedInitializer*>* init_fields = node->as.struct_initializer->fields;
+
+                for (size_t i = 0; i < type_fields->length(); ++i) {
+                    const char* field_name = (*type_fields)[i].name;
+                    // Find this field in the initializer
+                    bool found = false;
+                    for (size_t j = 0; j < init_fields->length(); ++j) {
+                        if (plat_strcmp((*init_fields)[j]->field_name, field_name) == 0) {
+                            emitExpression((*init_fields)[j]->value);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        writeString("0"); // Fallback for missing fields if allowed
+                    }
+                    if (i < type_fields->length() - 1) {
+                        writeString(", ");
+                    }
+                }
+            } else {
+                // Fallback if type info is missing
+                DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    emitExpression((*fields)[i]->value);
+                    if (i < fields->length() - 1) {
+                        writeString(", ");
+                    }
+                }
+            }
+            writeString("}");
+            break;
+        }
+        default:
+            writeString("/* [Unimplemented Expression Type ");
+            char num[16];
+            simple_itoa(node->type, num, sizeof(num));
+            writeString(num);
+            writeString("] */");
+            break;
+    }
+}
+
+void C89Emitter::emitTypeDefinition(const ASTNode* node) {
+    if (!node) return;
+
+    if (node->type == NODE_VAR_DECL) {
+        // plat_print_debug("emitTypeDefinition: var_decl\n");
+        const ASTVarDeclNode* decl = node->as.var_decl;
+        if (!decl || !decl->initializer) return;
+
+        Type* type = decl->initializer->resolved_type;
+        if (!type) return;
+
+        // Only emit definition if this is a type declaration (e.g. const T = struct { ... })
+        // In our current TypeChecker, these might not have TYPE_TYPE yet, but the initializer
+        // will have the actual composite type.
+        if (!decl->is_const || (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION && type->kind != TYPE_ENUM)) {
+            return;
+        }
+        if (type->kind == TYPE_STRUCT) {
+            writeIndent();
+            writeString("struct ");
+            writeString(getC89GlobalName(decl->name));
+            writeString(" {\n");
+            indent();
+            DynamicArray<StructField>* fields = type->as.struct_details.fields;
+            for (size_t i = 0; i < fields->length(); ++i) {
+                writeIndent();
+                emitType((*fields)[i].type, (*fields)[i].name);
+                writeString(";\n");
+            }
+            dedent();
+            writeIndent();
+            writeString("};\n\n");
+        } else if (type->kind == TYPE_UNION) {
+            writeIndent();
+            writeString("union ");
+            writeString(getC89GlobalName(decl->name));
+            writeString(" {\n");
+            indent();
+            DynamicArray<StructField>* fields = type->as.struct_details.fields;
+            for (size_t i = 0; i < fields->length(); ++i) {
+                writeIndent();
+                emitType((*fields)[i].type, (*fields)[i].name);
+                writeString(";\n");
+            }
+            dedent();
+            writeIndent();
+            writeString("};\n\n");
+        } else if (type->kind == TYPE_ENUM) {
+            // C89 doesn't support specific backing types for enums, they are always int.
+            // But we can emit a typedef if needed.
+            writeIndent();
+            writeString("enum ");
+            const char* enum_name = getC89GlobalName(decl->name);
+            writeString(enum_name);
+            writeString(" {\n");
+            indent();
+            DynamicArray<EnumMember>* members = type->as.enum_details.members;
+            for (size_t i = 0; i < members->length(); ++i) {
+                writeIndent();
+                writeString(enum_name);
+                writeString("_");
+                writeString((*members)[i].name);
+                writeString(" = ");
+                char buf[32];
+                simple_itoa((long)(*members)[i].value, buf, sizeof(buf));
+                writeString(buf);
+                if (i < members->length() - 1) {
+                    writeString(",");
+                }
+                writeString("\n");
+            }
+            dedent();
+            writeIndent();
+            writeString("};\n");
+            writeIndent();
+            writeString("typedef enum ");
+            writeString(enum_name);
+            writeString(" ");
+            writeString(enum_name);
+            writeString(";\n\n");
+        }
     }
 }
 
@@ -338,22 +605,33 @@ void C89Emitter::emitCharLiteral(const ASTCharLiteralNode* node) {
 }
 
 const char* C89Emitter::getC89GlobalName(const char* zig_name) {
+    if (!zig_name) return "z_anonymous";
+
+    // Check cache first
     for (size_t i = 0; i < global_names_.length(); ++i) {
-        if (strings_equal(global_names_[i].zig_name, zig_name)) {
+        if (plat_strcmp(global_names_[i].zig_name, zig_name) == 0) {
             return global_names_[i].c89_name;
         }
     }
 
     char buf[256];
-    plat_strncpy(buf, zig_name, 250);
-    buf[250] = '\0';
+    // Prefix C89 keywords
+    if (isCKeyword(zig_name)) {
+        plat_strcpy(buf, "z_");
+        plat_strcat(buf, zig_name);
+    } else {
+        plat_strcpy(buf, zig_name);
+    }
+
+    // Sanitize
     sanitizeForC89(buf);
 
+    // Truncate to 31 characters for C89/MSVC 6.0
     if (plat_strlen(buf) > 31) {
         buf[31] = '\0';
     }
 
-    // Ensure uniqueness by appending a suffix if the mangled name collides
+    // Ensure uniqueness within this translation unit
     char final_buf[256];
     plat_strcpy(final_buf, buf);
     int suffix = 0;
@@ -362,7 +640,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     while (!unique) {
         unique = true;
         for (size_t i = 0; i < global_names_.length(); ++i) {
-            if (strings_equal(global_names_[i].c89_name, final_buf)) {
+            if (plat_strcmp(global_names_[i].c89_name, final_buf) == 0) {
                 unique = false;
                 break;
             }
@@ -371,17 +649,18 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         if (!unique) {
             suffix++;
             char suffix_str[16];
-            sprintf(suffix_str, "%d", suffix);
+            simple_itoa(suffix, suffix_str, sizeof(suffix_str));
             size_t suffix_len = plat_strlen(suffix_str);
             size_t base_len = plat_strlen(buf);
 
             if (base_len + suffix_len > 31) {
-                plat_strncpy(final_buf, buf, 31 - suffix_len);
-                final_buf[31 - suffix_len] = '\0';
-                plat_strcpy(final_buf + (31 - suffix_len), suffix_str);
+                size_t truncate_at = 31 - suffix_len;
+                plat_strncpy(final_buf, buf, truncate_at);
+                final_buf[truncate_at] = '\0';
+                plat_strcat(final_buf, suffix_str);
             } else {
                 plat_strcpy(final_buf, buf);
-                plat_strcpy(final_buf + base_len, suffix_str);
+                plat_strcat(final_buf, suffix_str);
             }
         }
     }

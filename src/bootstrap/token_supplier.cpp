@@ -11,7 +11,9 @@ TokenSupplier::TokenSupplier(SourceManager& source_manager, StringInterner& inte
 TokenStream TokenSupplier::getTokensForFile(u32 file_id) {
     // Grow the cache if the file_id is out of bounds.
     while (token_cache_.length() <= file_id) {
-        TokenStream empty_stream = { NULL, 0 };
+        TokenStream empty_stream;
+        empty_stream.tokens = NULL;
+        empty_stream.count = 0;
         token_cache_.append(empty_stream);
     }
 
@@ -50,7 +52,9 @@ void TokenSupplier::tokenizeAndCache(u32 file_id) {
     }
 
     // 4. Cache the stable pointer and count.
-    TokenStream final_stream = { stable_tokens, num_tokens };
+    TokenStream final_stream;
+    final_stream.tokens = stable_tokens;
+    final_stream.count = num_tokens;
     token_cache_[file_id] = final_stream;
 }
 

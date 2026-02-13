@@ -227,6 +227,13 @@ ASTNode* Parser::parsePrimaryExpr() {
         }
         case TOKEN_LBRACE:
             return parseBlockStatement();
+        case TOKEN_DOT:
+            if (peekNext().type == TOKEN_LBRACE) {
+                advance(); // consume '.'
+                return parseStructInitializer(NULL);
+            }
+            error("Expected '.' followed by '{' for anonymous struct literal");
+            return NULL;
         case TOKEN_SWITCH:
             return parseSwitchExpression();
         case TOKEN_STRUCT:

@@ -125,6 +125,12 @@ void plat_strcpy(char* dest, const char* src) {
         ;
 }
 
+void plat_strcat(char* dest, const char* src) {
+    while (*dest) dest++;
+    while ((*dest++ = *src++))
+        ;
+}
+
 void plat_strncpy(char* dest, const char* src, size_t n) {
     size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++)
@@ -311,6 +317,10 @@ void plat_memmove(void* dest, const void* src, size_t n) {
 
 void plat_strcpy(char* dest, const char* src) {
     strcpy(dest, src);
+}
+
+void plat_strcat(char* dest, const char* src) {
+    strcat(dest, src);
 }
 
 void plat_strncpy(char* dest, const char* src, size_t n) {

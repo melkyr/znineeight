@@ -1,7 +1,10 @@
 #include "source_manager.hpp"
 
 u32 SourceManager::addFile(const char* filename, const char* content, size_t size) {
-    SourceFile file = { filename, content, size };
+    SourceFile file;
+    file.filename = filename;
+    file.content = content;
+    file.size = size;
     files.append(file);
     // The file_id is the index in the dynamic array.
     return files.length() - 1;

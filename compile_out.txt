@@ -1,0 +1,1556 @@
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/bootstrap/lexer.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from src/bootstrap/parser.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/bootstrap/../include/string_interner.hpp:5,
+                 from src/bootstrap/string_interner.cpp:1:
+src/bootstrap/../include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/error_handler.hpp:4,
+                 from src/bootstrap/error_handler.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/symbol_table.hpp:5,
+                 from src/bootstrap/symbol_table.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/type_system.hpp:5,
+                 from src/bootstrap/type_system.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/type_checker.hpp:4,
+                 from src/bootstrap/type_checker.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/bootstrap/compilation_unit.cpp:1:
+src/include/compilation_unit.hpp: In constructor ‘CompilationUnit::CompilationUnit(ArenaAllocator&, StringInterner&)’:
+src/include/compilation_unit.hpp:156:32: warning: ‘CompilationUnit::test_patterns_’ will be initialized after [-Wreorder]
+  156 |     DynamicArray<const char*>* test_patterns_;
+      |                                ^~~~~~~~~~~~~~
+src/include/compilation_unit.hpp:152:17: warning:   ‘const char* CompilationUnit::current_module_’ [-Wreorder]
+  152 |     const char* current_module_;
+      |                 ^~~~~~~~~~~~~~~
+src/bootstrap/compilation_unit.cpp:121:1: warning:   when initialized here [-Wreorder]
+  121 | CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
+      | ^~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5:
+src/include/memory.hpp: At global scope:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/bootstrap/source_manager.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/token_supplier.hpp:5,
+                 from src/bootstrap/token_supplier.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/c89_feature_validator.hpp:4,
+                 from src/bootstrap/c89_feature_validator.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from src/include/lifetime_analyzer.hpp:4,
+                 from src/bootstrap/lifetime_analyzer.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from src/include/null_pointer_analyzer.hpp:4,
+                 from src/bootstrap/null_pointer_analyzer.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from src/include/double_free_analyzer.hpp:4,
+                 from src/bootstrap/double_free_analyzer.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/ast_utils.hpp:4,
+                 from src/bootstrap/ast_utils.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/error_set_catalogue.hpp:5,
+                 from src/bootstrap/error_set_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/generic_catalogue.hpp:5,
+                 from src/bootstrap/generic_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/error_function_catalogue.hpp:5,
+                 from src/bootstrap/error_function_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/try_expression_catalogue.hpp:5,
+                 from src/bootstrap/try_expression_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/catch_expression_catalogue.hpp:5,
+                 from src/bootstrap/catch_expression_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/orelse_expression_catalogue.hpp:5,
+                 from src/bootstrap/orelse_expression_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/extraction_analysis_catalogue.hpp:5,
+                 from src/bootstrap/extraction_analysis_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/c89_pattern_generator.hpp:5,
+                 from src/bootstrap/c89_pattern_generator.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/errdefer_catalogue.hpp:5,
+                 from src/bootstrap/errdefer_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/name_collision_detector.hpp:5,
+                 from src/bootstrap/name_collision_detector.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/signature_analyzer.hpp:5,
+                 from src/bootstrap/signature_analyzer.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/name_mangler.hpp:5,
+                 from src/bootstrap/name_mangler.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/call_site_lookup_table.hpp:5,
+                 from src/bootstrap/call_site_lookup_table.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/indirect_call_catalogue.hpp:5,
+                 from src/bootstrap/indirect_call_catalogue.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from src/include/call_resolution_validator.hpp:4,
+                 from src/bootstrap/call_resolution_validator.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/c_variable_allocator.hpp:5,
+                 from src/include/codegen.hpp:6,
+                 from src/bootstrap/codegen.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/c_variable_allocator.hpp:5,
+                 from src/bootstrap/c_variable_allocator.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_c89_rejection.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/c89_type_compat_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/c89_type_mapping_tests.cpp:5:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/const_var_crash_test.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/bug_test_memory.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/dynamic_array_copy_test.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/integer_literal_parsing.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/lexer_edge_cases.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/lexer_fixes.cpp:1:
+tests/lexer_fixes.cpp:48:54: warning: use of C++11 long long integer constant [-Wlong-long]
+   48 |     ASSERT_TRUE(token.value.integer_literal.value == 0xFFFFFFFFFFFFFFFAULL);
+      |                                                      ^~~~~~~~~~~~~~~~~~~~~
+src/include/test_framework.hpp:26:11: note: in definition of macro ‘ASSERT_TRUE’
+   26 |     if (!(condition)) { \
+      |           ^~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/lexer_fixes.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/lexer_strings.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/lexer_utils.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/memory_alignment_test.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/memory_stability_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/memory_tests.cpp:70:21: warning: use of C++11 long long integer constant [-Wlong-long]
+   70 |         simple_itoa(9223372036854775807LL, buffer, sizeof(buffer));
+      |                     ^~~~~~~~~~~~~~~~~~~~~
+tests/memory_tests.cpp: In function ‘bool test_simple_itoa_conversion()’:
+tests/memory_tests.cpp:63:12: warning: unused variable ‘max_val’ [-Wunused-variable]
+   63 |     size_t max_val = (size_t)-1;
+      |            ^~~~~~~
+In file included from tests/memory_tests.cpp:2:
+tests/../src/include/memory.hpp: At global scope:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/parser_associativity_test.cpp:29:5: warning: multi-line comment [-Wcomment]
+   29 |     //             /      \
+      |     ^
+tests/parser_associativity_test.cpp:31:5: warning: multi-line comment [-Wcomment]
+   31 |     //       /      \
+      |     ^
+tests/parser_associativity_test.cpp:57:5: warning: multi-line comment [-Wcomment]
+   57 |     //               /     \
+      |     ^
+tests/parser_associativity_test.cpp:59:5: warning: multi-line comment [-Wcomment]
+   59 |     //          /     \
+      |     ^
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/../src/include/parser.hpp:4,
+                 from tests/parser_associativity_test.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/parser_bug_fixes.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/parser_symbol_integration_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/return_type_validation_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from src/include/symbol_table.hpp:5,
+                 from tests/symbol_builder_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/symbol_table_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/test_arena.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_arena_guard.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/test_arena_overflow.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_async.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_comptime.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_container_declarations.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_control_flow.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_declarations.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_error_nodes.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_statements.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/ast.hpp:5,
+                 from tests/test_ast_types.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_char_literal.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_compilation_unit.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_compile_time_keywords.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/test_error_handler.cpp: In function ‘bool test_print_error_report()’:
+tests/test_error_handler.cpp:33:48: warning: extended initializer lists only available with ‘-std=c++11’ or ‘-std=gnu++11’ [-Wc++11-extensions]
+   33 |     eh.report(ERR_TYPE_MISMATCH, SourceLocation{file_id, 1, 15}, "Cannot assign 'string' to 'i32'", "Use an integer literal instead.");
+      |                                                ^
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/error_handler.hpp:4,
+                 from tests/test_error_handler.cpp:1:
+src/include/memory.hpp: At global scope:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_keywords.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_lexer.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_lexer_comments.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_lexer_compound_operators.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_lexer_decimal_float.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_lexer_delimiters.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_lexer_float.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_lexer_integration.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_lexer_keywords.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_lexer_operators.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from tests/test_lexer_special_ops.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/name_mangler.hpp:5,
+                 from tests/name_mangler_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/test_memory.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_missing_keywords.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_array_slice.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_bitwise_expr.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_compound_assignment.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_block.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_parser_bug.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/test_parser_catch_expr.cpp:71:5: warning: multi-line comment [-Wcomment]
+   71 |     //               /      \
+      |     ^
+tests/test_parser_catch_expr.cpp:73:5: warning: multi-line comment [-Wcomment]
+   73 |     //          /     \
+      |     ^
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_catch_expr.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_comptime.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_defer.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_enums.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_errdefer.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_parser_errors.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_expressions.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_fn_decl.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_for_statement.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_functions.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_if_statement.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_integration.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/test_parser_lifecycle.cpp: In function ‘bool test_Parser_TokenStreamLifetimeIsIndependentOfParserObject()’:
+tests/test_parser_lifecycle.cpp:15:17: warning: unused variable ‘parser2’ [-Wunused-variable]
+   15 |         Parser* parser2 = ctx.getParser();
+      |                 ^~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_parser_lifecycle.cpp:2:
+src/include/memory.hpp: At global scope:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_logical_operators.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_parser_memory.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_navigation.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_parser_recursion.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_return.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_struct.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_switch.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_try_expr.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_types.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_unary.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_union.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_vars.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_parser_while.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/test_source_manager.cpp:1:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/string_interner.hpp:5,
+                 from tests/test_string_interner.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_string_literal.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_utils.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_address_of.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_array_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_binary_ops.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_bool_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_type_checker_compound_assignment.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_c89_compat_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_control_flow.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_enum_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_expressions.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_float_c89_compat_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_fn_decl.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_literals.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_pointer_arithmetic.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_pointer_operations.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_pointers.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/type_checker_tests.cpp:164:29: warning: use of C++11 long long integer constant [-Wlong-long]
+  164 |     node_i64_under.value = -2147483649LL; // Use LL for long long
+      |                             ^~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_unary_op_c89.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_var_decl.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_void_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/type_system.hpp:5,
+                 from tests/pointer_arithmetic_test.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_compatibility_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/type_system.hpp:5,
+                 from tests/type_system_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_to_string_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_assignment_compatibility.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_slice_expression_test.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/task_119_test.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_symbol_flags.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/lifetime_analysis_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from src/include/null_pointer_analyzer.hpp:4,
+                 from tests/null_pointer_analysis_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/integration_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/double_free_analysis_tests.cpp: In function ‘bool test_DoubleFree_TryAnalysis()’:
+tests/double_free_analysis_tests.cpp:273:10: warning: variable ‘has_leak’ set but not used [-Wunused-but-set-variable]
+  273 |     bool has_leak = false;
+      |          ^~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/double_free_analysis_tests.cpp:2:
+src/include/memory.hpp: At global scope:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_double_free_locations.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_double_free_task_129.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_double_free_path_aware.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_130_switch.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_130_error_handling.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_130_loops.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_struct_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_enum_member_access.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_135.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_136.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_generics_rejection.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_142.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_143.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/catch_expression_catalogue.hpp:5,
+                 from tests/test_catalogues_task_144.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_144_detection.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/type_checker_inference_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/extraction_analysis_tests.cpp: In function ‘bool run_extraction_test_verbose(const char*, ExtractionStrategy, bool, int)’:
+tests/extraction_analysis_tests.cpp:25:25: warning: ISO C++98 does not support the ‘z’ gnu_printf length modifier [-Wformat=]
+   25 |         fprintf(stderr, "FAIL: No extraction site found at index %d (total %zu)\n", site_index, sites->length());
+      |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/extraction_analysis_tests.cpp:31:25: warning: ISO C++98 does not support the ‘z’ gnu_printf length modifier [-Wformat=]
+   31 |         fprintf(stderr, "FAIL: Strategy mismatch. Expected %d, got %d (size=%zu, align=%zu, nesting=%d)\n",
+      |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/extraction_analysis_tests.cpp:31:25: warning: ISO C++98 does not support the ‘z’ gnu_printf length modifier [-Wformat=]
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_declarations.hpp:5,
+                 from tests/extraction_analysis_tests.cpp:1:
+src/include/memory.hpp: At global scope:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_148.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_task_149.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_declarations.hpp:5,
+                 from tests/test_task_150.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_declarations.hpp:5,
+                 from tests/test_task_150_extra.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_declarations.hpp:5,
+                 from tests/test_task_151.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_name_collision.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_signature_analyzer.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/task_154_test.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/task_156_multi_file_test.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/lexer_decrement_test.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/generic_catalogue.hpp:5,
+                 from tests/task_157_catalogue_test.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/compilation_unit.hpp:5,
+                 from tests/test_task_157_implicit_detection.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/compilation_unit.hpp:5,
+                 from tests/test_milestone4_generics_integration.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from tests/../src/include/source_manager.hpp:5,
+                 from tests/../src/include/lexer.hpp:5,
+                 from tests/test_milestone4_lexer_parser.cpp:2:
+tests/../src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/type_system.hpp:5,
+                 from tests/test_optional_type.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_optional_type_checker.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/name_mangler.hpp:5,
+                 from tests/test_milestone4_name_mangling.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/call_site_lookup_table.hpp:5,
+                 from tests/test_call_site_lookup.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/type_checker_call_site_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/test_task_165_resolution.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/test_indirect_calls.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/test_forward_reference.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/test_recursive_calls.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/test_call_syntax.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/task_168_validation.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_bootstrap_types.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_msvc_types.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/literal_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/variable_decl_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/arithmetic_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/function_decl_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/integration/../test_utils.hpp:4,
+                 from tests/integration/function_call_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/if_statement_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/while_loop_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/struct_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/pointer_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/array_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/enum_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/rejection_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/union_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/switch_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/for_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/defer_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/task182_183_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/pointer_arithmetic_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/builtin_offsetof_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/cast_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+tests/integration/builtin_size_tests.cpp:35:13: warning: ‘bool run_size_error_test(const char*, const char*)’ defined but not used [-Wunused-function]
+   35 | static bool run_size_error_test(const char* zig_code, const char* error_substring) {
+      |             ^~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/builtin_size_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/c_variable_allocator.hpp:5,
+                 from src/include/codegen.hpp:6,
+                 from tests/test_c89_emitter.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/c_variable_allocator.hpp:5,
+                 from tests/test_c_variable_allocator.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/integer_widening_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/codegen_integer_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/codegen_float_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/codegen_literal_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/compilation_unit.hpp:5,
+                 from tests/integration/test_compilation_unit.hpp:7,
+                 from tests/integration/codegen_global_tests.cpp:2:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~
+In file included from src/include/source_manager.hpp:5,
+                 from src/include/lexer.hpp:5,
+                 from src/include/parser.hpp:4,
+                 from tests/test_utils.hpp:4,
+                 from tests/test_declarations.hpp:5,
+                 from tests/main_batch26.cpp:1:
+src/include/memory.hpp:150:13: warning: ‘void report_out_of_memory()’ defined but not used [-Wunused-function]
+  150 | static void report_out_of_memory() {
+      |             ^~~~~~~~~~~~~~~~~~~~

@@ -957,6 +957,11 @@ TEST_FUNC(Codegen_Global_Pointer);
 TEST_FUNC(Codegen_Global_ConstPointer);
 TEST_FUNC(Codegen_Global_KeywordCollision);
 TEST_FUNC(Codegen_Global_LongName);
+TEST_FUNC(Codegen_Global_PointerToGlobal);
+TEST_FUNC(Codegen_Global_Arithmetic);
+TEST_FUNC(Codegen_Global_Enum);
+TEST_FUNC(Codegen_Global_Struct);
+TEST_FUNC(Codegen_Global_AnonymousContainer_Error);
 TEST_FUNC(Codegen_Global_NonConstantInit_Error);
 
 #endif // TEST_DECLARATIONS_HPP
