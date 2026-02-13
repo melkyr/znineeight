@@ -74,7 +74,7 @@ TEST_FUNC(PointerIntegration_DereferenceExpression) {
 
 TEST_FUNC(PointerIntegration_PointerArithmeticAdd) {
     const char* source =
-        "fn foo(p: *i32, i: i32) *i32 {\n"
+        "fn foo(p: *i32, i: usize) *i32 {\n"
         "    return p + i;\n"
         "}";
     return run_pointer_expression_test(source, "p + i");
@@ -82,7 +82,7 @@ TEST_FUNC(PointerIntegration_PointerArithmeticAdd) {
 
 TEST_FUNC(PointerIntegration_PointerArithmeticSub) {
     const char* source =
-        "fn foo(p: *i32, i: i32) *i32 {\n"
+        "fn foo(p: *i32, i: usize) *i32 {\n"
         "    return p - i;\n"
         "}";
     return run_pointer_expression_test(source, "p - i");

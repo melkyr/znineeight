@@ -26,7 +26,7 @@ TEST_FUNC(EnumIntegration_BasicEnum) {
         return false;
     }
 
-    if (!unit.validateVariableEmission("c", "enum Color c = Color_Red;")) {
+    if (!unit.validateVariableEmission("c", "enum Color c = 0;")) {
         return false;
     }
 
@@ -57,8 +57,8 @@ TEST_FUNC(EnumIntegration_MemberAccess) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string emission = emitter.emitExpression(fn->body);
 
-    if (emission.find("return Status_Ok;") == std::string::npos) {
-        printf("FAIL: Expected 'return Status_Ok;' in emission, got: %s\n", emission.c_str());
+    if (emission.find("return 0;") == std::string::npos) {
+        printf("FAIL: Expected 'return 0;' in emission, got: %s\n", emission.c_str());
         return false;
     }
 
