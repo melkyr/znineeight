@@ -27,6 +27,7 @@ enum TypeKind {
     // Complex Types
     TYPE_POINTER,
     TYPE_NULL,
+    TYPE_UNDEFINED,
     TYPE_ARRAY,
     TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
@@ -277,6 +278,7 @@ Type* get_g_type_usize();
 Type* get_g_type_f32();
 Type* get_g_type_f64();
 Type* get_g_type_null();
+Type* get_g_type_undefined();
 Type* get_g_type_type();
 Type* get_g_type_anytype();
 

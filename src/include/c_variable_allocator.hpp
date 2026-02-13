@@ -51,8 +51,14 @@ private:
      */
     bool isAssigned(const char* name) const;
 
+    struct SymbolEntry {
+        Symbol* sym;
+        const char* c_name;
+    };
+
     ArenaAllocator& arena_;
     DynamicArray<const char*> assigned_names_;
+    DynamicArray<SymbolEntry> symbol_cache_;
 
     // Prevent copying
     CVariableAllocator(const CVariableAllocator&);

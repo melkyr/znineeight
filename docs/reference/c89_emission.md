@@ -194,3 +194,42 @@ pub var data: [3]u8 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };
 ```c
 unsigned char data[3] = {1, 2, 3};
 ```
+
+## 8. Local Variables
+
+Local variables are emitted within C functions or compound statements.
+
+### 8.1 Declaration Splitting
+
+In C89, all declarations must appear at the top of a block, before any statements. To support Zig's flexible variable declaration placement, the bootstrap compiler uses a two-pass emission strategy for blocks:
+
+1. **Pass 1**: The emitter scans the block's statements for any variable declarations and emits them at the top of the C block.
+2. **Pass 2**: The emitter then emits all statements in order. If a variable declaration had an initializer, it is emitted as an assignment statement at the point where it appeared in the Zig source.
+
+### 8.2 `const` Handling
+
+For local variables, the `const` qualifier is always **dropped** in the generated C code. Since Zig has already enforced `const` correctness during semantic analysis, the C compiler does not need to re-enforce it. This simplifies the declaration-splitting logic, as an assignment to a `const` variable (which happens during Pass 2) would be illegal in C.
+
+### 8.3 `undefined` Initialization
+
+If a local variable is initialized with `undefined` in Zig, it is emitted as an uninitialized variable in C (e.g., `int x;`). No assignment is generated in Pass 2.
+
+### 8.4 Scoping and Uniquification
+
+Zig allows shadowing of variables in nested blocks. C89 has block-level scoping for names, but the bootstrap compiler simplifies this by using a **single `CVariableAllocator` per function**.
+
+Every local variable within a function is given a unique C name by appending a numeric suffix (e.g., `x`, `x_1`, `x_2`) if a name collision occurs. This ensures that even shadowed variables in Zig have distinct names in the generated C, avoiding any potential name conflict issues.
+
+## 9. Functions
+
+Function declarations are emitted as standard C89 function definitions.
+
+### 9.1 Return Types and Parameters
+
+- **Return Types**: Emitted before the function name. `void` is used for functions with no return value.
+- **Parameters**: Emitted within parentheses. If a function has no parameters, `(void)` is emitted to be C89-compliant.
+- **Mangling**: Function names are mangled using the same rules as global variables. Parameters also use the `CVariableAllocator` to ensure unique names.
+
+### 9.2 Function Bodies
+
+Function bodies are emitted as a single block statement (enclosed in `{}`). The internal logic for blocks (declaration splitting, etc.) ensures that the body is valid C89.

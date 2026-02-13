@@ -8,6 +8,7 @@
 // Forward-declare the main ASTNode struct so it can be used in the specific node structs.
 struct ASTNode;
 struct Type;
+struct Symbol;
 
 /**
  * @enum NodeType
@@ -31,6 +32,7 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
     NODE_NULL_LITERAL,    ///< A `null` literal.
+    NODE_UNDEFINED_LITERAL, ///< An `undefined` literal.
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
@@ -294,6 +296,7 @@ struct ASTStringLiteralNode {
  */
 struct ASTIdentifierNode {
     const char* name;
+    Symbol* symbol;
 };
 
 /**
@@ -587,6 +590,7 @@ struct ASTParamDeclNode {
     bool is_comptime;
     bool is_anytype;
     bool is_type_param;
+    Symbol* symbol;
 };
 
 /**
@@ -606,6 +610,7 @@ struct ASTVarDeclNode {
     bool is_const;
     bool is_mut;
     bool is_pub;
+    Symbol* symbol;
 };
 
 /**

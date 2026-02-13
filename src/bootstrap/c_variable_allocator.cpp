@@ -36,20 +36,39 @@ static bool is_c_reserved_name(const char* name) {
 }
 
 CVariableAllocator::CVariableAllocator(ArenaAllocator& arena)
-    : arena_(arena), assigned_names_(arena) {}
+    : arena_(arena), assigned_names_(arena), symbol_cache_(arena) {}
 
 void CVariableAllocator::reset() {
     assigned_names_.clear();
+    symbol_cache_.clear();
 }
 
 const char* CVariableAllocator::allocate(Symbol* sym) {
+    if (!sym) return "z_null_sym";
+
+    // 1. Check cache
+    for (size_t i = 0; i < symbol_cache_.length(); ++i) {
+        if (symbol_cache_[i].sym == sym) {
+            return symbol_cache_[i].c_name;
+        }
+    }
+
     const char* desired;
     if (sym->mangled_name && sym->mangled_name[0] != '\0') {
         desired = sym->mangled_name;
     } else {
         desired = sym->name;
     }
-    return makeUnique(desired);
+
+    const char* unique_name = makeUnique(desired);
+
+    // 2. Update cache
+    SymbolEntry entry;
+    entry.sym = sym;
+    entry.c_name = unique_name;
+    symbol_cache_.append(entry);
+
+    return unique_name;
 }
 
 const char* CVariableAllocator::generate(const char* base) {

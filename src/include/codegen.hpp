@@ -122,6 +122,49 @@ public:
     void emitGlobalVarDecl(const ASTNode* node, bool is_public);
 
     /**
+     * @brief Emits a local variable declaration.
+     * @param node The variable declaration AST node.
+     * @param emit_assignment True if it should emit an assignment statement.
+     */
+    void emitLocalVarDecl(const ASTNode* node, bool emit_assignment);
+
+    /**
+     * @brief Emits a function declaration.
+     * @param node The function declaration AST node.
+     */
+    void emitFnDecl(const ASTFnDeclNode* node);
+
+    /**
+     * @brief Emits a block of statements.
+     * @param node The block statement node.
+     */
+    void emitBlock(const ASTBlockStmtNode* node);
+
+    /**
+     * @brief Emits a single statement.
+     * @param node The statement node.
+     */
+    void emitStatement(const ASTNode* node);
+
+    /**
+     * @brief Emits an if statement.
+     * @param node The if statement node.
+     */
+    void emitIf(const ASTIfStmtNode* node);
+
+    /**
+     * @brief Emits a while statement.
+     * @param node The while statement node.
+     */
+    void emitWhile(const ASTWhileStmtNode* node);
+
+    /**
+     * @brief Emits a return statement.
+     * @param node The return statement node.
+     */
+    void emitReturn(const ASTReturnStmtNode* node);
+
+    /**
      * @brief Emits a top-level type definition (struct, union, enum).
      * @param node The declaration node.
      */
