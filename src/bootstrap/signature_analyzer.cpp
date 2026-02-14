@@ -18,16 +18,20 @@ void SignatureAnalyzer::visit(ASTNode* node) {
     switch (node->type) {
         case NODE_BLOCK_STMT: {
             DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
-            for (size_t i = 0; i < stmts->length(); ++i) {
-                visit((*stmts)[i]);
+            if (stmts) {
+                for (size_t i = 0; i < stmts->length(); ++i) {
+                    visit((*stmts)[i]);
+                }
             }
             break;
         }
 
         case NODE_FN_DECL:
-            visitFnDecl(node->as.fn_decl);
-            // Also visit the body in case there are nested functions
-            visit(node->as.fn_decl->body);
+            if (node->as.fn_decl) {
+                visitFnDecl(node->as.fn_decl);
+                // Also visit the body in case there are nested functions
+                visit(node->as.fn_decl->body);
+            }
             break;
 
         case NODE_IF_STMT:
@@ -94,7 +98,7 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     if (!node) return;
 
     // 1. Check parameter count
-    if (!isParameterCountValid(node->params->length())) {
+    if (node->params && !isParameterCountValid(node->params->length())) {
         char buffer[256];
         char num_buf[21];
         simple_itoa((long)node->params->length(), num_buf, sizeof(num_buf));
@@ -113,11 +117,13 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     }
 
     // 2. Check each parameter type
-    for (size_t i = 0; i < node->params->length(); ++i) {
-        ASTParamDeclNode* param = (*node->params)[i];
-        if (param->type && param->type->resolved_type) {
-            if (!isParameterTypeValid(param->type->resolved_type, param->type->loc)) {
-                invalid_count_++;
+    if (node->params) {
+        for (size_t i = 0; i < node->params->length(); ++i) {
+            ASTParamDeclNode* param = (*node->params)[i];
+            if (param && param->type && param->type->resolved_type) {
+                if (!isParameterTypeValid(param->type->resolved_type, param->type->loc)) {
+                    invalid_count_++;
+                }
             }
         }
     }

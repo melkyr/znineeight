@@ -8,7 +8,7 @@
 // This test function is for cases that should pass without any errors.
 TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = p + i; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p + i; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -23,7 +23,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     }
 
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = i + p; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = i + p; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -38,7 +38,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     }
 
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = p - i; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p - i; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -84,12 +84,12 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
         TypeChecker tc(comp_unit);
         tc.check(root);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR);
     }
 
     // Test: pointer * integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = p * i; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p * i; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -99,12 +99,12 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
         TypeChecker tc(comp_unit);
         tc.check(root);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR);
     }
 
     // Test: pointer / integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = p / i; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p / i; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -114,12 +114,12 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
         TypeChecker tc(comp_unit);
         tc.check(root);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR);
     }
 
     // Test: pointer % integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: i32; var res: *i32 = p % i; }";
+        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p % i; }";
         ArenaAllocator arena(16384);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -129,7 +129,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
         TypeChecker tc(comp_unit);
         tc.check(root);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR);
     }
 
     // Test: pointer - pointer (mismatched types) -> error
@@ -144,7 +144,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
         TypeChecker tc(comp_unit);
         tc.check(root);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
-        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_TYPE_MISMATCH);
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_SUBTRACTION_INCOMPATIBLE);
     }
 
     return true;

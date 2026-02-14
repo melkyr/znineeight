@@ -111,7 +111,9 @@ Type* TypeChecker::visit(ASTNode* node) {
             break;
     }
 
-    node->resolved_type = resolved_type;
+    if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
+        node->resolved_type = resolved_type;
+    }
     return resolved_type;
 }
 
@@ -1842,14 +1844,18 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
             }
 
             // A constant can hold a type in Zig.
-            // For now, we assume if it's in the symbol table and has a struct, union, enum, array or is a type parameter,
-            // it can be used as a type name.
-            if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT ||
-                                     sym->symbol_type->kind == TYPE_UNION ||
-                                     sym->symbol_type->kind == TYPE_ENUM ||
-                                     sym->symbol_type->kind == TYPE_ARRAY ||
-                                     sym->symbol_type->kind == TYPE_TYPE)) {
-                resolved_type = sym->symbol_type;
+            if (sym->symbol_type) {
+                if (sym->symbol_type->kind == TYPE_TYPE) {
+                    // Resolve the actual type held by this constant
+                    if (sym->details && ((ASTVarDeclNode*)sym->details)->initializer) {
+                        resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
+                    }
+                } else if (sym->symbol_type->kind == TYPE_STRUCT ||
+                           sym->symbol_type->kind == TYPE_UNION ||
+                           sym->symbol_type->kind == TYPE_ENUM ||
+                           sym->symbol_type->kind == TYPE_ARRAY) {
+                    resolved_type = sym->symbol_type;
+                }
             }
         }
     }
@@ -2125,6 +2131,12 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         Type* actual_base = actual->as.pointer.base;
         Type* expected_base = expected->as.pointer.base;
+
+        // Allow T* -> void* (implicit)
+        if (expected_base->kind == TYPE_VOID && actual_base->kind != TYPE_VOID) {
+             // Const correctness: cannot discard const during conversion
+             return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+        }
 
         // C89 exception: *void -> *T (implicit conversion)
         if (actual_base->kind == TYPE_VOID && expected_base->kind != TYPE_VOID) {
@@ -2496,7 +2508,9 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         Type* tgt_base = target_type->as.pointer.base;
 
         // Allow T* -> void* (implicit)
-        if (tgt_base->kind == TYPE_VOID && src_base->kind != TYPE_VOID) return true;
+        if (tgt_base->kind == TYPE_VOID && src_base->kind != TYPE_VOID) {
+            return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+        }
 
         // C89 exception: *void -> *T (implicit conversion)
         if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {

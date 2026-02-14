@@ -223,25 +223,33 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_STRUCT_DECL:
             current_parent_ = node;
-            for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
-                visit((*node->as.struct_decl->fields)[i]);
+            if (node->as.struct_decl && node->as.struct_decl->fields) {
+                for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                    visit((*node->as.struct_decl->fields)[i]);
+                }
             }
             current_parent_ = prev_parent;
             break;
         case NODE_UNION_DECL:
             current_parent_ = node;
-            for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
-                visit((*node->as.union_decl->fields)[i]);
+            if (node->as.union_decl && node->as.union_decl->fields) {
+                for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                    visit((*node->as.union_decl->fields)[i]);
+                }
             }
             current_parent_ = prev_parent;
             break;
         case NODE_ENUM_DECL:
             current_parent_ = node;
-            if (node->as.enum_decl->backing_type) {
-                visit(node->as.enum_decl->backing_type);
-            }
-            for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
-                visit((*node->as.enum_decl->fields)[i]);
+            if (node->as.enum_decl) {
+                if (node->as.enum_decl->backing_type) {
+                    visit(node->as.enum_decl->backing_type);
+                }
+                if (node->as.enum_decl->fields) {
+                    for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                        visit((*node->as.enum_decl->fields)[i]);
+                    }
+                }
             }
             current_parent_ = prev_parent;
             break;
@@ -750,8 +758,12 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     // Continue traversal
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
-    for (size_t i = 0; i < fn->params->length(); ++i) {
-        visit((*fn->params)[i]->type);
+    if (fn->params) {
+        for (size_t i = 0; i < fn->params->length(); ++i) {
+            if ((*fn->params)[i]) {
+                visit((*fn->params)[i]->type);
+            }
+        }
     }
     if (fn->return_type) {
         visit(fn->return_type);
@@ -767,8 +779,10 @@ void C89FeatureValidator::visitBlockStmt(ASTNode* node) {
 
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
-    for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-        visit((*node->as.block_stmt.statements)[i]);
+    if (node->as.block_stmt.statements) {
+        for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+            visit((*node->as.block_stmt.statements)[i]);
+        }
     }
     current_parent_ = prev_parent;
 

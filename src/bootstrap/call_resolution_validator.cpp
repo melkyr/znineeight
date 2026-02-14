@@ -23,12 +23,16 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
     // For Task 168, we'll do a simple recursive traversal
     switch (node->type) {
         case NODE_BLOCK_STMT:
-            for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-                traverse((*node->as.block_stmt.statements)[i], ctx);
+            if (node->as.block_stmt.statements) {
+                for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+                    traverse((*node->as.block_stmt.statements)[i], ctx);
+                }
             }
             break;
         case NODE_FN_DECL:
-            traverse(node->as.fn_decl->body, ctx);
+            if (node->as.fn_decl) {
+                traverse(node->as.fn_decl->body, ctx);
+            }
             break;
         case NODE_IF_STMT:
             traverse(node->as.if_stmt->condition, ctx);
@@ -53,9 +57,13 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
             traverse(node->as.unary_op.operand, ctx);
             break;
         case NODE_FUNCTION_CALL:
-            traverse(node->as.function_call->callee, ctx);
-            for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
-                traverse((*node->as.function_call->args)[i], ctx);
+            if (node->as.function_call) {
+                traverse(node->as.function_call->callee, ctx);
+                if (node->as.function_call->args) {
+                    for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
+                        traverse((*node->as.function_call->args)[i], ctx);
+                    }
+                }
             }
             break;
         case NODE_EXPRESSION_STMT:
@@ -68,8 +76,10 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
             traverse(node->as.errdefer_stmt.statement, ctx);
             break;
         case NODE_STRUCT_INITIALIZER:
-            for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
-                traverse((*node->as.struct_initializer->fields)[i]->value, ctx);
+            if (node->as.struct_initializer && node->as.struct_initializer->fields) {
+                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                    traverse((*node->as.struct_initializer->fields)[i]->value, ctx);
+                }
             }
             break;
         case NODE_ARRAY_ACCESS:
@@ -80,15 +90,21 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
             traverse(node->as.member_access->base, ctx);
             break;
         case NODE_SWITCH_EXPR:
-            traverse(node->as.switch_expr->expression, ctx);
-            for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
-                ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
-                if (!prong->is_else) {
-                    for (size_t j = 0; j < prong->cases->length(); ++j) {
-                        traverse((*prong->cases)[j], ctx);
+            if (node->as.switch_expr) {
+                traverse(node->as.switch_expr->expression, ctx);
+                if (node->as.switch_expr->prongs) {
+                    for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                        ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
+                        if (prong) {
+                            if (!prong->is_else && prong->cases) {
+                                for (size_t j = 0; j < prong->cases->length(); ++j) {
+                                    traverse((*prong->cases)[j], ctx);
+                                }
+                            }
+                            traverse(prong->body, ctx);
+                        }
                     }
                 }
-                traverse(prong->body, ctx);
             }
             break;
         // ... other nodes that can contain expressions ...
