@@ -1,5 +1,6 @@
 #include "indirect_call_catalogue.hpp"
 #include "platform.hpp"
+#include "utils.hpp"
 #include <new>
 
 IndirectCallCatalogue::IndirectCallCatalogue(ArenaAllocator& arena) : arena_(arena) {

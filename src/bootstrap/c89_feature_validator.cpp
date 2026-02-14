@@ -92,8 +92,10 @@ void C89FeatureValidator::visit(ASTNode* node) {
         // --- Recursive traversal for other node types ---
         case NODE_BINARY_OP:
             current_parent_ = node;
-            visit(node->as.binary_op->left);
-            visit(node->as.binary_op->right);
+            if (node->as.binary_op) {
+                visit(node->as.binary_op->left);
+                visit(node->as.binary_op->right);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_UNARY_OP:
@@ -106,10 +108,12 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_IF_STMT:
             current_parent_ = node;
-            visit(node->as.if_stmt->condition);
-            visit(node->as.if_stmt->then_block);
-            if (node->as.if_stmt->else_block) {
-                visit(node->as.if_stmt->else_block);
+            if (node->as.if_stmt) {
+                visit(node->as.if_stmt->condition);
+                visit(node->as.if_stmt->then_block);
+                if (node->as.if_stmt->else_block) {
+                    visit(node->as.if_stmt->else_block);
+                }
             }
             current_parent_ = prev_parent;
             break;
@@ -144,31 +148,39 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_MEMBER_ACCESS:
             current_parent_ = node;
-            visit(node->as.member_access->base);
+            if (node->as.member_access) {
+                visit(node->as.member_access->base);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_STRUCT_INITIALIZER:
             current_parent_ = node;
-            visit(node->as.struct_initializer->type_expr);
-            if (node->as.struct_initializer->fields) {
-                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
-                    visit((*node->as.struct_initializer->fields)[i]->value);
+            if (node->as.struct_initializer) {
+                visit(node->as.struct_initializer->type_expr);
+                if (node->as.struct_initializer->fields) {
+                    for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                        visit((*node->as.struct_initializer->fields)[i]->value);
+                    }
                 }
             }
             current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_ACCESS:
             current_parent_ = node;
-            visit(node->as.array_access->array);
-            visit(node->as.array_access->index);
+            if (node->as.array_access) {
+                visit(node->as.array_access->array);
+                visit(node->as.array_access->index);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_SLICE:
             reportNonC89Feature(node->loc, "Array slices are not supported in bootstrap compiler");
             current_parent_ = node;
-            visit(node->as.array_slice->array);
-            if (node->as.array_slice->start) visit(node->as.array_slice->start);
-            if (node->as.array_slice->end) visit(node->as.array_slice->end);
+            if (node->as.array_slice) {
+                visit(node->as.array_slice->array);
+                if (node->as.array_slice->start) visit(node->as.array_slice->start);
+                if (node->as.array_slice->end) visit(node->as.array_slice->end);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_ERRDEFER_STMT:
@@ -187,35 +199,41 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_VAR_DECL:
             current_parent_ = node;
-            if (node->resolved_type && isErrorType(node->resolved_type)) {
-                char type_str[128];
-                typeToString(node->resolved_type, type_str, sizeof(type_str));
-                char msg_buffer[256];
-                char* current = msg_buffer;
-                size_t remaining = sizeof(msg_buffer);
-                safe_append(current, remaining, "Variable '");
-                safe_append(current, remaining, node->as.var_decl->name);
-                safe_append(current, remaining, "' has error type '");
-                safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' which is not supported in bootstrap compiler");
-                reportNonC89Feature(node->loc, msg_buffer, true);
-            }
-            visit(node->as.var_decl->type);
-            if (node->as.var_decl->initializer) {
-                visit(node->as.var_decl->initializer);
+            if (node->as.var_decl) {
+                if (node->resolved_type && isErrorType(node->resolved_type)) {
+                    char type_str[128];
+                    typeToString(node->resolved_type, type_str, sizeof(type_str));
+                    char msg_buffer[256];
+                    char* current = msg_buffer;
+                    size_t remaining = sizeof(msg_buffer);
+                    safe_append(current, remaining, "Variable '");
+                    safe_append(current, remaining, node->as.var_decl->name ? node->as.var_decl->name : "<anonymous>");
+                    safe_append(current, remaining, "' has error type '");
+                    safe_append(current, remaining, type_str);
+                    safe_append(current, remaining, "' which is not supported in bootstrap compiler");
+                    reportNonC89Feature(node->loc, msg_buffer, true);
+                }
+                visit(node->as.var_decl->type);
+                if (node->as.var_decl->initializer) {
+                    visit(node->as.var_decl->initializer);
+                }
             }
             current_parent_ = prev_parent;
             break;
         case NODE_ASSIGNMENT:
             current_parent_ = node;
-            visit(node->as.assignment->lvalue);
-            visit(node->as.assignment->rvalue);
+            if (node->as.assignment) {
+                visit(node->as.assignment->lvalue);
+                visit(node->as.assignment->rvalue);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_COMPOUND_ASSIGNMENT:
             current_parent_ = node;
-            visit(node->as.compound_assignment->lvalue);
-            visit(node->as.compound_assignment->rvalue);
+            if (node->as.compound_assignment) {
+                visit(node->as.compound_assignment->lvalue);
+                visit(node->as.compound_assignment->rvalue);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_FN_DECL:
@@ -286,27 +304,37 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_FOR_STMT:
             current_parent_ = node;
-            visit(node->as.for_stmt->iterable_expr);
-            visit(node->as.for_stmt->body);
+            if (node->as.for_stmt) {
+                visit(node->as.for_stmt->iterable_expr);
+                visit(node->as.for_stmt->body);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_PTR_CAST:
             current_parent_ = node;
-            visit(node->as.ptr_cast->target_type);
-            visit(node->as.ptr_cast->expr);
+            if (node->as.ptr_cast) {
+                visit(node->as.ptr_cast->target_type);
+                visit(node->as.ptr_cast->expr);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_SWITCH_EXPR:
             current_parent_ = node;
-            visit(node->as.switch_expr->expression);
-            for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
-                ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
-                if (!prong->is_else) {
-                    for (size_t j = 0; j < prong->cases->length(); ++j) {
-                        visit((*prong->cases)[j]);
+            if (node->as.switch_expr) {
+                visit(node->as.switch_expr->expression);
+                if (node->as.switch_expr->prongs) {
+                    for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                        ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
+                        if (prong) {
+                            if (!prong->is_else && prong->cases) {
+                                for (size_t j = 0; j < prong->cases->length(); ++j) {
+                                    visit((*prong->cases)[j]);
+                                }
+                            }
+                            visit(prong->body);
+                        }
                     }
                 }
-                visit(prong->body);
             }
             current_parent_ = prev_parent;
             break;
@@ -321,12 +349,14 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_FUNCTION_TYPE:
             reportNonC89Feature(node->loc, "Function types (fn(...) T) are not supported in bootstrap compiler");
             current_parent_ = node;
-            if (node->as.function_type->params) {
-                for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
-                    visit((*node->as.function_type->params)[i]);
+            if (node->as.function_type) {
+                if (node->as.function_type->params) {
+                    for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
+                        visit((*node->as.function_type->params)[i]);
+                    }
                 }
+                visit(node->as.function_type->return_type);
             }
-            visit(node->as.function_type->return_type);
             current_parent_ = prev_parent;
             break;
         case NODE_ASYNC_EXPR:
@@ -636,10 +666,12 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     }
 
     // 1. Detect explicit generic call (type expression as argument)
-    for (size_t i = 0; i < call->args->length(); ++i) {
-        if (isTypeExpression((*call->args)[i], unit.getSymbolTable())) {
-            reportNonC89Feature(node->loc, "Generic function calls (with type arguments) are not C89-compatible.");
-            break;
+    if (call->args) {
+        for (size_t i = 0; i < call->args->length(); ++i) {
+            if (isTypeExpression((*call->args)[i], unit.getSymbolTable())) {
+                reportNonC89Feature(node->loc, "Generic function calls (with type arguments) are not C89-compatible.");
+                break;
+            }
         }
     }
 
@@ -680,8 +712,10 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     // Continue traversal
     current_parent_ = node;
     visit(call->callee);
-    for (size_t i = 0; i < call->args->length(); ++i) {
-        visit((*call->args)[i]);
+    if (call->args) {
+        for (size_t i = 0; i < call->args->length(); ++i) {
+            visit((*call->args)[i]);
+        }
     }
     current_parent_ = prev_parent;
 }
@@ -703,13 +737,14 @@ const char* C89FeatureValidator::getExpressionContext(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitFnDecl(ASTNode* node) {
+    if (!node || !node->as.fn_decl) return;
     ASTFnDeclNode* fn = node->as.fn_decl;
 
     // Nesting tracking
-    unit.getExtractionAnalysisCatalogue().enterFunction(fn->name);
+    unit.getExtractionAnalysisCatalogue().enterFunction(fn->name ? fn->name : "<anonymous>");
 
     // Resolve return type from symbol table (populated by TypeChecker)
-    Symbol* symbol = unit.getSymbolTable().lookup(fn->name);
+    Symbol* symbol = fn->name ? unit.getSymbolTable().lookup(fn->name) : NULL;
     Type* return_type = NULL;
     if (symbol && symbol->symbol_type && symbol->symbol_type->kind == TYPE_FUNCTION) {
         return_type = symbol->symbol_type->as.function.return_type;
@@ -718,7 +753,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     bool is_generic = hasGenericParams(fn);
     bool returns_error = isErrorType(return_type);
 
-    if (is_generic || unit.getGenericCatalogue().isFunctionGeneric(fn->name)) {
+    if (is_generic || (fn->name && unit.getGenericCatalogue().isFunctionGeneric(fn->name))) {
         reportNonC89Feature(node->loc, "Generic functions are not supported in C89 mode.");
     }
 
@@ -729,7 +764,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
         bool safe = payload ? unit.getExtractionAnalysisCatalogue().isStackSafe(payload) : true;
 
         unit.getErrorFunctionCatalogue().addErrorFunction(
-            fn->name,
+            fn->name ? fn->name : "<anonymous>",
             return_type,
             payload,
             node->loc,
@@ -748,7 +783,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
         char* current = msg_buffer;
         size_t remaining = sizeof(msg_buffer);
         safe_append(current, remaining, "Function '");
-        safe_append(current, remaining, fn->name);
+        safe_append(current, remaining, fn->name ? fn->name : "<anonymous>");
         safe_append(current, remaining, "' returns error type '");
         safe_append(current, remaining, type_str);
         safe_append(current, remaining, "' (non-C89)");

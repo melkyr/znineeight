@@ -99,6 +99,7 @@ TEST_FUNC(Task168_IndirectCallRejection) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
+    plat_print_info("Test 31: performFullPipeline returned\n");
 
     // Should fail validation/type-checking
     ASSERT_FALSE(success);

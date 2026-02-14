@@ -767,6 +767,18 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
 }
 
 void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
+    if (node->original_name && node->resolved_type && node->resolved_type->kind == TYPE_ENUM) {
+        const char* enum_name = node->resolved_type->as.enum_details.name;
+        if (enum_name) {
+            writeString(getC89GlobalName(enum_name));
+        } else {
+            writeString("/* anonymous enum */");
+        }
+        writeString("_");
+        writeString(node->original_name);
+        return;
+    }
+
     char buf[32];
     u64_to_decimal(node->value, buf, sizeof(buf));
     writeString(buf);
