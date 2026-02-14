@@ -714,15 +714,7 @@ Token Lexer::nextToken() {
             } else if (len == 8 && plat_strncmp(start, "offsetOf", 8) == 0) {
                 token.type = TOKEN_AT_OFFSETOF;
             } else {
-                // Unknown built-in: treat as generic identifier starting with @
-                char* name = (char*)this->arena.alloc(len + 2);
-                name[0] = '@';
-                if (len > 0) {
-                    plat_memcpy(name + 1, start, len);
-                }
-                name[len + 1] = '\0';
-                token.type = TOKEN_IDENTIFIER;
-                token.value.identifier = this->interner.intern(name);
+                token.type = TOKEN_ERROR;
             }
             this->column += (u32)len;
             break;

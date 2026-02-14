@@ -51,8 +51,8 @@ TEST_FUNC(TypeChecker_CompoundAssignment_PointerArithmetic) {
         "fn main() void {"
         "  var x: i32 = 10;"
         "  var p: *i32 = &x;"
-        "  p += 1;"
-        "  p -= 1;"
+        "  p += 1u;"
+        "  p -= 1u;"
         "}";
     if (!run_type_checker_test_successfully(source)) {
         printf("TypeChecker_CompoundAssignment_PointerArithmetic FAILED\n");

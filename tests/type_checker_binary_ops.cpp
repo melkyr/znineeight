@@ -83,7 +83,7 @@ TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
         "    var p2_i32: *i32;\n"
         "    var p_u8: *u8;\n"
         "    var p_void: *void;\n"
-        "    var i: i32 = 0;\n"
+        "    var i: usize = 0u;\n"
         "    %s;\n"
         "}";
 
@@ -141,12 +141,12 @@ TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
 
     // Subtracting incompatible pointer types
     {
-        ASSERT_TRUE(check_binary_op_error(base_source, "p_i32 - p_u8", ERR_TYPE_MISMATCH, arena));
+        ASSERT_TRUE(check_binary_op_error(base_source, "p_i32 - p_u8", ERR_POINTER_SUBTRACTION_INCOMPATIBLE, arena));
     }
 
     // pointer + pointer is forbidden
     {
-        ASSERT_TRUE(check_binary_op_error(base_source, "p_i32 + p2_i32", ERR_TYPE_MISMATCH, arena));
+        ASSERT_TRUE(check_binary_op_error(base_source, "p_i32 + p2_i32", ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, arena));
     }
 
     return true;

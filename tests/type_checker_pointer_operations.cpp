@@ -59,7 +59,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     TypeChecker checker(comp_unit);
 
     Type* ptr_type = createPointerType(arena, get_g_type_i32(), false);
-    Type* int_type = get_g_type_i32();
+    Type* int_type = get_g_type_usize();
 
     // Test: pointer + integer
     {
@@ -209,6 +209,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
 
         checker.visit(&root_node);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR);
     }
 
     // Test: pointer - pointer (incompatible types)
@@ -234,6 +235,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
 
         checker.visit(&root_node);
         ASSERT_TRUE(comp_unit.getErrorHandler().hasErrors());
+        ASSERT_EQ(comp_unit.getErrorHandler().getErrors()[0].code, ERR_POINTER_SUBTRACTION_INCOMPATIBLE);
     }
 
     // Test: void* + integer
