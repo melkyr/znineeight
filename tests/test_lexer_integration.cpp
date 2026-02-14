@@ -6,9 +6,6 @@
 #include "string_interner.hpp"
 #include <cmath> // For fabs
 
-static bool compare_floats(double a, double b) {
-    return fabs(a - b) < 1e-9;
-}
 
 TEST_FUNC(Lexer_MultiLineIntegrationTest) {
     ArenaAllocator arena(16384);

@@ -29,3 +29,31 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols) {
             return false;
     }
 }
+
+const char* getTokenSpelling(TokenType op) {
+    switch (op) {
+        case TOKEN_PLUS: return "+";
+        case TOKEN_MINUS: return "-";
+        case TOKEN_STAR: return "*";
+        case TOKEN_SLASH: return "/";
+        case TOKEN_PERCENT: return "%";
+        case TOKEN_EQUAL_EQUAL: return "==";
+        case TOKEN_BANG_EQUAL: return "!=";
+        case TOKEN_LESS: return "<";
+        case TOKEN_LESS_EQUAL: return "<=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_GREATER_EQUAL: return ">=";
+        case TOKEN_AMPERSAND: return "&";
+        case TOKEN_PIPE: return "|";
+        case TOKEN_CARET: return "^";
+        case TOKEN_LARROW2: return "<<";
+        case TOKEN_RARROW2: return ">>";
+        case TOKEN_PLUS2: return "++";
+        case TOKEN_MINUS2: return "--";
+        case TOKEN_BANG: return "!";
+        case TOKEN_TILDE: return "~";
+        case TOKEN_AND: return "&&";
+        case TOKEN_OR: return "||";
+        default: return "unknown";
+    }
+}

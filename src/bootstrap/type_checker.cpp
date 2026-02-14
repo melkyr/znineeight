@@ -9,29 +9,6 @@
 
 
 // Helper to get the string representation of a binary operator token.
-static const char* getTokenSpelling(TokenType op) {
-    switch (op) {
-        case TOKEN_PLUS: return "+";
-        case TOKEN_MINUS: return "-";
-        case TOKEN_STAR: return "*";
-        case TOKEN_SLASH: return "/";
-        case TOKEN_PERCENT: return "%";
-        case TOKEN_EQUAL_EQUAL: return "==";
-        case TOKEN_BANG_EQUAL: return "!=";
-        case TOKEN_LESS: return "<";
-        case TOKEN_LESS_EQUAL: return "<=";
-        case TOKEN_GREATER: return ">";
-        case TOKEN_GREATER_EQUAL: return ">=";
-        case TOKEN_AMPERSAND: return "&";
-        case TOKEN_PIPE: return "|";
-        case TOKEN_CARET: return "^";
-        case TOKEN_LARROW2: return "<<";
-        case TOKEN_RARROW2: return ">>";
-        case TOKEN_PLUS2: return "++";
-        case TOKEN_MINUS2: return "--";
-        default: return "unknown";
-    }
-}
 
 TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL) {
 }

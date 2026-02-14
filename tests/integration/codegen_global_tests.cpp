@@ -137,8 +137,8 @@ TEST_FUNC(Codegen_Global_Arithmetic) {
 }
 
 TEST_FUNC(Codegen_Global_Enum) {
-    // Enum constants are folded to integers for C89 emission simplicity
-    return run_global_codegen_test("const Color = enum { Red, Green }; pub var c: Color = Color.Red;", "enum Color c = 0;");
+    // Enum constants are folded to integers but keep their original name for mangled emission
+    return run_global_codegen_test("const Color = enum { Red, Green }; pub var c: Color = Color.Red;", "enum Color c = Color_Red;");
 }
 
 TEST_FUNC(Codegen_Global_Struct) {

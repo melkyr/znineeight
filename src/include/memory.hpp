@@ -55,7 +55,7 @@ static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
  * @param remaining A reference to the remaining size of the buffer.
  * @param src The null-terminated string to append.
  */
-static void safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
+static void arena_safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
     if (remaining <= 1) return; // Not enough space for content + null terminator
     size_t len = plat_strlen(src);
     size_t to_copy = len;
@@ -129,17 +129,17 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
     arena_simple_itoa(p2, n_p2, sizeof(n_p2));
     arena_simple_itoa(p3, n_p3, sizeof(n_p3));
 
-    safe_append(current, remaining, "Out of memory in ");
-    safe_append(current, remaining, context);
-    safe_append(current, remaining, ". Requested: ");
-    safe_append(current, remaining, n_requested);
-    safe_append(current, remaining, ", P1: ");
-    safe_append(current, remaining, n_p1);
-    safe_append(current, remaining, ", P2: ");
-    safe_append(current, remaining, n_p2);
-    safe_append(current, remaining, ", P3: ");
-    safe_append(current, remaining, n_p3);
-    safe_append(current, remaining, "\n");
+    arena_safe_append(current, remaining, "Out of memory in ");
+    arena_safe_append(current, remaining, context);
+    arena_safe_append(current, remaining, ". Requested: ");
+    arena_safe_append(current, remaining, n_requested);
+    arena_safe_append(current, remaining, ", P1: ");
+    arena_safe_append(current, remaining, n_p1);
+    arena_safe_append(current, remaining, ", P2: ");
+    arena_safe_append(current, remaining, n_p2);
+    arena_safe_append(current, remaining, ", P3: ");
+    arena_safe_append(current, remaining, n_p3);
+    arena_safe_append(current, remaining, "\n");
 
     plat_print_debug(buffer);
 }
@@ -223,13 +223,13 @@ public:
             arena_simple_itoa(total_cap, n_cap, sizeof(n_cap));
 
             dbg[0] = '\0';
-            safe_append(cur, rem, "DEBUG: total_used=");
-            safe_append(cur, rem, n_used);
-            safe_append(cur, rem, ", size=");
-            safe_append(cur, rem, n_size);
-            safe_append(cur, rem, ", cap=");
-            safe_append(cur, rem, n_cap);
-            safe_append(cur, rem, "\n");
+            arena_safe_append(cur, rem, "DEBUG: total_used=");
+            arena_safe_append(cur, rem, n_used);
+            arena_safe_append(cur, rem, ", size=");
+            arena_safe_append(cur, rem, n_size);
+            arena_safe_append(cur, rem, ", cap=");
+            arena_safe_append(cur, rem, n_cap);
+            arena_safe_append(cur, rem, "\n");
 
             plat_print_debug(dbg);
             report_out_of_memory("ArenaAllocator::alloc_aligned (total_cap)", size, total_used_for_stats, 0, total_cap);

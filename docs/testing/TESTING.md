@@ -7,9 +7,14 @@ This document outlines the testing strategy and procedures for the RetroZig comp
 Unit tests are used to verify the correctness of individual compiler components (Lexer, Parser, TypeChecker, Analyzers).
 
 ### Batch Testing Strategy
-To prevent memory fragmentation and handle the large number of tests (~380+) within strict memory constraints (<16MB), the test suite is divided into multiple batches. Each batch runs in a fresh process with its own arena.
+To prevent memory fragmentation and handle the large number of tests (~400+) within strict memory constraints (<16MB), the test suite is divided into multiple independent batches. Each batch runs in its own process with a clean heap and a fresh arena.
 
-Execute the `test.sh` script (or `test.bat` on Windows) to compile all batch runners and execute them sequentially via `run_all_tests.sh`.
+The test infrastructure uses a "Self-Contained Batch" approach to ensure maximum reliability and to avoid issues with global state or buggy destructors:
+- **Single Translation Unit**: Each batch runner is compiled as a single translation unit that includes the bootstrap core (`bootstrap_all.cpp`), required test files, and the batch main entry point.
+- **Automated Generation**: The `test.sh` script automatically generates these self-contained `.cpp` files based on the tests listed in each batch.
+- **Reliable Termination**: Batch runners use `_exit()` (or `ExitProcess()` on Windows) to terminate immediately after tests pass, bypassing potentially unstable global destructor sequences.
+
+Execute the `test.sh` script (or `test.bat` on Windows) to generate, compile, and run all batches sequentially via `run_all_tests.sh`.
 
 By default, the test runner binaries (`test_runner_batch*`) are automatically deleted after successful execution to save space. To keep the binaries for debugging, use the `--no-postclean` flag:
 

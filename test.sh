@@ -1,242 +1,60 @@
 #!/bin/bash
+# test.sh - Dumb and reliable test runner compilation script
+
 echo "Compiling RetroZig Batch Test Runners..."
 
-BOOTSTRAP_SRCS="src/bootstrap/lexer.cpp \
-    src/bootstrap/parser.cpp \
-    src/bootstrap/string_interner.cpp \
-    src/bootstrap/error_handler.cpp \
-    src/bootstrap/symbol_table.cpp \
-    src/bootstrap/type_system.cpp \
-    src/bootstrap/type_checker.cpp \
-    src/bootstrap/compilation_unit.cpp \
-    src/bootstrap/source_manager.cpp \
-    src/bootstrap/token_supplier.cpp \
-    src/bootstrap/c89_feature_validator.cpp \
-    src/bootstrap/lifetime_analyzer.cpp \
-    src/bootstrap/null_pointer_analyzer.cpp \
-    src/bootstrap/double_free_analyzer.cpp \
-    src/bootstrap/utils.cpp \
-    src/bootstrap/ast_utils.cpp \
-    src/bootstrap/error_set_catalogue.cpp \
-    src/bootstrap/generic_catalogue.cpp \
-    src/bootstrap/error_function_catalogue.cpp \
-    src/bootstrap/try_expression_catalogue.cpp \
-    src/bootstrap/catch_expression_catalogue.cpp \
-    src/bootstrap/orelse_expression_catalogue.cpp \
-    src/bootstrap/extraction_analysis_catalogue.cpp \
-    src/bootstrap/c89_pattern_generator.cpp \
-    src/bootstrap/errdefer_catalogue.cpp \
-    src/bootstrap/name_collision_detector.cpp \
-    src/bootstrap/signature_analyzer.cpp \
-    src/bootstrap/name_mangler.cpp \
-    src/bootstrap/call_site_lookup_table.cpp \
-    src/bootstrap/indirect_call_catalogue.cpp \
-    src/bootstrap/call_resolution_validator.cpp \
-    src/bootstrap/codegen.cpp \
-    src/bootstrap/c_variable_allocator.cpp \
-    src/bootstrap/platform.cpp"
+FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
 
-TEST_SRCS="tests/test_c89_rejection.cpp \
-    tests/c89_type_compat_tests.cpp \
-    tests/c89_type_mapping_tests.cpp \
-    tests/const_var_crash_test.cpp \
-    tests/bug_test_memory.cpp \
-    tests/dynamic_array_copy_test.cpp \
-    tests/integer_literal_parsing.cpp \
-    tests/lexer_edge_cases.cpp \
-    tests/lexer_fixes.cpp \
-    tests/lexer_strings.cpp \
-    tests/lexer_utils.cpp \
-    tests/memory_alignment_test.cpp \
-    tests/memory_stability_tests.cpp \
-    tests/memory_tests.cpp \
-    tests/parser_associativity_test.cpp \
-    tests/parser_bug_fixes.cpp \
-    tests/parser_symbol_integration_tests.cpp \
-    tests/return_type_validation_tests.cpp \
-    tests/symbol_builder_tests.cpp \
-    tests/symbol_table_tests.cpp \
-    tests/test_arena.cpp \
-    tests/test_arena_guard.cpp \
-    tests/test_arena_overflow.cpp \
-    tests/test_ast.cpp \
-    tests/test_ast_async.cpp \
-    tests/test_ast_comptime.cpp \
-    tests/test_ast_container_declarations.cpp \
-    tests/test_ast_control_flow.cpp \
-    tests/test_ast_declarations.cpp \
-    tests/test_ast_error_nodes.cpp \
-    tests/test_ast_statements.cpp \
-    tests/test_ast_types.cpp \
-    tests/test_char_literal.cpp \
-    tests/test_compilation_unit.cpp \
-    tests/test_compile_time_keywords.cpp \
-    tests/test_error_handler.cpp \
-    tests/test_keywords.cpp \
-    tests/test_lexer.cpp \
-    tests/test_lexer_comments.cpp \
-    tests/test_lexer_compound_operators.cpp \
-    tests/test_lexer_decimal_float.cpp \
-    tests/test_lexer_delimiters.cpp \
-    tests/test_lexer_float.cpp \
-    tests/test_lexer_integration.cpp \
-    tests/test_lexer_keywords.cpp \
-    tests/test_lexer_operators.cpp \
-    tests/test_lexer_special_ops.cpp \
-    tests/name_mangler_tests.cpp \
-    tests/test_memory.cpp \
-    tests/test_missing_keywords.cpp \
-    tests/test_parser_array_slice.cpp \
-    tests/test_parser_bitwise_expr.cpp \
-    tests/test_parser_compound_assignment.cpp \
-    tests/test_parser_block.cpp \
-    tests/test_parser_bug.cpp \
-    tests/test_parser_catch_expr.cpp \
-    tests/test_parser_comptime.cpp \
-    tests/test_parser_defer.cpp \
-    tests/test_parser_enums.cpp \
-    tests/test_parser_errdefer.cpp \
-    tests/test_parser_errors.cpp \
-    tests/test_parser_expressions.cpp \
-    tests/test_parser_fn_decl.cpp \
-    tests/test_parser_for_statement.cpp \
-    tests/test_parser_functions.cpp \
-    tests/test_parser_if_statement.cpp \
-    tests/test_parser_integration.cpp \
-    tests/test_parser_lifecycle.cpp \
-    tests/test_parser_logical_operators.cpp \
-    tests/test_parser_memory.cpp \
-    tests/test_parser_navigation.cpp \
-    tests/test_parser_recursion.cpp \
-    tests/test_parser_return.cpp \
-    tests/test_parser_struct.cpp \
-    tests/test_parser_switch.cpp \
-    tests/test_parser_try_expr.cpp \
-    tests/test_parser_types.cpp \
-    tests/test_parser_unary.cpp \
-    tests/test_parser_union.cpp \
-    tests/test_parser_vars.cpp \
-    tests/test_parser_while.cpp \
-    tests/test_source_manager.cpp \
-    tests/test_string_interner.cpp \
-    tests/test_string_literal.cpp \
-    tests/test_utils.cpp \
-    tests/type_checker_address_of.cpp \
-    tests/type_checker_array_tests.cpp \
-    tests/type_checker_binary_ops.cpp \
-    tests/type_checker_bool_tests.cpp \
-    tests/test_type_checker_compound_assignment.cpp \
-    tests/type_checker_c89_compat_tests.cpp \
-    tests/type_checker_control_flow.cpp \
-    tests/type_checker_enum_tests.cpp \
-    tests/type_checker_expressions.cpp \
-    tests/type_checker_float_c89_compat_tests.cpp \
-    tests/type_checker_fn_decl.cpp \
-    tests/type_checker_literals.cpp \
-    tests/type_checker_pointer_arithmetic.cpp \
-    tests/type_checker_pointer_operations.cpp \
-    tests/type_checker_pointers.cpp \
-    tests/type_checker_tests.cpp \
-    tests/type_checker_unary_op_c89.cpp \
-    tests/type_checker_var_decl.cpp \
-    tests/type_checker_void_tests.cpp \
-    tests/pointer_arithmetic_test.cpp \
-    tests/type_compatibility_tests.cpp \
-    tests/type_system_tests.cpp \
-    tests/type_to_string_tests.cpp \
-    tests/test_assignment_compatibility.cpp \
-    tests/type_checker_slice_expression_test.cpp \
-    tests/task_119_test.cpp \
-    tests/test_symbol_flags.cpp \
-    tests/test_utils_bug.cpp \
-    tests/lifetime_analysis_tests.cpp \
-    tests/null_pointer_analysis_tests.cpp \
-    tests/integration_tests.cpp \
-    tests/double_free_analysis_tests.cpp \
-    tests/test_double_free_locations.cpp \
-    tests/test_double_free_task_129.cpp \
-    tests/test_double_free_path_aware.cpp \
-    tests/test_task_130_switch.cpp \
-    tests/test_task_130_error_handling.cpp \
-    tests/test_task_130_loops.cpp \
-    tests/type_checker_struct_tests.cpp \
-    tests/test_enum_member_access.cpp \
-    tests/test_task_135.cpp \
-    tests/test_task_136.cpp \
-    tests/test_generics_rejection.cpp \
-    tests/test_task_142.cpp \
-    tests/test_task_143.cpp \
-    tests/test_catalogues_task_144.cpp \
-    tests/test_task_144_detection.cpp \
-    tests/type_checker_inference_tests.cpp \
-    tests/extraction_analysis_tests.cpp \
-    tests/test_task_148.cpp \
-    tests/test_task_149.cpp \
-    tests/test_task_150.cpp \
-    tests/test_task_150_extra.cpp \
-    tests/test_task_151.cpp \
-    tests/test_name_collision.cpp \
-    tests/test_signature_analyzer.cpp \
-    tests/task_154_test.cpp \
-    tests/test_platform.cpp \
-    tests/task_156_multi_file_test.cpp \
-    tests/lexer_decrement_test.cpp \
-    tests/task_157_catalogue_test.cpp \
-    tests/test_task_157_implicit_detection.cpp \
-    tests/test_milestone4_generics_integration.cpp \
-    tests/test_milestone4_lexer_parser.cpp \
-    tests/test_optional_type.cpp \
-    tests/test_optional_type_checker.cpp \
-    tests/test_milestone4_name_mangling.cpp \
-    tests/test_call_site_lookup.cpp \
-    tests/type_checker_call_site_tests.cpp \
-    tests/test_task_165_resolution.cpp \
-    tests/test_indirect_calls.cpp \
-    tests/test_forward_reference.cpp \
-    tests/test_recursive_calls.cpp \
-    tests/test_call_syntax.cpp \
-    tests/task_168_validation.cpp \
-    tests/test_bootstrap_types.cpp \
-    tests/test_msvc_types.cpp \
-    tests/integration/literal_tests.cpp \
-    tests/integration/variable_decl_tests.cpp \
-    tests/integration/arithmetic_tests.cpp \
-    tests/integration/function_decl_tests.cpp \
-    tests/integration/function_call_tests.cpp \
-    tests/integration/if_statement_tests.cpp \
-    tests/integration/while_loop_tests.cpp \
-    tests/integration/struct_tests.cpp \
-    tests/integration/pointer_tests.cpp \
-    tests/integration/array_tests.cpp \
-    tests/integration/enum_tests.cpp \
-    tests/integration/rejection_tests.cpp \
-    tests/integration/union_tests.cpp \
-    tests/integration/switch_tests.cpp \
-    tests/integration/for_tests.cpp \
-    tests/integration/defer_tests.cpp \
-    tests/integration/task182_183_tests.cpp \
-    tests/integration/pointer_arithmetic_tests.cpp \
-    tests/integration/builtin_offsetof_tests.cpp \
-    tests/integration/cast_tests.cpp \
-    tests/integration/builtin_size_tests.cpp \
-    tests/test_c89_emitter.cpp \
-    tests/test_c_variable_allocator.cpp \
-    tests/integer_widening_tests.cpp \
-    tests/c89_validation/gcc_validator.cpp \
-    tests/c89_validation/msvc6_validator.cpp \
-    tests/c89_validation/validation_tests.cpp \
-    tests/integration/codegen_integer_tests.cpp \
-    tests/integration/codegen_float_tests.cpp \
-    tests/integration/codegen_literal_tests.cpp \
-    tests/integration/codegen_global_tests.cpp \
-    tests/integration/codegen_function_tests.cpp \
-    tests/integration/codegen_local_tests.cpp"
+# Optional: Add -DDEBUG if needed, though batches should be self-contained
+# FLAGS="$FLAGS -DDEBUG"
 
-FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -DDEBUG -Isrc/include -Itests/integration -Itests/c89_validation"
+for i in {1..28}; do
+    MAIN_FILE="tests/main_batch$i.cpp"
+    if [ ! -f "$MAIN_FILE" ]; then
+        echo "Skipping Batch $i (no main file found)"
+        continue
+    fi
 
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27; do
-    echo "Compiling Batch $i..."
-    g++ $FLAGS $BOOTSTRAP_SRCS $TEST_SRCS tests/main_batch$i.cpp -o test_runner_batch$i
+    echo "Generating and Compiling Batch $i..."
+    RUNNER_FILE="tests/batch_runner_$i.cpp"
+
+    # Generate the self-contained runner
+    echo "// Generated batch runner for $MAIN_FILE" > "$RUNNER_FILE"
+    echo "#include \"../src/bootstrap/bootstrap_all.cpp\"" >> "$RUNNER_FILE"
+    echo "#include \"test_utils.cpp\"" >> "$RUNNER_FILE"
+
+    # Always include validation helpers as they are used by integration tests
+    echo "#include \"c89_validation/gcc_validator.cpp\"" >> "$RUNNER_FILE"
+    echo "#include \"c89_validation/msvc6_validator.cpp\"" >> "$RUNNER_FILE"
+
+    # Find needed test files
+    TEMP_FILE_LIST=$(mktemp)
+    grep -o 'test_[a-zA-Z0-9_]*' "$MAIN_FILE" | sed 's/test_//' | sort | uniq | while read name; do
+        find tests -name "*.cpp" | xargs grep -lE "TEST_FUNC\($name\)|bool test_$name\(\)" | grep -v "main_batch" | grep -v "test_declarations.hpp"
+    done | sort | uniq > "$TEMP_FILE_LIST"
+
+    # Add dependencies: if a file in a subdirectory is needed, include all files in that subdirectory
+    cat "$TEMP_FILE_LIST" | while read test_file; do
+        DIR=$(dirname "$test_file")
+        if [[ "$DIR" != "tests" ]]; then
+            find "$DIR" -name "*.cpp"
+        else
+            echo "$test_file"
+        fi
+    done | sort | uniq | while read test_file; do
+        if [[ "$test_file" != "$MAIN_FILE" && "$test_file" != "tests/test_utils.cpp" && \
+              "$test_file" != "tests/c89_validation/gcc_validator.cpp" && \
+              "$test_file" != "tests/c89_validation/msvc6_validator.cpp" ]]; then
+            REL_PATH=${test_file#tests/}
+            echo "#include \"$REL_PATH\"" >> "$RUNNER_FILE"
+        fi
+    done
+    rm "$TEMP_FILE_LIST"
+
+    echo "#include \"main_batch$i.cpp\"" >> "$RUNNER_FILE"
+
+    # Compile the runner
+    g++ $FLAGS "$RUNNER_FILE" -o "test_runner_batch$i"
     if [ $? -ne 0 ]; then
         echo "Compilation of Batch $i failed!"
         exit 1

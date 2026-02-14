@@ -17,8 +17,8 @@ bool C89FeatureValidator::validate(ASTNode* node) {
 
     // Generate extraction analysis report even if error found,
     // as it's useful for Milestone 5 planning.
-    unit.getExtractionAnalysisCatalogue().generateReport(&unit);
-    unit.getErrorHandler().printInfos();
+    // unit.getExtractionAnalysisCatalogue().generateReport(&unit);
+    // unit.getErrorHandler().printInfos();
 
     return !error_found_;
 }
@@ -630,6 +630,7 @@ void C89FeatureValidator::visitImportStmt(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
+    if (!node || node->type != NODE_FUNCTION_CALL || !node->as.function_call) return;
     ASTFunctionCallNode* call = node->as.function_call;
     ASTNode* prev_parent = current_parent_;
 
@@ -769,7 +770,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
             payload,
             node->loc,
             is_generic,
-            (int)fn->params->length(),
+            (int)(fn->params ? fn->params->length() : 0),
             size,
             safe
         );

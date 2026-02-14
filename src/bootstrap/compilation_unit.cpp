@@ -139,9 +139,9 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       name_mangler_(arena, interner),
       call_site_table_(arena),
       options_(),
+      current_module_(NULL),
       pattern_generator_(NULL),
       test_patterns_(NULL),
-      current_module_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
       c89_validation_passed_(false) {
