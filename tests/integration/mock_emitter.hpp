@@ -481,6 +481,15 @@ private:
     }
 
     std::string emitIntegerLiteral(const ASTIntegerLiteralNode* node, Type* type) {
+        if (node->original_name && type && type->kind == TYPE_ENUM) {
+            std::stringstream ss;
+            if (type->as.enum_details.name) {
+                ss << type->as.enum_details.name << "_" << node->original_name;
+            } else {
+                ss << "/* enum */_" << node->original_name;
+            }
+            return ss.str();
+        }
         std::stringstream ss;
         ss << node->value;
 

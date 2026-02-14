@@ -48,6 +48,8 @@ int ExtractionAnalysisCatalogue::addExtractionSite(
     int try_info_index,
     int catch_info_index
 ) {
+    if (!payload_type) return -1;
+
     int nesting = (function_stack_.length() > 0) ? function_stack_.back().current_depth : 0;
     int max_nesting = (function_stack_.length() > 0) ? function_stack_.back().max_depth : 0;
 
@@ -115,6 +117,7 @@ void ExtractionAnalysisCatalogue::generateReport(CompilationUnit* unit) {
 
     for (size_t i = 0; i < sites_->length(); ++i) {
         ExtractionSiteInfo& site = (*sites_)[i];
+        if (!site.extracted_type) continue;
 
         char type_name[128];
         typeToString(site.extracted_type, type_name, sizeof(type_name));

@@ -35,9 +35,11 @@ void SignatureAnalyzer::visit(ASTNode* node) {
             break;
 
         case NODE_IF_STMT:
-            visit(node->as.if_stmt->then_block);
-            if (node->as.if_stmt->else_block) {
-                visit(node->as.if_stmt->else_block);
+            if (node->as.if_stmt) {
+                visit(node->as.if_stmt->then_block);
+                if (node->as.if_stmt->else_block) {
+                    visit(node->as.if_stmt->else_block);
+                }
             }
             break;
 
@@ -46,41 +48,46 @@ void SignatureAnalyzer::visit(ASTNode* node) {
             break;
 
         case NODE_FOR_STMT:
-            visit(node->as.for_stmt->body);
+            if (node->as.for_stmt) {
+                visit(node->as.for_stmt->body);
+            }
             break;
 
-        case NODE_STRUCT_DECL: {
-            DynamicArray<ASTNode*>* fields = node->as.struct_decl->fields;
-            if (fields) {
-                for (size_t i = 0; i < fields->length(); ++i) {
-                    visit((*fields)[i]);
+        case NODE_STRUCT_DECL:
+            if (node->as.struct_decl) {
+                DynamicArray<ASTNode*>* fields = node->as.struct_decl->fields;
+                if (fields) {
+                    for (size_t i = 0; i < fields->length(); ++i) {
+                        visit((*fields)[i]);
+                    }
                 }
             }
             break;
-        }
 
-        case NODE_UNION_DECL: {
-            DynamicArray<ASTNode*>* fields = node->as.union_decl->fields;
-            if (fields) {
-                for (size_t i = 0; i < fields->length(); ++i) {
-                    visit((*fields)[i]);
+        case NODE_UNION_DECL:
+            if (node->as.union_decl) {
+                DynamicArray<ASTNode*>* fields = node->as.union_decl->fields;
+                if (fields) {
+                    for (size_t i = 0; i < fields->length(); ++i) {
+                        visit((*fields)[i]);
+                    }
                 }
             }
             break;
-        }
 
-        case NODE_ENUM_DECL: {
-            DynamicArray<ASTNode*>* fields = node->as.enum_decl->fields;
-            if (fields) {
-                for (size_t i = 0; i < fields->length(); ++i) {
-                    visit((*fields)[i]);
+        case NODE_ENUM_DECL:
+            if (node->as.enum_decl) {
+                DynamicArray<ASTNode*>* fields = node->as.enum_decl->fields;
+                if (fields) {
+                    for (size_t i = 0; i < fields->length(); ++i) {
+                        visit((*fields)[i]);
+                    }
                 }
             }
             break;
-        }
 
         case NODE_VAR_DECL:
-            if (node->as.var_decl->initializer) {
+            if (node->as.var_decl && node->as.var_decl->initializer) {
                 visit(node->as.var_decl->initializer);
             }
             break;
@@ -106,7 +113,7 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
         char* cur = buffer;
         size_t rem = sizeof(buffer);
         safe_append(cur, rem, "Function '");
-        safe_append(cur, rem, node->name);
+        safe_append(cur, rem, node->name ? node->name : "<anonymous>");
         safe_append(cur, rem, "' has too many parameters (");
         safe_append(cur, rem, num_buf);
         safe_append(cur, rem, "), maximum is 4 for bootstrap compiler compatibility");

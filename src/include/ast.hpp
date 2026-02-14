@@ -259,6 +259,7 @@ struct ASTIntegerLiteralNode {
     bool is_unsigned;
     bool is_long;
     Type* resolved_type;
+    const char* original_name; // For enum member preservation
 };
 
 /**

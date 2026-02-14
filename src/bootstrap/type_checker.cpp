@@ -1638,6 +1638,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         parent->as.integer_literal.is_unsigned = false;
         parent->as.integer_literal.is_long = false;
         parent->as.integer_literal.resolved_type = base_type;
+        parent->as.integer_literal.original_name = (*members)[member_idx].name;
         parent->resolved_type = base_type;
 
         return base_type; // Result type is the enum type itself
@@ -1849,6 +1850,10 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
                     // Resolve the actual type held by this constant
                     if (sym->details && ((ASTVarDeclNode*)sym->details)->initializer) {
                         resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
+                    } else if (sym->flags & SYMBOL_FLAG_PARAM) {
+                        // It's a type parameter (comptime T: type).
+                        // In the generic definition, we treat it as 'anytype'.
+                        resolved_type = get_g_type_anytype();
                     }
                 } else if (sym->symbol_type->kind == TYPE_STRUCT ||
                            sym->symbol_type->kind == TYPE_UNION ||
@@ -2585,7 +2590,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 
             if (isTypeExpression(arg, unit.getSymbolTable())) {
                 params[param_count].kind = GENERIC_PARAM_TYPE;
-                params[param_count].type_value = arg_type;
+                params[param_count].type_value = (arg_type && arg_type->kind == TYPE_TYPE) ? arg->resolved_type : arg_type;
                 params[param_count].param_name = NULL;
                 param_count++;
             } else {
@@ -2810,11 +2815,12 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
 
     switch (expr->type) {
         case NODE_IDENTIFIER:
-            return expr->as.identifier.name;
+            return expr->as.identifier.name ? expr->as.identifier.name : "";
         case NODE_MEMBER_ACCESS: {
+            if (!expr->as.member_access) return "";
             // Very simplified for now: base.field
             const char* base = exprToString(expr->as.member_access->base);
-            const char* field = expr->as.member_access->field_name;
+            const char* field = expr->as.member_access->field_name ? expr->as.member_access->field_name : "";
             size_t len = plat_strlen(base) + 1 + plat_strlen(field) + 1;
             char* buf = (char*)unit.getArena().alloc(len);
             char* cur = buf;
@@ -2822,6 +2828,28 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
             safe_append(cur, rem, base);
             safe_append(cur, rem, ".");
             safe_append(cur, rem, field);
+            return buf;
+        }
+        case NODE_ARRAY_ACCESS: {
+            if (!expr->as.array_access) return "";
+            const char* base = exprToString(expr->as.array_access->array);
+            size_t len = plat_strlen(base) + 4;
+            char* buf = (char*)unit.getArena().alloc(len);
+            char* cur = buf;
+            size_t rem = len;
+            safe_append(cur, rem, base);
+            safe_append(cur, rem, "[]");
+            return buf;
+        }
+        case NODE_FUNCTION_CALL: {
+            if (!expr->as.function_call) return "";
+            const char* callee = exprToString(expr->as.function_call->callee);
+            size_t len = plat_strlen(callee) + 3;
+            char* buf = (char*)unit.getArena().alloc(len);
+            char* cur = buf;
+            size_t rem = len;
+            safe_append(cur, rem, callee);
+            safe_append(cur, rem, "()");
             return buf;
         }
         default:
