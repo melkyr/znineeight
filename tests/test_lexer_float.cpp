@@ -16,9 +16,6 @@ static Token lex_string(const char* source, ArenaAllocator& alloc) {
 }
 
 // Helper for comparing floats
-static bool compare_floats(double a, double b) {
-    return fabs(a - b) < 1e-9;
-}
 
 TEST_FUNC(Lexer_FloatSimpleDecimal) {
     ArenaAllocator alloc(1024);

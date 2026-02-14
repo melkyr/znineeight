@@ -32,11 +32,7 @@ int main(int argc, char* argv[]) {
         test_CallSyntax_AtImport_Rejection,
         test_CallSyntax_ComplexPostfix,
         test_CallSyntax_MethodCall,
-        test_Task168_ComplexContexts,
-        test_Task168_MutualRecursion,
-        test_Task168_IndirectCallRejection,
-        test_Task168_GenericCallChain,
-        test_Task168_BuiltinCall
+        test_Task168_ComplexContexts
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

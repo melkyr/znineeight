@@ -149,8 +149,8 @@ private:
     IndirectCallCatalogue indirect_call_catalogue_;
     NameMangler name_mangler_;
     CallSiteLookupTable call_site_table_;
-    const char* current_module_;
     CompilationOptions options_;
+    const char* current_module_;
 
     C89PatternGenerator* pattern_generator_;
     DynamicArray<const char*>* test_patterns_;

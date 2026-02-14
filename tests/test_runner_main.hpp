@@ -3,9 +3,13 @@
 
 #include "../src/include/test_framework.hpp"
 #include "test_utils.hpp"
+#include "../src/include/platform.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 // Helper function to read source from a temporary file for child process
 static char* read_source_from_file_common(const char* path) {
@@ -54,7 +58,15 @@ inline int run_batch(int argc, char* argv[], bool (*tests[])(), int num_tests) {
     }
 
     printf("Passed %d/%d tests\n", passed, num_tests);
-    return passed == num_tests ? 0 : 1;
+    int result = (passed == num_tests ? 0 : 1);
+
+    // Using _exit/ExitProcess to avoid issues with buggy global/static destructors
+#if defined(_WIN32)
+    ExitProcess(result);
+#else
+    _exit(result);
+#endif
+    return result; // Unreachable
 }
 
 #endif // TEST_RUNNER_MAIN_HPP

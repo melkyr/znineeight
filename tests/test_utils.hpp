@@ -8,6 +8,7 @@
 #include "source_manager.hpp"
 #include "compilation_unit.hpp"
 #include <new> // For placement new
+#include <cmath> // For fabs
 
 class ArenaLifetimeGuard {
     ArenaAllocator* arena;
@@ -57,5 +58,11 @@ bool expect_parser_oom_abort(const char* source);
 // These are called by main() when running as a child process for a test
 void run_parser_test_in_child(const char* source);
 void run_type_checker_test_in_child(const char* source);
+
+inline bool compare_floats(double a, double b) {
+    double diff = a - b;
+    if (diff < 0) diff = -diff;
+    return diff < 1e-9;
+}
 
 #endif // TEST_UTILS_HPP

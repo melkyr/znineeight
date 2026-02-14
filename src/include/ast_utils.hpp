@@ -13,4 +13,11 @@ class SymbolTable;
  */
 bool isTypeExpression(ASTNode* node, SymbolTable& symbols);
 
+/**
+ * @brief Returns the string representation of a token type, typically for operators.
+ * @param op The token type.
+ * @return The string representation.
+ */
+const char* getTokenSpelling(TokenType op);
+
 #endif // AST_UTILS_HPP
