@@ -17,8 +17,8 @@ bool C89FeatureValidator::validate(ASTNode* node) {
 
     // Generate extraction analysis report even if error found,
     // as it's useful for Milestone 5 planning.
-    // unit.getExtractionAnalysisCatalogue().generateReport(&unit);
-    // unit.getErrorHandler().printInfos();
+    unit.getExtractionAnalysisCatalogue().generateReport(&unit);
+    unit.getErrorHandler().printInfos();
 
     return !error_found_;
 }

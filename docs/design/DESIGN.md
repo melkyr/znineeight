@@ -647,7 +647,9 @@ The testing strategy is designed to handle the complexity of the compiler while 
 
 ### Batch Testing Architecture
 To avoid arena fragmentation and out-of-memory errors during large-scale test runs, the unit test suite is split into multiple independent "batches".
+- **Single Translation Unit (STU) Strategy**: Each batch is compiled as a single translation unit that `#include`s the entire bootstrap core (`bootstrap_all.cpp`) and only the necessary test implementation files. This "dumb" compilation approach ensures maximum reliability by avoiding complex linking and ODR violations.
 - **Isolation**: Each batch runs in its own process, ensuring a clean memory heap and arena.
+- **Reliable Termination**: Test runners use `_exit()` (or `ExitProcess`) to terminate immediately after results are reported. This bypasses potentially unstable global destructor sequences, preventing exit-time segmentation faults.
 - **Scalability**: New tests can be added to existing batches or new ones without increasing the memory footprint of a single run.
 - **Verification**: A master script (`run_all_tests.sh`) orchestrates the sequential execution of all batches and aggregates results.
 - **Cleanup**: By default, batch runner binaries are deleted after execution to maintain environment cleanliness. This can be disabled using the `--no-postclean` flag in the test scripts.
