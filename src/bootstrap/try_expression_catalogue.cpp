@@ -34,9 +34,9 @@ void TryExpressionCatalogue::printSummary() const {
     for (size_t i = 0; i < try_expressions_->length(); ++i) {
         const TryExpressionInfo& info = (*try_expressions_)[i];
         char line[16], col[16], depth[16], strategy[16];
-        arena_simple_itoa(info.location.line, line, sizeof(line));
-        arena_simple_itoa(info.location.column, col, sizeof(col));
-        arena_simple_itoa(info.depth, depth, sizeof(depth));
+        plat_u64_to_string(info.location.line, line, sizeof(line));
+        plat_u64_to_string(info.location.column, col, sizeof(col));
+        plat_u64_to_string(info.depth, depth, sizeof(depth));
 
         char buffer[512];
         char* current = buffer;
@@ -51,7 +51,7 @@ void TryExpressionCatalogue::printSummary() const {
         safe_append(current, remaining, depth);
         safe_append(current, remaining, info.is_nested ? " nested=yes" : " nested=no");
 
-        arena_simple_itoa((size_t)info.extraction_strategy, strategy, sizeof(strategy));
+        plat_u64_to_string((size_t)info.extraction_strategy, strategy, sizeof(strategy));
         safe_append(current, remaining, " strategy=");
         safe_append(current, remaining, strategy);
         safe_append(current, remaining, info.stack_safe ? " safe=yes\n" : " safe=no\n");
@@ -60,7 +60,7 @@ void TryExpressionCatalogue::printSummary() const {
         plat_print_debug(buffer);
     }
     char total[16];
-    arena_simple_itoa(count(), total, sizeof(total));
+    plat_u64_to_string(count(), total, sizeof(total));
     char final_msg[64];
     char* cur = final_msg;
     size_t rem = sizeof(final_msg);

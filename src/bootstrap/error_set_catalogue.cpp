@@ -48,12 +48,12 @@ void ErrorSetCatalogue::printSummary() const {
         safe_append(ptr, remaining, " at ");
 
         char line_buf[16];
-        simple_itoa((long)info.location.line, line_buf, sizeof(line_buf));
+        plat_i64_to_string(info.location.line, line_buf, sizeof(line_buf));
         safe_append(ptr, remaining, line_buf);
         safe_append(ptr, remaining, ":");
 
         char col_buf[16];
-        simple_itoa((long)info.location.column, col_buf, sizeof(col_buf));
+        plat_i64_to_string(info.location.column, col_buf, sizeof(col_buf));
         safe_append(ptr, remaining, col_buf);
 
         safe_append(ptr, remaining, "\n");

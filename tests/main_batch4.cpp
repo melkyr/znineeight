@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
         // Utils Bug Fix
         test_safe_append_null_termination,
         test_safe_append_explicit_check,
-        test_simple_itoa_null_termination,
+        test_plat_itoa_null_termination,
 
         // Lifetime Analysis
         test_Lifetime_DirectReturnLocalAddress,

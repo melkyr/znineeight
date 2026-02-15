@@ -6,7 +6,6 @@
 #include "utils.hpp"
 #include "platform.hpp"
 #include <cstdlib> // For abort()
-#include <cstdio>
 
 
 // Helper to get the string representation of a binary operator token.
@@ -671,8 +670,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (!is_generic_call) {
             char msg_buffer[256];
             char expected_buf[21], actual_buf[21];
-            simple_itoa(expected_args, expected_buf, sizeof(expected_buf));
-            simple_itoa(actual_args, actual_buf, sizeof(actual_buf));
+            plat_i64_to_string(expected_args, expected_buf, sizeof(expected_buf));
+            plat_i64_to_string(actual_args, actual_buf, sizeof(actual_buf));
             char* current = msg_buffer;
             size_t remaining = sizeof(msg_buffer);
             safe_append(current, remaining, "wrong number of arguments to function call, expected ");
@@ -701,7 +700,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
             char msg_buffer[256];
             char arg_num_buf[21];
-            simple_itoa(i + 1, arg_num_buf, sizeof(arg_num_buf));
+            plat_i64_to_string(i + 1, arg_num_buf, sizeof(arg_num_buf));
             char* current = msg_buffer;
             size_t remaining = sizeof(msg_buffer);
             safe_append(current, remaining, "incompatible argument type for argument ");
@@ -962,7 +961,17 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         u64 array_size = base->as.array.size;
         if (index_value < 0 || (u64)index_value >= array_size) {
             char msg[128];
-            sprintf(msg, "Array index %ld is out of bounds for array of size %lu", (long)index_value, (unsigned long)array_size);
+            char* current = msg;
+            size_t remaining = sizeof(msg);
+
+            safe_append(current, remaining, "Array index ");
+            char num_buf[32];
+            plat_i64_to_string(index_value, num_buf, sizeof(num_buf));
+            safe_append(current, remaining, num_buf);
+            safe_append(current, remaining, " is out of bounds for array of size ");
+            plat_u64_to_string(array_size, num_buf, sizeof(num_buf));
+            safe_append(current, remaining, num_buf);
+
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->index->loc, msg, unit.getArena());
             return NULL;
         }
@@ -1967,13 +1976,13 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
     safe_append(current, remaining, " at ");
 
     char line_str[16];
-    simple_itoa(loc.line, line_str, sizeof(line_str));
+    plat_i64_to_string(loc.line, line_str, sizeof(line_str));
     safe_append(current, remaining, "line ");
     safe_append(current, remaining, line_str);
 
     safe_append(current, remaining, ", col ");
     char col_str[16];
-    simple_itoa(loc.column, col_str, sizeof(col_str));
+    plat_i64_to_string(loc.column, col_str, sizeof(col_str));
     safe_append(current, remaining, col_str);
     safe_append(current, remaining, "\n");
 
@@ -2403,8 +2412,8 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     safe_append(current, remaining, file ? file->filename : "<unknown>");
     safe_append(current, remaining, ":");
     char line_buf[21], col_buf[21];
-    simple_itoa(loc.line, line_buf, sizeof(line_buf));
-    simple_itoa(loc.column, col_buf, sizeof(col_buf));
+    plat_i64_to_string(loc.line, line_buf, sizeof(line_buf));
+    plat_i64_to_string(loc.column, col_buf, sizeof(col_buf));
     safe_append(current, remaining, line_buf);
     safe_append(current, remaining, ":");
     safe_append(current, remaining, col_buf);
@@ -2928,7 +2937,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
             char val_str[32];
             char type_str[64];
 
-            simple_itoa((long)val, val_str, sizeof(val_str));
+            plat_i64_to_string(val, val_str, sizeof(val_str));
             typeToString(target_type, type_str, sizeof(type_str));
 
             safe_append(curr, rem, "cast of value ");

@@ -9,41 +9,6 @@
 #include <new>     // For placement new
 
 /**
- * @brief A simple integer-to-string conversion function.
- *
- * This function converts an unsigned `size_t` integer to its string
- * representation. It is designed to be dependency-free, avoiding stdio
- * functions like `sprintf` to comply with project constraints.
- *
- * @param value The integer value to convert.
- * @param buffer A character buffer to store the resulting string.
- * @param buffer_size The size of the buffer.
- */
-static void arena_simple_itoa(size_t value, char* buffer, size_t buffer_size) {
-    if (buffer_size == 0) return;
-    buffer[--buffer_size] = '\0'; // Null-terminate
-
-    if (value == 0) {
-        if (buffer_size > 0) {
-            buffer[0] = '0';
-            buffer[1] = '\0';
-        }
-        return;
-    }
-
-    size_t i = buffer_size;
-    while (value > 0 && i > 0) {
-        buffer[--i] = (value % 10) + '0';
-        value /= 10;
-    }
-
-    // Shift the number to the start of the buffer
-    size_t len = buffer_size - i;
-    plat_memmove(buffer, buffer + i, len + 1);
-}
-
-
-/**
  * @brief Safely appends a source string to a destination buffer.
  *
  * This function appends `src` to the buffer pointed to by `dest_ptr`,
@@ -124,10 +89,10 @@ static void report_out_of_memory(const char* context, size_t requested, size_t p
     buffer[0] = '\0';
 
     char n_requested[21], n_p1[21], n_p2[21], n_p3[21];
-    arena_simple_itoa(requested, n_requested, sizeof(n_requested));
-    arena_simple_itoa(p1, n_p1, sizeof(n_p1));
-    arena_simple_itoa(p2, n_p2, sizeof(n_p2));
-    arena_simple_itoa(p3, n_p3, sizeof(n_p3));
+    plat_u64_to_string(requested, n_requested, sizeof(n_requested));
+    plat_u64_to_string(p1, n_p1, sizeof(n_p1));
+    plat_u64_to_string(p2, n_p2, sizeof(n_p2));
+    plat_u64_to_string(p3, n_p3, sizeof(n_p3));
 
     arena_safe_append(current, remaining, "Out of memory in ");
     arena_safe_append(current, remaining, context);
@@ -218,9 +183,9 @@ public:
             char* cur = dbg;
             size_t rem = sizeof(dbg);
             char n_used[21], n_size[21], n_cap[21];
-            arena_simple_itoa(total_used_for_stats, n_used, sizeof(n_used));
-            arena_simple_itoa(size, n_size, sizeof(n_size));
-            arena_simple_itoa(total_cap, n_cap, sizeof(n_cap));
+            plat_u64_to_string(total_used_for_stats, n_used, sizeof(n_used));
+            plat_u64_to_string(size, n_size, sizeof(n_size));
+            plat_u64_to_string(total_cap, n_cap, sizeof(n_cap));
 
             dbg[0] = '\0';
             arena_safe_append(cur, rem, "DEBUG: total_used=");

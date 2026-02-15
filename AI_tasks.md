@@ -1123,7 +1123,7 @@ Phase 1 – Core Infrastructure & Primitive Emission
 
         Test: Allocate local variable, ensure name is unique and ≤31 chars.
 
-    Task 191: Generate integer literals
+    Task 191: Generate integer literals (DONE)
 
         Emit 42, 0x1F, 123U, 123ULL, 123i64 (MSVC).
 
@@ -1131,7 +1131,7 @@ Phase 1 – Core Infrastructure & Primitive Emission
 
         Test: emitExpression(42) → "42".
 
-    Task 192: Generate float literals
+    Task 192: Generate float literals (DONE)
 
         Emit 3.14, 2.0e10.
 
@@ -1139,7 +1139,7 @@ Phase 1 – Core Infrastructure & Primitive Emission
 
         Test: 3.14f32 → "3.14" (no suffix).
 
-    Task 193: Generate string literals
+    Task 193: Generate string literals (DONE)
 
         Emit "hello", properly escaped.
 
@@ -1176,7 +1176,7 @@ Phase 2 – Variables & Functions
 
 Phase 3 – Expressions & Operators
 
-    Task 197: Binary operators (arithmetic, comparisons, logical)
+    Task 197: Binary operators (arithmetic, comparisons, logical) (DONE)
 
         Map Zig operators to C: +, -, *, /, %, ==, !=, <, >, <=, >=, &&, ||.
 
@@ -1184,7 +1184,7 @@ Phase 3 – Expressions & Operators
 
         Test: 1 + 2 * 3 → 1 + 2 * 3 (correct precedence relies on Zig parser, not emitter).
 
-    Task 198: Unary operators
+    Task 198: Unary operators (DONE)
 
         -x, !x, &x, *x.
 
@@ -1206,7 +1206,7 @@ Phase 3 – Expressions & Operators
 
 Phase 4 – Control Flow
 
-    Task 201: if statement
+    Task 201: if statement (DONE)
 
         if (cond) { ... } else { ... }
 
@@ -1214,13 +1214,13 @@ Phase 4 – Control Flow
 
         Test: if (x > 0) { return 1; } else { return 0; }
 
-    Task 202: while loop
+    Task 202: while loop (DONE)
 
         while (cond) { ... }
 
         Test: while (i < 10) { i = i + 1; }
 
-    Task 203: return statement
+    Task 203: return statement (DONE)
 
         return; (void) or return expr;.
 
@@ -1228,13 +1228,13 @@ Phase 4 – Control Flow
 
 Phase 5 – Built‑ins & Casts
 
-    Task 204: @ptrCast
+    Task 204: @ptrCast (DONE)
 
         Emit (T*)expr.
 
         Test: @ptrCast(*u8, ptr) → (unsigned char*)ptr.
 
-    Task 205: @intCast / @floatCast (runtime checked)
+    Task 205: @intCast / @floatCast (runtime checked) (DONE)
 
         Emit __bootstrap_T_from_U(expr) (call to runtime helper).
 
@@ -1250,7 +1250,7 @@ Phase 6 – Advanced (Optional / Deferred)
 
         Full implementation requires complex CFG transform – defer to Milestone 6.
 
-    Task 207: Integration tests with real C89 compiler
+    Task 207: Integration tests with real C89 compiler (DONE)
 
         Use the C89Validator framework from Task 179 to compile the generated code with gcc -std=c89 -pedantic.
 

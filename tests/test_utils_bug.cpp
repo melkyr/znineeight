@@ -63,24 +63,24 @@ TEST_FUNC(safe_append_explicit_check) {
     return true;
 }
 
-TEST_FUNC(simple_itoa_null_termination) {
+TEST_FUNC(plat_itoa_null_termination) {
     char buffer[10];
 
     // 1. Test zero
-    simple_itoa(0, buffer, 10);
+    plat_i64_to_string(0, buffer, 10);
     ASSERT_TRUE(buffer[0] == '0');
     ASSERT_TRUE(buffer[1] == '\0');
     if (buffer[1] == '0') return false; // Bug detection
 
     // 2. Test positive
-    simple_itoa(123, buffer, 10);
+    plat_i64_to_string(123, buffer, 10);
     // "123" -> buffer[0]='1', [1]='2', [2]='3', [3]='\0'
     ASSERT_TRUE(buffer[3] == '\0');
     if (buffer[3] == '0') return false; // Bug detection
     ASSERT_TRUE(strcmp(buffer, "123") == 0);
 
     // 3. Test negative
-    simple_itoa(-456, buffer, 10);
+    plat_i64_to_string(-456, buffer, 10);
     ASSERT_TRUE(strcmp(buffer, "-456") == 0);
     ASSERT_TRUE(buffer[4] == '\0');
     if (buffer[4] == '0') return false; // Bug detection

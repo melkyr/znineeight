@@ -108,7 +108,7 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     if (node->params && !isParameterCountValid(node->params->length())) {
         char buffer[256];
         char num_buf[21];
-        simple_itoa((long)node->params->length(), num_buf, sizeof(num_buf));
+        plat_i64_to_string(node->params->length(), num_buf, sizeof(num_buf));
 
         char* cur = buffer;
         size_t rem = sizeof(buffer);

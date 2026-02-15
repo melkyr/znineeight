@@ -67,11 +67,13 @@ public:
 * **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 
-### 3.2 Utility Functions (`utils.hpp`)
-**Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies.
+### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
+**Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).
 
-* **`safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
-* **`simple_itoa(long value, char* buffer, size_t buffer_size)`**: Converts a `long` to a string without using `sprintf` or `std::string`.
+* **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
+* **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
+* **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
+* **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
 
 ### 3.3 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.
@@ -156,7 +158,7 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
-    7.  **Code Generation:** Emits target code (C89).
+    7.  **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 #### 4.0.1 Non-C89 Feature Detection Strategy

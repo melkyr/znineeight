@@ -35,6 +35,10 @@ void plat_print_error(const char* message); // stderr
 void plat_print_debug(const char* message); // debugger only
 
 // String operations (CRT-free on Windows)
+void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size);
+void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size);
+void plat_float_to_string(double value, char* buffer, size_t buffer_size);
+
 size_t plat_strlen(const char* str);
 void plat_memcpy(void* dest, const void* src, size_t n);
 void plat_memmove(void* dest, const void* src, size_t n);

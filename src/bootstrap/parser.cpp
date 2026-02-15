@@ -70,7 +70,7 @@ void Parser::error(const char* msg) {
     plat_print_debug(" at token ");
     char buf[64];
     Token t = peek();
-    simple_itoa((long)t.type, buf, sizeof(buf));
+    plat_i64_to_string(t.type, buf, sizeof(buf));
     plat_print_debug(buf);
     if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_STRING_LITERAL) {
         plat_print_debug(" (");

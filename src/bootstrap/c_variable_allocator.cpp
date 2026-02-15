@@ -127,7 +127,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
         int suffix_num = 1;
         while (true) {
             char suffix_str[16];
-            simple_itoa((long)suffix_num, suffix_str, sizeof(suffix_str));
+            plat_i64_to_string(suffix_num, suffix_str, sizeof(suffix_str));
             size_t suffix_len = plat_strlen(suffix_str) + 1; // +1 for '_'
 
             size_t base_len = plat_strlen(mangled_buffer);

@@ -71,8 +71,8 @@ void CallSiteLookupTable::printUnresolved() const {
         if (!entry.resolved) {
             char buffer[512];
             char line_buf[21], col_buf[21];
-            simple_itoa(entry.call_node->loc.line, line_buf, sizeof(line_buf));
-            simple_itoa(entry.call_node->loc.column, col_buf, sizeof(col_buf));
+            plat_i64_to_string(entry.call_node->loc.line, line_buf, sizeof(line_buf));
+            plat_i64_to_string(entry.call_node->loc.column, col_buf, sizeof(col_buf));
 
             char* current = buffer;
             size_t remaining = sizeof(buffer);
