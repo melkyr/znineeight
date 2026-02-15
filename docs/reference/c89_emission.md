@@ -373,3 +373,57 @@ Multi-dimensional arrays are emitted using standard C nested array syntax.
 |----------|-----------------|
 | `[3][4]i32` | `int arr[3][4]` |
 | `*[5]u8`   | `unsigned char (*ptr)[5]` |
+
+## 14. Control Flow
+
+### 14.1 If Statements
+
+Zig `if` statements are mapped to C `if` statements. Braces are always emitted for both `then` and `else` blocks to ensure clarity and avoid dangling `else` issues in generated code.
+
+| Zig Syntax | C89 Emission |
+|------------|--------------|
+| `if (c) { a(); }` | `if (c) { a(); }` |
+| `if (c) { a(); } else { b(); }` | `if (c) { a(); } else { b(); }` |
+| `if (c) { a(); } else if (d) { b(); }` | `if (c) { a(); } else if (d) { b(); }` |
+
+### 14.2 While Loops
+
+Zig `while` loops are mapped to C `while` loops.
+
+| Zig Syntax | C89 Emission |
+|------------|--------------|
+| `while (c) { a(); }` | `while (c) { a(); }` |
+
+Zig's `break` and `continue` statements map directly to C's `break` and `continue`.
+
+### 14.3 Return Statements
+
+Zig `return` statements map directly to C `return`.
+
+| Zig Syntax | C89 Emission |
+|------------|--------------|
+| `return;`  | `return;`    |
+| `return x;`| `return x;`   |
+
+## 15. Built-ins and Casts
+
+### 15.1 Pointer Cast (@ptrCast)
+
+`@ptrCast(T, expr)` is emitted as a standard C-style cast.
+
+| Zig Syntax | C89 Emission |
+|------------|--------------|
+| `@ptrCast(*i32, p)` | `(int*)p` |
+
+### 15.2 Numeric Casts (@intCast, @floatCast)
+
+Numeric casts are handled differently depending on whether they can be resolved at compile-time.
+
+- **Compile-time**: Constant-folded into a raw literal by the `TypeChecker`.
+- **Runtime**: Emitted as a call to a checked conversion helper in the runtime library.
+
+| Zig Syntax | C89 Emission (Runtime) |
+|------------|------------------------|
+| `@intCast(i32, my_u64)` | `__bootstrap_i32_from_u32(my_u64)` |
+
+*(Note: The actual implementation of these helpers is provided in `zig_runtime.h`.)*
