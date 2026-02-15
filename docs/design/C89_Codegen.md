@@ -45,3 +45,22 @@ The `CVariableAllocator` manages the allocation and uniquification of C variable
 Zig name `long_variable_name_exceeding_31_chars` might become `long_variable_name_exceeding_3`.
 Zig name `int` becomes `z_int`.
 Multiple uses of `tmp` result in `tmp`, `tmp_1`, `tmp_2`, etc.
+
+## 3. Emission Strategies
+
+### 3.1 Two-Pass Block Emission
+C89 requires all local variable declarations to appear at the beginning of a block, before any executable statements. To support Zig's flexible declaration placement, the `C89Emitter::emitBlock` method employs a two-pass strategy:
+1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
+2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`).
+
+### 3.2 Control Flow Mapping
+- **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
+- **While Loops**: Mapped to C `while (cond) { ... }`. Supports `break` and `continue`.
+- **Return Statements**: Mapped to `return expr;` or `return;`.
+
+### 3.3 Built-in Intrinsics
+- **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
+- **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
+
+### 3.4 Operator Precedence & Parentheses
+The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
