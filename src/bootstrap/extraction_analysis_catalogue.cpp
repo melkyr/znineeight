@@ -123,8 +123,8 @@ void ExtractionAnalysisCatalogue::generateReport(CompilationUnit* unit) {
         typeToString(site.extracted_type, type_name, sizeof(type_name));
 
         char size_str[32], nesting_str[32];
-        arena_simple_itoa(site.payload_size, size_str, sizeof(size_str));
-        arena_simple_itoa(site.current_nesting_depth, nesting_str, sizeof(nesting_str));
+        plat_u64_to_string(site.payload_size, size_str, sizeof(size_str));
+        plat_u64_to_string(site.current_nesting_depth, nesting_str, sizeof(nesting_str));
 
         if (site.strategy == EXTRACTION_ARENA) {
             char msg[512];
@@ -140,7 +140,7 @@ void ExtractionAnalysisCatalogue::generateReport(CompilationUnit* unit) {
             handler.reportWarning(WARN_EXTRACTION_LARGE_PAYLOAD, site.location, msg, arena_);
         } else if (site.strategy == EXTRACTION_STACK) {
             char usage_str[32];
-            arena_simple_itoa(site.estimated_stack_usage, usage_str, sizeof(usage_str));
+            plat_u64_to_string(site.estimated_stack_usage, usage_str, sizeof(usage_str));
 
             char msg[512];
             char* cur = msg;

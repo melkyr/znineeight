@@ -1,4 +1,17 @@
 #include "platform.hpp"
+#include <stdio.h>
+
+static void plat_reverse(char* str, int length) {
+    int start = 0;
+    int end = length - 1;
+    while (start < end) {
+        char temp = str[start];
+        str[start] = str[end];
+        str[end] = temp;
+        start++;
+        end--;
+    }
+}
 
 #ifdef _WIN32
 // --- Windows Implementation ---
@@ -94,6 +107,68 @@ void plat_print_error(const char* message) {
 
 void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
+}
+
+void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    if (value == 0) {
+        if (buffer_size > 1) {
+            buffer[0] = '0';
+            buffer[1] = '\0';
+        } else {
+            buffer[0] = '\0';
+        }
+        return;
+    }
+
+    int i = 0;
+    while (value > 0 && (size_t)i < buffer_size - 1) {
+        buffer[i++] = (char)((value % 10) + '0');
+        value /= 10;
+    }
+    buffer[i] = '\0';
+    plat_reverse(buffer, i);
+}
+
+void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    if (value == 0) {
+        plat_u64_to_string(0, buffer, buffer_size);
+        return;
+    }
+
+    int i = 0;
+    bool negative = false;
+    u64 uval;
+
+    if (value < 0) {
+        negative = true;
+        uval = (u64)-(value + 1) + 1; // Avoid overflow for MIN_I64
+    } else {
+        uval = (u64)value;
+    }
+
+    while (uval > 0 && (size_t)i < buffer_size - 1) {
+        buffer[i++] = (char)((uval % 10) + '0');
+        uval /= 10;
+    }
+
+    if (negative && (size_t)i < buffer_size - 1) {
+        buffer[i++] = '-';
+    }
+
+    buffer[i] = '\0';
+    plat_reverse(buffer, i);
+}
+
+void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
+    /*
+     * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
+     * in the final kernel32-only bootstrap.
+     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     */
+    (void)buffer_size;
+    sprintf(buffer, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {
@@ -217,7 +292,6 @@ int plat_delete_file(const char* path) {
 #include <sys/wait.h>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
 
 void* plat_alloc(size_t size) {
     return malloc(size);
@@ -301,6 +375,68 @@ void plat_print_error(const char* message) {
 void plat_print_debug(const char* message) {
     plat_print_error("[DEBUG] ");
     plat_print_error(message);
+}
+
+void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    if (value == 0) {
+        if (buffer_size > 1) {
+            buffer[0] = '0';
+            buffer[1] = '\0';
+        } else {
+            buffer[0] = '\0';
+        }
+        return;
+    }
+
+    int i = 0;
+    while (value > 0 && (size_t)i < buffer_size - 1) {
+        buffer[i++] = (char)((value % 10) + '0');
+        value /= 10;
+    }
+    buffer[i] = '\0';
+    plat_reverse(buffer, i);
+}
+
+void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    if (value == 0) {
+        plat_u64_to_string(0, buffer, buffer_size);
+        return;
+    }
+
+    int i = 0;
+    bool negative = false;
+    u64 uval;
+
+    if (value < 0) {
+        negative = true;
+        uval = (u64)-(value + 1) + 1; // Avoid overflow for MIN_I64
+    } else {
+        uval = (u64)value;
+    }
+
+    while (uval > 0 && (size_t)i < buffer_size - 1) {
+        buffer[i++] = (char)((uval % 10) + '0');
+        uval /= 10;
+    }
+
+    if (negative && (size_t)i < buffer_size - 1) {
+        buffer[i++] = '-';
+    }
+
+    buffer[i] = '\0';
+    plat_reverse(buffer, i);
+}
+
+void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
+    /*
+     * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
+     * in the final kernel32-only bootstrap.
+     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     */
+    (void)buffer_size;
+    sprintf(buffer, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {

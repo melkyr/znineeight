@@ -983,10 +983,10 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
         else safe_append(p, rem, "unknown");
         safe_append(p, rem, ":");
         char buf[16];
-        simple_itoa(tp->alloc_loc.line, buf, sizeof(buf));
+        plat_i64_to_string(tp->alloc_loc.line, buf, sizeof(buf));
         safe_append(p, rem, buf);
         safe_append(p, rem, ":");
-        simple_itoa(tp->alloc_loc.column, buf, sizeof(buf));
+        plat_i64_to_string(tp->alloc_loc.column, buf, sizeof(buf));
         safe_append(p, rem, buf);
         safe_append(p, rem, ")");
     }
@@ -1002,10 +1002,10 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
                 else safe_append(p, rem, "unknown");
                 safe_append(p, rem, ":");
                 char buf[16];
-                simple_itoa(tp->defer_loc.line, buf, sizeof(buf));
+                plat_i64_to_string(tp->defer_loc.line, buf, sizeof(buf));
                 safe_append(p, rem, buf);
                 safe_append(p, rem, ":");
-                simple_itoa(tp->defer_loc.column, buf, sizeof(buf));
+                plat_i64_to_string(tp->defer_loc.column, buf, sizeof(buf));
                 safe_append(p, rem, buf);
             }
             safe_append(p, rem, " (deferred free at ");
@@ -1018,10 +1018,10 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
         else safe_append(p, rem, "unknown");
         safe_append(p, rem, ":");
         char buf[16];
-        simple_itoa(tp->first_free_loc.line, buf, sizeof(buf));
+        plat_i64_to_string(tp->first_free_loc.line, buf, sizeof(buf));
         safe_append(p, rem, buf);
         safe_append(p, rem, ":");
-        simple_itoa(tp->first_free_loc.column, buf, sizeof(buf));
+        plat_i64_to_string(tp->first_free_loc.column, buf, sizeof(buf));
         safe_append(p, rem, buf);
 
         if (tp->freed_via_defer) {
@@ -1055,10 +1055,10 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
             else safe_append(p, rem, "unknown");
             safe_append(p, rem, ":");
             char buf[16];
-            simple_itoa(tp->transfer_loc.line, buf, sizeof(buf));
+            plat_i64_to_string(tp->transfer_loc.line, buf, sizeof(buf));
             safe_append(p, rem, buf);
             safe_append(p, rem, ":");
-            simple_itoa(tp->transfer_loc.column, buf, sizeof(buf));
+            plat_i64_to_string(tp->transfer_loc.column, buf, sizeof(buf));
             safe_append(p, rem, buf);
             safe_append(p, rem, ")");
         }
@@ -1084,10 +1084,10 @@ void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool i
         else safe_append(p, rem, "unknown");
         safe_append(p, rem, ":");
         char buf[16];
-        simple_itoa(tp->alloc_loc.line, buf, sizeof(buf));
+        plat_i64_to_string(tp->alloc_loc.line, buf, sizeof(buf));
         safe_append(p, rem, buf);
         safe_append(p, rem, ":");
-        simple_itoa(tp->alloc_loc.column, buf, sizeof(buf));
+        plat_i64_to_string(tp->alloc_loc.column, buf, sizeof(buf));
         safe_append(p, rem, buf);
         safe_append(p, rem, ")");
     }

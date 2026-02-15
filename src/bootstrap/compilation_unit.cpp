@@ -60,7 +60,7 @@ public:
         char stat_buf[256];
         char num_buf_stat[32];
 
-        simple_itoa((long)unit.getTypeInterner().getDeduplicationCount(), num_buf_stat, sizeof(num_buf_stat));
+        plat_i64_to_string(unit.getTypeInterner().getDeduplicationCount(), num_buf_stat, sizeof(num_buf_stat));
         plat_print_info("Total Type Deduplications: ");
         plat_print_info(num_buf_stat);
         plat_print_info("\n");
@@ -79,27 +79,27 @@ public:
             safe_append(cur, rem, "\n");
 
             safe_append(cur, rem, "  Arena delta: ");
-            simple_itoa((long)delta, num_buf, sizeof(num_buf));
+            plat_i64_to_string(delta, num_buf, sizeof(num_buf));
             safe_append(cur, rem, num_buf);
             safe_append(cur, rem, " bytes\n");
 
             safe_append(cur, rem, "  AST nodes: ");
-            simple_itoa((long)s.ast_nodes, num_buf, sizeof(num_buf));
+            plat_i64_to_string(s.ast_nodes, num_buf, sizeof(num_buf));
             safe_append(cur, rem, num_buf);
             safe_append(cur, rem, "\n");
 
             safe_append(cur, rem, "  Types: ");
-            simple_itoa((long)s.types, num_buf, sizeof(num_buf));
+            plat_i64_to_string(s.types, num_buf, sizeof(num_buf));
             safe_append(cur, rem, num_buf);
             safe_append(cur, rem, "\n");
 
             safe_append(cur, rem, "  Symbols: ");
-            simple_itoa((long)s.symbols, num_buf, sizeof(num_buf));
+            plat_i64_to_string(s.symbols, num_buf, sizeof(num_buf));
             safe_append(cur, rem, num_buf);
             safe_append(cur, rem, "\n");
 
             safe_append(cur, rem, "  Catalogue entries: ");
-            simple_itoa((long)s.catalogue_entries, num_buf, sizeof(num_buf));
+            plat_i64_to_string(s.catalogue_entries, num_buf, sizeof(num_buf));
             safe_append(cur, rem, num_buf);
             safe_append(cur, rem, "\n");
 
@@ -373,19 +373,19 @@ void CompilationUnit::validateErrorHandlingRules() {
     safe_append(cur, rem, "Found ");
     char num_buf[21];
 
-    simple_itoa(try_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(try_expression_catalogue_.count(), num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " try expressions, ");
 
-    simple_itoa(catch_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(catch_expression_catalogue_.count(), num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " catch expressions, ");
 
-    simple_itoa(orelse_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(orelse_expression_catalogue_.count(), num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " orelse expressions, ");
 
-    simple_itoa(errdefer_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(errdefer_catalogue_.count(), num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " errdefer statements");
 
@@ -461,7 +461,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     size_t token_mem = token_arena_.getOffset();
     char num_buf[32];
-    simple_itoa((long)token_mem, num_buf, sizeof(num_buf));
+    plat_i64_to_string(token_mem, num_buf, sizeof(num_buf));
     plat_print_info("Token arena before reset: ");
     plat_print_info(num_buf);
     plat_print_info(" bytes\n");

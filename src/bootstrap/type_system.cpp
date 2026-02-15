@@ -375,7 +375,7 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             // Note: This is a simplified itoa; a proper one would be better.
             if (remaining > 11) {
                 char size_buf[21];
-                simple_itoa(type->as.array.size, size_buf, sizeof(size_buf));
+                plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
                 safe_append(current, remaining, size_buf);
             }
             safe_append(current, remaining, "]");

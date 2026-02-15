@@ -79,7 +79,7 @@ void C89Emitter::emitType(Type* type, const char* name) {
             while (curr->kind == TYPE_ARRAY) {
                 char buf[32];
                 writeString("[");
-                u64_to_decimal(curr->as.array.size, buf, sizeof(buf));
+                plat_u64_to_string(curr->as.array.size, buf, sizeof(buf));
                 writeString(buf);
                 writeString("]");
                 curr = curr->as.array.element_type;
@@ -113,7 +113,7 @@ void C89Emitter::emitType(Type* type, const char* name) {
         while (curr->kind == TYPE_ARRAY) {
             char buf[32];
             writeString("[");
-            u64_to_decimal(curr->as.array.size, buf, sizeof(buf));
+            plat_u64_to_string(curr->as.array.size, buf, sizeof(buf));
             writeString(buf);
             writeString("]");
             curr = curr->as.array.element_type;
@@ -366,7 +366,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeIndent();
             writeString("/* Unimplemented statement type ");
             char num[16];
-            simple_itoa(node->type, num, sizeof(num));
+            plat_i64_to_string(node->type, num, sizeof(num));
             writeString(num);
             writeString(" */\n");
             break;
@@ -719,7 +719,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         default:
             writeString("/* [Unimplemented Expression Type ");
             char num[16];
-            simple_itoa(node->type, num, sizeof(num));
+            plat_i64_to_string(node->type, num, sizeof(num));
             writeString(num);
             writeString("] */");
             break;
@@ -790,7 +790,7 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 writeString((*members)[i].name);
                 writeString(" = ");
                 char buf[32];
-                simple_itoa((long)(*members)[i].value, buf, sizeof(buf));
+                plat_i64_to_string((*members)[i].value, buf, sizeof(buf));
                 writeString(buf);
                 if (i < members->length() - 1) {
                     writeString(",");
@@ -824,7 +824,7 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
     }
 
     char buf[32];
-    u64_to_decimal(node->value, buf, sizeof(buf));
+    plat_u64_to_string(node->value, buf, sizeof(buf));
     writeString(buf);
 
     if (node->resolved_type) {
@@ -847,7 +847,7 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
 
 void C89Emitter::emitFloatLiteral(const ASTFloatLiteralNode* node) {
     char buffer[64];
-    sprintf(buffer, "%.15g", node->value);
+    plat_float_to_string(node->value, buffer, sizeof(buffer));
 
     // Ensure it's treated as a float by C (add .0 if no '.' or 'e')
     bool has_dot = false;
@@ -932,7 +932,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         if (!unique) {
             suffix++;
             char suffix_str[16];
-            simple_itoa(suffix, suffix_str, sizeof(suffix_str));
+            plat_i64_to_string(suffix, suffix_str, sizeof(suffix_str));
             size_t suffix_len = plat_strlen(suffix_str);
             size_t base_len = plat_strlen(buf);
 
@@ -1008,7 +1008,11 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
             } else {
                 char buf[8];
                 // Use octal escape \ooo (three digits zero-padded)
-                sprintf(buf, "\\%03o", c);
+                buf[0] = '\\';
+                buf[1] = (char)((c >> 6) & 7) + '0';
+                buf[2] = (char)((c >> 3) & 7) + '0';
+                buf[3] = (char)(c & 7) + '0';
+                buf[4] = '\0';
                 writeString(buf);
             }
     }

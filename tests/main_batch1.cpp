@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
         test_dynamic_array_growth_from_zero,
         test_dynamic_array_non_pod_reallocation,
 #ifdef DEBUG
-        test_simple_itoa_conversion,
+        test_plat_itoa_conversion,
 #endif
         // Group 1B
         test_string_interning,

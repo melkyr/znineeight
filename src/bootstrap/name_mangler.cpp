@@ -104,7 +104,7 @@ const char* NameMangler::mangleType(Type* type) {
 
             safe_append(ptr, remaining, "arr");
             char size_buf[21];
-            simple_itoa(type->as.array.size, size_buf, sizeof(size_buf));
+            plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
             safe_append(ptr, remaining, size_buf);
             safe_append(ptr, remaining, "_");
 

@@ -21,7 +21,7 @@ TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
 TEST_FUNC(dynamic_array_non_pod_reallocation);
 #ifdef DEBUG
-TEST_FUNC(simple_itoa_conversion);
+TEST_FUNC(plat_itoa_conversion);
 #endif
 
 // Forward declarations for Group 1B: Core Components
@@ -398,7 +398,7 @@ TEST_FUNC(SymbolFlags_SymbolBuilder);
 // Forward declarations for Task 119
 TEST_FUNC(safe_append_null_termination);
 TEST_FUNC(safe_append_explicit_check);
-TEST_FUNC(simple_itoa_null_termination);
+TEST_FUNC(plat_itoa_null_termination);
 TEST_FUNC(Task119_DetectMalloc);
 TEST_FUNC(Task119_DetectCalloc);
 TEST_FUNC(Task119_DetectRealloc);

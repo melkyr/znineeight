@@ -16,28 +16,6 @@
 void safe_append(char*& dest, size_t& remaining, const char* src);
 
 /**
- * @brief A simple integer-to-string conversion function (itoa).
- *
- * This function is C++98 compatible and avoids using std::string or sprintf.
- *
- * @param value The integer value to convert.
- * @param buffer The character buffer to write the string into.
- * @param buffer_size The size of the character buffer.
- */
-void simple_itoa(long value, char* buffer, size_t buffer_size);
-
-/**
- * @brief Converts a 64-bit unsigned integer to a decimal string.
- *
- * This function is stack-based and avoids heap allocations.
- *
- * @param value The u64 value to convert.
- * @param buffer The character buffer to write the string into.
- * @param buffer_size The size of the character buffer.
- */
-void u64_to_decimal(u64 value, char* buffer, size_t buffer_size);
-
-/**
  * @brief Checks if two C-style strings are equal.
  * @param a The first string.
  * @param b The second string.
