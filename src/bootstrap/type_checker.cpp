@@ -160,9 +160,8 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             return NULL; // Unreachable
         }
         case TOKEN_MINUS:
-        case TOKEN_PLUS2:
-        case TOKEN_MINUS2:
-            // C89 Unary '-', '++', '--' are only valid for numeric types.
+        case TOKEN_PLUS:
+            // C89 Unary '-' and '+' are only valid for numeric types.
             if (isNumericType(operand_type)) {
                 return operand_type;
             }
