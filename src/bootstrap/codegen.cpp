@@ -261,6 +261,50 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 }
 
+void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
+    if (!node) return;
+    // For prototypes, we don't necessarily need to reset var_alloc_,
+    // but we should ensure parameter names don't collide with keywords.
+    // However, C89 doesn't require parameter names in prototypes.
+    // Let's include them for clarity, but use a temporary allocator if needed.
+    // For now, we'll just use the regular one but save/restore state if possible.
+    // Since this is a bootstrap compiler, we can just use it and reset.
+
+    writeIndent();
+
+    // Special handling for the main entry point
+    if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
+        writeString("int main(void);");
+    } else {
+        if (node->is_extern) {
+            writeString("extern ");
+        } else if (!is_public && !node->is_pub && !node->is_export) {
+            writeString("static ");
+        }
+
+        Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+        const char* mangled_name = getC89GlobalName(node->name);
+
+        emitType(return_type, mangled_name);
+        writeString("(");
+
+        if (!node->params || node->params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < node->params->length(); ++i) {
+                ASTParamDeclNode* param = (*node->params)[i];
+                // Just use the name from Zig, sanitized for keywords if it was a symbol
+                // In prototype, we can even omit the name.
+                emitType(param->type->resolved_type, param->name);
+                if (i < node->params->length() - 1) {
+                    writeString(", ");
+                }
+            }
+        }
+        writeString(");");
+    }
+}
+
 void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (!node) return;
     beginFunction();

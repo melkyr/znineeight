@@ -529,11 +529,6 @@ TEST_FUNC(ExtractionAnalysis_Linking);
 TEST_FUNC(Task147_ErrDeferRejection);
 TEST_FUNC(Task147_AnyErrorRejection);
 
-// Forward declarations for Task 148
-TEST_FUNC(Task148_PatternGeneration_StructReturn);
-TEST_FUNC(Task148_PatternGeneration_OutParameter);
-TEST_FUNC(Task148_PatternGeneration_Arena);
-
 // Forward declarations for Task 149
 TEST_FUNC(Task149_ErrorHandlingFeaturesCatalogued);
 

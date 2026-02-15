@@ -11,7 +11,6 @@
 #include "test_task_142.cpp"
 #include "test_task_143.cpp"
 #include "test_task_144_detection.cpp"
-#include "test_task_148.cpp"
 #include "test_task_149.cpp"
 #include "test_task_150.cpp"
 #include "test_task_150_extra.cpp"

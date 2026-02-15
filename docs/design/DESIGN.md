@@ -848,14 +848,19 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ## 13. Code Generation Infrastructure (`codegen.hpp`, `c_variable_allocator.hpp`)
 The compiler utilizes a buffered emission system and a robust variable name allocator to ensure valid C89 output.
 
-### 13.1 C89Emitter
+### 13.1 CBackend
+- **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
+- **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
+- **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
+
+### 13.2 C89Emitter
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **Comments**: Standard C89 `/* ... */` comment emission.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 
-### 13.2 CVariableAllocator
+### 13.3 CVariableAllocator
 - **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.
 - **MSVC 6.0 Compatibility**: Enforces a strict 31-character limit for all identifiers.
 - **Uniquification**: Appends numeric suffixes to resolve name collisions within a function scope.

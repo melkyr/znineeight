@@ -2,7 +2,18 @@
 
 This document describes the infrastructure used by the RetroZig compiler to generate C89-compliant source code.
 
-## 1. C89Emitter Class
+## 1. CBackend Class
+
+The `CBackend` is the orchestration layer for code generation. It manages the creation of multiple C source and header files, one for each Zig module.
+
+### Responsibilities:
+- **Module Iteration**: Iterates over all compiled modules in a `CompilationUnit`.
+- **File Management**: Creates `.c` and `.h` files for each module.
+- **Orchestration**: Uses `C89Emitter` to write code to these files.
+- **Interface Generation**: Generates public header files (`.h`) containing declarations for symbols marked as `pub` in Zig.
+- **Implementation Generation**: Generates C source files (`.c`) containing all definitions, with non-`pub` symbols marked as `static`.
+
+## 2. C89Emitter Class
 
 The `C89Emitter` is the primary interface for writing C89 code to a file. It is designed for efficiency and adherence to the project's technical constraints.
 
@@ -26,7 +37,7 @@ emitter.dedent();
 emitter.writeString("}\n");
 ```
 
-## 2. CVariableAllocator Class
+## 3. CVariableAllocator Class
 
 The `CVariableAllocator` manages the allocation and uniquification of C variable names within a function scope. It ensures that all generated identifiers are valid in C89 and compatible with legacy compilers like MSVC 6.0.
 
@@ -46,21 +57,26 @@ Zig name `long_variable_name_exceeding_31_chars` might become `long_variable_nam
 Zig name `int` becomes `z_int`.
 Multiple uses of `tmp` result in `tmp`, `tmp_1`, `tmp_2`, etc.
 
-## 3. Emission Strategies
+## 4. Emission Strategies
 
-### 3.1 Two-Pass Block Emission
+### 4.1 Multi-Module Generation
+The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
+1. **`foo.c`**: Contains the full implementation. Includes `zig_runtime.h`. Private symbols are `static`.
+2. **`foo.h`**: Contains the public interface. Only includes declarations for `pub` symbols. Uses standard header guards.
+
+### 4.2 Two-Pass Block Emission
 C89 requires all local variable declarations to appear at the beginning of a block, before any executable statements. To support Zig's flexible declaration placement, the `C89Emitter::emitBlock` method employs a two-pass strategy:
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`).
 
-### 3.2 Control Flow Mapping
+### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
 - **While Loops**: Mapped to C `while (cond) { ... }`. Supports `break` and `continue`.
 - **Return Statements**: Mapped to `return expr;` or `return;`.
 
-### 3.3 Built-in Intrinsics
+### 4.4 Built-in Intrinsics
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
 - **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 
-### 3.4 Operator Precedence & Parentheses
+### 4.5 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
