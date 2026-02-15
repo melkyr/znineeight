@@ -21,10 +21,10 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
     char* cur = path;
     size_t rem = sizeof(path);
 
-    arena_safe_append(cur, rem, output_dir);
-    arena_safe_append(cur, rem, "/");
-    arena_safe_append(cur, rem, module->name);
-    arena_safe_append(cur, rem, ".c");
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/");
+    safe_append(cur, rem, module->name);
+    safe_append(cur, rem, ".c");
 
     C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
     if (!emitter.open(path)) {
@@ -74,10 +74,10 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     char* cur = path;
     size_t rem = sizeof(path);
 
-    arena_safe_append(cur, rem, output_dir);
-    arena_safe_append(cur, rem, "/");
-    arena_safe_append(cur, rem, module->name);
-    arena_safe_append(cur, rem, ".h");
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/");
+    safe_append(cur, rem, module->name);
+    safe_append(cur, rem, ".h");
 
     C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
     if (!emitter.open(path)) {
@@ -89,7 +89,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     char guard[256];
     char* g_cur = guard;
     size_t g_rem = sizeof(guard);
-    arena_safe_append(g_cur, g_rem, "ZIG_MODULE_");
+    safe_append(g_cur, g_rem, "ZIG_MODULE_");
 
     // Simplistic uppercase conversion
     for (const char* p = module->name; *p; ++p) {
@@ -101,7 +101,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
             g_rem--;
         }
     }
-    arena_safe_append(g_cur, g_rem, "_H");
+    safe_append(g_cur, g_rem, "_H");
 
     emitter.writeString("#ifndef ");
     emitter.writeString(guard);

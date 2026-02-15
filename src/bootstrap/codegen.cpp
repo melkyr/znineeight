@@ -274,7 +274,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
 
     // Special handling for the main entry point
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
-        writeString("int main(void);");
+        writeString("int main(int argc, char* argv[]);");
     } else {
         if (node->is_extern) {
             writeString("extern ");
@@ -313,7 +313,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     // Special handling for the main entry point
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
-        writeString("int main(void)");
+        writeString("int main(int argc, char* argv[])");
     } else {
         if (node->is_extern) {
             writeString("extern ");

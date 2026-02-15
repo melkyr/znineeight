@@ -10,22 +10,33 @@ typedef int bool;
 
 /* MSVC 6.0 specific hacks for 64-bit integers */
 #ifdef _MSC_VER
-    typedef __int64 i64_t;
-    typedef unsigned __int64 u64_t;
+    typedef __int64 i64;
+    typedef unsigned __int64 u64;
 #else
     /* For GCC/other C89 compilers, we assume they support long long or
-       provide int64_t via a similar mechanism. */
-    typedef long long i64_t;
-    typedef unsigned long long u64_t;
+       provide int64 via a similar mechanism. */
+    typedef long long i64;
+    typedef unsigned long long u64;
 #endif
 
 /* Standard Zig-like primitive types mapped to C89 */
-typedef signed char    i8_t;
-typedef unsigned char  u8_t;
-typedef short          i16_t;
-typedef unsigned short u16_t;
-typedef int            i32_t;
-typedef unsigned int   u32_t;
+typedef signed char    i8;
+typedef unsigned char  u8;
+typedef short          i16;
+typedef unsigned short u16;
+typedef int            i32;
+typedef unsigned int   u32;
+
+/* Pointer-sized integers */
+#ifdef _WIN32
+    typedef int isize;
+    typedef unsigned int usize;
+#else
+    /* For other platforms, we might need different types,
+       but bootstrap assumes 32-bit for now. */
+    typedef long isize;
+    typedef unsigned long usize;
+#endif
 
 /* Panic function (to be implemented later) */
 void __bootstrap_panic(const char* msg);

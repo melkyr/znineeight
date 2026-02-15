@@ -408,7 +408,13 @@ bool CompilationUnit::generateCode(const char* output_path) {
     char dir[1024];
     const char* last_slash = plat_strrchr(output_path, '/');
     const char* last_backslash = plat_strrchr(output_path, '\\');
-    const char* last_sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    const char* last_sep = NULL;
+
+    if (last_slash && last_backslash) {
+        last_sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    } else {
+        last_sep = last_slash ? last_slash : last_backslash;
+    }
 
     if (last_sep) {
         size_t len = last_sep - output_path;
