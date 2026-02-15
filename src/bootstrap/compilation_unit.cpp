@@ -142,6 +142,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       current_module_(NULL),
       pattern_generator_(NULL),
       test_patterns_(NULL),
+      last_ast_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
       c89_validation_passed_(false) {
@@ -427,6 +428,8 @@ size_t CompilationUnit::getTotalCatalogueEntries() const {
 }
 
 bool CompilationUnit::generateCode(const char* output_path) {
+    if (!last_ast_) return false;
+
     C89Emitter emitter(arena_, error_handler_);
     if (!emitter.open(output_path)) {
         error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open output file for code generation");
@@ -435,8 +438,31 @@ bool CompilationUnit::generateCode(const char* output_path) {
 
     emitter.emitPrologue();
 
-    // TODO: Implement full AST traversal and code generation
-    emitter.emitComment("TODO: Implement full AST traversal and code generation");
+    if (last_ast_->type != NODE_BLOCK_STMT) {
+        error_handler_.report(ERR_INTERNAL_ERROR, last_ast_->loc, "Expected block statement as AST root");
+        return false;
+    }
+
+    DynamicArray<ASTNode*>* stmts = last_ast_->as.block_stmt.statements;
+
+    // Pass 1: Type Definitions (Structs, Unions, Enums)
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        emitter.emitTypeDefinition((*stmts)[i]);
+    }
+
+    // Pass 2: Global Variables
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        if ((*stmts)[i]->type == NODE_VAR_DECL) {
+            emitter.emitGlobalVarDecl((*stmts)[i], (*stmts)[i]->as.var_decl->is_pub);
+        }
+    }
+
+    // Pass 3: Function Declarations and Definitions
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        if ((*stmts)[i]->type == NODE_FN_DECL) {
+            emitter.emitFnDecl((*stmts)[i]->as.fn_decl);
+        }
+    }
 
     emitter.close();
     return true;
@@ -473,6 +499,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     plat_print_info("Token arena after reset: 0 bytes\n");
 #endif
+    last_ast_ = ast;
     if (!ast) return false;
 
     // Name Collision Detection

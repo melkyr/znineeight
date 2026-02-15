@@ -99,20 +99,36 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (argc >= 3 && (plat_strcmp(argv[1], "--compile") == 0 ||
-                     plat_strcmp(argv[1], "parse") == 0 ||
-                     plat_strcmp(argv[1], "full_pipeline") == 0)) {
-        const char* filename = argv[2];
+    const char* input_file = NULL;
+    const char* output_file = NULL;
+    bool parse_only = false;
+    bool full_pipeline = false;
+
+    for (int i = 1; i < argc; ++i) {
+        if (plat_strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) output_file = argv[++i];
+        } else if (plat_strcmp(argv[i], "parse") == 0) {
+            parse_only = true;
+            if (i + 1 < argc) input_file = argv[++i];
+        } else if (plat_strcmp(argv[i], "--compile") == 0 || plat_strcmp(argv[i], "full_pipeline") == 0) {
+            full_pipeline = true;
+            if (i + 1 < argc) input_file = argv[++i];
+        } else if (input_file == NULL) {
+            input_file = argv[i];
+            full_pipeline = true;
+        }
+    }
+
+    if (input_file) {
         char* source = NULL;
         size_t size = 0;
-        if (!plat_file_read(filename, &source, &size)) {
+        if (!plat_file_read(input_file, &source, &size)) {
             plat_print_error("Could not read file: ");
-            plat_print_error(filename);
+            plat_print_error(input_file);
             plat_print_error("\n");
             return 1;
         }
 
-        // Use default 16MB arena to match project goals
         ArenaAllocator arena(DEFAULT_ARENA_SIZE);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -125,15 +141,18 @@ int main(int argc, char* argv[]) {
         opts.enable_lifetime_analysis = true;
         unit.setOptions(opts);
 
-        u32 file_id = unit.addSource(filename, source);
+        u32 file_id = unit.addSource(input_file, source);
 
         bool success = false;
-        if (plat_strcmp(argv[1], "parse") == 0) {
+        if (parse_only) {
             Parser* parser = unit.createParser(file_id);
             ASTNode* ast = parser->parse();
             success = (ast != NULL);
         } else {
             success = runCompilationPipeline(unit, file_id);
+            if (success && output_file) {
+                success = unit.generateCode(output_file);
+            }
         }
 
         plat_free(source);
@@ -141,12 +160,12 @@ int main(int argc, char* argv[]) {
     }
 
     plat_print_info("RetroZig Compiler v0.0.1\n");
-    plat_print_info("Usage: retrozig [options]\n");
+    plat_print_info("Usage: retrozig [options] <filename>\n");
     plat_print_info("Options:\n");
     plat_print_info("  --self-test             Run internal self-tests\n");
-    plat_print_info("  --compile <filename>    Compile a Zig source file\n");
-    plat_print_info("  parse <filename>        Parse only\n");
-    plat_print_info("  full_pipeline <filename> Execute full pipeline\n");
+    plat_print_info("  -o <file>               Specify output C file\n");
+    plat_print_info("  parse <file>            Parse only\n");
+    plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 
     return 0;
 }

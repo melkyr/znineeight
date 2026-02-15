@@ -745,6 +745,17 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 - [x] Task 194: Generate global variable declarations
 - [x] Task 195: Generate local variable declarations (with two-pass block logic)
 - [x] Task 196: Generate function definitions
+- [x] Task 197: Binary operators (arithmetic, comparisons, logical)
+- [x] Task 198: Unary operators
+- [x] Task 199: Member access
+- [x] Task 200: Array indexing
+- [x] Task 201: if statement
+- [x] Task 202: while loop
+- [x] Task 203: return statement
+- [x] Task 204: @ptrCast
+- [x] Task 205: @intCast / @floatCast (runtime checked)
+- [ ] Task 206: defer (placeholder)
+- [x] Task 207: Integration tests with real C89 compiler
 
 ### Week 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
@@ -841,6 +852,7 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **Comments**: Standard C89 `/* ... */` comment emission.
+- **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 
 ### 13.2 CVariableAllocator
