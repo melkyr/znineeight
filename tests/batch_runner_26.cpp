@@ -15,6 +15,7 @@
 #include "integration/codegen_integer_tests.cpp"
 #include "integration/codegen_literal_tests.cpp"
 #include "integration/codegen_local_tests.cpp"
+#include "integration/codegen_member_access_tests.cpp"
 #include "integration/codegen_unary_tests.cpp"
 #include "integration/defer_tests.cpp"
 #include "integration/enum_tests.cpp"

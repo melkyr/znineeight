@@ -1190,7 +1190,7 @@ Phase 3 – Expressions & Operators
 
         Test: *ptr → *ptr.
 
-    Task 199: Member access
+    Task 199: Member access (DONE)
 
         .field → .field (for structs)
 

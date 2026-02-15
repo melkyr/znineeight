@@ -989,4 +989,17 @@ TEST_FUNC(Codegen_Fn_Export);
 TEST_FUNC(Codegen_Fn_LongName);
 TEST_FUNC(Codegen_Fn_RejectArrayReturn);
 
+// Task 199: Member Access Codegen
+TEST_FUNC(Codegen_MemberAccess_Simple);
+TEST_FUNC(Codegen_MemberAccess_Pointer);
+TEST_FUNC(Codegen_MemberAccess_ExplicitDeref);
+TEST_FUNC(Codegen_MemberAccess_AddressOf);
+TEST_FUNC(Codegen_MemberAccess_Union);
+TEST_FUNC(Codegen_MemberAccess_Nested);
+TEST_FUNC(Codegen_MemberAccess_Array);
+TEST_FUNC(Codegen_MemberAccess_Call);
+TEST_FUNC(Codegen_MemberAccess_Cast);
+TEST_FUNC(Codegen_MemberAccess_NestedPointer);
+TEST_FUNC(Codegen_MemberAccess_ComplexPostfix);
+
 #endif // TEST_DECLARATIONS_HPP

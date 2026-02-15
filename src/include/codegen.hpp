@@ -231,6 +231,13 @@ private:
      */
     const char* getC89GlobalName(const char* zig_name);
 
+    /**
+     * @brief Returns true if the node requires parentheses when used as a base
+     *        of a postfix operator (., ->, [], ()).
+     * @param node The AST node to check.
+     */
+    bool requiresParentheses(const ASTNode* node) const;
+
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
