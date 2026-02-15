@@ -266,31 +266,37 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     beginFunction();
 
     writeIndent();
-    if (node->is_extern) {
-        writeString("extern ");
-    } else if (!node->is_pub && !node->is_export) {
-        writeString("static ");
-    }
 
-    Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
-    const char* mangled_name = getC89GlobalName(node->name);
-
-    emitType(return_type, mangled_name);
-    writeString("(");
-
-    if (!node->params || node->params->length() == 0) {
-        writeString("void");
+    // Special handling for the main entry point
+    if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
+        writeString("int main(void)");
     } else {
-        for (size_t i = 0; i < node->params->length(); ++i) {
-            ASTParamDeclNode* param = (*node->params)[i];
-            const char* c_param_name = var_alloc_.allocate(param->symbol);
-            emitType(param->type->resolved_type, c_param_name);
-            if (i < node->params->length() - 1) {
-                writeString(", ");
+        if (node->is_extern) {
+            writeString("extern ");
+        } else if (!node->is_pub && !node->is_export) {
+            writeString("static ");
+        }
+
+        Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+        const char* mangled_name = getC89GlobalName(node->name);
+
+        emitType(return_type, mangled_name);
+        writeString("(");
+
+        if (!node->params || node->params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < node->params->length(); ++i) {
+                ASTParamDeclNode* param = (*node->params)[i];
+                const char* c_param_name = var_alloc_.allocate(param->symbol);
+                emitType(param->type->resolved_type, c_param_name);
+                if (i < node->params->length() - 1) {
+                    writeString(", ");
+                }
             }
         }
+        writeString(")");
     }
-    writeString(")");
 
     if (node->body) {
         writeString(" ");

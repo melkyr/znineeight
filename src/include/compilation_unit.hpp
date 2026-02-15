@@ -154,6 +154,7 @@ private:
 
     C89PatternGenerator* pattern_generator_;
     DynamicArray<const char*>* test_patterns_;
+    ASTNode* last_ast_;
     bool is_test_mode_;
     bool validation_completed_;
     bool c89_validation_passed_;

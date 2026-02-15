@@ -1234,7 +1234,7 @@ Phase 5 – Built‑ins & Casts
 
         Test: @ptrCast(*u8, ptr) → (unsigned char*)ptr.
 
-    Task 205: @intCast / @floatCast (runtime checked)
+    Task 205: @intCast / @floatCast (runtime checked) (DONE)
 
         Emit __bootstrap_T_from_U(expr) (call to runtime helper).
 
@@ -1310,7 +1310,7 @@ What to Watch For – Critical Technical Constraints
 210. **Task 210:** Implement wrappers for Zig runtime features to C library calls.
 211. **Task 211:** Handle Zig memory management with C89-compatible patterns.
 212. **Task 212:** Integrate CBackend to write complete C89 `.c` files.
-213. **Task 213:** Compile a "hello world" Zig program end-to-end.
+213. **Task 213:** Compile a "hello world" Zig program end-to-end. (DONE)
 
 Phase 6A: Import System Foundation
 
