@@ -8,7 +8,7 @@ FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -
 # Optional: Add -DDEBUG if needed, though batches should be self-contained
 # FLAGS="$FLAGS -DDEBUG"
 
-for i in {1..28}; do
+for i in {1..29}; do
     MAIN_FILE="tests/main_batch$i.cpp"
     if [ ! -f "$MAIN_FILE" ]; then
         echo "Skipping Batch $i (no main file found)"

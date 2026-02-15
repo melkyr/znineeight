@@ -231,11 +231,20 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
 }
 
 Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+    // Try literal promotion first for all operators that support it
+    Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
+    if (promoted_type) {
+        return promoted_type;
+    }
+
     switch (op) {
 // --- Arithmetic Operators ---
         case TOKEN_PLUS:
+        case TOKEN_PLUSPERCENT:
         case TOKEN_MINUS:
+        case TOKEN_MINUSPERCENT:
         case TOKEN_STAR:
+        case TOKEN_STARPERCENT:
         case TOKEN_SLASH:
         case TOKEN_PERCENT: {
             // Modulo is only defined for integer types
@@ -244,11 +253,6 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "modulo operator '%' is only defined for integer types", unit.getArena());
                     return NULL;
                 }
-            }
-
-            Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
-            if (promoted_type) {
-                return promoted_type;
             }
 
             // First, check for void pointer arithmetic (must be rejected)
@@ -818,6 +822,18 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
         return NULL; // Error already reported.
     }
 
+    // Special handling for literals to support promotion in compound assignments.
+    Type* r_ptr = rvalue_type;
+    Type right_lit;
+    bool used_right_lit = false;
+
+    if (node->rvalue->type == NODE_INTEGER_LITERAL) {
+        right_lit.kind = TYPE_INTEGER_LITERAL;
+        right_lit.as.integer_literal.value = (i64)node->rvalue->as.integer_literal.value;
+        r_ptr = &right_lit;
+        used_right_lit = true;
+    }
+
     // Step 3: Map the compound operator to a binary operator.
     TokenType binary_op;
     switch (node->op) {
@@ -837,11 +853,14 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     }
 
     // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOperation(lvalue_type, rvalue_type, binary_op, node->lvalue->loc);
+    Type* result_type = checkBinaryOperation(lvalue_type, r_ptr, binary_op, node->lvalue->loc);
     if (!result_type) {
         // Error already reported by checkBinaryOperation. We can just return.
         return NULL;
     }
+
+    // Ensure we don't return a pointer to our stack-allocated literal type.
+    if (used_right_lit && result_type == &right_lit) result_type = rvalue_type;
 
     // Step 5: Ensure the result of the operation can be assigned back to the l-value.
     if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
@@ -2291,8 +2310,13 @@ Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* ri
 }
 
 Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op) {
-    bool is_arithmetic_op = (op == TOKEN_PLUS || op == TOKEN_MINUS ||
-                             op == TOKEN_STAR || op == TOKEN_SLASH);
+    bool is_arithmetic_op = (op == TOKEN_PLUS || op == TOKEN_PLUSPERCENT ||
+                             op == TOKEN_MINUS || op == TOKEN_MINUSPERCENT ||
+                             op == TOKEN_STAR || op == TOKEN_STARPERCENT ||
+                             op == TOKEN_SLASH ||
+                             op == TOKEN_PERCENT ||
+                             op == TOKEN_LARROW2 || op == TOKEN_RARROW2 ||
+                             op == TOKEN_AMPERSAND || op == TOKEN_PIPE || op == TOKEN_CARET);
 
     if (is_arithmetic_op && isNumericType(left_type) && isNumericType(right_type)) {
         if (left_type->kind == TYPE_INTEGER_LITERAL && canLiteralFitInType(left_type, right_type)) {

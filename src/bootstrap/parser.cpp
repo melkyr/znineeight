@@ -470,11 +470,14 @@ static int get_token_precedence(TokenType type) {
     switch (type) {
         // Arithmetic operators (highest precedence)
         case TOKEN_STAR:
+        case TOKEN_STARPERCENT:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
             return 10;
         case TOKEN_PLUS:
+        case TOKEN_PLUSPERCENT:
         case TOKEN_MINUS:
+        case TOKEN_MINUSPERCENT:
             return 9;
 
         // Bitwise shift operators
