@@ -54,6 +54,20 @@ const char* getTokenSpelling(TokenType op) {
         case TOKEN_TILDE: return "~";
         case TOKEN_AND: return "&&";
         case TOKEN_OR: return "||";
+        case TOKEN_DOT_ASTERISK: return "*";
+        case TOKEN_PLUS_EQUAL: return "+=";
+        case TOKEN_MINUS_EQUAL: return "-=";
+        case TOKEN_STAR_EQUAL: return "*=";
+        case TOKEN_SLASH_EQUAL: return "/=";
+        case TOKEN_PERCENT_EQUAL: return "%=";
+        case TOKEN_AMPERSAND_EQUAL: return "&=";
+        case TOKEN_PIPE_EQUAL: return "|=";
+        case TOKEN_CARET_EQUAL: return "^=";
+        case TOKEN_LARROW2_EQUAL: return "<<=";
+        case TOKEN_RARROW2_EQUAL: return ">>=";
+        case TOKEN_PLUSPERCENT: return "+";
+        case TOKEN_MINUSPERCENT: return "-";
+        case TOKEN_STARPERCENT: return "*";
         default: return "unknown";
     }
 }

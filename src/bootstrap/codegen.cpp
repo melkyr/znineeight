@@ -610,6 +610,13 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(" = ");
             emitExpression(node->as.assignment->rvalue);
             break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            emitExpression(node->as.compound_assignment->lvalue);
+            writeString(" ");
+            writeString(getTokenSpelling(node->as.compound_assignment->op));
+            writeString(" ");
+            emitExpression(node->as.compound_assignment->rvalue);
+            break;
         case NODE_STRUCT_INITIALIZER: {
             writeString("{");
             Type* struct_type = node->resolved_type;

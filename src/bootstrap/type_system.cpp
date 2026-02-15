@@ -440,6 +440,7 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         }
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
         case TYPE_ANYTYPE: safe_append(current, remaining, "anytype"); break;
+        case TYPE_INTEGER_LITERAL: safe_append(current, remaining, "comptime_int"); break;
         default:
             safe_append(current, remaining, "unknown");
             break;

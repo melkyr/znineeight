@@ -257,3 +257,28 @@ Function bodies are emitted as a compound statement (`{ ... }`). The emitter use
 - **Array Return Types**: Functions returning arrays (e.g., `fn f() [3]i32`) are strictly rejected by the `TypeChecker` as C89 does not support returning arrays by value.
 - **Extern with Body**: `extern fn` declarations must end with a semicolon and cannot have a body.
 - **Calling Conventions**: Custom calling conventions (e.g., `callconv(.Stdcall)`) are currently ignored and fallback to the default `__cdecl` for MSVC 6.0.
+
+## 10. Binary Operators
+
+The bootstrap compiler maps Zig binary operators directly to their C89 equivalents.
+
+### 10.1 Mapping Table
+
+| Zig Operator | C89 Operator | Notes |
+|--------------|--------------|-------|
+| `+`, `-`, `*`, `/`, `%` | `+`, `-`, `*`, `/`, `%` | Arithmetic |
+| `==`, `!=`, `<`, `>`, `<=`, `>=` | `==`, `!=`, `<`, `>`, `<=`, `>=` | Comparison |
+| `and` | `&&` | Logical AND |
+| `or` | `||` | Logical OR |
+| `&`, `|`, `^`, `<<`, `>>` | `&`, `|`, `^`, `<<`, `>>` | Bitwise |
+| `+=`, `-=`, `*=`, `/=`, `%=` | `+=`, `-=`, `*=`, `/=`, `%=` | Arithmetic compound assignment |
+| `&=`, `|=`, `^=`, `<<=`, `>>=` | `&=`, `|=`, `^=`, `<<=`, `>>=` | Bitwise compound assignment |
+| `+%`, `-%`, `*%` | `+`, `-`, `*` | Wrapping operators map to standard arithmetic |
+
+### 10.2 Precedence and Parentheses
+
+The bootstrap parser correctly handles Zig's operator precedence rules during AST construction. Parentheses in the Zig source are preserved as `NODE_PAREN_EXPR` in the AST. The emitter simply outputs the expressions in the order they appear in the AST, relying on either the AST structure or explicit parentheses to maintain correct evaluation order in the generated C code.
+
+### 10.3 Logical Operators Short-circuiting
+
+Zig's `and` and `or` operators map to C's `&&` and `||`, both of which exhibit the same short-circuiting behavior.
