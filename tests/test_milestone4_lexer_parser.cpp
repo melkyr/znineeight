@@ -8,8 +8,7 @@ TEST_FUNC(Milestone4_Lexer_Tokens) {
     ArenaAllocator arena(16384);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    // Note: using current names TOKEN_PLUS2 and TOKEN_MINUS2 as requested to skip refactor
-    const char* source = "!i32 ?u8 error{A} E1 || E2 ++ -- @import";
+    const char* source = "!i32 ?u8 error{A} E1 || E2 @import";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
 
@@ -49,13 +48,6 @@ TEST_FUNC(Milestone4_Lexer_Tokens) {
     // E2
     t = parser->advance();
     ASSERT_EQ(TOKEN_IDENTIFIER, t.type);
-
-    // ++
-    t = parser->advance();
-    ASSERT_EQ(TOKEN_PLUS2, t.type);
-    // --
-    t = parser->advance();
-    ASSERT_EQ(TOKEN_MINUS2, t.type);
 
     // @import
     t = parser->advance();

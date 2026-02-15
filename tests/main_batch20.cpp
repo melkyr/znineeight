@@ -18,7 +18,12 @@ int main(int argc, char* argv[]) {
         test_FloatCast_Constant_Fold,
         test_FloatCast_Runtime_Widening,
         test_FloatCast_Runtime_Narrowing,
-        test_Cast_Invalid_Types_Error
+        test_Cast_Invalid_Types_Error,
+        test_Codegen_IntCast_SafeWidening,
+        test_Codegen_IntCast_Narrowing,
+        test_Codegen_IntCast_SignednessMismatch,
+        test_Codegen_FloatCast_SafeWidening,
+        test_Codegen_FloatCast_Narrowing
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

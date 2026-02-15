@@ -183,8 +183,6 @@ enum TokenType {
     TOKEN_DOT_ASTERISK,     ///< '.*' operator.
     TOKEN_DOT_QUESTION,     ///< '.?' operator.
     TOKEN_QUESTION,         ///< '?' operator.
-    TOKEN_PLUS2,            ///< '++' operator.
-    TOKEN_MINUS2,           ///< '--' operator.
     TOKEN_STAR2,            ///< '**' operator.
     TOKEN_PLUSPERCENT,      ///< '+%' operator.
     TOKEN_MINUSPERCENT,     ///< '-%' operator.

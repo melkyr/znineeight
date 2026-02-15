@@ -647,6 +647,12 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(")");
             emitExpression(node->as.ptr_cast->expr);
             break;
+        case NODE_INT_CAST:
+            emitIntCast(node->as.numeric_cast);
+            break;
+        case NODE_FLOAT_CAST:
+            emitFloatCast(node->as.numeric_cast);
+            break;
         case NODE_FUNCTION_CALL: {
             const ASTFunctionCallNode* call = node->as.function_call;
             bool need_parens = requiresParentheses(call->callee);
@@ -807,6 +813,60 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             writeString(enum_name);
             writeString(";\n\n");
         }
+    }
+}
+
+void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
+    if (!node || !node->expr || !node->target_type) return;
+
+    Type* src_type = node->expr->resolved_type;
+    Type* dest_type = node->target_type->resolved_type;
+
+    if (!src_type || !dest_type) {
+        plat_print_debug("Error: Missing type info in @intCast\n");
+        abort();
+    }
+
+    if (isSafeWidening(src_type, dest_type)) {
+        writeString("(");
+        emitType(dest_type);
+        writeString(")");
+        emitExpression(node->expr);
+    } else {
+        writeString("__bootstrap_");
+        writeString(getZigTypeName(dest_type));
+        writeString("_from_");
+        writeString(getZigTypeName(src_type));
+        writeString("(");
+        emitExpression(node->expr);
+        writeString(")");
+    }
+}
+
+void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
+    if (!node || !node->expr || !node->target_type) return;
+
+    Type* src_type = node->expr->resolved_type;
+    Type* dest_type = node->target_type->resolved_type;
+
+    if (!src_type || !dest_type) {
+        plat_print_debug("Error: Missing type info in @floatCast\n");
+        abort();
+    }
+
+    if (isSafeWidening(src_type, dest_type)) {
+        writeString("(");
+        emitType(dest_type);
+        writeString(")");
+        emitExpression(node->expr);
+    } else {
+        writeString("__bootstrap_");
+        writeString(getZigTypeName(dest_type));
+        writeString("_from_");
+        writeString(getZigTypeName(src_type));
+        writeString("(");
+        emitExpression(node->expr);
+        writeString(")");
     }
 }
 
@@ -980,6 +1040,55 @@ bool C89Emitter::requiresParentheses(const ASTNode* node) const {
         // Everything else has lower precedence than postfix operators
         default:
             return true;
+    }
+}
+
+bool C89Emitter::isSafeWidening(Type* src, Type* dest) const {
+    if (!src || !dest) return false;
+
+    // Integer widening
+    bool src_is_int = (src->kind >= TYPE_I8 && src->kind <= TYPE_U64) || src->kind == TYPE_ISIZE || src->kind == TYPE_USIZE;
+    bool dest_is_int = (dest->kind >= TYPE_I8 && dest->kind <= TYPE_U64) || dest->kind == TYPE_ISIZE || dest->kind == TYPE_USIZE;
+
+    if (src_is_int && dest_is_int) {
+        // Signedness must match
+        bool src_signed = (src->kind == TYPE_I8 || src->kind == TYPE_I16 || src->kind == TYPE_I32 || src->kind == TYPE_I64 || src->kind == TYPE_ISIZE);
+        bool dest_signed = (dest->kind == TYPE_I8 || dest->kind == TYPE_I16 || dest->kind == TYPE_I32 || dest->kind == TYPE_I64 || dest->kind == TYPE_ISIZE);
+
+        if (src_signed != dest_signed) return false;
+
+        // Size must be non-decreasing
+        return dest->size >= src->size;
+    }
+
+    // Float widening
+    if (src->kind == TYPE_F32 || src->kind == TYPE_F64) {
+        if (dest->kind == TYPE_F32 || dest->kind == TYPE_F64) {
+            return dest->size >= src->size;
+        }
+    }
+
+    return false;
+}
+
+const char* C89Emitter::getZigTypeName(Type* type) const {
+    if (!type) return "unknown";
+    switch (type->kind) {
+        case TYPE_VOID: return "void";
+        case TYPE_BOOL: return "bool";
+        case TYPE_I8:   return "i8";
+        case TYPE_U8:   return "u8";
+        case TYPE_I16:  return "i16";
+        case TYPE_U16:  return "u16";
+        case TYPE_I32:  return "i32";
+        case TYPE_U32:  return "u32";
+        case TYPE_I64:  return "i64";
+        case TYPE_U64:  return "u64";
+        case TYPE_F32:  return "f32";
+        case TYPE_F64:  return "f64";
+        case TYPE_ISIZE: return "isize";
+        case TYPE_USIZE: return "usize";
+        default: return "unknown";
     }
 }
 

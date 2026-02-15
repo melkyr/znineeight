@@ -9,7 +9,7 @@ TEST_FUNC(LexerSpecialOperators) {
     ArenaAllocator allocator(1024);
     StringInterner interner(allocator);
     SourceManager source_manager(allocator);
-    const char* source = ". .* .? ? ++ ** +% -% *%";
+    const char* source = ". .* .? ? ** +% -% *%";
     u32 file_id = source_manager.addFile("test.zig", source, strlen(source));
     Lexer lexer(source_manager, interner, allocator, file_id);
 
@@ -24,9 +24,6 @@ TEST_FUNC(LexerSpecialOperators) {
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_QUESTION);
-
-    t = lexer.nextToken();
-    ASSERT_EQ(t.type, TOKEN_PLUS2);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_STAR2);
@@ -50,7 +47,7 @@ TEST_FUNC(LexerSpecialOperatorsMixed) {
     ArenaAllocator allocator(1024);
     StringInterner interner(allocator);
     SourceManager source_manager(allocator);
-    const char* source = ".+*?**++";
+    const char* source = ".+*?**+";
     u32 file_id = source_manager.addFile("test.zig", source, strlen(source));
     Lexer lexer(source_manager, interner, allocator, file_id);
 
@@ -70,7 +67,7 @@ TEST_FUNC(LexerSpecialOperatorsMixed) {
     ASSERT_EQ(t.type, TOKEN_STAR2);
 
     t = lexer.nextToken();
-    ASSERT_EQ(t.type, TOKEN_PLUS2);
+    ASSERT_EQ(t.type, TOKEN_PLUS);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_EOF);

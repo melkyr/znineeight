@@ -3,7 +3,7 @@
 #include "test_utils.cpp"
 #include "c89_validation/gcc_validator.cpp"
 #include "c89_validation/msvc6_validator.cpp"
-#include "lexer_decrement_test.cpp"
+#include "lexer_operators_misc_test.cpp"
 #include "task_156_multi_file_test.cpp"
 #include "task_157_catalogue_test.cpp"
 #include "test_milestone4_generics_integration.cpp"
