@@ -188,6 +188,18 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Emits an @intCast intrinsic call.
+     * @param node The numeric cast node.
+     */
+    void emitIntCast(const ASTNumericCastNode* node);
+
+    /**
+     * @brief Emits a @floatCast intrinsic call.
+     * @param node The numeric cast node.
+     */
+    void emitFloatCast(const ASTNumericCastNode* node);
+
+    /**
      * @brief Emits an integer literal expression.
      * @param node The integer literal node.
      */
@@ -237,6 +249,16 @@ private:
      * @param node The AST node to check.
      */
     bool requiresParentheses(const ASTNode* node) const;
+
+    /**
+     * @brief Returns true if the cast from src to dest is a safe widening conversion.
+     */
+    bool isSafeWidening(Type* src, Type* dest) const;
+
+    /**
+     * @brief Gets the Zig primitive name for a type (e.g. "i32", "u64").
+     */
+    const char* getZigTypeName(Type* type) const;
 
     struct GlobalNameEntry {
         const char* zig_name;

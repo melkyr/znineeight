@@ -583,8 +583,6 @@ TEST_FUNC(Task156_EnhancedGenericDetection);
 TEST_FUNC(Task156_InternalErrorCode);
 
 // Forward declarations for Task 157
-TEST_FUNC(lex_decrement_operator);
-TEST_FUNC(lex_decrement_mixed);
 TEST_FUNC(lex_pipe_pipe_operator);
 TEST_FUNC(GenericCatalogue_ImplicitInstantiation);
 TEST_FUNC(TypeChecker_ImplicitGenericDetection);
@@ -1012,5 +1010,12 @@ TEST_FUNC(Codegen_Array_NestedMember);
 TEST_FUNC(Codegen_Array_OOB_Error);
 TEST_FUNC(Codegen_Array_NonIntegerIndex_Error);
 TEST_FUNC(Codegen_Array_NonArrayBase_Error);
+
+// Task 205: @intCast / @floatCast Codegen
+TEST_FUNC(Codegen_IntCast_SafeWidening);
+TEST_FUNC(Codegen_IntCast_Narrowing);
+TEST_FUNC(Codegen_IntCast_SignednessMismatch);
+TEST_FUNC(Codegen_FloatCast_SafeWidening);
+TEST_FUNC(Codegen_FloatCast_Narrowing);
 
 #endif // TEST_DECLARATIONS_HPP

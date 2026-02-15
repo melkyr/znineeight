@@ -417,13 +417,20 @@ Zig `return` statements map directly to C `return`.
 
 ### 15.2 Numeric Casts (@intCast, @floatCast)
 
-Numeric casts are handled differently depending on whether they can be resolved at compile-time.
+Numeric casts are handled differently depending on whether they can be resolved at compile-time and whether the conversion is safe.
 
 - **Compile-time**: Constant-folded into a raw literal by the `TypeChecker`.
-- **Runtime**: Emitted as a call to a checked conversion helper in the runtime library.
+- **Safe Widening**: If the destination type can represent all values of the source type, a direct C-style cast is emitted.
+    - For integers: same signedness and destination size >= source size.
+    - For floats: destination size >= source size.
+- **Unsafe / Runtime**: Otherwise, it is emitted as a call to a checked conversion helper in the runtime library.
 
-| Zig Syntax | C89 Emission (Runtime) |
-|------------|------------------------|
-| `@intCast(i32, my_u64)` | `__bootstrap_i32_from_u32(my_u64)` |
+| Zig Case | Zig Syntax | C89 Emission |
+|----------|------------|--------------|
+| Safe Widening | `@intCast(i64, my_i32)` | `(__int64)my_i32` |
+| Narrowing | `@intCast(i32, my_i64)` | `__bootstrap_i32_from_i64(my_i64)` |
+| Signed Mismatch | `@intCast(u32, my_i32)` | `__bootstrap_u32_from_i32(my_i32)` |
+| Float Widening | `@floatCast(f64, my_f32)` | `(double)my_f32` |
+| Float Narrowing | `@floatCast(f32, my_f64)` | `__bootstrap_f32_from_f64(my_f64)` |
 
-*(Note: The actual implementation of these helpers is provided in `zig_runtime.h`.)*
+*(Note: Runtime helpers are defined in `zig_runtime.h` and use Zig primitive names in their identifiers.)*

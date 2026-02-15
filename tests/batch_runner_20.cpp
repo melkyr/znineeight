@@ -10,6 +10,7 @@
 #include "integration/cast_tests.cpp"
 #include "integration/codegen_array_indexing_tests.cpp"
 #include "integration/codegen_binary_tests.cpp"
+#include "integration/codegen_cast_tests.cpp"
 #include "integration/codegen_float_tests.cpp"
 #include "integration/codegen_function_tests.cpp"
 #include "integration/codegen_global_tests.cpp"
