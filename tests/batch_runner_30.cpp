@@ -1,4 +1,4 @@
-// Generated batch runner for tests/main_batch18.cpp
+// Generated batch runner for tests/main_batch30.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
 #include "test_utils.cpp"
 #include "c89_validation/gcc_validator.cpp"
@@ -33,4 +33,4 @@
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"
-#include "main_batch18.cpp"
+#include "main_batch30.cpp"

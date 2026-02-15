@@ -301,3 +301,36 @@ The bootstrap compiler maps Zig unary operators to their C89 prefix equivalents.
 ### 11.2 Dereference Syntax
 
 Zig uses the postfix operator `.*` for pointer dereference (e.g., `ptr.*`). The bootstrap compiler translates this into the standard C89 prefix dereference operator `*` (e.g., `*ptr`).
+
+## 12. Member Access
+
+Zig's dot operator (`.`) for member access is mapped to either the C dot operator (`.`) or the arrow operator (`->`), depending on whether the base expression is a pointer.
+
+### 12.1 Auto-dereference
+
+The bootstrap compiler implements Zig's auto-dereference for single-level pointers to structs or unions.
+
+| Zig Syntax | Base Type | C89 Emission |
+|------------|-----------|--------------|
+| `s.field`  | `struct S` | `s.field`    |
+| `p.field`  | `*struct S`| `p->field`    |
+| `u.field`  | `union U`  | `u.field`    |
+
+### 12.2 Parentheses for Low-Precedence Bases
+
+In C, postfix operators (including `.` and `->`) have higher precedence than unary operators (like `*` and `&`). To maintain Zig's semantics, the bootstrap compiler automatically adds parentheses around the base expression if it has lower precedence in C.
+
+| Zig Syntax | C89 Emission | Reason |
+|------------|--------------|--------|
+| `ptr.*.f`  | `(*ptr).f`   | Base is a dereference (unary `*`) |
+| `(&s).f`   | `(&s)->f`    | Base is an address-of (unary `&`) |
+| `a.b.c`    | `a.b.c`      | Base is level 1 (no parens) |
+| `arr[0].f` | `arr[0].f`   | Base is level 1 (no parens) |
+
+### 12.3 Enum Member Access
+
+Enum member access in Zig (e.g., `Color.Red`) is handled by the `TypeChecker` using constant folding. However, if the emitter encounters an enum member access (e.g., in some contexts where folding didn't happen or for test compatibility), it emits the mangled name.
+
+| Zig Syntax | C89 Emission |
+|------------|--------------|
+| `Color.Red`| `Color_Red`   |

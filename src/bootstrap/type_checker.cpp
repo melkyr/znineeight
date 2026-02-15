@@ -917,7 +917,7 @@ Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType
  * @return Returns NULL as it is a placeholder.
  */
 Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
-    if (struct_type->kind != TYPE_STRUCT) {
+    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION) {
         return NULL;
     }
 
@@ -1498,8 +1498,11 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 }
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
-    visitFnSignature(node);
-    return visitFnBody(node);
+    if (!visitFnSignature(node)) return NULL;
+    if (node->body) {
+        return visitFnBody(node);
+    }
+    return NULL;
 }
 
 Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
@@ -1639,8 +1642,8 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return base_type; // Result type is the enum type itself
     }
 
-    if (base_type->kind != TYPE_STRUCT) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs, enums or pointers to structs", unit.getArena());
+    if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs, unions, enums or pointers to structs/unions", unit.getArena());
         return NULL;
     }
 

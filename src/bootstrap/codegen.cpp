@@ -550,9 +550,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(" ");
             emitExpression(node->as.binary_op->right);
             break;
-        case NODE_MEMBER_ACCESS:
-            if (node->as.member_access->base->resolved_type) {
-                Type* actual_type = node->as.member_access->base->resolved_type;
+        case NODE_MEMBER_ACCESS: {
+            const ASTNode* base = node->as.member_access->base;
+            if (base->resolved_type) {
+                Type* actual_type = base->resolved_type;
 
                 if (actual_type->kind == TYPE_ENUM) {
                     // Enum member access: EnumName_MemberName
@@ -567,23 +568,34 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                     break;
                 }
             }
-            emitExpression(node->as.member_access->base);
+
+            bool need_parens = requiresParentheses(base);
+            if (need_parens) writeString("(");
+            emitExpression(base);
+            if (need_parens) writeString(")");
+
             // Auto-dereference for pointer to struct:
             // if base is a pointer, use ->, else use .
-            if (node->as.member_access->base->resolved_type &&
-                node->as.member_access->base->resolved_type->kind == TYPE_POINTER) {
+            if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
                 writeString("->");
             } else {
                 writeString(".");
             }
             writeString(node->as.member_access->field_name);
             break;
-        case NODE_ARRAY_ACCESS:
-            emitExpression(node->as.array_access->array);
+        }
+        case NODE_ARRAY_ACCESS: {
+            const ASTNode* array_node = node->as.array_access->array;
+            bool need_parens = requiresParentheses(array_node);
+            if (need_parens) writeString("(");
+            emitExpression(array_node);
+            if (need_parens) writeString(")");
+
             writeString("[");
             emitExpression(node->as.array_access->index);
             writeString("]");
             break;
+        }
         case NODE_PTR_CAST:
             writeString("(");
             emitType(node->as.ptr_cast->target_type->resolved_type);
@@ -592,7 +604,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         case NODE_FUNCTION_CALL: {
             const ASTFunctionCallNode* call = node->as.function_call;
+            bool need_parens = requiresParentheses(call->callee);
+            if (need_parens) writeString("(");
             emitExpression(call->callee);
+            if (need_parens) writeString(")");
+
             writeString("(");
             if (call->args) {
                 for (size_t i = 0; i < call->args->length(); ++i) {
@@ -897,6 +913,29 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     global_names_.append(entry);
 
     return owned_name;
+}
+
+bool C89Emitter::requiresParentheses(const ASTNode* node) const {
+    if (!node) return false;
+    switch (node->type) {
+        // Postfix and primary expressions (Level 1 in C)
+        case NODE_IDENTIFIER:
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_CHAR_LITERAL:
+        case NODE_BOOL_LITERAL:
+        case NODE_NULL_LITERAL:
+        case NODE_PAREN_EXPR:
+        case NODE_FUNCTION_CALL:
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+            return false;
+
+        // Everything else has lower precedence than postfix operators
+        default:
+            return true;
+    }
 }
 
 void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
