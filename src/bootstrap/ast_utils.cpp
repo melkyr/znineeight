@@ -48,8 +48,6 @@ const char* getTokenSpelling(TokenType op) {
         case TOKEN_CARET: return "^";
         case TOKEN_LARROW2: return "<<";
         case TOKEN_RARROW2: return ">>";
-        case TOKEN_PLUS2: return "++";
-        case TOKEN_MINUS2: return "--";
         case TOKEN_BANG: return "!";
         case TOKEN_TILDE: return "~";
         case TOKEN_AND: return "&&";

@@ -282,3 +282,22 @@ The bootstrap parser correctly handles Zig's operator precedence rules during AS
 ### 10.3 Logical Operators Short-circuiting
 
 Zig's `and` and `or` operators map to C's `&&` and `||`, both of which exhibit the same short-circuiting behavior.
+
+## 11. Unary Operators
+
+The bootstrap compiler maps Zig unary operators to their C89 prefix equivalents.
+
+### 11.1 Mapping Table
+
+| Zig Operator | C89 Operator | Notes |
+|--------------|--------------|-------|
+| `-x`         | `-x`         | Arithmetic negation |
+| `!x`         | `!x`         | Logical NOT |
+| `~x`         | `~x`         | Bitwise NOT |
+| `&x`         | `&x`         | Address-of |
+| `x.*`        | `*x`         | Dereference (mapped to C89 prefix `*`) |
+| `+x`         | `+x`         | Unary plus |
+
+### 11.2 Dereference Syntax
+
+Zig uses the postfix operator `.*` for pointer dereference (e.g., `ptr.*`). The bootstrap compiler translates this into the standard C89 prefix dereference operator `*` (e.g., `*ptr`).
