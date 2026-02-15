@@ -1198,7 +1198,7 @@ Phase 3 – Expressions & Operators
 
         Test: p.x → p.x, ptr.y → ptr->y.
 
-    Task 200: Array indexing
+    Task 200: Array indexing (DONE)
 
         arr[idx] → arr[idx].
 

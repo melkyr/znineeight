@@ -6,6 +6,7 @@
 #include "utils.hpp"
 #include "platform.hpp"
 #include <cstdlib> // For abort()
+#include <cstdio>
 
 
 // Helper to get the string representation of a binary operator token.
@@ -938,22 +939,36 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         return NULL; // Error already reported
     }
 
-    if (array_type->kind != TYPE_ARRAY) {
-        fatalError(node->array->loc, "Cannot index into a non-array type.");
+    // Check that index is an integer type
+    if (!isIntegerType(index_type) && index_type->kind != TYPE_INTEGER_LITERAL) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->index->loc, "Array index must be an integer", unit.getArena());
         return NULL;
     }
 
-    // Attempt to evaluate the index as a compile-time constant.
+    Type* base = array_type;
+    // Auto-dereference for pointer to array
+    if (base->kind == TYPE_POINTER && base->as.pointer.base->kind == TYPE_ARRAY) {
+        base = base->as.pointer.base;
+    }
+
+    if (base->kind != TYPE_ARRAY) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot index into a non-array type", unit.getArena());
+        return NULL;
+    }
+
+    // Attempt to evaluate the index as a compile-time constant for bounds checking.
     i64 index_value;
     if (evaluateConstantExpression(node->index, &index_value)) {
-        u64 array_size = array_type->as.array.size;
+        u64 array_size = base->as.array.size;
         if (index_value < 0 || (u64)index_value >= array_size) {
-            fatalError(node->index->loc, "Array index out of bounds.");
+            char msg[128];
+            sprintf(msg, "Array index %ld is out of bounds for array of size %lu", (long)index_value, (unsigned long)array_size);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->index->loc, msg, unit.getArena());
             return NULL;
         }
     }
 
-    return array_type->as.array.element_type;
+    return base->as.array.element_type;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {

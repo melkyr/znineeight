@@ -334,3 +334,42 @@ Enum member access in Zig (e.g., `Color.Red`) is handled by the `TypeChecker` us
 | Zig Syntax | C89 Emission |
 |------------|--------------|
 | `Color.Red`| `Color_Red`   |
+
+## 13. Array Indexing
+
+Zig's array indexing syntax `arr[index]` is mapped directly to C array indexing, with special handling for pointers to arrays to ensure correct semantics in C.
+
+### 13.1 Basic Indexing
+
+For standard arrays, the mapping is one-to-one.
+
+| Zig Syntax | C89 Emission | Note |
+|------------|--------------|------|
+| `arr[i]`   | `arr[i]`     | `arr` is `[N]T` |
+| `matrix[i][j]` | `matrix[i][j]` | `matrix` is `[M][N]T` |
+
+### 13.2 Pointer to Array Indexing
+
+In Zig, a pointer to an array can be indexed directly (e.g., `ptr[i]` where `ptr` is `*[N]T`). In C, indexing a pointer to an array (`T (*ptr)[N]`) would result in an array of type `T[N]`. To get the element, the pointer must be dereferenced first.
+
+| Zig Syntax | C89 Emission | Note |
+|------------|--------------|------|
+| `ptr[i]`   | `(*ptr)[i]`  | `ptr` is `*[N]T` |
+
+### 13.3 Compile-time Bounds Checking
+
+The bootstrap compiler performs compile-time bounds checking when the index is a constant expression.
+
+| Zig Syntax | Result |
+|------------|--------|
+| `arr[5]` (size 5) | Compile Error: Array index 5 is out of bounds |
+| `arr[-1]` | Compile Error: Array index -1 is out of bounds |
+
+### 13.4 Multi-dimensional Arrays
+
+Multi-dimensional arrays are emitted using standard C nested array syntax.
+
+| Zig Type | C89 Declaration |
+|----------|-----------------|
+| `[3][4]i32` | `int arr[3][4]` |
+| `*[5]u8`   | `unsigned char (*ptr)[5]` |

@@ -1002,4 +1002,15 @@ TEST_FUNC(Codegen_MemberAccess_Cast);
 TEST_FUNC(Codegen_MemberAccess_NestedPointer);
 TEST_FUNC(Codegen_MemberAccess_ComplexPostfix);
 
+// Task 200: Array Indexing Codegen
+TEST_FUNC(Codegen_Array_Simple);
+TEST_FUNC(Codegen_Array_MultiDim);
+TEST_FUNC(Codegen_Array_Pointer);
+TEST_FUNC(Codegen_Array_Const);
+TEST_FUNC(Codegen_Array_ExpressionIndex);
+TEST_FUNC(Codegen_Array_NestedMember);
+TEST_FUNC(Codegen_Array_OOB_Error);
+TEST_FUNC(Codegen_Array_NonIntegerIndex_Error);
+TEST_FUNC(Codegen_Array_NonArrayBase_Error);
+
 #endif // TEST_DECLARATIONS_HPP
