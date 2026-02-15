@@ -60,6 +60,33 @@ void C89Emitter::emitType(Type* type, const char* name) {
 
     // Handle recursion for pointers and arrays
     if (type->kind == TYPE_POINTER) {
+        if (type->as.pointer.base->kind == TYPE_ARRAY) {
+            // Pointer to array: Base (*name)[N1][N2]...
+            Type* arr_type = type->as.pointer.base;
+            Type* base_elem = arr_type;
+            while (base_elem->kind == TYPE_ARRAY) base_elem = base_elem->as.array.element_type;
+
+            if (type->as.pointer.is_const) {
+                writeString("const ");
+            }
+            emitType(base_elem);
+            writeString(" (*");
+            if (name) writeString(name);
+            writeString(")");
+
+            // Emit all array dimensions
+            Type* curr = arr_type;
+            while (curr->kind == TYPE_ARRAY) {
+                char buf[32];
+                writeString("[");
+                u64_to_decimal(curr->as.array.size, buf, sizeof(buf));
+                writeString(buf);
+                writeString("]");
+                curr = curr->as.array.element_type;
+            }
+            return;
+        }
+
         if (type->as.pointer.is_const) {
             writeString("const ");
         }
@@ -73,18 +100,24 @@ void C89Emitter::emitType(Type* type, const char* name) {
     }
 
     if (type->kind == TYPE_ARRAY) {
-        emitType(type->as.array.element_type);
+        Type* base_elem = type;
+        while (base_elem->kind == TYPE_ARRAY) base_elem = base_elem->as.array.element_type;
+
+        emitType(base_elem);
         if (name) {
             writeString(" ");
             writeString(name);
         }
-        char buf[64];
-        plat_strcpy(buf, "[");
-        char num_buf[32];
-        u64_to_decimal(type->as.array.size, num_buf, sizeof(num_buf));
-        plat_strcat(buf, num_buf);
-        plat_strcat(buf, "]");
-        writeString(buf);
+
+        Type* curr = type;
+        while (curr->kind == TYPE_ARRAY) {
+            char buf[32];
+            writeString("[");
+            u64_to_decimal(curr->as.array.size, buf, sizeof(buf));
+            writeString(buf);
+            writeString("]");
+            curr = curr->as.array.element_type;
+        }
         return;
     }
 
@@ -586,10 +619,22 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         }
         case NODE_ARRAY_ACCESS: {
             const ASTNode* array_node = node->as.array_access->array;
+            Type* array_type = array_node->resolved_type;
+            bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
+                                    array_type->as.pointer.base->kind == TYPE_ARRAY);
+
+            if (is_ptr_to_array) {
+                writeString("(*");
+            }
+
             bool need_parens = requiresParentheses(array_node);
             if (need_parens) writeString("(");
             emitExpression(array_node);
             if (need_parens) writeString(")");
+
+            if (is_ptr_to_array) {
+                writeString(")");
+            }
 
             writeString("[");
             emitExpression(node->as.array_access->index);
