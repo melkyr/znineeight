@@ -8,6 +8,7 @@
 #include "integration/builtin_offsetof_tests.cpp"
 #include "integration/builtin_size_tests.cpp"
 #include "integration/cast_tests.cpp"
+#include "integration/cbackend_multi_file_tests.cpp"
 #include "integration/codegen_array_indexing_tests.cpp"
 #include "integration/codegen_binary_tests.cpp"
 #include "integration/codegen_cast_tests.cpp"
