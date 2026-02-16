@@ -33,6 +33,7 @@ public:
      */
     C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path);
 
+
     /**
      * @brief Constructs an emitter that writes to an already open file.
      * @param arena The ArenaAllocator for CVariableAllocator.
@@ -96,6 +97,11 @@ public:
      * @brief Closes the output file.
      */
     void close();
+
+    /**
+     * @brief Sets the name of the module being emitted.
+     */
+    void setModule(const char* name) { module_name_ = name; }
 
     /**
      * @brief Writes the standard C89 prologue (comments and includes).
@@ -281,6 +287,7 @@ private:
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    const char* module_name_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

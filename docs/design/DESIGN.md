@@ -852,6 +852,8 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
 - **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
 - **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
+- **Header Generation**: Public types and function prototypes are automatically exported to `.h` files with robust include guards.
+- **Import Handling**: Translates Zig `@import` into C `#include` directives.
 
 ### 13.2 C89Emitter
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.

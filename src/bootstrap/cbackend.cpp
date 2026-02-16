@@ -27,6 +27,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
     safe_append(cur, rem, ".c");
 
     C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    emitter.setModule(module->name);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open .c file for writing");
         return false;
@@ -34,10 +35,18 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
 
     emitter.emitPrologue();
 
-    // Pass 1: Local header include (if needed)
-    // emitter.writeString("#include \"");
-    // emitter.writeString(module->name);
-    // emitter.writeString(".h\"\n\n");
+    // Pass 0: Header includes
+    emitter.writeString("#include \"");
+    emitter.writeString(module->name);
+    emitter.writeString(".h\"\n");
+
+    for (size_t i = 0; i < module->imports.length(); ++i) {
+        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+        emitter.writeString("#include \"");
+        emitter.writeString(module->imports[i]);
+        emitter.writeString(".h\"\n");
+    }
+    emitter.writeString("\n");
 
     if (!module->ast_root || module->ast_root->type != NODE_BLOCK_STMT) {
         emitter.close();
@@ -46,9 +55,13 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
 
     DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-    // Pass 1: Type Definitions
+    // Pass 1: Private Type Definitions (Public types are in the .h file)
     for (size_t i = 0; i < stmts->length(); ++i) {
-        emitter.emitTypeDefinition((*stmts)[i]);
+        if ((*stmts)[i]->type == NODE_VAR_DECL) {
+            if (!(*stmts)[i]->as.var_decl->is_pub) {
+                emitter.emitTypeDefinition((*stmts)[i]);
+            }
+        }
     }
 
     // Pass 2: Global Variables
@@ -80,6 +93,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     safe_append(cur, rem, ".h");
 
     C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    emitter.setModule(module->name);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open .h file for writing");
         return false;
@@ -109,14 +123,33 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     emitter.writeString(guard);
     emitter.writeString("\n\n");
 
+    emitter.writeString("#include \"zig_runtime.h\"\n\n");
+
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-        // Emit public global variable declarations
+        // Pass 1: Public Type Definitions
+        for (size_t i = 0; i < stmts->length(); ++i) {
+            if ((*stmts)[i]->type == NODE_VAR_DECL) {
+                if ((*stmts)[i]->as.var_decl->is_pub) {
+                    emitter.emitTypeDefinition((*stmts)[i]);
+                }
+            }
+        }
+
+        // Pass 2: Public global variable declarations
         for (size_t i = 0; i < stmts->length(); ++i) {
             if ((*stmts)[i]->type == NODE_VAR_DECL) {
                 ASTVarDeclNode* decl = (*stmts)[i]->as.var_decl;
                 if (decl->is_pub && !decl->is_extern) {
+                    // Skip type declarations
+                    if (decl->is_const && decl->initializer) {
+                        Type* init_type = decl->initializer->resolved_type;
+                        if (init_type && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM)) {
+                            continue;
+                        }
+                    }
+
                     emitter.writeIndent();
                     emitter.writeString("extern ");
 

@@ -630,6 +630,49 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 return target_type;
             }
 
+            if (plat_strcmp(name, "@import") == 0) {
+                if (node->args->length() != 1) {
+                    fatalError(node->callee->loc, "@import expects 1 argument");
+                }
+                ASTNode* arg = (*node->args)[0];
+                if (arg->type != NODE_STRING_LITERAL) {
+                    fatalError(arg->loc, "@import expects a string literal");
+                }
+
+                const char* import_path = arg->as.string_literal.value;
+                const char* last_slash = plat_strrchr(import_path, '/');
+                const char* last_backslash = plat_strrchr(import_path, '\\');
+                const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+                const char* basename = sep ? sep + 1 : import_path;
+
+                char mod_name[256];
+                size_t blen = plat_strlen(basename);
+                if (blen >= sizeof(mod_name)) blen = sizeof(mod_name) - 1;
+                plat_strncpy(mod_name, basename, blen);
+                mod_name[blen] = '\0';
+
+                char* dot = plat_strrchr(mod_name, '.');
+                if (dot) *dot = '\0';
+
+                const char* interned_mod_name = unit.getStringInterner().intern(mod_name);
+
+                Module* current_mod = unit.getModule(unit.getCurrentModule());
+                if (current_mod) {
+                    bool found = false;
+                    for (size_t i = 0; i < current_mod->imports.length(); ++i) {
+                        if (plat_strcmp(current_mod->imports[i], interned_mod_name) == 0) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        current_mod->imports.append(interned_mod_name);
+                    }
+                }
+
+                return get_g_type_anytype();
+            }
+
             // Register in call site table as builtin
             int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
             unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
@@ -1627,6 +1670,27 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     // Auto-dereference for single level pointer
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
+    }
+
+    if (base_type->kind == TYPE_ANYTYPE) {
+        // Module member access
+        const char* mod_name = NULL;
+        if (node->base->type == NODE_IDENTIFIER) {
+            mod_name = node->base->as.identifier.name;
+        }
+
+        if (mod_name) {
+            Symbol* sym = unit.getSymbolTable().lookupWithModule(mod_name, node->field_name);
+            if (sym) {
+                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) {
+                    return sym->symbol_type;
+                }
+                if (sym->kind == SYMBOL_FUNCTION || sym->kind == SYMBOL_VARIABLE) {
+                    return sym->symbol_type;
+                }
+            }
+        }
+        return get_g_type_anytype();
     }
 
     if (base_type->kind == TYPE_ENUM) {
@@ -2823,6 +2887,10 @@ IndirectType TypeChecker::detectIndirectType(ASTNode* callee) {
     }
 
     if (callee->type == NODE_MEMBER_ACCESS) {
+        Type* base_type = visit(callee->as.member_access->base);
+        if (base_type && base_type->kind == TYPE_ANYTYPE) {
+            return NOT_INDIRECT;
+        }
         return INDIRECT_MEMBER;
     }
 

@@ -274,6 +274,15 @@ void CompilationUnit::setCurrentModule(const char* module_name) {
     current_module_ = interner_.intern(module_name);
 }
 
+Module* CompilationUnit::getModule(const char* name) {
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (plat_strcmp(modules_[i]->name, name) == 0) {
+            return modules_[i];
+        }
+    }
+    return NULL;
+}
+
 CompilationOptions& CompilationUnit::getOptions() {
     return options_;
 }
@@ -463,7 +472,8 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (!ast) return false;
 
     // Register module
-    Module* mod = (Module*)arena_.alloc(sizeof(Module));
+    void* mod_mem = arena_.alloc(sizeof(Module));
+    Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
     mod->filename = source_manager_.getFile(file_id)->filename;
     mod->ast_root = ast;

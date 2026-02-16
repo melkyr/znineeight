@@ -8,18 +8,22 @@
 
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
 }
 
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
     output_file_ = plat_open_file(path, true);
 }
 
+
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
 }
 
 C89Emitter::~C89Emitter() {
@@ -610,6 +614,8 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 Symbol* sym = node->as.identifier.symbol;
                 if (sym->flags & SYMBOL_FLAG_LOCAL) {
                     writeString(var_alloc_.allocate(sym));
+                } else if (sym->mangled_name) {
+                    writeString(sym->mangled_name);
                 } else {
                     writeString(getC89GlobalName(sym->name));
                 }
@@ -649,6 +655,16 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                     writeString("_");
                     writeString(node->as.member_access->field_name);
                     break;
+                }
+
+                if (actual_type->kind == TYPE_ANYTYPE) {
+                    // Module member access: ModuleName_MemberName
+                    if (base->type == NODE_IDENTIFIER) {
+                        writeString(base->as.identifier.name);
+                        writeString("_");
+                        writeString(node->as.member_access->field_name);
+                        break;
+                    }
                 }
             }
 
@@ -800,9 +816,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             return;
         }
         if (type->kind == TYPE_STRUCT) {
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("struct ");
-            writeString(getC89GlobalName(decl->name));
+            writeString(type->c_name);
             writeString(" {\n");
             indent();
             DynamicArray<StructField>* fields = type->as.struct_details.fields;
@@ -815,9 +834,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             writeIndent();
             writeString("};\n\n");
         } else if (type->kind == TYPE_UNION) {
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("union ");
-            writeString(getC89GlobalName(decl->name));
+            writeString(type->c_name);
             writeString(" {\n");
             indent();
             DynamicArray<StructField>* fields = type->as.struct_details.fields;
@@ -832,9 +854,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
         } else if (type->kind == TYPE_ENUM) {
             // C89 doesn't support specific backing types for enums, they are always int.
             // But we can emit a typedef if needed.
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("enum ");
-            const char* enum_name = getC89GlobalName(decl->name);
+            const char* enum_name = type->c_name;
             writeString(enum_name);
             writeString(" {\n");
             indent();
@@ -1008,13 +1033,15 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     }
 
     char buf[256];
-    // Prefix C89 keywords
-    if (isCKeyword(zig_name)) {
-        plat_strcpy(buf, "z_");
-        plat_strcat(buf, zig_name);
-    } else {
-        plat_strcpy(buf, zig_name);
+    char* cur = buf;
+    size_t rem = sizeof(buf);
+
+    if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
+        plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
+        safe_append(cur, rem, module_name_);
+        safe_append(cur, rem, "_");
     }
+    safe_append(cur, rem, zig_name);
 
     // Sanitize
     sanitizeForC89(buf);

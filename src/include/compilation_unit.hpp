@@ -63,10 +63,12 @@ public:
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
+    StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
 
     DynamicArray<Module*>& getModules() { return modules_; }
+    Module* getModule(const char* name);
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);

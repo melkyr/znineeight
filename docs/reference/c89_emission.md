@@ -434,3 +434,38 @@ Numeric casts are handled differently depending on whether they can be resolved 
 | Float Narrowing | `@floatCast(f32, my_f64)` | `__bootstrap_f32_from_f64(my_f64)` |
 
 *(Note: Runtime helpers are defined in `zig_runtime.h` and use Zig primitive names in their identifiers.)*
+
+## 16. Multi-Module and Header Support
+
+The bootstrap compiler supports multi-file projects by generating paired `.c` and `.h` files for each Zig module.
+
+### 16.1 Header Files (.h)
+
+Generated header files contain public interfaces and declarations intended for use by other modules.
+
+- **Include Guards**: Every header file uses standard `#ifndef`/`#define`/`#endif` guards based on the module name (e.g., `ZIG_MODULE_UTILS_H`).
+- **Standard Include**: All headers automatically include `zig_runtime.h` to ensure primitive types are available.
+- **Public Types**: `pub const T = struct { ... };` declarations are emitted as full struct/union/enum definitions in the header.
+- **Public Prototypes**: `pub fn` declarations are emitted as function prototypes.
+- **Public Variables**: `pub var` declarations are emitted as `extern` declarations.
+
+### 16.2 Source Files (.c)
+
+Generated source files contain implementations and private declarations.
+
+- **Module Header**: Every source file includes its own corresponding header file (e.g., `utils.c` includes `utils.h`).
+- **Import Mapping**: Zig `@import("foo.zig")` statements are translated into C `#include "foo.h"` directives.
+- **Visibility**: Symbols not marked as `pub` are emitted with the `static` keyword to ensure they are private to the translation unit.
+- **Private Types**: Types not marked as `pub` are defined only within the `.c` file.
+
+### 16.3 Namespacing
+
+To avoid collisions across multiple files, all global symbols (functions, variables, and named types) are mangled with a module-based prefix.
+
+| Zig Symbol | Module | C89 Name |
+|------------|--------|----------|
+| `Point`    | `utils`| `utils_Point` |
+| `add`      | `math` | `math_add` |
+| `main`     | `main` | `main` (entry point is never prefixed) |
+
+The `C89Emitter` ensures that references to symbols from imported modules use these mangled names. For example, a call to `utils.add()` in `main.zig` will be emitted as `utils_add()` in `main.c`.
