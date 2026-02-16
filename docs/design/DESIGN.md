@@ -45,7 +45,11 @@ This matches the target Win32/x86 environment of the late 90s.
 ## 3. Architecture & Memory Strategy
 The compiler uses a layered architecture relying heavily on "Arena Allocation" to avoid `malloc`/`free` overhead on slow 90s allocators.
 
-### 3.1 Memory Management (`memory.hpp`)
+### 3.1 Memory Management
+
+The RetroZig project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
+
+#### 3.1.1 Bootstrap Compiler Memory (`memory.hpp`)
 **Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
 
 ```cpp
@@ -66,6 +70,24 @@ public:
 * **Usage:** AST Nodes, Types, and Symbols are allocated here. A transient `token_arena` is used during parsing and reset immediately after to free memory early.
 * **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
+
+#### 3.1.2 Runtime Memory Management (`zig_runtime.h`, `zig_runtime.c`)
+**Concept:** A C89 implementation of the linked-block arena allocator, designed to be available across all generated modules. It allows Zig programs to manage their own memory efficiently using multiple independent arenas.
+
+```c
+typedef struct Arena Arena;
+
+Arena* arena_create(usize initial_capacity);
+void* arena_alloc(Arena* a, usize size);
+void arena_reset(Arena* a);
+void arena_destroy(Arena* a);
+
+extern Arena* zig_default_arena;
+```
+
+* **Implementation:** Uses Win32 `HeapAlloc` (from `kernel32.dll`) to allocate fixed-size blocks. Each block is chained in a linked list to ensure that existing pointers remain valid (non-relocatable) as the arena grows.
+* **Platform Abstraction:** Provides a fallback to standard C `malloc`/`free` for non-Windows environments to facilitate testing and development.
+* **Global Arena:** A default `zig_default_arena` is provided for simple programs and backward compatibility with Milestone 4 components.
 
 ### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
 **Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).

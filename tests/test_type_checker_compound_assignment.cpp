@@ -86,7 +86,7 @@ TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
     StringInterner interner(arena);
     const char* source =
         "fn my_ptr_test() void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    p += 10u;\n"
         "    arena_free(p);\n"
         "}\n";

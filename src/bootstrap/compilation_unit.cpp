@@ -316,23 +316,122 @@ void CompilationUnit::injectRuntimeSymbols() {
         }
     }
 
-    // arena_alloc(size: usize) -> *void
-    void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
-    DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
-    params->append(get_g_type_usize());
-    Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
-    Type* fn_type = createFunctionType(arena_, params, ret_type);
-
-    const char* alloc_name = interner_.intern("arena_alloc");
-    Symbol sym_alloc = SymbolBuilder(arena_)
-        .withName(alloc_name)
-        .withMangledName(name_mangler_.mangleFunction(alloc_name, NULL, 0, current_module_))
-        .ofType(SYMBOL_FUNCTION)
-        .withType(fn_type)
+    // Opaque Arena type
+    const char* arena_name = interner_.intern("Arena");
+    Type* arena_type = createStructType(arena_, NULL, arena_name);
+    Symbol sym_arena = SymbolBuilder(arena_)
+        .withName(arena_name)
+        .withMangledName(arena_name)
+        .ofType(SYMBOL_TYPE)
+        .withType(arena_type)
         .build();
-    symbol_table_.insert(sym_alloc);
+    symbol_table_.insert(sym_arena);
 
-    // arena_free(ptr: *void) -> void
+    Type* arena_ptr_type = createPointerType(arena_, arena_type, false, &type_interner_);
+
+    // arena_create(initial_size: usize) -> *Arena
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(get_g_type_usize());
+        Type* fn_type = createFunctionType(arena_, params, arena_ptr_type);
+
+        const char* name = interner_.intern("arena_create");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // arena_alloc(a: *Arena, size: usize) -> *void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(arena_ptr_type);
+        params->append(get_g_type_usize());
+        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
+        Type* fn_type = createFunctionType(arena_, params, ret_type);
+
+        const char* name = interner_.intern("arena_alloc");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // arena_reset(a: *Arena) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(arena_ptr_type);
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("arena_reset");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // arena_destroy(a: *Arena) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(arena_ptr_type);
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("arena_destroy");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // zig_default_arena: *Arena
+    {
+        const char* name = interner_.intern("zig_default_arena");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_VARIABLE)
+            .withFlags(SYMBOL_FLAG_GLOBAL)
+            .withType(arena_ptr_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // Backward compatibility: arena_alloc_default(size: usize) -> *void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(get_g_type_usize());
+        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
+        Type* fn_type = createFunctionType(arena_, params, ret_type);
+
+        const char* name = interner_.intern("arena_alloc_default");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .build();
+        symbol_table_.insert(sym);
+    }
+
+    // Deprecated: arena_free(ptr: *void) -> void
+    // Map it to a no-op or just leave it for now.
     void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
     DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
     params2->append(createPointerType(arena_, get_g_type_void(), false, &type_interner_));
@@ -342,7 +441,7 @@ void CompilationUnit::injectRuntimeSymbols() {
     const char* free_name = interner_.intern("arena_free");
     Symbol sym_free = SymbolBuilder(arena_)
         .withName(free_name)
-        .withMangledName(name_mangler_.mangleFunction(free_name, NULL, 0, current_module_))
+        .withMangledName(free_name)
         .ofType(SYMBOL_FUNCTION)
         .withType(fn_type2)
         .build();

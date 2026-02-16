@@ -34,10 +34,10 @@ TEST_FUNC(DoubleFree_TransferTracking) {
     StringInterner interner(arena);
 
     const char* source =
-        "fn arena_alloc(size: usize) -> *void { return null; }\n"
+        "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
         "fn unknown_func(p: *u8) -> void {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    unknown_func(p);\n" // Ownership transferred
         "}\n";
 
@@ -76,10 +76,10 @@ TEST_FUNC(DoubleFree_DeferContextInError) {
     StringInterner interner(arena);
 
     const char* source =
-        "fn arena_alloc(size: usize) -> *void { return null; }\n"
+        "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
         "fn arena_free(p: *void) -> void {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    defer { arena_free(p); }\n"         // Line 5 (executes 2nd)
         "    defer { arena_free(p); }\n"         // Line 6 (executes 1st)
         "}\n";
@@ -118,10 +118,10 @@ TEST_FUNC(DoubleFree_ErrdeferContextInError) {
     StringInterner interner(arena);
 
     const char* source =
-        "fn arena_alloc(size: usize) -> *void { return null; }\n"
+        "fn arena_alloc_default(size: usize) -> *void { return null; }\n"
         "fn arena_free(p: *void) -> void {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"   // Line 4
+        "    var p: *u8 = arena_alloc_default(100u);\n"   // Line 4
         "    errdefer { arena_free(p); }\n"      // Line 5 (executes 2nd)
         "    errdefer { arena_free(p); }\n"      // Line 6 (executes 1st)
         "}\n";

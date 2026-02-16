@@ -11,7 +11,7 @@ TEST_FUNC(DoubleFree_SimpleDoubleFree) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "    arena_free(p);\n"
         "    arena_free(p);\n"
         "}\n";
@@ -48,7 +48,7 @@ TEST_FUNC(DoubleFree_NestedDeferScopes) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    {\n"
         "        defer { arena_free(p); }\n"
         "    }\n"
@@ -87,7 +87,7 @@ TEST_FUNC(DoubleFree_PointerAliasing) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    var q: *u8 = p;\n"
         "    arena_free(p);\n"
         "    arena_free(q);\n" // Double free via alias (Risk)
@@ -134,7 +134,7 @@ TEST_FUNC(DoubleFree_DeferInLoop) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    var i: i32 = 0;\n"
         "    while (i < x) {\n"
         "        defer { arena_free(p); }\n"
@@ -170,7 +170,7 @@ TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree) {
         "fn my_func(x: i32) -> void {\n"
         "    var p: *u8 = null;\n"
         "    if (x > 0) {\n"
-        "        p = arena_alloc(100u);\n"
+        "        p = arena_alloc_default(100u);\n"
         "    } else {\n"
         "        p = null;\n"
         "    }\n"
@@ -212,7 +212,7 @@ TEST_FUNC(DoubleFree_SwitchAnalysis) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
         "        else => p,\n"
@@ -254,7 +254,7 @@ TEST_FUNC(DoubleFree_TryAnalysis) {
     const char* source =
         "fn fallible() -> void {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    try fallible();\n"
         "    arena_free(p);\n"
         "}\n";
@@ -293,7 +293,7 @@ TEST_FUNC(DoubleFree_TryAnalysisComplex) {
     const char* source =
         "fn fallible() -> void {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    try fallible();\n" // try wrapping a call
         "    arena_free(p);\n"
         "    arena_free(p);\n"
@@ -332,7 +332,7 @@ TEST_FUNC(DoubleFree_CatchAnalysis) {
     const char* source =
         "fn fallible() -> *u8 { return null; }\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = fallible() catch arena_alloc(100u);\n"
+        "    var p: *u8 = fallible() catch arena_alloc_default(100u);\n"
         "    arena_free(p);\n"
         "}\n";
 
@@ -347,7 +347,7 @@ TEST_FUNC(DoubleFree_CatchAnalysis) {
     DoubleFreeAnalyzer analyzer(ctx.getCompilationUnit());
     analyzer.analyze(ast);
 
-    // If 'catch' is NOT visited, arena_alloc(100u) is NOT seen.
+    // If 'catch' is NOT visited, arena_alloc_default(100u) is NOT seen.
     // So p will be UNINITIALIZED.
     // arena_free(p) will report WARN_FREE_UNALLOCATED.
     bool has_uninit_warning = false;
@@ -370,7 +370,7 @@ TEST_FUNC(DoubleFree_BinaryOpAnalysis) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u) + 0u;\n" // arena_alloc inside binary op
+        "    var p: *u8 = arena_alloc_default(100u) + 0u;\n" // arena_alloc inside binary op
         "    arena_free(p);\n"
         "}\n";
 
@@ -409,8 +409,8 @@ TEST_FUNC(DoubleFree_ReassignmentLeak) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
-        "    p = arena_alloc(200);\n" // Leak of first allocation
+        "    var p: *u8 = arena_alloc_default(100);\n"
+        "    p = arena_alloc_default(200);\n" // Leak of first allocation
         "    arena_free(p);\n"
         "}\n";
 
@@ -445,7 +445,7 @@ TEST_FUNC(DoubleFree_NullReassignmentLeak) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "    p = null;\n" // Leak
         "}\n";
 
@@ -480,7 +480,7 @@ TEST_FUNC(DoubleFree_ReturnExempt) {
 
     const char* source =
         "fn my_func() -> *u8 {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "    return p;\n" // No leak
         "}\n";
 
@@ -515,7 +515,7 @@ TEST_FUNC(DoubleFree_BasicTracking) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "    arena_free(p);\n"
         "}\n";
 
@@ -595,7 +595,7 @@ TEST_FUNC(DoubleFree_MemoryLeak) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
@@ -630,7 +630,7 @@ TEST_FUNC(DoubleFree_DeferDoubleFree) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n"
+        "    var p: *u8 = arena_alloc_default(100);\n"
         "    defer { arena_free(p); }\n"
         "    arena_free(p);\n"
         "}\n";

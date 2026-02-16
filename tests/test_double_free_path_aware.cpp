@@ -11,7 +11,7 @@ TEST_FUNC(DoubleFree_IfElseBranching) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    if (x > 0) {\n"
         "        arena_free(p);\n"
         "    } else {\n"
@@ -60,7 +60,7 @@ TEST_FUNC(DoubleFree_IfElseBothFree) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    if (x > 0) {\n"
         "        arena_free(p);\n"
         "    } else {\n"
@@ -106,10 +106,10 @@ TEST_FUNC(DoubleFree_WhileConservative) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    while (x > 0) {\n"
         "        arena_free(p);\n"
-        "        p = arena_alloc(200u);\n"
+        "        p = arena_alloc_default(200u);\n"
         "    }\n"
         "    // p is AS_UNKNOWN here\n"
         "    arena_free(p);\n"

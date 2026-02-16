@@ -10,7 +10,7 @@ TEST_FUNC(DoubleFree_SwitchPathAware) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
         "        else => {}\n"
@@ -52,7 +52,7 @@ TEST_FUNC(DoubleFree_SwitchBothFree) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
         "        else => arena_free(p)\n"
