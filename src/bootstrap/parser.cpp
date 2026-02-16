@@ -1227,11 +1227,12 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
 
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
+        .withModule(module_name_)
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
-        .withFlags(0) // Semantic flags will be set by TypeChecker
+        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0) // Semantic flags will be set by TypeChecker
         .build();
 
     symbol_table_->insert(symbol);
@@ -1326,10 +1327,12 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
     // Create and insert the symbol for the function itself into the current scope.
     Symbol fn_symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
+        .withModule(module_name_)
         .ofType(SYMBOL_FUNCTION)
         .withType(NULL) // TODO: Create a function type object
         .atLocation(name_token.location)
         .definedBy(fn_decl)
+        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0)
         .build();
 
     symbol_table_->insert(fn_symbol);

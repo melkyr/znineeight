@@ -65,6 +65,11 @@ static void __bootstrap_print(const char* s) {
     fputs(s, stderr);
 }
 
+/**
+ * @brief Print integer helper
+ */
+void __bootstrap_print_int(i32 n);
+
 /* Arena Allocator API */
 Arena* arena_create(usize initial_capacity);
 void* arena_alloc(Arena* a, usize size);

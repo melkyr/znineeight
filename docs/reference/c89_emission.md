@@ -33,7 +33,7 @@ The `zig_runtime.h` header serves several purposes:
 - **Portable Typedefs**: Defines `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `usize`, and `isize` in a way that is compatible with both MSVC 6.0 and modern compilers in C89 mode.
 - **64-bit Literal Suffixes**: Provides macros for `i64` and `ui64` suffixes. On MSVC, these are used directly. On other compilers, they are mapped to `LL` and `ULL` via the preprocessor.
 - **Runtime Safety**: Contains the `__bootstrap_panic` handler and checked numeric conversion helpers (like `__bootstrap_i32_from_u64`).
-- **Debugging**: Provides `__bootstrap_print` for basic string output.
+- **Debugging**: Provides `__bootstrap_print(const char*)` for string output and `__bootstrap_print_int(i32)` for integer output.
 
 ## 2. Float Literals
 
@@ -465,8 +465,11 @@ To avoid collisions across multiple files, all global symbols (functions, variab
 
 | Zig Symbol | Module | C89 Name |
 |------------|--------|----------|
-| `Point`    | `utils`| `utils_Point` |
-| `add`      | `math` | `math_add` |
-| `main`     | `main` | `main` (entry point is never prefixed) |
+| `Point`    | `utils`| `z_utils_Point` |
+| `add`      | `math` | `z_math_add` |
+| `main`     | `main` | `int main(int argc, char* argv[])` |
 
-The `C89Emitter` ensures that references to symbols from imported modules use these mangled names. For example, a call to `utils.add()` in `main.zig` will be emitted as `utils_add()` in `main.c`.
+The `C89Emitter` ensures that references to symbols from imported modules use these mangled names. For example, a call to `utils.add()` in `main.zig` will be emitted as `z_utils_add()` in `main.c`.
+
+### 16.4 Extern Linkage
+Symbols marked as `extern` (e.g., `extern fn __bootstrap_print(...)`) skip the module-based name mangling. This allows Zig code to interface directly with existing C symbols or runtime helpers defined in `zig_runtime.h`.

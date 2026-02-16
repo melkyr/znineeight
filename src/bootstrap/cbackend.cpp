@@ -56,7 +56,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
         safe_append(cur, rem, ".c");
     }
 
-    C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    C89Emitter emitter(unit_);
     emitter.setModule(module->name);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open .c file for writing");
@@ -122,7 +122,7 @@ bool CBackend::generateMasterMain(const char* output_dir) {
     safe_append(cur, rem, "/");
     safe_append(cur, rem, entry_filename_);
 
-    C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    C89Emitter emitter(unit_);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open master main file for writing");
         return false;
@@ -202,7 +202,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     safe_append(cur, rem, module->name);
     safe_append(cur, rem, ".h");
 
-    C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    C89Emitter emitter(unit_);
     emitter.setModule(module->name);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open .h file for writing");
@@ -260,10 +260,11 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
             if ((*stmts)[i]->type == NODE_VAR_DECL) {
                 ASTVarDeclNode* decl = (*stmts)[i]->as.var_decl;
                 if (decl->is_pub && !decl->is_extern) {
-                    // Skip type declarations
-                    if (decl->is_const && decl->initializer) {
+                    // Skip type and module declarations
+                    if (decl->initializer && decl->initializer->resolved_type) {
                         Type* init_type = decl->initializer->resolved_type;
-                        if (init_type && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM)) {
+                        if (init_type->kind == TYPE_MODULE ||
+                            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
                             continue;
                         }
                     }

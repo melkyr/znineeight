@@ -27,7 +27,7 @@ static bool run_member_codegen_test(const char* zig_code, const char* expected_c
     std::string generated_c;
     const char* temp_filename = "temp_member_test.c";
     {
-        C89Emitter emitter(arena, unit.getErrorHandler(), temp_filename);
+        C89Emitter emitter(unit, temp_filename);
         if (!emitter.isValid()) {
             printf("FAIL: Could not open temp file for writing\n");
             return false;

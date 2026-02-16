@@ -632,7 +632,7 @@ TEST_FUNC(Recursive_Forward_Mangled);
 
 // Task 168: Call Syntax Verification
 TEST_FUNC(CallSyntax_AtImport);
-TEST_FUNC(CallSyntax_AtImport_Rejection);
+TEST_FUNC(CallSyntax_AtImport_Pipeline);
 TEST_FUNC(CallSyntax_ComplexPostfix);
 TEST_FUNC(CallSyntax_MethodCall);
 
@@ -1018,5 +1018,9 @@ TEST_FUNC(Task211_MultiArenaUsage);
 TEST_FUNC(Task211_ArenaAllocDefault);
 TEST_FUNC(Task211_ArenaTypeRecognition);
 TEST_FUNC(Task211_ArenaCodegen);
+
+// End-to-End Tests
+TEST_FUNC(EndToEnd_HelloWorld);
+TEST_FUNC(EndToEnd_PrimeNumbers);
 
 #endif // TEST_DECLARATIONS_HPP

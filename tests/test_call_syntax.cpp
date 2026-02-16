@@ -37,7 +37,7 @@ TEST_FUNC(CallSyntax_AtImport) {
     return true;
 }
 
-TEST_FUNC(CallSyntax_AtImport_Rejection) {
+TEST_FUNC(CallSyntax_AtImport_Pipeline) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -47,10 +47,7 @@ TEST_FUNC(CallSyntax_AtImport_Rejection) {
     u32 file_id = unit.addSource("test.zig", source);
 
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
-
-    // Check if error was reported
-    ASSERT_TRUE(unit.getErrorHandler().getErrors().length() > 0);
+    ASSERT_TRUE(success);
 
     return true;
 }

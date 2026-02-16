@@ -739,6 +739,20 @@ for %%f in (%TEST_DIR%*.zig) do (
 echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ```
 
+### 8.1 End-to-End Example (Milestone 6)
+The ultimate verification of the bootstrap toolchain is the successful compilation and execution of a multi-module Zig program. This is demonstrated by the `EndToEnd_HelloWorld` test case.
+
+**Example Modules:**
+- `main.zig`: Imports `greetings.zig` and calls `sayHello()`.
+- `greetings.zig`: Imports `std.zig` and calls `std.debug.print()`.
+- `std.zig`: Mimics the Zig standard library namespace using module imports.
+
+**Pipeline Flow:**
+1. **Bootstrap Compiler (`zig0`)**: Parses Zig source, resolves symbols across modules, and validates C89 compatibility.
+2. **CBackend**: Generates `.c` and `.h` files for each module.
+3. **C Toolchain (`gcc`)**: Compiles the generated C code, linked with `zig_runtime.c`, into a native executable.
+4. **Execution**: The resulting binary runs and produces output (e.g., "Hello, world!") via runtime helpers.
+
 ## 9. Implementation Roadmap
 
 ### Phase 0: The Bootstrap (C++98)

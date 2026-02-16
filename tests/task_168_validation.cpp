@@ -166,12 +166,12 @@ TEST_FUNC(Task168_BuiltinCall) {
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
 
-    ASSERT_FALSE(success);
+    // @import is now supported
+    ASSERT_TRUE(success);
 
     CallSiteLookupTable& table = unit.getCallSiteLookupTable();
-    ASSERT_EQ(1, table.count());
-    ASSERT_FALSE(table.getEntry(0).resolved);
-    ASSERT_STREQ("Built-in function not supported", table.getEntry(0).error_if_unresolved);
+    // Built-ins are not tracked in the call site table as they don't need C-level resolution/mangling
+    ASSERT_EQ(0, table.count());
 
     return true;
 }

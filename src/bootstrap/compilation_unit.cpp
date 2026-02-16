@@ -272,6 +272,7 @@ const char* CompilationUnit::getCurrentModule() const {
 
 void CompilationUnit::setCurrentModule(const char* module_name) {
     current_module_ = interner_.intern(module_name);
+    symbol_table_.setCurrentModule(current_module_);
 }
 
 Module* CompilationUnit::getModule(const char* name) {

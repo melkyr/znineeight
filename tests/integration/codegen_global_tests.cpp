@@ -27,7 +27,7 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
     std::string generated_c;
     const char* temp_filename = "temp_global_test.c";
     {
-        C89Emitter emitter(arena, unit.getErrorHandler(), temp_filename);
+        C89Emitter emitter(unit, temp_filename);
         if (!emitter.isValid()) {
             printf("FAIL: Could not open temp file for writing\n");
             return false;
@@ -176,7 +176,7 @@ TEST_FUNC(Codegen_Global_NonConstantInit_Error) {
     }
 
     const char* temp_filename = "temp_global_error_test.c";
-    C89Emitter emitter(arena, unit.getErrorHandler(), temp_filename);
+    C89Emitter emitter(unit, temp_filename);
 
     ASTNode* root = unit.last_ast;
     bool error_reported = false;

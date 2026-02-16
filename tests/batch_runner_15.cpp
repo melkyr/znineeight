@@ -22,6 +22,7 @@
 #include "integration/codegen_member_access_tests.cpp"
 #include "integration/codegen_unary_tests.cpp"
 #include "integration/defer_tests.cpp"
+#include "integration/end_to_end_hello.cpp"
 #include "integration/enum_tests.cpp"
 #include "integration/for_tests.cpp"
 #include "integration/function_call_tests.cpp"

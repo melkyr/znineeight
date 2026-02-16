@@ -21,11 +21,13 @@ enum SymbolFlag {
     SYMBOL_FLAG_LOCAL   = (1 << 0),  // Stack-allocated variable/parameter
     SYMBOL_FLAG_STATIC  = (1 << 1),  // Static storage
     SYMBOL_FLAG_PARAM   = (1 << 2),  // Function parameter
-    SYMBOL_FLAG_GLOBAL  = (1 << 3)   // Global variable
+    SYMBOL_FLAG_GLOBAL  = (1 << 3),  // Global variable
+    SYMBOL_FLAG_EXTERN  = (1 << 4)   // Extern linkage
 };
 
 struct Symbol {
     const char* name;
+    const char* module_name; // NULL for local or 'main' module
     const char* mangled_name;
     SymbolType kind;
     Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
@@ -43,6 +45,7 @@ class SymbolBuilder {
 public:
     SymbolBuilder(ArenaAllocator& arena);
     SymbolBuilder& withName(const char* name);
+    SymbolBuilder& withModule(const char* module_name);
     SymbolBuilder& withMangledName(const char* mangled_name);
     SymbolBuilder& ofType(SymbolType type);
     SymbolBuilder& withType(Type* symbol_type);
@@ -67,7 +70,7 @@ struct Scope {
 
     Scope(ArenaAllocator& arena, size_t initial_bucket_count = 4);
     void insert(Symbol& symbol);
-    Symbol* find(const char* name);
+    Symbol* find(const char* name, const char* module_name = NULL);
     void resize();
 };
 
@@ -75,16 +78,18 @@ class SymbolTable {
     ArenaAllocator& arena_;
     DynamicArray<Scope*> scopes;
     DynamicArray<Scope*> all_scopes_; // Persist all scopes for subsequent passes
+    const char* current_module_;
     unsigned int current_scope_level_;
 
 public:
     SymbolTable(ArenaAllocator& arena);
+    void setCurrentModule(const char* module_name) { current_module_ = module_name; }
     void enterScope();
     void exitScope();
     bool insert(Symbol& symbol);
     Symbol* lookup(const char* name);
     Symbol* lookupInCurrentScope(const char* name);
-    Symbol* lookupWithModule(const char* module, const char* name);
+    Symbol* lookupWithModule(const char* module_name, const char* symbol_name);
     Symbol* findInAnyScope(const char* name); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 };

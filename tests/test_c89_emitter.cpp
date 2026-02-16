@@ -8,7 +8,7 @@ TEST_FUNC(c89_emitter_basic) {
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
     const char* filename = "test_emitter_basic.c";
-    C89Emitter emitter(arena, unit.getErrorHandler(), filename);
+    C89Emitter emitter(unit, filename);
     ASSERT_TRUE(emitter.isValid());
 
     emitter.emitComment("Hello World");
@@ -39,7 +39,7 @@ TEST_FUNC(c89_emitter_buffering) {
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
     const char* filename = "test_emitter_buffering.c";
-    C89Emitter emitter(arena, unit.getErrorHandler(), filename);
+    C89Emitter emitter(unit, filename);
     ASSERT_TRUE(emitter.isValid());
 
     // Write exactly 4096 bytes to fill the buffer
