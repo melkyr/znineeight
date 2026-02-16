@@ -54,6 +54,65 @@ typedef int isize;
  */
 #include <stdlib.h>
 #include <stdio.h>
+
+/* Forward declaration for Arena structures */
+typedef struct ArenaBlock ArenaBlock;
+
+/**
+ * @struct Arena
+ * @brief Header for a linked-block arena allocator.
+ */
+typedef struct Arena {
+    ArenaBlock* first;
+    ArenaBlock* current;
+} Arena;
+
+/**
+ * @brief Creates a new arena with the specified initial capacity.
+ * @param initial_capacity The size of the first block in bytes.
+ * @return A pointer to the newly created arena, or NULL on failure.
+ */
+Arena* arena_create(usize initial_capacity);
+
+/**
+ * @brief Allocates memory from the specified arena.
+ * @param a The arena to allocate from.
+ * @param size The number of bytes to allocate.
+ * @return A pointer to the allocated memory. Panics on failure.
+ */
+void* arena_alloc(Arena* a, usize size);
+
+/**
+ * @brief Resets the arena, making all its memory available for reuse.
+ * Does not free the blocks back to the OS.
+ * @param a The arena to reset.
+ */
+void arena_reset(Arena* a);
+
+/**
+ * @brief Destroys the arena and frees all its memory back to the OS.
+ * @param a The arena to destroy.
+ */
+void arena_destroy(Arena* a);
+
+/**
+ * @brief Default global arena for simple allocations.
+ * Initialized at program startup.
+ */
+extern Arena* zig_default_arena;
+
+/**
+ * @brief Convenience wrapper for allocating from the default arena.
+ * Used for backward compatibility with Milestone 4 tests.
+ */
+void* arena_alloc_default(usize size);
+
+/**
+ * @brief Frees memory. For arenas, this is a no-op.
+ * Provided for compatibility with tests.
+ */
+void arena_free(void* ptr);
+
 static void __bootstrap_panic(const char* msg, const char* file, int line) {
     fprintf(stderr, "PANIC: %s at %s:%d\n", msg, file, line);
     abort();

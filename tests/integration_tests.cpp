@@ -15,7 +15,7 @@ TEST_FUNC(Integration_FullPipeline) {
 
     const char* source =
         "fn main() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    arena_free(p);\n"
         "    arena_free(p);  // Double free\n"
         "    var q: *i32 = null;\n"
@@ -74,7 +74,7 @@ TEST_FUNC(Integration_CorrectUsage) {
 
     const char* source =
         "fn main() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    arena_free(p);  // Correct usage\n"
         "}\n";
 

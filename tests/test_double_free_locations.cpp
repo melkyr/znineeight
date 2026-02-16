@@ -35,7 +35,7 @@ TEST_FUNC(DoubleFree_LocationInLeakWarning) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n" // Line 2
+        "    var p: *u8 = arena_alloc_default(100);\n" // Line 2
         "}\n";
 
     ParserTestContext ctx(source, arena, interner);
@@ -75,8 +75,8 @@ TEST_FUNC(DoubleFree_LocationInReassignmentLeak) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n" // Line 2
-        "    p = arena_alloc(200);\n"         // Line 3
+        "    var p: *u8 = arena_alloc_default(100);\n" // Line 2
+        "    p = arena_alloc_default(200);\n"         // Line 3
         "    arena_free(p);\n"
         "}\n";
 
@@ -115,7 +115,7 @@ TEST_FUNC(DoubleFree_LocationInDoubleFreeError) {
 
     const char* source =
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100);\n" // Line 2
+        "    var p: *u8 = arena_alloc_default(100);\n" // Line 2
         "    arena_free(p);\n"                  // Line 3
         "    arena_free(p);\n"                  // Line 4
         "}\n";

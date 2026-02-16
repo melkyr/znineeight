@@ -900,7 +900,8 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
     if (node->type == NODE_FUNCTION_CALL) {
         ASTFunctionCallNode* call = node->as.function_call;
         if (call->callee->type == NODE_IDENTIFIER) {
-            return strings_equal(call->callee->as.identifier.name, "arena_alloc");
+            const char* name = call->callee->as.identifier.name;
+            return strings_equal(name, "arena_alloc") || strings_equal(name, "arena_alloc_default");
         }
     } else if (node->type == NODE_TRY_EXPR) {
         return isAllocationCall(node->as.try_expr.expression);
