@@ -175,6 +175,14 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
     if (!node || !node->as.function_call || !node->as.function_call->callee) return;
     ASTFunctionCallNode* call = node->as.function_call;
 
+    // Skip built-ins (Task 168/209)
+    if (call->callee->type == NODE_IDENTIFIER) {
+        const char* name = call->callee->as.identifier.name;
+        if (name && name[0] == '@') {
+            return;
+        }
+    }
+
     // Check if it's an indirect call
     const IndirectCallInfo* indirect = ctx.unit.getIndirectCallCatalogue().findByLocation(call->callee->loc);
     if (indirect) {

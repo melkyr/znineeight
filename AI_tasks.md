@@ -1305,8 +1305,8 @@ What to Watch For – Critical Technical Constraints
     Target <16MB total memory for the compiler itself, not for generated output.
 
 ### Milestone 6: C Library Integration & Final Bootstrap
-208. **Task 208:** Implement the CBackend class skeleton for final code emission.
-209. **Task 209:** Add logic to generate proper C89 headers and include guards.
+208. **Task 208:** Implement the CBackend class skeleton for final code emission. (DONE)
+209. **Task 209:** Add logic to generate proper C89 headers and include guards. (DONE)
 210. **Task 210:** Implement wrappers for Zig runtime features to C library calls.
 211. **Task 211:** Handle Zig memory management with C89-compatible patterns.
 212. **Task 212:** Integrate CBackend to write complete C89 `.c` files.
@@ -1334,13 +1334,13 @@ Phase 6A: Import System Foundation
 
 Phase 6B: C89 Code Generation with Modules
 
-Task 208: Implement the CBackend class skeleton for final code emission.
+Task 208: Implement the CBackend class skeleton for final code emission. (DONE)
 
     Enhancement: Support emitting multiple .c files from multiple Zig files
 
     Add per-module code generation
 
-Task 209: Add logic to generate proper C89 headers and include guards.
+Task 209: Add logic to generate proper C89 headers and include guards. (DONE)
 
     Enhancement: Generate .h files for module interfaces
 

@@ -174,10 +174,12 @@ struct ASTAssignmentNode {
  * @brief Represents a member access expression (e.g., `s.field`).
  * @var ASTMemberAccessNode::base The expression being accessed.
  * @var ASTMemberAccessNode::field_name The name of the field (interned string).
+ * @var ASTMemberAccessNode::symbol The resolved symbol (for module access).
  */
 struct ASTMemberAccessNode {
     ASTNode* base;
     const char* field_name;
+    Symbol* symbol;
 };
 
 /**

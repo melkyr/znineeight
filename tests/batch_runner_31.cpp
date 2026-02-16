@@ -36,4 +36,5 @@
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "test_cbackend.cpp"
 #include "main_batch31.cpp"

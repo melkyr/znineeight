@@ -19,6 +19,7 @@
 #include "indirect_call_catalogue.hpp"
 #include "name_mangler.hpp"
 #include "call_site_lookup_table.hpp"
+#include "module.hpp"
 
 /**
  * @struct CompilationOptions
@@ -37,7 +38,6 @@ struct CompilationOptions {
 
 // Forward-declare to avoid circular dependencies.
 class Parser;
-class C89PatternGenerator;
 
 class CompilationUnit {
 public:
@@ -63,8 +63,12 @@ public:
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
+    StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
+
+    DynamicArray<Module*>& getModules() { return modules_; }
+    Module* getModule(const char* name);
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);
@@ -77,22 +81,6 @@ public:
      * @brief Injects mandatory runtime symbols (like arena_alloc, arena_free) into the global scope.
      */
     void injectRuntimeSymbols();
-
-    /**
-     * @brief Generates C89 return patterns for all error-returning functions in the catalogue.
-     *        Only used for Task 148 validation.
-     */
-    void testErrorPatternGeneration();
-
-    /**
-     * @brief Returns the number of generated test patterns.
-     */
-    int getGeneratedPatternCount() const;
-
-    /**
-     * @brief Returns a specific generated test pattern by index.
-     */
-    const char* getGeneratedPattern(int index) const;
 
     /**
      * @brief Executes the full compilation pipeline for a single file.
@@ -152,8 +140,7 @@ private:
     CompilationOptions options_;
     const char* current_module_;
 
-    C89PatternGenerator* pattern_generator_;
-    DynamicArray<const char*>* test_patterns_;
+    DynamicArray<Module*> modules_;
     ASTNode* last_ast_;
     bool is_test_mode_;
     bool validation_completed_;

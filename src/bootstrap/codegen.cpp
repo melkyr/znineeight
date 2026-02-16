@@ -8,18 +8,22 @@
 
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
 }
 
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
     output_file_ = plat_open_file(path, true);
 }
 
+
 C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena) {
+      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      module_name_(NULL) {
 }
 
 C89Emitter::~C89Emitter() {
@@ -261,6 +265,50 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 }
 
+void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
+    if (!node) return;
+    // For prototypes, we don't necessarily need to reset var_alloc_,
+    // but we should ensure parameter names don't collide with keywords.
+    // However, C89 doesn't require parameter names in prototypes.
+    // Let's include them for clarity, but use a temporary allocator if needed.
+    // For now, we'll just use the regular one but save/restore state if possible.
+    // Since this is a bootstrap compiler, we can just use it and reset.
+
+    writeIndent();
+
+    // Special handling for the main entry point
+    if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
+        writeString("int main(int argc, char* argv[]);");
+    } else {
+        if (node->is_extern) {
+            writeString("extern ");
+        } else if (!is_public && !node->is_pub && !node->is_export) {
+            writeString("static ");
+        }
+
+        Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+        const char* mangled_name = getC89GlobalName(node->name);
+
+        emitType(return_type, mangled_name);
+        writeString("(");
+
+        if (!node->params || node->params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < node->params->length(); ++i) {
+                ASTParamDeclNode* param = (*node->params)[i];
+                // Just use the name from Zig, sanitized for keywords if it was a symbol
+                // In prototype, we can even omit the name.
+                emitType(param->type->resolved_type, param->name);
+                if (i < node->params->length() - 1) {
+                    writeString(", ");
+                }
+            }
+        }
+        writeString(");");
+    }
+}
+
 void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (!node) return;
     beginFunction();
@@ -269,7 +317,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     // Special handling for the main entry point
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
-        writeString("int main(void)");
+        writeString("int main(int argc, char* argv[])");
     } else {
         if (node->is_extern) {
             writeString("extern ");
@@ -566,6 +614,8 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 Symbol* sym = node->as.identifier.symbol;
                 if (sym->flags & SYMBOL_FLAG_LOCAL) {
                     writeString(var_alloc_.allocate(sym));
+                } else if (sym->mangled_name) {
+                    writeString(sym->mangled_name);
                 } else {
                     writeString(getC89GlobalName(sym->name));
                 }
@@ -596,14 +646,28 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 
                 if (actual_type->kind == TYPE_ENUM) {
                     // Enum member access: EnumName_MemberName
-                    const char* enum_name = actual_type->as.enum_details.name;
-                    if (enum_name) {
-                        writeString(getC89GlobalName(enum_name));
+                    if (actual_type->c_name) {
+                        writeString(actual_type->c_name);
+                    } else if (actual_type->as.enum_details.name) {
+                        writeString(getC89GlobalName(actual_type->as.enum_details.name));
                     } else {
                         writeString("/* anonymous enum */");
                     }
                     writeString("_");
                     writeString(node->as.member_access->field_name);
+                    break;
+                }
+
+                if (actual_type->kind == TYPE_ANYTYPE) {
+                    // Module member access
+                    if (node->as.member_access->symbol && node->as.member_access->symbol->mangled_name) {
+                        writeString(node->as.member_access->symbol->mangled_name);
+                    } else if (base->type == NODE_IDENTIFIER) {
+                        writeString("z_");
+                        writeString(base->as.identifier.name);
+                        writeString("_");
+                        writeString(node->as.member_access->field_name);
+                    }
                     break;
                 }
             }
@@ -756,9 +820,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             return;
         }
         if (type->kind == TYPE_STRUCT) {
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("struct ");
-            writeString(getC89GlobalName(decl->name));
+            writeString(type->c_name);
             writeString(" {\n");
             indent();
             DynamicArray<StructField>* fields = type->as.struct_details.fields;
@@ -771,9 +838,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             writeIndent();
             writeString("};\n\n");
         } else if (type->kind == TYPE_UNION) {
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("union ");
-            writeString(getC89GlobalName(decl->name));
+            writeString(type->c_name);
             writeString(" {\n");
             indent();
             DynamicArray<StructField>* fields = type->as.struct_details.fields;
@@ -788,9 +858,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
         } else if (type->kind == TYPE_ENUM) {
             // C89 doesn't support specific backing types for enums, they are always int.
             // But we can emit a typedef if needed.
+            if (!type->c_name) {
+                type->c_name = getC89GlobalName(decl->name);
+            }
             writeIndent();
             writeString("enum ");
-            const char* enum_name = getC89GlobalName(decl->name);
+            const char* enum_name = type->c_name;
             writeString(enum_name);
             writeString(" {\n");
             indent();
@@ -878,9 +951,10 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
 
 void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
     if (node->original_name && node->resolved_type && node->resolved_type->kind == TYPE_ENUM) {
-        const char* enum_name = node->resolved_type->as.enum_details.name;
-        if (enum_name) {
-            writeString(getC89GlobalName(enum_name));
+        if (node->resolved_type->c_name) {
+            writeString(node->resolved_type->c_name);
+        } else if (node->resolved_type->as.enum_details.name) {
+            writeString(getC89GlobalName(node->resolved_type->as.enum_details.name));
         } else {
             writeString("/* anonymous enum */");
         }
@@ -964,15 +1038,20 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     }
 
     char buf[256];
-    // Prefix C89 keywords
-    if (isCKeyword(zig_name)) {
-        plat_strcpy(buf, "z_");
-        plat_strcat(buf, zig_name);
-    } else {
-        plat_strcpy(buf, zig_name);
-    }
+    char* cur = buf;
+    size_t rem = sizeof(buf);
 
-    // Sanitize
+    if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
+        plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
+        safe_append(cur, rem, "z_");
+        safe_append(cur, rem, module_name_);
+        safe_append(cur, rem, "_");
+    } else if (isCKeyword(zig_name)) {
+        safe_append(cur, rem, "z_");
+    }
+    safe_append(cur, rem, zig_name);
+
+    // Sanitize (handles remaining invalid characters and starting digits)
     sanitizeForC89(buf);
 
     // Truncate to 31 characters for C89/MSVC 6.0

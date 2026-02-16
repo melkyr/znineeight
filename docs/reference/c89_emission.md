@@ -32,7 +32,8 @@ Every generated `.c` file should include `zig_runtime.h` at the top.
 The `zig_runtime.h` header serves several purposes:
 - **Portable Typedefs**: Defines `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `usize`, and `isize` in a way that is compatible with both MSVC 6.0 and modern compilers in C89 mode.
 - **64-bit Literal Suffixes**: Provides macros for `i64` and `ui64` suffixes. On MSVC, these are used directly. On other compilers, they are mapped to `LL` and `ULL` via the preprocessor.
-- **Runtime Safety**: Contains the `__bootstrap_panic` handler used by runtime safety checks (like overflow detection in numeric casts).
+- **Runtime Safety**: Contains the `__bootstrap_panic` handler and checked numeric conversion helpers (like `__bootstrap_i32_from_u64`).
+- **Debugging**: Provides `__bootstrap_print` for basic string output.
 
 ## 2. Float Literals
 
@@ -433,4 +434,39 @@ Numeric casts are handled differently depending on whether they can be resolved 
 | Float Widening | `@floatCast(f64, my_f32)` | `(double)my_f32` |
 | Float Narrowing | `@floatCast(f32, my_f64)` | `__bootstrap_f32_from_f64(my_f64)` |
 
-*(Note: Runtime helpers are defined in `zig_runtime.h` and use Zig primitive names in their identifiers.)*
+*(Note: Runtime helpers are defined in `zig_runtime.h` as `static` functions and use Zig primitive names in their identifiers.)*
+
+## 16. Multi-Module and Header Support
+
+The bootstrap compiler supports multi-file projects by generating paired `.c` and `.h` files for each Zig module.
+
+### 16.1 Header Files (.h)
+
+Generated header files contain public interfaces and declarations intended for use by other modules.
+
+- **Include Guards**: Every header file uses standard `#ifndef`/`#define`/`#endif` guards based on the module name (e.g., `ZIG_MODULE_UTILS_H`).
+- **Standard Include**: All headers automatically include `zig_runtime.h` to ensure primitive types are available.
+- **Public Types**: `pub const T = struct { ... };` declarations are emitted as full struct/union/enum definitions in the header.
+- **Public Prototypes**: `pub fn` declarations are emitted as function prototypes.
+- **Public Variables**: `pub var` declarations are emitted as `extern` declarations.
+
+### 16.2 Source Files (.c)
+
+Generated source files contain implementations and private declarations.
+
+- **Module Header**: Every source file includes its own corresponding header file (e.g., `utils.c` includes `utils.h`).
+- **Import Mapping**: Zig `@import("foo.zig")` statements are translated into C `#include "foo.h"` directives.
+- **Visibility**: Symbols not marked as `pub` are emitted with the `static` keyword to ensure they are private to the translation unit.
+- **Private Types**: Types not marked as `pub` are defined only within the `.c` file.
+
+### 16.3 Namespacing
+
+To avoid collisions across multiple files, all global symbols (functions, variables, and named types) are mangled with a module-based prefix.
+
+| Zig Symbol | Module | C89 Name |
+|------------|--------|----------|
+| `Point`    | `utils`| `utils_Point` |
+| `add`      | `math` | `math_add` |
+| `main`     | `main` | `main` (entry point is never prefixed) |
+
+The `C89Emitter` ensures that references to symbols from imported modules use these mangled names. For example, a call to `utils.add()` in `main.zig` will be emitted as `utils_add()` in `main.c`.

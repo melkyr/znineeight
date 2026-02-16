@@ -47,3 +47,13 @@ test_runner_batch*
 
 # Log files
 *.log
+
+# App outputs
+*.txt
+
+# Temporary binaries
+test_multi_file
+
+# Generated C89 files
+temp_codegen_*.c
+test_output/

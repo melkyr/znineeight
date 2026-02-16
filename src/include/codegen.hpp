@@ -33,6 +33,7 @@ public:
      */
     C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path);
 
+
     /**
      * @brief Constructs an emitter that writes to an already open file.
      * @param arena The ArenaAllocator for CVariableAllocator.
@@ -98,6 +99,11 @@ public:
     void close();
 
     /**
+     * @brief Sets the name of the module being emitted.
+     */
+    void setModule(const char* name) { module_name_ = name; }
+
+    /**
      * @brief Writes the standard C89 prologue (comments and includes).
      */
     void emitPrologue();
@@ -129,7 +135,14 @@ public:
     void emitLocalVarDecl(const ASTNode* node, bool emit_assignment);
 
     /**
-     * @brief Emits a function declaration.
+     * @brief Emits a function prototype (declaration only).
+     * @param node The function declaration AST node.
+     * @param is_public True if the prototype should be public (no static).
+     */
+    void emitFnProto(const ASTFnDeclNode* node, bool is_public);
+
+    /**
+     * @brief Emits a function declaration or definition.
      * @param node The function declaration AST node.
      */
     void emitFnDecl(const ASTFnDeclNode* node);
@@ -228,6 +241,13 @@ public:
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
 
+    /**
+     * @brief Gets a C89-compatible global name for a Zig name.
+     * @param zig_name The Zig identifier name.
+     * @return The sanitized and uniquified C89 name.
+     */
+    const char* getC89GlobalName(const char* zig_name);
+
 private:
     /**
      * @brief Emits a byte with proper C89 escaping.
@@ -235,13 +255,6 @@ private:
      * @param is_char_literal True if emitting inside a character literal.
      */
     void emitEscapedByte(unsigned char c, bool is_char_literal);
-
-    /**
-     * @brief Gets a C89-compatible global name for a Zig name.
-     * @param zig_name The Zig identifier name.
-     * @return The sanitized and uniquified C89 name.
-     */
-    const char* getC89GlobalName(const char* zig_name);
 
     /**
      * @brief Returns true if the node requires parentheses when used as a base
@@ -274,6 +287,7 @@ private:
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    const char* module_name_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

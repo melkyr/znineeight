@@ -11,6 +11,7 @@ bool test_Codegen_Array_NestedMember();
 bool test_Codegen_Array_OOB_Error();
 bool test_Codegen_Array_NonIntegerIndex_Error();
 bool test_Codegen_Array_NonArrayBase_Error();
+bool test_CBackend_Skeleton_MultiFile();
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
@@ -22,7 +23,8 @@ int main(int argc, char* argv[]) {
         test_Codegen_Array_NestedMember,
         test_Codegen_Array_OOB_Error,
         test_Codegen_Array_NonIntegerIndex_Error,
-        test_Codegen_Array_NonArrayBase_Error
+        test_Codegen_Array_NonArrayBase_Error,
+        test_CBackend_Skeleton_MultiFile
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -6,11 +6,11 @@
 #include "type_checker.hpp"
 #include "c89_feature_validator.hpp"
 #include "codegen.hpp"
+#include "cbackend.hpp"
 #include "lifetime_analyzer.hpp"
 #include "null_pointer_analyzer.hpp"
 #include "double_free_analyzer.hpp"
 #include "type_system.hpp"
-#include "c89_pattern_generator.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
 
@@ -140,20 +140,13 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       call_site_table_(arena),
       options_(),
       current_module_(NULL),
-      pattern_generator_(NULL),
-      test_patterns_(NULL),
+      modules_(arena),
       last_ast_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
       c89_validation_passed_(false) {
 
     current_module_ = interner_.intern("main");
-
-    void* gen_mem = arena_.alloc(sizeof(C89PatternGenerator));
-    pattern_generator_ = new (gen_mem) C89PatternGenerator(arena_);
-
-    void* patterns_mem = arena_.alloc(sizeof(DynamicArray<const char*>));
-    test_patterns_ = new (patterns_mem) DynamicArray<const char*>(arena_);
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -279,6 +272,15 @@ const char* CompilationUnit::getCurrentModule() const {
 
 void CompilationUnit::setCurrentModule(const char* module_name) {
     current_module_ = interner_.intern(module_name);
+}
+
+Module* CompilationUnit::getModule(const char* name) {
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (plat_strcmp(modules_[i]->name, name) == 0) {
+            return modules_[i];
+        }
+    }
+    return NULL;
 }
 
 CompilationOptions& CompilationUnit::getOptions() {
@@ -446,25 +448,6 @@ void CompilationUnit::injectRuntimeSymbols() {
     symbol_table_.insert(sym_free);
 }
 
-void CompilationUnit::testErrorPatternGeneration() {
-    if (!is_test_mode_) return;
-
-    for (size_t i = 0; i < error_function_catalogue_.getFunctions()->length(); ++i) {
-        const ErrorFunctionInfo& info = (*error_function_catalogue_.getFunctions())[i];
-        const char* pattern = pattern_generator_->generatePattern(info);
-        test_patterns_->append(pattern);
-    }
-}
-
-int CompilationUnit::getGeneratedPatternCount() const {
-    return (int)test_patterns_->length();
-}
-
-const char* CompilationUnit::getGeneratedPattern(int index) const {
-    if (index < 0 || (size_t)index >= test_patterns_->length()) return NULL;
-    return (*test_patterns_)[index];
-}
-
 void CompilationUnit::validateErrorHandlingRules() {
     char buffer[512];
     char* cur = buffer;
@@ -527,44 +510,30 @@ size_t CompilationUnit::getTotalCatalogueEntries() const {
 }
 
 bool CompilationUnit::generateCode(const char* output_path) {
-    if (!last_ast_) return false;
+    CBackend backend(*this);
 
-    C89Emitter emitter(arena_, error_handler_);
-    if (!emitter.open(output_path)) {
-        error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open output file for code generation");
-        return false;
+    // Extract directory from output_path
+    char dir[1024];
+    const char* last_slash = plat_strrchr(output_path, '/');
+    const char* last_backslash = plat_strrchr(output_path, '\\');
+    const char* last_sep = NULL;
+
+    if (last_slash && last_backslash) {
+        last_sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    } else {
+        last_sep = last_slash ? last_slash : last_backslash;
     }
 
-    emitter.emitPrologue();
-
-    if (last_ast_->type != NODE_BLOCK_STMT) {
-        error_handler_.report(ERR_INTERNAL_ERROR, last_ast_->loc, "Expected block statement as AST root");
-        return false;
+    if (last_sep) {
+        size_t len = last_sep - output_path;
+        if (len >= sizeof(dir)) len = sizeof(dir) - 1;
+        plat_strncpy(dir, output_path, len);
+        dir[len] = '\0';
+    } else {
+        plat_strcpy(dir, ".");
     }
 
-    DynamicArray<ASTNode*>* stmts = last_ast_->as.block_stmt.statements;
-
-    // Pass 1: Type Definitions (Structs, Unions, Enums)
-    for (size_t i = 0; i < stmts->length(); ++i) {
-        emitter.emitTypeDefinition((*stmts)[i]);
-    }
-
-    // Pass 2: Global Variables
-    for (size_t i = 0; i < stmts->length(); ++i) {
-        if ((*stmts)[i]->type == NODE_VAR_DECL) {
-            emitter.emitGlobalVarDecl((*stmts)[i], (*stmts)[i]->as.var_decl->is_pub);
-        }
-    }
-
-    // Pass 3: Function Declarations and Definitions
-    for (size_t i = 0; i < stmts->length(); ++i) {
-        if ((*stmts)[i]->type == NODE_FN_DECL) {
-            emitter.emitFnDecl((*stmts)[i]->as.fn_decl);
-        }
-    }
-
-    emitter.close();
-    return true;
+    return backend.generate(dir);
 }
 
 bool CompilationUnit::performFullPipeline(u32 file_id) {
@@ -600,6 +569,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     last_ast_ = ast;
     if (!ast) return false;
+
+    // Register module
+    void* mod_mem = arena_.alloc(sizeof(Module));
+    Module* mod = new (mod_mem) Module(arena_);
+    mod->name = current_module_;
+    mod->filename = source_manager_.getFile(file_id)->filename;
+    mod->ast_root = ast;
+    mod->file_id = file_id;
+    modules_.append(mod);
 
     // Name Collision Detection
 #ifdef MEASURE_MEMORY

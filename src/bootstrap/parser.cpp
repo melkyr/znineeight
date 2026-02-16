@@ -375,7 +375,7 @@ ASTNode* Parser::parsePostfixExpression() {
             new_expr_node->loc = name_token.location;
             new_expr_node->as.member_access = member_node;
             expr = new_expr_node;
-        } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME)) {
+        } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME || expr->type == NODE_MEMBER_ACCESS)) {
             // Struct Initializer: Type { .field = value }
             expr = parseStructInitializer(expr);
         } else if (match(TOKEN_DOT_ASTERISK)) {

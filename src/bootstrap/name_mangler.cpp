@@ -14,8 +14,16 @@ const char* NameMangler::mangleFunction(const char* name,
     char* ptr = buffer;
     size_t remaining = sizeof(buffer);
 
-    // TODO: Handle module prefix in Milestone 6
-    (void)module;
+    // Handle module prefix (skip for main and test modules)
+    if (module && plat_strcmp(module, "main") != 0 &&
+        plat_strcmp(module, "test") != 0 && plat_strcmp(name, "main") != 0) {
+
+        safe_append(ptr, remaining, "z_");
+        safe_append(ptr, remaining, module);
+        safe_append(ptr, remaining, "_");
+    } else if (isCKeyword(name)) {
+        safe_append(ptr, remaining, "z_");
+    }
 
     // Start with function name
     size_t name_len = plat_strlen(name);

@@ -544,9 +544,10 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 
 ### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
 For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
-- **Panic Handler**: A global panic handler `__bootstrap_panic(const char* msg, const char* file, int line)` will be implemented in the bootstrap runtime library.
-- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` will perform bounds checks and call the panic handler on failure.
-- **Historical Compatibility**: The panic handler will use `OutputDebugStringA` (on Windows) or `stderr` (on other platforms) and then call `abort()`, ensuring compatibility with 1998-era hardware.
+- **Panic Handler**: A panic handler `__bootstrap_panic(const char* msg)` is implemented as a `static` function in `zig_runtime.h`.
+- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` are implemented in `zig_runtime.h` to perform bounds checks and call the panic handler on failure.
+- **Historical Compatibility**: The panic handler uses `fputs` to `stderr` and then calls `abort()`, ensuring compatibility with 1998-era hardware and modern environments.
+- **Debug Output**: A minimal `__bootstrap_print(const char* s)` is provided for debugging purposes, wrapping `fputs` to `stderr`.
 
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
@@ -870,14 +871,21 @@ echo Results: %PASS_COUNT% passed, %FAIL_COUNT% failed
 ## 13. Code Generation Infrastructure (`codegen.hpp`, `c_variable_allocator.hpp`)
 The compiler utilizes a buffered emission system and a robust variable name allocator to ensure valid C89 output.
 
-### 13.1 C89Emitter
+### 13.1 CBackend
+- **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
+- **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
+- **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
+- **Header Generation**: Public types and function prototypes are automatically exported to `.h` files with robust include guards.
+- **Import Handling**: Translates Zig `@import` into C `#include` directives.
+
+### 13.2 C89Emitter
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **Comments**: Standard C89 `/* ... */` comment emission.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 
-### 13.2 CVariableAllocator
+### 13.3 CVariableAllocator
 - **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.
 - **MSVC 6.0 Compatibility**: Enforces a strict 31-character limit for all identifiers.
 - **Uniquification**: Appends numeric suffixes to resolve name collisions within a function scope.

@@ -1,35 +1,28 @@
 # Multi-File Considerations for Milestone 6
 
-## Current Limitation (Milestone 4-5)
-- Single-file compilation only.
-- `@import` statements are recognized by the parser but strictly rejected by `C89FeatureValidator`.
-- The compiler tracks a "current module" based on the filename of the source being compiled.
+Multi-file support is implemented in the bootstrap compiler as of Milestone 6.
 
-## Design for Milestone 6 Import System
+## Compilation Model
 
-### 1. Module Names
-- Use logical names, not filenames: `@import("std")` → module "std".
-- Map logical names to file paths via include search paths (to be implemented with `-I` flag).
-- In the current implementation, the module name is derived from the base filename without extension (e.g., `main.zig` -> `main`).
+The compiler now supports multiple Zig modules within a single `CompilationUnit`. Each module typically corresponds to one Zig source file.
 
-### 2. Symbol Resolution
-- Each module has its own symbol table or a way to distinguish symbols by module.
-- Public symbols (marked `pub`) are exported and visible to importing modules.
-- Lookup priority: current scope → imported modules (in import order).
-- `SymbolTable::lookupWithModule(module, name)` is provided as a placeholder for module-aware lookups.
+- **`@import` Support**: The parser recognizes `@import` and the `TypeChecker` uses it to populate the module dependency list.
+- **Orchestration**: The `CBackend` class manages the generation of paired `.c` and `.h` files for all modules in the unit.
+- **Header Generation**: Public declarations (`pub`) are automatically extracted into the corresponding header file.
 
-### 3. Catalogue Merging
-- `GenericCatalogue`, `ErrorSetCatalogue`, etc., must support merging across modules.
-- `GenericCatalogue::mergeFrom` is implemented to combine instantiations and definitions from different compilation units.
-- Names in merged catalogues may be prefixed with the module name to avoid collisions (e.g., `std.ArrayList` vs `my_lib.ArrayList`).
+## Symbol Resolution and Namespacing
 
-### 4. AST Storage
-- Every `ASTNode` now contains a `module` field (pointer to interned module name).
-- This ensures that subsequent analysis passes (Type Checker, Validator) can identify the provenance of any syntax construct, which is essential for correct error reporting and cross-module template instantiation.
+### Module Names
+Module names are interned strings. For files, the name is derived from the basename without the `.zig` extension.
 
-### 5. Circular Import Detection
-- Milestone 6 will implement a simple mechanism to reject circular imports in the bootstrap compiler.
-- The `CompilationUnit` or a dedicated `ModuleGraph` will track visited files during import resolution.
+### Global Namespacing
+To avoid C-level collisions, symbols are mangled using the module name as a prefix: `z_ModuleName_SymbolName`.
+
+### Cross-Module Access
+When a module accesses a member of an imported module (e.g., `utils.Point`), the `TypeChecker` resolves the reference via `SymbolTable::lookupWithModule`. The `C89Emitter` then uses the mangled name for emission.
+
+## C89 Mapping Details
+For more information on how modules map to C89 files, see [C89 Code Generation Strategy](c89_emission.md).
 
 ## Implementation Details (Milestone 4 Foundation)
 - `CompilationUnit` tracks `current_module_`.
