@@ -38,7 +38,7 @@ TEST_FUNC(Task182_ArenaAllocReturnsVoidPtr) {
     // arena_alloc now returns *void. We can assign it to *void without conversion.
     return run_task_test(
         "fn foo() void {\n"
-        "    var p: *void = arena_alloc(16u);\n"
+        "    var p: *void = arena_alloc_default(16u);\n"
         "}\n"
     );
 }
@@ -47,7 +47,7 @@ TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrAssignment) {
     // Implicit conversion from *void to *i32
     return run_task_test(
         "fn foo() void {\n"
-        "    var p: *i32 = arena_alloc(4u);\n"
+        "    var p: *i32 = arena_alloc_default(4u);\n"
         "}\n"
     );
 }
@@ -56,7 +56,7 @@ TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrArgument) {
     return run_task_test(
         "fn bar(p: *f64) void {}\n"
         "fn foo() void {\n"
-        "    bar(arena_alloc(8u));\n"
+        "    bar(arena_alloc_default(8u));\n"
         "}\n"
     );
 }
@@ -64,7 +64,7 @@ TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrArgument) {
 TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrReturn) {
     return run_task_test(
         "fn foo() *u8 {\n"
-        "    return arena_alloc(10u);\n"
+        "    return arena_alloc_default(10u);\n"
         "}\n"
     );
 }
@@ -73,7 +73,7 @@ TEST_FUNC(Task182_ConstCorrectness_AddConst) {
     // *void -> *const i32 (Allowed: adding const)
     return run_task_test(
         "fn foo() void {\n"
-        "    var p: *const i32 = arena_alloc(4u);\n"
+        "    var p: *const i32 = arena_alloc_default(4u);\n"
         "}\n"
     );
 }
@@ -87,7 +87,7 @@ TEST_FUNC(Task182_ConstCorrectness_PreserveConst) {
         "    return p;\n"
         "}\n"
         "fn foo() void {\n"
-        "    var p: *const void = arena_alloc(4u);\n"
+        "    var p: *const void = arena_alloc_default(4u);\n"
         "    var q: *const i32 = bar(p);\n"
         "}\n"
     );
@@ -111,7 +111,7 @@ TEST_FUNC(Task182_NonC89Target_REJECT) {
     // *void -> **i32 (Rejected: **i32 is not C89-compatible in this compiler)
     return run_task_test(
         "fn foo() void {\n"
-        "    var p: * * i32 = arena_alloc(4u);\n"
+        "    var p: * * i32 = arena_alloc_default(4u);\n"
         "}\n",
         false
     );

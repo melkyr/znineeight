@@ -1018,4 +1018,10 @@ TEST_FUNC(Codegen_IntCast_SignednessMismatch);
 TEST_FUNC(Codegen_FloatCast_SafeWidening);
 TEST_FUNC(Codegen_FloatCast_Narrowing);
 
+// Task 211: Arena Memory Management
+TEST_FUNC(Task211_MultiArenaUsage);
+TEST_FUNC(Task211_ArenaAllocDefault);
+TEST_FUNC(Task211_ArenaTypeRecognition);
+TEST_FUNC(Task211_ArenaCodegen);
+
 #endif // TEST_DECLARATIONS_HPP

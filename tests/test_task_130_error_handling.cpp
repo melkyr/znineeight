@@ -11,7 +11,7 @@ TEST_FUNC(DoubleFree_TryPathAware) {
     const char* source =
         "fn mightFail() -> i32 {}\n"
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    try mightFail();\n"
         "    // After try, p should be AS_UNKNOWN\n"
         "    arena_free(p); // Should NOT be a definite double free error\n"
@@ -51,7 +51,7 @@ TEST_FUNC(DoubleFree_CatchPathAware) {
     const char* source =
         "fn mightFail() -> i32 {}\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    // Use a simple expression for catch body\n"
         "    mightFail() catch arena_free(p);\n"
         "    // On success path, p is still AS_ALLOCATED\n"
@@ -90,9 +90,9 @@ TEST_FUNC(DoubleFree_OrelsePathAware) {
     const char* source =
         "fn maybeAlloc() -> *u8 { return null; }\n"
         "fn my_func() -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    // Use a simple expression for orelse body\n"
-        "    var q: *u8 = maybeAlloc() orelse arena_alloc(10u);\n"
+        "    var q: *u8 = maybeAlloc() orelse arena_alloc_default(10u);\n"
         "    // In both paths p is still AS_ALLOCATED\n"
         "    arena_free(p);\n"
         "    arena_free(q);\n"

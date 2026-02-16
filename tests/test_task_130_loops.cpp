@@ -10,10 +10,10 @@ TEST_FUNC(DoubleFree_LoopConservativeVerification) {
 
     const char* source =
         "fn my_func(x: i32) -> void {\n"
-        "    var p: *u8 = arena_alloc(100u);\n"
+        "    var p: *u8 = arena_alloc_default(100u);\n"
         "    while (x > 0) {\n"
         "        arena_free(p);\n"
-        "        p = arena_alloc(200u);\n"
+        "        p = arena_alloc_default(200u);\n"
         "    }\n"
         "    // p should be AS_UNKNOWN here because it was modified in the loop\n"
         "    arena_free(p); // Should NOT be a definite double free error\n"
