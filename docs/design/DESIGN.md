@@ -522,9 +522,10 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 
 ### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
 For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
-- **Panic Handler**: A global panic handler `__bootstrap_panic(const char* msg, const char* file, int line)` will be implemented in the bootstrap runtime library.
-- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` will perform bounds checks and call the panic handler on failure.
-- **Historical Compatibility**: The panic handler will use `OutputDebugStringA` (on Windows) or `stderr` (on other platforms) and then call `abort()`, ensuring compatibility with 1998-era hardware.
+- **Panic Handler**: A panic handler `__bootstrap_panic(const char* msg)` is implemented as a `static` function in `zig_runtime.h`.
+- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` are implemented in `zig_runtime.h` to perform bounds checks and call the panic handler on failure.
+- **Historical Compatibility**: The panic handler uses `fputs` to `stderr` and then calls `abort()`, ensuring compatibility with 1998-era hardware and modern environments.
+- **Debug Output**: A minimal `__bootstrap_print(const char* s)` is provided for debugging purposes, wrapping `fputs` to `stderr`.
 
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:

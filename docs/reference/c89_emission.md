@@ -32,7 +32,8 @@ Every generated `.c` file should include `zig_runtime.h` at the top.
 The `zig_runtime.h` header serves several purposes:
 - **Portable Typedefs**: Defines `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `usize`, and `isize` in a way that is compatible with both MSVC 6.0 and modern compilers in C89 mode.
 - **64-bit Literal Suffixes**: Provides macros for `i64` and `ui64` suffixes. On MSVC, these are used directly. On other compilers, they are mapped to `LL` and `ULL` via the preprocessor.
-- **Runtime Safety**: Contains the `__bootstrap_panic` handler used by runtime safety checks (like overflow detection in numeric casts).
+- **Runtime Safety**: Contains the `__bootstrap_panic` handler and checked numeric conversion helpers (like `__bootstrap_i32_from_u64`).
+- **Debugging**: Provides `__bootstrap_print` for basic string output.
 
 ## 2. Float Literals
 
@@ -433,7 +434,7 @@ Numeric casts are handled differently depending on whether they can be resolved 
 | Float Widening | `@floatCast(f64, my_f32)` | `(double)my_f32` |
 | Float Narrowing | `@floatCast(f32, my_f64)` | `__bootstrap_f32_from_f64(my_f64)` |
 
-*(Note: Runtime helpers are defined in `zig_runtime.h` and use Zig primitive names in their identifiers.)*
+*(Note: Runtime helpers are defined in `zig_runtime.h` as `static` functions and use Zig primitive names in their identifiers.)*
 
 ## 16. Multi-Module and Header Support
 
