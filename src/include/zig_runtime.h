@@ -78,22 +78,22 @@ void arena_free(void* ptr);
 /* Runtime checked numeric conversions */
 
 static i32 __bootstrap_i32_from_u32(u32 x) {
-    if (x > 2147483647U) __bootstrap_panic("integer overflow in @intCast", "zig_runtime.h", 84);
+    if (x > 2147483647U) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (i32)x;
 }
 
 static i32 __bootstrap_i32_from_i64(i64 x) {
-    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer overflow in @intCast", "zig_runtime.h", 89);
+    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (i32)x;
 }
 
 static u32 __bootstrap_u32_from_u64(u64 x) {
-    if (x > (u64)4294967295U) __bootstrap_panic("integer overflow in @intCast", "zig_runtime.h", 94);
+    if (x > (u64)4294967295U) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u32)x;
 }
 
 static u32 __bootstrap_u32_from_i32(i32 x) {
-    if (x < 0) __bootstrap_panic("integer overflow in @intCast", "zig_runtime.h", 99);
+    if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u32)x;
 }
 
