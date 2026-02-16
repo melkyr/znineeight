@@ -17,14 +17,12 @@ const char* NameMangler::mangleFunction(const char* name,
     // Handle module prefix (skip for main and test modules)
     if (module && plat_strcmp(module, "main") != 0 &&
         plat_strcmp(module, "test") != 0 && plat_strcmp(name, "main") != 0) {
-        size_t mod_len = plat_strlen(module);
-        if (mod_len < remaining - 1) {
-            plat_strncpy(ptr, (char*)module, mod_len);
-            ptr[mod_len] = '_';
-            ptr[mod_len + 1] = '\0';
-            ptr += mod_len + 1;
-            remaining -= mod_len + 1;
-        }
+
+        safe_append(ptr, remaining, "z_");
+        safe_append(ptr, remaining, module);
+        safe_append(ptr, remaining, "_");
+    } else if (isCKeyword(name)) {
+        safe_append(ptr, remaining, "z_");
     }
 
     // Start with function name

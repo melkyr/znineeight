@@ -646,9 +646,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 
                 if (actual_type->kind == TYPE_ENUM) {
                     // Enum member access: EnumName_MemberName
-                    const char* enum_name = actual_type->as.enum_details.name;
-                    if (enum_name) {
-                        writeString(getC89GlobalName(enum_name));
+                    if (actual_type->c_name) {
+                        writeString(actual_type->c_name);
+                    } else if (actual_type->as.enum_details.name) {
+                        writeString(getC89GlobalName(actual_type->as.enum_details.name));
                     } else {
                         writeString("/* anonymous enum */");
                     }
@@ -658,13 +659,16 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 }
 
                 if (actual_type->kind == TYPE_ANYTYPE) {
-                    // Module member access: ModuleName_MemberName
-                    if (base->type == NODE_IDENTIFIER) {
+                    // Module member access
+                    if (node->as.member_access->symbol && node->as.member_access->symbol->mangled_name) {
+                        writeString(node->as.member_access->symbol->mangled_name);
+                    } else if (base->type == NODE_IDENTIFIER) {
+                        writeString("z_");
                         writeString(base->as.identifier.name);
                         writeString("_");
                         writeString(node->as.member_access->field_name);
-                        break;
                     }
+                    break;
                 }
             }
 
@@ -947,9 +951,10 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
 
 void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
     if (node->original_name && node->resolved_type && node->resolved_type->kind == TYPE_ENUM) {
-        const char* enum_name = node->resolved_type->as.enum_details.name;
-        if (enum_name) {
-            writeString(getC89GlobalName(enum_name));
+        if (node->resolved_type->c_name) {
+            writeString(node->resolved_type->c_name);
+        } else if (node->resolved_type->as.enum_details.name) {
+            writeString(getC89GlobalName(node->resolved_type->as.enum_details.name));
         } else {
             writeString("/* anonymous enum */");
         }
@@ -1038,12 +1043,15 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
 
     if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
         plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
+        safe_append(cur, rem, "z_");
         safe_append(cur, rem, module_name_);
         safe_append(cur, rem, "_");
+    } else if (isCKeyword(zig_name)) {
+        safe_append(cur, rem, "z_");
     }
     safe_append(cur, rem, zig_name);
 
-    // Sanitize
+    // Sanitize (handles remaining invalid characters and starting digits)
     sanitizeForC89(buf);
 
     // Truncate to 31 characters for C89/MSVC 6.0

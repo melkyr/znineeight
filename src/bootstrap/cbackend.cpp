@@ -123,7 +123,15 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
     emitter.writeString(guard);
     emitter.writeString("\n\n");
 
-    emitter.writeString("#include \"zig_runtime.h\"\n\n");
+    emitter.writeString("#include \"zig_runtime.h\"\n");
+
+    for (size_t i = 0; i < module->imports.length(); ++i) {
+        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+        emitter.writeString("#include \"");
+        emitter.writeString(module->imports[i]);
+        emitter.writeString(".h\"\n");
+    }
+    emitter.writeString("\n");
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;

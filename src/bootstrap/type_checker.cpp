@@ -1682,6 +1682,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (mod_name) {
             Symbol* sym = unit.getSymbolTable().lookupWithModule(mod_name, node->field_name);
             if (sym) {
+                node->symbol = sym;
                 if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) {
                     return sym->symbol_type;
                 }
