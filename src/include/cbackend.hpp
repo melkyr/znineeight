@@ -45,7 +45,29 @@ private:
      */
     bool generateHeaderFile(Module* module, const char* output_dir);
 
+    /**
+     * @brief Generates a master main.c file that includes all modules.
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateMasterMain(const char* output_dir);
+
+    /**
+     * @brief Generates a build.bat file for Windows.
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateBuildBat(const char* output_dir);
+
+    /**
+     * @brief Generates a Makefile for Unix.
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateMakefile(const char* output_dir);
+
     CompilationUnit& unit_;
+    const char* entry_filename_;
 };
 
 #endif // CBACKEND_HPP

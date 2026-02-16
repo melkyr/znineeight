@@ -4,14 +4,40 @@
 #include "platform.hpp"
 #include "utils.hpp"
 
-CBackend::CBackend(CompilationUnit& unit) : unit_(unit) {}
+CBackend::CBackend(CompilationUnit& unit) : unit_(unit), entry_filename_(NULL) {}
 
 bool CBackend::generate(const char* output_dir) {
     DynamicArray<Module*>& modules = unit_.getModules();
+
+    bool has_main_function = false;
+
+    for (size_t i = 0; i < modules.length(); ++i) {
+
+        if (modules[i]->ast_root && modules[i]->ast_root->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = modules[i]->ast_root->as.block_stmt.statements;
+            for (size_t j = 0; j < stmts->length(); ++j) {
+                if ((*stmts)[j]->type == NODE_FN_DECL) {
+                    ASTFnDeclNode* fn = (*stmts)[j]->as.fn_decl;
+                    if (fn->is_pub && plat_strcmp(fn->name, "main") == 0) {
+                        has_main_function = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (has_main_function) {
+        entry_filename_ = "main.c";
+    }
+
     for (size_t i = 0; i < modules.length(); ++i) {
         if (!generateSourceFile(modules[i], output_dir)) return false;
         if (!generateHeaderFile(modules[i], output_dir)) return false;
     }
+
+    if (!generateMasterMain(output_dir)) return false;
+    if (!generateBuildBat(output_dir)) return false;
+    if (!generateMakefile(output_dir)) return false;
 
     return true;
 }
@@ -23,8 +49,12 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
 
     safe_append(cur, rem, output_dir);
     safe_append(cur, rem, "/");
-    safe_append(cur, rem, module->name);
-    safe_append(cur, rem, ".c");
+    if (entry_filename_ && plat_strcmp(module->name, "main") == 0) {
+        safe_append(cur, rem, "main_module.c");
+    } else {
+        safe_append(cur, rem, module->name);
+        safe_append(cur, rem, ".c");
+    }
 
     C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
     emitter.setModule(module->name);
@@ -79,6 +109,86 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir) {
     }
 
     emitter.close();
+    return true;
+}
+
+bool CBackend::generateMasterMain(const char* output_dir) {
+    if (!entry_filename_) return true; // No main function found
+
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/");
+    safe_append(cur, rem, entry_filename_);
+
+    C89Emitter emitter(unit_.getArena(), unit_.getErrorHandler());
+    if (!emitter.open(path)) {
+        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Failed to open master main file for writing");
+        return false;
+    }
+
+    emitter.emitPrologue();
+    emitter.writeString("/* Master Single Translation Unit (STU) file */\n\n");
+
+    DynamicArray<Module*>& modules = unit_.getModules();
+    for (size_t i = 0; i < modules.length(); ++i) {
+        emitter.writeString("#include \"");
+        if (plat_strcmp(modules[i]->name, "main") == 0) {
+            emitter.writeString("main_module.c\"\n");
+        } else {
+            emitter.writeString(modules[i]->name);
+            emitter.writeString(".c\"\n");
+        }
+    }
+
+    emitter.close();
+    return true;
+}
+
+bool CBackend::generateBuildBat(const char* output_dir) {
+    if (!entry_filename_) return true;
+
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/build.bat");
+
+    PlatFile f = plat_open_file(path, true);
+    if (f == PLAT_INVALID_FILE) return false;
+
+    const char* part1 = "@echo off\ncl /Feapp.exe ";
+    const char* part2 = "\n";
+
+    plat_write_file(f, part1, plat_strlen(part1));
+    plat_write_file(f, entry_filename_, plat_strlen(entry_filename_));
+    plat_write_file(f, part2, plat_strlen(part2));
+
+    plat_close_file(f);
+    return true;
+}
+
+bool CBackend::generateMakefile(const char* output_dir) {
+    if (!entry_filename_) return true;
+
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/Makefile");
+
+    PlatFile f = plat_open_file(path, true);
+    if (f == PLAT_INVALID_FILE) return false;
+
+    const char* part1 = "all:\n\tgcc -std=c89 -pedantic -o app ";
+    const char* part2 = "\n";
+
+    plat_write_file(f, part1, plat_strlen(part1));
+    plat_write_file(f, entry_filename_, plat_strlen(entry_filename_));
+    plat_write_file(f, part2, plat_strlen(part2));
+
+    plat_close_file(f);
     return true;
 }
 
