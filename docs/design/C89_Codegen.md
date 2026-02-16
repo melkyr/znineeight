@@ -80,3 +80,18 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 
 ### 4.5 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
+
+## 5. Master STU File & Build System
+
+To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.
+
+### 5.1 Master Entry Point (`main.c` / `master.c`)
+If any module contains a `pub fn main`, the backend generates a master Single Translation Unit (STU) file.
+- **Filename**: Usually `main.c`. If a module is already named `main`, the master file is named `master.c` to avoid conflict, and the module file is named `main_module.c`.
+- **Content**: A series of `#include` directives for every generated `.c` module implementation.
+- **Advantage**: Allows the entire program to be compiled with a single compiler command, eliminating the need for a complex linker stage.
+
+### 5.2 Build Automation
+The backend automatically generates basic build scripts in the output directory:
+- **`build.bat`**: A Windows batch script that invokes the MSVC compiler (`cl`) to produce `app.exe`.
+- **`Makefile`**: A standard Makefile for Unix-like environments that uses `gcc` to produce the `app` binary.
