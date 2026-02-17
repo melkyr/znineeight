@@ -731,6 +731,7 @@ struct ASTTypeNameNode {
 struct ASTPointerTypeNode {
     ASTNode* base;
     bool is_const;
+    bool is_many;
 };
 
 /**

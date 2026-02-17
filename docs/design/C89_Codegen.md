@@ -91,8 +91,14 @@ Standard C89 does not allow array or struct assignment after declaration (e.g., 
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
 - **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 
-### 4.5 Pointer Types Limitation
-**Many-item pointers ([*]T) are not supported** in the bootstrap compiler. Use single-item pointers (*T) and explicit casts via @ptrCast when necessary. This restriction maintains the simplicity of the rejection framework and ensures compatibility with the C89 subset.
+### 4.6 Many-item Pointers ([*]T)
+Many-item pointers (e.g., `[*]u8`, `[*]const i32`) are supported in the bootstrap compiler. They represent pointers to zero or more items of type `T`, mapping directly to C's raw pointers (`T*`).
+
+#### Semantics
+- **Indexing**: `[*]T` supports indexing `ptr[i]`, returning a value of type `T`.
+- **Dereferencing**: `[*]T` does **not** support the dereference operator `.*`. Use indexing (e.g., `ptr[0]`) instead.
+- **Arithmetic**: `[*]T` supports pointer arithmetic (`ptr + i`, `i + ptr`, `ptr - i`) and pointer subtraction.
+- **Nullability**: In the bootstrap compiler, `[*]T` can be assigned the `null` literal (unlike standard Zig where only `?[*]T` can be null).
 
 ### 4.7 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.

@@ -78,6 +78,7 @@ struct Type {
         struct {
             Type* base;
             bool is_const;
+            bool is_many;
         } pointer;
         struct {
             DynamicArray<Type*>* params;
@@ -141,7 +142,7 @@ class ArenaAllocator;
 class TypeInterner {
 public:
     TypeInterner(ArenaAllocator& arena);
-    Type* getPointerType(Type* base_type, bool is_const);
+    Type* getPointerType(Type* base_type, bool is_const, bool is_many = false);
     Type* getArrayType(Type* element_type, u64 size);
     Type* getOptionalType(Type* payload);
 
@@ -168,7 +169,7 @@ private:
  * @param is_const True if the pointer type is const-qualified.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, TypeInterner* interner = NULL);
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many = false, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new function Type object from the arena.

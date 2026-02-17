@@ -1523,7 +1523,7 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
         if (base_type == NULL) {
             return NULL; // Propagate the failure
         }
-        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const, type_interner_);
+        return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const, type_node->as.pointer_type.is_many, type_interner_);
     }
     // Let the TypeChecker handle unsupported types.
     return NULL;
@@ -1805,6 +1805,7 @@ ASTNode* Parser::parsePointerType() {
     ASTNode* node = createNodeAt(NODE_POINTER_TYPE, start_token.location);
     node->as.pointer_type.base = base_type;
     node->as.pointer_type.is_const = is_const;
+    node->as.pointer_type.is_many = false;
 
     return node;
 }
@@ -1846,6 +1847,21 @@ ASTNode* Parser::parseOptionalType() {
 
 ASTNode* Parser::parseArrayType() {
     Token lbracket_token = advance(); // Consume '['
+
+    // Check for [*]T (many-item pointer)
+    if (peek().type == TOKEN_STAR && peekNext().type == TOKEN_RBRACKET) {
+        advance(); // consume '*'
+        advance(); // consume ']'
+        bool is_const = match(TOKEN_CONST);
+        ASTNode* element_type = parseType();
+
+        ASTNode* node = createNodeAt(NODE_POINTER_TYPE, lbracket_token.location);
+        node->as.pointer_type.base = element_type;
+        node->as.pointer_type.is_const = is_const;
+        node->as.pointer_type.is_many = true;
+        return node;
+    }
+
     ASTNode* size_expr = NULL;
 
     if (peek().type != TOKEN_RBRACKET) {

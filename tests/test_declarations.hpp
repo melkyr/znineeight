@@ -1043,4 +1043,15 @@ TEST_FUNC(Pointer_Pointer_Param_Return);
 TEST_FUNC(Pointer_Pointer_Const_Ignored);
 TEST_FUNC(Pointer_Pointer_Global_Emission);
 
+// Task 220: Many-item pointers ([*]T)
+TEST_FUNC(ManyItemPointer_Parsing);
+TEST_FUNC(ManyItemPointer_Indexing);
+TEST_FUNC(SingleItemPointer_Indexing_Rejected);
+TEST_FUNC(ManyItemPointer_Dereference_Rejected);
+TEST_FUNC(ManyItemPointer_Arithmetic);
+TEST_FUNC(SingleItemPointer_Arithmetic_Rejected);
+TEST_FUNC(Pointer_Conversion_Rejected);
+TEST_FUNC(ManyItemPointer_Null);
+TEST_FUNC(ManyItemPointer_TypeToString);
+
 #endif // TEST_DECLARATIONS_HPP

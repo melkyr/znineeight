@@ -127,6 +127,11 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
                 return NULL;
             }
 
+            if (operand_type->as.pointer.is_many) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a many-item pointer. Use indexing instead.", unit.getArena());
+                return NULL;
+            }
+
             Type* base_type = operand_type->as.pointer.base;
             if (base_type->kind == TYPE_VOID) {
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a void pointer");
@@ -152,7 +157,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
             if (is_lvalue) {
-                return createPointerType(unit.getArena(), operand_type, false, &unit.getTypeInterner());
+                return createPointerType(unit.getArena(), operand_type, false, false, &unit.getTypeInterner());
             }
 
             unit.getErrorHandler().report(ERR_LVALUE_EXPECTED, node->operand->loc, "l-value expected as operand of address-of operator '&'");
@@ -960,12 +965,17 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 
     Type* base = array_type;
     // Auto-dereference for pointer to array
-    if (base->kind == TYPE_POINTER && base->as.pointer.base->kind == TYPE_ARRAY) {
+    if (base->kind == TYPE_POINTER && !base->as.pointer.is_many && base->as.pointer.base->kind == TYPE_ARRAY) {
         base = base->as.pointer.base;
     }
 
+    if (base->kind == TYPE_POINTER && base->as.pointer.is_many) {
+        // Many-item pointer indexing: returns the base type
+        return base->as.pointer.base;
+    }
+
     if (base->kind != TYPE_ARRAY) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot index into a non-array type", unit.getArena());
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot index into a non-array type. Many-item pointers ([*]T) support indexing, but single-item pointers (*T) do not.", unit.getArena());
         return NULL;
     }
 
@@ -1052,7 +1062,7 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
 Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
     Type* char_type = resolvePrimitiveTypeName("u8");
     // String literals are pointers to constant characters.
-    return createPointerType(unit.getArena(), char_type, true, &unit.getTypeInterner());
+    return createPointerType(unit.getArena(), char_type, true, false, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
@@ -1991,7 +2001,7 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
         // Error already reported by the base type visit
         return NULL;
     }
-    return createPointerType(unit.getArena(), base_type, node->is_const, &unit.getTypeInterner());
+    return createPointerType(unit.getArena(), base_type, node->is_const, node->is_many, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
@@ -2262,6 +2272,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
             }
         }
 
+        // Must have the same pointer kind (single-item vs many-item)
+        if (actual->as.pointer.is_many != expected->as.pointer.is_many) {
+            return false;
+        }
+
         // Must have the same base type
         if (actual_base != expected_base) {
             return false;
@@ -2362,6 +2377,12 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
             return NULL;
         }
 
+        // Zig only allows pointer subtraction on many-item pointers (and slices)
+        if (!left_type->as.pointer.is_many || !right_type->as.pointer.is_many) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Pointer subtraction is only allowed on many-item pointers ([*]T)");
+            return NULL;
+        }
+
         if (!areSamePointerTypeIgnoringConst(left_type, right_type)) {
             unit.getErrorHandler().report(ERR_POINTER_SUBTRACTION_INCOMPATIBLE, loc, "Cannot subtract pointers to different types");
             return NULL;
@@ -2397,6 +2418,12 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
     // Check if pointer is complete
     if (!isCompletePointerType(ptr_type)) {
         unit.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
+        return NULL;
+    }
+
+    // Zig only allows pointer arithmetic on many-item pointers
+    if (!ptr_type->as.pointer.is_many) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Pointer arithmetic is only allowed on many-item pointers ([*]T)");
         return NULL;
     }
 
@@ -2651,6 +2678,10 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
         // Base types must match
         if (src_base == tgt_base) {
+            if (source_type->as.pointer.is_many != target_type->as.pointer.is_many) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot implicitly convert between single-item pointer (*T) and many-item pointer ([*]T)");
+                return false;
+            }
             if (const_compatible) return true;
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot assign const pointer to non-const");
             return false;

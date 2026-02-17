@@ -75,6 +75,7 @@ struct Type {
         struct PointerDetails {
             Type* base; // The type that the pointer points to.
             bool is_const;
+            bool is_many;
         } pointer;
 
         /**
@@ -153,10 +154,11 @@ This logic is primarily handled in the `visitVarDecl`, `visitAssignment`, and `v
 
 Pointer assignments follow a specific set of C89-compatible rules:
 
-1.  **Null Assignment:** The `null` literal can be assigned to a variable of any pointer type.
+1.  **Null Assignment:** The `null` literal can be assigned to a variable of any pointer type, including many-item pointers.
     -   `var p: *i32 = null;` // ✓ OK
+    -   `var p: [*]u8 = null;` // ✓ OK (Extended for bootstrap simplicity)
 
-2.  **Implicit Cast to `void*`:** Any typed pointer (`*T`) can be implicitly assigned to a `void` pointer (`*void`).
+2.  **Implicit Cast to `void*`:** Any typed pointer (`*T` or `[*]T`) can be implicitly assigned to a `void` pointer (`*void`).
     -   `var p_void: *void = my_i32_ptr;` // ✓ OK
 
 3.  **Implicit Cast from `void*`:** A `void` pointer can be implicitly assigned to any typed pointer (`*T`), provided that `T` is C89-compatible. This matches C89 behavior for `void*`.
@@ -189,6 +191,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `*T`                    | `*const T`             | ✓           | Safe to add `const`.                                               |
 | `*const T`              | `*T`                   | ✗           | Unsafe to remove `const`.                                          |
 | `*T`                    | `*U` (different types) | ✗           | Incompatible pointer base types.                                   |
+| `*T`                    | `[*]T`                 | ✗           | Cannot implicitly convert between single and many-item pointers.   |
+| `[*]T`                  | `*T`                   | ✗           | Cannot implicitly convert between many and single-item pointers.   |
 
 
 ## 4. Semantic Analysis
@@ -376,19 +380,20 @@ Function calls are subject to the following strict limitations:
         -   Array accesses (e.g., `&my_array[i]`).
         -   Pointer dereferences (e.g., `&*my_ptr`).
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
-    -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
+    -   **Dereference (`*` or `.*`):** This operator can only be applied to **single-item** pointer types (`*T`). Applying it to a many-item pointer (`[*]T`) or a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
-    -   **Pointer Arithmetic (Task 184):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules for pointer arithmetic:
+    -   **Pointer Arithmetic (Task 184/220):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules for pointer arithmetic:
         -   **Supported Operations:**
-            -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward.
-            -   `unsigned_int + ptr` -> `ptr`: Commutative addition.
-            -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward.
-            -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types.
+            -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward (allowed only on `[*]T`).
+            -   `unsigned_int + ptr` -> `ptr`: Commutative addition (allowed only on `[*]T`).
+            -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward (allowed only on `[*]T`).
+            -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types (allowed only if both are `[*]T`).
         -   **Safety Rules:**
+            -   **Many-item Pointers Only**: Arithmetic is **strictly rejected** on single-item pointers (`*T`).
             -   **No Void Pointers:** Arithmetic on `*void` or `*const void` is strictly forbidden.
-            -   **Complete Types Only:** The base type of the pointer must be a "complete" type (not `void`, and single-level pointers only). Multi-level pointers (`**T`) are rejected for arithmetic to avoid complexity in the bootstrap phase.
+            -   **Complete Types Only:** The base type of the pointer must be a "complete" type (not `void`).
             -   **Unsigned Offsets Only:** Offsets used in `+` or `-` must be of an unsigned integer type (e.g., `u8`, `u32`, `usize`). This matches Zig's requirement for explicit casting and prevents common signed-overflow bugs in C.
-            -   **Compatible Pointer Subtraction:** Subtraction is allowed if both pointers point to the same base type, ignoring `const` qualification (e.g., `*i32` - `*const i32` is valid, matching C89 standard behavior).
+            -   **Compatible Pointer Subtraction:** Subtraction is allowed if both pointers point to the same base type, ignoring `const` qualification (e.g., `[*]i32` - `[*]const i32` is valid). Both must be many-item pointers.
         -   **Rejected Operations:** Any other operations (e.g., `ptr + ptr`, `ptr * int`, `ptr / int`) are considered type errors and rejected.
 
 ### Control Flow Statements
@@ -661,7 +666,8 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
-| `*T` | Conditional | `T*` | Allowed only if `T` is an allowed primitive or struct/enum. |
+| `*T` | ✓ | `T*` | Single-item pointer. Supported. |
+| `[*]T` | ✓ | `T*` | Many-item pointer. Supported. |
 | `**T` | ✓ | `T**` | Supported. |
 | `[]T` | ✗ | - | **Rejected.** Slices require runtime support not available in bootstrap. |
 | `!T` | ✗ | - | **Rejected.** Error unions are rejected until Milestone 5 translation. |
@@ -711,7 +717,7 @@ var col = Color.Red;
 A static inline function, `is_c89_compatible(Type* type)`, provides the mechanism for enforcing the C89 type subset. Its behavior is as follows:
 
 -   **Returns `true`** for any primitive type whose `TypeKind` is present in the `c89_type_map` table.
--   **Returns `true`** for a single-level pointer (e.g., `*i32`) whose base type is a C89-compatible primitive.
+-   **Returns `true`** for any pointer type (e.g., `*i32`, `[*]u8`, `**f64`) whose base type is C89-compatible.
 -   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
@@ -870,7 +876,7 @@ A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduce
 This mechanism allows the parser to easily obtain a valid `Type*` for a symbol by looking up the type name found in the source code.
 
 ### `createPointerType`
-A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const)`, has been added to facilitate the creation of pointer types. It allocates a new `Type` object from the arena, sets its kind to `TYPE_POINTER`, and links it to the provided base type, respecting the `const` qualifier.
+A helper function, `createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many = false)`, has been added to facilitate the creation of pointer types. It allocates a new `Type` object from the arena, sets its kind to `TYPE_POINTER`, and links it to the provided base type, respecting the `const` qualifier and the many-item flag.
 
 ### `createFunctionType`
 A new helper function, `createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type)`, has been added to create `TYPE_FUNCTION` objects. It allocates a new `Type` and populates it with the list of parameter types and the return type.
