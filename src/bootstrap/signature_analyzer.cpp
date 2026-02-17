@@ -165,11 +165,6 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_POINTER:
-            // Check for multi-level pointers
-            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in bootstrap compiler", unit_.getArena());
-                return false;
-            }
             return true;
 
         case TYPE_STRUCT:
@@ -217,11 +212,6 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_POINTER:
-            // Check for multi-level pointers
-            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_POINTER) {
-                error_handler_.report(ERR_NON_C89_FEATURE, loc, "multi-level pointers are not supported in bootstrap compiler", unit_.getArena());
-                return false;
-            }
             return true;
 
         case TYPE_STRUCT:

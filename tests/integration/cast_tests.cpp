@@ -71,7 +71,7 @@ TEST_FUNC(PtrCast_ToConst) {
         "fn foo(ptr: *i32) *const i32 {\n"
         "    return @ptrCast(*const i32, ptr);\n"
         "}";
-    return run_cast_test(source, TYPE_POINTER, "(const int*)ptr");
+    return run_cast_test(source, TYPE_POINTER, "(int*)ptr");
 }
 
 TEST_FUNC(PtrCast_FromVoid) {

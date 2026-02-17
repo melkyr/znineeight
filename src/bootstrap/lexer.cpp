@@ -595,8 +595,6 @@ Token Lexer::nextToken() {
         case '*':
             if (match('=')) {
                 token.type = TOKEN_STAR_EQUAL;
-            } else if (match('*')) {
-                token.type = TOKEN_STAR2;
             } else if (match('%')) {
                 token.type = TOKEN_STARPERCENT;
             } else {

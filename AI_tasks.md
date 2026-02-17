@@ -1364,12 +1364,13 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multi�
 | **Multi‑item Pointers (`[*]T`)** | Treat as raw pointer, allow in parser, type checker.    | Required for iterating over C‑style arrays and interfacing with external APIs that use raw pointers.         | Map directly to `T*` in C. No length information is kept; the programmer is responsible for bounds. Codegen emits `T*`. (This is effectively a pointer to an unknown‑length array, identical to C’s `T*`.)                                                                                                                                                                        |
 | **Function Pointers** | Support function type expressions, function pointer variables, and calls through pointers. | Enables cleaner architecture (e.g., virtual tables, callbacks) and is used in many compiler designs.        | Represent function pointer types as they are in C (e.g., `int (*)(int, int)`). For a function pointer variable, emit `int (*fp)(int, int)`. Calls can be written as `fp(args)` (C allows direct call). Allow function type syntax `fn(i32, i32) i32` in the parser. Update the type system to have `TYPE_FUNCTION_POINTER`. Ensure codegen handles function pointer declarations and calls correctly. |
 
-219. **Task 219:** Multi‑level Pointers (`**T`)
-    - **Parser**: Update `parseType` to allow `*` prefix multiple times (e.g., `**i32`).
-    - **Type system**: Create a `TYPE_POINTER` with depth information (already exists). Ensure `is_c89_compatible` returns true for any depth (since C89 supports it).
-    - **C89FeatureValidator**: Remove the rejection rule for `**T`.
-    - **Codegen**: `emitType` already works for pointers recursively – it will emit `int**` automatically.
-    - **Tests**: Add integration tests for pointer‑to‑pointer variables, function parameters, and dereferencing.
+219. [COMPLETE] **Task 219:** Multi‑level Pointers (`**T`) (DONE)
+    - **Parser**: Recursive `parsePointerType` already supported multiple `*`. Removed `TOKEN_STAR2` from lexer to support `**` as two tokens.
+    - **Type system**: Updated `is_c89_compatible` to allow recursive pointer types.
+    - **C89FeatureValidator**: Removed rejection rule for `**T`.
+    - **SignatureAnalyzer**: Removed rejection rule for `**T` in function signatures.
+    - **Codegen**: `emitType` updated to ignore `const` on pointers. It handles recursion automatically.
+    - **Tests**: Added Batch 36 with multi-level pointer tests.
 
 220. **Task 220:** Multi‑item Pointers (`[*]T`)
     - **Parser**: Recognise `[*]T` as a distinct pointer type (maybe a new `NODE_MANYITEM_POINTER` or reuse `NODE_POINTER_TYPE` with a flag). For simplicity, treat it as a pointer type with no size, and during type checking, map it to a raw pointer.

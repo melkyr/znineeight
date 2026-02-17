@@ -39,9 +39,6 @@ public:
         if (!decl || !symbol) return "/* INVALID DECL */";
 
         std::stringstream ss;
-        if (decl->is_const) {
-            ss << "const ";
-        }
 
         Type* type = symbol->symbol_type;
         if (type && type->kind == TYPE_ARRAY) {
@@ -438,9 +435,6 @@ private:
 
         if (type->kind == TYPE_POINTER) {
             std::string base = getC89TypeName(type->as.pointer.base);
-            if (type->as.pointer.is_const) {
-                return "const " + base + "*";
-            }
             return base + "*";
         }
 

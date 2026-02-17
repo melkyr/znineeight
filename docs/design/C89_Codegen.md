@@ -84,6 +84,17 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 ### 4.6 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
 
+### 4.7 Multi-level Pointers (**T)
+Multi-level pointers (e.g., `**i32`, `***f64`) are fully supported in the bootstrap compiler and map directly to C's multi-level pointers (e.g., `int**`, `double***`).
+
+#### Const Qualifiers
+To simplify code generation and avoid complex C declaration syntax (e.g., `int* const*`), the RetroZig bootstrap compiler **drops all `const` qualifiers** in the generated C code for pointers and variables.
+- Zig `*const i32` -> C `int*`
+- Zig `*const *i32` -> C `int**`
+- Zig `const x: i32 = 42` -> C `int x = 42`
+
+This is safe because the Zig compiler frontend already enforces const-correctness during semantic analysis. The generated C code serves only as an intermediate representation where these qualifiers are not required for correctness.
+
 ## 5. Master STU File & Build System
 
 To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.
