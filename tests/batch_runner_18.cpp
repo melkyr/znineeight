@@ -28,6 +28,7 @@
 #include "integration/function_call_tests.cpp"
 #include "integration/function_decl_tests.cpp"
 #include "integration/if_statement_tests.cpp"
+#include "integration/import_tests.cpp"
 #include "integration/literal_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"

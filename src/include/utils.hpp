@@ -61,4 +61,21 @@ bool isCReservedName(const char* str);
  */
 void sanitizeForC89(char* buffer);
 
+/**
+ * @brief Joins a base directory and a relative path.
+ * @param base_dir The base directory.
+ * @param rel_path The relative path.
+ * @param buffer The buffer to store the joined path.
+ * @param buffer_size The size of the buffer.
+ */
+void join_paths(const char* base_dir, const char* rel_path, char* buffer, size_t buffer_size);
+
+/**
+ * @brief Gets the directory portion of a file path.
+ * @param path The full file path.
+ * @param buffer The buffer to store the directory.
+ * @param buffer_size The size of the buffer.
+ */
+void get_directory(const char* path, char* buffer, size_t buffer_size);
+
 #endif // UTILS_HPP

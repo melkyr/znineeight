@@ -625,7 +625,7 @@ void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitImportStmt(ASTNode* node) {
-    fatalError(node->loc, "Imports (@import) are not supported in the bootstrap phase.");
+    // Basic @import support is now implemented for multi-file loading.
 }
 
 void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
@@ -640,8 +640,7 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
             // Allow basic built-ins as they are now partially supported for bootstrap
             if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0 ||
                 plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 ||
-                plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@offsetOf") == 0 ||
-                plat_strcmp(name, "@import") == 0) {
+                plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@offsetOf") == 0) {
                 return;
             }
             reportNonC89Feature(node->loc, "Built-in functions (@) are not supported in the bootstrap phase.");

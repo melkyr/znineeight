@@ -727,6 +727,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_INT_CAST:
             emitIntCast(node->as.numeric_cast);
             break;
+        case NODE_IMPORT_STMT:
+            writeString("/* import \"");
+            writeString(node->as.import_stmt->module_name);
+            writeString("\" */");
+            break;
         case NODE_FLOAT_CAST:
             emitFloatCast(node->as.numeric_cast);
             break;

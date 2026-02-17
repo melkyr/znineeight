@@ -322,7 +322,7 @@ private:
     ASTNode* parseErrorSetDefinition();
 
     /** @brief Parses an @import statement. */
-    ASTNode* parseImport();
+    ASTNode* parseImportStmt();
 
     /** @brief Parses a @ptrCast expression. */
     ASTNode* parsePtrCastExpr();

@@ -16,12 +16,15 @@ struct Module {
     ASTNode* ast_root;    /* Root of the AST for this module */
     u32 file_id;          /* ID in SourceManager */
     DynamicArray<const char*> imports;
+    DynamicArray<ASTNode*> import_nodes;
+    bool is_analyzed;
 
-    Module(ArenaAllocator& arena) : imports(arena) {
+    Module(ArenaAllocator& arena) : imports(arena), import_nodes(arena) {
         name = NULL;
         filename = NULL;
         ast_root = NULL;
         file_id = 0;
+        is_analyzed = false;
     }
 };
 

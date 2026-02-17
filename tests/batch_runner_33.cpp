@@ -1,9 +1,8 @@
-// Generated batch runner for tests/main_batch19.cpp
+// Generated batch runner for tests/main_batch33.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
 #include "test_utils.cpp"
 #include "c89_validation/gcc_validator.cpp"
 #include "c89_validation/msvc6_validator.cpp"
-#include "integer_widening_tests.cpp"
 #include "integration/arena_tests.cpp"
 #include "integration/arithmetic_tests.cpp"
 #include "integration/array_tests.cpp"
@@ -40,4 +39,4 @@
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"
-#include "main_batch19.cpp"
+#include "main_batch33.cpp"

@@ -83,3 +83,52 @@ void sanitizeForC89(char* buffer) {
         plat_strcpy(buffer, temp);
     }
 }
+
+void join_paths(const char* base_dir, const char* rel_path, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    buffer[0] = '\0';
+
+    if (!base_dir || base_dir[0] == '\0' || plat_strcmp(base_dir, ".") == 0 || (rel_path && (rel_path[0] == '/' || rel_path[0] == '\\'))) {
+        // rel_path is absolute or base_dir is empty or current dir
+        if (rel_path) {
+            plat_strncpy(buffer, rel_path, buffer_size - 1);
+            buffer[buffer_size - 1] = '\0';
+        }
+        return;
+    }
+
+    plat_strncpy(buffer, base_dir, buffer_size - 1);
+    buffer[buffer_size - 1] = '\0';
+
+    size_t len = plat_strlen(buffer);
+    if (len > 0 && buffer[len - 1] != '/' && buffer[len - 1] != '\\') {
+        if (len < buffer_size - 1) {
+            buffer[len] = '/';
+            buffer[len + 1] = '\0';
+            len++;
+        }
+    }
+
+    if (rel_path && len < buffer_size - 1) {
+        plat_strncpy(buffer + len, rel_path, buffer_size - 1 - len);
+        buffer[buffer_size - 1] = '\0';
+    }
+}
+
+void get_directory(const char* path, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    buffer[0] = '\0';
+
+    const char* last_slash = plat_strrchr(path, '/');
+    const char* last_backslash = plat_strrchr(path, '\\');
+    const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+
+    if (sep) {
+        size_t len = sep - path;
+        if (len >= buffer_size) len = buffer_size - 1;
+        plat_strncpy(buffer, path, len);
+        buffer[len] = '\0';
+    } else {
+        plat_strcpy(buffer, ".");
+    }
+}

@@ -163,8 +163,17 @@ TEST_FUNC(Task168_BuiltinCall) {
         "    const std = @import(\"std\");\n"
         "}\n";
 
+    // Create a dummy std file to satisfy the new import system
+    FILE* f = fopen("std", "w");
+    if (f) {
+        fprintf(f, "\n");
+        fclose(f);
+    }
+
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
+
+    remove("std");
 
     // @import is now supported
     ASSERT_TRUE(success);

@@ -97,6 +97,8 @@ extern Arena* zig_default_arena;
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
 * **`plat_abort()`**: Terminates the process immediately without calling destructors or performing CRT cleanup. Uses `ExitProcess(1)` on Windows.
+* **`join_paths(const char* dir, const char* rel_path, ArenaAllocator& arena)`**: Combines a directory and a relative path into a normalized path, handling both Windows and POSIX separators.
+* **`get_directory(const char* filepath, ArenaAllocator& arena)`**: Extracts the directory component from a file path.
 
 ### 3.3 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.
@@ -175,10 +177,11 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Lifetime Management:** Ensures that all objects related to a compilation (AST nodes, tokens, interned strings) are allocated from a single arena, making cleanup trivial.
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
-    1.  **Lexing & Parsing:** Produces the Initial AST.
-    2.  **Pass 0: Type Checking (Permissive):** Resolves all types, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
+    1.  **Lexing & Parsing:** Produces the AST for the entry module.
+    2.  **Import Resolution (Task 214):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution relative to the importing module's directory.
+    3.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
     3.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0. This is where descriptive error messages for unsupported features are reported.
-    4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers.
+    4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
     7.  **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.

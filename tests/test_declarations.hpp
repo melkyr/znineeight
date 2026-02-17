@@ -1023,4 +1023,9 @@ TEST_FUNC(Task211_ArenaCodegen);
 TEST_FUNC(EndToEnd_HelloWorld);
 TEST_FUNC(EndToEnd_PrimeNumbers);
 
+// Import System Tests (Task 214)
+TEST_FUNC(Import_Simple);
+TEST_FUNC(Import_Circular);
+TEST_FUNC(Import_Missing);
+
 #endif // TEST_DECLARATIONS_HPP
