@@ -1352,12 +1352,56 @@ Phase 6C: Bootstrap Compiler Integration
     - Implement std.debug, std.mem, std.io basics
     - Keep it C89-compatible
     - Use in zig1 compiler source
-	
+
+### Milestone 7: Extended Feature Set for Writing `zig1`
+
+With the bootstrap compiler (`zig0`) now stable and capable of generating multi‑module C89 code, we can extend its supported language subset to include features essential for writing a self‑hosted compiler in Zig (`zig1`).
+
+| Feature            | Change Required                                         | Why Needed for `zig1`                                                                                        | C89 Implementation Strategy                                                                                                                                                                                                                                                                                                                                                     |
+|--------------------|---------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Slices (`[]T`)** | Enable in lexer/parser/type checker/codegen             | Critical for text processing (lexer, parser), managing dynamic arrays (AST nodes), and safe buffer handling. | Represent as a C struct: `typedef struct { T* ptr; size_t len; } Slice_T;`. Pass slices by value (two machine words). Generate distinct struct types per element type (or use a generic macro). Access elements via `ptr[index]`, get length via `.len`. Update codegen to emit this struct for slice types and to translate slice operations accordingly.                         |
+| **Multi‑level Pointers (`**T`)** | Allow in parser, type checker, remove rejection.        | Needed for lists of strings (`argv`), arrays of pointers in ASTs (e.g., array of function pointers).        | C89 supports `T**` natively. Simply emit `T**` in generated code. No extra runtime support required.                                                                                                                                                                                                                                                                           |
+| **Multi‑item Pointers (`[*]T`)** | Treat as raw pointer, allow in parser, type checker.    | Required for iterating over C‑style arrays and interfacing with external APIs that use raw pointers.         | Map directly to `T*` in C. No length information is kept; the programmer is responsible for bounds. Codegen emits `T*`. (This is effectively a pointer to an unknown‑length array, identical to C’s `T*`.)                                                                                                                                                                        |
+| **Function Pointers** | Support function type expressions, function pointer variables, and calls through pointers. | Enables cleaner architecture (e.g., virtual tables, callbacks) and is used in many compiler designs.        | Represent function pointer types as they are in C (e.g., `int (*)(int, int)`). For a function pointer variable, emit `int (*fp)(int, int)`. Calls can be written as `fp(args)` (C allows direct call). Allow function type syntax `fn(i32, i32) i32` in the parser. Update the type system to have `TYPE_FUNCTION_POINTER`. Ensure codegen handles function pointer declarations and calls correctly. |
+
+219. **Task 219:** Multi‑level Pointers (`**T`)
+    - **Parser**: Update `parseType` to allow `*` prefix multiple times (e.g., `**i32`).
+    - **Type system**: Create a `TYPE_POINTER` with depth information (already exists). Ensure `is_c89_compatible` returns true for any depth (since C89 supports it).
+    - **C89FeatureValidator**: Remove the rejection rule for `**T`.
+    - **Codegen**: `emitType` already works for pointers recursively – it will emit `int**` automatically.
+    - **Tests**: Add integration tests for pointer‑to‑pointer variables, function parameters, and dereferencing.
+
+220. **Task 220:** Multi‑item Pointers (`[*]T`)
+    - **Parser**: Recognise `[*]T` as a distinct pointer type (maybe a new `NODE_MANYITEM_POINTER` or reuse `NODE_POINTER_TYPE` with a flag). For simplicity, treat it as a pointer type with no size, and during type checking, map it to a raw pointer.
+    - **Type system**: Add a new `TypeKind` `TYPE_MANYITEM_POINTER` or just use `TYPE_POINTER` with a flag `is_many`. C89 compatibility: it's just a pointer.
+    - **C89FeatureValidator**: Allow it.
+    - **Codegen**: Emit as `T*`.
+    - **Tests**: Use cases like iterating over a C‑style array passed from `extern`.
+
+221. **Task 221:** Function Pointers
+    - **Parser**: Add grammar for function type expressions: `fn (param_list) return_type`. This will be a new node type `NODE_FUNCTION_TYPE`. Update `parseType` to handle it.
+    - **AST**: Define `ASTFunctionTypeNode` storing parameter types and return type.
+    - **Type system**: Create a new `TypeKind` `TYPE_FUNCTION_POINTER` that holds the signature (parameter types and return type). Also need a way to represent function types for function declarations (they are not pointers, but the type is similar). We can unify by having a `FunctionSignature` struct used for both.
+    - **Symbol table**: Allow symbols of kind `FUNCTION_POINTER` (maybe reuse `SYMBOL_TYPE` but with function type).
+    - **Type checker**: Implement resolution of function pointer types, and when a function name is used without `()` (e.g., `var fp = foo`), it should yield a function pointer. Also handle assignment and calls through pointers.
+    - **C89FeatureValidator**: Allow function pointer declarations and calls.
+    - **Codegen**: For a function pointer variable, emit `int (*name)(int, int)`. For a call, emit `(*fp)(args)` or `fp(args)` (both are valid). For function pointer parameters, emit the appropriate type.
+    - **Tests**: Write tests for function pointer assignment, passing as argument, calling, and returning from functions.
+
+222. **Task 222:** Slices (`[]T`)
+    - **Parser**: Recognise `[]T` as a type expression. Create a new node `NODE_SLICE_TYPE`.
+    - **AST**: Define `ASTSliceTypeNode` with element type.
+    - **Type system**: Add `TYPE_SLICE` (approx. 8 bytes, alignment 4 on 32-bit).
+    - **Codegen**: Emit `typedef struct { T* ptr; size_t len; } Slice_T;` for each used slice type.
+    - **Operations**: Support indexing `s[i]` -> `s.ptr[i]`, length `s.len` -> `s.len`.
+    - **Type checking**: Allow implicit conversion from fixed-size array to slice.
+    - **Tests**: Verify passing slices by value, accessing elements and length.
+
 ## Phase 1: The Cross-Compiler (Zig)
-219. **Task 219:** Translate the C++ compiler logic into the supported Zig subset.
-220. **Task 220:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
-221. **Task 221:** Verify `zig1.exe` by using it to compile the test suite.
+223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.
+224. **Task 224:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
+225. **Task 225:** Verify `zig1.exe` by using it to compile the test suite.
 
 ## Phase 2: Self-Hosting
-222. **Task 222:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
-223. **Task 223:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
+226. **Task 226:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
+227. **Task 227:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
