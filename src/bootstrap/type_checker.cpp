@@ -5,7 +5,6 @@
 #include "error_handler.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
-#include <cstdlib> // For abort()
 
 
 // Helper to get the string representation of a binary operator token.
@@ -2505,7 +2504,7 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
 
     plat_print_debug(buffer);
 
-    abort();
+    plat_abort();
 }
 
 bool TypeChecker::all_paths_return(ASTNode* node) {
@@ -3191,5 +3190,5 @@ void TypeChecker::fatalError(const char* message) {
     plat_print_debug("Fatal type error: ");
     plat_print_debug(message);
     plat_print_debug("\n");
-    abort();
+    plat_abort();
 }

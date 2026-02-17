@@ -110,12 +110,10 @@ public:
 };
 #endif
 #include <new>       // For placement new
-#include <cstdlib>   // For abort()
-
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
     plat_print_debug(message);
-    abort();
+    plat_abort();
 }
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)

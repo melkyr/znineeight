@@ -78,7 +78,10 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
 - **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 
-### 4.5 Operator Precedence & Parentheses
+### 4.5 Pointer Types Limitation
+**Many-item pointers ([*]T) are not supported** in the bootstrap compiler. Use single-item pointers (*T) and explicit casts via @ptrCast when necessary. This restriction maintains the simplicity of the rejection framework and ensures compatibility with the C89 subset.
+
+### 4.6 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
 
 ## 5. Master STU File & Build System
