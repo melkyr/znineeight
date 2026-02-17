@@ -10,7 +10,7 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, const char* module_name)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner, const char* module_name)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
@@ -19,6 +19,7 @@ Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolT
       catalogue_(catalogue),
       generic_catalogue_(generic_catalogue),
       type_interner_(type_interner),
+      interner_(interner),
       module_name_(module_name),
       recursion_depth_(0)
 {
@@ -262,6 +263,10 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseNumericCastExpr(NODE_FLOAT_CAST);
         case TOKEN_AT_OFFSETOF:
             return parseOffsetOfExpr();
+        case TOKEN_LBRACKET:
+            return parseArrayType();
+        case TOKEN_STAR:
+            return parsePointerType();
         default:
             error("Expected a primary expression (literal, identifier, or parenthesized expression)");
             return NULL; // Unreachable
@@ -374,8 +379,8 @@ ASTNode* Parser::parsePostfixExpression() {
             new_expr_node->loc = name_token.location;
             new_expr_node->as.member_access = member_node;
             expr = new_expr_node;
-        } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME || expr->type == NODE_MEMBER_ACCESS)) {
-            // Struct Initializer: Type { .field = value }
+        } else if (peek().type == TOKEN_LBRACE && (expr->type == NODE_IDENTIFIER || expr->type == NODE_TYPE_NAME || expr->type == NODE_MEMBER_ACCESS || expr->type == NODE_ARRAY_TYPE || expr->type == NODE_POINTER_TYPE)) {
+            // Initializer: Type { .field = value } or Type { val1, val2 }
             expr = parseStructInitializer(expr);
         } else if (match(TOKEN_DOT_ASTERISK)) {
             // Zig-style dereference: p.*
@@ -799,17 +804,42 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
     if (!init_data->fields) error("Out of memory");
     new (init_data->fields) DynamicArray<ASTNamedInitializer*>(*arena_);
 
+    int index = 0;
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
-        expect(TOKEN_DOT, "Expected '.' before field name in struct initializer");
-        Token field_name = expect(TOKEN_IDENTIFIER, "Expected field name in struct initializer");
-        expect(TOKEN_EQUAL, "Expected '=' after field name in struct initializer");
-        ASTNode* value = parseExpression();
+        const char* field_name_str = NULL;
+        SourceLocation loc = peek().location;
+        ASTNode* value = NULL;
+
+        if (peek().type == TOKEN_DOT && peekNext().type == TOKEN_IDENTIFIER) {
+            match(TOKEN_DOT);
+            Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct initializer");
+            field_name_str = field_name_token.value.identifier;
+            expect(TOKEN_EQUAL, "Expected '=' after field name in struct initializer");
+            value = parseExpression();
+            loc = field_name_token.location;
+        } else {
+            // Positional initializer (mostly for arrays)
+            value = parseExpression();
+
+            char buf[32];
+            buf[0] = '_';
+            plat_i64_to_string(index++, buf + 1, sizeof(buf) - 1);
+
+            if (interner_) {
+                field_name_str = interner_->intern(buf);
+            } else {
+                // Fallback if interner is missing (should not happen in production)
+                char* mem = (char*)arena_->alloc(plat_strlen(buf) + 1);
+                plat_strcpy(mem, buf);
+                field_name_str = mem;
+            }
+        }
 
         ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
         if (!named_init) error("Out of memory");
-        named_init->field_name = field_name.value.identifier;
+        named_init->field_name = field_name_str;
         named_init->value = value;
-        named_init->loc = field_name.location;
+        named_init->loc = loc;
 
         init_data->fields->append(named_init);
 

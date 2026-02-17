@@ -3,7 +3,7 @@
 
 echo "Compiling RetroZig Batch Test Runners..."
 
-FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
+FLAGS="-std=c++98 -Wall -DRETROZIG_TEST -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
 
 # Optional: Add -DDEBUG if needed, though batches should be self-contained
 # FLAGS="$FLAGS -DDEBUG"

@@ -32,3 +32,6 @@
 #include "cbackend.cpp"
 #include "c_variable_allocator.cpp"
 #include "platform.cpp"
+#include "memory_tracker.cpp"
+#include "pe_builder.cpp"
+#include "main.cpp"

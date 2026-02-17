@@ -147,7 +147,7 @@ A critical exception to the strict equality rule, inherited from C89, applies to
 -   `var x: u8 = -1;`        // ✗ **Error:** `-1` is out of range for `u8`.
 -   `var x: i8 = 128;`       // ✗ **Error:** `128` overflows `i8`.
 
-This logic is primarily handled in the `visitVarDecl` method, which uses the `canLiteralFitInType` helper to perform the value range check.
+This logic is primarily handled in the `visitVarDecl`, `visitAssignment`, and `visitFunctionCall` methods, which use the `canLiteralFitInType` helper to perform the value range check. This ensures that integer literals behave consistently across all contexts.
 
 ### Exception 2: Pointer Assignment Rules
 
@@ -1268,7 +1268,7 @@ Function calls are resolved during the Type Checking phase (Pass 0) using the fo
 The `TypeChecker` enforces strict type compatibility for arguments:
 - **Exact Match**: The argument type must ideally match the parameter type exactly.
 - **Implicit Widening**: Safe integer widening (e.g., `i8` to `i32`) is allowed for arguments.
-- **Literal Promotion**: Integer literals are promoted to the parameter's type if the value fits within its range.
+- **Literal Promotion**: Integer literals are promoted to the parameter's type if the value fits within its range (checked via `canLiteralFitInType`).
 - **Pointer Compatibility**: Standard C89 pointer rules apply (e.g., passing `*T` to `*const T` or `*void` parameters).
 
 ### 16.3 C89 Compatibility Rejections

@@ -98,6 +98,7 @@ private:
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
+    Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
 
     CompilationUnit& unit;
     Type* current_fn_return_type;

@@ -39,11 +39,11 @@ To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
 Detailed instructions are available in [docs/Building.md](docs/Building.md).
 On Linux:
 ```bash
-g++ -std=c++98 src/bootstrap/bootstrap_all.cpp -o zig0
+g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 On Windows (MSVC 6.0):
 ```batch
-cl /Za /W3 src\bootstrap\bootstrap_all.cpp /Fezig0.exe
+cl /Za /W3 /Isrc/include src\bootstrap\bootstrap_all.cpp /Fezig0.exe
 ```
 
 ### Running Tests

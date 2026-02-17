@@ -43,7 +43,7 @@ public:
      * @param generic_catalogue A pointer to the GenericCatalogue for tracking generic functions.
      * @param module_name The name of the module being parsed.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, const char* module_name = "main");
+    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner = NULL, const char* module_name = "main");
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -359,6 +359,7 @@ private:
     ErrorSetCatalogue* catalogue_;
     GenericCatalogue* generic_catalogue_;
     TypeInterner* type_interner_;
+    StringInterner* interner_;
     const char* module_name_;
     int recursion_depth_; ///< Tracks the current recursion depth for expression parsing.
     Token eof_token_; ///< A cached EOF token to return from peekNext()

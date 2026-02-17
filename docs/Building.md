@@ -8,7 +8,7 @@ On a modern Linux system, you need `g++` (C++98 compatible) and `make`.
 
 **Direct Compilation:**
 ```bash
-g++ -std=c++98 src/bootstrap/bootstrap_all.cpp -o zig0
+g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 
 ### 1.2 Windows 98 / MSVC 6.0
@@ -30,7 +30,7 @@ set LIB=%MSVC_DIR%\Lib
 Use the `cl` command to build the compiler:
 
 ```batch
-cl /Za /W3 src\bootstrap\bootstrap_all.cpp /Fezig0.exe
+cl /Za /W3 /Isrc/include src\bootstrap\bootstrap_all.cpp /Fezig0.exe
 ```
 
 ---

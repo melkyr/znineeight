@@ -220,6 +220,74 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     writeString(";\n");
 }
 
+void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode* init_node) {
+    if (!init_node || init_node->type != NODE_STRUCT_INITIALIZER) return;
+    const ASTStructInitializerNode* init = init_node->as.struct_initializer;
+    Type* type = init_node->resolved_type;
+
+    if (!type) return;
+
+    if (type->kind == TYPE_STRUCT) {
+        DynamicArray<StructField>* fields = type->as.struct_details.fields;
+        for (size_t i = 0; i < fields->length(); ++i) {
+            const char* field_name = (*fields)[i].name;
+            // Find in initializer
+            ASTNode* val = NULL;
+            for (size_t j = 0; j < init->fields->length(); ++j) {
+                if (plat_strcmp((*init->fields)[j]->field_name, field_name) == 0) {
+                    val = (*init->fields)[j]->value;
+                    break;
+                }
+            }
+
+            if (val) {
+                if (val->type == NODE_STRUCT_INITIALIZER) {
+                    char nested_name[256];
+                    char* cur = nested_name;
+                    size_t rem = sizeof(nested_name);
+                    safe_append(cur, rem, base_name);
+                    safe_append(cur, rem, ".");
+                    safe_append(cur, rem, field_name);
+                    emitInitializerAssignments(nested_name, val);
+                } else {
+                    writeIndent();
+                    writeString(base_name);
+                    writeString(".");
+                    writeString(field_name);
+                    writeString(" = ");
+                    emitExpression(val);
+                    writeString(";\n");
+                }
+            }
+        }
+    } else if (type->kind == TYPE_ARRAY) {
+        for (size_t i = 0; i < init->fields->length(); ++i) {
+            ASTNode* val = (*init->fields)[i]->value;
+            char idx_str[32];
+            plat_i64_to_string(i, idx_str, sizeof(idx_str));
+
+            if (val->type == NODE_STRUCT_INITIALIZER) {
+                char nested_name[256];
+                char* cur = nested_name;
+                size_t rem = sizeof(nested_name);
+                safe_append(cur, rem, base_name);
+                safe_append(cur, rem, "[");
+                safe_append(cur, rem, idx_str);
+                safe_append(cur, rem, "]");
+                emitInitializerAssignments(nested_name, val);
+            } else {
+                writeIndent();
+                writeString(base_name);
+                writeString("[");
+                writeString(idx_str);
+                writeString("] = ");
+                emitExpression(val);
+                writeString(";\n");
+            }
+        }
+    }
+}
+
 void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
@@ -236,11 +304,15 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             bool is_undefined = (decl->initializer->type == NODE_UNDEFINED_LITERAL);
 
             if (!is_undefined) {
-                writeIndent();
-                writeString(c_name);
-                writeString(" = ");
-                emitExpression(decl->initializer);
-                writeString(";\n");
+                if (decl->initializer->type == NODE_STRUCT_INITIALIZER) {
+                    emitInitializerAssignments(c_name, decl->initializer);
+                } else {
+                    writeIndent();
+                    writeString(c_name);
+                    writeString(" = ");
+                    emitExpression(decl->initializer);
+                    writeString(";\n");
+                }
             }
         }
     }

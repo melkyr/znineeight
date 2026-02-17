@@ -133,6 +133,13 @@ public:
     void emitLocalVarDecl(const ASTNode* node, bool emit_assignment);
 
     /**
+     * @brief Emits individual assignments for struct/array initializers.
+     * @param base_name The name of the variable being initialized.
+     * @param init_node The initializer expression node (NODE_STRUCT_INITIALIZER).
+     */
+    void emitInitializerAssignments(const char* base_name, const ASTNode* init_node);
+
+    /**
      * @brief Emits a function prototype (declaration only).
      * @param node The function declaration AST node.
      * @param is_public True if the prototype should be public (no static).
