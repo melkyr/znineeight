@@ -636,6 +636,11 @@ ASTNode* Parser::parseOrelseCatchExpression() {
  * @return A pointer to the ASTNode representing the assignment.
  */
 ASTNode* Parser::parseAssignmentExpression() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Expression too complex, recursion limit reached");
+    }
+
     ASTNode* left = parseOrelseCatchExpression();
 
     if (match(TOKEN_EQUAL)) {
@@ -650,6 +655,7 @@ ASTNode* Parser::parseAssignmentExpression() {
 
         ASTNode* node = createNode(NODE_ASSIGNMENT);
         node->as.assignment = assign_node;
+        recursion_depth_--;
         return node;
     }
 
@@ -675,10 +681,12 @@ ASTNode* Parser::parseAssignmentExpression() {
 
             ASTNode* node = createNode(NODE_COMPOUND_ASSIGNMENT);
             node->as.compound_assignment = comp_node;
+            recursion_depth_--;
             return node;
         }
     }
 
+    recursion_depth_--;
     return left;
 }
 
@@ -1539,6 +1547,11 @@ ASTNode* Parser::parseStatement() {
 }
 
 ASTNode* Parser::parseBlockStatement() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Block too deeply nested, recursion limit reached");
+    }
+
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
     symbol_table_->enterScope();
@@ -1560,6 +1573,7 @@ ASTNode* Parser::parseBlockStatement() {
     block_node->loc = lbrace_token.location;
     block_node->as.block_stmt.statements = statements;
 
+    recursion_depth_--;
     return block_node;
 }
 
@@ -1683,6 +1697,11 @@ ASTNode* Parser::parseReturnStatement() {
 }
 
 ASTNode* Parser::parseType() {
+    recursion_depth_++;
+    if (recursion_depth_ > MAX_PARSER_RECURSION_DEPTH) {
+        error("Type expression too complex, recursion limit reached");
+    }
+
     // Handle 'const' qualifier by skipping it for now in the bootstrap compiler
     // or we could wrap it. For now, let's just skip to the actual type.
     while (match(TOKEN_CONST)) {}
@@ -1744,6 +1763,7 @@ ASTNode* Parser::parseType() {
         }
     }
 
+    recursion_depth_--;
     return left;
 }
 

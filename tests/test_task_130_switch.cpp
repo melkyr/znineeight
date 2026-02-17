@@ -4,7 +4,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_SwitchPathAware) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -46,7 +46,7 @@ TEST_FUNC(DoubleFree_SwitchPathAware) {
 }
 
 TEST_FUNC(DoubleFree_SwitchBothFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

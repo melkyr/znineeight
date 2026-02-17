@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeChecker_VarDecl_Valid_Simple) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
     ParserTestContext ctx(source, arena, interner);
@@ -20,7 +20,7 @@ TEST_FUNC(TypeChecker_VarDecl_Valid_Simple) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "const x: i32 = \"hello\"; const y: f32 = 12;";
     ParserTestContext ctx(source, arena, interner);
@@ -42,7 +42,7 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "const x: i32 = \"hello\";";
     ParserTestContext ctx(source, arena, interner);
@@ -64,7 +64,7 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Invalid_Widening) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     // This test now passes. The type checker's `visitVarDecl` has been updated
     // with a special case for integer literals, which is the correct C89 behavior.

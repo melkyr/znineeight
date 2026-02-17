@@ -4,7 +4,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_LoopConservativeVerification) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

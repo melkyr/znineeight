@@ -5,7 +5,8 @@
 
 IndirectCallCatalogue::IndirectCallCatalogue(ArenaAllocator& arena) : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<IndirectCallInfo>));
-    entries_ = new (mem) DynamicArray<IndirectCallInfo>(arena_);
+    if (mem == NULL) plat_abort();
+   entries_ = new (mem) DynamicArray<IndirectCallInfo>(arena_);
 }
 
 void IndirectCallCatalogue::addIndirectCall(const IndirectCallInfo& info) {

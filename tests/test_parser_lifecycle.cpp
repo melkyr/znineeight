@@ -4,7 +4,7 @@
 #include "compilation_unit.hpp"
 
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "const x: i32 = 42;";
 
@@ -35,7 +35,7 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
 //     // The code below will no longer compile, which is the expected and desired behavior.
 //
 //     /*
-//     ArenaAllocator arena(16384);
+//     ArenaAllocator arena(262144);
 //     StringInterner interner(arena);
 //     const char* source = "const x: i32 = 42;";
 //

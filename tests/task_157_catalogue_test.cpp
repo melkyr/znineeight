@@ -5,7 +5,7 @@
 #include <cstring>
 
 TEST_FUNC(GenericCatalogue_ImplicitInstantiation) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     GenericCatalogue catalogue(arena);
 
     // Mock types

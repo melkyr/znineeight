@@ -7,7 +7,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_FnDecl_ValidEmpty) {
-    ArenaAllocator arena(16384); // Increased arena size
+    ArenaAllocator arena(262144); // Increased arena size
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -47,7 +47,7 @@ TEST_FUNC(Parser_FnDecl_ValidEmpty) {
 // This is handled by the `expect_parser_abort` helper.
 
 TEST_FUNC(Parser_FnDecl_Valid_NoArrow) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

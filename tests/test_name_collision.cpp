@@ -9,7 +9,7 @@ TEST_FUNC(FunctionNameCollisionSameScope) {
         "fn foo() void {}\n"
         "fn foo() i32 { return 0; }\n";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);
@@ -31,7 +31,7 @@ TEST_FUNC(FunctionVariableCollisionSameScope) {
         "fn foo() void {}\n"
         "var foo: i32 = 5;\n";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);
@@ -54,7 +54,7 @@ TEST_FUNC(ShadowingAllowed) {
         "    const foo: i32 = 5;\n"
         "}\n";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);

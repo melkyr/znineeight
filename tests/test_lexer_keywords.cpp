@@ -14,7 +14,7 @@ TEST_FUNC(keywords_are_sorted) {
 }
 
 TEST_FUNC(lex_keywords) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 
@@ -41,7 +41,7 @@ TEST_FUNC(lex_keywords) {
 }
 
 TEST_FUNC(lex_miscellaneous_keywords) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 
@@ -68,7 +68,7 @@ TEST_FUNC(lex_miscellaneous_keywords) {
 }
 
 TEST_FUNC(lex_visibility_and_linkage_keywords) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 

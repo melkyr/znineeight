@@ -7,7 +7,7 @@
 bool expect_parser_abort(const char* source);
 
 TEST_FUNC(Parser_SwitchExpression_Basic) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("switch (x) { 1 => 10, else => 20 }", arena, interner);
@@ -41,7 +41,7 @@ TEST_FUNC(Parser_SwitchExpression_Basic) {
 }
 
 TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("switch (y) { 1, 2, 3 => 42, else => 0 }", arena, interner);
@@ -68,7 +68,7 @@ TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
 
 TEST_FUNC(Parser_SwitchExpression_Nested) {
     const char* source = "switch (a) { 1 => switch (b) { 10 => 100, else => 200 }, else => 300 }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);

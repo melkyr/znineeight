@@ -8,7 +8,7 @@ TEST_FUNC(AST_Statements)
     // This test is primarily a compile-time check to ensure the AST statement
     // node definitions are correct and can be instantiated.
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     // Test ASTIfStmtNode
     ASTNode if_node;

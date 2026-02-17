@@ -4,7 +4,8 @@
 OrelseExpressionCatalogue::OrelseExpressionCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<OrelseExpressionInfo>));
-    orelse_expressions_ = new (mem) DynamicArray<OrelseExpressionInfo>(arena_);
+    if (mem == NULL) plat_abort();
+   orelse_expressions_ = new (mem) DynamicArray<OrelseExpressionInfo>(arena_);
 }
 
 void OrelseExpressionCatalogue::addOrelseExpression(SourceLocation loc, const char* context_type,

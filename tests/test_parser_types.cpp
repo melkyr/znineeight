@@ -3,7 +3,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_ParsePrimitiveType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("i32", arena, interner);
@@ -19,7 +19,7 @@ TEST_FUNC(Parser_ParsePrimitiveType) {
 }
 
 TEST_FUNC(Parser_ParsePointerType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("*u8", arena, interner);
@@ -39,7 +39,7 @@ TEST_FUNC(Parser_ParsePointerType) {
 }
 
 TEST_FUNC(Parser_ParseSliceType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[]bool", arena, interner);
@@ -60,7 +60,7 @@ TEST_FUNC(Parser_ParseSliceType) {
 }
 
 TEST_FUNC(Parser_ParseNestedPointerType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("**i32", arena, interner);
@@ -84,7 +84,7 @@ TEST_FUNC(Parser_ParseNestedPointerType) {
 }
 
 TEST_FUNC(Parser_ParseSliceOfPointers) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[]*i32", arena, interner);
@@ -109,7 +109,7 @@ TEST_FUNC(Parser_ParseSliceOfPointers) {
 }
 
 TEST_FUNC(Parser_ParseFixedSizeArray) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("[8]u8", arena, interner);

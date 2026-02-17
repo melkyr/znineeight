@@ -4,7 +4,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(Assignment_ExactNumericMatch) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -17,7 +17,7 @@ TEST_FUNC(Assignment_ExactNumericMatch) {
 }
 
 TEST_FUNC(Assignment_NumericWidening_Fails) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -33,7 +33,7 @@ TEST_FUNC(Assignment_NumericWidening_Fails) {
 }
 
 TEST_FUNC(Assignment_NullToPointer_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -47,7 +47,7 @@ TEST_FUNC(Assignment_NullToPointer_Valid) {
 }
 
 TEST_FUNC(Assignment_PointerExactMatch_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -60,7 +60,7 @@ TEST_FUNC(Assignment_PointerExactMatch_Valid) {
 }
 
 TEST_FUNC(Assignment_PointerToVoidPointer_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -74,7 +74,7 @@ TEST_FUNC(Assignment_PointerToVoidPointer_Valid) {
 }
 
 TEST_FUNC(Assignment_VoidPointerToPointer_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -89,7 +89,7 @@ TEST_FUNC(Assignment_VoidPointerToPointer_Valid) {
 }
 
 TEST_FUNC(Assignment_PointerToConstPointer_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -103,7 +103,7 @@ TEST_FUNC(Assignment_PointerToConstPointer_Valid) {
 }
 
 TEST_FUNC(Assignment_ConstPointerToPointer_Invalid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -119,7 +119,7 @@ TEST_FUNC(Assignment_ConstPointerToPointer_Invalid) {
 }
 
 TEST_FUNC(Assignment_IncompatiblePointers_Invalid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
