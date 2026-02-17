@@ -30,6 +30,7 @@
 #include "integration/if_statement_tests.cpp"
 #include "integration/import_tests.cpp"
 #include "integration/literal_tests.cpp"
+#include "integration/multi_module_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
 #include "integration/rejection_tests.cpp"

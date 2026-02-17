@@ -178,7 +178,10 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the AST for the entry module.
-    2.  **Import Resolution (Task 214):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution relative to the importing module's directory.
+- **Import Resolution (Task 214):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution relative to the importing module's directory. It uses normalized, interned filenames for consistent module caching.
+- **Modular Semantic Analysis (Task 215):** Compilation passes are executed unit-wide but with module-level granularity:
+    - **Context Switching:** The `CompilationUnit` iterates through all loaded modules for each pass (Type Checking, C89 Validation, Static Analyzers).
+    - **Isolated Context:** Each module maintains its own `SymbolTable` and feature catalogues (Generic, ErrorSet, etc.) to prevent cross-module state leakage while allowing qualified symbol resolution.
     3.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
     3.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0. This is where descriptive error messages for unsupported features are reported.
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.

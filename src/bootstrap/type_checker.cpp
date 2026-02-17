@@ -1645,27 +1645,42 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         // Module member access
-        const char* mod_name = NULL;
+        Module* target_mod = NULL;
         if (base_type->kind == TYPE_MODULE) {
-            mod_name = base_type->as.module.name;
-        } else if (node->base->type == NODE_IDENTIFIER) {
-            mod_name = node->base->as.identifier.name;
+            target_mod = (Module*)base_type->as.module.module_ptr;
         }
 
-        if (mod_name) {
-            Symbol* sym = unit.getSymbolTable().lookupWithModule(mod_name, node->field_name);
+        if (target_mod && target_mod->symbols) {
+            Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {
                 node->symbol = sym;
-                if (sym->symbol_type) return sym->symbol_type;
+                // If it's a constant type alias, we might need to resolve it
+                if (!sym->symbol_type && sym->details) {
+                    // This is tricky: we are in Module A, but we need to resolve a symbol in Module B.
+                    // We should switch context temporarily?
+                    // For now, assume it's already resolved or resolve it in target module context.
+                    const char* saved_module = unit.getCurrentModule();
+                    unit.setCurrentModule(target_mod->name);
+                    TypeChecker target_checker(unit);
+                    if (sym->kind == SYMBOL_FUNCTION) {
+                        target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
+                    } else if (sym->kind == SYMBOL_VARIABLE) {
+                        target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                    }
+                    unit.setCurrentModule(saved_module);
+                }
 
-                if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) {
-                    return sym->symbol_type;
-                }
-                if (sym->kind == SYMBOL_FUNCTION || sym->kind == SYMBOL_VARIABLE) {
-                    return sym->symbol_type;
-                }
+                if (sym->symbol_type) return sym->symbol_type;
             }
+        } else if (base_type->kind == TYPE_MODULE) {
+             // Fallback for legacy lookup if module_ptr is not set (e.g. in some tests)
+             Symbol* sym = unit.getSymbolTable().lookupWithModule(base_type->as.module.name, node->field_name);
+             if (sym) {
+                 node->symbol = sym;
+                 return sym->symbol_type;
+             }
         }
+
         return get_g_type_anytype();
     }
 
@@ -2713,22 +2728,35 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 }
 
 ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry) {
-    // Guard 1: Must be identifier
-    if (call->callee->type != NODE_IDENTIFIER) {
-        entry.call_type = CALL_INDIRECT;
-        return INDIRECT_REJECTED;
+    Symbol* sym = NULL;
+
+    if (call->callee->type == NODE_IDENTIFIER) {
+        const char* callee_name = call->callee->as.identifier.name;
+
+        // Guard 2: Built-in functions
+        if (callee_name[0] == '@') {
+            return BUILTIN_REJECTED;
+        }
+
+        // Guard 3: Symbol must exist
+        sym = unit.getSymbolTable().lookup(callee_name);
+    } else if (call->callee->type == NODE_MEMBER_ACCESS) {
+        // Module member access: utils.add()
+        Type* base_type = visit(call->callee->as.member_access->base);
+        if (base_type && base_type->kind == TYPE_MODULE) {
+            Module* target_mod = (Module*)base_type->as.module.module_ptr;
+            if (target_mod && target_mod->symbols) {
+                sym = target_mod->symbols->lookup(call->callee->as.member_access->field_name);
+            }
+        }
     }
 
-    const char* callee_name = call->callee->as.identifier.name;
-
-    // Guard 2: Built-in functions
-    if (callee_name[0] == '@') {
-        return BUILTIN_REJECTED;
-    }
-
-    // Guard 3: Symbol must exist
-    Symbol* sym = unit.getSymbolTable().lookup(callee_name);
+    // Guard 1: Must be identifier or module member access
     if (!sym) {
+        if (call->callee->type != NODE_IDENTIFIER && call->callee->type != NODE_MEMBER_ACCESS) {
+            entry.call_type = CALL_INDIRECT;
+            return INDIRECT_REJECTED;
+        }
         return UNRESOLVED_SYMBOL;
     }
 
@@ -3128,23 +3156,10 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
 }
 
 Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
-    const char* import_path = node->module_name;
-    const char* last_slash = plat_strrchr(import_path, '/');
-    const char* last_backslash = plat_strrchr(import_path, '\\');
-    const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
-    const char* basename = sep ? sep + 1 : import_path;
-
-    char mod_name[256];
-    size_t blen = plat_strlen(basename);
-    if (blen >= sizeof(mod_name)) blen = sizeof(mod_name) - 1;
-    plat_strncpy(mod_name, basename, blen);
-    mod_name[blen] = '\0';
-
-    char* dot = plat_strrchr(mod_name, '.');
-    if (dot) *dot = '\0';
-
-    const char* interned_mod_name = unit.getStringInterner().intern(mod_name);
-    return createModuleType(unit.getArena(), interned_mod_name);
+    const char* name = node->module_ptr ? node->module_ptr->name : node->module_name;
+    Type* mod_type = createModuleType(unit.getArena(), name);
+    mod_type->as.module.module_ptr = node->module_ptr;
+    return mod_type;
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {

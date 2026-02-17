@@ -1,13 +1,26 @@
 #include "source_manager.hpp"
 
 u32 SourceManager::addFile(const char* filename, const char* content, size_t size) {
+    // Check cache (filename is assumed to be interned and normalized by caller)
+    for (size_t i = 0; i < cache.length(); ++i) {
+        if (cache[i].filename == filename) {
+            return cache[i].file_id;
+        }
+    }
+
     SourceFile file;
     file.filename = filename;
     file.content = content;
     file.size = size;
     files.append(file);
-    // The file_id is the index in the dynamic array.
-    return files.length() - 1;
+    u32 file_id = files.length() - 1;
+
+    FileCacheEntry entry;
+    entry.filename = filename;
+    entry.file_id = file_id;
+    cache.append(entry);
+
+    return file_id;
 }
 
 SourceLocation SourceManager::getLocation(u32 file_id, size_t offset) {

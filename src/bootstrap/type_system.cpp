@@ -54,6 +54,7 @@ Type* createModuleType(ArenaAllocator& arena, const char* name) {
     new_type->size = 0;
     new_type->alignment = 0;
     new_type->as.module.name = name;
+    new_type->as.module.module_ptr = NULL;
     return new_type;
 }
 

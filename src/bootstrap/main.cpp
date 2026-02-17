@@ -62,8 +62,6 @@ int main(int argc, char* argv[]) {
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
 
-        unit.injectRuntimeSymbols();
-
         CompilationOptions opts;
         opts.enable_double_free_analysis = true;
         opts.enable_null_pointer_analysis = true;
