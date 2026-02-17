@@ -39,6 +39,7 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
     return true;
 }
 
+#ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
         plat_print_info("Executing self-test...\n");
@@ -181,3 +182,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+#endif

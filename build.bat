@@ -1,7 +1,7 @@
 @echo off
 REM Builds the main RetroZig bootstrap compiler.
 echo Building zig0.exe...
-cl.exe /nologo /EHsc /W4 /DDEBUG /Isrc/include src/bootstrap/*.cpp /Fe:zig0.exe
+cl /nologo /Za /W3 /Isrc/include src/bootstrap/bootstrap_all.cpp /Fezig0.exe
 
 if errorlevel 1 (
     echo Build failed!
