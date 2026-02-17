@@ -178,7 +178,12 @@ filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the AST for the entry module.
-- **Import Resolution (Task 214):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution relative to the importing module's directory. It uses normalized, interned filenames for consistent module caching.
+- **Import Resolution (Task 214 & 216):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution.
+    - **Search Order:**
+        1.  Directory of the importing file.
+        2.  Directories specified via `-I` command-line flags (searched in the order they were provided).
+        3.  Default `lib/` directory located relative to the compiler executable.
+    - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
 - **Modular Semantic Analysis (Task 215):** Compilation passes are executed unit-wide but with module-level granularity:
     - **Context Switching:** The `CompilationUnit` iterates through all loaded modules for each pass (Type Checking, C89 Validation, Static Analyzers).
     - **Isolated Context:** Each module maintains its own `SymbolTable` and feature catalogues (Generic, ErrorSet, etc.) to prevent cross-module state leakage while allowing qualified symbol resolution.

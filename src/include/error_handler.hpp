@@ -64,7 +64,8 @@ enum ErrorCode {
 
     // System Errors (5000-5999)
     ERR_OUT_OF_MEMORY = 5000,
-    ERR_INTERNAL_ERROR = 5001
+    ERR_INTERNAL_ERROR = 5001,
+    ERR_FILE_NOT_FOUND = 5002
 };
 
 /**
