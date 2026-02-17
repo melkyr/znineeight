@@ -53,6 +53,7 @@ test_runner_batch*
 
 # Temporary binaries
 test_multi_file
+tests/batch_runner_*.cpp
 
 # Generated C89 files
 temp_codegen_*.c

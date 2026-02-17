@@ -570,7 +570,7 @@ To prevent stack overflows when parsing deeply nested or complex expressions, th
 
 This feature is a critical safeguard for the compiler's stability, especially given the limited resources of the target environment.
 
-## 5. Type Expression Node Types
+## 6. Type Expression Node Types
 
 These nodes are used to represent types within the AST, such as in variable declarations or function return types.
 
@@ -623,7 +623,7 @@ Represents both fixed-size arrays and dynamic slices.
     };
     ```
 
-## 6. Statement Node Types
+## 7. Statement Node Types
 
 These nodes represent statements, which are instructions that perform actions.
 
@@ -878,7 +878,7 @@ The `parseErrDeferStatement` function handles the `errdefer` statement. It adher
 - It then requires a subsequent statement. Consistent with `defer`, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
-## 7. Declaration Node Types
+## 8. Declaration Node Types
 
 These nodes represent declarations, which introduce new named entities like variables and functions into the program.
 
@@ -974,7 +974,7 @@ Represents a single parameter within a function's parameter list. This node is n
     };
     ```
 
-## 8. Control Flow Node Types
+## 9. Control Flow Node Types
 
 These nodes represent control flow constructs like loops and switches.
 
@@ -1036,7 +1036,7 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
     };
     ```
 
-## 9. Container Declaration Node Types
+## 10. Container Declaration Node Types
 
 These nodes represent container types like structs, unions, and enums.
 
@@ -1149,7 +1149,7 @@ The `parseEnumDeclaration` function handles anonymous enum literals. It is invok
 - It correctly handles empty enums (`{}`).
 - Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
 
-## 10. Error Handling Node Types
+## 11. Error Handling Node Types
 
 These nodes represent Zig's error handling mechanisms.
 
@@ -1259,7 +1259,7 @@ Represents an `errdefer` statement, which is executed only if the function retur
     };
     ```
 
-## 11. Error Set Definitions
+## 12. Error Set Definitions
 
 ### Syntax
 ```zig
@@ -1302,7 +1302,7 @@ The error set merge operator `||` is parsed within `parsePrecedenceExpr` (or rec
 ### Detection and Cataloguing
 Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. This allows for documentation and analysis of all errors used in the codebase, even though they are eventually rejected by the `C89FeatureValidator`.
 
-## 12. Try Expression Detection (Task 143)
+## 13. Try Expression Detection (Task 143)
 
 ### AST Node
 ```cpp
@@ -1329,7 +1329,7 @@ Each try expression is recorded in the `TryExpressionCatalogue` with:
 - **Result type**: The type after unwrapping (e.g., `i32`).
 - **Nesting depth**: Tracking how deep the `try` is nested within other `try` expressions.
 
-## 13. Catch Expression Detection (Task 144)
+## 14. Catch Expression Detection (Task 144)
 
 ### AST Node
 ```cpp
@@ -1350,7 +1350,7 @@ Catch expressions are catalogued in `CatchExpressionCatalogue` with:
 - **Chaining info**: Whether it is part of a chain (`a catch b catch c`) and its index in that chain.
 - **Error parameter**: Name of the captured error variable, if any.
 
-## 14. Orelse Expression Detection
+## 15. Orelse Expression Detection
 
 ### AST Node
 ```cpp
@@ -1368,7 +1368,7 @@ Orelse expressions are catalogued in `OrelseExpressionCatalogue` with:
 - **Right type**: Type of the fallback expression.
 - **Result type**: Resolved type after the orelse operation.
 
-## 15. Import Statements
+## 16. Import Statements
 
 ### Syntax
 ```zig
@@ -1391,7 +1391,7 @@ The compiler resolves `@import` paths using the following search order:
 2.  **Include Paths (-I)**: Directories specified via the `-I` command-line flag, in the order they were provided.
 3.  **Default Library Path**: A `lib/` directory located in the same directory as the compiler executable (`zig0.exe`).
 
-## 16. Error-Returning Function Detection (Task 142)
+## 17. Error-Returning Function Detection (Task 142)
 
 ### Detection Criteria
 A function is catalogued as error-returning when its resolved return type is:
@@ -1414,7 +1414,7 @@ During the `C89FeatureValidator` pass (which now runs AFTER `TypeChecker`):
 `C89FeatureValidator` rejects all catalogued functions with specific diagnostics:
 - "Function 'X' returns error type 'Y' (non-C89)"
 
-## 17. Compile-Time Operation Node Types
+## 18. Compile-Time Operation Node Types
 
 These nodes are related to compile-time execution and evaluation.
 
@@ -1442,7 +1442,7 @@ The `parseComptimeBlock` function is responsible for parsing a `comptime` block.
 - It requires that the block contains exactly one expression.
 - Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.
 
-## 13. Type Expression Parsing
+## 19. Type Expression Parsing
 
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
 
@@ -1465,7 +1465,7 @@ The parser will abort with an error in the following cases:
 - An array's size is not an integer literal.
 - The closing `]` is missing in an array type declaration.
 
-## 14. Parser Error Handling
+## 20. Parser Error Handling
 
 The parser's error handling strategy is designed for simplicity and adherence to the strict technical constraints of the project.
 
@@ -1482,7 +1482,7 @@ After printing the message (on Windows), the function **always** calls `abort()`
 
 This approach avoids forbidden standard library dependencies like `<cstdio>` (for `fprintf`) while still providing useful diagnostic messages on the primary development and target platform.
 
-## 15. Parser Lifetime and Memory Safety
+## 21. Parser Lifetime and Memory Safety
 
 The `Parser` is designed with clear ownership semantics to ensure memory safety and prevent unintended side effects.
 
@@ -1494,7 +1494,7 @@ The `Parser` is designed with clear ownership semantics to ensure memory safety 
 
 This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
 
-## 16. Lifetime Analysis Phase
+## 22. Lifetime Analysis Phase
 
 The Lifetime Analysis phase is a critical semantic analysis pass that follows the Type Checker. Its purpose is to identify memory safety issues at compile-time, specifically dangling pointers created by returning pointers to local (stack-allocated) variables.
 
@@ -1512,7 +1512,7 @@ The Lifetime Analysis phase is a critical semantic analysis pass that follows th
 ### Implementation Strategy
 The `LifetimeAnalyzer` uses a visitor pattern to traverse the AST. It maintains a list of `PointerAssignment` records for the current function to track the provenance of local pointer variables. It reports `ERR_LIFETIME_VIOLATION` through the `ErrorHandler`, allowing compilation to continue and identify multiple issues in a single pass.
 
-## 17. Double Free Analysis Phase
+## 23. Double Free Analysis Phase
 
 The Double Free Analysis phase (Task 127 & 128) detects memory safety issues related to the `ArenaAllocator` interface (`arena_alloc`, `arena_free`).
 
@@ -1568,7 +1568,7 @@ To minimize false negatives while maintaining simplicity, the analyzer flags ris
 -   **Aliasing Design Choice**: In the bootstrap phase, the compiler **does not track aliases** (multiple variables pointing to the same allocation). Assigning an allocated pointer to another variable transitions the target variable to `AS_UNKNOWN`. This avoids the complexity of full pointer alias analysis while still catching basic mistakes on the original tracked pointer.
 -   **Function Call Conservatism**: Passing a pointer to any function (except `arena_free`) marks it as `AS_TRANSFERRED`. This stops tracking for that pointer to avoid false positives, instead issuing a `WARN_TRANSFERRED_MEMORY` warning to the developer.
 
-## 18. Non-C89 Type Detection
+## 24. Non-C89 Type Detection
 
 ### Error Union Types (!T)
 The parser recognizes `!` as an error union type operator:
@@ -1587,7 +1587,7 @@ Both validators traverse type expressions recursively:
 1. C89FeatureValidator: Reports fatal errors
 2. TypeChecker: Logs locations for documentation
 
-## 19. Generic Function Detection (Tasks 156-160)
+## 25. Generic Function Detection (Tasks 156-160)
 
 Zig's compile-time generic functions (often called "templates" in older documentation) are detected and catalogued during semantic analysis, then subsequently rejected by the `C89FeatureValidator` as non-C89 compatible features. This process fulfills Tasks 156 through 160 by identifying, tracking, and validating the safety (via rejection) of generic instantiations.
 
@@ -1620,19 +1620,30 @@ All generic function calls are rejected by the `C89FeatureValidator` because:
 1.  Standard C89 does not support compile-time type parameters or generics.
 2.  Zig's `comptime` execution model has no direct equivalent in the target legacy environments.
 
-## 21. Multi-File Considerations for Milestone 6
+## 26. Multi-File Considerations for Milestone 6
 
 The current implementation assumes single-file compilation but includes data structures designed for modular compilation in Milestone 6.
 
 ### 21.1 Module Field in ASTNode
 Every `ASTNode` stores a `module` field, which is a pointer to the interned logical name of the module (e.g., "main", "std"). This field is populated by the `Parser` using the module name provided by the `CompilationUnit`.
 
-### 21.2 Design for Milestone 6
-- **Import System**: `@import` will be processed during parsing to pull in external declarations.
-- **Catalogue Merging**: Specialized catalogues (e.g., `GenericCatalogue`) support merging to track cross-module feature usage.
-- See the [multi-file considerations](../reference/multi_file_considerations.md) and [compilation model](../reference/compilation_model.md) for more details.
+### 21.2 Multi-Module Pipeline (Milestone 6)
+The `CompilationUnit` orchestrates a recursive, multi-pass pipeline to support multiple modules linked via `@import`.
 
-## 20. Parser Path for Non-C89 Features (Task 150)
+1.  **Recursive Import Resolution**: Starting from the main file, the compiler discovers all `@import` statements. It resolves paths, detects circular dependencies, and loads unique source files into `Module` objects.
+2.  **Per-Module Isolation**: Each module maintains its own `SymbolTable` and feature catalogues. This ensures that private symbols do not leak between modules.
+3.  **Cross-Module Symbol Lookup**: The `SymbolTable` supports qualified lookups (e.g., `std.debug.print`) by searching the target module's exportable symbols.
+4.  **Multi-Pass Processing**: The compiler executes each semantic pass (Type Checking, Validation, etc.) across all loaded modules sequentially, ensuring global consistency before code generation.
+
+### 21.3 Import Path Resolution (Task 216)
+The compiler searches for imported files in the following order:
+1.  **Relative**: The directory of the importing file.
+2.  **Include Flags**: Directories specified via `-I <path>` in the order they were provided.
+3.  **Standard Library**: A default `lib/` directory located relative to the compiler executable.
+
+All filenames are normalized and interned to ensure that each unique file is only parsed once.
+
+## 27. Parser Path for Non-C89 Features (Task 150)
 
 To support accurate diagnostics and future translation planning, the RetroZig parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
 
@@ -1648,7 +1659,7 @@ To support accurate diagnostics and future translation planning, the RetroZig pa
 ### 20.3 Rejection via Validation
 The `C89FeatureValidator` ensures that none of these modern constructs proceed to the code generation phase. It recursively traverses the AST and issues fatal errors for any node that represents a non-C89 feature or has an associated error-related type.
 
-## 21. Name Mangling for C89 Compatibility
+## 28. Name Mangling for C89 Compatibility
 
 When a function is declared, the `TypeChecker` computes a mangled name:
 - **Non-generic functions**: same name (if valid) or prefixed/sanitized.
@@ -1660,7 +1671,7 @@ Mangled: `max__i32` (if i32 is the only type parameter).
 
 This mangled name is stored in the `Symbol` table and used by the code generator and catalogues.
 
-## 22. Call Site Resolution (Tasks 163 & 165)
+## 29. Call Site Resolution (Tasks 163 & 165)
 
 During type checking, every function call is recorded in a `CallSiteLookupTable` owned by the `CompilationUnit`. This table serves as a central registry for mapping call nodes to their resolved C89-compatible mangled names, which is essential for correctly emitting code in later phases.
 
@@ -1688,7 +1699,7 @@ Example: `foo()` → looks up `foo` → resolves signature → records `foo` as 
 | **Recursive** | Resolved using the current function's `mangled_name`. | Recorded & Resolved |
 | **Indirect** | Detected and catalogued for future translation. Rejected in bootstrap. | Recorded & Catalogued |
 
-## 23. Indirect Function Calls (Task 166)
+## 30. Indirect Function Calls (Task 166)
 
 ### Detection Patterns
 The compiler identifies several patterns that result in an indirect function call (using a function pointer at the machine level):
@@ -1715,7 +1726,7 @@ While function pointers are technically C89 compatible, they are strictly reject
 - **Timing**: Call sites are registered during the `TypeChecker::visitFunctionCall` pass.
 - **Validation**: At the end of the compilation pipeline, any unresolved call sites are reported as diagnostics to assist in debugging and feature implementation.
 
-## 24. Recursive Call Resolution (Task 167)
+## 31. Recursive Call Resolution (Task 167)
 
 ### 24.1 Detection Mechanism
 The `TypeChecker` identifies recursive function calls during the `resolveCallSite` process:
@@ -1740,7 +1751,7 @@ Recursive function calls are fully C89-compatible and are not rejected by the `C
 - **Generic Functions**: Recursive calls within generic functions use the specialized mangled name of the specific instantiation from the `GenericCatalogue`.
 - **Consistency**: The resolution logic is unified for all call types, ensuring that recursive calls follow the same ABI and naming conventions as regular calls.
 
-## 25. Call Resolution Validation Strategy (Task 168)
+## 32. Call Resolution Validation Strategy (Task 168)
 
 ### 25.1 Validation Test Suite
 The compiler includes comprehensive validation for call resolution covering:
@@ -1793,7 +1804,7 @@ A review of the Zig language specification has identified several language featu
 *   **Compile-Time Operations:**
     *   `ComptimeBlockNode`: For `comptime` blocks. (DONE)
 
-## 26. Function Call Integration Testing (Task 174)
+## 33. Function Call Integration Testing (Task 174)
 
 Task 174 introduced comprehensive integration testing for function calls, verifying the entire pipeline from Lexer to `CallSiteLookupTable`.
 
