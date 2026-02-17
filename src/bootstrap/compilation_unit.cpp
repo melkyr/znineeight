@@ -122,18 +122,18 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       type_interner_(arena),
       interner_(interner),
       source_manager_(arena),
-      symbol_table_(arena),
+      default_symbols_(arena),
       error_handler_(source_manager_, arena),
       token_supplier_(source_manager_, interner_, token_arena_),
-      error_set_catalogue_(arena),
-      generic_catalogue_(arena),
-      error_function_catalogue_(arena),
-      try_expression_catalogue_(arena),
-      catch_expression_catalogue_(arena),
-      orelse_expression_catalogue_(arena),
-      extraction_analysis_catalogue_(arena),
-      errdefer_catalogue_(arena),
-      indirect_call_catalogue_(arena),
+      default_error_set_catalogue_(arena),
+      default_generic_catalogue_(arena),
+      default_error_function_catalogue_(arena),
+      default_try_expression_catalogue_(arena),
+      default_catch_expression_catalogue_(arena),
+      default_orelse_expression_catalogue_(arena),
+      default_extraction_analysis_catalogue_(arena),
+      default_errdefer_catalogue_(arena),
+      default_indirect_call_catalogue_(arena),
       name_mangler_(arena, interner),
       call_site_table_(arena),
       options_(),
@@ -148,7 +148,18 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
-    u32 file_id = source_manager_.addFile(filename, source, plat_strlen(source));
+    char norm_path[1024];
+    plat_strncpy(norm_path, filename, sizeof(norm_path) - 1);
+    norm_path[sizeof(norm_path) - 1] = '\0';
+    normalize_path(norm_path);
+    const char* interned_filename = interner_.intern(norm_path);
+
+    Module* existing = getModuleByFilename(interned_filename);
+    if (existing) {
+        return existing->file_id;
+    }
+
+    u32 file_id = source_manager_.addFile(interned_filename, source, plat_strlen(source));
 
     // Derive module name: "foo.zig" -> "foo"
     const char* slash = plat_strrchr(filename, '/');
@@ -168,11 +179,23 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     char* dot = plat_strrchr(module_name_buf, '.');
     if (dot) *dot = '\0';
 
-    if (module_name_buf[0] == '\0') {
-        setCurrentModule("main");
-    } else {
-        setCurrentModule(module_name_buf);
-    }
+    const char* mod_name = (module_name_buf[0] == '\0') ? "main" : module_name_buf;
+    setCurrentModule(mod_name);
+
+    // Create module early
+    void* mod_mem = arena_.alloc(sizeof(Module));
+    Module* mod = new (mod_mem) Module(arena_);
+    mod->name = current_module_;
+    mod->filename = interned_filename;
+    mod->file_id = file_id;
+
+    // Create per-module symbol table
+    void* sym_mem = arena_.alloc(sizeof(SymbolTable));
+    mod->symbols = new (sym_mem) SymbolTable(arena_);
+    mod->symbols->setCurrentModule(mod->name);
+    injectRuntimeSymbols(*mod->symbols);
+
+    modules_.append(mod);
 
     return file_id;
 }
@@ -184,16 +207,35 @@ Parser* CompilationUnit::createParser(u32 file_id) {
         return NULL; // Will not be reached
     }
 
+    Module* mod = NULL;
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->file_id == file_id) {
+            mod = modules_[i];
+            break;
+        }
+    }
+
+    if (!mod) {
+        fatalError("CompilationUnit::createParser: Module not found for file_id.");
+        return NULL;
+    }
+
     void* mem = arena_.alloc(sizeof(Parser));
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, &symbol_table_, &error_set_catalogue_, &generic_catalogue_, &type_interner_, current_module_);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, mod->name);
 }
 
 /**
- * @brief Returns the symbol table for this compilation unit.
+ * @brief Returns the symbol table for the specified module or the current one.
  * @return A reference to the SymbolTable.
  */
-SymbolTable& CompilationUnit::getSymbolTable() {
-    return symbol_table_;
+SymbolTable& CompilationUnit::getSymbolTable(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod && mod->symbols) {
+        return *mod->symbols;
+    }
+    // Return default_symbols_ if no module is found, for backward compatibility in tests
+    return default_symbols_;
 }
 
 ErrorHandler& CompilationUnit::getErrorHandler() {
@@ -208,40 +250,67 @@ SourceManager& CompilationUnit::getSourceManager() {
     return source_manager_;
 }
 
-ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue() {
-    return error_set_catalogue_;
+ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->error_set_catalogue;
+    return default_error_set_catalogue_;
 }
 
-GenericCatalogue& CompilationUnit::getGenericCatalogue() {
-    return generic_catalogue_;
+GenericCatalogue& CompilationUnit::getGenericCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->generic_catalogue;
+    return default_generic_catalogue_;
 }
 
-ErrorFunctionCatalogue& CompilationUnit::getErrorFunctionCatalogue() {
-    return error_function_catalogue_;
+ErrorFunctionCatalogue& CompilationUnit::getErrorFunctionCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->error_function_catalogue;
+    return default_error_function_catalogue_;
 }
 
-TryExpressionCatalogue& CompilationUnit::getTryExpressionCatalogue() {
-    return try_expression_catalogue_;
+TryExpressionCatalogue& CompilationUnit::getTryExpressionCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->try_expression_catalogue;
+    return default_try_expression_catalogue_;
 }
 
-CatchExpressionCatalogue& CompilationUnit::getCatchExpressionCatalogue() {
-    return catch_expression_catalogue_;
+CatchExpressionCatalogue& CompilationUnit::getCatchExpressionCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->catch_expression_catalogue;
+    return default_catch_expression_catalogue_;
 }
 
-OrelseExpressionCatalogue& CompilationUnit::getOrelseExpressionCatalogue() {
-    return orelse_expression_catalogue_;
+OrelseExpressionCatalogue& CompilationUnit::getOrelseExpressionCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->orelse_expression_catalogue;
+    return default_orelse_expression_catalogue_;
 }
 
-ExtractionAnalysisCatalogue& CompilationUnit::getExtractionAnalysisCatalogue() {
-    return extraction_analysis_catalogue_;
+ExtractionAnalysisCatalogue& CompilationUnit::getExtractionAnalysisCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->extraction_analysis_catalogue;
+    return default_extraction_analysis_catalogue_;
 }
 
-ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue() {
-    return errdefer_catalogue_;
+ErrDeferCatalogue& CompilationUnit::getErrDeferCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->errdefer_catalogue;
+    return default_errdefer_catalogue_;
 }
 
-IndirectCallCatalogue& CompilationUnit::getIndirectCallCatalogue() {
-    return indirect_call_catalogue_;
+IndirectCallCatalogue& CompilationUnit::getIndirectCallCatalogue(const char* module_name) {
+    const char* target = module_name ? module_name : current_module_;
+    Module* mod = getModule(target);
+    if (mod) return mod->indirect_call_catalogue;
+    return default_indirect_call_catalogue_;
 }
 
 NameMangler& CompilationUnit::getNameMangler() {
@@ -270,12 +339,20 @@ const char* CompilationUnit::getCurrentModule() const {
 
 void CompilationUnit::setCurrentModule(const char* module_name) {
     current_module_ = interner_.intern(module_name);
-    symbol_table_.setCurrentModule(current_module_);
 }
 
 Module* CompilationUnit::getModule(const char* name) {
     for (size_t i = 0; i < modules_.length(); ++i) {
         if (plat_strcmp(modules_[i]->name, name) == 0) {
+            return modules_[i];
+        }
+    }
+    return NULL;
+}
+
+Module* CompilationUnit::getModuleByFilename(const char* filename) {
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (plat_strcmp(modules_[i]->filename, filename) == 0) {
             return modules_[i];
         }
     }
@@ -295,6 +372,10 @@ void CompilationUnit::setOptions(const CompilationOptions& options) {
 }
 
 void CompilationUnit::injectRuntimeSymbols() {
+    injectRuntimeSymbols(getSymbolTable());
+}
+
+void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // Inject primitive types as SYMBOL_TYPE
     const char* primitives[] = {
         "void", "bool", "i8", "i16", "i32", "i64",
@@ -311,7 +392,7 @@ void CompilationUnit::injectRuntimeSymbols() {
                 .ofType(SYMBOL_TYPE)
                 .withType(t)
                 .build();
-            symbol_table_.insert(sym);
+            table.insert(sym);
         }
     }
 
@@ -324,7 +405,7 @@ void CompilationUnit::injectRuntimeSymbols() {
         .ofType(SYMBOL_TYPE)
         .withType(arena_type)
         .build();
-    symbol_table_.insert(sym_arena);
+    table.insert(sym_arena);
 
     Type* arena_ptr_type = createPointerType(arena_, arena_type, false, &type_interner_);
 
@@ -342,7 +423,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // arena_alloc(a: *Arena, size: usize) -> *void
@@ -361,7 +442,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // arena_reset(a: *Arena) -> void
@@ -378,7 +459,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // arena_destroy(a: *Arena) -> void
@@ -395,7 +476,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // zig_default_arena: *Arena
@@ -408,7 +489,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .withFlags(SYMBOL_FLAG_GLOBAL)
             .withType(arena_ptr_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // Backward compatibility: arena_alloc_default(size: usize) -> *void
@@ -426,7 +507,7 @@ void CompilationUnit::injectRuntimeSymbols() {
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
             .build();
-        symbol_table_.insert(sym);
+        table.insert(sym);
     }
 
     // Deprecated: arena_free(ptr: *void) -> void
@@ -444,10 +525,22 @@ void CompilationUnit::injectRuntimeSymbols() {
         .ofType(SYMBOL_FUNCTION)
         .withType(fn_type2)
         .build();
-    symbol_table_.insert(sym_free);
+    table.insert(sym_free);
 }
 
 void CompilationUnit::validateErrorHandlingRules() {
+    size_t total_try = default_try_expression_catalogue_.count();
+    size_t total_catch = default_catch_expression_catalogue_.count();
+    size_t total_orelse = default_orelse_expression_catalogue_.count();
+    size_t total_errdefer = default_errdefer_catalogue_.count();
+
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        total_try += modules_[i]->try_expression_catalogue.count();
+        total_catch += modules_[i]->catch_expression_catalogue.count();
+        total_orelse += modules_[i]->orelse_expression_catalogue.count();
+        total_errdefer += modules_[i]->errdefer_catalogue.count();
+    }
+
     char buffer[512];
     char* cur = buffer;
     size_t rem = sizeof(buffer);
@@ -455,19 +548,19 @@ void CompilationUnit::validateErrorHandlingRules() {
     safe_append(cur, rem, "Found ");
     char num_buf[21];
 
-    plat_i64_to_string(try_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(total_try, num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " try expressions, ");
 
-    plat_i64_to_string(catch_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(total_catch, num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " catch expressions, ");
 
-    plat_i64_to_string(orelse_expression_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(total_orelse, num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " orelse expressions, ");
 
-    plat_i64_to_string(errdefer_catalogue_.count(), num_buf, sizeof(num_buf));
+    plat_i64_to_string(total_errdefer, num_buf, sizeof(num_buf));
     safe_append(cur, rem, num_buf);
     safe_append(cur, rem, " errdefer statements");
 
@@ -496,15 +589,28 @@ size_t CompilationUnit::getTypeCount() const {
 
 size_t CompilationUnit::getTotalCatalogueEntries() const {
     size_t total = 0;
-    total += error_set_catalogue_.count();
-    total += generic_catalogue_.count();
-    total += error_function_catalogue_.count();
-    total += try_expression_catalogue_.count();
-    total += catch_expression_catalogue_.count();
-    total += orelse_expression_catalogue_.count();
-    total += extraction_analysis_catalogue_.count();
-    total += errdefer_catalogue_.count();
-    total += indirect_call_catalogue_.count();
+    total += default_error_set_catalogue_.count();
+    total += default_generic_catalogue_.count();
+    total += default_error_function_catalogue_.count();
+    total += default_try_expression_catalogue_.count();
+    total += default_catch_expression_catalogue_.count();
+    total += default_orelse_expression_catalogue_.count();
+    total += default_extraction_analysis_catalogue_.count();
+    total += default_errdefer_catalogue_.count();
+    total += default_indirect_call_catalogue_.count();
+
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        total += m->error_set_catalogue.count();
+        total += m->generic_catalogue.count();
+        total += m->error_function_catalogue.count();
+        total += m->try_expression_catalogue.count();
+        total += m->catch_expression_catalogue.count();
+        total += m->orelse_expression_catalogue.count();
+        total += m->extraction_analysis_catalogue.count();
+        total += m->errdefer_catalogue.count();
+        total += m->indirect_call_catalogue.count();
+    }
     return total;
 }
 
@@ -569,14 +675,20 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     last_ast_ = ast;
     if (!ast) return false;
 
-    // Register initial module
-    void* mod_mem = arena_.alloc(sizeof(Module));
-    Module* mod = new (mod_mem) Module(arena_);
-    mod->name = current_module_;
-    mod->filename = source_manager_.getFile(file_id)->filename;
+    // Find the module created in addSource
+    Module* mod = NULL;
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->file_id == file_id) {
+            mod = modules_[i];
+            break;
+        }
+    }
+
+    if (!mod) {
+        fatalError("CompilationUnit::performFullPipeline: Module not found.");
+        return false;
+    }
     mod->ast_root = ast;
-    mod->file_id = file_id;
-    modules_.append(mod);
 
     // Collect imports from initial file
     collectImports(ast, mod);
@@ -594,10 +706,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.begin_phase("Name Collision Detection");
 #endif
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        setCurrentModule(modules_[i]->name);
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
         NameCollisionDetector detector(*this);
-        detector.check(modules_[i]->ast_root);
+        detector.check(m->ast_root);
         if (detector.hasCollisions()) all_success = false;
     }
 #ifdef MEASURE_MEMORY
@@ -610,10 +723,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.begin_phase("Type Checking");
 #endif
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        setCurrentModule(modules_[i]->name);
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
         TypeChecker checker(*this);
-        checker.check(modules_[i]->ast_root);
+        checker.check(m->ast_root);
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
@@ -622,9 +736,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef DEBUG
     plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        if (!CallResolutionValidator::validate(*this, modules_[i]->ast_root)) {
-            error_handler_.report(ERR_INTERNAL_ERROR, modules_[i]->ast_root->loc, "Call resolution validation failed");
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
+        if (!CallResolutionValidator::validate(*this, m->ast_root)) {
+            error_handler_.report(ERR_INTERNAL_ERROR, m->ast_root->loc, "Call resolution validation failed");
             all_success = false;
         }
     }
@@ -637,10 +753,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     bool signature_errors = false;
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        setCurrentModule(modules_[i]->name);
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
         SignatureAnalyzer sig_analyzer(*this);
-        sig_analyzer.analyze(modules_[i]->ast_root);
+        sig_analyzer.analyze(m->ast_root);
         if (sig_analyzer.hasInvalidSignatures()) signature_errors = true;
     }
 #ifdef MEASURE_MEMORY
@@ -653,10 +770,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     bool validation_success = true;
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        setCurrentModule(modules_[i]->name);
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
         C89FeatureValidator validator(*this);
-        if (!validator.validate(modules_[i]->ast_root)) validation_success = false;
+        if (!validator.validate(m->ast_root)) validation_success = false;
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
@@ -675,9 +793,10 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 
     // Phase 5: Static Analyzers
     for (size_t i = 0; i < modules_.length(); ++i) {
-        if (modules_[i]->is_analyzed) continue;
-        setCurrentModule(modules_[i]->name);
-        ASTNode* m_ast = modules_[i]->ast_root;
+        Module* m = modules_[i];
+        if (m->is_analyzed || !m->ast_root) continue;
+        setCurrentModule(m->name);
+        ASTNode* m_ast = m->ast_root;
 
         if (options_.enable_lifetime_analysis) {
             LifetimeAnalyzer analyzer(*this);
@@ -694,7 +813,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             analyzer.analyze(m_ast);
         }
 
-        modules_[i]->is_analyzed = true;
+        m->is_analyzed = true;
     }
 
     // Task 163: Report unresolved call sites
@@ -857,6 +976,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 
         char abs_path[1024];
         join_paths(base_dir, rel_path, abs_path, sizeof(abs_path));
+        normalize_path(abs_path);
 
         const char* interned_abs_path = interner_.intern(abs_path);
 
@@ -878,13 +998,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         }
 
         // Check if module already loaded
-        Module* imported_mod = NULL;
-        for (size_t j = 0; j < modules_.length(); ++j) {
-            if (plat_strcmp(modules_[j]->filename, interned_abs_path) == 0) {
-                imported_mod = modules_[j];
-                break;
-            }
-        }
+        Module* imported_mod = getModuleByFilename(interned_abs_path);
 
         if (!imported_mod) {
             // Load and parse
@@ -896,18 +1010,21 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             }
 
             u32 file_id = addSource(interned_abs_path, source);
+            // addSource now creates the module and its symbol table
+
+            // Find the module we just added
+            for (size_t j = 0; j < modules_.length(); ++j) {
+                if (modules_[j]->file_id == file_id) {
+                    imported_mod = modules_[j];
+                    break;
+                }
+            }
+
             Parser* parser = createParser(file_id);
             ASTNode* ast = parser->parse();
             if (!ast) return false;
 
-            // Register module
-            void* mod_mem = arena_.alloc(sizeof(Module));
-            imported_mod = new (mod_mem) Module(arena_);
-            imported_mod->name = current_module_; // addSource sets current_module_
-            imported_mod->filename = interned_abs_path;
             imported_mod->ast_root = ast;
-            imported_mod->file_id = file_id;
-            modules_.append(imported_mod);
 
             collectImports(ast, imported_mod);
 
@@ -927,6 +1044,9 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         if (!already_present) {
             module->imports.append(imported_mod->name);
         }
+
+        // Set the module pointer in the import node for the TypeChecker
+        import_node->as.import_stmt->module_ptr = imported_mod;
     }
 
     setCurrentModule(saved_module);
@@ -941,11 +1061,24 @@ bool CompilationUnit::areErrorTypesEliminated() const {
     // If validation passed (c89_validation_passed_ is true), then NO error types should be present.
     // If validation failed, it means error types were detected and rejected.
     if (c89_validation_passed_) {
-        return (error_function_catalogue_.count() == 0 &&
-                error_set_catalogue_.count() == 0 &&
-                try_expression_catalogue_.count() == 0 &&
-                catch_expression_catalogue_.count() == 0 &&
-                orelse_expression_catalogue_.count() == 0);
+        if (default_error_function_catalogue_.count() > 0 ||
+            default_error_set_catalogue_.count() > 0 ||
+            default_try_expression_catalogue_.count() > 0 ||
+            default_catch_expression_catalogue_.count() > 0 ||
+            default_orelse_expression_catalogue_.count() > 0) {
+            return false;
+        }
+
+        for (size_t i = 0; i < modules_.length(); ++i) {
+            Module* m = modules_[i];
+            if (m->error_function_catalogue.count() > 0 ||
+                m->error_set_catalogue.count() > 0 ||
+                m->try_expression_catalogue.count() > 0 ||
+                m->catch_expression_catalogue.count() > 0 ||
+                m->orelse_expression_catalogue.count() > 0) {
+                return false;
+            }
+        }
     }
 
     // Validation failed, which means the non-C89 error types were successfully rejected.

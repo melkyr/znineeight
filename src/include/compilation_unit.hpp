@@ -47,19 +47,19 @@ public:
 
     Parser* createParser(u32 file_id);
 
-    SymbolTable& getSymbolTable();
+    SymbolTable& getSymbolTable(const char* module_name = NULL);
     ErrorHandler& getErrorHandler();
     const ErrorHandler& getErrorHandler() const;
     SourceManager& getSourceManager();
-    ErrorSetCatalogue& getErrorSetCatalogue();
-    GenericCatalogue& getGenericCatalogue();
-    ErrorFunctionCatalogue& getErrorFunctionCatalogue();
-    TryExpressionCatalogue& getTryExpressionCatalogue();
-    CatchExpressionCatalogue& getCatchExpressionCatalogue();
-    OrelseExpressionCatalogue& getOrelseExpressionCatalogue();
-    ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue();
-    ErrDeferCatalogue& getErrDeferCatalogue();
-    IndirectCallCatalogue& getIndirectCallCatalogue();
+    ErrorSetCatalogue& getErrorSetCatalogue(const char* module_name = NULL);
+    GenericCatalogue& getGenericCatalogue(const char* module_name = NULL);
+    ErrorFunctionCatalogue& getErrorFunctionCatalogue(const char* module_name = NULL);
+    TryExpressionCatalogue& getTryExpressionCatalogue(const char* module_name = NULL);
+    CatchExpressionCatalogue& getCatchExpressionCatalogue(const char* module_name = NULL);
+    OrelseExpressionCatalogue& getOrelseExpressionCatalogue(const char* module_name = NULL);
+    ExtractionAnalysisCatalogue& getExtractionAnalysisCatalogue(const char* module_name = NULL);
+    ErrDeferCatalogue& getErrDeferCatalogue(const char* module_name = NULL);
+    IndirectCallCatalogue& getIndirectCallCatalogue(const char* module_name = NULL);
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
@@ -69,6 +69,7 @@ public:
 
     DynamicArray<Module*>& getModules() { return modules_; }
     Module* getModule(const char* name);
+    Module* getModuleByFilename(const char* filename);
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);
@@ -80,7 +81,8 @@ public:
     /**
      * @brief Injects mandatory runtime symbols (like arena_alloc, arena_free) into the global scope.
      */
-    void injectRuntimeSymbols();
+    void injectRuntimeSymbols(SymbolTable& table);
+    void injectRuntimeSymbols(); // For backward compatibility
 
     /**
      * @brief Executes the full compilation pipeline for a single file.
@@ -134,18 +136,19 @@ private:
     TypeInterner type_interner_;
     StringInterner& interner_;
     SourceManager source_manager_;
-    SymbolTable symbol_table_;
+    SymbolTable default_symbols_; // For backward compatibility and early injection
     ErrorHandler error_handler_;
     TokenSupplier token_supplier_;
-    ErrorSetCatalogue error_set_catalogue_;
-    GenericCatalogue generic_catalogue_;
-    ErrorFunctionCatalogue error_function_catalogue_;
-    TryExpressionCatalogue try_expression_catalogue_;
-    CatchExpressionCatalogue catch_expression_catalogue_;
-    OrelseExpressionCatalogue orelse_expression_catalogue_;
-    ExtractionAnalysisCatalogue extraction_analysis_catalogue_;
-    ErrDeferCatalogue errdefer_catalogue_;
-    IndirectCallCatalogue indirect_call_catalogue_;
+    // Per-module catalogues fallback for early access
+    ErrorSetCatalogue default_error_set_catalogue_;
+    GenericCatalogue default_generic_catalogue_;
+    ErrorFunctionCatalogue default_error_function_catalogue_;
+    TryExpressionCatalogue default_try_expression_catalogue_;
+    CatchExpressionCatalogue default_catch_expression_catalogue_;
+    OrelseExpressionCatalogue default_orelse_expression_catalogue_;
+    ExtractionAnalysisCatalogue default_extraction_analysis_catalogue_;
+    ErrDeferCatalogue default_errdefer_catalogue_;
+    IndirectCallCatalogue default_indirect_call_catalogue_;
     NameMangler name_mangler_;
     CallSiteLookupTable call_site_table_;
     CompilationOptions options_;

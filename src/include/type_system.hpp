@@ -118,6 +118,7 @@ struct Type {
         } optional;
         struct {
             const char* name;
+            struct Module* module_ptr;
         } module;
     } as;
 };

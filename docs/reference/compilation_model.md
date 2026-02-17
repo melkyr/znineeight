@@ -19,24 +19,27 @@ In Milestones 1-5, the compiler operates primarily on a single-file basis.
 
 ## Multi-File Compilation (Milestone 6)
 
-Milestone 6 introduces `@import` support and a modular compilation model.
+Milestone 6 introduces `@import` support and a modular compilation pipeline.
 
-### Parse-Time Imports (Simpler Model)
+### Recursive Import Resolution
 
-The bootstrap compiler will use a parse-time import strategy:
-- When the `Parser` encounters `@import("filename")`, it triggers the `CompilationUnit` to locate and parse the referenced file.
-- The results are merged into the existing compilation context.
+The compiler uses a recursive, multi-pass loading strategy:
+- **Discovery**: When the `Parser` encounters an `@import("path.zig")`, it records the requirement in the current module's `ASTImportStmtNode`.
+- **Recursive Loading**: The `CompilationUnit` resolves these paths relative to the current module's directory. It uses normalized, interned filenames to avoid redundant parsing and detects circular dependencies via a filename stack.
+- **Unit Aggregation**: All parsed modules are stored in a single `CompilationUnit`, which manages the overall lifecycle.
 
-### Module-Aware Symbol Tables
+### Module-Isolated Analysis
 
-Symbols will be tracked with module context to prevent collisions between different files.
--   `SymbolTable::lookupWithModule` allows explicit module-prefixed lookups.
+To prevent global state leakage, each module is analyzed in its own context:
+- **Per-Module Symbol Tables**: Each module has its own `SymbolTable`. `SymbolTable::lookupWithModule` is used for cross-module member access (e.g., `utils.add`).
+- **Feature Catalogues**: Analysis catalogues (Generics, ErrorSets, etc.) are moved from the unit to the individual `Module`.
+- **Pipeline Context Switching**: The `CompilationUnit` executes each analysis pass (Type Checking, C89 Validation, etc.) by iterating through all modules and setting the active module context for each one.
 
-### Cross-Module Generic Detection
+### Cross-Module Generic Specialization
 
-Generic functions from other modules will be detected through catalogue merging:
-- Each parsed module contributes to a global `GenericCatalogue`.
-- Instantiations are tracked with their originating module name to ensure unique specialization in the generated C code.
+Generic functions and types from imported modules are handled by tracking their source module:
+- Instantiation requests from importing modules are recorded with the target module's name.
+- The `C89Emitter` uses this information to generate unique, mangled C symbols (e.g., `z_TargetModule_GenericFn_T`) in the appropriate translation unit.
 
 ## Resource Management
 

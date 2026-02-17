@@ -132,3 +132,30 @@ void get_directory(const char* path, char* buffer, size_t buffer_size) {
         plat_strcpy(buffer, ".");
     }
 }
+
+void normalize_path(char* path) {
+    if (!path) return;
+    for (char* p = path; *p; ++p) if (*p == '\\') *p = '/';
+
+    char* dst = path;
+    char* src = path;
+
+    while (*src) {
+        if (src[0] == '.' && (src[1] == '/' || src[1] == '\0')) {
+            src += (src[1] == '/') ? 2 : 1;
+        } else if (src[0] == '.' && src[1] == '.' && (src[2] == '/' || src[2] == '\0')) {
+            src += (src[2] == '/') ? 3 : 2;
+            if (dst > path) {
+                if (dst[-1] == '/') dst--;
+                while (dst > path && dst[-1] != '/') dst--;
+            }
+        } else {
+            while (*src && *src != '/') *dst++ = *src++;
+            if (*src == '/') *dst++ = *src++;
+        }
+    }
+    // Remove trailing slash
+    if (dst > path + 1 && dst[-1] == '/') dst--;
+    *dst = '\0';
+    if (path[0] == '\0') plat_strcpy(path, ".");
+}

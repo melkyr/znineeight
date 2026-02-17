@@ -78,4 +78,11 @@ void join_paths(const char* base_dir, const char* rel_path, char* buffer, size_t
  */
 void get_directory(const char* path, char* buffer, size_t buffer_size);
 
+/**
+ * @brief Normalizes a file path by converting backslashes to forward slashes
+ *        and resolving '.' and '..' components.
+ * @param path The path to normalize (modified in place).
+ */
+void normalize_path(char* path);
+
 #endif // UTILS_HPP

@@ -708,6 +708,7 @@ struct ASTErrorSetMergeNode {
  */
 struct ASTImportStmtNode {
     const char* module_name;
+    struct Module* module_ptr;
 };
 
 

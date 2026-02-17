@@ -51,12 +51,18 @@ class SourceManager {
     ArenaAllocator& allocator;
     DynamicArray<SourceFile> files;
 
+    struct FileCacheEntry {
+        const char* filename;
+        u32 file_id;
+    };
+    DynamicArray<FileCacheEntry> cache;
+
 public:
     /**
      * @brief Constructs a SourceManager.
      * @param alloc The ArenaAllocator to be used for storing file information.
      */
-    SourceManager(ArenaAllocator& alloc) : allocator(alloc), files(alloc) {}
+    SourceManager(ArenaAllocator& alloc) : allocator(alloc), files(alloc), cache(alloc) {}
 
     /**
      * @brief Adds a new source file to the manager.
