@@ -8,7 +8,8 @@
 ExtractionAnalysisCatalogue::ExtractionAnalysisCatalogue(ArenaAllocator& arena)
     : arena_(arena), function_stack_(arena), current_stack_estimate_(0) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ExtractionSiteInfo>));
-    sites_ = new (mem) DynamicArray<ExtractionSiteInfo>(arena_);
+    if (mem == NULL) plat_abort();
+   sites_ = new (mem) DynamicArray<ExtractionSiteInfo>(arena_);
 }
 
 void ExtractionAnalysisCatalogue::enterFunction(const char* name) {

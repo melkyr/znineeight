@@ -34,7 +34,7 @@ TEST_FUNC(ParserBug_LogicalOperatorSymbol) {
 
 TEST_FUNC(ParserBug_TopLevelStruct) {
     const char* source = "struct {};";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
@@ -57,7 +57,7 @@ TEST_FUNC(ParserBug_TopLevelStruct) {
 
 TEST_FUNC(ParserBug_UnionFieldNodeType) {
     const char* source = "union { a: i32, };";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);
@@ -77,7 +77,7 @@ TEST_FUNC(ParserBug_UnionFieldNodeType) {
 
 TEST_FUNC(ParserBug_TopLevelUnion) {
     const char* source = "union {};";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx(source, arena, interner);

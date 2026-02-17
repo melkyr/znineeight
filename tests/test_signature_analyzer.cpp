@@ -10,7 +10,7 @@ TEST_FUNC(SignatureAnalysisNonC89Types) {
         "fn bad2(a: !i32) void {}      // Error union - should reject\n"
         "fn good(a: i32) void {}       // Simple type - should pass\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
@@ -38,7 +38,7 @@ TEST_FUNC(SignatureAnalysisReturnTypeRejection) {
         "fn badRet() !i32 { return 0; }\n"
         "fn goodRet() i32 { return 0; }\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
@@ -65,7 +65,7 @@ TEST_FUNC(SignatureAnalysisTooManyParams) {
     const char* source =
         "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
@@ -90,7 +90,7 @@ TEST_FUNC(SignatureAnalysisMultiLevelPointers) {
     const char* source =
         "fn multiPtr(a: * * i32) void {}\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
@@ -116,7 +116,7 @@ TEST_FUNC(SignatureAnalysisTypeAliasResolution) {
         "const MyInt = i32;\n"
         "fn good(a: MyInt) void {}  // Should pass - resolves to i32\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
@@ -140,7 +140,7 @@ TEST_FUNC(SignatureAnalysisArrayParameterWarning) {
     const char* source =
         "fn arrayParam(a: [10]i32) void {}\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();

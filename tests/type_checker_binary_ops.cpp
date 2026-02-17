@@ -74,7 +74,7 @@ static bool check_binary_op_error(const char* source_code, const char* inner_exp
 
 
 TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     const char* base_source =
         "fn test_fn() {\n"
@@ -153,7 +153,7 @@ TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
 }
 
 TEST_FUNC(TypeCheckerBinaryOps_NumericArithmetic) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     const char* base_source =
         "fn test_fn() {\n"
@@ -187,7 +187,7 @@ TEST_FUNC(TypeCheckerBinaryOps_NumericArithmetic) {
 }
 
 TEST_FUNC(TypeCheckerBinaryOps_Comparison) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     const char* base_source =
         "fn test_fn() {\n"
@@ -224,7 +224,7 @@ TEST_FUNC(TypeCheckerBinaryOps_Comparison) {
 }
 
 TEST_FUNC(TypeCheckerBinaryOps_Bitwise) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     const char* base_source =
         "fn test_fn() {\n"
@@ -257,7 +257,7 @@ TEST_FUNC(TypeCheckerBinaryOps_Bitwise) {
 }
 
 TEST_FUNC(TypeCheckerBinaryOps_Logical) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
 
     const char* base_source =
         "fn test_fn() {\n"

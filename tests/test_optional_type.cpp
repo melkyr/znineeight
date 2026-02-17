@@ -3,7 +3,7 @@
 #include "memory.hpp"
 
 TEST_FUNC(OptionalType_Creation) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     Type* base_type = get_g_type_i32();
     Type* opt_type = createOptionalType(arena, base_type);
 
@@ -19,7 +19,7 @@ TEST_FUNC(OptionalType_Creation) {
 }
 
 TEST_FUNC(OptionalType_ToString) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     Type* base_type = get_g_type_i32();
     Type* opt_type = createOptionalType(arena, base_type);
 

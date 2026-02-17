@@ -5,7 +5,7 @@
 #include <cstring>
 
 TEST_FUNC(Parser_CatchExpression_Simple) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a catch b", arena, interner);
@@ -30,7 +30,7 @@ TEST_FUNC(Parser_CatchExpression_Simple) {
 }
 
 TEST_FUNC(Parser_CatchExpression_WithPayload) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a catch |err| b", arena, interner);
@@ -56,7 +56,7 @@ TEST_FUNC(Parser_CatchExpression_WithPayload) {
 }
 
 TEST_FUNC(Parser_CatchExpression_MixedAssociativity) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     // This expression should parse as `(a catch b) orelse c`

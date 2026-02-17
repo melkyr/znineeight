@@ -5,7 +5,7 @@
 #include <cstring>
 
 TEST_FUNC(Lexer_StringLiteral_EscapedCharacters) {
-    ArenaAllocator arena(16384); // Use a larger arena for tests
+    ArenaAllocator arena(262144); // Use a larger arena for tests
     StringInterner interner(arena);
     SourceManager sm(arena);
 
@@ -55,7 +55,7 @@ TEST_FUNC(Lexer_StringLiteral_EscapedCharacters) {
 }
 
 TEST_FUNC(Lexer_StringLiteral_LongString) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
 

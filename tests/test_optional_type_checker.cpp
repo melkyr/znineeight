@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeChecker_OptionalType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "var x: ?i32 = null;";
     ParserTestContext context(source, arena, interner);

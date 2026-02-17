@@ -10,7 +10,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails);
 TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails) {
     // Test case 1: Widening from f32 to f64 should be rejected under strict C89 rules.
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(262144);
         StringInterner interner(arena);
         const char* source =
             "fn test_fn(x: f32) -> void {\n"
@@ -29,7 +29,7 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails) {
 
     // Test case 2: Unsafe narrowing from f64 to f32 should be rejected.
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(262144);
         StringInterner interner(arena);
         const char* source =
             "fn test_fn(x: f64) -> void {\n"

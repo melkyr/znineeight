@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeCheckerValidDeclarations) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
 
     // i32 declaration
@@ -37,7 +37,7 @@ TEST_FUNC(TypeCheckerValidDeclarations) {
 }
 
 TEST_FUNC(TypeChecker_C89IntegerCompatibility) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     ParserTestContext context("", arena, interner);
     TypeChecker checker(context.getCompilationUnit());
@@ -84,7 +84,7 @@ TEST_FUNC(TypeChecker_C89IntegerCompatibility) {
 }
 
 TEST_FUNC(TypeCheckerInvalidDeclarations) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "var x: i32 = \"hello\";";
     ParserTestContext context(source, arena, interner);
@@ -98,7 +98,7 @@ TEST_FUNC(TypeCheckerInvalidDeclarations) {
 }
 
 TEST_FUNC(TypeCheckerStringLiteralType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "fn my_func() -> void { \"hello world\"; }";
     ParserTestContext context(source, arena, interner);
@@ -125,7 +125,7 @@ TEST_FUNC(TypeCheckerStringLiteralType) {
 }
 
 TEST_FUNC(TypeCheckerIntegerLiteralType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     // Create a dummy context to initialize the CompilationUnit for the TypeChecker
     ParserTestContext context("", arena, interner);
@@ -172,7 +172,7 @@ TEST_FUNC(TypeCheckerIntegerLiteralType) {
 
 
 TEST_FUNC(TypeCheckerUndeclaredVariable) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "var x: i32 = y;";
     ParserTestContext context(source, arena, interner);

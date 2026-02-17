@@ -17,7 +17,7 @@ static bool is_identifier(ASTNode* node, const char* name) {
 // This test checks for (a orelse b) orelse c
 TEST_FUNC(Parser_Orelse_IsLeftAssociative) {
     const char* source = "a orelse b orelse c";
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();
@@ -45,7 +45,7 @@ TEST_FUNC(Parser_Orelse_IsLeftAssociative) {
 // This test checks for (a catch b) catch c
 TEST_FUNC(Parser_Catch_IsLeftAssociative) {
     const char* source = "a catch b catch c";
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     ParserTestContext context(source, arena, interner);
     Parser* parser = context.getParser();

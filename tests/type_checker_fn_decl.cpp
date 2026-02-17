@@ -4,7 +4,7 @@
 #include "error_handler.hpp"
 
 TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "fn add(a: i32, b: i32) -> i32 { return a + b; }";
     ParserTestContext context(source, arena, interner);
@@ -21,7 +21,7 @@ TEST_FUNC(TypeCheckerFnDecl_ValidSimpleParams) {
 }
 
 TEST_FUNC(TypeCheckerFnDecl_InvalidParamType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "fn sub(a: NotARealType, b: i32) -> i32 { return a - b; }";
     ParserTestContext context(source, arena, interner);

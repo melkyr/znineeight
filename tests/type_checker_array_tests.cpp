@@ -59,7 +59,7 @@ TEST_FUNC(TypeChecker_ArrayAccessWithNamedConstant) {
 
 TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration) {
     const char* source = "var my_array: [16]i32;";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

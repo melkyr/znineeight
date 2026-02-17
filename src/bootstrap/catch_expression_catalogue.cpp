@@ -4,7 +4,8 @@
 CatchExpressionCatalogue::CatchExpressionCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<CatchExpressionInfo>));
-    catch_expressions_ = new (mem) DynamicArray<CatchExpressionInfo>(arena_);
+    if (mem == NULL) plat_abort();
+   catch_expressions_ = new (mem) DynamicArray<CatchExpressionInfo>(arena_);
 }
 
 int CatchExpressionCatalogue::addCatchExpression(SourceLocation loc, const char* context_type,

@@ -25,13 +25,14 @@ TEST_FUNC(Parser_RecursionLimit) {
 }
 
 TEST_FUNC(Parser_RecursionLimit_Binary) {
-    // Create a deeply nested binary expression: "1 + 1 + 1 + ..."
+    // Create a deeply nested binary expression: "a = a = a = ..."
+    // Assignment is right-associative and recursive in this parser.
     char source[4096] = {0};
-    strcat(source, "var x: i32 = 1");
+    strcat(source, "fn foo() void { var a: i32 = 0; ");
     for (int i = 0; i < 300; ++i) {
-        strcat(source, " + 1");
+        strcat(source, "a = ");
     }
-    strcat(source, ";");
+    strcat(source, "0; }");
 
     ASSERT_TRUE(expect_statement_parser_abort(source));
 

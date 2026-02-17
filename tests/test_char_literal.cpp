@@ -5,7 +5,7 @@
 #include "string_interner.hpp"
 
 TEST_FUNC(Lexer_CharLiteralHappyPath) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'a' 'Z' '\\n' '\\''";
@@ -36,7 +36,7 @@ TEST_FUNC(Lexer_CharLiteralHappyPath) {
 }
 
 TEST_FUNC(Lexer_CharLiteralHex) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'\\x41' '\\x6F'";
@@ -55,7 +55,7 @@ TEST_FUNC(Lexer_CharLiteralHex) {
 }
 
 TEST_FUNC(Lexer_CharLiteralUnicode) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'\\u{1f4a9}'";
@@ -71,7 +71,7 @@ TEST_FUNC(Lexer_CharLiteralUnicode) {
 
 
 TEST_FUNC(Lexer_CharLiteralErrors) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "'' 'a 'ab' '\\z'";
