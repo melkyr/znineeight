@@ -7,7 +7,7 @@
 TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
     const char* source = "const x: i32 = 0; const p: *i32 = &x;";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -51,7 +51,7 @@ TEST_FUNC(TypeChecker_Dereference_ValidPointer) {
 }
 
 TEST_FUNC(TypeChecker_Dereference_ZeroLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -91,7 +91,7 @@ TEST_FUNC(TypeChecker_Dereference_ZeroLiteral) {
 TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     const char* source = "const x: i32 = 42;";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -148,7 +148,7 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
 TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
     const char* source = "const p: *void = null;";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -202,7 +202,7 @@ TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
 }
 
 TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -248,7 +248,7 @@ TEST_FUNC(TypeChecker_Dereference_NestedPointer_REJECT) {
 }
 
 TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -290,7 +290,7 @@ TEST_FUNC(TypeChecker_Dereference_ConstPointer) {
 
 
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

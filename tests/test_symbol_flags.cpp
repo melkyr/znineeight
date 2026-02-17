@@ -4,7 +4,7 @@
 #include "symbol_table.hpp"
 
 TEST_FUNC(SymbolFlags_GlobalVariable) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source = "var global_x: i32 = 42;";
     ParserTestContext ctx(source, arena, interner);
@@ -27,7 +27,7 @@ TEST_FUNC(SymbolFlags_GlobalVariable) {
 }
 
 TEST_FUNC(SymbolFlags_SymbolBuilder) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     Symbol sym = SymbolBuilder(arena)
         .withName("test")
         .ofType(SYMBOL_VARIABLE)

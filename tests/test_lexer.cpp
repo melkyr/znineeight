@@ -6,7 +6,7 @@
 #include "../src/include/string_interner.hpp"
 
 TEST_FUNC(single_char_tokens) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "+\t-\n/ *;(){}[]@";
@@ -81,7 +81,7 @@ TEST_FUNC(single_char_tokens) {
 }
 
 TEST_FUNC(IntegerRangeAmbiguity) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* test_content = "0..10";
@@ -106,7 +106,7 @@ TEST_FUNC(IntegerRangeAmbiguity) {
 }
 
 TEST_FUNC(token_fields_are_initialized) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", "fn");
@@ -118,7 +118,7 @@ TEST_FUNC(token_fields_are_initialized) {
 }
 
 TEST_FUNC(Lexer_ErrorConditions) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* source = "'a "  // 1. Unterminated char literal
@@ -147,7 +147,7 @@ TEST_FUNC(Lexer_ErrorConditions) {
 }
 
 TEST_FUNC(Lexer_IdentifiersAndStrings) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* source = "my_var \"hello world\" _another_var \"\"";
@@ -181,7 +181,7 @@ TEST_FUNC(Lexer_IdentifiersAndStrings) {
 }
 
 TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* source = "if (x > 10) {\n"
@@ -222,7 +222,7 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
 }
 
 TEST_FUNC(IntegerLiterals) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "123 0xFF";
@@ -245,7 +245,7 @@ TEST_FUNC(IntegerLiterals) {
 }
 
 TEST_FUNC(skip_comments) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* test_content = "// this is a line comment\n"
@@ -273,7 +273,7 @@ TEST_FUNC(skip_comments) {
 }
 
 TEST_FUNC(nested_block_comments) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* test_content = "/* start /* nested */ end */+";
@@ -292,7 +292,7 @@ TEST_FUNC(nested_block_comments) {
 }
 
 TEST_FUNC(unterminated_block_comment) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* test_content = "/* this comment is not closed";
@@ -306,7 +306,7 @@ TEST_FUNC(unterminated_block_comment) {
 }
 
 TEST_FUNC(assignment_vs_equality) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "= == = > >= < <= ! !=";
@@ -357,7 +357,7 @@ TEST_FUNC(assignment_vs_equality) {
 }
 
 TEST_FUNC(multi_char_tokens) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* test_content = "== != <= >= ";

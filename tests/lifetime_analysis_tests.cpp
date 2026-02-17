@@ -6,7 +6,7 @@
 #include <cstdio>
 
 static bool run_lifetime_analyzer_test(const char* source, ErrorCode expected_error = (ErrorCode)0) {
-    ArenaAllocator arena(65536);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.addSource("test.zig", source);

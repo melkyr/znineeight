@@ -3,7 +3,7 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -26,7 +26,7 @@ TEST_FUNC(Parser_UnaryOp_SimpleNegation) {
 }
 
 TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -56,7 +56,7 @@ TEST_FUNC(Parser_UnaryOp_ChainedNegation) {
 }
 
 TEST_FUNC(Parser_UnaryOp_MixedOperators) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -92,7 +92,7 @@ TEST_FUNC(Parser_UnaryOp_MixedOperators) {
 }
 
 TEST_FUNC(Parser_UnaryOp_WithPostfix) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

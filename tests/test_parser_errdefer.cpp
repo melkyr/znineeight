@@ -7,7 +7,7 @@
 bool expect_statement_parser_abort(const char* source);
 
 TEST_FUNC(Parser_ErrDeferStatement_Simple) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

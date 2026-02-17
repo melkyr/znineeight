@@ -9,7 +9,7 @@
 #include "symbol_table.hpp"
 
 TEST_FUNC(Integration_FullPipeline) {
-    ArenaAllocator arena(131072); // 128KB
+    ArenaAllocator arena(262144); // 128KB
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -68,7 +68,7 @@ TEST_FUNC(Integration_FullPipeline) {
 }
 
 TEST_FUNC(Integration_CorrectUsage) {
-    ArenaAllocator arena(131072); // 128KB
+    ArenaAllocator arena(262144); // 128KB
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

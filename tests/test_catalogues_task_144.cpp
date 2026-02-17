@@ -5,7 +5,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(CatchExpressionCatalogue_Basic) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     CatchExpressionCatalogue cat(arena);
 
     ASSERT_EQ(0, cat.count());
@@ -33,7 +33,7 @@ TEST_FUNC(CatchExpressionCatalogue_Basic) {
 }
 
 TEST_FUNC(CatchExpressionCatalogue_Chaining) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     CatchExpressionCatalogue cat(arena);
 
     SourceLocation loc1;
@@ -62,7 +62,7 @@ TEST_FUNC(CatchExpressionCatalogue_Chaining) {
 }
 
 TEST_FUNC(OrelseExpressionCatalogue_Basic) {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(262144);
     OrelseExpressionCatalogue cat(arena);
 
     ASSERT_EQ(0, cat.count());

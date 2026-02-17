@@ -184,6 +184,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
 
     // Create module early
     void* mod_mem = arena_.alloc(sizeof(Module));
+    if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
     mod->filename = interned_filename;
@@ -191,6 +192,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
 
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
+    if (sym_mem == NULL) fatalError("Out of memory allocating SymbolTable");
     mod->symbols = new (sym_mem) SymbolTable(arena_);
     mod->symbols->setCurrentModule(mod->name);
     injectRuntimeSymbols(*mod->symbols);
@@ -221,6 +223,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
+    if (mem == NULL) fatalError("Out of memory allocating Parser");
     return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, mod->name);
 }
 
@@ -412,6 +415,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // arena_create(initial_size: usize) -> *Arena
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for arena_create");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(get_g_type_usize());
         Type* fn_type = createFunctionType(arena_, params, arena_ptr_type);
@@ -429,6 +433,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // arena_alloc(a: *Arena, size: usize) -> *void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for arena_alloc");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(arena_ptr_type);
         params->append(get_g_type_usize());
@@ -448,6 +453,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // arena_reset(a: *Arena) -> void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for arena_reset");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(arena_ptr_type);
         Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
@@ -465,6 +471,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // arena_destroy(a: *Arena) -> void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for arena_destroy");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(arena_ptr_type);
         Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
@@ -495,6 +502,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // Backward compatibility: arena_alloc_default(size: usize) -> *void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for arena_alloc_default");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(get_g_type_usize());
         Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
@@ -513,6 +521,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     // Deprecated: arena_free(ptr: *void) -> void
     // Map it to a no-op or just leave it for now.
     void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
+    if (params_mem2 == NULL) fatalError("Out of memory allocating params for arena_free");
     DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
     params2->append(createPointerType(arena_, get_g_type_void(), false, &type_interner_));
     Type* ret_type2 = get_g_type_void();

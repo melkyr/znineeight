@@ -3,7 +3,8 @@
 
 ErrorFunctionCatalogue::ErrorFunctionCatalogue(ArenaAllocator& arena) : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ErrorFunctionInfo>));
-    functions_ = new (mem) DynamicArray<ErrorFunctionInfo>(arena_);
+    if (mem == NULL) plat_abort();
+   functions_ = new (mem) DynamicArray<ErrorFunctionInfo>(arena_);
 }
 
 void ErrorFunctionCatalogue::addErrorFunction(const char* name, Type* return_type, Type* payload_type, SourceLocation loc, bool is_generic, int param_count, size_t error_union_size, bool msvc6_stack_safe) {

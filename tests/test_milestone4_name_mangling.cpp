@@ -4,7 +4,7 @@
 #include "memory.hpp"
 
 TEST_FUNC(NameMangler_Milestone4Types) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(262144);
     StringInterner interner(arena);
     NameMangler mangler(arena, interner);
 
