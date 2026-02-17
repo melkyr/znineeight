@@ -74,17 +74,30 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **While Loops**: Mapped to C `while (cond) { ... }`. Supports `break` and `continue`.
 - **Return Statements**: Mapped to `return expr;` or `return;`.
 
-### 4.4 Built-in Intrinsics
+### 4.4 Array and Struct Initializers
+Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
+1. **Positional Initialization**: If a variable is initialized with `{ ... }`, the emitter generates a series of individual assignments for each field or array element.
+   - Zig `var arr = [3]i32{1, 2, 3};` becomes:
+     ```c
+     int arr[3];
+     arr[0] = 1;
+     arr[1] = 2;
+     arr[2] = 3;
+     ```
+   - This approach ensures compatibility with C89 and works correctly even if the initializer elements are non-constant expressions.
+2. **Global Constant Initializers**: Global variables (using `pub const` or `pub var`) are emitted using C-style constant initializers: `static int arr[3] = {1, 2, 3};`.
+
+### 4.5 Built-in Intrinsics
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
 - **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 
 ### 4.5 Pointer Types Limitation
 **Many-item pointers ([*]T) are not supported** in the bootstrap compiler. Use single-item pointers (*T) and explicit casts via @ptrCast when necessary. This restriction maintains the simplicity of the rejection framework and ensures compatibility with the C89 subset.
 
-### 4.6 Operator Precedence & Parentheses
+### 4.7 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
 
-### 4.7 Multi-level Pointers (**T)
+### 4.8 Multi-level Pointers (**T)
 Multi-level pointers (e.g., `**i32`, `***f64`) are fully supported in the bootstrap compiler and map directly to C's multi-level pointers (e.g., `int**`, `double***`).
 
 #### Const Qualifiers

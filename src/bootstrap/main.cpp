@@ -39,13 +39,14 @@ static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
     return true;
 }
 
+#ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
         plat_print_info("Executing self-test...\n");
 
         const char* source =
             "fn my_func() -> void {\n"
-            "    var p: *u8 = arena_alloc(100u);\n"
+            "    var p: *u8 = arena_alloc_default(100u);\n"
             "    arena_free(p);\n"
             "    arena_free(p); // Double free\n"
             "}\n"
@@ -181,3 +182,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+#endif
