@@ -5,7 +5,7 @@
 #include "../src/include/ast.hpp"
 
 TEST_FUNC(Milestone4_Lexer_Tokens) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     const char* source = "!i32 ?u8 error{A} E1 || E2 @import";
@@ -60,7 +60,7 @@ TEST_FUNC(Milestone4_Lexer_Tokens) {
 }
 
 TEST_FUNC(Milestone4_Parser_AST) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 

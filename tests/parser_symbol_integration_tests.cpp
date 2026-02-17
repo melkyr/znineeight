@@ -6,13 +6,13 @@
 #include "type_system.hpp"
 
 TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
 
     const char* source = "var my_var: i32 = 123;";
     u32 file_id = comp_unit.addSource("test.zig", source);
+    SymbolTable& table = comp_unit.getSymbolTable();
     Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* decl_node = parser->parseVarDecl();
@@ -29,14 +29,14 @@ TEST_FUNC(Parser_VarDecl_InsertsSymbolCorrectly) {
 }
 
 TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
 
     // In this source, the inner 'x' (bool) shadows the outer 'x' (i32).
     const char* source = "{ var x: i32 = 1; { var x: bool = false; } }";
     u32 file_id = comp_unit.addSource("test.zig", source);
+    SymbolTable& table = comp_unit.getSymbolTable();
     Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* block_node = parser->parseStatement();
@@ -51,13 +51,13 @@ TEST_FUNC(Parser_NestedBlocks_AndShadowing) {
 }
 
 TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
 
     const char* source = "{ var a: i32 = 1; { var b: bool = true; } }";
     u32 file_id = comp_unit.addSource("test.zig", source);
+    SymbolTable& table = comp_unit.getSymbolTable();
     Parser* parser = comp_unit.createParser(file_id);
 
     ASTNode* block_node = parser->parseStatement();
@@ -71,13 +71,13 @@ TEST_FUNC(Parser_SymbolDoesNotLeakFromInnerScope) {
 }
 
 TEST_FUNC(Parser_FnDecl_AndScopeManagement) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
-    SymbolTable& table = comp_unit.getSymbolTable();
 
     const char* source = "fn my_func() -> void { var local: i32 = 1; }";
     u32 file_id = comp_unit.addSource("test.zig", source);
+    SymbolTable& table = comp_unit.getSymbolTable();
     Parser* parser = comp_unit.createParser(file_id);
 
     // The global scope should be level 1.

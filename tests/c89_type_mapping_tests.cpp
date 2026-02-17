@@ -29,7 +29,7 @@ TEST_FUNC(C89TypeMapping_Validation) {
     printf("-------------------------\n");
 
     // 2. Setup Arena for creating test types
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
 
     // 3. Verify all whitelisted primitive types are compatible

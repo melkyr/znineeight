@@ -2,7 +2,7 @@
 #include "../src/include/memory.hpp"
 
 TEST_FUNC(dynamic_array_append) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     DynamicArray<int> arr(arena);
     arr.append(10);
     arr.append(20);
@@ -13,7 +13,7 @@ TEST_FUNC(dynamic_array_append) {
 }
 
 TEST_FUNC(dynamic_array_growth) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     DynamicArray<int> arr(arena);
     for (int i = 0; i < 20; ++i) {
         arr.append(i);
@@ -24,7 +24,7 @@ TEST_FUNC(dynamic_array_growth) {
 }
 
 TEST_FUNC(dynamic_array_growth_from_zero) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     DynamicArray<int> arr(arena);
     arr.append(42);
     ASSERT_EQ(arr.length(), 1);
@@ -34,7 +34,7 @@ TEST_FUNC(dynamic_array_growth_from_zero) {
 }
 
 TEST_FUNC(arena_allocator_actually_allocates) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     void* ptr = arena.alloc(16);
     ASSERT_TRUE(ptr != NULL);
     // Attempt to write to the allocated memory. This will cause a crash

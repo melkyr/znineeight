@@ -80,7 +80,7 @@ static bool expect_abort(void (*test_func)()) {
 
 // These functions are executed IN THE CHILD PROCESS
 void run_parser_test_in_child(const char* source) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
     comp_unit.injectRuntimeSymbols();

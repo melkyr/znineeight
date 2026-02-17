@@ -2,14 +2,14 @@
 #include "../src/include/memory.hpp"
 
 TEST_FUNC(basic_allocation) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(1024 * 1024);
     void* p = arena.alloc(100);
     ASSERT_TRUE(p != NULL);
     return true;
 }
 
 TEST_FUNC(multiple_allocations) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(1024 * 1024);
     void* p1 = arena.alloc(100);
     void* p2 = arena.alloc(200);
     ASSERT_TRUE(p1 != NULL);
@@ -20,7 +20,7 @@ TEST_FUNC(multiple_allocations) {
 }
 
 TEST_FUNC(allocation_failure) {
-    ArenaAllocator arena(100);
+    ArenaAllocator arena(1024 * 1024);
     arena.alloc(50);
     void* p2 = arena.alloc(60);
     ASSERT_TRUE(p2 == NULL);
@@ -28,7 +28,7 @@ TEST_FUNC(allocation_failure) {
 }
 
 TEST_FUNC(reset) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(1024 * 1024);
     void* p1 = arena.alloc(100);
     arena.reset();
     void* p2 = arena.alloc(100);
@@ -37,7 +37,7 @@ TEST_FUNC(reset) {
 }
 
 TEST_FUNC(aligned_allocation) {
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(1024 * 1024);
     arena.alloc(3); // Misalign the offset to 3
 
     // Test 1: Basic alignment

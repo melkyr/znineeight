@@ -6,6 +6,7 @@
 TryExpressionCatalogue::TryExpressionCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     try_expressions_ = (DynamicArray<TryExpressionInfo>*)arena.alloc(sizeof(DynamicArray<TryExpressionInfo>));
+    if (!try_expressions_) plat_abort();
     new (try_expressions_) DynamicArray<TryExpressionInfo>(arena);
 }
 

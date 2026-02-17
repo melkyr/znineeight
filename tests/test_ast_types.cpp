@@ -3,7 +3,7 @@
 #include "memory.hpp"
 
 TEST_FUNC(ASTNode_TypeName) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     node->type = NODE_TYPE_NAME;
 
@@ -17,7 +17,7 @@ TEST_FUNC(ASTNode_TypeName) {
 }
 
 TEST_FUNC(ASTNode_PointerType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
 
     // Base type
     ASTNode* base_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
@@ -39,7 +39,7 @@ TEST_FUNC(ASTNode_PointerType) {
 }
 
 TEST_FUNC(ASTNode_ArrayType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
 
     // Element type
     ASTNode* element_type_node = (ASTNode*)arena.alloc(sizeof(ASTNode));
@@ -69,7 +69,7 @@ TEST_FUNC(ASTNode_ArrayType) {
 }
 
 TEST_FUNC(ASTNode_SliceType) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
 
     // Element type
     ASTNode* element_type_node = (ASTNode*)arena.alloc(sizeof(ASTNode));

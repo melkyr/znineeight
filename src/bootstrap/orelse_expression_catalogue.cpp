@@ -4,6 +4,7 @@
 OrelseExpressionCatalogue::OrelseExpressionCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<OrelseExpressionInfo>));
+    if (!mem) plat_abort();
     orelse_expressions_ = new (mem) DynamicArray<OrelseExpressionInfo>(arena_);
 }
 

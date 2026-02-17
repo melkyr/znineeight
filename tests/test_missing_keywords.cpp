@@ -6,7 +6,7 @@
 #include <cstring>
 
 TEST_FUNC(lex_missing_keywords) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 

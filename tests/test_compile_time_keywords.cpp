@@ -6,7 +6,7 @@
 #include <cstring>
 
 TEST_FUNC(lex_compile_time_and_special_function_keywords) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 

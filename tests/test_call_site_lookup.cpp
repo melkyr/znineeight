@@ -5,7 +5,7 @@
 #include "platform.hpp"
 
 bool test_CallSiteLookupTable_Basic() {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(1024 * 1024);
     CallSiteLookupTable table(arena);
 
     ASTNode call_node;
@@ -29,7 +29,7 @@ bool test_CallSiteLookupTable_Basic() {
 }
 
 bool test_CallSiteLookupTable_Unresolved() {
-    ArenaAllocator arena(4096);
+    ArenaAllocator arena(1024 * 1024);
     CallSiteLookupTable table(arena);
 
     ASTNode call_node;

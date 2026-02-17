@@ -9,7 +9,7 @@
 TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p + i; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -24,7 +24,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
 
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = i + p; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -39,7 +39,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
 
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p - i; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -54,7 +54,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
 
     {
         const char* source = "fn main() { var p1: *i32; var p2: *i32; var res: isize = p1 - p2; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -75,7 +75,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer + pointer -> error
     {
         const char* source = "fn main() { var p1: *i32; var p2: *i32; var res: *i32 = p1 + p2; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -90,7 +90,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer * integer -> error
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p * i; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -105,7 +105,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer / integer -> error
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p / i; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -120,7 +120,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer % integer -> error
     {
         const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p % i; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);
@@ -135,7 +135,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer - pointer (mismatched types) -> error
     {
         const char* source = "fn main() { var p1: *i32; var p2: *u8; var res: isize = p1 - p2; }";
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
         u32 file_id = comp_unit.addSource("test.zig", source);

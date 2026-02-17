@@ -7,7 +7,7 @@
 #include <cstring>
 
 TEST_FUNC(unicode_validation) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     SourceManager source_manager(arena);
 
@@ -29,7 +29,7 @@ TEST_FUNC(unicode_validation) {
 }
 
 TEST_FUNC(c_style_strings) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     SourceManager source_manager(arena);
     const char* test_content = "c\"hello\"";
@@ -45,7 +45,7 @@ TEST_FUNC(c_style_strings) {
 }
 
 TEST_FUNC(multiline_strings) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     SourceManager source_manager(arena);
     const char* test_content = "\"hello\\\nworld\"";

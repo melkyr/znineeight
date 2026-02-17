@@ -5,7 +5,7 @@
 #include <cstring>
 
 TEST_FUNC(TypeCheckerEnum_MemberAccess) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -14,7 +14,7 @@ TEST_FUNC(TypeCheckerEnum_MemberAccess) {
         "const Color = enum { Red, Green, Blue };\n"
         "const my_color = Color.Green;\n";
 
-    u32 file_id = unit.getSourceManager().addFile("test.zig", source, strlen(source));
+    u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
 
@@ -43,7 +43,7 @@ TEST_FUNC(TypeCheckerEnum_InvalidMemberAccess) {
 }
 
 TEST_FUNC(TypeCheckerEnum_ImplicitConversion) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -52,7 +52,7 @@ TEST_FUNC(TypeCheckerEnum_ImplicitConversion) {
         "const Color = enum { Red, Green, Blue };\n"
         "const x: i32 = Color.Red;\n";
 
-    u32 file_id = unit.getSourceManager().addFile("test.zig", source, strlen(source));
+    u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
 
@@ -70,7 +70,7 @@ TEST_FUNC(TypeCheckerEnum_DuplicateMember) {
 }
 
 TEST_FUNC(TypeCheckerEnum_AutoIncrement) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -80,7 +80,7 @@ TEST_FUNC(TypeCheckerEnum_AutoIncrement) {
         "const u = Status.Unknown;\n"
         "const f = Status.Fatal;\n";
 
-    u32 file_id = unit.getSourceManager().addFile("test.zig", source, strlen(source));
+    u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
 
@@ -107,7 +107,7 @@ TEST_FUNC(TypeCheckerEnum_AutoIncrement) {
 }
 
 TEST_FUNC(TypeCheckerEnum_Switch) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -122,7 +122,7 @@ TEST_FUNC(TypeCheckerEnum_Switch) {
         "    };\n"
         "}\n";
 
-    u32 file_id = unit.getSourceManager().addFile("test.zig", source, strlen(source));
+    u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
 

@@ -5,6 +5,7 @@
 CallSiteLookupTable::CallSiteLookupTable(ArenaAllocator& arena)
     : arena_(arena) {
     entries_ = (DynamicArray<CallSiteEntry>*)arena.alloc(sizeof(DynamicArray<CallSiteEntry>));
+    if (!entries_) plat_abort();
     new (entries_) DynamicArray<CallSiteEntry>(arena);
 }
 

@@ -5,7 +5,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_SimpleDoubleFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -42,7 +42,7 @@ TEST_FUNC(DoubleFree_SimpleDoubleFree) {
 }
 
 TEST_FUNC(DoubleFree_NestedDeferScopes) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -81,7 +81,7 @@ TEST_FUNC(DoubleFree_NestedDeferScopes) {
 }
 
 TEST_FUNC(DoubleFree_PointerAliasing) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -128,7 +128,7 @@ TEST_FUNC(DoubleFree_PointerAliasing) {
 }
 
 TEST_FUNC(DoubleFree_DeferInLoop) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -162,7 +162,7 @@ TEST_FUNC(DoubleFree_DeferInLoop) {
 }
 
 TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -206,7 +206,7 @@ TEST_FUNC(DoubleFree_ConditionalAllocUnconditionalFree) {
 }
 
 TEST_FUNC(DoubleFree_SwitchAnalysis) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -247,7 +247,7 @@ TEST_FUNC(DoubleFree_SwitchAnalysis) {
 }
 
 TEST_FUNC(DoubleFree_TryAnalysis) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -286,7 +286,7 @@ TEST_FUNC(DoubleFree_TryAnalysis) {
 }
 
 TEST_FUNC(DoubleFree_TryAnalysisComplex) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -325,7 +325,7 @@ TEST_FUNC(DoubleFree_TryAnalysisComplex) {
 }
 
 TEST_FUNC(DoubleFree_CatchAnalysis) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -364,7 +364,7 @@ TEST_FUNC(DoubleFree_CatchAnalysis) {
 }
 
 TEST_FUNC(DoubleFree_BinaryOpAnalysis) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -403,7 +403,7 @@ TEST_FUNC(DoubleFree_BinaryOpAnalysis) {
 }
 
 TEST_FUNC(DoubleFree_ReassignmentLeak) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -439,7 +439,7 @@ TEST_FUNC(DoubleFree_ReassignmentLeak) {
 }
 
 TEST_FUNC(DoubleFree_NullReassignmentLeak) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -474,7 +474,7 @@ TEST_FUNC(DoubleFree_NullReassignmentLeak) {
 }
 
 TEST_FUNC(DoubleFree_ReturnExempt) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -509,7 +509,7 @@ TEST_FUNC(DoubleFree_ReturnExempt) {
 }
 
 TEST_FUNC(DoubleFree_BasicTracking) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -553,7 +553,7 @@ TEST_FUNC(DoubleFree_BasicTracking) {
 }
 
 TEST_FUNC(DoubleFree_UninitializedFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -589,7 +589,7 @@ TEST_FUNC(DoubleFree_UninitializedFree) {
 }
 
 TEST_FUNC(DoubleFree_MemoryLeak) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -624,7 +624,7 @@ TEST_FUNC(DoubleFree_MemoryLeak) {
 }
 
 TEST_FUNC(DoubleFree_DeferDoubleFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

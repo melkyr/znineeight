@@ -20,7 +20,7 @@ static void setup_pointer_arithmetic_test(
 }
 
 TEST_FUNC(TypeChecker_PointerIntegerAddition) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -41,7 +41,7 @@ TEST_FUNC(TypeChecker_PointerIntegerAddition) {
 }
 
 TEST_FUNC(TypeChecker_IntegerPointerAddition) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -62,7 +62,7 @@ TEST_FUNC(TypeChecker_IntegerPointerAddition) {
 }
 
 TEST_FUNC(TypeChecker_PointerIntegerSubtraction) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -83,7 +83,7 @@ TEST_FUNC(TypeChecker_PointerIntegerSubtraction) {
 }
 
 TEST_FUNC(TypeChecker_PointerPointerSubtraction) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -104,7 +104,7 @@ TEST_FUNC(TypeChecker_PointerPointerSubtraction) {
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -125,7 +125,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerPointerAddition) {
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -146,7 +146,7 @@ TEST_FUNC(TypeChecker_Invalid_PointerPointerSubtraction_DifferentTypes) {
 }
 
 TEST_FUNC(TypeChecker_Invalid_PointerMultiplication) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);

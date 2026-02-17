@@ -29,7 +29,7 @@ TEST_FUNC(dynamic_array_destructor_fix) {
     DestructorTracker::destructor_call_count = 0;
 
     // 2. Set up an arena allocator.
-    ArenaAllocator arena(1024);
+    ArenaAllocator arena(1024 * 1024);
 
     // 3. Create a DynamicArray inside a scope.
     {

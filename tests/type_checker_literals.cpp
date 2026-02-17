@@ -46,14 +46,14 @@ TEST_FUNC(TypeChecker_IntegerLiteralInference) {
     // Each literal is tested in its own scope with a fresh arena and interner
     // to prevent state corruption between test cases.
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("127", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         // The parser sees this as UnaryOp(-) -> Integer(128).
         // 128 is inferred as i32, so the result is i32.
@@ -62,49 +62,49 @@ TEST_FUNC(TypeChecker_IntegerLiteralInference) {
         ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("255u", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_U32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("128", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("65535u", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_U32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("65536", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("4294967295u", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_U32);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("4294967296", arena, interner);
         ASSERT_TRUE(type != NULL);
         ASSERT_EQ(type->kind, TYPE_I64);
     }
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         StringInterner interner(arena);
         Type* type = get_resolved_type_of_literal("9223372036854775808u", arena, interner);
         ASSERT_TRUE(type != NULL);
@@ -114,7 +114,7 @@ TEST_FUNC(TypeChecker_IntegerLiteralInference) {
 }
 
 TEST_FUNC(TypeChecker_FloatLiteralInference) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     Type* type_f64 = get_resolved_type_of_literal("3.14159", arena, interner);
@@ -125,7 +125,7 @@ TEST_FUNC(TypeChecker_FloatLiteralInference) {
 }
 
 TEST_FUNC(TypeChecker_CharLiteralInference) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     Type* type_u8 = get_resolved_type_of_literal("'z'", arena, interner);
@@ -136,7 +136,7 @@ TEST_FUNC(TypeChecker_CharLiteralInference) {
 }
 
 TEST_FUNC(TypeChecker_StringLiteralInference) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     Type* type_ptr_const_u8 = get_resolved_type_of_literal("\"hello world\"", arena, interner);

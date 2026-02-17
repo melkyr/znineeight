@@ -11,7 +11,7 @@ TEST_FUNC(Task136_ErrorSet_Catalogue) {
         "const Merged = error{D} || error{E};\n"
         "const std = @import(\"std\");\n";
 
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 

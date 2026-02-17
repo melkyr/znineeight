@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeChecker_VarDecl_Inferred_Crash) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     // Inferred type inside a function to ensure it's not global
     const char* source = "fn myTest() void { var x = 42; }";
@@ -22,7 +22,7 @@ TEST_FUNC(TypeChecker_VarDecl_Inferred_Crash) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Inferred_Loop) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source = "fn myTest() void { var i = 0; while (i < 10) { i = i + 1; } }";
     ParserTestContext ctx(source, arena, interner);
@@ -36,7 +36,7 @@ TEST_FUNC(TypeChecker_VarDecl_Inferred_Loop) {
 }
 
 TEST_FUNC(TypeChecker_VarDecl_Inferred_Multiple) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source = "fn myTest() void { var x = 1; var y = 2.0; var z = true; }";
     ParserTestContext ctx(source, arena, interner);

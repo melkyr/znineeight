@@ -7,7 +7,7 @@
 
 TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration) {
     const char* source = "fn main() -> void { var x: void = 0; }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -36,7 +36,7 @@ TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration) {
 
 TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction) {
     const char* source = "fn main() -> void {}";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -54,7 +54,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInVoidFunction) {
 
 TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction) {
     const char* source = "fn main() -> void { return; }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -72,7 +72,7 @@ TEST_FUNC(TypeCheckerVoidTests_ExplicitReturnInVoidFunction) {
 
 TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction) {
     const char* source = "fn main() -> void { return 123; }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -101,7 +101,7 @@ TEST_FUNC(TypeCheckerVoidTests_ReturnValueInVoidFunction) {
 
 TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction) {
     const char* source = "fn main() -> i32 { return; }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -130,7 +130,7 @@ TEST_FUNC(TypeCheckerVoidTests_MissingReturnValueInNonVoidFunction) {
 
 TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction) {
     const char* source = "fn main() -> i32 {}";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -158,7 +158,7 @@ TEST_FUNC(TypeCheckerVoidTests_ImplicitReturnInNonVoidFunction) {
 }
 
 TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -205,7 +205,7 @@ TEST_FUNC(TypeCheckerVoidTests_PointerAddition) {
 
 TEST_FUNC(TypeCheckerVoidTests_AllPathsReturnInNonVoidFunction) {
     const char* source = "fn main(a: i32) -> i32 { const zero: i32 = 0; if (a > zero) { return 1; } else { return 0; } }";
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

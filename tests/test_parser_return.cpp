@@ -4,7 +4,7 @@
 #include "ast.hpp"
 
 TEST_FUNC(Parser_ReturnStatement_NoValue) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("return;", arena, interner);
@@ -21,7 +21,7 @@ TEST_FUNC(Parser_ReturnStatement_NoValue) {
 }
 
 TEST_FUNC(Parser_ReturnStatement_WithValue) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("return 42;", arena, interner);

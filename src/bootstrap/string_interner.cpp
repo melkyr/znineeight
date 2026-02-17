@@ -60,14 +60,14 @@ const char* StringInterner::intern(const char* str) {
     char* new_str = static_cast<char*>(allocator.alloc(len + 1));
     if (!new_str) {
         // Allocation failure is considered a fatal error for this project.
-        exit(1);
+        plat_abort();
     }
     plat_memcpy(new_str, str, len + 1);
 
     // Create the new entry in the hash table.
     StringEntry* new_entry = static_cast<StringEntry*>(allocator.alloc(sizeof(StringEntry)));
      if (!new_entry) {
-        exit(1);
+        plat_abort();
     }
 
     // Add the new entry to the front of the bucket's linked list.
@@ -96,7 +96,7 @@ const char* StringInterner::intern(const char* str, size_t length) {
     char* new_str = static_cast<char*>(allocator.alloc(length + 1));
     if (!new_str) {
         // Allocation failure is considered a fatal error for this project.
-        exit(1);
+        plat_abort();
     }
     plat_strncpy(new_str, str, length);
     new_str[length] = '\0';
@@ -104,7 +104,7 @@ const char* StringInterner::intern(const char* str, size_t length) {
     // Create the new entry in the hash table.
     StringEntry* new_entry = static_cast<StringEntry*>(allocator.alloc(sizeof(StringEntry)));
      if (!new_entry) {
-        exit(1);
+        plat_abort();
     }
 
     // Add the new entry to the front of the bucket's linked list.

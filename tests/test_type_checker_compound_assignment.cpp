@@ -62,7 +62,7 @@ TEST_FUNC(TypeChecker_CompoundAssignment_PointerArithmetic) {
 }
 
 TEST_FUNC(TypeChecker_CompoundAssignment_InvalidTypes) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source =
         "fn main() void {"
@@ -82,7 +82,7 @@ TEST_FUNC(TypeChecker_CompoundAssignment_InvalidTypes) {
 }
 
 TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source =
         "fn my_ptr_test() void {\n"

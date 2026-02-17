@@ -37,7 +37,7 @@ TEST_FUNC(TypeCheckerUnaryOp_NegateBool_ShouldFail) {
 TEST_FUNC(TypeCheckerUnaryOp_LogicalNotResultType_ShouldBeBool) {
     // The logical NOT operator (!) should always produce a result of type bool.
     const char* source = "fn test_fn() { var x = !10; }"; // ! applied to an integer
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     u32 file_id = unit.addSource("test.zig", source);

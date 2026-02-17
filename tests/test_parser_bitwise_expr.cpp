@@ -4,7 +4,7 @@
 #include <cstring> // For strcmp
 
 TEST_FUNC(Parser_BitwiseExpr_SimpleAnd) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b", arena, interner);
@@ -23,7 +23,7 @@ TEST_FUNC(Parser_BitwiseExpr_SimpleAnd) {
 }
 
 TEST_FUNC(Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a + b & c", arena, interner);
@@ -52,7 +52,7 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_AdditionAndBitwiseAnd) {
 }
 
 TEST_FUNC(Parser_BitwiseExpr_Precedence_BitwiseAndAndShift) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b << c", arena, interner);
@@ -81,7 +81,7 @@ TEST_FUNC(Parser_BitwiseExpr_Precedence_BitwiseAndAndShift) {
 }
 
 TEST_FUNC(Parser_BitwiseExpr_Associativity_Xor) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a ^ b ^ c", arena, interner);
@@ -110,7 +110,7 @@ TEST_FUNC(Parser_BitwiseExpr_Associativity_Xor) {
 }
 
 TEST_FUNC(Parser_BitwiseExpr_ComplexExpression) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a | b & c ^ d << 1", arena, interner);
@@ -147,7 +147,7 @@ TEST_FUNC(Parser_BitwiseExpr_ComplexExpression) {
 }
 
 TEST_FUNC(Parser_BitwiseExpr_ComparisonPrecedence) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a & b == 0", arena, interner);

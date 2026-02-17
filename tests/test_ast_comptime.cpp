@@ -2,7 +2,7 @@
 #include "test_framework.hpp"
 
 TEST_FUNC(ASTNode_Comptime) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ASTNode* node = (ASTNode*)arena.alloc(sizeof(ASTNode));
     node->type = NODE_COMPTIME_BLOCK;
 

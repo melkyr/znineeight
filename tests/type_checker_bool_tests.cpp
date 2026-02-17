@@ -4,7 +4,7 @@
 #include "ast.hpp"
 
 TEST_FUNC(TypeChecker_Bool_Literals) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

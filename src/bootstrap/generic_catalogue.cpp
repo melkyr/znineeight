@@ -6,9 +6,11 @@
 GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<GenericInstantiation>));
+    if (!mem) plat_abort();
     instantiations_ = new (mem) DynamicArray<GenericInstantiation>(arena_);
 
     void* def_mem = arena_.alloc(sizeof(DynamicArray<GenericDefinitionInfo>));
+    if (!def_mem) plat_abort();
     definitions_ = new (def_mem) DynamicArray<GenericDefinitionInfo>(arena_);
 }
 

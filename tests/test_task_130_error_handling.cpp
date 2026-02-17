@@ -4,7 +4,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_TryPathAware) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -44,7 +44,7 @@ TEST_FUNC(DoubleFree_TryPathAware) {
 }
 
 TEST_FUNC(DoubleFree_CatchPathAware) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -83,7 +83,7 @@ TEST_FUNC(DoubleFree_CatchPathAware) {
 }
 
 TEST_FUNC(DoubleFree_OrelsePathAware) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

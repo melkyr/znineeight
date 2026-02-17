@@ -13,7 +13,7 @@ TEST_FUNC(Lexer_HandlesLongIdentifier) {
     long_identifier[300] = '\0';
 
     // Set up the necessary components for the parser
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     // Use the test context to lex the long identifier
@@ -33,7 +33,7 @@ TEST_FUNC(Lexer_HandlesU64Integer) {
     // but fits in an unsigned 64-bit integer. strtol should fail.
     const char* large_uint_str = "18446744073709551610";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     ParserTestContext ctx(large_uint_str, arena, interner);
@@ -55,7 +55,7 @@ TEST_FUNC(Lexer_UnterminatedCharHexEscape) {
     // The input '\\x' at the end of the file could cause a read past the null terminator.
     const char* source = "'\\x'";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
@@ -72,7 +72,7 @@ TEST_FUNC(Lexer_UnterminatedStringHexEscape) {
     // The input '"\\x"' at the end of the file could cause a read past the null terminator.
     const char* source = "\"\\x\"";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
@@ -89,7 +89,7 @@ TEST_FUNC(Lexer_NumericLookaheadSafety) {
     // The input "1.." should result in an integer token '1', not a float.
     const char* source = "1..";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);
@@ -108,7 +108,7 @@ TEST_FUNC(Lexer_UnicodeInStringLiteral) {
     const char* source = "\"\\u{20AC}\"";
     const char* expected_utf8 = "\xE2\x82\xAC";
 
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     ParserTestContext ctx(source, arena, interner);

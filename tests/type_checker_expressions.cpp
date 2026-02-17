@@ -4,7 +4,7 @@
 #include "type_system.hpp"
 
 TEST_FUNC(TypeChecker_BoolLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -39,7 +39,7 @@ TEST_FUNC(TypeChecker_BoolLiteral) {
 TEST_FUNC(TypeChecker_Identifier) {
     // Test a valid variable access by manually inserting a symbol
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -66,7 +66,7 @@ TEST_FUNC(TypeChecker_Identifier) {
 
     // Test an invalid variable access
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -85,7 +85,7 @@ TEST_FUNC(TypeChecker_Identifier) {
 }
 
 TEST_FUNC(TypeChecker_CharLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -101,7 +101,7 @@ TEST_FUNC(TypeChecker_CharLiteral) {
 }
 
 TEST_FUNC(TypeChecker_StringLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -119,7 +119,7 @@ TEST_FUNC(TypeChecker_StringLiteral) {
 }
 
 TEST_FUNC(TypeChecker_IntegerLiteral) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -149,7 +149,7 @@ TEST_FUNC(TypeChecker_IntegerLiteral) {
 TEST_FUNC(TypeChecker_BinaryOp) {
     // Test valid i32 addition
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -164,7 +164,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
 
     // Test valid i32 comparison
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -179,7 +179,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
 
     // Test invalid addition (i32 + bool)
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -194,7 +194,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
 
     // Test invalid comparison (i32 > bool)
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -209,7 +209,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
 
     // Test invalid addition (i32 + f64)
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
@@ -224,7 +224,7 @@ TEST_FUNC(TypeChecker_BinaryOp) {
 
     // Test null operand (undeclared variable) to prevent crash
     {
-        ArenaAllocator arena(16384);
+        ArenaAllocator arena(1024 * 1024);
         ArenaLifetimeGuard guard(arena);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);

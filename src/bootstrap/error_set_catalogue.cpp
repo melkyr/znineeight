@@ -6,6 +6,7 @@
 ErrorSetCatalogue::ErrorSetCatalogue(ArenaAllocator& arena)
     : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ErrorSetInfo>));
+    if (!mem) plat_abort();
     error_sets_ = new (mem) DynamicArray<ErrorSetInfo>(arena_);
 }
 

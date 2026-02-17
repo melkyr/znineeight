@@ -25,13 +25,15 @@ TEST_FUNC(Parser_RecursionLimit) {
 }
 
 TEST_FUNC(Parser_RecursionLimit_Binary) {
-    // Create a deeply nested binary expression: "1 + 1 + 1 + ..."
-    char source[4096] = {0};
-    strcat(source, "var x: i32 = 1");
+    // Create a deeply nested binary expression that actually recurse.
+    // Since our Pratt parser is flat for same-precedence left-associative operators,
+    // we use assignment which is right-associative and recursive in our parser.
+    char source[16384] = {0};
+    strcat(source, "fn foo() void { ");
     for (int i = 0; i < 300; ++i) {
-        strcat(source, " + 1");
+        strcat(source, "a = ");
     }
-    strcat(source, ";");
+    strcat(source, "1; }");
 
     ASSERT_TRUE(expect_statement_parser_abort(source));
 

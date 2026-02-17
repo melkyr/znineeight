@@ -7,7 +7,7 @@
 #include "symbol_table.hpp"
 
 TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -52,7 +52,7 @@ TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue) {
 }
 
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -138,7 +138,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
 }
 
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -176,7 +176,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer) {
 }
 
 TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -267,7 +267,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
 }
 
 TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);
@@ -303,7 +303,7 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_ValidPointer) {
 }
 
 TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit comp_unit(arena, interner);

@@ -29,7 +29,7 @@ static bool contains_substring(const char* haystack, const char* needle) {
 }
 
 TEST_FUNC(DoubleFree_TransferTracking) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -71,7 +71,7 @@ TEST_FUNC(DoubleFree_TransferTracking) {
 }
 
 TEST_FUNC(DoubleFree_DeferContextInError) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -113,7 +113,7 @@ TEST_FUNC(DoubleFree_DeferContextInError) {
 }
 
 TEST_FUNC(DoubleFree_ErrdeferContextInError) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

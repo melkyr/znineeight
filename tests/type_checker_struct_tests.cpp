@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(TypeChecker_StructDeclaration_Valid) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source = "const Point = struct { x: i32, y: i32 };";
@@ -18,7 +18,7 @@ TEST_FUNC(TypeChecker_StructDeclaration_Valid) {
 }
 
 TEST_FUNC(TypeChecker_StructDeclaration_DuplicateField) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source = "const S = struct { x: i32, x: bool };";
@@ -33,7 +33,7 @@ TEST_FUNC(TypeChecker_StructDeclaration_DuplicateField) {
 }
 
 TEST_FUNC(TypeChecker_StructLayout_Verification) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source = "const S = struct { a: u8, b: i32, c: u8 };";
@@ -71,7 +71,7 @@ TEST_FUNC(TypeChecker_StructLayout_Verification) {
 }
 
 TEST_FUNC(TypeChecker_UnionDeclaration_DuplicateField) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source = "const U = union { x: i32, x: bool };";
@@ -86,7 +86,7 @@ TEST_FUNC(TypeChecker_UnionDeclaration_DuplicateField) {
 }
 
 TEST_FUNC(TypeChecker_StructInitialization_Valid) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =
@@ -105,7 +105,7 @@ TEST_FUNC(TypeChecker_StructInitialization_Valid) {
 }
 
 TEST_FUNC(TypeChecker_MemberAccess_Valid) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =
@@ -125,7 +125,7 @@ TEST_FUNC(TypeChecker_MemberAccess_Valid) {
 }
 
 TEST_FUNC(TypeChecker_MemberAccess_InvalidField) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =
@@ -145,7 +145,7 @@ TEST_FUNC(TypeChecker_MemberAccess_InvalidField) {
 }
 
 TEST_FUNC(TypeChecker_StructInitialization_MissingField) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =
@@ -164,7 +164,7 @@ TEST_FUNC(TypeChecker_StructInitialization_MissingField) {
 }
 
 TEST_FUNC(TypeChecker_StructInitialization_ExtraField) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =
@@ -183,7 +183,7 @@ TEST_FUNC(TypeChecker_StructInitialization_ExtraField) {
 }
 
 TEST_FUNC(TypeChecker_StructInitialization_TypeMismatch) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
 
     const char* source =

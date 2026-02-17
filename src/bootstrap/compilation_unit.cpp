@@ -184,6 +184,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
 
     // Create module early
     void* mod_mem = arena_.alloc(sizeof(Module));
+    if (!mod_mem) plat_abort();
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
     mod->filename = interned_filename;
@@ -191,6 +192,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
 
     // Create per-module symbol table
     void* sym_mem = arena_.alloc(sizeof(SymbolTable));
+    if (!sym_mem) plat_abort();
     mod->symbols = new (sym_mem) SymbolTable(arena_);
     mod->symbols->setCurrentModule(mod->name);
     injectRuntimeSymbols(*mod->symbols);
@@ -221,6 +223,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
     }
 
     void* mem = arena_.alloc(sizeof(Parser));
+    if (!mem) plat_abort();
     return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, mod->name);
 }
 

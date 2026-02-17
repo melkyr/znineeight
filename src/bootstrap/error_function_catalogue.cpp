@@ -3,6 +3,7 @@
 
 ErrorFunctionCatalogue::ErrorFunctionCatalogue(ArenaAllocator& arena) : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ErrorFunctionInfo>));
+    if (!mem) plat_abort();
     functions_ = new (mem) DynamicArray<ErrorFunctionInfo>(arena_);
 }
 

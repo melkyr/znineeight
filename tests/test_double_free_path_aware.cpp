@@ -5,7 +5,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(DoubleFree_IfElseBranching) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -54,7 +54,7 @@ TEST_FUNC(DoubleFree_IfElseBranching) {
 }
 
 TEST_FUNC(DoubleFree_IfElseBothFree) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -100,7 +100,7 @@ TEST_FUNC(DoubleFree_IfElseBothFree) {
 }
 
 TEST_FUNC(DoubleFree_WhileConservative) {
-    ArenaAllocator arena(131072);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 

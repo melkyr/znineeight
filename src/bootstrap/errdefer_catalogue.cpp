@@ -3,6 +3,7 @@
 
 ErrDeferCatalogue::ErrDeferCatalogue(ArenaAllocator& arena) : arena_(arena) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ErrDeferInfo>));
+    if (!mem) plat_abort();
     err_defers_ = new (mem) DynamicArray<ErrDeferInfo>(arena_);
 }
 

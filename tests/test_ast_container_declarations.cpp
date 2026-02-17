@@ -4,7 +4,7 @@
 
 TEST_FUNC(ASTNode_ContainerDeclarations)
 {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
 
     // Test Struct Declaration Node
     ASTStructDeclNode struct_node;

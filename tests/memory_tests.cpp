@@ -17,7 +17,7 @@ struct AssignmentLogger {
 };
 
 TEST_FUNC(dynamic_array_non_pod_reallocation) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     DynamicArray<AssignmentLogger> arr(arena);
     copy_assignment_calls = 0;
 

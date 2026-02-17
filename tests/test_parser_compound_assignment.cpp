@@ -4,7 +4,7 @@
 #include <cstring>
 
 TEST_FUNC(Parser_CompoundAssignment_Simple) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a += 5", arena, interner);
@@ -28,7 +28,7 @@ TEST_FUNC(Parser_CompoundAssignment_Simple) {
 }
 
 TEST_FUNC(Parser_CompoundAssignment_AllOperators) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -57,7 +57,7 @@ TEST_FUNC(Parser_CompoundAssignment_AllOperators) {
 }
 
 TEST_FUNC(Parser_CompoundAssignment_RightAssociativity) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("a += b *= c", arena, interner);
@@ -83,7 +83,7 @@ TEST_FUNC(Parser_CompoundAssignment_RightAssociativity) {
 }
 
 TEST_FUNC(Parser_CompoundAssignment_ComplexRHS) {
-    ArenaAllocator arena(32768);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     ParserTestContext ctx("x *= y + z * 2", arena, interner);

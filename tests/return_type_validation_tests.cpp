@@ -3,7 +3,7 @@
 #include "type_checker.hpp"
 
 TEST_FUNC(ReturnTypeValidation_Valid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source = "fn test_fn() -> i32 { return 10; }";
     ParserTestContext context(source, arena, interner);
@@ -17,7 +17,7 @@ TEST_FUNC(ReturnTypeValidation_Valid) {
 }
 
 TEST_FUNC(ReturnTypeValidation_Invalid) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     const char* source = "fn test_fn() -> i32 { return true; }";
     ParserTestContext context(source, arena, interner);

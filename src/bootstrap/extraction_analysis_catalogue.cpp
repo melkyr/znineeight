@@ -8,6 +8,7 @@
 ExtractionAnalysisCatalogue::ExtractionAnalysisCatalogue(ArenaAllocator& arena)
     : arena_(arena), function_stack_(arena), current_stack_estimate_(0) {
     void* mem = arena_.alloc(sizeof(DynamicArray<ExtractionSiteInfo>));
+    if (!mem) plat_abort();
     sites_ = new (mem) DynamicArray<ExtractionSiteInfo>(arena_);
 }
 

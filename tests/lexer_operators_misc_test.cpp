@@ -6,7 +6,7 @@
 #include <cstring>
 
 TEST_FUNC(lex_pipe_pipe_operator) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     SourceManager sm(arena);
     const char* source = "||";

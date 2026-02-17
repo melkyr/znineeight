@@ -70,7 +70,7 @@ TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer) {
 TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray) {
     const char* source = "const S = struct { field: [8]u8 };";
     // This should not abort
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -87,7 +87,7 @@ TEST_FUNC(TypeChecker_C89_StructFieldValidation_ValidArray) {
 TEST_FUNC(TypeChecker_C89_UnionFieldValidation_ValidFields) {
     const char* source = "const U = struct { a: i32, b: *u8, c: [4]f64 };";
     // This should not abort
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);

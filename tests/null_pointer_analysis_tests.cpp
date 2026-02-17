@@ -5,7 +5,7 @@
 #include <new>
 
 TEST_FUNC(NullPointerAnalyzer_BasicTracking) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -33,7 +33,7 @@ TEST_FUNC(NullPointerAnalyzer_BasicTracking) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_Shadowing) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -69,7 +69,7 @@ TEST_FUNC(NullPointerAnalyzer_Shadowing) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_NoLeakage) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -103,7 +103,7 @@ TEST_FUNC(NullPointerAnalyzer_NoLeakage) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_IfNullGuard) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -134,7 +134,7 @@ TEST_FUNC(NullPointerAnalyzer_IfNullGuard) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_IfElseMerge) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -167,7 +167,7 @@ TEST_FUNC(NullPointerAnalyzer_IfElseMerge) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_WhileGuard) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -196,7 +196,7 @@ TEST_FUNC(NullPointerAnalyzer_WhileGuard) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -229,7 +229,7 @@ TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_DefiniteNullDeref) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -265,7 +265,7 @@ TEST_FUNC(NullPointerAnalyzer_DefiniteNullDeref) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_UninitPointer) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -301,7 +301,7 @@ TEST_FUNC(NullPointerAnalyzer_UninitPointer) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_PotentialNullDeref) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -339,7 +339,7 @@ TEST_FUNC(NullPointerAnalyzer_PotentialNullDeref) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_AddressOfSafe) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -368,7 +368,7 @@ TEST_FUNC(NullPointerAnalyzer_AddressOfSafe) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_ArrayAccessDeref) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -397,7 +397,7 @@ TEST_FUNC(NullPointerAnalyzer_ArrayAccessDeref) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
@@ -427,7 +427,7 @@ TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking) {
 }
 
 TEST_FUNC(NullPointerAnalyzer_AssignmentTracking) {
-    ArenaAllocator arena(16384);
+    ArenaAllocator arena(1024 * 1024);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
 
