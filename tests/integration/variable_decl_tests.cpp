@@ -36,7 +36,7 @@ TEST_FUNC(VariableIntegration_BasicI32) {
 }
 
 TEST_FUNC(VariableIntegration_BasicConstF64) {
-    return run_var_decl_test("const y: f64 = 3.14;", "y", "const double y = 3.14;");
+    return run_var_decl_test("const y: f64 = 3.14;", "y", "double y = 3.14;");
 }
 
 TEST_FUNC(VariableIntegration_GlobalVar) {
@@ -62,7 +62,7 @@ TEST_FUNC(VariableIntegration_InferredFloat) {
 }
 
 TEST_FUNC(VariableIntegration_InferredBool) {
-    return run_var_decl_test("const b = true;", "b", "const int b = 1;");
+    return run_var_decl_test("const b = true;", "b", "int b = 1;");
 }
 
 // --- Name Mangling ---

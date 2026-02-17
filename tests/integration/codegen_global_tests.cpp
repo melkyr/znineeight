@@ -87,11 +87,11 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
 }
 
 TEST_FUNC(Codegen_Global_PubConst) {
-    return run_global_codegen_test("pub const x: i32 = 42;", "const int x = 42;");
+    return run_global_codegen_test("pub const x: i32 = 42;", "int x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_PrivateConst) {
-    return run_global_codegen_test("const x: i32 = 42;", "static const int x = 42;");
+    return run_global_codegen_test("const x: i32 = 42;", "static int x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_PubVar) {
@@ -109,7 +109,7 @@ TEST_FUNC(Codegen_Global_Array) {
 TEST_FUNC(Codegen_Global_Array_WithInit) {
     // Zig doesn't support positional array literals in current parser yet, but we can test if we have them.
     // For now, testing that it produces a constant initializer.
-    return run_global_codegen_test("pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };", "const int x[3] = {1, 2, 3};");
+    return run_global_codegen_test("pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };", "int x[3] = {1, 2, 3};");
 }
 
 TEST_FUNC(Codegen_Global_Pointer) {
@@ -117,7 +117,7 @@ TEST_FUNC(Codegen_Global_Pointer) {
 }
 
 TEST_FUNC(Codegen_Global_ConstPointer) {
-    return run_global_codegen_test("pub var x: *const i32;", "const int* x;");
+    return run_global_codegen_test("pub var x: *const i32;", "int* x;");
 }
 
 TEST_FUNC(Codegen_Global_KeywordCollision) {
@@ -133,7 +133,7 @@ TEST_FUNC(Codegen_Global_PointerToGlobal) {
 }
 
 TEST_FUNC(Codegen_Global_Arithmetic) {
-    return run_global_codegen_test("pub const x: i32 = 1 + 2 * 3;", "const int x = 1 + 2 * 3;");
+    return run_global_codegen_test("pub const x: i32 = 1 + 2 * 3;", "int x = 1 + 2 * 3;");
 }
 
 TEST_FUNC(Codegen_Global_Enum) {

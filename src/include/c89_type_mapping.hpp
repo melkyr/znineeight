@@ -56,8 +56,8 @@ static inline bool is_c89_compatible(Type* type) {
     switch (type->kind) {
         case TYPE_POINTER: {
             Type* base_type = type->as.pointer.base;
-            // Reject null base, multi-level pointers, and function pointers.
-            if (!base_type || base_type->kind == TYPE_POINTER || base_type->kind == TYPE_FUNCTION) {
+            // Reject null base and function pointers.
+            if (!base_type || base_type->kind == TYPE_FUNCTION) {
                 return false;
             }
             // A pointer is compatible only if its base type is a compatible type.

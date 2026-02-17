@@ -290,9 +290,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_POINTER_TYPE:
             current_parent_ = node;
-            if (node->as.pointer_type.base && node->as.pointer_type.base->type == NODE_POINTER_TYPE) {
-                reportNonC89Feature(node->loc, "multi-level pointers are not supported in bootstrap compiler");
-            }
             visit(node->as.pointer_type.base);
             current_parent_ = prev_parent;
             break;

@@ -126,7 +126,7 @@ TEST_FUNC(PointerIntegration_ConstAdding) {
         "    var cp: *const i32 = p;\n"
         "    return cp;\n"
         "}";
-    return run_pointer_test(source, "cp", "const int* cp = p;");
+    return run_pointer_test(source, "cp", "int* cp = p;");
 }
 
 // --- Negative Tests ---

@@ -1046,6 +1046,12 @@ Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode*
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
     const char* name = node->as.identifier.name;
 
+    // Handle special '_' identifier for discarding values
+    if (plat_strcmp(name, "_") == 0) {
+        node->resolved_type = get_g_type_anytype();
+        return node->resolved_type;
+    }
+
     // Handle primitive types as values (e.g. @sizeOf(i32))
     Type* prim = resolvePrimitiveTypeName(name);
     if (prim) {
@@ -2559,6 +2565,9 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Exact match always works
     if (source_type == target_type) return true;
+
+    // anytype target (like special discard '_') accepts anything
+    if (target_type->kind == TYPE_ANYTYPE) return true;
 
     // Error Union assignment (Zig-like for analysis purposes)
     if (target_type->kind == TYPE_ERROR_UNION) {

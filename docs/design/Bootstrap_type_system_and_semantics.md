@@ -662,7 +662,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
 | `*T` | Conditional | `T*` | Allowed only if `T` is an allowed primitive or struct/enum. |
-| `**T` | ✗ | - | **Rejected.** Multi-level pointers are not supported in bootstrap. |
+| `**T` | ✓ | `T**` | Supported. |
 | `[]T` | ✗ | - | **Rejected.** Slices require runtime support not available in bootstrap. |
 | `!T` | ✗ | - | **Rejected.** Error unions are rejected until Milestone 5 translation. |
 | `?T` | ✗ | - | **Rejected.** Optionals are rejected until Milestone 5 translation. |
@@ -1219,8 +1219,7 @@ The following patterns are strictly rejected in the bootstrap phase to maintain 
     -   **Error Unions** (`!T`): Error handling is handled via alternative designs.
     -   **Error Sets** (`error{...}`): Incompatible with C89 function signatures.
     -   **Optional Types** (`?T`): Nullability handled differently in C89.
-3.  **Multi-level Pointers**: Only single-level pointers (e.g., `*i32`) are allowed in parameters. Multi-level pointers (e.g., `**i32`) are rejected to avoid complexity.
-4.  **Void Parameters**: Parameters cannot have the `void` type.
+3.  **Void Parameters**: Parameters cannot have the `void` type.
 
 ### 14.2 Type Alias Resolution
 
@@ -1303,7 +1302,7 @@ To ensure C89 compatibility and maintain Zig's safety guarantees, the following 
 - **`ptr + unsigned` / `unsigned + ptr`**: Result is a pointer of the same type as `ptr`. The offset must be an unsigned integer type (`u8`, `u32`, `usize`).
 - **`ptr - unsigned`**: Result is a pointer of the same type.
 - **`ptr1 - ptr2`**: Result is an `isize` representing the distance between the two pointers. This is only valid if both pointers point to the same base type (ignoring `const`).
-- **Prohibited**: Arithmetic on `*void`, multi-level pointers (`**T`), or incomplete types is strictly rejected.
+- **Prohibited**: Arithmetic on `*void`, multi-level pointers (`**T`) (for now), or incomplete types is strictly rejected.
 
 ### Implicit Pointer Conversions
 - **`*void` to `*T`**: The bootstrap compiler allows implicit conversion from a `void` pointer to any typed pointer, provided the target base type is C89-compatible. This matches standard C89 behavior and is essential for using `arena_alloc`.
@@ -1349,7 +1348,6 @@ To maintain stability in test environments, child processes explicitly call `abo
 | **Slices** | `var s: []u8;` | Slices require a struct (`{ptr, len}`) and runtime support that do not exist in C89. |
 | **Error Unions** | `var v: !i32;` | C89 uses error codes or `errno`. |
 | **Optionals** | `var v: ?*i32;` | Optionals are implemented as tagged unions or pointers, which is a higher-level concept. |
-| **Multi-level Pointers**| `var p: **i32;` | Adds unnecessary complexity to the bootstrap type system. |
 | **Function Pointers** | `var f = &func;` | Rejected to simplify the type system and code generation. |
 | **Struct Methods** | `s.method()` | C89 structs do not have associated functions. Equivalent is passing a struct pointer to a global function. |
 | **Variadic Functions** | `fn f(args: ...)` | Not supported to simplify calling convention and type checking. |

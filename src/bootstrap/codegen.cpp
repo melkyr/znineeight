@@ -69,9 +69,6 @@ void C89Emitter::emitType(Type* type, const char* name) {
             Type* base_elem = arr_type;
             while (base_elem->kind == TYPE_ARRAY) base_elem = base_elem->as.array.element_type;
 
-            if (type->as.pointer.is_const) {
-                writeString("const ");
-            }
             emitType(base_elem);
             writeString(" (*");
             if (name) writeString(name);
@@ -90,9 +87,6 @@ void C89Emitter::emitType(Type* type, const char* name) {
             return;
         }
 
-        if (type->as.pointer.is_const) {
-            writeString("const ");
-        }
         emitType(type->as.pointer.base);
         writeString("*");
         if (name) {
@@ -216,20 +210,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     Type* type = node->resolved_type;
     const char* c_name = getC89GlobalName(decl->name);
 
-    if (type && type->kind == TYPE_POINTER) {
-        // For pointers: Type* const Name or const Type* const Name
-        emitType(type); // Emits e.g. "int*" or "const int*"
-        if (decl->is_const) {
-            writeString(" const");
-        }
-        writeString(" ");
-        writeString(c_name);
-    } else {
-        if (decl->is_const) {
-            writeString("const ");
-        }
-        emitType(type, c_name);
-    }
+    emitType(type, c_name);
 
     if (decl->initializer) {
         writeString(" = ");

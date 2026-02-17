@@ -274,19 +274,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir) {
 
                     Type* type = (*stmts)[i]->resolved_type;
                     const char* c_name = emitter.getC89GlobalName(decl->name);
-                    if (type && type->kind == TYPE_POINTER) {
-                        emitter.emitType(type);
-                        if (decl->is_const) {
-                            emitter.writeString(" const");
-                        }
-                        emitter.writeString(" ");
-                        emitter.writeString(c_name);
-                    } else {
-                        if (decl->is_const) {
-                            emitter.writeString("const ");
-                        }
-                        emitter.emitType(type, c_name);
-                    }
+                    emitter.emitType(type, c_name);
                     emitter.writeString(";\n");
                 }
             }

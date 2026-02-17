@@ -1035,4 +1035,12 @@ TEST_FUNC(ImportResolution_DefaultLib);
 TEST_FUNC(ImportResolution_PrecedenceLocal);
 TEST_FUNC(ImportResolution_NotFound);
 
+// Task 219: Multi-level pointers
+TEST_FUNC(Pointer_Pointer_Decl);
+TEST_FUNC(Pointer_Pointer_Dereference);
+TEST_FUNC(Pointer_Pointer_Triple);
+TEST_FUNC(Pointer_Pointer_Param_Return);
+TEST_FUNC(Pointer_Pointer_Const_Ignored);
+TEST_FUNC(Pointer_Pointer_Global_Emission);
+
 #endif // TEST_DECLARATIONS_HPP
