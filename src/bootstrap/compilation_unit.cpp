@@ -236,7 +236,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
 
     void* mem = arena_.alloc(sizeof(Parser));
     if (mem == NULL) fatalError("Out of memory allocating Parser");
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, mod->name);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
 }
 
 /**

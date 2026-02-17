@@ -694,7 +694,22 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             continue;
         }
 
-        if (!areTypesCompatible(param_type, arg_type)) {
+        // Handle integer literal and constant promotion for arguments
+        bool compatible = areTypesCompatible(param_type, arg_type);
+        if (!compatible && isIntegerType(param_type)) {
+            i64 const_val;
+            if (evaluateConstantExpression(arg_node, &const_val)) {
+                Type literal_type;
+                literal_type.kind = TYPE_INTEGER_LITERAL;
+                literal_type.as.integer_literal.value = const_val;
+                if (canLiteralFitInType(&literal_type, param_type)) {
+                    compatible = true;
+                    arg_node->resolved_type = param_type;
+                }
+            }
+        }
+
+        if (!compatible) {
             char param_type_str[64];
             char arg_type_str[64];
             typeToString(param_type, param_type_str, sizeof(param_type_str));
@@ -780,6 +795,17 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     }
 
     // Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules.
+    // Handle integer literal promotion for assignments
+    if (node->rvalue->type == NODE_INTEGER_LITERAL && isIntegerType(lvalue_type)) {
+        Type literal_type;
+        literal_type.kind = TYPE_INTEGER_LITERAL;
+        literal_type.as.integer_literal.value = (i64)node->rvalue->as.integer_literal.value;
+        if (canLiteralFitInType(&literal_type, lvalue_type)) {
+            node->rvalue->resolved_type = lvalue_type;
+            return lvalue_type;
+        }
+    }
+
     if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
         // IsTypeAssignableTo already reports a detailed error.
         // We will now call fatalError to halt compilation as requested.
@@ -1801,16 +1827,26 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
 
 Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
     if (node->type_expr) {
-        Type* struct_type = visit(node->type_expr);
-        if (!struct_type) return NULL;
+        Type* init_type = visit(node->type_expr);
+        if (!init_type) return NULL;
 
-        if (struct_type->kind != TYPE_STRUCT) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct type for initialization", unit.getArena());
+        if (init_type->kind == TYPE_STRUCT) {
+            if (checkStructInitializerFields(node, init_type, node->type_expr->loc)) {
+                return init_type;
+            }
+        } else if (init_type->kind == TYPE_ARRAY) {
+            // For arrays, just visit values and check compatibility if possible
+            Type* elem_type = init_type->as.array.element_type;
+            for (size_t i = 0; i < node->fields->length(); ++i) {
+                Type* val_type = visit((*node->fields)[i]->value);
+                if (val_type && !IsTypeAssignableTo(val_type, elem_type, (*node->fields)[i]->loc)) {
+                     // Error already reported
+                }
+            }
+            return init_type;
+        } else {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct or array type for initialization", unit.getArena());
             return NULL;
-        }
-
-        if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
-            return struct_type;
         }
         return NULL;
     }

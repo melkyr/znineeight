@@ -246,21 +246,32 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!decl->symbol) return;
     const char* c_name = var_alloc_.allocate(decl->symbol);
 
+    bool is_const_init = decl->initializer && isConstantInitializer(decl->initializer);
+    bool is_undefined = decl->initializer && (decl->initializer->type == NODE_UNDEFINED_LITERAL);
+
     if (!emit_assignment) {
         writeIndent();
+        // C89: Only use 'const' for local variables if they have a constant initializer.
+        // Otherwise, we'd have to initialize them at declaration, which might change
+        // the order of side effects if the declaration is not at the top of the block.
+        // For simplicity and correctness, we only emit 'const' for locals with constant initializers.
+        if (decl->is_const && is_const_init) {
+            writeString("const ");
+        }
         emitType(node->resolved_type, c_name);
+
+        if (is_const_init && !is_undefined) {
+            writeString(" = ");
+            emitExpression(decl->initializer);
+        }
         writeString(";\n");
     } else {
-        if (decl->initializer) {
-            bool is_undefined = (decl->initializer->type == NODE_UNDEFINED_LITERAL);
-
-            if (!is_undefined) {
-                writeIndent();
-                writeString(c_name);
-                writeString(" = ");
-                emitExpression(decl->initializer);
-                writeString(";\n");
-            }
+        if (decl->initializer && !is_const_init && !is_undefined) {
+            writeIndent();
+            writeString(c_name);
+            writeString(" = ");
+            emitExpression(decl->initializer);
+            writeString(";\n");
         }
     }
 }
