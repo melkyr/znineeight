@@ -80,9 +80,9 @@ Type* resolvePrimitiveTypeName(const char* name) {
 }
 
 
-Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, TypeInterner* interner) {
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
     if (interner) {
-        return interner->getPointerType(base_type, is_const);
+        return interner->getPointerType(base_type, is_const, is_many);
     }
 
     Type* new_type = allocateType(arena);
@@ -91,6 +91,7 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, T
     new_type->alignment = 4; // Assuming 32-bit pointers
     new_type->as.pointer.base = base_type;
     new_type->as.pointer.is_const = is_const;
+    new_type->as.pointer.is_many = is_many;
     return new_type;
 }
 
@@ -255,18 +256,19 @@ u32 TypeInterner::hashType(TypeKind kind, void* p1, u64 v1) {
     return h % 256;
 }
 
-Type* TypeInterner::getPointerType(Type* base_type, bool is_const) {
-    u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const);
+Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many) {
+    u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const | ((u64)is_many << 8));
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_POINTER &&
             e->type->as.pointer.base == base_type &&
-            e->type->as.pointer.is_const == is_const) {
+            e->type->as.pointer.is_const == is_const &&
+            e->type->as.pointer.is_many == is_many) {
             dedupe_count++;
             return e->type;
         }
     }
 
-    Type* t = createPointerType(arena_, base_type, is_const, NULL);
+    Type* t = createPointerType(arena_, base_type, is_const, is_many, NULL);
     Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
     e->type = t;
     e->next = buckets[h];
@@ -373,10 +375,13 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         case TYPE_F64:   safe_append(current, remaining, "f64"); break;
         case TYPE_NULL:  safe_append(current, remaining, "null"); break;
         case TYPE_POINTER: {
-            if (type->as.pointer.is_const) {
-                safe_append(current, remaining, "*const ");
+            if (type->as.pointer.is_many) {
+                safe_append(current, remaining, "[*]");
             } else {
                 safe_append(current, remaining, "*");
+            }
+            if (type->as.pointer.is_const) {
+                safe_append(current, remaining, "const ");
             }
             typeToString(type->as.pointer.base, current, remaining);
             break;

@@ -430,7 +430,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         .build();
     table.insert(sym_arena);
 
-    Type* arena_ptr_type = createPointerType(arena_, arena_type, false, &type_interner_);
+    Type* arena_ptr_type = createPointerType(arena_, arena_type, false, false, &type_interner_);
 
     // arena_create(initial_size: usize) -> *Arena
     {
@@ -457,7 +457,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(arena_ptr_type);
         params->append(get_g_type_usize());
-        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
+        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, false, &type_interner_);
         Type* fn_type = createFunctionType(arena_, params, ret_type);
 
         const char* name = interner_.intern("arena_alloc");
@@ -525,7 +525,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         if (params_mem == NULL) fatalError("Out of memory allocating params for arena_alloc_default");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
         params->append(get_g_type_usize());
-        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, &type_interner_);
+        Type* ret_type = createPointerType(arena_, get_g_type_void(), false, false, &type_interner_);
         Type* fn_type = createFunctionType(arena_, params, ret_type);
 
         const char* name = interner_.intern("arena_alloc_default");
@@ -543,7 +543,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
     if (params_mem2 == NULL) fatalError("Out of memory allocating params for arena_free");
     DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
-    params2->append(createPointerType(arena_, get_g_type_void(), false, &type_interner_));
+    params2->append(createPointerType(arena_, get_g_type_void(), false, false, &type_interner_));
     Type* ret_type2 = get_g_type_void();
     Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
 
