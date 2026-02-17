@@ -282,6 +282,10 @@ int plat_delete_file(const char* path) {
     return -1;
 }
 
+void plat_abort() {
+    ExitProcess(1);
+}
+
 #else
 // --- Linux/POSIX Implementation ---
 
@@ -555,6 +559,10 @@ char* plat_create_temp_file(const char* prefix, const char* suffix) {
 
 int plat_delete_file(const char* path) {
     return unlink(path);
+}
+
+void plat_abort() {
+    abort();
 }
 
 #endif

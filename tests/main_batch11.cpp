@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
         test_Recursive_Mutual_Mangled,
         test_Recursive_Forward_Mangled,
         test_CallSyntax_AtImport,
-        test_CallSyntax_AtImport_Rejection,
+        test_CallSyntax_AtImport_Pipeline,
         test_CallSyntax_ComplexPostfix,
         test_CallSyntax_MethodCall,
         test_Task168_ComplexContexts

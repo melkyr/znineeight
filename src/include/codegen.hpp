@@ -23,24 +23,22 @@ public:
      * @param arena The ArenaAllocator for CVariableAllocator.
      * @param error_handler The error handler for reporting errors during codegen.
      */
-    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler);
+    C89Emitter(CompilationUnit& unit);
 
     /**
      * @brief Constructs an emitter that writes to the specified file.
-     * @param arena The ArenaAllocator for CVariableAllocator.
-     * @param error_handler The error handler for reporting errors during codegen.
+     * @param unit The compilation unit.
      * @param path The path to the output file.
      */
-    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path);
+    C89Emitter(CompilationUnit& unit, const char* path);
 
 
     /**
      * @brief Constructs an emitter that writes to an already open file.
-     * @param arena The ArenaAllocator for CVariableAllocator.
-     * @param error_handler The error handler for reporting errors during codegen.
+     * @param unit The compilation unit.
      * @param file The open file handle.
      */
-    C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, PlatFile file);
+    C89Emitter(CompilationUnit& unit, PlatFile file);
 
     /**
      * @brief Destructor. Flushes and closes the file if it was opened by the constructor.
@@ -283,6 +281,7 @@ private:
     PlatFile output_file_;
     int indent_level_;
     bool owns_file_;
+    CompilationUnit& unit_;
     CVariableAllocator var_alloc_;
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;

@@ -8,12 +8,11 @@ FLAGS="-std=c++98 -Wall -Wno-error=unused-function -Wno-error=c++11-extensions -
 # Optional: Add -DDEBUG if needed, though batches should be self-contained
 # FLAGS="$FLAGS -DDEBUG"
 
-for i in {1..32}; do
-    MAIN_FILE="tests/main_batch$i.cpp"
-    if [ ! -f "$MAIN_FILE" ]; then
-        echo "Skipping Batch $i (no main file found)"
-        continue
-    fi
+for MAIN_FILE in tests/main_batch*.cpp; do
+    if [ ! -f "$MAIN_FILE" ]; then continue; fi
+
+    # Extract batch number from filename (e.g., tests/main_batch1.cpp -> 1)
+    i=$(echo "$MAIN_FILE" | sed 's/tests\/main_batch//;s/\.cpp//')
 
     echo "Generating and Compiling Batch $i..."
     RUNNER_FILE="tests/batch_runner_$i.cpp"

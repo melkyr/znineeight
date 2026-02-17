@@ -18,6 +18,7 @@ static u32 hash_string(const char* str) {
 SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     // Zero-initialize the temporary symbol to ensure all fields are set.
     temp_symbol_.name = NULL;
+    temp_symbol_.module_name = NULL;
     temp_symbol_.mangled_name = NULL;
     temp_symbol_.symbol_type = NULL;
     temp_symbol_.details = NULL;
@@ -29,6 +30,11 @@ SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
 
 SymbolBuilder& SymbolBuilder::withName(const char* name) {
     temp_symbol_.name = name;
+    return *this;
+}
+
+SymbolBuilder& SymbolBuilder::withModule(const char* module_name) {
+    temp_symbol_.module_name = module_name;
     return *this;
 }
 
@@ -109,13 +115,16 @@ void Scope::insert(Symbol& symbol) {
     symbol_count++;
 }
 
-Symbol* Scope::find(const char* name) {
+Symbol* Scope::find(const char* name, const char* module_name) {
     u32 hash = hash_string(name);
     size_t index = hash % bucket_count;
 
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
         if (plat_strcmp(entry->symbol.name, name) == 0) {
-            return &entry->symbol;
+            if (module_name == NULL || entry->symbol.module_name == NULL ||
+                plat_strcmp(entry->symbol.module_name, module_name) == 0) {
+                return &entry->symbol;
+            }
         }
     }
     return NULL;
@@ -154,7 +163,7 @@ void Scope::resize() {
 // --- SymbolTable Implementation ---
 
 SymbolTable::SymbolTable(ArenaAllocator& arena)
-    : arena_(arena), scopes(arena), all_scopes_(arena), current_scope_level_(0)
+    : arena_(arena), scopes(arena), all_scopes_(arena), current_module_(NULL), current_scope_level_(0)
 {
     // The global scope is entered by default upon initialization.
     enterScope();
@@ -178,8 +187,15 @@ void SymbolTable::exitScope() {
 
 bool SymbolTable::insert(Symbol& symbol) {
     // Check for redeclaration in the current scope.
-    if (lookupInCurrentScope(symbol.name)) {
-        return false; // Symbol already exists.
+    // If it's the global scope, we must check for collisions within the same module
+    if (scopes.length() == 1) {
+        if (scopes.back()->find(symbol.name, symbol.module_name)) {
+            return false;
+        }
+    } else {
+        if (lookupInCurrentScope(symbol.name)) {
+            return false; // Symbol already exists.
+        }
     }
     // Assign the current scope level to the symbol.
     symbol.scope_level = getCurrentScopeLevel();
@@ -190,8 +206,9 @@ bool SymbolTable::insert(Symbol& symbol) {
 
 Symbol* SymbolTable::lookup(const char* name) {
     // Search from the innermost scope to the outermost.
-    for (int i = scopes.length() - 1; i >= 0; --i) {
-        Symbol* symbol = scopes[i]->find(name);
+    for (int i = (int)scopes.length() - 1; i >= 0; --i) {
+        const char* mod = (i == 0) ? current_module_ : NULL;
+        Symbol* symbol = scopes[i]->find(name, mod);
         if (symbol) {
             return symbol;
         }
@@ -203,19 +220,25 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     if (scopes.length() == 0) {
         return NULL;
     }
-    return scopes.back()->find(name);
+    const char* mod = (scopes.length() == 1) ? current_module_ : NULL;
+    return scopes.back()->find(name, mod);
 }
 
-Symbol* SymbolTable::lookupWithModule(const char* module, const char* name) {
-    // For now, ignore module parameter and use existing lookup
-    // TODO: In Milestone 6, implement proper module-aware lookup
-    return lookup(name);
+Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbol_name) {
+    // Look directly into the global scope with the specified module name
+    if (scopes.length() > 0) {
+        return scopes[0]->find(symbol_name, module_name);
+    }
+    return NULL;
 }
 
 Symbol* SymbolTable::findInAnyScope(const char* name) {
     // Search all scopes ever created, from most recent to oldest.
     for (int i = (int)all_scopes_.length() - 1; i >= 0; --i) {
-        Symbol* symbol = all_scopes_[i]->find(name);
+        // This is tricky because we don't know which module a scope belongs to here
+        // But for any-scope lookup (used for things like forward references),
+        // we probably want to ignore module filtering or use current module.
+        Symbol* symbol = all_scopes_[i]->find(name, current_module_);
         if (symbol) {
             return symbol;
         }

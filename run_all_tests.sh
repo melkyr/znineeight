@@ -12,27 +12,31 @@ echo "================================"
 
 FAILED=0
 
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31; do
+# Use find to get all batch runners and sort them numerically
+BATCHES=$(ls ./test_runner_batch* 2>/dev/null | sed 's/\.\/test_runner_batch//' | sort -n)
+
+if [ -z "$BATCHES" ]; then
+    echo "No test runners found. Run ./test.sh first."
+    exit 1
+fi
+
+for i in $BATCHES; do
     BINARY="./test_runner_batch$i"
     echo "Batch $i..."
-    if [ -f "$BINARY" ]; then
-        # Run the binary directly to ensure output goes to console
-        $BINARY
-        RESULT=$?
-        if [ $RESULT -ne 0 ]; then
-            echo "✗ Batch $i failed"
-            FAILED=1
-        else
-            echo "✓ Batch $i passed"
-        fi
 
-        if [ "$POSTCLEAN" = true ]; then
-            rm -f "$BINARY"
-            echo "Cleaned up $BINARY"
-        fi
-    else
-        echo "✗ $BINARY not found"
+    # Run the binary directly to ensure output goes to console
+    $BINARY
+    RESULT=$?
+    if [ $RESULT -ne 0 ]; then
+        echo "✗ Batch $i failed"
         FAILED=1
+    else
+        echo "✓ Batch $i passed"
+    fi
+
+    if [ "$POSTCLEAN" = true ]; then
+        rm -f "$BINARY"
+        echo "Cleaned up $BINARY"
     fi
     echo ""
 done

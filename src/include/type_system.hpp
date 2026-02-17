@@ -38,7 +38,8 @@ enum TypeKind {
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
     TYPE_TYPE,
-    TYPE_ANYTYPE
+    TYPE_ANYTYPE,
+    TYPE_MODULE
 };
 
 /**
@@ -115,6 +116,9 @@ struct Type {
         struct {
             Type* payload;
         } optional;
+        struct {
+            const char* name;
+        } module;
     } as;
 };
 
@@ -246,6 +250,11 @@ void calculateStructLayout(Type* struct_type);
  * @return A pointer to the newly allocated Type object.
  */
 Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val);
+
+/**
+ * @brief Creates a new module Type object.
+ */
+Type* createModuleType(ArenaAllocator& arena, const char* name);
 
 /**
  * @brief Converts a Type object to its string representation.

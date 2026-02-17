@@ -1,18 +1,12 @@
 #include "test_declarations.hpp"
 #include "test_runner_main.hpp"
 
-// Forward declarations
-bool test_Task211_MultiArenaUsage();
-bool test_Task211_ArenaAllocDefault();
-bool test_Task211_ArenaTypeRecognition();
-bool test_Task211_ArenaCodegen();
+TEST_FUNC(EndToEnd_HelloWorld);
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
-        test_Task211_MultiArenaUsage,
-        test_Task211_ArenaAllocDefault,
-        test_Task211_ArenaTypeRecognition,
-        test_Task211_ArenaCodegen
+        test_EndToEnd_HelloWorld,
+        test_EndToEnd_PrimeNumbers
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

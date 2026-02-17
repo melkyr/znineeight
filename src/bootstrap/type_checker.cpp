@@ -5,7 +5,6 @@
 #include "error_handler.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
-#include <cstdlib> // For abort()
 
 
 // Helper to get the string representation of a binary operator token.
@@ -605,6 +604,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 parent->as.integer_literal.is_unsigned = true;
                 parent->as.integer_literal.is_long = false;
                 parent->as.integer_literal.resolved_type = get_g_type_usize();
+                parent->as.integer_literal.original_name = NULL;
                 parent->resolved_type = get_g_type_usize();
 
                 return parent->resolved_type;
@@ -670,7 +670,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                     }
                 }
 
-                return get_g_type_anytype();
+                return createModuleType(unit.getArena(), interned_mod_name);
             }
 
             // Register in call site table as builtin
@@ -1431,7 +1431,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (existing_sym) {
         existing_sym->symbol_type = declared_type;
         existing_sym->details = node;
-        existing_sym->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+        if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
+            existing_sym->mangled_name = existing_sym->name;
+        } else {
+            existing_sym->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+        }
 
         // If we are inside a function body, current_fn_return_type will be non-NULL
         bool is_local = (current_fn_return_type != NULL);
@@ -1441,9 +1445,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         // If not found (e.g. injected in tests), create and insert
         if (declared_type) {
             bool is_local = (current_fn_return_type != NULL);
+            const char* mangled = (node->is_extern) ? node->name :
+                                 unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+
             Symbol var_symbol = SymbolBuilder(unit.getArena())
                 .withName(node->name)
-                .withMangledName(unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule()))
+                .withModule(unit.getCurrentModule())
+                .withMangledName(mangled)
                 .ofType(SYMBOL_VARIABLE)
                 .withType(declared_type)
                 .atLocation(node->name_loc)
@@ -1512,7 +1520,11 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
     Type* function_type = createFunctionType(unit.getArena(), param_types, return_type);
     if (fn_symbol) {
         fn_symbol->symbol_type = function_type;
-        fn_symbol->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+        if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
+            fn_symbol->mangled_name = fn_symbol->name;
+        } else {
+            fn_symbol->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
+        }
     }
 
     return function_type;
@@ -1672,10 +1684,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = base_type->as.pointer.base;
     }
 
-    if (base_type->kind == TYPE_ANYTYPE) {
+    if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         // Module member access
         const char* mod_name = NULL;
-        if (node->base->type == NODE_IDENTIFIER) {
+        if (base_type->kind == TYPE_MODULE) {
+            mod_name = base_type->as.module.name;
+        } else if (node->base->type == NODE_IDENTIFIER) {
             mod_name = node->base->as.identifier.name;
         }
 
@@ -1683,6 +1697,8 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
             Symbol* sym = unit.getSymbolTable().lookupWithModule(mod_name, node->field_name);
             if (sym) {
                 node->symbol = sym;
+                if (sym->symbol_type) return sym->symbol_type;
+
                 if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) {
                     return sym->symbol_type;
                 }
@@ -2488,7 +2504,7 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
 
     plat_print_debug(buffer);
 
-    abort();
+    plat_abort();
 }
 
 bool TypeChecker::all_paths_return(ASTNode* node) {
@@ -2859,7 +2875,7 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
         }
         case NODE_IDENTIFIER: {
             Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
-            if (symbol && symbol->details) {
+            if (symbol && symbol->kind == SYMBOL_VARIABLE && symbol->details) {
                 ASTVarDeclNode* decl = (ASTVarDeclNode*)symbol->details;
                 if (decl->is_const && decl->initializer) {
                     return evaluateConstantExpression(decl->initializer, out_value);
@@ -2889,7 +2905,7 @@ IndirectType TypeChecker::detectIndirectType(ASTNode* callee) {
 
     if (callee->type == NODE_MEMBER_ACCESS) {
         Type* base_type = visit(callee->as.member_access->base);
-        if (base_type && base_type->kind == TYPE_ANYTYPE) {
+        if (base_type && (base_type->kind == TYPE_ANYTYPE || base_type->kind == TYPE_MODULE)) {
             return NOT_INDIRECT;
         }
         return INDIRECT_MEMBER;
@@ -3025,6 +3041,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
         parent->as.integer_literal.is_unsigned = isUnsignedIntegerType(target_type);
         parent->as.integer_literal.is_long = (target_type->size > 4);
         parent->as.integer_literal.resolved_type = target_type;
+        parent->as.integer_literal.original_name = NULL;
         parent->resolved_type = target_type;
         return target_type;
     }
@@ -3103,6 +3120,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
     parent->as.integer_literal.is_unsigned = true;
     parent->as.integer_literal.is_long = false;
     parent->as.integer_literal.resolved_type = get_g_type_usize();
+    parent->as.integer_literal.original_name = NULL;
     parent->resolved_type = get_g_type_usize();
 
     return parent->resolved_type;
@@ -3172,5 +3190,5 @@ void TypeChecker::fatalError(const char* message) {
     plat_print_debug("Fatal type error: ");
     plat_print_debug(message);
     plat_print_debug("\n");
-    abort();
+    plat_abort();
 }

@@ -90,9 +90,10 @@ void* arena_alloc(Arena* a, usize size) {
     if (block->used + aligned_size > block->capacity) {
         /* Need new block */
         usize next_cap = block->capacity * 2;
+        ArenaBlock* next_block;
         if (next_cap < aligned_size) next_cap = aligned_size + 1024;
 
-        ArenaBlock* next_block = (ArenaBlock*)platform_alloc(next_cap + sizeof(ArenaBlock));
+        next_block = (ArenaBlock*)platform_alloc(next_cap + sizeof(ArenaBlock));
         if (!next_block) __bootstrap_panic("arena_alloc: Out of memory", "zig_runtime.c", 95);
 
         next_block->next = (ArenaBlock*)0;
@@ -139,4 +140,33 @@ void* arena_alloc_default(usize size) {
 void arena_free(void* ptr) {
     /* No-op: individual allocations cannot be freed in an arena. */
     (void)ptr;
+}
+
+void __bootstrap_print_int(i32 n) {
+    char buf[32];
+    int i = 0;
+    unsigned int val;
+
+    if (n < 0) {
+        fputc('-', stderr);
+        val = (unsigned int)(-n);
+    } else {
+        val = (unsigned int)n;
+    }
+
+    if (val == 0) {
+        fputc('0', stderr);
+        return;
+    }
+
+    /* Convert to decimal (reverse order) */
+    while (val > 0) {
+        buf[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+
+    /* Reverse and print */
+    while (i > 0) {
+        fputc(buf[--i], stderr);
+    }
 }

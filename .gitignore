@@ -57,3 +57,5 @@ test_multi_file
 # Generated C89 files
 temp_codegen_*.c
 test_output/
+temp_hello/
+temp_prime/

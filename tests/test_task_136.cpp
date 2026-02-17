@@ -55,8 +55,3 @@ TEST_FUNC(Task136_ErrorSetMerge_Rejection) {
     return true;
 }
 
-TEST_FUNC(Task136_Import_Rejection) {
-    const char* source = "const std = @import(\"std\");";
-    ASSERT_TRUE(expect_type_checker_abort(source));
-    return true;
-}

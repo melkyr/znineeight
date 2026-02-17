@@ -39,6 +39,24 @@ DEFINE_GET_TYPE_FUNC(g_type_undefined, TYPE_UNDEFINED, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_type, TYPE_TYPE, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_anytype, TYPE_ANYTYPE, 0, 0)
 
+static Type* allocateType(ArenaAllocator& arena) {
+    Type* t = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
+    if (t) plat_memset(t, 0, sizeof(Type));
+    return t;
+}
+
+Type* createModuleType(ArenaAllocator& arena, const char* name) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_MODULE;
+    new_type->size = 0;
+    new_type->alignment = 0;
+    new_type->as.module.name = name;
+    return new_type;
+}
+
 Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "void") == 0) return get_g_type_void();
     if (plat_strcmp(name, "bool") == 0) return get_g_type_bool();
@@ -60,14 +78,6 @@ Type* resolvePrimitiveTypeName(const char* name) {
     return NULL; // Not a known primitive type
 }
 
-static Type* allocateType(ArenaAllocator& arena) {
-    Type* t = (Type*)arena.alloc(sizeof(Type));
-#ifdef MEASURE_MEMORY
-    MemoryTracker::types++;
-#endif
-    if (t) plat_memset(t, 0, sizeof(Type));
-    return t;
-}
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, TypeInterner* interner) {
     if (interner) {
@@ -440,6 +450,10 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         }
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
         case TYPE_ANYTYPE: safe_append(current, remaining, "anytype"); break;
+        case TYPE_MODULE:
+            safe_append(current, remaining, "module ");
+            safe_append(current, remaining, type->as.module.name);
+            break;
         case TYPE_INTEGER_LITERAL: safe_append(current, remaining, "comptime_int"); break;
         default:
             safe_append(current, remaining, "unknown");

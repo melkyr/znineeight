@@ -3,26 +3,25 @@
 #include "platform.hpp"
 #include "utils.hpp"
 #include "symbol_table.hpp"
-#include <cstdio>
 
 
-C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler)
+C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       module_name_(NULL) {
 }
 
-C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, const char* path)
+C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       module_name_(NULL) {
     output_file_ = plat_open_file(path, true);
 }
 
 
-C89Emitter::C89Emitter(ArenaAllocator& arena, ErrorHandler& error_handler, PlatFile file)
+C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
-      var_alloc_(arena), error_handler_(error_handler), arena_(arena), global_names_(arena),
+      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       module_name_(NULL) {
 }
 
@@ -191,10 +190,11 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     // Use flags from node, but allow override from is_public for now to avoid breaking tests
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
-    // Skip type declarations (e.g. const T = struct { ... })
-    if (decl->is_const && decl->initializer) {
+    // Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std"))
+    if (decl->initializer && decl->initializer->resolved_type) {
         Type* init_type = decl->initializer->resolved_type;
-        if (init_type && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM)) {
+        if (init_type->kind == TYPE_MODULE ||
+            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
             return;
         }
     }
@@ -658,15 +658,22 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                     break;
                 }
 
-                if (actual_type->kind == TYPE_ANYTYPE) {
+                if (actual_type->kind == TYPE_MODULE || actual_type->kind == TYPE_ANYTYPE) {
                     // Module member access
                     if (node->as.member_access->symbol && node->as.member_access->symbol->mangled_name) {
                         writeString(node->as.member_access->symbol->mangled_name);
-                    } else if (base->type == NODE_IDENTIFIER) {
-                        writeString("z_");
-                        writeString(base->as.identifier.name);
-                        writeString("_");
-                        writeString(node->as.member_access->field_name);
+                    } else {
+                        const char* mod_name = (actual_type->kind == TYPE_MODULE) ?
+                                              actual_type->as.module.name :
+                                              (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
+                        if (mod_name) {
+                            writeString("z_");
+                            writeString(mod_name);
+                            writeString("_");
+                            writeString(node->as.member_access->field_name);
+                        } else {
+                            writeString(node->as.member_access->field_name);
+                        }
                     }
                     break;
                 }
@@ -903,7 +910,7 @@ void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
 
     if (!src_type || !dest_type) {
         plat_print_debug("Error: Missing type info in @intCast\n");
-        abort();
+        plat_abort();
     }
 
     if (isSafeWidening(src_type, dest_type)) {
@@ -930,7 +937,7 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
 
     if (!src_type || !dest_type) {
         plat_print_debug("Error: Missing type info in @floatCast\n");
-        abort();
+        plat_abort();
     }
 
     if (isSafeWidening(src_type, dest_type)) {

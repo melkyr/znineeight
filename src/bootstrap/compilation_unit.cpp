@@ -110,12 +110,10 @@ public:
 };
 #endif
 #include <new>       // For placement new
-#include <cstdlib>   // For abort()
-
 // Private helper to handle fatal errors
 static void fatalError(const char* message) {
     plat_print_debug(message);
-    abort();
+    plat_abort();
 }
 
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
@@ -272,6 +270,7 @@ const char* CompilationUnit::getCurrentModule() const {
 
 void CompilationUnit::setCurrentModule(const char* module_name) {
     current_module_ = interner_.intern(module_name);
+    symbol_table_.setCurrentModule(current_module_);
 }
 
 Module* CompilationUnit::getModule(const char* name) {

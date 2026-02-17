@@ -58,6 +58,7 @@ inline int run_batch(int argc, char* argv[], bool (*tests[])(), int num_tests) {
     }
 
     printf("Passed %d/%d tests\n", passed, num_tests);
+    fflush(stdout);
     int result = (passed == num_tests ? 0 : 1);
 
     // Using _exit/ExitProcess to avoid issues with buggy global/static destructors
