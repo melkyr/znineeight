@@ -32,11 +32,11 @@ This matches the target Win32/x86 environment of the late 90s.
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
-* **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output) MUST go through the PAL (`platform.hpp`).
+* **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output, process termination) MUST go through the PAL (`platform.hpp`).
 * **C++ Standard Library Usage Policy:**
   * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
   * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<iostream>`, `<string>` (`std::string`), and `<vector>` (`std::vector`).
-  * **Exceptions:** `<cstdlib>` is allowed *only* for `abort()` and `strtol`/`strtod`.
+  * **Exceptions:** `<cstdlib>` is allowed *only* for `strtol`/`strtod`. Process termination MUST use `plat_abort()` from `platform.hpp`.
 * **Specific MSVC 6.0 Hacks:**
   * Use `__int64` instead of `long long`
   * Define `bool`, `true`, `false` manually if missing
@@ -96,6 +96,7 @@ extern Arena* zig_default_arena;
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
+* **`plat_abort()`**: Terminates the process immediately without calling destructors or performing CRT cleanup. Uses `ExitProcess(1)` on Windows.
 
 ### 3.3 String Interning (`string_interner.hpp`)
 **Concept:** Deduplicate identifiers. If "varname" appears 50 times, store it once and compare pointers.

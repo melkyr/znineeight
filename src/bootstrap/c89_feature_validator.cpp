@@ -5,7 +5,6 @@
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
-#include <cstdlib> // For abort()
 
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
     : unit(unit), error_found_(false), try_expression_depth_(0),

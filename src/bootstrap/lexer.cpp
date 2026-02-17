@@ -59,7 +59,6 @@ double Lexer::parseDecimalFloat(const char* start, const char** end) {
     *end = p;
     return value;
 }
-#include <cstdlib> // For strtol, strtod
 #include <cmath>   // For ldexp
 #include "platform.hpp"
 

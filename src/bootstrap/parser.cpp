@@ -5,7 +5,6 @@
 #include "type_system.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
-#include <cstdlib>   // For abort()
 #include <new>       // For placement new
 
 /**
@@ -79,7 +78,7 @@ void Parser::error(const char* msg) {
     }
     plat_print_debug("\n");
 
-    abort();
+    plat_abort();
 }
 
 ASTNode* Parser::createNode(NodeType type) {

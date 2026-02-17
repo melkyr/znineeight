@@ -3,7 +3,6 @@
 #include "platform.hpp"
 #include "utils.hpp"
 #include "symbol_table.hpp"
-#include <cstdio>
 
 
 C89Emitter::C89Emitter(CompilationUnit& unit)
@@ -911,7 +910,7 @@ void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
 
     if (!src_type || !dest_type) {
         plat_print_debug("Error: Missing type info in @intCast\n");
-        abort();
+        plat_abort();
     }
 
     if (isSafeWidening(src_type, dest_type)) {
@@ -938,7 +937,7 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
 
     if (!src_type || !dest_type) {
         plat_print_debug("Error: Missing type info in @floatCast\n");
-        abort();
+        plat_abort();
     }
 
     if (isSafeWidening(src_type, dest_type)) {

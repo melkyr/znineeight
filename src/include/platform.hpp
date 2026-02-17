@@ -61,4 +61,7 @@ char* plat_create_temp_file(const char* prefix, const char* suffix);
 // Deletes a file. Returns 0 on success, -1 on failure.
 int plat_delete_file(const char* path);
 
+// Aborts the process immediately. This function does not return.
+void plat_abort();
+
 #endif // PLATFORM_HPP
