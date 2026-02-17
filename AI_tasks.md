@@ -1307,9 +1307,9 @@ What to Watch For – Critical Technical Constraints
 ### Milestone 6: C Library Integration & Final Bootstrap
 208. **Task 208:** Implement the CBackend class skeleton for final code emission. (DONE)
 209. **Task 209:** Add logic to generate proper C89 headers and include guards. (DONE)
-210. **Task 210:** Implement wrappers for Zig runtime features to C library calls.
-211. **Task 211:** Handle Zig memory management with C89-compatible patterns.
-212. **Task 212:** Integrate CBackend to write complete C89 `.c` files.
+210. **Task 210:** Implement wrappers for Zig runtime features to C library calls. (DONE)
+211. **Task 211:** Handle Zig memory management with C89-compatible patterns. (DONE)
+212. **Task 212:** Integrate CBackend to write complete C89 `.c` files. (DONE)
 213. **Task 213:** Compile a "hello world" Zig program end-to-end. (DONE)
     - Verified multi-module `@import` support.
     - Verified cross-module symbol resolution and member access.
