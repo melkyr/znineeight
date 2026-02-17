@@ -90,6 +90,13 @@ public:
     bool performFullPipeline(u32 file_id);
 
     /**
+     * @brief Recursively resolves imports for the given module.
+     * @param module The module to resolve imports for.
+     * @return True if all imports were successfully resolved.
+     */
+    bool resolveImports(Module* module);
+
+    /**
      * @brief Generates C89 code from the AST and writes it to the specified file.
      * @param output_path The path to the output .c file.
      * @return True if code generation was successful.
@@ -111,6 +118,10 @@ public:
      * @brief Sets whether the unit is in test mode (enabling pattern generation).
      */
     void setTestMode(bool test_mode);
+
+    // Memory tracking helpers
+    void collectImports(ASTNode* node, Module* module);
+    bool resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack);
 
     // Memory tracking helpers
     size_t getASTNodeCount() const;

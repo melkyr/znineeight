@@ -81,6 +81,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ORELSE_EXPR:      resolved_type = visitOrelseExpr(node->as.orelse_expr); break;
         case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
         case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
+        case NODE_IMPORT_STMT:      resolved_type = visitImportStmt(node->as.import_stmt); break;
         default:
             // TODO: Add error handling for unhandled node types.
             resolved_type = NULL;
@@ -630,48 +631,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 return target_type;
             }
 
-            if (plat_strcmp(name, "@import") == 0) {
-                if (node->args->length() != 1) {
-                    fatalError(node->callee->loc, "@import expects 1 argument");
-                }
-                ASTNode* arg = (*node->args)[0];
-                if (arg->type != NODE_STRING_LITERAL) {
-                    fatalError(arg->loc, "@import expects a string literal");
-                }
-
-                const char* import_path = arg->as.string_literal.value;
-                const char* last_slash = plat_strrchr(import_path, '/');
-                const char* last_backslash = plat_strrchr(import_path, '\\');
-                const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
-                const char* basename = sep ? sep + 1 : import_path;
-
-                char mod_name[256];
-                size_t blen = plat_strlen(basename);
-                if (blen >= sizeof(mod_name)) blen = sizeof(mod_name) - 1;
-                plat_strncpy(mod_name, basename, blen);
-                mod_name[blen] = '\0';
-
-                char* dot = plat_strrchr(mod_name, '.');
-                if (dot) *dot = '\0';
-
-                const char* interned_mod_name = unit.getStringInterner().intern(mod_name);
-
-                Module* current_mod = unit.getModule(unit.getCurrentModule());
-                if (current_mod) {
-                    bool found = false;
-                    for (size_t i = 0; i < current_mod->imports.length(); ++i) {
-                        if (plat_strcmp(current_mod->imports[i], interned_mod_name) == 0) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        current_mod->imports.append(interned_mod_name);
-                    }
-                }
-
-                return createModuleType(unit.getArena(), interned_mod_name);
-            }
 
             // Register in call site table as builtin
             int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
@@ -3166,6 +3125,26 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
     }
 
     return target_type;
+}
+
+Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
+    const char* import_path = node->module_name;
+    const char* last_slash = plat_strrchr(import_path, '/');
+    const char* last_backslash = plat_strrchr(import_path, '\\');
+    const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    const char* basename = sep ? sep + 1 : import_path;
+
+    char mod_name[256];
+    size_t blen = plat_strlen(basename);
+    if (blen >= sizeof(mod_name)) blen = sizeof(mod_name) - 1;
+    plat_strncpy(mod_name, basename, blen);
+    mod_name[blen] = '\0';
+
+    char* dot = plat_strrchr(mod_name, '.');
+    if (dot) *dot = '\0';
+
+    const char* interned_mod_name = unit.getStringInterner().intern(mod_name);
+    return createModuleType(unit.getArena(), interned_mod_name);
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {

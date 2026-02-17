@@ -13,16 +13,17 @@ This document outlines the roles, responsibilities, development methodology, con
     - **Dependencies**: Win32 API (kernel32.dll) only. No third-party libraries.
     - **Compiler Compatibility**: Must work with older toolchains (e.g., MSVC 6.0 quirks like `__int64`).
 
-## Current Status: Milestone 4 (Task 166)
+## Current Status: Milestone 6 (Task 214+)
 
-We are implementing the bootstrap type system and semantic analysis with strict C89 compatibility constraints.
+We are implementing multi-module support and `@import` resolution, moving towards full C89 code generation for the bootstrap phase.
 
 ### Key Architectural Components
 
-1. **Multi-Phase Compilation Pipeline** (`CompilationUnit::performFullPipeline`)
+1. **Multi-Phase Multi-Module Pipeline** (`CompilationUnit::performFullPipeline` / `resolveImports`)
 2. **Feature Detection & Rejection** (`C89FeatureValidator`)
 3. **Comprehensive Cataloguing** (9 specialized catalogues)
 4. **Pass-Based Semantic Analysis** (Type checking → Validation → Lifetime → Null pointer → Double free)
+5. **Multi-File C89 Generation** (`CBackend` / `C89Emitter`)
 
 ## AI Agent Role: Specialized Compiler Implementer
 

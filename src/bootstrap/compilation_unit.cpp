@@ -569,7 +569,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     last_ast_ = ast;
     if (!ast) return false;
 
-    // Register module
+    // Register initial module
     void* mod_mem = arena_.alloc(sizeof(Module));
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
@@ -578,62 +578,92 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     mod->file_id = file_id;
     modules_.append(mod);
 
-    // Name Collision Detection
-#ifdef MEASURE_MEMORY
-    tracker.begin_phase("Name Collision Detection");
-#endif
-    NameCollisionDetector name_detector(*this);
-    name_detector.check(ast);
-#ifdef MEASURE_MEMORY
-    tracker.end_phase();
-#endif
-    if (name_detector.hasCollisions()) {
+    // Collect imports from initial file
+    collectImports(ast, mod);
+
+    // Resolve imports recursively (load and parse all dependencies)
+    if (!resolveImports(mod)) {
         return false;
     }
 
-    // Pass 0: Type Checking
+    // Now run semantic analysis on ALL modules
+    bool all_success = true;
+
+    // Phase 1: Name Collision Detection
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Name Collision Detection");
+#endif
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        setCurrentModule(modules_[i]->name);
+        NameCollisionDetector detector(*this);
+        detector.check(modules_[i]->ast_root);
+        if (detector.hasCollisions()) all_success = false;
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+    if (!all_success) return false;
+
+    // Phase 2: Type Checking
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Type Checking");
 #endif
-    TypeChecker checker(*this);
-    checker.check(ast);
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        setCurrentModule(modules_[i]->name);
+        TypeChecker checker(*this);
+        checker.check(modules_[i]->ast_root);
+    }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
 
 #ifdef DEBUG
-    plat_print_debug("CompilationUnit: DEBUG is defined. Calling CallResolutionValidator...\n");
-    // Task 168: Run call resolution validation
-    if (!CallResolutionValidator::validate(*this, ast)) {
-        error_handler_.report(ERR_INTERNAL_ERROR, ast->loc, "Call resolution validation failed");
-        return false;
+    plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        if (!CallResolutionValidator::validate(*this, modules_[i]->ast_root)) {
+            error_handler_.report(ERR_INTERNAL_ERROR, modules_[i]->ast_root->loc, "Call resolution validation failed");
+            all_success = false;
+        }
     }
-#else
-    plat_print_info("CompilationUnit: DEBUG is NOT defined. Skipping CallResolutionValidator.\n");
 #endif
+    if (!all_success) return false;
 
-    // Pass 0.5: Signature Analysis
+    // Phase 3: Signature Analysis
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Signature Analysis");
 #endif
-    SignatureAnalyzer sig_analyzer(*this);
-    sig_analyzer.analyze(ast);
+    bool signature_errors = false;
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        setCurrentModule(modules_[i]->name);
+        SignatureAnalyzer sig_analyzer(*this);
+        sig_analyzer.analyze(modules_[i]->ast_root);
+        if (sig_analyzer.hasInvalidSignatures()) signature_errors = true;
+    }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
 
-    // Pass 1: C89 feature validation
+    // Phase 4: C89 Validation
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("C89 Validation");
 #endif
-    C89FeatureValidator validator(*this);
-    bool success = validator.validate(ast);
+    bool validation_success = true;
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        setCurrentModule(modules_[i]->name);
+        C89FeatureValidator validator(*this);
+        if (!validator.validate(modules_[i]->ast_root)) validation_success = false;
+    }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
 
     validation_completed_ = true;
-    c89_validation_passed_ = success && !sig_analyzer.hasInvalidSignatures();
+    c89_validation_passed_ = validation_success && !signature_errors;
 
     if (!c89_validation_passed_) {
 #ifdef MEASURE_MEMORY
@@ -643,20 +673,28 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
-    // Pass 2+: Static Analyzers (if enabled)
-    if (options_.enable_lifetime_analysis) {
-        LifetimeAnalyzer analyzer(*this);
-        analyzer.analyze(ast);
-    }
+    // Phase 5: Static Analyzers
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        if (modules_[i]->is_analyzed) continue;
+        setCurrentModule(modules_[i]->name);
+        ASTNode* m_ast = modules_[i]->ast_root;
 
-    if (options_.enable_null_pointer_analysis) {
-        NullPointerAnalyzer analyzer(*this);
-        analyzer.analyze(ast);
-    }
+        if (options_.enable_lifetime_analysis) {
+            LifetimeAnalyzer analyzer(*this);
+            analyzer.analyze(m_ast);
+        }
 
-    if (options_.enable_double_free_analysis) {
-        DoubleFreeAnalyzer analyzer(*this);
-        analyzer.analyze(ast);
+        if (options_.enable_null_pointer_analysis) {
+            NullPointerAnalyzer analyzer(*this);
+            analyzer.analyze(m_ast);
+        }
+
+        if (options_.enable_double_free_analysis) {
+            DoubleFreeAnalyzer analyzer(*this);
+            analyzer.analyze(m_ast);
+        }
+
+        modules_[i]->is_analyzed = true;
     }
 
     // Task 163: Report unresolved call sites
@@ -668,6 +706,231 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.print_report();
     MemoryTracker::reset_counts();
 #endif
+    return true;
+}
+
+void CompilationUnit::collectImports(ASTNode* node, Module* module) {
+    if (!node) return;
+
+    if (node->type == NODE_IMPORT_STMT) {
+        module->import_nodes.append(node);
+        return;
+    }
+
+    switch (node->type) {
+        case NODE_BLOCK_STMT: {
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            if (stmts) {
+                for (size_t i = 0; i < stmts->length(); ++i) {
+                    collectImports((*stmts)[i], module);
+                }
+            }
+            break;
+        }
+        case NODE_VAR_DECL:
+            collectImports(node->as.var_decl->initializer, module);
+            break;
+        case NODE_FN_DECL:
+            collectImports(node->as.fn_decl->body, module);
+            break;
+        case NODE_IF_STMT:
+            collectImports(node->as.if_stmt->condition, module);
+            collectImports(node->as.if_stmt->then_block, module);
+            collectImports(node->as.if_stmt->else_block, module);
+            break;
+        case NODE_WHILE_STMT:
+            collectImports(node->as.while_stmt.condition, module);
+            collectImports(node->as.while_stmt.body, module);
+            break;
+        case NODE_FOR_STMT:
+            collectImports(node->as.for_stmt->iterable_expr, module);
+            collectImports(node->as.for_stmt->body, module);
+            break;
+        case NODE_EXPRESSION_STMT:
+            collectImports(node->as.expression_stmt.expression, module);
+            break;
+        case NODE_PAREN_EXPR:
+            collectImports(node->as.paren_expr.expr, module);
+            break;
+        case NODE_BINARY_OP:
+            collectImports(node->as.binary_op->left, module);
+            collectImports(node->as.binary_op->right, module);
+            break;
+        case NODE_UNARY_OP:
+            collectImports(node->as.unary_op.operand, module);
+            break;
+        case NODE_FUNCTION_CALL: {
+            collectImports(node->as.function_call->callee, module);
+            DynamicArray<ASTNode*>* args = node->as.function_call->args;
+            if (args) {
+                for (size_t i = 0; i < args->length(); ++i) {
+                    collectImports((*args)[i], module);
+                }
+            }
+            break;
+        }
+        case NODE_ASSIGNMENT:
+            collectImports(node->as.assignment->lvalue, module);
+            collectImports(node->as.assignment->rvalue, module);
+            break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            collectImports(node->as.compound_assignment->lvalue, module);
+            collectImports(node->as.compound_assignment->rvalue, module);
+            break;
+        case NODE_RETURN_STMT:
+            collectImports(node->as.return_stmt.expression, module);
+            break;
+        case NODE_ARRAY_ACCESS:
+            collectImports(node->as.array_access->array, module);
+            collectImports(node->as.array_access->index, module);
+            break;
+        case NODE_ARRAY_SLICE:
+            collectImports(node->as.array_slice->array, module);
+            collectImports(node->as.array_slice->start, module);
+            collectImports(node->as.array_slice->end, module);
+            break;
+        case NODE_MEMBER_ACCESS:
+            collectImports(node->as.member_access->base, module);
+            break;
+        case NODE_STRUCT_INITIALIZER: {
+            DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
+            if (fields) {
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    collectImports((*fields)[i]->value, module);
+                }
+            }
+            break;
+        }
+        case NODE_SWITCH_EXPR: {
+            collectImports(node->as.switch_expr->expression, module);
+            DynamicArray<ASTSwitchProngNode*>* prongs = node->as.switch_expr->prongs;
+            if (prongs) {
+                for (size_t i = 0; i < prongs->length(); ++i) {
+                    ASTSwitchProngNode* prong = (*prongs)[i];
+                    for (size_t j = 0; j < prong->cases->length(); ++j) {
+                        collectImports((*prong->cases)[j], module);
+                    }
+                    collectImports(prong->body, module);
+                }
+            }
+            break;
+        }
+        case NODE_TRY_EXPR:
+            collectImports(node->as.try_expr.expression, module);
+            break;
+        case NODE_CATCH_EXPR:
+            collectImports(node->as.catch_expr->payload, module);
+            collectImports(node->as.catch_expr->else_expr, module);
+            break;
+        case NODE_ORELSE_EXPR:
+            collectImports(node->as.orelse_expr->payload, module);
+            collectImports(node->as.orelse_expr->else_expr, module);
+            break;
+        case NODE_DEFER_STMT:
+            collectImports(node->as.defer_stmt.statement, module);
+            break;
+        case NODE_ERRDEFER_STMT:
+            collectImports(node->as.errdefer_stmt.statement, module);
+            break;
+        default:
+            break;
+    }
+}
+
+bool CompilationUnit::resolveImports(Module* module) {
+    DynamicArray<const char*> stack(arena_);
+    return resolveImportsRecursive(module, stack);
+}
+
+bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack) {
+    stack.append(module->filename);
+
+    const char* saved_module = current_module_;
+
+    for (size_t i = 0; i < module->import_nodes.length(); ++i) {
+        ASTNode* import_node = module->import_nodes[i];
+        const char* rel_path = import_node->as.import_stmt->module_name;
+
+        // Resolve path
+        char base_dir[1024];
+        get_directory(module->filename, base_dir, sizeof(base_dir));
+
+        char abs_path[1024];
+        join_paths(base_dir, rel_path, abs_path, sizeof(abs_path));
+
+        const char* interned_abs_path = interner_.intern(abs_path);
+
+        // Cycle detection: check if this path is already in the current stack
+        for (size_t k = 0; k < stack.length(); ++k) {
+            if (plat_strcmp(stack[k], interned_abs_path) == 0) {
+                char cycle_msg[1024];
+                char* cur = cycle_msg;
+                size_t rem = sizeof(cycle_msg);
+                safe_append(cur, rem, "Circular import detected: ");
+                for (size_t j = k; j < stack.length(); ++j) {
+                    safe_append(cur, rem, stack[j]);
+                    safe_append(cur, rem, " -> ");
+                }
+                safe_append(cur, rem, interned_abs_path);
+                error_handler_.report(ERR_INTERNAL_ERROR, import_node->loc, cycle_msg);
+                return false;
+            }
+        }
+
+        // Check if module already loaded
+        Module* imported_mod = NULL;
+        for (size_t j = 0; j < modules_.length(); ++j) {
+            if (plat_strcmp(modules_[j]->filename, interned_abs_path) == 0) {
+                imported_mod = modules_[j];
+                break;
+            }
+        }
+
+        if (!imported_mod) {
+            // Load and parse
+            char* source = NULL;
+            size_t size = 0;
+            if (!plat_file_read(interned_abs_path, &source, &size)) {
+                error_handler_.report(ERR_INTERNAL_ERROR, import_node->loc, "Could not read imported file");
+                return false;
+            }
+
+            u32 file_id = addSource(interned_abs_path, source);
+            Parser* parser = createParser(file_id);
+            ASTNode* ast = parser->parse();
+            if (!ast) return false;
+
+            // Register module
+            void* mod_mem = arena_.alloc(sizeof(Module));
+            imported_mod = new (mod_mem) Module(arena_);
+            imported_mod->name = current_module_; // addSource sets current_module_
+            imported_mod->filename = interned_abs_path;
+            imported_mod->ast_root = ast;
+            imported_mod->file_id = file_id;
+            modules_.append(imported_mod);
+
+            collectImports(ast, imported_mod);
+
+            if (!resolveImportsRecursive(imported_mod, stack)) {
+                return false;
+            }
+        }
+
+        // Record dependency module name
+        bool already_present = false;
+        for (size_t j = 0; j < module->imports.length(); ++j) {
+            if (identifiers_equal(module->imports[j], imported_mod->name)) {
+                already_present = true;
+                break;
+            }
+        }
+        if (!already_present) {
+            module->imports.append(imported_mod->name);
+        }
+    }
+
+    setCurrentModule(saved_module);
+    stack.pop_back();
     return true;
 }
 

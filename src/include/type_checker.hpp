@@ -68,6 +68,7 @@ public:
     Type* visitOrelseExpr(ASTOrelseExprNode* node);
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
+    Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
 
     // Public for TDD

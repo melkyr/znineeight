@@ -74,7 +74,18 @@ Performs an explicit floating-point cast with range checking.
   - **Safe widenings** (e.g., `f32` to `f64`): Emitted as a direct C-style cast: `(double)expr`.
   - **Potentially unsafe narrowing** (`f64` to `f32`): Emitted as a call to a runtime helper: `__bootstrap_f32_from_f64(expr)`.
 
+### `@import(path)`
+Loads and parses an external Zig module.
+- **Syntax:** `@import("relative_path.zig")`
+- **Result Type:** `type(module)`
+- **Behavior:**
+    - Resolves the path relative to the current module's directory.
+    - Recursively loads and parses the target file if not already loaded.
+    - Detects circular dependencies and reports them as fatal errors.
+    - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.debug.print(...);`.
+- **C89 Emission:** This built-in is handled entirely by the compiler's front-end and import resolution phase. It does not generate any code at the call site. Instead, it influences header generation and symbol resolution.
+
 ---
 
 ## Unsupported Built-ins
-Most other Zig built-ins (e.g., `@import`, `@typeInfo`, `@as`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.
+Most other Zig built-ins (e.g., `@typeInfo`, `@as`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.

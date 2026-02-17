@@ -26,13 +26,9 @@ TEST_FUNC(CallSyntax_AtImport) {
     ASTNode* init = stmt->as.var_decl->initializer;
     ASSERT_TRUE(init != NULL);
 
-    // Check if it's NODE_FUNCTION_CALL
-    ASSERT_EQ(NODE_FUNCTION_CALL, init->type);
-    ASSERT_EQ(NODE_IDENTIFIER, init->as.function_call->callee->type);
-    ASSERT_STREQ("@import", init->as.function_call->callee->as.identifier.name);
-    ASSERT_EQ(1, init->as.function_call->args->length());
-    ASSERT_EQ(NODE_STRING_LITERAL, (*init->as.function_call->args)[0]->type);
-    ASSERT_STREQ("std", (*init->as.function_call->args)[0]->as.string_literal.value);
+    // Check if it's NODE_IMPORT_STMT
+    ASSERT_EQ(NODE_IMPORT_STMT, init->type);
+    ASSERT_STREQ("std", init->as.import_stmt->module_name);
 
     return true;
 }
@@ -44,9 +40,19 @@ TEST_FUNC(CallSyntax_AtImport_Pipeline) {
     unit.injectRuntimeSymbols();
 
     const char* source = "const std = @import(\"std\");";
+
+    // Create dummy std file
+    FILE* f = fopen("std", "w");
+    if (f) {
+        fprintf(f, "\n");
+        fclose(f);
+    }
+
     u32 file_id = unit.addSource("test.zig", source);
 
     bool success = unit.performFullPipeline(file_id);
+    remove("std");
+
     ASSERT_TRUE(success);
 
     return true;
