@@ -78,6 +78,9 @@ public:
     const CompilationOptions& getOptions() const;
     void setOptions(const CompilationOptions& options);
 
+    void addIncludePath(const char* path);
+    const DynamicArray<const char*>& getIncludePaths() const { return include_paths_; }
+
     /**
      * @brief Injects mandatory runtime symbols (like arena_alloc, arena_free) into the global scope.
      */
@@ -154,6 +157,8 @@ private:
     CompilationOptions options_;
     const char* current_module_;
 
+    DynamicArray<const char*> include_paths_;
+    const char* default_lib_path_;
     DynamicArray<Module*> modules_;
     ASTNode* last_ast_;
     bool is_test_mode_;

@@ -282,6 +282,29 @@ int plat_delete_file(const char* path) {
     return -1;
 }
 
+int plat_mkdir(const char* path) {
+    if (CreateDirectoryA(path, NULL)) return 0;
+    return -1;
+}
+
+bool plat_file_exists(const char* path) {
+    DWORD dwAttrib = GetFileAttributesA(path);
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES);
+}
+
+void plat_get_executable_dir(char* buffer, size_t size) {
+    if (GetModuleFileNameA(NULL, buffer, (DWORD)size) == 0) {
+        plat_strcpy(buffer, ".");
+        return;
+    }
+    char* last_slash = plat_strrchr(buffer, '\\');
+    if (last_slash) {
+        *last_slash = '\0';
+    } else {
+        plat_strcpy(buffer, ".");
+    }
+}
+
 void plat_abort() {
     ExitProcess(1);
 }
@@ -559,6 +582,29 @@ char* plat_create_temp_file(const char* prefix, const char* suffix) {
 
 int plat_delete_file(const char* path) {
     return unlink(path);
+}
+
+int plat_mkdir(const char* path) {
+    return mkdir(path, 0777);
+}
+
+bool plat_file_exists(const char* path) {
+    return access(path, F_OK) == 0;
+}
+
+void plat_get_executable_dir(char* buffer, size_t size) {
+    ssize_t len = readlink("/proc/self/exe", buffer, size - 1);
+    if (len != -1) {
+        buffer[len] = '\0';
+        char* last_slash = plat_strrchr(buffer, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+        } else {
+            plat_strcpy(buffer, ".");
+        }
+    } else {
+        plat_strcpy(buffer, ".");
+    }
 }
 
 void plat_abort() {

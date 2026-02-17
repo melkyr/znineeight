@@ -138,6 +138,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       call_site_table_(arena),
       options_(),
       current_module_(NULL),
+      include_paths_(arena),
+      default_lib_path_(NULL),
       modules_(arena),
       last_ast_(NULL),
       is_test_mode_(false),
@@ -145,6 +147,16 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       c89_validation_passed_(false) {
 
     current_module_ = interner_.intern("main");
+
+    // Initialize default lib path
+    char exe_dir[1024];
+    plat_get_executable_dir(exe_dir, sizeof(exe_dir));
+    char lib_path[1024];
+    join_paths(exe_dir, "lib", lib_path, sizeof(lib_path));
+    normalize_path(lib_path);
+    if (plat_file_exists(lib_path)) {
+        default_lib_path_ = interner_.intern(lib_path);
+    }
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -372,6 +384,14 @@ const CompilationOptions& CompilationUnit::getOptions() const {
 
 void CompilationUnit::setOptions(const CompilationOptions& options) {
     options_ = options;
+}
+
+void CompilationUnit::addIncludePath(const char* path) {
+    char norm[1024];
+    plat_strncpy(norm, path, sizeof(norm) - 1);
+    norm[sizeof(norm) - 1] = '\0';
+    normalize_path(norm);
+    include_paths_.append(interner_.intern(norm));
 }
 
 void CompilationUnit::injectRuntimeSymbols() {
@@ -980,12 +1000,48 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         const char* rel_path = import_node->as.import_stmt->module_name;
 
         // Resolve path
-        char base_dir[1024];
-        get_directory(module->filename, base_dir, sizeof(base_dir));
-
         char abs_path[1024];
-        join_paths(base_dir, rel_path, abs_path, sizeof(abs_path));
-        normalize_path(abs_path);
+        bool found = false;
+
+        // 1. Try relative to the current module's directory
+        {
+            char base_dir[1024];
+            get_directory(module->filename, base_dir, sizeof(base_dir));
+            join_paths(base_dir, rel_path, abs_path, sizeof(abs_path));
+            normalize_path(abs_path);
+            if (getModuleByFilename(interner_.intern(abs_path)) || plat_file_exists(abs_path)) {
+                found = true;
+            }
+        }
+
+        // 2. Try -I include paths
+        if (!found) {
+            for (size_t k = 0; k < include_paths_.length(); ++k) {
+                join_paths(include_paths_[k], rel_path, abs_path, sizeof(abs_path));
+                normalize_path(abs_path);
+                if (getModuleByFilename(interner_.intern(abs_path)) || plat_file_exists(abs_path)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        // 3. Try default lib path
+        if (!found && default_lib_path_) {
+            join_paths(default_lib_path_, rel_path, abs_path, sizeof(abs_path));
+            normalize_path(abs_path);
+            if (getModuleByFilename(interner_.intern(abs_path)) || plat_file_exists(abs_path)) {
+                found = true;
+            }
+        }
+
+        if (!found) {
+            char error_msg[1024];
+            plat_strcpy(error_msg, "Could not find imported file: ");
+            plat_strcat(error_msg, rel_path);
+            error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, error_msg);
+            return false;
+        }
 
         const char* interned_abs_path = interner_.intern(abs_path);
 
@@ -1001,7 +1057,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
                     safe_append(cur, rem, " -> ");
                 }
                 safe_append(cur, rem, interned_abs_path);
-                error_handler_.report(ERR_INTERNAL_ERROR, import_node->loc, cycle_msg);
+                error_handler_.report(ERR_SYNTAX_ERROR, import_node->loc, cycle_msg);
                 return false;
             }
         }
@@ -1014,7 +1070,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             char* source = NULL;
             size_t size = 0;
             if (!plat_file_read(interned_abs_path, &source, &size)) {
-                error_handler_.report(ERR_INTERNAL_ERROR, import_node->loc, "Could not read imported file");
+                error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, "Could not read imported file");
                 return false;
             }
 

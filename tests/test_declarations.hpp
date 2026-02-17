@@ -1028,4 +1028,11 @@ TEST_FUNC(Import_Simple);
 TEST_FUNC(Import_Circular);
 TEST_FUNC(Import_Missing);
 
+// Import Resolution Tests (Task 216)
+TEST_FUNC(ImportResolution_Basic);
+TEST_FUNC(ImportResolution_IncludePath);
+TEST_FUNC(ImportResolution_DefaultLib);
+TEST_FUNC(ImportResolution_PrecedenceLocal);
+TEST_FUNC(ImportResolution_NotFound);
+
 #endif // TEST_DECLARATIONS_HPP

@@ -1385,6 +1385,12 @@ struct ASTImportStmtNode {
 };
 ```
 
+### Import Path Resolution (Task 216)
+The compiler resolves `@import` paths using the following search order:
+1.  **Relative to the importing file**: The directory containing the file that has the `@import` statement.
+2.  **Include Paths (-I)**: Directories specified via the `-I` command-line flag, in the order they were provided.
+3.  **Default Library Path**: A `lib/` directory located in the same directory as the compiler executable (`zig0.exe`).
+
 ## 16. Error-Returning Function Detection (Task 142)
 
 ### Detection Criteria

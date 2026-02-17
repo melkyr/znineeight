@@ -61,6 +61,15 @@ char* plat_create_temp_file(const char* prefix, const char* suffix);
 // Deletes a file. Returns 0 on success, -1 on failure.
 int plat_delete_file(const char* path);
 
+// Creates a directory. Returns 0 on success, -1 on failure.
+int plat_mkdir(const char* path);
+
+// Checks if a file or directory exists.
+bool plat_file_exists(const char* path);
+
+// Gets the directory containing the current executable.
+void plat_get_executable_dir(char* buffer, size_t size);
+
 // Aborts the process immediately. This function does not return.
 void plat_abort();
 

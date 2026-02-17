@@ -102,9 +102,18 @@ int main(int argc, char* argv[]) {
     bool parse_only = false;
     bool full_pipeline = false;
 
+    // We'll use a simple fixed-size array for temporary include path storage
+    // before the CompilationUnit is created.
+    const char* temp_include_paths[64];
+    int include_path_count = 0;
+
     for (int i = 1; i < argc; ++i) {
         if (plat_strcmp(argv[i], "-o") == 0) {
             if (i + 1 < argc) output_file = argv[++i];
+        } else if (plat_strcmp(argv[i], "-I") == 0) {
+            if (i + 1 < argc && include_path_count < 64) {
+                temp_include_paths[include_path_count++] = argv[++i];
+            }
         } else if (plat_strcmp(argv[i], "parse") == 0) {
             parse_only = true;
             if (i + 1 < argc) input_file = argv[++i];
@@ -130,6 +139,10 @@ int main(int argc, char* argv[]) {
         ArenaAllocator arena(DEFAULT_ARENA_SIZE);
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
+
+        for (int i = 0; i < include_path_count; ++i) {
+            unit.addIncludePath(temp_include_paths[i]);
+        }
 
         unit.injectRuntimeSymbols();
 
@@ -162,6 +175,7 @@ int main(int argc, char* argv[]) {
     plat_print_info("Options:\n");
     plat_print_info("  --self-test             Run internal self-tests\n");
     plat_print_info("  -o <file>               Specify output C file\n");
+    plat_print_info("  -I <path>               Add include search path\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 
