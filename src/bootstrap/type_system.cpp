@@ -105,6 +105,16 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
     return new_type;
 }
 
+Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_FUNCTION_POINTER;
+    new_type->size = 4;
+    new_type->alignment = 4;
+    new_type->as.function_pointer.param_types = params;
+    new_type->as.function_pointer.return_type = return_type;
+    return new_type;
+}
+
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner) {
     if (interner) {
         return interner->getArrayType(element_type, size);
@@ -349,14 +359,8 @@ bool isTypeComplete(Type* type) {
     }
 }
 
-void typeToString(Type* type, char* buffer, size_t buffer_size) {
-    if (!type || buffer_size == 0) {
-        if (buffer_size > 0) buffer[0] = '\0';
-        return;
-    }
-
-    char* current = buffer;
-    size_t remaining = buffer_size;
+static void typeToStringInternal(Type* type, char*& current, size_t& remaining) {
+    if (!type || remaining == 0) return;
 
     switch (type->kind) {
         case TYPE_VOID:  safe_append(current, remaining, "void"); break;
@@ -383,33 +387,47 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             if (type->as.pointer.is_const) {
                 safe_append(current, remaining, "const ");
             }
-            typeToString(type->as.pointer.base, current, remaining);
+            typeToStringInternal(type->as.pointer.base, current, remaining);
             break;
         }
         case TYPE_ARRAY: {
             safe_append(current, remaining, "[");
             // Note: This is a simplified itoa; a proper one would be better.
-            if (remaining > 11) {
+            if (remaining > 21) {
                 char size_buf[21];
                 plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
                 safe_append(current, remaining, size_buf);
             }
             safe_append(current, remaining, "]");
-            typeToString(type->as.array.element_type, current, remaining);
+            typeToStringInternal(type->as.array.element_type, current, remaining);
+            break;
+        }
+        case TYPE_FUNCTION_POINTER: {
+            safe_append(current, remaining, "fn(");
+            if (type->as.function_pointer.param_types) {
+                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                    typeToStringInternal((*type->as.function_pointer.param_types)[i], current, remaining);
+                    if (i < type->as.function_pointer.param_types->length() - 1) {
+                        safe_append(current, remaining, ", ");
+                    }
+                }
+            }
+            safe_append(current, remaining, ") ");
+            typeToStringInternal(type->as.function_pointer.return_type, current, remaining);
             break;
         }
         case TYPE_FUNCTION: {
             safe_append(current, remaining, "fn(");
             if (type->as.function.params) {
                 for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    typeToString((*type->as.function.params)[i], current, remaining);
+                    typeToStringInternal((*type->as.function.params)[i], current, remaining);
                     if (i < type->as.function.params->length() - 1) {
                         safe_append(current, remaining, ", ");
                     }
                 }
             }
-            safe_append(current, remaining, ") -> ");
-            typeToString(type->as.function.return_type, current, remaining);
+            safe_append(current, remaining, ") ");
+            typeToStringInternal(type->as.function.return_type, current, remaining);
             break;
         }
         case TYPE_ENUM:
@@ -435,10 +453,10 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             if (type->as.error_union.is_inferred) {
                 safe_append(current, remaining, "!");
             } else {
-                typeToString(type->as.error_union.error_set, current, remaining);
+                typeToStringInternal(type->as.error_union.error_set, current, remaining);
                 safe_append(current, remaining, "!");
             }
-            typeToString(type->as.error_union.payload, current, remaining);
+            typeToStringInternal(type->as.error_union.payload, current, remaining);
             break;
         }
         case TYPE_ERROR_SET: {
@@ -451,7 +469,7 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
         }
         case TYPE_OPTIONAL: {
             safe_append(current, remaining, "?");
-            typeToString(type->as.optional.payload, current, remaining);
+            typeToStringInternal(type->as.optional.payload, current, remaining);
             break;
         }
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
@@ -465,4 +483,76 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
             safe_append(current, remaining, "unknown");
             break;
     }
+}
+
+void typeToString(Type* type, char* buffer, size_t buffer_size) {
+    if (!type || buffer_size == 0) {
+        if (buffer_size > 0) buffer[0] = '\0';
+        return;
+    }
+
+    char* current = buffer;
+    size_t remaining = buffer_size;
+    typeToStringInternal(type, current, remaining);
+}
+
+bool areTypesEqual(Type* a, Type* b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+    if (a->kind != b->kind) {
+        // One exception: TYPE_FUNCTION and TYPE_FUNCTION_POINTER are structurally equal
+        // if their signatures match. But this function is for GENERAL type equality.
+        // Actually, for pointers to functions, they should both be TYPE_FUNCTION_POINTER.
+        return false;
+    }
+
+    switch (a->kind) {
+        case TYPE_POINTER:
+            return a->as.pointer.is_const == b->as.pointer.is_const &&
+                   a->as.pointer.is_many == b->as.pointer.is_many &&
+                   areTypesEqual(a->as.pointer.base, b->as.pointer.base);
+
+        case TYPE_ARRAY:
+            return a->as.array.size == b->as.array.size &&
+                   areTypesEqual(a->as.array.element_type, b->as.array.element_type);
+
+        case TYPE_OPTIONAL:
+            return areTypesEqual(a->as.optional.payload, b->as.optional.payload);
+
+        case TYPE_FUNCTION:
+            return signaturesMatch(a->as.function.params, a->as.function.return_type,
+                                  b->as.function.params, b->as.function.return_type);
+        case TYPE_FUNCTION_POINTER:
+            return signaturesMatch(a->as.function_pointer.param_types, a->as.function_pointer.return_type,
+                                  b->as.function_pointer.param_types, b->as.function_pointer.return_type);
+
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_ENUM:
+            return false;
+
+        default:
+            return true;
+    }
+}
+
+bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return) {
+    if (!areTypesEqual(a_return, b_return)) {
+        return false;
+    }
+
+    if (!a_params && !b_params) return true;
+    if (!a_params || !b_params) return false;
+
+    if (a_params->length() != b_params->length()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < a_params->length(); ++i) {
+        if (!areTypesEqual((*a_params)[i], (*b_params)[i])) {
+            return false;
+        }
+    }
+
+    return true;
 }

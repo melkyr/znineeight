@@ -561,6 +561,10 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
             return isConstantInitializer(node->as.binary_op->left) &&
                    isConstantInitializer(node->as.binary_op->right);
         case NODE_IDENTIFIER:
+            // Function names are constant addresses in C89
+            if (node->resolved_type && node->resolved_type->kind == TYPE_FUNCTION) {
+                return true;
+            }
             // Identifiers are generally not constant initializers unless they are enum members or similar.
             // For now, we assume they might be global addresses if they are operands of '&'.
             return false;

@@ -101,23 +101,15 @@ TEST_FUNC(Task168_IndirectCallRejection) {
     bool success = unit.performFullPipeline(file_id);
     plat_print_info("Test 31: performFullPipeline returned\n");
 
-    // Should fail validation/type-checking
-    ASSERT_FALSE(success);
+    // Should NOW pass validation/type-checking (Task 221)
+    ASSERT_TRUE(success);
 
-    // Should have 1 indirect call in catalogue
+    // Should still have 1 indirect call in catalogue
     ASSERT_EQ(1, unit.getIndirectCallCatalogue().count());
     ASSERT_EQ(INDIRECT_VARIABLE, unit.getIndirectCallCatalogue().get(0).type);
 
-    // Check for advice 9002
-    bool advice_found = false;
-    const DynamicArray<InfoReport>& infos = unit.getErrorHandler().getInfos();
-    for (size_t i = 0; i < infos.length(); ++i) {
-        if (infos[i].code == INFO_INDIRECT_CALL_ADVICE) {
-            advice_found = true;
-            break;
-        }
-    }
-    ASSERT_TRUE(advice_found);
+    // Note: advice 9002 (INFO_INDIRECT_CALL_ADVICE) is no longer reported
+    // as function pointers are now supported.
 
     return true;
 }

@@ -1372,14 +1372,14 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multi�
     - **Codegen**: `emitType` updated to ignore `const` on pointers. It handles recursion automatically.
     - **Tests**: Added Batch 36 with multi-level pointer tests.
 
-220. **Task 220:** Multi‑item Pointers (`[*]T`)
-    - **Parser**: Recognise `[*]T` as a distinct pointer type (maybe a new `NODE_MANYITEM_POINTER` or reuse `NODE_POINTER_TYPE` with a flag). For simplicity, treat it as a pointer type with no size, and during type checking, map it to a raw pointer.
-    - **Type system**: Add a new `TypeKind` `TYPE_MANYITEM_POINTER` or just use `TYPE_POINTER` with a flag `is_many`. C89 compatibility: it's just a pointer.
-    - **C89FeatureValidator**: Allow it.
-    - **Codegen**: Emit as `T*`.
-    - **Tests**: Use cases like iterating over a C‑style array passed from `extern`.
+220. [COMPLETE] **Task 220:** Multi‑item Pointers (`[*]T`)
+    - **Parser**: Added support for `[*]T` syntax in `parseType`.
+    - **Type system**: Added `is_many` flag to `TYPE_POINTER`. Updated `is_c89_compatible` and `SignatureAnalyzer` to allow many-item pointers.
+    - **Type checker**: Implemented Zig semantics: many-item pointers allow indexing and arithmetic but not dereferencing; single-item pointers allow dereferencing but not indexing/arithmetic.
+    - **Codegen**: Maps to raw `T*` in C89.
+    - **Tests**: Verified with Batch 37.
 
-221. **Task 221:** Function Pointers
+221. [IN PROGRESS] **Task 221:** Function Pointers (Phases 1-4 COMPLETE)
     - **Parser**: Add grammar for function type expressions: `fn (param_list) return_type`. This will be a new node type `NODE_FUNCTION_TYPE`. Update `parseType` to handle it.
     - **AST**: Define `ASTFunctionTypeNode` storing parameter types and return type.
     - **Type system**: Create a new `TypeKind` `TYPE_FUNCTION_POINTER` that holds the signature (parameter types and return type). Also need a way to represent function types for function declarations (they are not pointers, but the type is similar). We can unify by having a `FunctionSignature` struct used for both.

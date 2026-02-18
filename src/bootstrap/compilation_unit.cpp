@@ -758,6 +758,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         TypeChecker checker(*this);
         checker.check(m->ast_root);
     }
+    if (error_handler_.hasErrors()) all_success = false;
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
