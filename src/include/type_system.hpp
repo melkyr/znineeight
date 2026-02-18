@@ -31,6 +31,7 @@ enum TypeKind {
     TYPE_ARRAY,
     TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
+    TYPE_FUNCTION_POINTER,
     TYPE_ENUM,
     TYPE_STRUCT,
     TYPE_UNION,
@@ -84,6 +85,10 @@ struct Type {
             DynamicArray<Type*>* params;
             Type* return_type;
         } function;
+        struct {
+            DynamicArray<Type*>* param_types;
+            Type* return_type;
+        } function_pointer;
         struct ArrayDetails {
             Type* element_type;
             u64 size;
@@ -265,6 +270,24 @@ Type* createModuleType(ArenaAllocator& arena, const char* name);
  * @param buffer_size The size of the character buffer.
  */
 void typeToString(Type* type, char* buffer, size_t buffer_size);
+
+/**
+ * @brief Checks if two types are structurally equal.
+ * @param a The first type.
+ * @param b The second type.
+ * @return True if the types are equal, false otherwise.
+ */
+bool areTypesEqual(Type* a, Type* b);
+
+/**
+ * @brief Checks if two function signatures are structurally equal.
+ * @param a_params The parameters of the first function.
+ * @param a_return The return type of the first function.
+ * @param b_params The parameters of the second function.
+ * @param b_return The return type of the second function.
+ * @return True if the signatures match, false otherwise.
+ */
+bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return);
 
     /**
      * @brief Checks if a type is complete (has a known size and alignment).

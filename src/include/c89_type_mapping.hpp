@@ -42,8 +42,7 @@ static const TypeMapping c89_type_map[] = {
  * - Function types, provided their parameters and return types are also C89-compatible.
  * - Struct and Enum types (relying on TypeChecker for internal field validation).
  *
- * It rejects multi-level pointers, function pointers, and functions with more than 4
- * parameters.
+ * It rejects functions with more than 4 parameters.
  *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.
@@ -56,13 +55,27 @@ static inline bool is_c89_compatible(Type* type) {
     switch (type->kind) {
         case TYPE_POINTER: {
             Type* base_type = type->as.pointer.base;
-            // Reject null base and function pointers.
-            if (!base_type || base_type->kind == TYPE_FUNCTION) {
-                return false;
-            }
             // A pointer is compatible only if its base type is a compatible type.
             // We check this by recursively calling is_c89_compatible.
             return is_c89_compatible(base_type);
+        }
+
+        case TYPE_FUNCTION_POINTER: {
+            if (!type->as.function_pointer.param_types || !type->as.function_pointer.return_type) {
+                return false;
+            }
+            if (type->as.function_pointer.param_types->length() > 4) {
+                return false;
+            }
+            if (!is_c89_compatible(type->as.function_pointer.return_type)) {
+                return false;
+            }
+            for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                if (!is_c89_compatible((*type->as.function_pointer.param_types)[i])) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         case TYPE_FUNCTION: {

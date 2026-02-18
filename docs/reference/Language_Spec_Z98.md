@@ -75,12 +75,12 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **No Slices**: `[]T` is rejected. Use a pointer and a length.
-- **No Many-item Pointers**: `[*]T` is not supported.
+- **Many-item Pointers**: `[*]T` is supported (Task 220).
 - **No Error Unions**: `!T` syntax is recognized but requires Milestone 5 translation (not available in bootstrap).
 - **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **No Multi-level Pointers**: `**T` and deeper are rejected.
-- **No Function Pointers**: Functions cannot be passed as values or stored in variables.
+- **Multi-level Pointers**: `**T` and deeper are supported (Task 219).
+- **Function Pointers**: `fn(...) T` types are supported (Task 221).
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`.
 - **Parameter Limit**: Functions are limited to a maximum of **4 parameters**.

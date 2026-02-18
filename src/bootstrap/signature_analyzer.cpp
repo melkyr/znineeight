@@ -165,6 +165,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_POINTER:
+        case TYPE_FUNCTION_POINTER:
             return true;
 
         case TYPE_STRUCT:
@@ -212,6 +213,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_POINTER:
+        case TYPE_FUNCTION_POINTER:
             return true;
 
         case TYPE_STRUCT:

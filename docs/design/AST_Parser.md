@@ -1679,8 +1679,8 @@ During type checking, every function call is recorded in a `CallSiteLookupTable`
 
 Direct function calls are resolved during the semantic analysis phase using a robust algorithm that handles various edge cases:
 
-1.  **Identifier Check**: The callee must be a simple identifier. Indirect calls (via pointers) are currently rejected for bootstrap.
-2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features (strictly rejected in the bootstrap phase with specific errors).
+1.  **Identifier Check**: The callee can be a simple identifier or a more complex expression (like a function pointer variable). Indirect calls are supported as of Task 221.
+2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features.
 3.  **Symbol Lookup**: The compiler searches the hierarchical symbol table for the callee name.
 4.  **Forward Reference Resolution**: If the symbol is found but its type is not yet resolved (common for functions declared later in the same file), the compiler triggers an on-demand signature resolution.
 5.  **Generic Handling**: If the symbol is marked as generic, the compiler attempts to find the matching instantiation in the `GenericCatalogue` and uses its specialized mangled name.
@@ -1697,9 +1697,9 @@ Example: `foo()` → looks up `foo` → resolves signature → records `foo` as 
 | **Direct** | Resolved using the target function's symbol `mangled_name`. | Recorded & Resolved |
 | **Generic** | Resolved using the specific instantiation's `mangled_name` from `GenericCatalogue`. | Recorded & Resolved |
 | **Recursive** | Resolved using the current function's `mangled_name`. | Recorded & Resolved |
-| **Indirect** | Detected and catalogued for future translation. Rejected in bootstrap. | Recorded & Catalogued |
+| **Indirect** | Supported as of Task 221. | Recorded & Resolved |
 
-## 30. Indirect Function Calls (Task 166)
+## 30. Indirect Function Calls (Task 166/221)
 
 ### Detection Patterns
 The compiler identifies several patterns that result in an indirect function call (using a function pointer at the machine level):
@@ -1717,8 +1717,8 @@ All detected indirect calls are recorded in the `IndirectCallCatalogue` with:
 - **Function Type**: The resolved signature of the function being called.
 - **Expression**: The string representation of the callee (e.g., "s.f").
 
-### Bootstrap Rejection
-While function pointers are technically C89 compatible, they are strictly rejected in the Milestone 4 bootstrap compiler to simplify the initial translation and safety analysis. The `C89FeatureValidator` uses the catalogue to provide detailed diagnostic messages explaining why a specific call is indirect and thus unsupported.
+### Bootstrap Support
+As of Milestone 7 (Task 221), function pointers and indirect calls are fully supported in the bootstrap compiler. The `C89FeatureValidator` no longer rejects them, and the `C89Emitter` is equipped to handle function pointer declarators and calls.
 
 ### Implementation Details
 
@@ -1759,7 +1759,7 @@ The compiler includes comprehensive validation for call resolution covering:
 1. **Direct Calls**: Standard function calls with 0-4 arguments.
 2. **Generic Calls**: Explicit (`max(i32, a, b)`) and implicit instantiation.
 3. **Recursive Calls**: Self-recursion and mutual recursion.
-4. **Indirect Calls**: Function pointers (rejected in bootstrap).
+4. **Indirect Calls**: Function pointers (supported as of Task 221).
 5. **Complex Contexts**: Calls in `defer` blocks, `switch` prongs, loop conditions, nested arguments, and struct initializers.
 
 ### 25.2 Expected Behavior Matrix
@@ -1768,7 +1768,7 @@ The compiler includes comprehensive validation for call resolution covering:
 | Direct    | Successful | CallSiteLookupTable | Allowed | Generated |
 | Generic   | Successful | GenericCatalogue | Rejected | Not generated |
 | Recursive | Successful | CallSiteLookupTable | Allowed | Generated |
-| Indirect  | Successful | IndirectCallCatalogue | Rejected | Not generated |
+| Indirect  | Successful | IndirectCallCatalogue | Allowed | Generated |
 
 ### 25.3 Validation Outcomes
 All call resolution tests pass as of Milestone 4 completion. The `CallResolutionValidator` class integrated into the pipeline (DEBUG mode) ensures every call site is either correctly resolved or catalogued for rejection.

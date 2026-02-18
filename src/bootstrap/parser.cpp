@@ -1889,9 +1889,11 @@ ASTNode* Parser::parseFunctionType() {
     new (params) DynamicArray<ASTNode*>(*arena_);
 
     if (peek().type != TOKEN_RPAREN) {
-        do {
+        while (true) {
             params->append(parseType());
-        } while (match(TOKEN_COMMA));
+            if (!match(TOKEN_COMMA)) break;
+            if (peek().type == TOKEN_RPAREN) break; // Support trailing comma
+        }
     }
     expect(TOKEN_RPAREN, "Expected ')' after function type parameters");
 

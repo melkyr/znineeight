@@ -557,8 +557,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 safe_append(current, remaining, "Call to '");
                 safe_append(current, remaining, callee_name);
                 safe_append(current, remaining, "' is forbidden. Use the project's ArenaAllocator for safe memory management.");
-                fatalError(node->callee->loc, msg_buffer);
-                return NULL; // Unreachable
+                unit.getErrorHandler().report(ERR_BANNED_ALLOCATION_FUNCTION, node->callee->loc, msg_buffer);
+                return get_g_type_void();
             }
         }
     }
@@ -582,7 +582,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (name[0] == '@') {
             if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
                 if (node->args->length() != 1) {
-                    fatalError(node->callee->loc, "built-in expects 1 argument");
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "built-in expects 1 argument");
+                    return get_g_type_usize();
                 }
 
                 ASTNode* arg_node = (*node->args)[0];
@@ -618,7 +619,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
             if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
                 if (node->args->length() != 2) {
-                    fatalError(node->callee->loc, "built-in expects 2 arguments");
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "built-in expects 2 arguments");
+                    return get_g_type_void();
                 }
                 Type* target_type = visit((*node->args)[0]);
                 if (!target_type) {
@@ -654,15 +656,16 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    if (callee_type->kind != TYPE_FUNCTION) {
+    if (callee_type->kind != TYPE_FUNCTION && callee_type->kind != TYPE_FUNCTION_POINTER) {
         // This also handles the function pointer case, as a variable holding a
         // function would have a symbol kind of VARIABLE, not FUNCTION.
         int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
         unit.getCallSiteLookupTable().markUnresolved(entry_id, "Called object is not a function", CALL_INDIRECT);
-        fatalError(node->callee->loc, "called object is not a function");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "called object is not a function");
+        return get_g_type_void();
     }
 
-    size_t expected_args = callee_type->as.function.params->length();
+    size_t expected_args = (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.params->length() : callee_type->as.function_pointer.param_types->length();
     size_t actual_args = node->args->length();
 
     if (actual_args != expected_args) {
@@ -685,14 +688,15 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             safe_append(current, remaining, expected_buf);
             safe_append(current, remaining, ", got ");
             safe_append(current, remaining, actual_buf);
-            fatalError(node->callee->loc, msg_buffer);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, msg_buffer);
         }
     }
 
     for (size_t i = 0; i < actual_args; ++i) {
         ASTNode* arg_node = (*node->args)[i];
         Type* arg_type = visit(arg_node);
-        Type* param_type = (*callee_type->as.function.params)[i];
+        if (i >= expected_args) continue;
+        Type* param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         if (!arg_type) {
             // Error in argument expression, already reported.
@@ -723,7 +727,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             safe_append(current, remaining, "', got '");
             safe_append(current, remaining, arg_type_str);
             safe_append(current, remaining, "'");
-            fatalError(arg_node->loc, msg_buffer);
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, arg_node->loc, msg_buffer);
         }
     }
 
@@ -764,7 +768,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     // --- End Task 165 ---
 
-    return callee_type->as.function.return_type;
+    return (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.return_type : callee_type->as.function_pointer.return_type;
 }
 
 Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
@@ -2205,8 +2209,8 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return true;
     }
 
-    // Handle null assignment to any pointer
-    if (actual->kind == TYPE_NULL && expected->kind == TYPE_POINTER) {
+    // Handle null assignment to any pointer or function pointer
+    if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER)) {
         return true;
     }
 
@@ -2247,6 +2251,18 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         // !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass)
         if (areTypesCompatible(expected, actual->as.error_union.payload)) {
             return true;
+        }
+    }
+
+    // Function Pointer compatibility
+    if (expected->kind == TYPE_FUNCTION_POINTER) {
+        if (actual->kind == TYPE_FUNCTION_POINTER) {
+            return signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
+                                  actual->as.function_pointer.param_types, actual->as.function_pointer.return_type);
+        }
+        if (actual->kind == TYPE_FUNCTION) {
+            return signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
+                                  actual->as.function.params, actual->as.function.return_type);
         }
     }
 
@@ -2612,7 +2628,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Null literal handling
     if (source_type->kind == TYPE_NULL) {
-        return (target_type->kind == TYPE_POINTER);
+        return (target_type->kind == TYPE_POINTER || target_type->kind == TYPE_FUNCTION_POINTER);
     }
 
     // Exact match always works
@@ -2631,6 +2647,38 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     // Enum to Integer conversion (C89 compatible)
     if (source_type->kind == TYPE_ENUM && isIntegerType(target_type)) {
         return true;
+    }
+
+    // Function Pointer assignment
+    if (target_type->kind == TYPE_FUNCTION_POINTER) {
+        if (source_type->kind == TYPE_FUNCTION_POINTER || source_type->kind == TYPE_FUNCTION) {
+            bool match = false;
+            if (source_type->kind == TYPE_FUNCTION_POINTER) {
+                match = signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
+                                      source_type->as.function_pointer.param_types, source_type->as.function_pointer.return_type);
+            } else {
+                match = signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
+                                      source_type->as.function.params, source_type->as.function.return_type);
+            }
+
+            if (!match) {
+                char src_str[128], tgt_str[128];
+                typeToString(source_type, src_str, sizeof(src_str));
+                typeToString(target_type, tgt_str, sizeof(tgt_str));
+
+                char msg[512];
+                char* cur = msg;
+                size_t rem = sizeof(msg);
+                safe_append(cur, rem, "Function signature mismatch: expected '");
+                safe_append(cur, rem, tgt_str);
+                safe_append(cur, rem, "', got '");
+                safe_append(cur, rem, src_str);
+                safe_append(cur, rem, "'");
+
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg);
+            }
+            return match;
+        }
     }
 
     // Numeric types require exact match in C89
@@ -3263,7 +3311,12 @@ Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
     Type* return_type = visit(node->return_type);
     if (!return_type) return NULL;
 
-    return createFunctionType(unit.getArena(), param_types, return_type);
+    if (param_types->length() > 4) {
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->params->length() > 0 ? (*node->params)[0]->loc : node->return_type->loc,
+            "Function pointers with more than 4 parameters are not supported in bootstrap");
+    }
+
+    return createFunctionPointerType(unit.getArena(), param_types, return_type);
 }
 
 void TypeChecker::fatalError(const char* message) {
