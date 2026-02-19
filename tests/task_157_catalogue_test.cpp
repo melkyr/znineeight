@@ -12,10 +12,12 @@ TEST_FUNC(GenericCatalogue_ImplicitInstantiation) {
     Type type_i32;
     type_i32.kind = TYPE_I32;
 
-    GenericParamInfo params[1];
-    params[0].kind = GENERIC_PARAM_TYPE;
-    params[0].type_value = &type_i32;
-    params[0].param_name = NULL;
+    DynamicArray<GenericParamInfo> params(arena);
+    GenericParamInfo info;
+    info.kind = GENERIC_PARAM_TYPE;
+    info.type_value = &type_i32;
+    info.param_name = NULL;
+    params.append(info);
 
     SourceLocation loc;
     loc.file_id = 1;
@@ -24,16 +26,17 @@ TEST_FUNC(GenericCatalogue_ImplicitInstantiation) {
     const char* module = "main";
     u32 hash = 12345;
 
-    Type* arg_types[1] = { &type_i32 };
+    DynamicArray<Type*> arg_types(arena);
+    arg_types.append(&type_i32);
 
-    catalogue.addInstantiation("foo", "foo__i32", params, arg_types, 1, loc, module, false, hash);
+    catalogue.addInstantiation("foo", "foo__i32", &params, &arg_types, 1, loc, module, false, hash);
 
     ASSERT_EQ(1, catalogue.count());
     const GenericInstantiation& inst = (*catalogue.getInstantiations())[0];
     ASSERT_STREQ("foo", inst.function_name);
     ASSERT_EQ(false, inst.is_explicit);
     ASSERT_EQ(1, inst.param_count);
-    ASSERT_EQ(TYPE_I32, inst.params[0].type_value->kind);
+    ASSERT_EQ(TYPE_I32, (*inst.params)[0].type_value->kind);
     ASSERT_STREQ("main", inst.module);
 
     return true;

@@ -1379,15 +1379,21 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Maps to raw `T*` in C89.
     - **Tests**: Verified with Batch 37.
 
-221. [COMPLETE] **Task 221:** Function Pointers (VERIFIED)
+221. [COMPLETE] **Task 221:** Function Pointers & Control Flow (VERIFIED REVISION)
     - **Parser**: Added grammar for function type expressions: `fn (param_list) return_type`. New node type `NODE_FUNCTION_TYPE`.
     - **AST**: Defined `ASTFunctionTypeNode` storing parameter types and return type.
     - **Type system**: Created `TYPE_FUNCTION_POINTER` holding signatures. Implemented structural signature matching.
-    - **Type checker**: Implemented implicit coercion from function names to pointers. Enabled indirect calls through variables, parameters, and complex expressions. Reinstated and strictly enforced the 4-parameter limit for functions and function pointers to ensure C89 compatibility.
+    - **Type checker**:
+        - Implemented implicit coercion from function names to pointers.
+        - Enabled indirect calls through variables, parameters, and complex expressions.
+        - **Revised**: Lifted the 4-parameter limit for all function signatures and generic instantiations. Replaced fixed-size arrays with dynamic arena allocations.
+        - **Revised**: Implemented semantic validation for `break` and `continue`, ensuring they are only used within loop bodies and rejecting them inside `defer`/`errdefer` blocks.
     - **C89FeatureValidator**: Permitted function pointer declarations and calls.
-    - **Codegen**: Implemented recursive declarator system (`emitTypePrefix`/`emitTypeSuffix`) to handle complex C89 types (arrays of FPs, functions returning FPs). Supported `break` and `continue` statements.
+    - **Codegen**:
+        - Implemented recursive declarator system (`emitTypePrefix`/`emitTypeSuffix`) to handle complex C89 types (arrays of FPs, functions returning FPs).
+        - Supported `break` and `continue` statement emission.
     - **Verification**: Created and verified examples in `examples/quicksort/`, `examples/sort_strings/`, and `examples/func_ptr_return/`.
-    - **Tests**: Verified with comprehensive Batch 38 tests, including complex integration scenarios.
+    - **Tests**: Verified with comprehensive Batch 38 and Batch 39 tests, including tests for many parameters (up to 33) and complex loop control flow.
 
 222. **Task 222:** Slices (`[]T`)
     - **Parser**: Recognise `[]T` as a type expression. Create a new node `NODE_SLICE_TYPE`.

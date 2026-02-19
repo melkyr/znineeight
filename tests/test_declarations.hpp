@@ -551,11 +551,23 @@ TEST_FUNC(ShadowingAllowed);
 
 // Forward declarations for Task 153 (Signature Analysis)
 TEST_FUNC(SignatureAnalysisNonC89Types);
-TEST_FUNC(SignatureAnalysisTooManyParams);
+TEST_FUNC(SignatureAnalysis_ManyParams_Accepted);
+TEST_FUNC(SignatureAnalysis_ExtremeParams_Accepted);
 TEST_FUNC(SignatureAnalysisMultiLevelPointers);
 TEST_FUNC(SignatureAnalysisTypeAliasResolution);
 TEST_FUNC(SignatureAnalysisArrayParameterWarning);
 TEST_FUNC(SignatureAnalysisReturnTypeRejection);
+
+// Forward declarations for Task 221 Revision (Break/Continue)
+TEST_FUNC(TypeChecker_BreakContinue_InLoop);
+TEST_FUNC(TypeChecker_BreakOutsideLoop_Error);
+TEST_FUNC(TypeChecker_ContinueOutsideLoop_Error);
+TEST_FUNC(TypeChecker_BreakInDefer_Error);
+TEST_FUNC(TypeChecker_BreakInSwitchInLoop);
+
+// Forward declarations for Task 221 Revision (Many Params)
+TEST_FUNC(TypeChecker_ManyParams_FunctionPointer);
+TEST_FUNC(TypeChecker_ManyParams_GenericInstantiation);
 
 // Forward declarations for Task 154 (Generic Function Detection)
 TEST_FUNC(Task154_RejectAnytypeParam);

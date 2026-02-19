@@ -70,15 +70,15 @@ TEST_FUNC(Task156_EnhancedGenericDetection) {
     ASSERT_TRUE(inst.is_explicit);
 
     // Param 0: i32 (Type)
-    ASSERT_EQ(inst.params[0].kind, GENERIC_PARAM_TYPE);
-    ASSERT_TRUE(inst.params[0].type_value != NULL);
+    ASSERT_EQ((*inst.params)[0].kind, GENERIC_PARAM_TYPE);
+    ASSERT_TRUE((*inst.params)[0].type_value != NULL);
     char type_name_buf[64];
-    typeToString(inst.params[0].type_value, type_name_buf, sizeof(type_name_buf));
+    typeToString((*inst.params)[0].type_value, type_name_buf, sizeof(type_name_buf));
     ASSERT_STREQ("i32", type_name_buf);
 
     // Param 1: 10 (Comptime Int)
-    ASSERT_EQ(inst.params[1].kind, GENERIC_PARAM_COMPTIME_INT);
-    ASSERT_EQ(inst.params[1].int_value, 10);
+    ASSERT_EQ((*inst.params)[1].kind, GENERIC_PARAM_COMPTIME_INT);
+    ASSERT_EQ((*inst.params)[1].int_value, 10);
 
     return true;
 }

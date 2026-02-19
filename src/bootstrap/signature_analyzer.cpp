@@ -104,25 +104,6 @@ void SignatureAnalyzer::visit(ASTNode* node) {
 void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     if (!node) return;
 
-    // 1. Check parameter count
-    if (node->params && node->params->length() > 4) {
-        char buffer[256];
-        char num_buf[21];
-        plat_i64_to_string(node->params->length(), num_buf, sizeof(num_buf));
-
-        char* cur = buffer;
-        size_t rem = sizeof(buffer);
-        safe_append(cur, rem, "Function '");
-        safe_append(cur, rem, node->name ? node->name : "<anonymous>");
-        safe_append(cur, rem, "' has too many parameters (");
-        safe_append(cur, rem, num_buf);
-        safe_append(cur, rem, "), maximum is 4 for bootstrap compiler compatibility");
-
-        SourceLocation loc = node->body ? node->body->loc : SourceLocation();
-        error_handler_.report(ERR_NON_C89_FEATURE, loc, buffer, unit_.getArena());
-        invalid_count_++;
-    }
-
     // 2. Check each parameter type
     if (node->params) {
         for (size_t i = 0; i < node->params->length(); ++i) {

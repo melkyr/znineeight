@@ -23,12 +23,14 @@ bool test_generic_mangling() {
     Type i32_type;
     i32_type.kind = TYPE_I32;
 
-    GenericParamInfo params[1];
-    params[0].kind = GENERIC_PARAM_TYPE;
-    params[0].type_value = &i32_type;
-    params[0].param_name = interner.intern("T");
+    DynamicArray<GenericParamInfo> params(arena);
+    GenericParamInfo info;
+    info.kind = GENERIC_PARAM_TYPE;
+    info.type_value = &i32_type;
+    info.param_name = interner.intern("T");
+    params.append(info);
 
-    const char* mangled = mangler.mangleFunction("foo", params, 1);
+    const char* mangled = mangler.mangleFunction("foo", &params, 1);
     ASSERT_TRUE(plat_strcmp(mangled, "foo__i32") == 0);
 
     return true;
@@ -44,15 +46,20 @@ bool test_multiple_generic_mangling() {
     Type f64_type;
     f64_type.kind = TYPE_F64;
 
-    GenericParamInfo params[2];
-    params[0].kind = GENERIC_PARAM_TYPE;
-    params[0].type_value = &i32_type;
-    params[0].param_name = interner.intern("T");
-    params[1].kind = GENERIC_PARAM_TYPE;
-    params[1].type_value = &f64_type;
-    params[1].param_name = interner.intern("U");
+    DynamicArray<GenericParamInfo> params(arena);
+    GenericParamInfo p1;
+    p1.kind = GENERIC_PARAM_TYPE;
+    p1.type_value = &i32_type;
+    p1.param_name = interner.intern("T");
+    params.append(p1);
 
-    const char* mangled = mangler.mangleFunction("bar", params, 2);
+    GenericParamInfo p2;
+    p2.kind = GENERIC_PARAM_TYPE;
+    p2.type_value = &f64_type;
+    p2.param_name = interner.intern("U");
+    params.append(p2);
+
+    const char* mangled = mangler.mangleFunction("bar", &params, 2);
     ASSERT_TRUE(plat_strcmp(mangled, "bar__i32_f64") == 0);
 
     return true;
@@ -104,13 +111,15 @@ bool test_determinism() {
 
     Type i32_type;
     i32_type.kind = TYPE_I32;
-    GenericParamInfo params[1];
-    params[0].kind = GENERIC_PARAM_TYPE;
-    params[0].type_value = &i32_type;
-    params[0].param_name = interner.intern("T");
+    DynamicArray<GenericParamInfo> params(arena);
+    GenericParamInfo info;
+    info.kind = GENERIC_PARAM_TYPE;
+    info.type_value = &i32_type;
+    info.param_name = interner.intern("T");
+    params.append(info);
 
-    const char* mangled1 = mangler.mangleFunction("foo", params, 1);
-    const char* mangled2 = mangler.mangleFunction("foo", params, 1);
+    const char* mangled1 = mangler.mangleFunction("foo", &params, 1);
+    const char* mangled2 = mangler.mangleFunction("foo", &params, 1);
 
     ASSERT_TRUE(mangled1 == mangled2); // Should be same interned string
 

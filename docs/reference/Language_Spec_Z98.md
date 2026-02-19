@@ -55,12 +55,19 @@ Memory is reclaimed by resetting or destroying the arena.
 - Memory allocated via `arena_alloc` should **not** be manually freed using `free()`.
 
 ## 3. Control Flow
+
+### 3.1 Statements
 - `if (cond) { ... } else { ... }`: Braces are **required**.
-- `while (cond) { ... }`: Supports `break` and `continue`.
-- `for (iterable) |item| { ... }`: Simple iteration.
+- `while (cond) { ... }`: Simple loop.
+- `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
 - `switch (expr) { ... }`: Pattern matching.
 - `defer { ... }`: Executes at scope exit.
 - `errdefer { ... }`: Executes at scope exit if an error is returned.
+
+### 3.2 Loop Control
+- `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
+- `continue`: Jumps to the next iteration of the innermost loop. Only allowed within `while` or `for` loop bodies.
+- **Validation**: Both `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
 
 ## 4. Built-in Functions
 - `@import("file.zig")`: Includes another module.
@@ -80,7 +87,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
-- **Function Pointers**: `fn(...) T` types are supported (maximum 4 parameters).
+- **Function Pointers**: `fn(...) T` types are supported.
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`.
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
