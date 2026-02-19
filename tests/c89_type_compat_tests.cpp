@@ -24,7 +24,7 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
-    // Test Case 3: Invalid function with more than 4 parameters
+    // Test Case 3: Valid function with more than 4 parameters (now supported)
     {
         DynamicArray<Type*>* params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         params->append(get_g_type_i8());
@@ -33,10 +33,10 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         params->append(get_g_type_i64());
         params->append(get_g_type_u8()); // 5th parameter
         Type* func_type = createFunctionType(arena, params, get_g_type_void());
-        ASSERT_FALSE(is_c89_compatible(func_type));
+        ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
-    // Test Case 4: Invalid function with a function pointer as a parameter
+    // Test Case 4: Valid function with a function pointer as a parameter (now supported)
     {
         DynamicArray<Type*>* inner_params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         Type* inner_func_type = createFunctionType(arena, inner_params, get_g_type_void());
@@ -44,17 +44,17 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         DynamicArray<Type*>* outer_params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         outer_params->append(inner_func_type);
         Type* outer_func_type = createFunctionType(arena, outer_params, get_g_type_void());
-        ASSERT_FALSE(is_c89_compatible(outer_func_type));
+        ASSERT_TRUE(is_c89_compatible(outer_func_type));
     }
 
-    // Test Case 5: Invalid function returning a function pointer
+    // Test Case 5: Valid function returning a function pointer (now supported)
     {
         DynamicArray<Type*>* inner_params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         Type* inner_func_type = createFunctionType(arena, inner_params, get_g_type_void());
 
         DynamicArray<Type*>* outer_params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         Type* outer_func_type = createFunctionType(arena, outer_params, inner_func_type);
-        ASSERT_FALSE(is_c89_compatible(outer_func_type));
+        ASSERT_TRUE(is_c89_compatible(outer_func_type));
     }
 
     // Test Case 6: Valid function with isize parameter

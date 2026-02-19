@@ -130,21 +130,23 @@ TEST_FUNC(StructIntegration_RejectSliceField) {
     return unit.hasErrorMatching("Slices are not supported");
 }
 
-TEST_FUNC(StructIntegration_RejectMultiLevelPointerField) {
+TEST_FUNC(StructIntegration_AllowMultiLevelPointerField) {
     const char* source =
         "const Data = struct {\n"
         "    ptr: * * i32,\n"
-        "};";
+        "};\n"
+        "var d: Data = undefined;";
 
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
     u32 file_id = unit.addSource("test.zig", source);
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected failure for multi-level pointer, but it succeeded\n");
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Expected success for multi-level pointer field, but it failed\n");
+        unit.getErrorHandler().printErrors();
         return false;
     }
 
-    return unit.hasErrorMatching("multi-level pointers");
+    return true;
 }

@@ -84,7 +84,7 @@ TEST_FUNC(Task168_MutualRecursion) {
     return true;
 }
 
-TEST_FUNC(Task168_IndirectCallRejection) {
+TEST_FUNC(Task168_IndirectCallSupport) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
@@ -101,23 +101,12 @@ TEST_FUNC(Task168_IndirectCallRejection) {
     bool success = unit.performFullPipeline(file_id);
     plat_print_info("Test 31: performFullPipeline returned\n");
 
-    // Should fail validation/type-checking
-    ASSERT_FALSE(success);
+    // Should now succeed
+    ASSERT_TRUE(success);
 
-    // Should have 1 indirect call in catalogue
+    // Should still have 1 indirect call in catalogue for analysis
     ASSERT_EQ(1, unit.getIndirectCallCatalogue().count());
     ASSERT_EQ(INDIRECT_VARIABLE, unit.getIndirectCallCatalogue().get(0).type);
-
-    // Check for advice 9002
-    bool advice_found = false;
-    const DynamicArray<InfoReport>& infos = unit.getErrorHandler().getInfos();
-    for (size_t i = 0; i < infos.length(); ++i) {
-        if (infos[i].code == INFO_INDIRECT_CALL_ADVICE) {
-            advice_found = true;
-            break;
-        }
-    }
-    ASSERT_TRUE(advice_found);
 
     return true;
 }

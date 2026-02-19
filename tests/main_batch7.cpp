@@ -41,11 +41,16 @@ int main(int argc, char* argv[]) {
         test_FunctionVariableCollisionSameScope,
         test_ShadowingAllowed,
         test_SignatureAnalysisNonC89Types,
-        test_SignatureAnalysisTooManyParams,
+        test_SignatureAnalysisManyParams,
         test_SignatureAnalysisMultiLevelPointers,
         test_SignatureAnalysisTypeAliasResolution,
         test_SignatureAnalysisArrayParameterWarning,
-        test_SignatureAnalysisReturnTypeRejection
+        test_SignatureAnalysisReturnTypeRejection,
+        test_BreakContinue_Valid,
+        test_BreakContinue_Invalid,
+        test_BreakContinue_Codegen,
+        test_ManyParameters_Call,
+        test_ManyParameters_Generic
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -30,13 +30,22 @@ void GenericCatalogue::addInstantiation(const char* name, const char* mangled_na
     GenericInstantiation inst;
     inst.function_name = name;
     inst.mangled_name = mangled_name;
-    inst.param_count = (count > 4) ? 4 : count;
-    for (int i = 0; i < inst.param_count; ++i) {
-        inst.params[i] = params[i];
+    inst.param_count = count;
+
+    void* params_mem = arena_.alloc(sizeof(DynamicArray<GenericParamInfo>));
+    if (!params_mem) plat_abort();
+    inst.params = new (params_mem) DynamicArray<GenericParamInfo>(arena_);
+
+    void* arg_types_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+    if (!arg_types_mem) plat_abort();
+    inst.arg_types = new (arg_types_mem) DynamicArray<Type*>(arena_);
+
+    for (int i = 0; i < count; ++i) {
+        inst.params->append(params[i]);
         if (arg_types) {
-            inst.arg_types[i] = arg_types[i];
+            inst.arg_types->append(arg_types[i]);
         } else {
-            inst.arg_types[i] = NULL;
+            inst.arg_types->append(NULL);
         }
     }
     inst.location = loc;
@@ -67,7 +76,7 @@ void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, Gener
     definitions_->append(info);
 }
 
-void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* module_prefix) {
+void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* /*module_prefix*/) {
     // For instantiations
     const DynamicArray<GenericInstantiation>* other_insts = other.getInstantiations();
     for (size_t i = 0; i < other_insts->length(); ++i) {
@@ -75,9 +84,22 @@ void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* modu
 
         // In a real merge, we might prefix the name if module_prefix is provided
         // For now, we just add them to our own list, deduplicating
+
+        // We need to convert back to raw pointers for addInstantiation
+        // Since addInstantiation copies them, this is fine
+        GenericParamInfo* params_ptr = NULL;
+        Type** arg_types_ptr = NULL;
+
+        if (other_inst.params && other_inst.params->length() > 0) {
+            params_ptr = &((*other_inst.params)[0]);
+        }
+        if (other_inst.arg_types && other_inst.arg_types->length() > 0) {
+            arg_types_ptr = &((*other_inst.arg_types)[0]);
+        }
+
         addInstantiation(other_inst.function_name, other_inst.mangled_name,
-                         (GenericParamInfo*)other_inst.params,
-                         (Type**)other_inst.arg_types,
+                         params_ptr,
+                         arg_types_ptr,
                          other_inst.param_count, other_inst.location,
                          other_inst.module, other_inst.is_explicit, other_inst.param_hash);
     }

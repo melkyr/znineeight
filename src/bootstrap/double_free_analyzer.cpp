@@ -911,6 +911,8 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
         return isAllocationCall(node->as.orelse_expr->payload) || isAllocationCall(node->as.orelse_expr->else_expr);
     } else if (node->type == NODE_BINARY_OP) {
         return isAllocationCall(node->as.binary_op->left) || isAllocationCall(node->as.binary_op->right);
+    } else if (node->type == NODE_PTR_CAST) {
+        return isAllocationCall(node->as.ptr_cast->expr);
     }
     return false;
 }
@@ -961,6 +963,8 @@ const char* DoubleFreeAnalyzer::extractVariableName(ASTNode* node) {
     if (!node) return NULL;
     if (node->type == NODE_IDENTIFIER) {
         return node->as.identifier.name;
+    } else if (node->type == NODE_PTR_CAST) {
+        return extractVariableName(node->as.ptr_cast->expr);
     }
     return NULL;
 }

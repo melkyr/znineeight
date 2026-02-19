@@ -304,7 +304,7 @@ The `TypeChecker` resolves identifiers, verifies type compatibility for assignme
 - **Redefinition Check:** Ensures no two symbols share the same name in the same scope.
 
 #### Pass 2: Lifetime Analysis (Task 125)
-The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters.
+The `LifetimeAnalyzer` is a read-only pass that detects memory safety violations, specifically dangling pointers created by returning pointers to local variables or parameters from functions.
 
 - **Provenance Tracking:** It tracks which pointers are assigned the addresses of local variables (e.g., `p = &x;`). It uses a `DynamicArray` to store `PointerAssignment` records for the current function scope.
 
@@ -349,20 +349,19 @@ The `DoubleFreeAnalyzer` is a read-only pass that identifies potential double-fr
 ### 4.4 Layer 4: Type System (`type_system.hpp`)
 
 **Bootstrap Type Subset Philosophy:**
-The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifically chosen for their direct compatibility with C89 and the simplified memory model of the bootstrap environment. It is NOT intended to support the full range of modern Zig types.
+The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifically chosen for their direct compatibility with C89 and the simplified memory model of the bootstrap environment.
 
 **Supported Types (Bootstrap Phase):**
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`.
-* **Pointers:** `*T` (Single level only). Supports pointer arithmetic with `usize`/`isize`.
+* **Pointers:** `*T`, `[*]T`. Supports multi-level pointers (`**T`, etc.) and pointer arithmetic with `usize`/`u32` on `[*]T`.
 * **Arrays:** `[N]T` (Constant size only).
 * **Structs/Enums:** C-style declarations only.
+* **Functions:** `fn(...) T` as function pointers.
 
 **Explicitly Rejected Types (Bootstrap Phase):**
-* **Multi-level pointers:** `**T`, `***T` (rejected to simplify memory management and signature analysis).
 * **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
 * **Optionals:** `?T` (Rejected until Milestone 5 translation).
 * **Error Unions:** `!T` (Rejected until Milestone 5 translation).
-* **Function Pointers:** `fn(...) T` as a value or variable (rejected to simplify the type system).
 
 **Type Representation:**
 ```cpp
@@ -382,7 +381,8 @@ enum TypeKind {
     TYPE_F32,
     TYPE_F64,
     // Complex Types
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_FUNCTION
 };
 
 struct Type {
@@ -392,7 +392,12 @@ struct Type {
     union {
         struct {
             Type* base;
+            bool is_many;
         } pointer;
+        struct {
+            DynamicArray<Type*>* params;
+            Type* return_type;
+        } function;
     } as;
 };
 ```
@@ -532,12 +537,14 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 ### 5.1 Supported Syntax & Features
 *   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
 *   **Primitive Types**: `i8` through `i64`, `u8` through `u64`, `isize`, `usize`, `f32`, `f64`, `bool`, `void`.
-*   **Pointers**: Single-level pointers `*T` and `*const T`. Supports address-of `&`, dereference `ptr.*`, pointer-to-struct access `ptr.field`, and arithmetic (`ptr + offset`, `ptr - offset`, `ptr1 - ptr2`).
+*   **Pointers**: Single-level pointers `*T` and `*const T`. Many-item pointers `[*]T`. Supports multi-level pointers (`**T`, etc.).
+*   **Address-of & Dereference**: Supports `&` for address-of and `ptr.*` for dereference.
+*   **Pointer Arithmetic**: Supported on `[*]T` with `+`, `-`, and distance `ptr1 - ptr2`.
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
 *   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
 *   **Unions**: Named bare unions via `const U = union { ... };`.
-*   **Functions**: Function declarations with up to 4 parameters. Supports recursion and forward references.
+*   **Functions**: Function declarations and calls with support for any number of parameters.
 *   **Control Flow**:
     *   `if (cond) { ... } else { ... }` (Braced blocks required).
     *   `while (cond) { ... }` (Supports `break` and `continue`).
@@ -568,11 +575,8 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **No Multi-level Pointers**: `**T` and deeper are rejected.
 *   **No Tagged Unions**: Only bare (untagged) unions are supported.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
-*   **No Function Pointers**: Functions cannot be treated as first-class values (variables/parameters).
-*   **Parameter Limit**: Maximum of 4 parameters per function.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
 *   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.

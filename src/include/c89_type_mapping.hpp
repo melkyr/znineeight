@@ -38,12 +38,9 @@ static const TypeMapping c89_type_map[] = {
  *
  * This function validates that a type adheres to bootstrap constraints. It accepts:
  * - Whitelisted primitive types (as defined in c89_type_map).
- * - Single-level pointers to whitelisted primitive types.
- * - Function types, provided their parameters and return types are also C89-compatible.
- * - Struct and Enum types (relying on TypeChecker for internal field validation).
- *
- * It rejects multi-level pointers, function pointers, and functions with more than 4
- * parameters.
+ * - Multi-level pointers to whitelisted primitive types or function types.
+ * - Function types (function pointers), provided their parameters and return types are also C89-compatible.
+ * - Struct and Enum types.
  *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.
@@ -56,12 +53,10 @@ static inline bool is_c89_compatible(Type* type) {
     switch (type->kind) {
         case TYPE_POINTER: {
             Type* base_type = type->as.pointer.base;
-            // Reject null base and function pointers.
-            if (!base_type || base_type->kind == TYPE_FUNCTION) {
+            if (!base_type) {
                 return false;
             }
-            // A pointer is compatible only if its base type is a compatible type.
-            // We check this by recursively calling is_c89_compatible.
+            // Multi-level pointers and pointers to functions are now supported.
             return is_c89_compatible(base_type);
         }
 
@@ -71,21 +66,18 @@ static inline bool is_c89_compatible(Type* type) {
                 return false;
             }
 
-            // Rule: Must not have more than 4 parameters.
-            if (type->as.function.params->length() > 4) {
-                return false;
-            }
+            // Rule: Unlimited parameters now supported.
 
-            // Rule: Return type must be valid, C89-compatible, and not a function itself.
+            // Rule: Return type must be valid and C89-compatible.
             Type* return_type = type->as.function.return_type;
-            if (return_type->kind == TYPE_FUNCTION || !is_c89_compatible(return_type)) {
+            if (!is_c89_compatible(return_type)) {
                 return false;
             }
 
-            // Rule: All parameter types must be valid, C89-compatible, and not functions themselves.
+            // Rule: All parameter types must be valid and C89-compatible.
             for (size_t i = 0; i < type->as.function.params->length(); ++i) {
                 Type* param_type = (*type->as.function.params)[i];
-                if (!param_type || param_type->kind == TYPE_FUNCTION || !is_c89_compatible(param_type)) {
+                if (!param_type || !is_c89_compatible(param_type)) {
                     return false;
                 }
             }
@@ -95,12 +87,10 @@ static inline bool is_c89_compatible(Type* type) {
 
         case TYPE_ARRAY: {
             // An array is compatible if its element type is compatible.
-            // Use an iterative approach to find the base primitive type.
             Type* current_type = type;
             while (current_type && current_type->kind == TYPE_ARRAY) {
                 current_type = current_type->as.array.element_type;
             }
-            // After the loop, check the final non-array base type.
             return is_c89_compatible(current_type);
         }
 
@@ -117,7 +107,6 @@ static inline bool is_c89_compatible(Type* type) {
                     return true;
                 }
             }
-            // All other types (e.g., isize, array, etc.) are not compatible by default.
             return false;
         }
     }

@@ -38,36 +38,33 @@ TEST_FUNC(Task165_BuiltinRejection) {
     return true;
 }
 
-TEST_FUNC(Task165_C89Incompatible) {
+TEST_FUNC(Task165_C89CompatibleManyParams) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
 
-    // Use a function with too many parameters - SignatureAnalyzer or resolveCallSite will reject it.
+    // Use a function with 5 parameters - now supported and C89 compatible.
     const char* source =
-        "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
-        "fn main() void { tooMany(1, 2, 3, 4, 5); }\n";
+        "fn fiveParams(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
+        "fn main() void { fiveParams(1, 2, 3, 4, 5); }\n";
 
     u32 file_id = unit.addSource("test.zig", source);
-
-    // Pipeline will return false because SignatureAnalyzer/FeatureValidator will report errors
-    unit.performFullPipeline(file_id);
+    bool success = unit.performFullPipeline(file_id);
+    ASSERT_TRUE(success);
 
     CallSiteLookupTable& table = unit.getCallSiteLookupTable();
-    // One call to tooMany
     ASSERT_TRUE(table.count() >= 1);
 
-    bool found_incompatible = false;
+    bool found_resolved = false;
     for (int i = 0; i < table.count(); ++i) {
         const CallSiteEntry& entry = table.getEntry(i);
-        if (!entry.resolved && entry.error_if_unresolved &&
-            plat_strcmp(entry.error_if_unresolved, "Function signature is not C89-compatible") == 0) {
-            found_incompatible = true;
+        if (entry.resolved && entry.mangled_name && strstr(entry.mangled_name, "fiveParams")) {
+            found_resolved = true;
         }
     }
 
-    ASSERT_TRUE(found_incompatible);
+    ASSERT_TRUE(found_resolved);
 
     return true;
 }

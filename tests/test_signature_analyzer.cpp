@@ -61,9 +61,9 @@ TEST_FUNC(SignatureAnalysisReturnTypeRejection) {
 }
 
 
-TEST_FUNC(SignatureAnalysisTooManyParams) {
+TEST_FUNC(SignatureAnalysisManyParams) {
     const char* source =
-        "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n";
+        "fn manyParams(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) void {}\n";
 
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
@@ -81,14 +81,14 @@ TEST_FUNC(SignatureAnalysisTooManyParams) {
     SignatureAnalyzer analyzer(unit);
     analyzer.analyze(ast);
 
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // Should now be valid
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
     return true;
 }
 
 TEST_FUNC(SignatureAnalysisMultiLevelPointers) {
     const char* source =
-        "fn multiPtr(a: * * i32) void {}\n";
+        "fn multiPtr(a: **i32) void {}\n";
 
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
@@ -106,8 +106,8 @@ TEST_FUNC(SignatureAnalysisMultiLevelPointers) {
     SignatureAnalyzer analyzer(unit);
     analyzer.analyze(ast);
 
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // Multi-level pointers are now allowed
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
     return true;
 }
 

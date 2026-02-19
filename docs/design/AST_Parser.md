@@ -599,10 +599,12 @@ Represents a pointer to another type.
      * @brief Represents a pointer type.
      * @var ASTPointerTypeNode::base A pointer to the ASTNode for the type being pointed to.
      * @var ASTPointerTypeNode::is_const True if the pointer type is const-qualified.
+     * @var ASTPointerTypeNode::is_many True if it is a many-item pointer ([*]T).
      */
     struct ASTPointerTypeNode {
         ASTNode* base;
         bool is_const;
+        bool is_many;
     };
     ```
 
@@ -830,29 +832,6 @@ The `parseReturnStatement` function handles the `return` statement. It adheres t
 - It consumes a `return` token.
 - It then checks for a semicolon. If the next token is not a semicolon, it assumes an expression is present and calls `parseExpression` to parse it.
 - Finally, it requires a terminating semicolon.
-- Any deviation from this structure results in a fatal error.
-
-### `ASTDeferStmtNode`
-Represents a `defer` statement.
-*   **Zig Code:** `defer file.close();`
-*   **Structure:**
-    ```cpp
-    /**
-     * @struct ASTDeferStmtNode
-     * @brief Represents a defer statement.
-     * @var ASTDeferStmtNode::statement The statement to be executed at scope exit.
-     */
-    struct ASTDeferStmtNode {
-        ASTNode* statement;
-    };
-    ```
-
-#### Parsing Logic (`parseDeferStatement`)
-The `parseDeferStatement` function handles the `defer` statement. It adheres to the grammar:
-`'defer' statement`
-
-- It consumes a `defer` token.
-- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTErrDeferStmtNode`
@@ -1166,6 +1145,7 @@ Represents a `try` expression, which either unwraps a successful value or propag
     struct ASTTryExprNode {
         ASTNode* expression;
     };
+    ```
 
 #### Parsing Logic (`parseUnaryExpr` for `try`)
 The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExpr` function.
@@ -1197,7 +1177,6 @@ The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExp
 
 ### `peekNext()`
 The `peekNext()` function provides a one-token lookahead without consuming the current token. This is useful in situations where the parser needs to make a decision based on the token that follows the current one. For example, it can be used to distinguish between an array access `[i]` and an array slice `[i..]`.
-    ```
 
 ### `ASTCatchExprNode`
 Represents a `catch` expression, providing a fallback value in case of an error.
@@ -1446,17 +1425,19 @@ The `parseComptimeBlock` function is responsible for parsing a `comptime` block.
 
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
 
-`type = primitive | pointer_type | array_type | slice_type`
+`type = primitive | pointer_type | array_type | slice_type | function_type`
 `primitive = IDENTIFIER` (e.g., `i32`, `u8`, `usize`, `isize`, `bool`)
-`pointer_type = '*' type`
+`pointer_type = ('*' | '[*]') type`
 `array_type = '[' <expr> ']' type`
 `slice_type = '[]' type`
+`function_type = 'fn' '(' <param_types> ')' type`
 
 ### AST Node Structures
 
 - **`ASTTypeNameNode`**: Represents a primitive or named type (e.g., `i32`, `usize`, `MyStruct`).
-- **`ASTPointerTypeNode`**: Represents a pointer to a base type.
+- **`ASTPointerTypeNode`**: Represents a pointer to a base type. Supports both single-item (`*`) and many-item (`[*]`) pointers.
 - **`ASTArrayTypeNode`**: Represents both fixed-size arrays and slices. For slices, the `size` field is `NULL`.
+- **`ASTFnDeclNode`**: Also used to represent function types.
 
 ### Error Cases
 
@@ -1679,14 +1660,14 @@ During type checking, every function call is recorded in a `CallSiteLookupTable`
 
 Direct function calls are resolved during the semantic analysis phase using a robust algorithm that handles various edge cases:
 
-1.  **Identifier Check**: The callee must be a simple identifier. Indirect calls (via pointers) are currently rejected for bootstrap.
+1.  **Identifier Check**: The callee must be a simple identifier.
 2.  **Built-in Detection**: Identifiers starting with `@` (e.g., `@import`) are identified and handled as built-in features (strictly rejected in the bootstrap phase with specific errors).
 3.  **Symbol Lookup**: The compiler searches the hierarchical symbol table for the callee name.
 4.  **Forward Reference Resolution**: If the symbol is found but its type is not yet resolved (common for functions declared later in the same file), the compiler triggers an on-demand signature resolution.
 5.  **Generic Handling**: If the symbol is marked as generic, the compiler attempts to find the matching instantiation in the `GenericCatalogue` and uses its specialized mangled name.
-6.  **C89 Compatibility**: The resolved function signature is verified for C89 compatibility (e.g., parameter count, supported types).
+6.  **C89 Compatibility**: The resolved function signature is verified for C89 compatibility (e.g., supported types).
 7.  **Recursion Detection**: The compiler checks if the call is recursive by comparing the callee name with the current function being checked.
-8.  **Recording**: The call site, its resolved mangled name, and its type (`DIRECT`, `RECURSIVE`, `GENERIC`) are recorded in the `CallSiteLookupTable`.
+8.  **Recording**: The call site, its resolved mangled name, and its type (`DIRECT`, `RECURSIVE`, `GENERIC`, `INDIRECT`) are recorded in the `CallSiteLookupTable`.
 
 Example: `foo()` → looks up `foo` → resolves signature → records `foo` as `CALL_DIRECT`.
 
@@ -1697,7 +1678,7 @@ Example: `foo()` → looks up `foo` → resolves signature → records `foo` as 
 | **Direct** | Resolved using the target function's symbol `mangled_name`. | Recorded & Resolved |
 | **Generic** | Resolved using the specific instantiation's `mangled_name` from `GenericCatalogue`. | Recorded & Resolved |
 | **Recursive** | Resolved using the current function's `mangled_name`. | Recorded & Resolved |
-| **Indirect** | Detected and catalogued for future translation. Rejected in bootstrap. | Recorded & Catalogued |
+| **Indirect** | Resolved using function pointers. | Recorded & Resolved |
 
 ## 30. Indirect Function Calls (Task 166)
 
@@ -1717,8 +1698,8 @@ All detected indirect calls are recorded in the `IndirectCallCatalogue` with:
 - **Function Type**: The resolved signature of the function being called.
 - **Expression**: The string representation of the callee (e.g., "s.f").
 
-### Bootstrap Rejection
-While function pointers are technically C89 compatible, they are strictly rejected in the Milestone 4 bootstrap compiler to simplify the initial translation and safety analysis. The `C89FeatureValidator` uses the catalogue to provide detailed diagnostic messages explaining why a specific call is indirect and thus unsupported.
+### Bootstrap Support
+Function pointers are fully supported in Z98. The `C89Emitter` generates appropriate function pointer declarations and indirect call syntax in C89.
 
 ### Implementation Details
 
@@ -1756,10 +1737,10 @@ Recursive function calls are fully C89-compatible and are not rejected by the `C
 ### 25.1 Validation Test Suite
 The compiler includes comprehensive validation for call resolution covering:
 
-1. **Direct Calls**: Standard function calls with 0-4 arguments.
+1. **Direct Calls**: Standard function calls.
 2. **Generic Calls**: Explicit (`max(i32, a, b)`) and implicit instantiation.
 3. **Recursive Calls**: Self-recursion and mutual recursion.
-4. **Indirect Calls**: Function pointers (rejected in bootstrap).
+4. **Indirect Calls**: Function pointers.
 5. **Complex Contexts**: Calls in `defer` blocks, `switch` prongs, loop conditions, nested arguments, and struct initializers.
 
 ### 25.2 Expected Behavior Matrix
@@ -1768,7 +1749,7 @@ The compiler includes comprehensive validation for call resolution covering:
 | Direct    | Successful | CallSiteLookupTable | Allowed | Generated |
 | Generic   | Successful | GenericCatalogue | Rejected | Not generated |
 | Recursive | Successful | CallSiteLookupTable | Allowed | Generated |
-| Indirect  | Successful | IndirectCallCatalogue | Rejected | Not generated |
+| Indirect  | Successful | IndirectCallCatalogue | Allowed | Generated |
 
 ### 25.3 Validation Outcomes
 All call resolution tests pass as of Milestone 4 completion. The `CallResolutionValidator` class integrated into the pipeline (DEBUG mode) ensures every call site is either correctly resolved or catalogued for rejection.
@@ -1809,10 +1790,9 @@ A review of the Zig language specification has identified several language featu
 Task 174 introduced comprehensive integration testing for function calls, verifying the entire pipeline from Lexer to `CallSiteLookupTable`.
 
 ### Verified Scenarios
-- **Argument Limits**: Strict enforcement of the 4-argument limit for bootstrap.
 - **Nested Calls**: Correct recursive parsing and resolution of calls within argument lists.
 - **Mangled Naming**: Integration with the `NameMangler` to ensure C-keyword conflicts are resolved at call sites.
 - **Return Type Integration**: Verification that returned values are correctly typed and can be used in complex expressions.
-- **Error Condition Rejection**: Robust detection and rejection of non-C89 call patterns like variadics and indirect calls.
+- **Error Condition Rejection**: Robust detection and rejection of non-C89 call patterns like variadics.
 
 For more details, see the integration test suite in `tests/integration/function_call_tests.cpp`.

@@ -96,7 +96,7 @@ Many-item pointers (e.g., `[*]u8`, `[*]const i32`) are supported in the bootstra
 
 #### Semantics
 - **Indexing**: `[*]T` supports indexing `ptr[i]`, returning a value of type `T`.
-- **Dereferencing**: `[*]T` does **not** support the dereference operator `.*`. Use indexing (e.g., `ptr[0]`) instead.
+- **Dereferencing**: `[*]T` supports the dereference operator `.*` (equivalent to `ptr[0]`).
 - **Arithmetic**: `[*]T` supports pointer arithmetic (`ptr + i`, `i + ptr`, `ptr - i`) and pointer subtraction.
 - **Nullability**: In the bootstrap compiler, `[*]T` can be assigned the `null` literal (unlike standard Zig where only `?[*]T` can be null).
 

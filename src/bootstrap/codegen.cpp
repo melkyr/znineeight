@@ -469,6 +469,14 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeIndent();
             writeString(";\n");
             break;
+        case NODE_BREAK_STMT:
+            writeIndent();
+            writeString("break;\n");
+            break;
+        case NODE_CONTINUE_STMT:
+            writeIndent();
+            writeString("continue;\n");
+            break;
         default:
             writeIndent();
             writeString("/* Unimplemented statement type ");

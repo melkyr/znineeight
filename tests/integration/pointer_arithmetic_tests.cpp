@@ -60,7 +60,7 @@ static bool run_ptr_arith_error_test(const char* zig_code, const char* error_sub
 
 TEST_FUNC(PointerArithmetic_PtrPlusUSize) {
     const char* source =
-        "fn foo(ptr: *i32, offset: usize) *i32 {\n"
+        "fn foo(ptr: [*]i32, offset: usize) [*]i32 {\n"
         "    return ptr + offset;\n"
         "}";
     return run_ptr_arith_test(source, TYPE_POINTER, "ptr + offset");
@@ -104,7 +104,7 @@ TEST_FUNC(PointerArithmetic_OffsetOf) {
 
 TEST_FUNC(PointerArithmetic_USizePlusPtr) {
     const char* source =
-        "fn foo(ptr: *i32, offset: usize) *i32 {\n"
+        "fn foo(ptr: [*]i32, offset: usize) [*]i32 {\n"
         "    return offset + ptr;\n"
         "}";
     return run_ptr_arith_test(source, TYPE_POINTER, "offset + ptr");
@@ -112,7 +112,7 @@ TEST_FUNC(PointerArithmetic_USizePlusPtr) {
 
 TEST_FUNC(PointerArithmetic_PtrMinusUSize) {
     const char* source =
-        "fn foo(ptr: *i32, offset: usize) *i32 {\n"
+        "fn foo(ptr: [*]i32, offset: usize) [*]i32 {\n"
         "    return ptr - offset;\n"
         "}";
     return run_ptr_arith_test(source, TYPE_POINTER, "ptr - offset");
@@ -120,7 +120,7 @@ TEST_FUNC(PointerArithmetic_PtrMinusUSize) {
 
 TEST_FUNC(PointerArithmetic_PtrMinusPtr) {
     const char* source =
-        "fn foo(ptr1: *i32, ptr2: *i32) isize {\n"
+        "fn foo(ptr1: [*]i32, ptr2: [*]i32) isize {\n"
         "    return ptr1 - ptr2;\n"
         "}";
     // isize is a primitive type in our system
@@ -129,7 +129,7 @@ TEST_FUNC(PointerArithmetic_PtrMinusPtr) {
 
 TEST_FUNC(PointerArithmetic_PtrPlusISize) {
     const char* source =
-        "fn foo(ptr: *i32, offset: isize) *i32 {\n"
+        "fn foo(ptr: [*]i32, offset: isize) [*]i32 {\n"
         "    return ptr + offset;\n"
         "}";
     // isize is signed, so this should fail!
@@ -141,7 +141,7 @@ TEST_FUNC(PointerArithmetic_PtrPlusISize) {
 
 TEST_FUNC(PointerArithmetic_PtrMinusPtr_ConstCompatible) {
     const char* source =
-        "fn foo(ptr1: *i32, ptr2: *const i32) isize {\n"
+        "fn foo(ptr1: [*]i32, ptr2: [*]const i32) isize {\n"
         "    return ptr1 - ptr2;\n"
         "}";
     return run_ptr_arith_test(source, TYPE_ISIZE, "ptr1 - ptr2");
@@ -149,8 +149,8 @@ TEST_FUNC(PointerArithmetic_PtrMinusPtr_ConstCompatible) {
 
 TEST_FUNC(PointerArithmetic_PtrPlusSigned_Error) {
     const char* source =
-        "fn foo(ptr: *i32, offset: i32) void {\n"
-        "    var res: *i32 = ptr + offset;\n"
+        "fn foo(ptr: [*]i32, offset: i32) void {\n"
+        "    var res: [*]i32 = ptr + offset;\n"
         "}";
     return run_ptr_arith_error_test(source, "requires an unsigned integer offset");
 }
@@ -175,8 +175,8 @@ TEST_FUNC(PointerArithmetic_MultiLevel_Error) {
 
 TEST_FUNC(PointerArithmetic_PtrPlusPtr_Error) {
     const char* source =
-        "fn foo(ptr1: *i32, ptr2: *i32) void {\n"
-        "    var res: *i32 = ptr1 + ptr2;\n"
+        "fn foo(ptr1: [*]i32, ptr2: [*]i32) void {\n"
+        "    var res: [*]i32 = ptr1 + ptr2;\n"
         "}";
 
     ArenaAllocator arena(1024 * 1024);
@@ -219,7 +219,7 @@ TEST_FUNC(PointerArithmetic_PtrMulInt_Error) {
 
 TEST_FUNC(PointerArithmetic_DiffDifferentTypes_Error) {
     const char* source =
-        "fn foo(ptr1: *i32, ptr2: *u8) void {\n"
+        "fn foo(ptr1: [*]i32, ptr2: [*]u8) void {\n"
         "    var res: isize = ptr1 - ptr2;\n"
         "}";
 

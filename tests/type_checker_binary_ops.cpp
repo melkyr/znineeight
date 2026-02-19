@@ -77,12 +77,12 @@ TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
     ArenaAllocator arena(262144);
 
     const char* base_source =
-        "fn test_fn() {\n"
-        "    var p_i32: *i32;\n"
-        "    var p_const_i32: *const i32;\n"
-        "    var p2_i32: *i32;\n"
-        "    var p_u8: *u8;\n"
-        "    var p_void: *void;\n"
+        "fn test_fn() void {\n"
+        "    var p_i32: [*]i32 = undefined;\n"
+        "    var p_const_i32: [*]const i32 = undefined;\n"
+        "    var p2_i32: [*]i32 = undefined;\n"
+        "    var p_u8: [*]u8 = undefined;\n"
+        "    var p_void: [*]void = undefined;\n"
         "    var i: usize = 0u;\n"
         "    %s;\n"
         "}";
@@ -156,12 +156,12 @@ TEST_FUNC(TypeCheckerBinaryOps_NumericArithmetic) {
     ArenaAllocator arena(262144);
 
     const char* base_source =
-        "fn test_fn() {\n"
-        "    var a_i32: i32;\n"
-        "    var b_i32: i32;\n"
-        "    var a_i16: i16;\n"
-        "    var a_f64: f64;\n"
-        "    var b_f64: f64;\n"
+        "fn test_fn() void {\n"
+        "    var a_i32: i32 = 0;\n"
+        "    var b_i32: i32 = 0;\n"
+        "    var a_i16: i16 = 0;\n"
+        "    var a_f64: f64 = 0.0;\n"
+        "    var b_f64: f64 = 0.0;\n"
         "    %s;\n"
         "}";
 
@@ -190,14 +190,14 @@ TEST_FUNC(TypeCheckerBinaryOps_Comparison) {
     ArenaAllocator arena(262144);
 
     const char* base_source =
-        "fn test_fn() {\n"
-        "    var a_i32: i32;\n"
-        "    var b_i32: i32;\n"
-        "    var a_i16: i16;\n"
-        "    var p_i32: *i32;\n"
-        "    var p_u8: *u8;\n"
-        "    var a_bool: bool;\n"
-        "    var b_bool: bool;\n"
+        "fn test_fn() void {\n"
+        "    var a_i32: i32 = 0;\n"
+        "    var b_i32: i32 = 0;\n"
+        "    var a_i16: i16 = 0;\n"
+        "    var p_i32: *i32 = null;\n"
+        "    var p_u8: *u8 = null;\n"
+        "    var a_bool: bool = true;\n"
+        "    var b_bool: bool = false;\n"
         "    %s;\n"
         "}";
 
@@ -227,7 +227,7 @@ TEST_FUNC(TypeCheckerBinaryOps_Bitwise) {
     ArenaAllocator arena(262144);
 
     const char* base_source =
-        "fn test_fn() {\n"
+        "fn test_fn() void {\n"
         "    var a_u32: u32 = 3000000000u;\n"
         "    var b_u32: u32 = 3000000001u;\n"
         "    var a_i32: i32 = 3;\n"
@@ -260,7 +260,7 @@ TEST_FUNC(TypeCheckerBinaryOps_Logical) {
     ArenaAllocator arena(262144);
 
     const char* base_source =
-        "fn test_fn() {\n"
+        "fn test_fn() void {\n"
         "    var a_bool: bool = true;\n"
         "    var b_bool: bool = false;\n"
         "    var a_i32: i32 = 1;\n"

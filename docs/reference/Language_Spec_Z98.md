@@ -17,9 +17,11 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 
 ### 1.2 Pointers
 - **Single-item pointers**: `*T` and `*const T`.
+- **Many-item pointers**: `[*]T` and `[*]const T`. Supported for C-style array access and pointer arithmetic.
 - **Address-of**: `&variable` produces a pointer.
-- **Dereference**: `pointer.*` accesses the value.
+- **Dereference**: `pointer.*` accesses the value. Supported for both single and many-item pointers.
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a pointer to a struct.
+- **Multi-level pointers**: `**T` and deeper are supported.
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
@@ -29,6 +31,10 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 ### 1.4 Arrays
 - **Fixed-size**: `[N]T` where `N` is a compile-time constant.
 - **Indexing**: `arr[i]`.
+
+### 1.5 Function Types
+- **Function Pointers**: `fn(args) T` are supported.
+- **Parameters**: Functions support any number of parameters (no longer limited to 4).
 
 ## 2. Memory Management (Arena Pattern)
 
@@ -75,12 +81,8 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **No Slices**: `[]T` is rejected. Use a pointer and a length.
-- **No Many-item Pointers**: `[*]T` is not supported.
 - **No Error Unions**: `!T` syntax is recognized but requires Milestone 5 translation (not available in bootstrap).
 - **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **No Multi-level Pointers**: `**T` and deeper are rejected.
-- **No Function Pointers**: Functions cannot be passed as values or stored in variables.
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`.
-- **Parameter Limit**: Functions are limited to a maximum of **4 parameters**.

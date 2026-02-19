@@ -11,12 +11,14 @@ TEST_FUNC(IndirectCall_Variable) {
 
     const char* source =
         "fn foo() void {}\n"
-        "const fp = foo;\n"
-        "fn main() void { fp(); }\n";
+        "fn main() void {\n"
+        "    var fp = foo;\n"
+        "    fp();\n"
+        "}\n";
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -41,7 +43,7 @@ TEST_FUNC(IndirectCall_Member) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -64,7 +66,7 @@ TEST_FUNC(IndirectCall_Array) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -87,7 +89,7 @@ TEST_FUNC(IndirectCall_Returned) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -110,7 +112,7 @@ TEST_FUNC(IndirectCall_Complex) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());

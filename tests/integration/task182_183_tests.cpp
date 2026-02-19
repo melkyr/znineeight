@@ -107,12 +107,12 @@ TEST_FUNC(Task182_ConstCorrectness_DiscardConst_REJECT) {
     );
 }
 
-TEST_FUNC(Task182_NonC89Target_REJECT) {
-    // *void -> **i32 (Rejected: **i32 is not C89-compatible in this compiler)
+TEST_FUNC(Task182_NonC89Target_Allow) {
+    // *void -> **i32 (Now allowed: **i32 is C89-compatible in stage 0)
     return run_task_test(
         "fn foo() void {\n"
         "    var p: * * i32 = arena_alloc_default(4u);\n"
         "}\n",
-        false
+        true
     );
 }

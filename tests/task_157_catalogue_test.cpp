@@ -33,7 +33,7 @@ TEST_FUNC(GenericCatalogue_ImplicitInstantiation) {
     ASSERT_STREQ("foo", inst.function_name);
     ASSERT_EQ(false, inst.is_explicit);
     ASSERT_EQ(1, inst.param_count);
-    ASSERT_EQ(TYPE_I32, inst.params[0].type_value->kind);
+    ASSERT_EQ(TYPE_I32, (*inst.params)[0].type_value->kind);
     ASSERT_STREQ("main", inst.module);
 
     return true;

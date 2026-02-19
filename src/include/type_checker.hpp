@@ -37,8 +37,8 @@ public:
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
-    Type* visitBreakStmt(ASTBreakStmtNode* node);
-    Type* visitContinueStmt(ASTContinueStmtNode* node);
+    Type* visitBreakStmt(ASTNode* node);
+    Type* visitContinueStmt(ASTNode* node);
     Type* visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node);
     Type* visitDeferStmt(ASTDeferStmtNode* node);
     Type* visitForStmt(ASTForStmtNode* node);
@@ -104,6 +104,7 @@ private:
     Type* current_fn_return_type;
     const char* current_fn_name;
     const char* current_struct_name_;
+    int current_loop_depth_;
 };
 
 #endif // TYPE_CHECKER_HPP

@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) {
         test_Task182_ConstCorrectness_AddConst,
         test_Task182_ConstCorrectness_PreserveConst,
         test_Task182_ConstCorrectness_DiscardConst_REJECT,
-        test_Task182_NonC89Target_REJECT,
+        test_Task182_NonC89Target_Allow,
         test_PointerArithmetic_PtrPlusUSize,
         test_PointerArithmetic_USizePlusPtr,
         test_PointerArithmetic_PtrMinusUSize,

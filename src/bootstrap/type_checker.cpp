@@ -9,7 +9,7 @@
 
 // Helper to get the string representation of a binary operator token.
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL) {
+TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL), current_loop_depth_(0) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -51,8 +51,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
         case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(&node->as.while_stmt); break;
-        case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(&node->as.break_stmt); break;
-        case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(&node->as.continue_stmt); break;
+        case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(node); break;
+        case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(node); break;
         case NODE_RETURN_STMT:      resolved_type = visitReturnStmt(node, &node->as.return_stmt); break;
         case NODE_DEFER_STMT:       resolved_type = visitDeferStmt(&node->as.defer_stmt); break;
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
@@ -143,13 +143,18 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
         case TOKEN_AMPERSAND: { // Address-of operator (&)
             // The operand of '&' must be an l-value.
             bool is_lvalue;
-            switch (node->operand->type) {
+            ASTNode* op_node = node->operand;
+            while (op_node->type == NODE_PAREN_EXPR) {
+                op_node = op_node->as.paren_expr.expr;
+            }
+
+            switch (op_node->type) {
                 case NODE_IDENTIFIER:
                 case NODE_ARRAY_ACCESS:
                     is_lvalue = true;
                     break;
                 case NODE_UNARY_OP:
-                    is_lvalue = (node->operand->as.unary_op.op == TOKEN_STAR);
+                    is_lvalue = (op_node->as.unary_op.op == TOKEN_STAR || op_node->as.unary_op.op == TOKEN_DOT_ASTERISK);
                     break;
                 default:
                     is_lvalue = false;
@@ -564,9 +569,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     // --- END NEW LOGIC FOR TASK 119 ---
 
-    if (node->args->length() > 4) {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
-    }
 
     Type* callee_type = visit(node->callee);
     if (!callee_type) {
@@ -1158,19 +1160,23 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
         }
     }
 
+    current_loop_depth_++;
     visit(node->body);
+    current_loop_depth_--;
     return NULL;
 }
 
-Type* TypeChecker::visitBreakStmt(ASTBreakStmtNode* /*node*/) {
-    // Standard C89 break is allowed in while loops.
-    // Full semantic validation (ensuring it's inside a loop) is deferred.
+Type* TypeChecker::visitBreakStmt(ASTNode* node) {
+    if (current_loop_depth_ == 0) {
+        unit.getErrorHandler().report(ERR_INVALID_OPERATION, node->loc, "break statement outside of loop", unit.getArena());
+    }
     return NULL;
 }
 
-Type* TypeChecker::visitContinueStmt(ASTContinueStmtNode* /*node*/) {
-    // Standard C89 continue is allowed in while loops.
-    // Full semantic validation (ensuring it's inside a loop) is deferred.
+Type* TypeChecker::visitContinueStmt(ASTNode* node) {
+    if (current_loop_depth_ == 0) {
+        unit.getErrorHandler().report(ERR_INVALID_OPERATION, node->loc, "continue statement outside of loop", unit.getArena());
+    }
     return NULL;
 }
 
@@ -1245,7 +1251,9 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         unit.getSymbolTable().insert(sym);
     }
 
+    current_loop_depth_++;
     visit(node->body);
+    current_loop_depth_--;
 
     unit.getSymbolTable().exitScope();
     return NULL;
@@ -2726,11 +2734,12 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 
     if (is_explicit || is_implicit) {
         // Collect parameter info
-        GenericParamInfo params[4];
-        Type* arg_types[4];
+        size_t num_args = node->args->length();
+        GenericParamInfo* params = (GenericParamInfo*)unit.getArena().alloc(sizeof(GenericParamInfo) * num_args);
+        Type** arg_types = (Type**)unit.getArena().alloc(sizeof(Type*) * num_args);
         int param_count = 0;
 
-        for (size_t i = 0; i < node->args->length() && param_count < 4; ++i) {
+        for (size_t i = 0; i < num_args; ++i) {
             ASTNode* arg = (*node->args)[i];
             Type* arg_type = visit(arg);
             arg_types[param_count] = arg_type;

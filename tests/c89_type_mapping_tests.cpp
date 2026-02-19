@@ -63,17 +63,18 @@ TEST_FUNC(C89TypeMapping_Validation) {
     ASSERT_TRUE(is_c89_compatible(get_g_type_isize()));
     ASSERT_TRUE(is_c89_compatible(get_g_type_usize()));
 
-    // Function types are not C89 compatible in this context
+    // Function types and multi-level pointers ARE now compatible
     Type func_type;
     func_type.kind = TYPE_FUNCTION;
-    ASSERT_FALSE(is_c89_compatible(&func_type));
+    func_type.as.function.params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
+    func_type.as.function.return_type = get_g_type_void();
+    ASSERT_TRUE(is_c89_compatible(&func_type));
 
-    // Multi-level pointers are not compatible
     Type* ptr_to_ptr_to_i32 = createTestPointerType(arena, ptr_to_i32, false);
-    ASSERT_FALSE(is_c89_compatible(ptr_to_ptr_to_i32));
+    ASSERT_TRUE(is_c89_compatible(ptr_to_ptr_to_i32));
 
     Type* const_ptr_to_ptr_to_u8 = createTestPointerType(arena, const_ptr_to_u8, true);
-    ASSERT_FALSE(is_c89_compatible(const_ptr_to_ptr_to_u8));
+    ASSERT_TRUE(is_c89_compatible(const_ptr_to_ptr_to_u8));
 
     return true; // Test passed
 }

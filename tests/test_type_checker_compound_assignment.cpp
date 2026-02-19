@@ -5,7 +5,7 @@
 
 TEST_FUNC(TypeChecker_CompoundAssignment_Valid) {
     const char* source =
-        "fn main() void {"
+        "fn main_func() void {"
         "  var x: i32 = 10;"
         "  x += 5;"
         "  x -= 2;"
@@ -22,7 +22,7 @@ TEST_FUNC(TypeChecker_CompoundAssignment_Valid) {
 
 TEST_FUNC(TypeChecker_CompoundAssignment_InvalidLValue) {
     const char* source =
-        "fn main() void {"
+        "fn main_func() void {"
         "  const x: i32 = 10;"
         "  x += 5;"
         "}";
@@ -31,13 +31,13 @@ TEST_FUNC(TypeChecker_CompoundAssignment_InvalidLValue) {
 
 TEST_FUNC(TypeChecker_CompoundAssignment_Bitwise) {
     const char* source =
-        "fn main() void {"
-        "  var x: u32 = 240u;" // 0xF0u
-        "  x &= 15u;"          // 0x0Fu
-        "  x |= 255u;"         // 0xFFu
-        "  x ^= 170u;"         // 0xAAu
-        "  x <<= 2u;"
-        "  x >>= 1u;"
+        "fn main_func() void {"
+        "  var x: u32 = 240;" // 0xF0
+        "  x &= 15;"          // 0x0F
+        "  x |= 255;"         // 0xFF
+        "  x ^= 170;"         // 0xAA
+        "  x <<= 2;"
+        "  x >>= 1;"
         "}";
     if (!run_type_checker_test_successfully(source)) {
         printf("TypeChecker_CompoundAssignment_Bitwise FAILED\n");
@@ -48,9 +48,8 @@ TEST_FUNC(TypeChecker_CompoundAssignment_Bitwise) {
 
 TEST_FUNC(TypeChecker_CompoundAssignment_PointerArithmetic) {
     const char* source =
-        "fn main() void {"
-        "  var x: i32 = 10;"
-        "  var p: *i32 = &x;"
+        "fn main_func() void {"
+        "  var p: [*]i32 = undefined;"
         "  p += 1u;"
         "  p -= 1u;"
         "}";
@@ -65,7 +64,7 @@ TEST_FUNC(TypeChecker_CompoundAssignment_InvalidTypes) {
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
     const char* source =
-        "fn main() void {"
+        "fn main_func() void {"
         "  var b: bool = true;"
         "  b += 1;"
         "}";
@@ -86,9 +85,9 @@ TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
     StringInterner interner(arena);
     const char* source =
         "fn my_ptr_test() void {\n"
-        "    var p: *u8 = arena_alloc_default(100u);\n"
+        "    var p: [*]u8 = @ptrCast([*]u8, arena_alloc_default(100u));\n"
         "    p += 10u;\n"
-        "    arena_free(p);\n"
+        "    arena_free(@ptrCast(*void, p));\n"
         "}\n";
 
     CompilationUnit unit(arena, interner);
@@ -102,7 +101,10 @@ TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
     DoubleFreeAnalyzer dfa(unit);
     dfa.analyze(root);
 
-    // We expect a memory leak warning (6005) because p is reassigned.
+    // We no longer expect a memory leak warning (6005) because p is reassigned but then freed?
+    // Actually p += 10u changes p, so original p is lost.
+    // But since it's an arena, it's fine?
+    // The DoubleFreeAnalyzer currently reports a leak if an AS_ALLOCATED pointer is reassigned.
     const DynamicArray<WarningReport>& warnings = unit.getErrorHandler().getWarnings();
     bool found_leak = false;
     for (size_t i = 0; i < warnings.length(); ++i) {

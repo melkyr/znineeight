@@ -8,7 +8,7 @@
 // This test function is for cases that should pass without any errors.
 TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p + i; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = p + i; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -23,7 +23,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     }
 
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = i + p; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = i + p; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -38,7 +38,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     }
 
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p - i; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = p - i; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -53,7 +53,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
     }
 
     {
-        const char* source = "fn main() { var p1: *i32; var p2: *i32; var res: isize = p1 - p2; }";
+        const char* source = "fn main() { var p1: [*]i32 = undefined; var p2: [*]i32 = undefined; var res: isize = p1 - p2; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -74,7 +74,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_ValidCases_ExplicitTyping) {
 TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
     // Test: pointer + pointer -> error
     {
-        const char* source = "fn main() { var p1: *i32; var p2: *i32; var res: *i32 = p1 + p2; }";
+        const char* source = "fn main() { var p1: [*]i32 = undefined; var p2: [*]i32 = undefined; var res: [*]i32 = p1 + p2; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -89,7 +89,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
 
     // Test: pointer * integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p * i; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = p * i; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -104,7 +104,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
 
     // Test: pointer / integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p / i; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = p / i; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -119,7 +119,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
 
     // Test: pointer % integer -> error
     {
-        const char* source = "fn main() { var p: *i32; var i: usize; var res: *i32 = p % i; }";
+        const char* source = "fn main() { var p: [*]i32 = undefined; var i: usize = 0; var res: [*]i32 = p % i; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);
@@ -134,7 +134,7 @@ TEST_FUNC(TypeChecker_PointerArithmetic_InvalidCases_ExplicitTyping) {
 
     // Test: pointer - pointer (mismatched types) -> error
     {
-        const char* source = "fn main() { var p1: *i32; var p2: *u8; var res: isize = p1 - p2; }";
+        const char* source = "fn main() { var p1: [*]i32 = undefined; var p2: [*]u8 = undefined; var res: isize = p1 - p2; }";
         ArenaAllocator arena(262144);
         StringInterner interner(arena);
         CompilationUnit comp_unit(arena, interner);

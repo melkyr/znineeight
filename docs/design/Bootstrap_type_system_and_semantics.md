@@ -311,11 +311,8 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 ### Known Limitations (Milestone 4)
 
 - **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
-- **No Function Pointers**: Functions cannot be stored in variables or passed as arguments. Call sites are strictly resolved to direct function names at compile time.
-- **Max 4 Parameters**: Function declarations and calls are limited to 4 parameters/arguments to ensure stability in legacy calling conventions.
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
-- **Single-level Pointers**: Multi-level pointers like `**T` are rejected to simplify memory safety analysis.
 - **Braces Required**: All control flow blocks (`if`, `while`, `for`) must use curly braces `{}`.
 
 ### Enum Type Declarations
@@ -361,13 +358,7 @@ To ensure that the output of the bootstrap compiler is compatible with C89, seve
 
 Function calls are subject to the following strict limitations:
 
-1.  **Maximum Number of Arguments:** A function call cannot have more than four arguments. This is a conservative limit to ensure compatibility with various C89-era calling conventions and stack limitations. Any call with five or more arguments will trigger a fatal compilation error.
-
-2.  **No Function Pointers:** The bootstrap compiler does not support calling functions via pointers. Any attempt to call a variable that holds a function (i.e., a function pointer) will be rejected with a fatal error.
-
-    *Note on testing:* The current parser does not support type inference for variable declarations (e.g., `var func_ptr = my_func;`). As a result, tests for this specific feature currently fail during the parsing phase, preventing the `TypeChecker` from running. The check remains in the `TypeChecker` for correctness and future-proofing.
-
-3.  **No Variadic Functions:** The parser does not support the syntax for declaring or calling variadic functions (e.g., `printf`-style functions with `...`).
+1.  **No Variadic Functions:** The parser does not support the syntax for declaring or calling variadic functions (e.g., `printf`-style functions with `...`).
 
 ### Operators
 
@@ -380,7 +371,7 @@ Function calls are subject to the following strict limitations:
         -   Array accesses (e.g., `&my_array[i]`).
         -   Pointer dereferences (e.g., `&*my_ptr`).
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
-    -   **Dereference (`*` or `.*`):** This operator can only be applied to **single-item** pointer types (`*T`). Applying it to a many-item pointer (`[*]T`) or a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
+    -   **Dereference (`*` or `.*`):** This operator can be applied to both **single-item** pointer types (`*T`) and **many-item** pointer types (`[*]T`). Applying it to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T`, `[*]T` or `*const T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
     -   **Pointer Arithmetic (Task 184/220):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules for pointer arithmetic:
         -   **Supported Operations:**
@@ -389,7 +380,6 @@ Function calls are subject to the following strict limitations:
             -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward (allowed only on `[*]T`).
             -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types (allowed only if both are `[*]T`).
         -   **Safety Rules:**
-            -   **Many-item Pointers Only**: Arithmetic is **strictly rejected** on single-item pointers (`*T`).
             -   **No Void Pointers:** Arithmetic on `*void` or `*const void` is strictly forbidden.
             -   **Complete Types Only:** The base type of the pointer must be a "complete" type (not `void`).
             -   **Unsigned Offsets Only:** Offsets used in `+` or `-` must be of an unsigned integer type (e.g., `u8`, `u32`, `usize`). This matches Zig's requirement for explicit casting and prevents common signed-overflow bugs in C.
@@ -421,11 +411,9 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 
 3.  **Argument Type Compatibility:** It iterates through each argument and compares its type to the corresponding parameter's type using the `areTypesCompatible` function. This allows for safe, implicit widening conversions (e.g., passing an `i16` to an `i32` parameter) but rejects incompatible types. A mismatch results in a fatal error detailing the expected and actual types.
 
-4.  **C89 Argument Limit:** To maintain compatibility with legacy C89 compilers and calling conventions, the type checker enforces a hard limit of a maximum of 4 arguments per function call. Any call with five or more arguments will result in a fatal error.
+4.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
 
-5.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
-
-6.  **Built-in Support (Task 186):** While most Zig built-ins are rejected in the bootstrap phase, a core set of intrinsics is supported to enable low-level operations and metadata access:
+5.  **Built-in Support (Task 186):** While most Zig built-ins are rejected in the bootstrap phase, a core set of intrinsics is supported to enable low-level operations and metadata access:
     -   **`@sizeOf(T)`**: Returns a `usize` constant representing the size of type `T` in bytes.
     -   **`@alignOf(T)`**: Returns a `usize` constant representing the alignment of type `T` in bytes.
     -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast. Both `T` and the type of `val` must be pointer types.
@@ -437,9 +425,8 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 #### Call Resolution Completeness (Task 168)
 
 The bootstrap compiler includes a `CallResolutionValidator` (active in DEBUG builds) that verifies the following after Pass 0 (Type Checking):
-- Every function call in the AST has a corresponding entry in either the `CallSiteLookupTable` (resolved) or the `IndirectCallCatalogue` (rejected).
+- Every function call in the AST has a corresponding entry in the `CallSiteLookupTable` (resolved).
 - Direct and recursive calls to known functions are successfully resolved to their mangled names.
-- All non-C89 call patterns (indirect, too many arguments, built-ins) are correctly identified and flagged for rejection by the `C89FeatureValidator`.
 
 ### Expression Type Checking
 
@@ -675,7 +662,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
-| `fn` | ✗ | - | Function pointers are rejected as values or variables. |
+| `fn` | ✓ | `T(*)()` | Function pointers are supported. |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
 
 ### Supported Type Syntax Examples
@@ -721,13 +708,10 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 -   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
-    -   The function must not have more than 4 parameters.
     -   The return type must be C89-compatible.
     -   All parameter types must be C89-compatible.
-    -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
 -   **Returns `false`** for `NULL` types.
 -   **Returns `false`** for any type not in the mapping table (e.g., `anyerror`).
--   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).
 -   **Returns `false`** for anonymous composite types (structs/unions/enums not assigned to a `const`).
 
 This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` and `C89FeatureValidator` to reject unsupported Zig features early in the compilation process.
@@ -749,7 +733,6 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `anytype` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `type` (as type) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `[]T` (slice) | No equivalent | REJECTED | `C89FeatureValidator` |
-| `**T` (multi-ptr) | No equivalent | REJECTED | `C89FeatureValidator` / `TypeChecker` |
 | `anyerror` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `@import` | No equivalent | REJECTED | `C89FeatureValidator` |
 
@@ -1219,13 +1202,12 @@ To ensure generated code is compatible with C89 backend constraints, the bootstr
 
 The following patterns are strictly rejected in the bootstrap phase to maintain C89 compatibility:
 
-1.  **Parameter Count Limit**: Functions are limited to a maximum of **4 parameters**. This is a conservative limit to ensure compatibility with MSVC 6.0 stack management and various calling conventions.
-2.  **Non-C89 Types in Parameters**:
+1.  **Non-C89 Types in Parameters**:
     -   **Slices** (`[]T`): No direct primitive mapping in C89.
     -   **Error Unions** (`!T`): Error handling is handled via alternative designs.
     -   **Error Sets** (`error{...}`): Incompatible with C89 function signatures.
     -   **Optional Types** (`?T`): Nullability handled differently in C89.
-3.  **Void Parameters**: Parameters cannot have the `void` type.
+2.  **Void Parameters**: Parameters cannot have the `void` type.
 
 ### 14.2 Type Alias Resolution
 
@@ -1280,10 +1262,8 @@ The `TypeChecker` enforces strict type compatibility for arguments:
 ### 16.3 C89 Compatibility Rejections
 
 The following call patterns are strictly rejected to maintain C89 compatibility:
-1. **Parameter Count**: Calls with more than **4 arguments** are rejected.
-2. **Indirect Calls**: Calling functions via variables or other non-identifier expressions is rejected with an informational note about C89 compatibility.
-3. **Built-ins**: Most Zig built-in functions (starting with `@`) are rejected, except for the supported subset: `@sizeOf`, `@alignOf`, `@ptrCast`, `@intCast`, `@floatCast`, and `@offsetOf`.
-4. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
+1. **Built-ins**: Most Zig built-in functions (starting with `@`) are rejected, except for the supported subset: `@sizeOf`, `@alignOf`, `@ptrCast`, `@intCast`, `@floatCast`, and `@offsetOf`.
+2. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
 
 For verification details, see the integration tests in `tests/integration/function_call_tests.cpp`.
 
@@ -1308,7 +1288,7 @@ To ensure C89 compatibility and maintain Zig's safety guarantees, the following 
 - **`ptr + unsigned` / `unsigned + ptr`**: Result is a pointer of the same type as `ptr`. The offset must be an unsigned integer type (`u8`, `u32`, `usize`).
 - **`ptr - unsigned`**: Result is a pointer of the same type.
 - **`ptr1 - ptr2`**: Result is an `isize` representing the distance between the two pointers. This is only valid if both pointers point to the same base type (ignoring `const`).
-- **Prohibited**: Arithmetic on `*void`, multi-level pointers (`**T`) (for now), or incomplete types is strictly rejected.
+- **Prohibited**: Arithmetic on `*void` or incomplete types is strictly rejected.
 
 ### Implicit Pointer Conversions
 - **`*void` to `*T`**: The bootstrap compiler allows implicit conversion from a `void` pointer to any typed pointer, provided the target base type is C89-compatible. This matches standard C89 behavior and is essential for using `arena_alloc`.
@@ -1354,7 +1334,6 @@ To maintain stability in test environments, child processes explicitly call `abo
 | **Slices** | `var s: []u8;` | Slices require a struct (`{ptr, len}`) and runtime support that do not exist in C89. |
 | **Error Unions** | `var v: !i32;` | C89 uses error codes or `errno`. |
 | **Optionals** | `var v: ?*i32;` | Optionals are implemented as tagged unions or pointers, which is a higher-level concept. |
-| **Function Pointers** | `var f = &func;` | Rejected to simplify the type system and code generation. |
 | **Struct Methods** | `s.method()` | C89 structs do not have associated functions. Equivalent is passing a struct pointer to a global function. |
 | **Variadic Functions** | `fn f(args: ...)` | Not supported to simplify calling convention and type checking. |
 | **Generics** | `comptime T: type`| C89 does not support compile-time type parameters or templates. |

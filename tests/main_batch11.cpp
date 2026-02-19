@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_CallSiteRecording_Generic,
         test_Task165_ForwardReference,
         test_Task165_BuiltinRejection,
-        test_Task165_C89Incompatible,
+        test_Task165_C89CompatibleManyParams,
         test_IndirectCall_Variable,
         test_IndirectCall_Member,
         test_IndirectCall_Array,

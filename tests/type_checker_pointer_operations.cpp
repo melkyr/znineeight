@@ -1,10 +1,8 @@
 #include "test_framework.hpp"
 #include "test_utils.hpp"
-#include "compilation_unit.hpp"
 #include "type_checker.hpp"
-#include "error_handler.hpp"
 #include "type_system.hpp"
-#include "symbol_table.hpp"
+#include "ast.hpp"
 
 TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue) {
     ArenaAllocator arena(262144);
@@ -13,22 +11,21 @@ TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    // 1. Setup: Create a symbol for a variable 'x' of type i32
-    Symbol symbol = SymbolBuilder(arena)
-        .withName("x")
+    // 1. Setup: Register a variable 'x' of type i32
+    Symbol sym = SymbolBuilder(arena)
+        .withName(interner.intern("x"))
+        .ofType(SYMBOL_VARIABLE)
         .withType(get_g_type_i32())
+        .withFlags(SYMBOL_FLAG_LOCAL)
         .build();
-    comp_unit.getSymbolTable().insert(symbol);
+    comp_unit.getSymbolTable().insert(sym);
 
     // 2. Create mock AST for '&x'
-    // AST for 'x'
     ASTNode identifier_node;
     plat_memset(&identifier_node, 0, sizeof(ASTNode));
     identifier_node.type = NODE_IDENTIFIER;
-    identifier_node.as.identifier.name = symbol.name;
-    identifier_node.resolved_type = symbol.symbol_type; // Pre-resolve for unit test
+    identifier_node.as.identifier.name = interner.intern("x");
 
-    // AST for '&' operator
     ASTUnaryOpNode unary_op_node;
     plat_memset(&unary_op_node, 0, sizeof(ASTUnaryOpNode));
     unary_op_node.op = TOKEN_AMPERSAND;
@@ -58,7 +55,7 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type = createPointerType(arena, get_g_type_i32(), false);
+    Type* ptr_type = createPointerType(arena, get_g_type_i32(), false, true); // Many-item
     Type* int_type = get_g_type_usize();
 
     // Test: pointer + integer
@@ -144,8 +141,8 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false);
-    Type* ptr_type2 = createPointerType(arena, get_g_type_i32(), false);
+    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false, true);
+    Type* ptr_type2 = createPointerType(arena, get_g_type_i32(), false, true);
 
     // Test: pointer - pointer (valid)
     {
@@ -182,9 +179,9 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false);
-    Type* ptr_type2 = createPointerType(arena, get_g_type_u8(), false); // Different base type
-    Type* void_ptr_type = createPointerType(arena, get_g_type_void(), false);
+    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false, true);
+    Type* ptr_type2 = createPointerType(arena, get_g_type_u8(), false, true); // Different base type
+    Type* void_ptr_type = createPointerType(arena, get_g_type_void(), false, true);
 
     // Test: pointer + pointer
     {
@@ -339,4 +336,3 @@ TEST_FUNC(TypeCheckerPointerOps_Dereference_InvalidNonPointer) {
 
     return true;
 }
-

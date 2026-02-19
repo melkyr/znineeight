@@ -111,30 +111,21 @@ TEST_FUNC(FunctionCallIntegration_CallResolution) {
     return unit.validateCallResolution("add", CALL_DIRECT);
 }
 
-// --- Negative Tests ---
+// --- New Tests for Task 221 Revision ---
 
-TEST_FUNC(FunctionCallIntegration_RejectFiveArgs) {
-    ArenaAllocator arena(1024 * 1024);
-    StringInterner interner(arena);
-    TestCompilationUnit unit(arena, interner);
-
-    // Bootstrap limit is 4 arguments
+TEST_FUNC(FunctionCallIntegration_FiveArgs) {
     const char* source =
-        "fn too_many(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
-        "fn main_func() void { too_many(1, 2, 3, 4, 5); }";
-
-    u32 file_id = unit.addSource("test.zig", source);
-    // Should fail validation
-    ASSERT_FALSE(unit.performTestPipeline(file_id));
-    return true;
+        "fn five_args(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
+        "fn main_func() void { five_args(1, 2, 3, 4, 5); }";
+    return run_function_call_test(source, "five_args", "five_args(1, 2, 3, 4, 5)");
 }
 
-TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer) {
+TEST_FUNC(FunctionCallIntegration_FunctionPointer) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
-    // Indirect calls via variables are not supported in bootstrap
+    // Indirect calls via variables are now supported
     const char* source =
         "fn target() void {}\n"
         "fn main_func() void {\n"
@@ -143,8 +134,8 @@ TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer) {
         "}";
 
     u32 file_id = unit.addSource("test.zig", source);
-    // Should fail because function pointers are rejected
-    ASSERT_FALSE(unit.performTestPipeline(file_id));
+    // Should succeed now
+    ASSERT_TRUE(unit.performTestPipeline(file_id));
     return true;
 }
 

@@ -31,8 +31,8 @@ struct GenericParamInfo {
 struct GenericInstantiation {
     const char* function_name;
     const char* mangled_name;
-    GenericParamInfo params[4];
-    Type* arg_types[4];  // Captures the resolved type of each argument
+    DynamicArray<GenericParamInfo>* params;
+    DynamicArray<Type*>* arg_types;  // Captures the resolved type of each argument
     int param_count;
     SourceLocation location;
     const char* module;  // NULL or logical name
