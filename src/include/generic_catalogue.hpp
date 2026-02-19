@@ -31,8 +31,8 @@ struct GenericParamInfo {
 struct GenericInstantiation {
     const char* function_name;
     const char* mangled_name;
-    GenericParamInfo params[4];
-    Type* arg_types[4];  // Captures the resolved type of each argument
+    DynamicArray<GenericParamInfo>* params;
+    DynamicArray<Type*>* arg_types;  // Captures the resolved type of each argument
     int param_count;
     SourceLocation location;
     const char* module;  // NULL or logical name
@@ -64,7 +64,7 @@ public:
     /**
      * @brief Adds a new generic instantiation to the catalogue.
      */
-    void addInstantiation(const char* name, const char* mangled_name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash);
+    void addInstantiation(const char* name, const char* mangled_name, DynamicArray<GenericParamInfo>* params, DynamicArray<Type*>* arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash);
 
     /**
      * @brief Adds a new generic function definition to the catalogue.

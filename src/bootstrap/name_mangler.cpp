@@ -7,7 +7,7 @@ NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena), interner_(interner) {}
 
 const char* NameMangler::mangleFunction(const char* name,
-                                       const GenericParamInfo* params,
+                                       DynamicArray<GenericParamInfo>* params,
                                        int param_count,
                                        const char* module) {
     char buffer[256];
@@ -51,9 +51,9 @@ const char* NameMangler::mangleFunction(const char* name,
                 }
             }
             const char* type_str = "";
-            if (params[i].kind == GENERIC_PARAM_TYPE) {
-                type_str = mangleType(params[i].type_value);
-            } else if (params[i].kind == GENERIC_PARAM_ANYTYPE) {
+            if ((*params)[i].kind == GENERIC_PARAM_TYPE) {
+                type_str = mangleType((*params)[i].type_value);
+            } else if ((*params)[i].kind == GENERIC_PARAM_ANYTYPE) {
                 type_str = "any";
             } else {
                 // TODO: Handle comptime values

@@ -16,7 +16,7 @@ public:
      * @brief Mangles a function name based on its base name and generic parameters.
      */
     const char* mangleFunction(const char* name,
-                               const GenericParamInfo* params,
+                               DynamicArray<GenericParamInfo>* params,
                                int param_count,
                                const char* module = NULL);
 

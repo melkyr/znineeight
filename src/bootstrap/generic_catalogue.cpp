@@ -14,31 +14,75 @@ GenericCatalogue::GenericCatalogue(ArenaAllocator& arena)
     definitions_ = new (def_mem) DynamicArray<GenericDefinitionInfo>(arena_);
 }
 
-void GenericCatalogue::addInstantiation(const char* name, const char* mangled_name, GenericParamInfo* params, Type** arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
+static bool areGenericParamsEqual(DynamicArray<GenericParamInfo>* a, DynamicArray<GenericParamInfo>* b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    if (a->length() != b->length()) return false;
+
+    for (size_t i = 0; i < a->length(); ++i) {
+        const GenericParamInfo& pa = (*a)[i];
+        const GenericParamInfo& pb = (*b)[i];
+
+        if (pa.kind != pb.kind) return false;
+        switch (pa.kind) {
+            case GENERIC_PARAM_TYPE:
+                if (!areTypesEqual(pa.type_value, pb.type_value)) return false;
+                break;
+            case GENERIC_PARAM_COMPTIME_INT:
+                if (pa.int_value != pb.int_value) return false;
+                break;
+            case GENERIC_PARAM_COMPTIME_FLOAT:
+                if (pa.float_value != pb.float_value) return false;
+                break;
+            default:
+                break;
+        }
+    }
+    return true;
+}
+
+void GenericCatalogue::addInstantiation(const char* name, const char* mangled_name, DynamicArray<GenericParamInfo>* params, DynamicArray<Type*>* arg_types, int count, SourceLocation loc, const char* module, bool is_explicit, u32 param_hash) {
     if (!name) name = "anonymous";
     if (!module) module = "unknown";
 
-    // Deduplication using hash and name
+    // Deduplication using hash, name, and deep comparison of params
     for (size_t i = 0; i < instantiations_->length(); ++i) {
         const GenericInstantiation& existing = (*instantiations_)[i];
-        if (existing.param_hash == param_hash && plat_strcmp(existing.function_name, name) == 0 &&
-            existing.param_count == count && plat_strcmp(existing.module, module) == 0) {
-            return;
+        if (existing.param_hash == param_hash &&
+            existing.param_count == count &&
+            plat_strcmp(existing.function_name, name) == 0 &&
+            plat_strcmp(existing.module, module) == 0) {
+
+            if (areGenericParamsEqual(existing.params, params)) {
+                return;
+            }
         }
     }
 
     GenericInstantiation inst;
     inst.function_name = name;
     inst.mangled_name = mangled_name;
-    inst.param_count = (count > 4) ? 4 : count;
-    for (int i = 0; i < inst.param_count; ++i) {
-        inst.params[i] = params[i];
+    inst.param_count = count;
+
+    void* params_mem = arena_.alloc(sizeof(DynamicArray<GenericParamInfo>));
+    if (!params_mem) plat_abort();
+    inst.params = new (params_mem) DynamicArray<GenericParamInfo>(arena_);
+
+    void* args_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+    if (!args_mem) plat_abort();
+    inst.arg_types = new (args_mem) DynamicArray<Type*>(arena_);
+
+    for (int i = 0; i < count; ++i) {
+        if (params) {
+            inst.params->append((*params)[i]);
+        }
         if (arg_types) {
-            inst.arg_types[i] = arg_types[i];
+            inst.arg_types->append((*arg_types)[i]);
         } else {
-            inst.arg_types[i] = NULL;
+            inst.arg_types->append(NULL);
         }
     }
+
     inst.location = loc;
     inst.module = module;
     inst.is_explicit = is_explicit;
@@ -76,8 +120,8 @@ void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* modu
         // In a real merge, we might prefix the name if module_prefix is provided
         // For now, we just add them to our own list, deduplicating
         addInstantiation(other_inst.function_name, other_inst.mangled_name,
-                         (GenericParamInfo*)other_inst.params,
-                         (Type**)other_inst.arg_types,
+                         other_inst.params,
+                         other_inst.arg_types,
                          other_inst.param_count, other_inst.location,
                          other_inst.module, other_inst.is_explicit, other_inst.param_hash);
     }

@@ -64,8 +64,8 @@ TEST_FUNC(Milestone4_GenericsIntegration_ComplexParams) {
     ASSERT_EQ(4, inst.param_count); // T, U, x, y (wait, does it count all or just generic?)
     // Actually TypeChecker::catalogGenericInstantiation loops through all arguments of the call.
 
-    ASSERT_EQ(TYPE_I32, inst.arg_types[2]->kind);
-    ASSERT_EQ(TYPE_F64, inst.arg_types[3]->kind);
+    ASSERT_EQ(TYPE_I32, (*inst.arg_types)[2]->kind);
+    ASSERT_EQ(TYPE_F64, (*inst.arg_types)[3]->kind);
 
     ASSERT_TRUE(expect_type_checker_abort(zig_source));
 

@@ -41,8 +41,8 @@ TEST_FUNC(TypeChecker_ImplicitGenericDetection) {
             found = true;
             // Verify inferred types
             ASSERT_EQ(1, inst.param_count);
-            ASSERT_TRUE(inst.arg_types[0] != NULL);
-            ASSERT_EQ(TYPE_I32, inst.arg_types[0]->kind);
+            ASSERT_TRUE((*inst.arg_types)[0] != NULL);
+            ASSERT_EQ(TYPE_I32, (*inst.arg_types)[0]->kind);
         }
     }
 
@@ -86,8 +86,8 @@ TEST_FUNC(TypeChecker_MultipleImplicitInstantiations) {
         const GenericInstantiation& inst = (*insts)[i];
         if (plat_strcmp(inst.function_name, "genericFn") == 0 && !inst.is_explicit) {
             found_count++;
-            if (inst.arg_types[0]->kind == TYPE_I32) found_i32 = true;
-            if (inst.arg_types[0]->kind == TYPE_F64) found_f64 = true;
+            if ((*inst.arg_types)[0]->kind == TYPE_I32) found_i32 = true;
+            if ((*inst.arg_types)[0]->kind == TYPE_F64) found_f64 = true;
         }
     }
 
@@ -130,8 +130,8 @@ TEST_FUNC(TypeChecker_AnytypeImplicitDetection) {
         if (plat_strcmp(inst.function_name, "anytypeFn") == 0 && !inst.is_explicit) {
             found = true;
             ASSERT_EQ(1, inst.param_count);
-            ASSERT_TRUE(inst.arg_types[0] != NULL);
-            ASSERT_EQ(TYPE_F64, inst.arg_types[0]->kind);
+            ASSERT_TRUE((*inst.arg_types)[0] != NULL);
+            ASSERT_EQ(TYPE_F64, (*inst.arg_types)[0]->kind);
         }
     }
 

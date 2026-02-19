@@ -9,7 +9,7 @@
 
 // Helper to get the string representation of a binary operator token.
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL) {
+TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL), current_loop_depth(0), in_defer(false) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -51,8 +51,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
         case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(&node->as.while_stmt); break;
-        case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(&node->as.break_stmt); break;
-        case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(&node->as.continue_stmt); break;
+        case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(node); break;
+        case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(node); break;
         case NODE_RETURN_STMT:      resolved_type = visitReturnStmt(node, &node->as.return_stmt); break;
         case NODE_DEFER_STMT:       resolved_type = visitDeferStmt(&node->as.defer_stmt); break;
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
@@ -1182,19 +1182,27 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
         }
     }
 
+    current_loop_depth++;
     visit(node->body);
+    current_loop_depth--;
     return NULL;
 }
 
-Type* TypeChecker::visitBreakStmt(ASTBreakStmtNode* /*node*/) {
-    // Standard C89 break is allowed in while loops.
-    // Full semantic validation (ensuring it's inside a loop) is deferred.
+Type* TypeChecker::visitBreakStmt(ASTNode* node) {
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement inside defer is not allowed");
+    } else if (current_loop_depth == 0) {
+        unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement outside of loop");
+    }
     return NULL;
 }
 
-Type* TypeChecker::visitContinueStmt(ASTContinueStmtNode* /*node*/) {
-    // Standard C89 continue is allowed in while loops.
-    // Full semantic validation (ensuring it's inside a loop) is deferred.
+Type* TypeChecker::visitContinueStmt(ASTNode* node) {
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement inside defer is not allowed");
+    } else if (current_loop_depth == 0) {
+        unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement outside of loop");
+    }
     return NULL;
 }
 
@@ -1229,7 +1237,10 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 }
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
+    bool old_in_defer = in_defer;
+    in_defer = true;
     visit(node->statement);
+    in_defer = old_in_defer;
     return NULL;
 }
 
@@ -1269,7 +1280,9 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         unit.getSymbolTable().insert(sym);
     }
 
+    current_loop_depth++;
     visit(node->body);
+    current_loop_depth--;
 
     unit.getSymbolTable().exitScope();
     return NULL;
@@ -2149,7 +2162,10 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
+    bool old_in_defer = in_defer;
+    in_defer = true;
     visit(node->statement);
+    in_defer = old_in_defer;
     return NULL;
 }
 
@@ -2797,47 +2813,51 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 
     if (is_explicit || is_implicit) {
         // Collect parameter info
-        GenericParamInfo params[4];
-        Type* arg_types[4];
-        int param_count = 0;
+        void* params_mem = unit.getArena().alloc(sizeof(DynamicArray<GenericParamInfo>));
+        if (!params_mem) fatalError("Out of memory");
+        DynamicArray<GenericParamInfo>* params = new (params_mem) DynamicArray<GenericParamInfo>(unit.getArena());
 
-        for (size_t i = 0; i < node->args->length() && param_count < 4; ++i) {
+        void* arg_types_mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
+        if (!arg_types_mem) fatalError("Out of memory");
+        DynamicArray<Type*>* arg_types = new (arg_types_mem) DynamicArray<Type*>(unit.getArena());
+
+        for (size_t i = 0; i < node->args->length(); ++i) {
             ASTNode* arg = (*node->args)[i];
             Type* arg_type = visit(arg);
-            arg_types[param_count] = arg_type;
+            arg_types->append(arg_type);
 
+            GenericParamInfo info;
             if (isTypeExpression(arg, unit.getSymbolTable())) {
-                params[param_count].kind = GENERIC_PARAM_TYPE;
-                params[param_count].type_value = (arg_type && arg_type->kind == TYPE_TYPE) ? arg->resolved_type : arg_type;
-                params[param_count].param_name = NULL;
-                param_count++;
+                info.kind = GENERIC_PARAM_TYPE;
+                info.type_value = (arg_type && arg_type->kind == TYPE_TYPE) ? arg->resolved_type : arg_type;
+                info.param_name = NULL;
             } else {
                 // If it's not a type expression, it might be a value that infers a type
                 i64 int_val;
                 if (evaluateConstantExpression(arg, &int_val)) {
-                    params[param_count].kind = GENERIC_PARAM_COMPTIME_INT;
-                    params[param_count].int_value = int_val;
-                    params[param_count].param_name = NULL;
-                    param_count++;
+                    info.kind = GENERIC_PARAM_COMPTIME_INT;
+                    info.int_value = int_val;
+                    info.param_name = NULL;
                 } else {
                     // Implicit inference from argument type
-                    params[param_count].kind = GENERIC_PARAM_TYPE;
-                    params[param_count].type_value = arg_type;
-                    params[param_count].param_name = NULL;
-                    param_count++;
+                    info.kind = GENERIC_PARAM_TYPE;
+                    info.type_value = arg_type;
+                    info.param_name = NULL;
                 }
             }
+            params->append(info);
         }
 
         // Compute hash for deduplication
         u32 hash = 2166136261u;
-        for (int i = 0; i < param_count; ++i) {
-            hash ^= (u32)params[i].kind;
+        for (size_t i = 0; i < params->length(); ++i) {
+            GenericParamInfo& info = (*params)[i];
+            hash ^= (u32)info.kind;
             hash *= 16777619u;
-            if (params[i].kind == GENERIC_PARAM_TYPE) {
-                hash ^= (u32)(size_t)params[i].type_value;
-            } else if (params[i].kind == GENERIC_PARAM_COMPTIME_INT) {
-                hash ^= (u32)params[i].int_value;
+            if (info.kind == GENERIC_PARAM_TYPE) {
+                hash ^= (u32)(size_t)info.type_value;
+            } else if (info.kind == GENERIC_PARAM_COMPTIME_INT) {
+                hash ^= (u32)info.int_value;
             }
             hash *= 16777619u;
         }
@@ -2845,7 +2865,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
         const char* mangled_name = unit.getNameMangler().mangleFunction(
             callee_name ? callee_name : "anonymous",
             params,
-            param_count,
+            (int)params->length(),
             unit.getCurrentModule()
         );
 
@@ -2854,7 +2874,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             mangled_name,
             params,
             arg_types,
-            param_count,
+            (int)params->length(),
             node->callee->loc,
             unit.getCurrentModule(),
             is_explicit,
@@ -3337,20 +3357,6 @@ Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
-    if (node->params && node->params->length() > 4) {
-        char buffer[256];
-        char num_buf[21];
-        plat_i64_to_string(node->params->length(), num_buf, sizeof(num_buf));
-
-        char* cur = buffer;
-        size_t rem = sizeof(buffer);
-        safe_append(cur, rem, "Function pointer type has too many parameters (");
-        safe_append(cur, rem, num_buf);
-        safe_append(cur, rem, "), maximum is 4 for bootstrap compiler compatibility");
-
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->params->length() > 0 ? (*node->params)[0]->loc : SourceLocation(), buffer, unit.getArena());
-    }
-
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     if (!mem) fatalError("Out of memory");
     DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
