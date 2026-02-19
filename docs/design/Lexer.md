@@ -105,7 +105,6 @@ This section tracks the implementation status of all tokens required for the Ret
 | `TOKEN_DOT_QUESTION`| `.?`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_QUESTION`   | `?`    | Yes         | Also used for Optional types (?T) |
 | `TOKEN_PLUS2`      | `++`   | Yes         | Implemented as part of Task 22. |
-| `TOKEN_STAR2`      | `**`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_PLUSPERCENT`| `+%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_MINUSPERCENT`| `-%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_STARPERCENT`| `*%`   | Yes         | Implemented as part of Task 22. |

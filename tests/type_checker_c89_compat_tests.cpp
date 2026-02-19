@@ -6,7 +6,7 @@
 
 // Forward declarations for test functions
 // Forward declarations for test functions
-TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
+TEST_FUNC(TypeCheckerC89Compat_AllowFunctionWithManyArgs);
 // TEST_FUNC(TypeCheckerC89Compat_RejectFunctionPointerCall);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
@@ -63,7 +63,18 @@ TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice) {
 
 TEST_FUNC(TypeChecker_C89_UnionFieldValidation_MultiLevelPointer) {
     const char* source = "const U = union { field: * * i32 };";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    // This should now succeed
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    unit.injectRuntimeSymbols();
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* root = parser->parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
     return true;
 }
 

@@ -25,7 +25,8 @@ TEST_FUNC(BootstrapTypes_Allowed_Pointers) {
     const char* source =
         "var a: *i32 = null;\n"
         "var b: *const u8 = null;\n"
-        "var c: *void = null;\n";
+        "var c: *void = null;\n"
+        "var d: **i32 = null;\n";
     ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
@@ -54,11 +55,6 @@ TEST_FUNC(BootstrapTypes_Allowed_Enums) {
 
 // --- Negative Tests: Rejected Types ---
 
-TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: * * i32 = null;"));
-    return true;
-}
-
 TEST_FUNC(BootstrapTypes_Rejected_Slice) {
     ASSERT_TRUE(expect_type_checker_abort("var x: []u8 = 0;"));
     return true;
@@ -74,11 +70,9 @@ TEST_FUNC(BootstrapTypes_Rejected_Optional) {
     return true;
 }
 
-TEST_FUNC(BootstrapTypes_Rejected_FunctionPointer) {
-    // Note: fn(i32) void is not fully supported by parser yet for all contexts,
-    // but we can try it as a parameter which is handled.
+TEST_FUNC(BootstrapTypes_Allowed_FunctionPointer) {
     const char* source = "fn f(p: fn(i32) void) void {}";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 
@@ -89,14 +83,8 @@ TEST_FUNC(BootstrapTypes_Rejected_VoidVariable) {
 }
 
 TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs) {
-    // Zig functions use -> return_type or just return_type
+    /* Zig functions use -> return_type or just return_type */
     const char* source = "fn f(a: i32, b: i32, c: i32, d: i32, e: i32) void {}";
-    ASSERT_TRUE(expect_type_checker_abort(source));
-    return true;
-}
-
-TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer_StructField) {
-    const char* source = "const S = struct { x: * * i32 };";
     ASSERT_TRUE(expect_type_checker_abort(source));
     return true;
 }

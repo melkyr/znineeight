@@ -36,9 +36,6 @@ private:
 
     // Check if a type is valid for C89 function return
     bool isReturnTypeValid(Type* type, SourceLocation loc);
-
-    // Check parameter count
-    bool isParameterCountValid(size_t count);
 };
 
 #endif // SIGNATURE_ANALYZER_HPP

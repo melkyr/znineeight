@@ -25,8 +25,12 @@ TEST_FUNC(LexerSpecialOperators) {
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_QUESTION);
 
+    // ** is lexed as two separate * tokens
     t = lexer.nextToken();
-    ASSERT_EQ(t.type, TOKEN_STAR2);
+    ASSERT_EQ(t.type, TOKEN_STAR);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_STAR);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_PLUSPERCENT);
@@ -63,8 +67,12 @@ TEST_FUNC(LexerSpecialOperatorsMixed) {
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_QUESTION);
 
+    // ** is lexed as two separate * tokens
     t = lexer.nextToken();
-    ASSERT_EQ(t.type, TOKEN_STAR2);
+    ASSERT_EQ(t.type, TOKEN_STAR);
+
+    t = lexer.nextToken();
+    ASSERT_EQ(t.type, TOKEN_STAR);
 
     t = lexer.nextToken();
     ASSERT_EQ(t.type, TOKEN_PLUS);

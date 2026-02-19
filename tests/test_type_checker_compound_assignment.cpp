@@ -49,8 +49,8 @@ TEST_FUNC(TypeChecker_CompoundAssignment_Bitwise) {
 TEST_FUNC(TypeChecker_CompoundAssignment_PointerArithmetic) {
     const char* source =
         "fn main() void {"
-        "  var x: i32 = 10;"
-        "  var p: *i32 = &x;"
+        "  var x: [10]i32;"
+        "  var p: [*]i32 = @ptrCast([*]i32, &x[0]);"
         "  p += 1u;"
         "  p -= 1u;"
         "}";
@@ -86,9 +86,9 @@ TEST_FUNC(DoubleFreeAnalyzer_CompoundAssignment) {
     StringInterner interner(arena);
     const char* source =
         "fn my_ptr_test() void {\n"
-        "    var p: *u8 = arena_alloc_default(100u);\n"
+        "    var p: [*]u8 = @ptrCast([*]u8, arena_alloc_default(100u));\n"
         "    p += 10u;\n"
-        "    arena_free(p);\n"
+        "    arena_free(@ptrCast(*u8, p));\n"
         "}\n";
 
     CompilationUnit unit(arena, interner);

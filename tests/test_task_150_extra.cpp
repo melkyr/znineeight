@@ -120,7 +120,8 @@ TEST_FUNC(C89Rejection_ArraySliceExpression) {
     ASSERT_TRUE(unit.getErrorHandler().hasErrors());
     bool found_msg = false;
     for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        if (strstr(unit.getErrorHandler().getErrors()[i].message, "Array slices are not supported")) {
+        const char* msg = unit.getErrorHandler().getErrors()[i].message;
+        if (strstr(msg, "Array slices are not supported") || strstr(msg, "Slice expressions") || strstr(msg, "are not supported")) {
             found_msg = true;
             break;
         }

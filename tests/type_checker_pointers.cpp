@@ -238,11 +238,21 @@ TEST_FUNC(TypeChecker_Dereference_NullLiteral) {
     return true;
 }
 
-TEST_FUNC(TypeChecker_Dereference_NestedPointer_REJECT) {
-    const char* source = "var x: i32 = 0; var p1: *i32 = &x; var p2: **i32 = &p1; var y: i32 = **p2;";
+TEST_FUNC(TypeChecker_Dereference_NestedPointer_ALLOW) {
+    const char* source = "var x: i32 = 0; var p1: *i32 = &x; var p2: **i32 = &p1; var y: i32 = p2.*.*;";
 
-    // Multi-level pointers are NOT supported in bootstrap compiler (Task 169)
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    // Multi-level pointers ARE now supported
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    unit.injectRuntimeSymbols();
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* root = parser->parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
 
     return true;
 }

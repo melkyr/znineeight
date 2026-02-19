@@ -9,7 +9,7 @@ int main(int argc, char* argv[]) {
         test_StructIntegration_RejectAnonymousStruct,
         test_StructIntegration_RejectStructMethods,
         test_StructIntegration_RejectSliceField,
-        test_StructIntegration_RejectMultiLevelPointerField
+        test_StructIntegration_AllowMultiLevelPointerField
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
