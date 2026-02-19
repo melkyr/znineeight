@@ -71,7 +71,8 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 
 ### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
-- **While Loops**: Mapped to C `while (cond) { ... }`. Supports `break` and `continue`.
+- **While Loops**: Mapped to C `while (cond) { ... }`.
+- **Break/Continue**: Mapped directly to C `break;` and `continue;`.
 - **Return Statements**: Mapped to `return expr;` or `return;`.
 
 ### 4.4 Array and Struct Initializers

@@ -64,3 +64,6 @@ Check the `examples/` directory for sample Z98 programs:
 - `examples/prime/`: Prime number calculation.
 - `examples/fibonacci/`: Recursive Fibonacci sequence.
 - `examples/heapsort/`: In-place Heapsort algorithm.
+- `examples/quicksort/`: Quicksort with function pointers.
+- `examples/sort_strings/`: String sorting with multi-level pointers.
+- `examples/func_ptr_return/`: Functions returning function pointers.

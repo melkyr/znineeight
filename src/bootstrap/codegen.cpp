@@ -499,6 +499,14 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_WHILE_STMT:
             emitWhile(&node->as.while_stmt);
             break;
+        case NODE_BREAK_STMT:
+            writeIndent();
+            writeString("break;\n");
+            break;
+        case NODE_CONTINUE_STMT:
+            writeIndent();
+            writeString("continue;\n");
+            break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
             break;
