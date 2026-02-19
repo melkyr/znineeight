@@ -61,9 +61,9 @@ TEST_FUNC(SignatureAnalysisReturnTypeRejection) {
 }
 
 
-TEST_FUNC(SignatureAnalysisTooManyParams) {
+TEST_FUNC(SignatureAnalysis_ManyParams_Accepted) {
     const char* source =
-        "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n";
+        "fn manyParams(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n";
 
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
@@ -81,8 +81,36 @@ TEST_FUNC(SignatureAnalysisTooManyParams) {
     SignatureAnalyzer analyzer(unit);
     analyzer.analyze(ast);
 
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // 5 parameters should now be accepted
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
+    return true;
+}
+
+TEST_FUNC(SignatureAnalysis_ExtremeParams_Accepted) {
+    const char* source =
+        "fn extremeParams(p1: i32, p2: i32, p3: i32, p4: i32, p5: i32, p6: i32, p7: i32, p8: i32, "
+        "                 p9: i32, p10: i32, p11: i32, p12: i32, p13: i32, p14: i32, p15: i32, p16: i32, "
+        "                 p17: i32, p18: i32, p19: i32, p20: i32, p21: i32, p22: i32, p23: i32, p24: i32, "
+        "                 p25: i32, p26: i32, p27: i32, p28: i32, p29: i32, p30: i32, p31: i32, p32: i32) void {}\n";
+
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    unit.injectRuntimeSymbols();
+    u32 file_id = unit.addSource("test.zig", source);
+
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker checker(unit);
+    checker.check(ast);
+
+    SignatureAnalyzer analyzer(unit);
+    analyzer.analyze(ast);
+
+    // 32 parameters should be accepted
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
     return true;
 }
 

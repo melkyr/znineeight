@@ -41,11 +41,19 @@ int main(int argc, char* argv[]) {
         test_FunctionVariableCollisionSameScope,
         test_ShadowingAllowed,
         test_SignatureAnalysisNonC89Types,
-        test_SignatureAnalysisTooManyParams,
+        test_SignatureAnalysis_ManyParams_Accepted,
+        test_SignatureAnalysis_ExtremeParams_Accepted,
         test_SignatureAnalysisMultiLevelPointers,
         test_SignatureAnalysisTypeAliasResolution,
         test_SignatureAnalysisArrayParameterWarning,
-        test_SignatureAnalysisReturnTypeRejection
+        test_SignatureAnalysisReturnTypeRejection,
+        test_TypeChecker_BreakContinue_InLoop,
+        test_TypeChecker_BreakOutsideLoop_Error,
+        test_TypeChecker_ContinueOutsideLoop_Error,
+        test_TypeChecker_BreakInDefer_Error,
+        test_TypeChecker_BreakInSwitchInLoop,
+        test_TypeChecker_ManyParams_FunctionPointer,
+        test_TypeChecker_ManyParams_GenericInstantiation
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

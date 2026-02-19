@@ -14,7 +14,7 @@
  * generation phase.
  */
 TEST_FUNC(Task151_ErrorTypeRejection) {
-    const char* source = "fn test() !i32 { return 0; }";
+    const char* source = "fn test_func() !i32 { return 0; }";
 
     // In bootstrap, success for Task 151 means it is rejected, not converted.
     ASSERT_TRUE(expect_type_checker_abort(source));
@@ -29,7 +29,7 @@ TEST_FUNC(Task151_ErrorTypeRejection) {
  * the bootstrap phase.
  */
 TEST_FUNC(Task151_OptionalTypeRejection) {
-    const char* source = "fn test(x: ?i32) void { _ = x; }";
+    const char* source = "fn test_func(x: ?i32) void { _ = x; }";
 
     // Should be rejected
     ASSERT_TRUE(expect_type_checker_abort(source));

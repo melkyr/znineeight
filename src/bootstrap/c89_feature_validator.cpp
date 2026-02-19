@@ -677,7 +677,7 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
             for (int i = 0; i < inst->param_count; i++) {
                 if (i > 0) safe_append(cur, rem, ", ");
                 char type_name[64];
-                typeToString(inst->arg_types[i], type_name, sizeof(type_name));
+                typeToString((*inst->arg_types)[i], type_name, sizeof(type_name));
                 safe_append(cur, rem, type_name);
             }
             safe_append(cur, rem, " (non-C89)");
