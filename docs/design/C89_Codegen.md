@@ -96,9 +96,25 @@ Many-item pointers (e.g., `[*]u8`, `[*]const i32`) are supported in the bootstra
 
 #### Semantics
 - **Indexing**: `[*]T` supports indexing `ptr[i]`, returning a value of type `T`.
-- **Dereferencing**: `[*]T` does **not** support the dereference operator `.*`. Use indexing (e.g., `ptr[0]`) instead.
-- **Arithmetic**: `[*]T` supports pointer arithmetic (`ptr + i`, `i + ptr`, `ptr - i`) and pointer subtraction.
-- **Nullability**: In the bootstrap compiler, `[*]T` can be assigned the `null` literal (unlike standard Zig where only `?[*]T` can be null).
+- **Dereferencing**: `[*]T` supports the dereference operator `.*`, yielding the first element (equivalent to `ptr[0]`). Mapped to C `*ptr`.
+- **Arithmetic**: `[*]T` supports pointer arithmetic (`ptr + i`, `i + ptr`, `ptr - i`) and pointer subtraction (`ptr1 - ptr2`).
+  - Arithmetic requires **unsigned** integer offsets (`usize`, `u32`).
+  - Pointer subtraction yields `isize`.
+- **Nullability**: In the bootstrap compiler, `[*]T` can be assigned the `null` literal (mapped to `((void*)0)`).
+
+#### Pointer Arithmetic Summary
+| Operation | Many-item ([*]T) | Single-item (*T) | Result Type |
+|-----------|------------------|------------------|-------------|
+| `ptr + unsigned` | ✓ Allowed | ✗ REJECTED | `[*]T` |
+| `ptr - unsigned` | ✓ Allowed | ✗ REJECTED | `[*]T` |
+| `ptr1 - ptr2` | ✓ Allowed | ✗ REJECTED | `isize` |
+| `ptr[i]` | ✓ Allowed | ✗ REJECTED | `T` |
+| `ptr.*` | ✓ Allowed | ✓ Allowed | `T` |
+
+#### Multi-level Pointers
+Arithmetic on multi-level pointers is supported only if the outer level is a many-item pointer.
+- Zig `var pp: [*]*i32` -> C `int** pp`.
+- `pp + 1` advances by `sizeof(int*)`.
 
 ### 4.7 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
@@ -114,15 +130,19 @@ C's "inside-out" declarator syntax is handled by a recursive emission strategy (
 
 Examples:
 - Zig `var fp: fn(i32) void` -> C `void (*fp)(int)`
+- Zig `var fp2: fn(i32, i32) i32` -> C `int (*fp2)(int, int)`
 - Zig `var fps: [10]fn() void` -> C `void (*fps[10])(void)`
 - Zig `fn foo() fn() void` -> C `void (*foo(void))(void)`
+- Zig `fn get_handler(id: i32) fn(i32) i32` -> C `int (*get_handler(int))(int)`
 
 #### Indirect Calls
 Indirect calls through function pointer variables or complex expressions (e.g., `fps[0]()`) are emitted directly as standard C function calls: `callee(args)`. C89 allows implicit dereferencing of function pointers.
 
 #### Limitations
-- **Parameter Limit**: Function pointers follow standard C89 parameter limits.
-- **Implicit Coercion**: Function declarations (names) implicitly coerce to their corresponding function pointer type when assigned or passed as arguments.
+- **Parameter Limit**: Function pointers follow standard C89 parameter limits (maximum 4 parameters in bootstrap).
+- **Implicit Coercion**: Function declarations (names) implicitly coerce to their corresponding function pointer type when assigned or passed as arguments, provided signatures match exactly.
+- **Calling Convention**: Defaults to `__cdecl`. Custom calling conventions are not supported.
+- **Nullability**: Function pointers can be assigned `null` (temporary bootstrap extension).
 
 #### Const Qualifiers
 To simplify code generation and avoid complex C declaration syntax (e.g., `int* const*`), the RetroZig bootstrap compiler **drops all `const` qualifiers** in the generated C code for pointers and variables.

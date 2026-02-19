@@ -949,7 +949,7 @@ Output: Runtime assertions in codegen module
     ptr += 1;              // pointer arithmetic with usize
     ```
 
-184. **Task 184:** Full Pointer Arithmetic Validation
+184. [COMPLETE] **Task 184:** Full Pointer Arithmetic Validation (DONE)
     **Risk:** MEDIUM
     **Goal:** Implement a complete, C89‑compliant pointer arithmetic validator in `TypeChecker::visitBinaryOp`.
     **Why:** Task 93 is marked “Partially Implemented”. You need a final, exhaustive implementation that rejects all invalid forms.
@@ -1383,7 +1383,7 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multi�
     - **Parser**: Added grammar for function type expressions: `fn (param_list) return_type`. New node type `NODE_FUNCTION_TYPE`.
     - **AST**: Defined `ASTFunctionTypeNode` storing parameter types and return type.
     - **Type system**: Created `TYPE_FUNCTION_POINTER` holding signatures. Implemented structural signature matching.
-    - **Type checker**: Implemented implicit coercion from function names to pointers. Enabled indirect calls through variables, parameters, and complex expressions. Removed the 4-parameter limit for functions and function pointers.
+    - **Type checker**: Implemented implicit coercion from function names to pointers. Enabled indirect calls through variables, parameters, and complex expressions. Reinstated and strictly enforced the 4-parameter limit for functions and function pointers to ensure C89 compatibility.
     - **C89FeatureValidator**: Permitted function pointer declarations and calls.
     - **Codegen**: Implemented recursive declarator system (`emitTypePrefix`/`emitTypeSuffix`) to handle complex C89 types (arrays of FPs, functions returning FPs).
     - **Tests**: Verified with comprehensive Batch 38 tests, including complex integration scenarios.

@@ -168,10 +168,12 @@ Pointer assignments follow a specific set of C89-compatible rules:
 2.  **Implicit Cast to `void*`:** Any typed pointer (`*T` or `[*]T`) can be implicitly assigned to a `void` pointer (`*void`).
     -   `var p_void: *void = my_i32_ptr;` // ✓ OK
 
-3.  **Implicit Cast from `void*`:** A `void` pointer can be implicitly assigned to any typed pointer (`*T`), provided that `T` is C89-compatible. This matches C89 behavior for `void*`.
+3.  **Implicit Cast from `void*`:** Strictly speaking, Zig does not allow implicit casts from `*void`. However, for bootstrap simplicity, a `void` pointer can be implicitly assigned to any typed pointer (`*T`), provided that `T` is C89-compatible.
     -   `var p: *i32 = arena_alloc(4u);` // ✓ OK
 
-4.  **Const Correctness:**
+4.  **Multi-level Pointers:** Pointers of any depth (e.g. `**i32`) are supported. Compatibility rules apply recursively to the base types.
+
+5.  **Const Correctness:**
     -   A mutable pointer (`*T`) can be assigned to a constant pointer (`*const T`). This is a safe, "const-adding" conversion.
         - `var p_const: *const i32 = my_i32_ptr;` // ✓ OK
     -   A constant pointer (`*const T`) cannot be assigned to a mutable pointer (`*T`). This would unsafely remove the `const` qualification.
@@ -318,7 +320,7 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 ### Known Limitations (Milestone 4)
 
 - **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
-- **No Function Pointers**: Functions cannot be stored in variables or passed as arguments. Call sites are strictly resolved to direct function names at compile time.
+- **Function Pointers**: Supported as of Milestone 7 (Task 221). Functions can be stored in variables, passed as arguments, and called indirectly.
 - **Function Parameters**: Function declarations and calls support standard C89 parameter limits (at least 31).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
@@ -362,6 +364,10 @@ When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` perfor
 -   The analyzer will verify that the number of arguments in a function call matches the number of parameters in the function's declaration.
 -   It will check that the type of each argument is compatible with the type of the corresponding parameter.
 
+#### Signature Matching and Compatibility
+Two function pointer types are considered compatible if their parameter types and return types match exactly.
+A function declaration (name) implicitly coerces to its corresponding function pointer type when assigned to a variable or passed as an argument, provided the signatures match exactly.
+
 #### C89 Compatibility Restrictions
 
 To ensure that the output of the bootstrap compiler is compatible with C89, several restrictions are enforced during semantic analysis. These limitations are designed to prevent the use of modern language features that do not have a direct and simple equivalent in C89.
@@ -370,7 +376,7 @@ Function calls are subject to the following strict limitations:
 
 1.  **Number of Arguments:** A function call follows standard C89 argument limits.
 
-2.  **No Function Pointers:** The bootstrap compiler does not support calling functions via pointers. Any attempt to call a variable that holds a function (i.e., a function pointer) will be rejected with a fatal error.
+2.  **Function Pointers:** Supported as of Task 221. Functions can be called via pointers.
 
     *Note on testing:* The current parser does not support type inference for variable declarations (e.g., `var func_ptr = my_func;`). As a result, tests for this specific feature currently fail during the parsing phase, preventing the `TypeChecker` from running. The check remains in the `TypeChecker` for correctness and future-proofing.
 
@@ -387,20 +393,21 @@ Function calls are subject to the following strict limitations:
         -   Array accesses (e.g., `&my_array[i]`).
         -   Pointer dereferences (e.g., `&*my_ptr`).
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
-    -   **Dereference (`*` or `.*`):** This operator can only be applied to **single-item** pointer types (`*T`). Applying it to a many-item pointer (`[*]T`) or a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
-        -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
-    -   **Pointer Arithmetic (Task 184/220):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules for pointer arithmetic:
+    -   **Dereference (`*` or `.*`):** This operator can be applied to any pointer type (`*T`, `[*]T`, `**T`, etc.). For many-item pointers, it yields the first element (equivalent to `ptr[0]`). The resulting type of `*p` where `p` points to `T` is `T`.
+        -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced pointer to a constant type to the non-const base type, the enforcement of immutability (i.e., preventing assignments like `*p = 10` when `p` is `*const T`) is handled during the semantic analysis of assignment expressions.
+    -   **Indexing (`ptr[i]`):** This operator can only be applied to many-item pointers (`[*]T`), arrays (`[N]T`), and slices (`[]T`). Indexing is **strictly rejected** on single-item pointers (`*T`).
+    -   **Pointer Arithmetic (Task 184/220/221):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules:
         -   **Supported Operations:**
-            -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward (allowed only on `[*]T`).
-            -   `unsigned_int + ptr` -> `ptr`: Commutative addition (allowed only on `[*]T`).
-            -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward (allowed only on `[*]T`).
-            -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types (allowed only if both are `[*]T`).
+            -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward (allowed only on `[*]T` and `[]T`).
+            -   `unsigned_int + ptr` -> `ptr`: Commutative addition (allowed only on `[*]T` and `[]T`).
+            -   `ptr - unsigned_int` -> `ptr`: Offsetting a pointer backward (allowed only on `[*]T` and `[]T`).
+            -   `ptr1 - ptr2` -> `isize`: Calculating the distance between two pointers of compatible types (allowed only if both are `[*]T` or `[]T`).
         -   **Safety Rules:**
             -   **Many-item Pointers Only**: Arithmetic is **strictly rejected** on single-item pointers (`*T`).
-            -   **No Void Pointers:** Arithmetic on `*void` or `*const void` is strictly forbidden.
-            -   **Complete Types Only:** The base type of the pointer must be a "complete" type (not `void`).
-            -   **Unsigned Offsets Only:** Offsets used in `+` or `-` must be of an unsigned integer type (e.g., `u8`, `u32`, `usize`). This matches Zig's requirement for explicit casting and prevents common signed-overflow bugs in C.
-            -   **Compatible Pointer Subtraction:** Subtraction is allowed if both pointers point to the same base type, ignoring `const` qualification (e.g., `[*]i32` - `[*]const i32` is valid). Both must be many-item pointers.
+            -   **No Void Pointers**: Arithmetic on `*void` or `*const void` is strictly forbidden.
+            -   **Multi-level Pointers**: Supported for arithmetic if they are many-item pointers (e.g., `[*]**T` is allowed). `pp + 1` advances by the size of the base type (e.g., `sizeof(*T)` for `**T`).
+            -   **Unsigned Offsets Only**: Offsets used in `+` or `-` must be of an unsigned integer type (e.g., `u8`, `u32`, `usize`). Signed integers are rejected.
+            -   **Compatible Pointer Subtraction**: Subtraction is allowed if both pointers point to the same base type, ignoring `const` qualification (e.g., `[*]i32 - [*]const i32` is valid). Both must be many-item pointers or slices.
         -   **Rejected Operations:** Any other operations (e.g., `ptr + ptr`, `ptr * int`, `ptr / int`) are considered type errors and rejected.
 
 ### Control Flow Statements
@@ -489,13 +496,12 @@ To clarify the current capabilities of the type checker and guide future develop
         -   Array accesses (e.g., `&my_array[i]`).
         -   Pointer dereferences (e.g., `&*my_ptr`).
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_TYPE_MISMATCH`. The resulting type of `&x` where `x` has type `T` is `*T`.
-    -   **Dereference (`*`):** This operator can only be applied to an expression of a pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` has type `*T` or `*const T` is `T`.
-        -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced `*const T` to `T`, the enforcement of immutability (i.e., preventing assignments like `*p = 10`) is handled during the semantic analysis of assignment expressions (Task 107), not by the dereference operator itself.
-    -   **Pointer Arithmetic:** To ensure C89 compatibility, the type checker enforces the following rules for pointer arithmetic:
-        -   `pointer + integer` -> `pointer`: The result is a pointer of the same type.
-        -   `integer + pointer` -> `pointer`: The result is a pointer of the same type.
-        -   `pointer - integer` -> `pointer`: The result is a pointer of the same type.
-        -   `pointer - pointer` -> `isize`: The result is a signed integer of type `isize`. This is only valid if both pointers are of the exact same type (e.g., `*i32` and `*i32`, but not `*i32` and `*const i32`).
+-   **Dereference (`*`):** This operator can be applied to any pointer type. Applying `*` to a non-pointer type will result in an `ERR_TYPE_MISMATCH`. The resulting type of `*p` where `p` points to `T` is `T`.
+    -   **Pointer Arithmetic:** To ensure C89 compatibility and Zig safety, the following rules apply:
+        -   `pointer + unsigned_int` -> `pointer`: Result is a pointer of the same type. Allowed only on `[*]T` and `[]T`.
+        -   `unsigned_int + pointer` -> `pointer`: Result is a pointer of the same type. Allowed only on `[*]T` and `[]T`.
+        -   `pointer - unsigned_int` -> `pointer`: Result is a pointer of the same type. Allowed only on `[*]T` and `[]T`.
+        -   `ptr1 - ptr2` -> `isize`: Result is an `isize`. Valid if both are `[*]T` or `[]T` and point to the same base type (ignoring const).
         -   Any other arithmetic operations involving pointers (e.g., `pointer + pointer`, `pointer * integer`) are considered a type error.
 
 -   **Literals:**
@@ -673,16 +679,16 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
-| `*T` | ✓ | `T*` | Single-item pointer. Supported. |
-| `[*]T` | ✓ | `T*` | Many-item pointer. Supported. |
-| `**T` | ✓ | `T**` | Supported. |
+| `*T` | ✓ | `T*` | Single-item pointer. (No indexing/arithmetic). |
+| `[*]T` | ✓ | `T*` | Many-item pointer. (Supports indexing/arithmetic). |
+| `**T` | ✓ | `T**` | Multi-level pointers are supported. |
 | `[]T` | ✗ | - | **Rejected.** Slices require runtime support not available in bootstrap. |
 | `!T` | ✗ | - | **Rejected.** Error unions are rejected until Milestone 5 translation. |
 | `?T` | ✗ | - | **Rejected.** Optionals are rejected until Milestone 5 translation. |
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
-| `fn(...) T` | ✓ | `T (*)(...)` | Function pointers are supported. |
+| `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (max 4 params). |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
 
 ### Supported Type Syntax Examples
@@ -728,7 +734,7 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 -   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
-    -   The function follows standard C89 parameter limits.
+    -   The function follows the bootstrap parameter limit (maximum 4 parameters).
     -   The return type must be C89-compatible.
     -   All parameter types must be C89-compatible.
     -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
@@ -1311,10 +1317,10 @@ For detailed specifications, syntax, and implementation details for each built-i
 
 ### Pointer Arithmetic
 To ensure C89 compatibility and maintain Zig's safety guarantees, the following rules apply to pointer arithmetic:
-- **`ptr + unsigned` / `unsigned + ptr`**: Result is a pointer of the same type as `ptr`. The offset must be an unsigned integer type (`u8`, `u32`, `usize`).
-- **`ptr - unsigned`**: Result is a pointer of the same type.
-- **`ptr1 - ptr2`**: Result is an `isize` representing the distance between the two pointers. This is only valid if both pointers point to the same base type (ignoring `const`).
-- **Prohibited**: Arithmetic on `*void`, multi-level pointers (`**T`) (for now), or incomplete types is strictly rejected.
+- **`ptr + unsigned` / `unsigned + ptr`**: Result is a pointer of the same type as `ptr`. Allowed on `[*]T` and `[]T`. Offset must be unsigned (`u8`, `u32`, `usize`).
+- **`ptr - unsigned`**: Result is a pointer of the same type. Allowed on `[*]T` and `[]T`.
+- **`ptr1 - ptr2`**: Result is an `isize`. Valid if both point to same base type (ignoring `const`) and are many-item pointers or slices.
+- **Prohibited**: Arithmetic on single-item pointers (`*T`), `*void`, or incomplete types is strictly rejected.
 
 ### Implicit Pointer Conversions
 - **`*void` to `*T`**: The bootstrap compiler allows implicit conversion from a `void` pointer to any typed pointer, provided the target base type is C89-compatible. This matches standard C89 behavior and is essential for using `arena_alloc`.

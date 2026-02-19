@@ -25,12 +25,12 @@ bool test_SingleItemPointer_Indexing_Rejected() {
     return expect_type_checker_abort(source);
 }
 
-bool test_ManyItemPointer_Dereference_Rejected() {
+bool test_ManyItemPointer_Dereference_Allowed() {
     const char* source =
         "fn foo(p: [*]u8) u8 {\n"
         "    return p.*;\n"
         "}\n";
-    return expect_type_checker_abort(source);
+    return run_type_checker_test_successfully(source);
 }
 
 bool test_ManyItemPointer_Arithmetic() {

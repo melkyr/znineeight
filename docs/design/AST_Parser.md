@@ -970,12 +970,19 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
 
 #### Parsing Logic (`parseFnDecl`)
 The `parseFnDecl` function is responsible for parsing function declarations. It follows the grammar:
-`'fn' IDENT '(' param_list ')' (type_expr | '->' type_expr)? block_statement`
+`'fn' IDENT '(' param_list ')' (type_expr | '->' type_expr)? (block_statement | ';')`
 
 - It consumes the `fn` keyword and the function's identifier.
 - It parses the parameter list inside `()`.
 - It then checks for a return type. The return type can be specified with an optional `->` token followed by a type expression, or just the type expression itself. If no return type is present before the opening `{` of the body, it defaults to `void`.
-- After parsing the function signature, it calls `parseBlockStatement` to parse the function's body.
+- For `extern` functions, it expects a semicolon. For normal functions, it calls `parseBlockStatement` to parse the function's body.
+
+#### Parsing Logic (`parseFunctionType`)
+The `parseFunctionType` function parses function pointer types (e.g., `fn(i32) void`).
+- It consumes the `fn` keyword.
+- It parses a comma-separated list of parameter type expressions inside `()`.
+- It supports an optional trailing comma in the parameter list.
+- It then parses the mandatory return type expression.
 
 ### `ASTParamDeclNode`
 Represents a single parameter within a function's parameter list. This node is not directly used in the main `ASTNode` union but is a component of `ASTFnDeclNode`.
@@ -1468,15 +1475,17 @@ The parser is responsible for parsing type expressions from the token stream. Th
 
 `type = primitive | pointer_type | array_type | slice_type`
 `primitive = IDENTIFIER` (e.g., `i32`, `u8`, `usize`, `isize`, `bool`)
-`pointer_type = '*' type`
+`pointer_type = ('*' | '[*]') type`
 `array_type = '[' <expr> ']' type`
 `slice_type = '[]' type`
+`function_type = 'fn' '(' param_list ')' type_expr`
 
 ### AST Node Structures
 
 - **`ASTTypeNameNode`**: Represents a primitive or named type (e.g., `i32`, `usize`, `MyStruct`).
-- **`ASTPointerTypeNode`**: Represents a pointer to a base type.
+- **`ASTPointerTypeNode`**: Represents a pointer to a base type. The `is_many` flag distinguishes between `*T` and `[*]T`.
 - **`ASTArrayTypeNode`**: Represents both fixed-size arrays and slices. For slices, the `size` field is `NULL`.
+- **`ASTFunctionTypeNode`**: Represents a function pointer type (e.g., `fn(i32) void`).
 
 ### Error Cases
 

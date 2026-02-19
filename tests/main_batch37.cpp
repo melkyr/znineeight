@@ -5,7 +5,7 @@
 bool test_ManyItemPointer_Parsing();
 bool test_ManyItemPointer_Indexing();
 bool test_SingleItemPointer_Indexing_Rejected();
-bool test_ManyItemPointer_Dereference_Rejected();
+bool test_ManyItemPointer_Dereference_Allowed();
 bool test_ManyItemPointer_Arithmetic();
 bool test_SingleItemPointer_Arithmetic_Rejected();
 bool test_Pointer_Conversion_Rejected();
@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
         test_ManyItemPointer_Parsing,
         test_ManyItemPointer_Indexing,
         test_SingleItemPointer_Indexing_Rejected,
-        test_ManyItemPointer_Dereference_Rejected,
+        test_ManyItemPointer_Dereference_Allowed,
         test_ManyItemPointer_Arithmetic,
         test_SingleItemPointer_Arithmetic_Rejected,
         test_Pointer_Conversion_Rejected,

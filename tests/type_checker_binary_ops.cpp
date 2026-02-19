@@ -78,10 +78,10 @@ TEST_FUNC(TypeCheckerBinaryOps_PointerArithmetic) {
 
     const char* base_source =
         "fn test_fn() {\n"
-        "    var p_i32: *i32;\n"
-        "    var p_const_i32: *const i32;\n"
-        "    var p2_i32: *i32;\n"
-        "    var p_u8: *u8;\n"
+        "    var p_i32: [*]i32;\n"
+        "    var p_const_i32: [*]const i32;\n"
+        "    var p2_i32: [*]i32;\n"
+        "    var p_u8: [*]u8;\n"
         "    var p_void: *void;\n"
         "    var i: usize = 0u;\n"
         "    %s;\n"

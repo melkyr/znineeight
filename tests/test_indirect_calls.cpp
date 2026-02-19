@@ -16,7 +16,8 @@ TEST_FUNC(IndirectCall_Variable) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    if (!success) unit.getErrorHandler().printErrors();
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -41,7 +42,8 @@ TEST_FUNC(IndirectCall_Member) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    if (!success) unit.getErrorHandler().printErrors();
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -64,7 +66,8 @@ TEST_FUNC(IndirectCall_Array) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    if (!success) unit.getErrorHandler().printErrors();
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -87,7 +90,8 @@ TEST_FUNC(IndirectCall_Returned) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    if (!success) unit.getErrorHandler().printErrors();
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());
@@ -110,7 +114,8 @@ TEST_FUNC(IndirectCall_Complex) {
 
     u32 file_id = unit.addSource("test.zig", source);
     bool success = unit.performFullPipeline(file_id);
-    ASSERT_FALSE(success);
+    if (!success) unit.getErrorHandler().printErrors();
+    ASSERT_TRUE(success);
 
     IndirectCallCatalogue& catalogue = unit.getIndirectCallCatalogue();
     ASSERT_EQ(1, catalogue.count());

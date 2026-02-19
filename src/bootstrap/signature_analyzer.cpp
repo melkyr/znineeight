@@ -105,7 +105,7 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     if (!node) return;
 
     // 1. Check parameter count
-    if (node->params && !isParameterCountValid(node->params->length())) {
+    if (node->params && node->params->length() > 4) {
         char buffer[256];
         char num_buf[21];
         plat_i64_to_string(node->params->length(), num_buf, sizeof(num_buf));
@@ -143,9 +143,6 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     }
 }
 
-bool SignatureAnalyzer::isParameterCountValid(size_t /*count*/) {
-    return true;
-}
 
 bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
     if (!type) return true;
