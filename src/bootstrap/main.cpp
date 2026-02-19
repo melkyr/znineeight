@@ -17,12 +17,14 @@ static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
  * @brief Executes the full compilation pipeline for a single file.
  */
 static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
-    if (!unit.performFullPipeline(file_id)) {
-        return false;
-    }
+    bool pipeline_success = unit.performFullPipeline(file_id);
 
     if (unit.getErrorHandler().hasErrors()) {
         unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    if (!pipeline_success) {
         return false;
     }
 
