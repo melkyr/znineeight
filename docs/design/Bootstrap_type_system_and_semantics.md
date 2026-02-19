@@ -40,6 +40,7 @@ enum TypeKind {
     TYPE_POINTER,
     TYPE_ARRAY,
     TYPE_FUNCTION,
+    TYPE_FUNCTION_POINTER,
     TYPE_ENUM,
     TYPE_STRUCT,
     TYPE_ERROR_UNION,
@@ -105,6 +106,11 @@ struct Type {
             DynamicArray<EnumMember>* members;
         } enum_details;
 
+        struct {
+            DynamicArray<Type*>* param_types;
+            Type* return_type;
+        } function_pointer;
+
         struct StructDetails {
             DynamicArray<StructField>* fields;
         } struct_details;
@@ -154,9 +160,10 @@ This logic is primarily handled in the `visitVarDecl`, `visitAssignment`, and `v
 
 Pointer assignments follow a specific set of C89-compatible rules:
 
-1.  **Null Assignment:** The `null` literal can be assigned to a variable of any pointer type, including many-item pointers.
+1.  **Null Assignment:** The `null` literal can be assigned to a variable of any pointer type, including many-item pointers and function pointers.
     -   `var p: *i32 = null;` // ✓ OK
     -   `var p: [*]u8 = null;` // ✓ OK (Extended for bootstrap simplicity)
+    -   `var fp: fn() void = null;` // ✓ OK (Allowed for bootstrap)
 
 2.  **Implicit Cast to `void*`:** Any typed pointer (`*T` or `[*]T`) can be implicitly assigned to a `void` pointer (`*void`).
     -   `var p_void: *void = my_i32_ptr;` // ✓ OK
@@ -312,7 +319,7 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 
 - **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
 - **No Function Pointers**: Functions cannot be stored in variables or passed as arguments. Call sites are strictly resolved to direct function names at compile time.
-- **Max 4 Parameters**: Function declarations and calls are limited to 4 parameters/arguments to ensure stability in legacy calling conventions.
+- **Function Parameters**: Function declarations and calls support standard C89 parameter limits (at least 31).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
 - **Single-level Pointers**: Multi-level pointers like `**T` are rejected to simplify memory safety analysis.
@@ -361,7 +368,7 @@ To ensure that the output of the bootstrap compiler is compatible with C89, seve
 
 Function calls are subject to the following strict limitations:
 
-1.  **Maximum Number of Arguments:** A function call cannot have more than four arguments. This is a conservative limit to ensure compatibility with various C89-era calling conventions and stack limitations. Any call with five or more arguments will trigger a fatal compilation error.
+1.  **Number of Arguments:** A function call follows standard C89 argument limits.
 
 2.  **No Function Pointers:** The bootstrap compiler does not support calling functions via pointers. Any attempt to call a variable that holds a function (i.e., a function pointer) will be rejected with a fatal error.
 
@@ -421,7 +428,7 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 
 3.  **Argument Type Compatibility:** It iterates through each argument and compares its type to the corresponding parameter's type using the `areTypesCompatible` function. This allows for safe, implicit widening conversions (e.g., passing an `i16` to an `i32` parameter) but rejects incompatible types. A mismatch results in a fatal error detailing the expected and actual types.
 
-4.  **C89 Argument Limit:** To maintain compatibility with legacy C89 compilers and calling conventions, the type checker enforces a hard limit of a maximum of 4 arguments per function call. Any call with five or more arguments will result in a fatal error.
+4.  **Number of Arguments:** A function call follows standard C89 argument limits.
 
 5.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
 
@@ -675,7 +682,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
-| `fn` | ✗ | - | Function pointers are rejected as values or variables. |
+| `fn(...) T` | ✓ | `T (*)(...)` | Function pointers are supported. |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
 
 ### Supported Type Syntax Examples
@@ -721,7 +728,7 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 -   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
-    -   The function must not have more than 4 parameters.
+    -   The function follows standard C89 parameter limits.
     -   The return type must be C89-compatible.
     -   All parameter types must be C89-compatible.
     -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
@@ -1219,7 +1226,7 @@ To ensure generated code is compatible with C89 backend constraints, the bootstr
 
 The following patterns are strictly rejected in the bootstrap phase to maintain C89 compatibility:
 
-1.  **Parameter Count Limit**: Functions are limited to a maximum of **4 parameters**. This is a conservative limit to ensure compatibility with MSVC 6.0 stack management and various calling conventions.
+1.  **Parameter Count Limit**: Functions follow standard C89 parameter limits (at least 31).
 2.  **Non-C89 Types in Parameters**:
     -   **Slices** (`[]T`): No direct primitive mapping in C89.
     -   **Error Unions** (`!T`): Error handling is handled via alternative designs.
@@ -1280,7 +1287,7 @@ The `TypeChecker` enforces strict type compatibility for arguments:
 ### 16.3 C89 Compatibility Rejections
 
 The following call patterns are strictly rejected to maintain C89 compatibility:
-1. **Parameter Count**: Calls with more than **4 arguments** are rejected.
+1. **Parameter Count**: Calls follow standard C89 argument limits.
 2. **Built-ins**: Most Zig built-in functions (starting with `@`) are rejected, except for the supported subset: `@sizeOf`, `@alignOf`, `@ptrCast`, `@intCast`, `@floatCast`, and `@offsetOf`.
 4. **Generic Instantiations**: Both explicit and implicit calls to generic functions are detected and rejected with detailed diagnostics.
 

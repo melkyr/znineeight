@@ -106,6 +106,24 @@ The emitter maintains correct C precedence by automatically parenthesizing the b
 ### 4.8 Multi-level Pointers (**T)
 Multi-level pointers (e.g., `**i32`, `***f64`) are fully supported in the bootstrap compiler and map directly to C's multi-level pointers (e.g., `int**`, `double***`).
 
+### 4.9 Function Pointers
+Function pointers (e.g., `fn(i32) i32`) are supported and map to C's function pointer syntax.
+
+#### Recursive Declarators
+C's "inside-out" declarator syntax is handled by a recursive emission strategy (`emitTypePrefix` and `emitTypeSuffix`). This ensures that complex nested types like "array of pointers to functions returning pointers to functions" are emitted correctly.
+
+Examples:
+- Zig `var fp: fn(i32) void` -> C `void (*fp)(int)`
+- Zig `var fps: [10]fn() void` -> C `void (*fps[10])(void)`
+- Zig `fn foo() fn() void` -> C `void (*foo(void))(void)`
+
+#### Indirect Calls
+Indirect calls through function pointer variables or complex expressions (e.g., `fps[0]()`) are emitted directly as standard C function calls: `callee(args)`. C89 allows implicit dereferencing of function pointers.
+
+#### Limitations
+- **Parameter Limit**: Function pointers follow standard C89 parameter limits.
+- **Implicit Coercion**: Function declarations (names) implicitly coerce to their corresponding function pointer type when assigned or passed as arguments.
+
 #### Const Qualifiers
 To simplify code generation and avoid complex C declaration syntax (e.g., `int* const*`), the RetroZig bootstrap compiler **drops all `const` qualifiers** in the generated C code for pointers and variables.
 - Zig `*const i32` -> C `int*`

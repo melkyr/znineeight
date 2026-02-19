@@ -1379,15 +1379,14 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Maps to raw `T*` in C89.
     - **Tests**: Verified with Batch 37.
 
-221. [IN PROGRESS] **Task 221:** Function Pointers (Phases 1-4 COMPLETE)
-    - **Parser**: Add grammar for function type expressions: `fn (param_list) return_type`. This will be a new node type `NODE_FUNCTION_TYPE`. Update `parseType` to handle it.
-    - **AST**: Define `ASTFunctionTypeNode` storing parameter types and return type.
-    - **Type system**: Create a new `TypeKind` `TYPE_FUNCTION_POINTER` that holds the signature (parameter types and return type). Also need a way to represent function types for function declarations (they are not pointers, but the type is similar). We can unify by having a `FunctionSignature` struct used for both.
-    - **Symbol table**: Allow symbols of kind `FUNCTION_POINTER` (maybe reuse `SYMBOL_TYPE` but with function type).
-    - **Type checker**: Implement resolution of function pointer types, and when a function name is used without `()` (e.g., `var fp = foo`), it should yield a function pointer. Also handle assignment and calls through pointers.
-    - **C89FeatureValidator**: Allow function pointer declarations and calls.
-    - **Codegen**: For a function pointer variable, emit `int (*name)(int, int)`. For a call, emit `(*fp)(args)` or `fp(args)` (both are valid). For function pointer parameters, emit the appropriate type.
-    - **Tests**: Write tests for function pointer assignment, passing as argument, calling, and returning from functions.
+221. [COMPLETE] **Task 221:** Function Pointers
+    - **Parser**: Added grammar for function type expressions: `fn (param_list) return_type`. New node type `NODE_FUNCTION_TYPE`.
+    - **AST**: Defined `ASTFunctionTypeNode` storing parameter types and return type.
+    - **Type system**: Created `TYPE_FUNCTION_POINTER` holding signatures. Implemented structural signature matching.
+    - **Type checker**: Implemented implicit coercion from function names to pointers. Enabled indirect calls through variables, parameters, and complex expressions. Removed the 4-parameter limit for functions and function pointers.
+    - **C89FeatureValidator**: Permitted function pointer declarations and calls.
+    - **Codegen**: Implemented recursive declarator system (`emitTypePrefix`/`emitTypeSuffix`) to handle complex C89 types (arrays of FPs, functions returning FPs).
+    - **Tests**: Verified with comprehensive Batch 38 tests, including complex integration scenarios.
 
 222. **Task 222:** Slices (`[]T`)
     - **Parser**: Recognise `[]T` as a type expression. Create a new node `NODE_SLICE_TYPE`.

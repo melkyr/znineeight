@@ -8,13 +8,13 @@
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      module_name_(NULL) {
+      module_name_(NULL), last_char_('\0') {
 }
 
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      module_name_(NULL) {
+      module_name_(NULL), last_char_('\0') {
     output_file_ = plat_open_file(path, true);
 }
 
@@ -22,7 +22,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      module_name_(NULL) {
+      module_name_(NULL), last_char_('\0') {
 }
 
 C89Emitter::~C89Emitter() {
@@ -55,66 +55,135 @@ void C89Emitter::beginFunction() {
 }
 
 void C89Emitter::emitType(Type* type, const char* name) {
+    emitDeclarator(type, name);
+}
+
+void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
+    emitTypePrefix(type);
+    if (name) {
+        if (last_char_ != '(' && last_char_ != ' ') {
+            writeString(" ");
+        }
+        writeString(name);
+    }
+
+    if (params_node) {
+        writeString("(");
+        if (!params_node->params || params_node->params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < params_node->params->length(); ++i) {
+                ASTParamDeclNode* param = (*params_node->params)[i];
+                // For definition (within FnDecl), use mangled local name.
+                // For prototype, use original name.
+                const char* param_name = param->symbol ? var_alloc_.allocate(param->symbol) : param->name;
+                emitDeclarator(param->type->resolved_type, param_name);
+                if (i < params_node->params->length() - 1) {
+                    writeString(", ");
+                }
+            }
+        }
+        writeString(")");
+    }
+
+    emitTypeSuffix(type);
+}
+
+void C89Emitter::emitTypePrefix(Type* type) {
     if (!type) {
         writeString("void");
-        if (name) { writeString(" "); writeString(name); }
         return;
     }
 
-    // Handle recursion for pointers and arrays
-    if (type->kind == TYPE_POINTER) {
-        if (type->as.pointer.base->kind == TYPE_ARRAY) {
-            // Pointer to array: Base (*name)[N1][N2]...
-            Type* arr_type = type->as.pointer.base;
-            Type* base_elem = arr_type;
-            while (base_elem->kind == TYPE_ARRAY) base_elem = base_elem->as.array.element_type;
-
-            emitType(base_elem);
-            writeString(" (*");
-            if (name) writeString(name);
-            writeString(")");
-
-            // Emit all array dimensions
-            Type* curr = arr_type;
-            while (curr->kind == TYPE_ARRAY) {
-                char buf[32];
-                writeString("[");
-                plat_u64_to_string(curr->as.array.size, buf, sizeof(buf));
-                writeString(buf);
-                writeString("]");
-                curr = curr->as.array.element_type;
+    switch (type->kind) {
+        case TYPE_POINTER:
+            emitTypePrefix(type->as.pointer.base);
+            if (type->as.pointer.base->kind != TYPE_POINTER &&
+                (type->as.pointer.base->kind == TYPE_ARRAY ||
+                 type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
+                 type->as.pointer.base->kind == TYPE_FUNCTION)) {
+                writeString(" (*");
+            } else {
+                writeString("*");
             }
-            return;
-        }
-
-        emitType(type->as.pointer.base);
-        writeString("*");
-        if (name) {
-            writeString(" ");
-            writeString(name);
-        }
-        return;
+            break;
+        case TYPE_ARRAY:
+            emitTypePrefix(type->as.array.element_type);
+            break;
+        case TYPE_FUNCTION:
+            emitTypePrefix(type->as.function.return_type);
+            break;
+        case TYPE_FUNCTION_POINTER:
+            emitTypePrefix(type->as.function_pointer.return_type);
+            writeString(" (*");
+            break;
+        default:
+            emitBaseType(type);
+            break;
     }
+}
 
-    if (type->kind == TYPE_ARRAY) {
-        Type* base_elem = type;
-        while (base_elem->kind == TYPE_ARRAY) base_elem = base_elem->as.array.element_type;
+void C89Emitter::emitTypeSuffix(Type* type) {
+    if (!type) return;
 
-        emitType(base_elem);
-        if (name) {
-            writeString(" ");
-            writeString(name);
-        }
-
-        Type* curr = type;
-        while (curr->kind == TYPE_ARRAY) {
+    switch (type->kind) {
+        case TYPE_POINTER:
+            if (type->as.pointer.base->kind != TYPE_POINTER &&
+                (type->as.pointer.base->kind == TYPE_ARRAY ||
+                 type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
+                 type->as.pointer.base->kind == TYPE_FUNCTION)) {
+                writeString(")");
+            }
+            emitTypeSuffix(type->as.pointer.base);
+            break;
+        case TYPE_ARRAY: {
             char buf[32];
             writeString("[");
-            plat_u64_to_string(curr->as.array.size, buf, sizeof(buf));
+            plat_u64_to_string(type->as.array.size, buf, sizeof(buf));
             writeString(buf);
             writeString("]");
-            curr = curr->as.array.element_type;
+            emitTypeSuffix(type->as.array.element_type);
+            break;
         }
+        case TYPE_FUNCTION: {
+            writeString("(");
+            DynamicArray<Type*>* params = type->as.function.params;
+            if (!params || params->length() == 0) {
+                writeString("void");
+            } else {
+                for (size_t i = 0; i < params->length(); ++i) {
+                    emitDeclarator((*params)[i], NULL);
+                    if (i < params->length() - 1) writeString(", ");
+                }
+            }
+            writeString(")");
+            emitTypeSuffix(type->as.function.return_type);
+            break;
+        }
+        case TYPE_FUNCTION_POINTER: {
+            writeString(")");
+            writeString("(");
+            DynamicArray<Type*>* params = type->as.function_pointer.param_types;
+            if (!params || params->length() == 0) {
+                writeString("void");
+            } else {
+                for (size_t i = 0; i < params->length(); ++i) {
+                    emitDeclarator((*params)[i], NULL);
+                    if (i < params->length() - 1) writeString(", ");
+                }
+            }
+            writeString(")");
+            emitTypeSuffix(type->as.function_pointer.return_type);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+void C89Emitter::emitBaseType(Type* type) {
+    if (!type) {
+        writeString("void");
         return;
     }
 
@@ -170,11 +239,6 @@ void C89Emitter::emitType(Type* type, const char* name) {
             writeString("/* unsupported type */");
             break;
     }
-
-    if (name) {
-        writeString(" ");
-        writeString(name);
-    }
 }
 
 void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
@@ -210,7 +274,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     Type* type = node->resolved_type;
     const char* c_name = getC89GlobalName(decl->name);
 
-    emitType(type, c_name);
+    emitDeclarator(type, c_name);
 
     if (decl->initializer) {
         writeString(" = ");
@@ -297,7 +361,7 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
     if (!emit_assignment) {
         writeIndent();
-        emitType(node->resolved_type, c_name);
+        emitDeclarator(node->resolved_type, c_name);
         writeString(";\n");
     } else {
         if (decl->initializer) {
@@ -320,12 +384,6 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
 void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
     if (!node) return;
-    // For prototypes, we don't necessarily need to reset var_alloc_,
-    // but we should ensure parameter names don't collide with keywords.
-    // However, C89 doesn't require parameter names in prototypes.
-    // Let's include them for clarity, but use a temporary allocator if needed.
-    // For now, we'll just use the regular one but save/restore state if possible.
-    // Since this is a bootstrap compiler, we can just use it and reset.
 
     writeIndent();
 
@@ -339,26 +397,30 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
             writeString("static ");
         }
 
-        Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+        Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
         const char* mangled_name = getC89GlobalName(node->name);
 
-        emitType(return_type, mangled_name);
+        // For prototype, we don't necessarily want to allocate parameter names in var_alloc_,
+        // so we don't pass 'node' as params_node if we want to avoid side effects.
+        // But we want to emit parameter types correctly.
+        emitTypePrefix(ret_type);
+        writeString(" ");
+        writeString(mangled_name);
         writeString("(");
-
         if (!node->params || node->params->length() == 0) {
             writeString("void");
         } else {
             for (size_t i = 0; i < node->params->length(); ++i) {
                 ASTParamDeclNode* param = (*node->params)[i];
-                // Just use the name from Zig, sanitized for keywords if it was a symbol
-                // In prototype, we can even omit the name.
-                emitType(param->type->resolved_type, param->name);
+                emitDeclarator(param->type->resolved_type, NULL);
                 if (i < node->params->length() - 1) {
                     writeString(", ");
                 }
             }
         }
-        writeString(");");
+        writeString(")");
+        emitTypeSuffix(ret_type);
+        writeString(";");
     }
 }
 
@@ -378,25 +440,10 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             writeString("static ");
         }
 
-        Type* return_type = node->return_type ? node->return_type->resolved_type : NULL;
+        Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
         const char* mangled_name = getC89GlobalName(node->name);
 
-        emitType(return_type, mangled_name);
-        writeString("(");
-
-        if (!node->params || node->params->length() == 0) {
-            writeString("void");
-        } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTParamDeclNode* param = (*node->params)[i];
-                const char* c_param_name = var_alloc_.allocate(param->symbol);
-                emitType(param->type->resolved_type, c_param_name);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
-                }
-            }
-        }
-        writeString(")");
+        emitDeclarator(ret_type, mangled_name, node);
     }
 
     if (node->body) {
@@ -596,18 +643,21 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
 
 void C89Emitter::write(const char* data, size_t len) {
     if (output_file_ == PLAT_INVALID_FILE) return;
+    if (len == 0) return;
 
     if (buffer_pos_ + len > sizeof(buffer_)) {
         flush();
         // If the data is larger than the buffer itself, write it directly
         if (len > sizeof(buffer_)) {
             plat_write_file(output_file_, data, len);
+            last_char_ = data[len - 1];
             return;
         }
     }
 
     plat_memcpy(buffer_ + buffer_pos_, data, len);
     buffer_pos_ += len;
+    last_char_ = data[len - 1];
 }
 
 void C89Emitter::writeString(const char* str) {

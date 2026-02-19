@@ -16,7 +16,7 @@ The following types are strictly rejected when used as function parameters in th
 - **Multi-level Pointers**: `* * T` (and deeper) are rejected to avoid complexity in the bootstrap translation and to maintain compatibility with simpler C89 patterns. Only single-level pointers (e.g., `*i32`, `*const u8`) are allowed.
 
 ### 3. Parameter Count Limits
-- **Maximum 4 Parameters**: To ensure compatibility with conservative stack management and calling conventions on 1998-era hardware (specifically MSVC 6.0), functions are limited to a maximum of 4 parameters. Signatures with more than 4 parameters are rejected.
+- **Parameter Count**: Functions follow standard C89 parameter limits (at least 31). Signatures with many parameters may still be problematic for very old MSVC 6.0 versions on extremely low-memory systems.
 
 ### 4. Void Parameters
 - Parameters cannot have the `void` type.
