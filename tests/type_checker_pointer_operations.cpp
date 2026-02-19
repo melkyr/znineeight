@@ -58,7 +58,8 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerInteger) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type = createPointerType(arena, get_g_type_i32(), false);
+    // Use many-item pointer ([*]i32) for arithmetic
+    Type* ptr_type = createPointerType(arena, get_g_type_i32(), false, true);
     Type* int_type = get_g_type_usize();
 
     // Test: pointer + integer
@@ -144,8 +145,9 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_PointerPointer) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false);
-    Type* ptr_type2 = createPointerType(arena, get_g_type_i32(), false);
+    // Many-item pointers for subtraction
+    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false, true);
+    Type* ptr_type2 = createPointerType(arena, get_g_type_i32(), false, true);
 
     // Test: pointer - pointer (valid)
     {
@@ -182,9 +184,10 @@ TEST_FUNC(TypeCheckerPointerOps_Arithmetic_InvalidOperations) {
     CompilationUnit comp_unit(arena, interner);
     TypeChecker checker(comp_unit);
 
-    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false);
-    Type* ptr_type2 = createPointerType(arena, get_g_type_u8(), false); // Different base type
-    Type* void_ptr_type = createPointerType(arena, get_g_type_void(), false);
+    // Many-item pointers for these tests to reach specific error codes
+    Type* ptr_type1 = createPointerType(arena, get_g_type_i32(), false, true);
+    Type* ptr_type2 = createPointerType(arena, get_g_type_u8(), false, true); // Different base type
+    Type* void_ptr_type = createPointerType(arena, get_g_type_void(), false, true);
 
     // Test: pointer + pointer
     {

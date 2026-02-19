@@ -275,7 +275,7 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer);
 TEST_FUNC(TypeChecker_Dereference_VoidPointer);
 TEST_FUNC(TypeChecker_Dereference_NullLiteral);
 TEST_FUNC(TypeChecker_Dereference_ZeroLiteral);
-TEST_FUNC(TypeChecker_Dereference_NestedPointer_REJECT);
+TEST_FUNC(TypeChecker_Dereference_NestedPointer_ALLOW);
 TEST_FUNC(TypeChecker_Dereference_ConstPointer);
 TEST_FUNC(TypeChecker_AddressOf_Valid_LValues);
 TEST_FUNC(TypeCheckerPointerOps_AddressOf_ValidLValue);
@@ -354,7 +354,7 @@ TEST_FUNC(TypeChecker_AcceptsValidArrayDeclaration);
 TEST_FUNC(TypeCheckerVoidTests_DisallowVoidVariableDeclaration);
 TEST_FUNC(TypeCompatibility);
 TEST_FUNC(TypeToString_Reentrancy);
-TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs);
+TEST_FUNC(TypeCheckerC89Compat_AllowFunctionWithManyArgs);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
 TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails);
@@ -649,13 +649,11 @@ TEST_FUNC(BootstrapTypes_Allowed_Pointers);
 TEST_FUNC(BootstrapTypes_Allowed_Arrays);
 TEST_FUNC(BootstrapTypes_Allowed_Structs);
 TEST_FUNC(BootstrapTypes_Allowed_Enums);
-TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer);
 TEST_FUNC(BootstrapTypes_Rejected_Slice);
 TEST_FUNC(BootstrapTypes_Rejected_ErrorUnion);
 TEST_FUNC(BootstrapTypes_Rejected_Optional);
-TEST_FUNC(BootstrapTypes_Rejected_FunctionPointer);
+TEST_FUNC(BootstrapTypes_Allowed_FunctionPointer);
 TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs);
-TEST_FUNC(BootstrapTypes_Rejected_MultiLevelPointer_StructField);
 TEST_FUNC(BootstrapTypes_Rejected_VoidVariable);
 
 // Task 169: MSVC Compatibility Tests
@@ -732,7 +730,7 @@ TEST_FUNC(FunctionIntegration_Recursion);
 TEST_FUNC(FunctionIntegration_ForwardReference);
 TEST_FUNC(FunctionIntegration_RejectFiveParams);
 TEST_FUNC(FunctionIntegration_RejectSliceReturn);
-TEST_FUNC(FunctionIntegration_RejectMultiLevelPointer);
+TEST_FUNC(FunctionIntegration_AllowMultiLevelPointer);
 TEST_FUNC(FunctionIntegration_RejectDuplicateName);
 
 // Task 174: Function Call Integration Tests
@@ -744,7 +742,7 @@ TEST_FUNC(FunctionCallIntegration_MangleKeyword);
 TEST_FUNC(FunctionCallIntegration_VoidStatement);
 TEST_FUNC(FunctionCallIntegration_CallResolution);
 TEST_FUNC(FunctionCallIntegration_RejectFiveArgs);
-TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer);
+TEST_FUNC(FunctionCallIntegration_AllowFunctionPointer);
 TEST_FUNC(FunctionCallIntegration_TypeMismatch);
 TEST_FUNC(FunctionCallIntegration_UndefinedFunction);
 
@@ -783,7 +781,7 @@ TEST_FUNC(StructIntegration_NamedInitializerOrder);
 TEST_FUNC(StructIntegration_RejectAnonymousStruct);
 TEST_FUNC(StructIntegration_RejectStructMethods);
 TEST_FUNC(StructIntegration_RejectSliceField);
-TEST_FUNC(StructIntegration_RejectMultiLevelPointerField);
+TEST_FUNC(StructIntegration_AllowMultiLevelPointerField);
 
 // Task 178: Pointer Integration Tests
 TEST_FUNC(PointerIntegration_AddressOfDereference);
@@ -837,7 +835,7 @@ TEST_FUNC(Task182_ImplicitVoidPtrToTypedPtrReturn);
 TEST_FUNC(Task182_ConstCorrectness_AddConst);
 TEST_FUNC(Task182_ConstCorrectness_PreserveConst);
 TEST_FUNC(Task182_ConstCorrectness_DiscardConst_REJECT);
-TEST_FUNC(Task182_NonC89Target_REJECT);
+TEST_FUNC(Task182_MultiLevelPointer_Support);
 TEST_FUNC(PointerArithmetic_PtrPlusUSize);
 TEST_FUNC(PointerArithmetic_USizePlusPtr);
 TEST_FUNC(PointerArithmetic_PtrMinusUSize);

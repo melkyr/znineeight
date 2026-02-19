@@ -44,10 +44,10 @@ TEST_FUNC(Task165_C89Incompatible) {
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
 
-    // Use a function with incompatible type (slice)
+    // Use a function with incompatible type (optional)
     const char* source =
-        "fn takeSlice(s: []i32) void {}\n"
-        "fn main() void { takeSlice(undefined); }\n";
+        "fn takeOptional(s: ?i32) void {}\n"
+        "fn main() void { takeOptional(undefined); }\n";
 
     u32 file_id = unit.addSource("test.zig", source);
 
@@ -55,7 +55,7 @@ TEST_FUNC(Task165_C89Incompatible) {
     unit.performFullPipeline(file_id);
 
     CallSiteLookupTable& table = unit.getCallSiteLookupTable();
-    // One call to tooMany
+    // One call to takeOptional
     ASSERT_TRUE(table.count() >= 1);
 
     bool found_incompatible = false;

@@ -129,12 +129,12 @@ TEST_FUNC(FunctionCallIntegration_RejectFiveArgs) {
     return true;
 }
 
-TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer) {
+TEST_FUNC(FunctionCallIntegration_AllowFunctionPointer) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
-    // Indirect calls via variables are not supported in bootstrap
+    // Function pointers and indirect calls are now supported
     const char* source =
         "fn target() void {}\n"
         "fn main_func() void {\n"
@@ -143,8 +143,7 @@ TEST_FUNC(FunctionCallIntegration_RejectFunctionPointer) {
         "}";
 
     u32 file_id = unit.addSource("test.zig", source);
-    // Should fail because function pointers are rejected
-    ASSERT_FALSE(unit.performTestPipeline(file_id));
+    ASSERT_TRUE(unit.performTestPipeline(file_id));
     return true;
 }
 

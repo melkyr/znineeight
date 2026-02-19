@@ -132,10 +132,6 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
                 return NULL;
             }
 
-            if (operand_type->as.pointer.is_many) {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, "Cannot dereference a many-item pointer. Use indexing instead.", unit.getArena());
-                return NULL;
-            }
 
             Type* base_type = operand_type->as.pointer.base;
             if (base_type->kind == TYPE_VOID) {
@@ -293,6 +289,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             if (pointer_arithmetic_result) {
                 return pointer_arithmetic_result;
             }
+            if (unit.getErrorHandler().hasErrors()) return NULL;
 
             // Handle regular numeric arithmetic with strict C89 rules
             if (isNumericType(left_type) && isNumericType(right_type)) {
@@ -2222,6 +2219,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return false;
     }
 
+    // undefined is compatible with anything
+    if (actual->kind == TYPE_UNDEFINED) {
+        return true;
+    }
+
     // anytype is compatible with anything
     if (expected->kind == TYPE_ANYTYPE || actual->kind == TYPE_ANYTYPE) {
         return true;
@@ -2370,8 +2372,6 @@ bool TypeChecker::isCompletePointerType(Type* type) {
     // void is incomplete
     if (base->kind == TYPE_VOID) return false;
 
-    // Multi-level pointers are considered incomplete for arithmetic purposes in our bootstrap subset
-    if (base->kind == TYPE_POINTER) return false;
 
     // Structs/Unions must have size calculated
     if (base->kind == TYPE_STRUCT || base->kind == TYPE_UNION) {
@@ -2888,20 +2888,29 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         }
     }
 
-    // Guard 1: Must be identifier or module member access
+    // Guard 1: Handle indirect calls or unresolved symbols
     if (!sym) {
-        if (call->callee->type != NODE_IDENTIFIER && call->callee->type != NODE_MEMBER_ACCESS) {
-            entry.call_type = CALL_INDIRECT;
-            // If it's a function pointer, we allow it.
-            if (callee_resolved_type && (callee_resolved_type->kind == TYPE_FUNCTION_POINTER || callee_resolved_type->kind == TYPE_FUNCTION)) {
-                if (is_c89_compatible(callee_resolved_type)) {
-                    return RESOLVED;
-                }
-                return C89_INCOMPATIBLE;
+        entry.call_type = CALL_INDIRECT;
+        // If it's a function pointer (even if accessed via member/array/etc), we allow it.
+        if (callee_resolved_type && (callee_resolved_type->kind == TYPE_FUNCTION_POINTER || callee_resolved_type->kind == TYPE_FUNCTION)) {
+            if (is_c89_compatible(callee_resolved_type)) {
+                return RESOLVED;
             }
-            return INDIRECT_REJECTED;
+            return C89_INCOMPATIBLE;
         }
-        return UNRESOLVED_SYMBOL;
+
+        // If it was a simple identifier that wasn't found, it's truly unresolved.
+        if (call->callee->type == NODE_IDENTIFIER) {
+            return UNRESOLVED_SYMBOL;
+        }
+
+        // For member access, if it's not a module member, it should have been a struct field.
+        // If it reached here without a symbol and without a function type, it's invalid.
+        if (call->callee->type == NODE_MEMBER_ACCESS) {
+             return UNRESOLVED_SYMBOL;
+        }
+
+        return INDIRECT_REJECTED;
     }
 
     // Guard 4: Forward Reference / Not resolved yet
@@ -3328,6 +3337,20 @@ Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
+    if (node->params && node->params->length() > 4) {
+        char buffer[256];
+        char num_buf[21];
+        plat_i64_to_string(node->params->length(), num_buf, sizeof(num_buf));
+
+        char* cur = buffer;
+        size_t rem = sizeof(buffer);
+        safe_append(cur, rem, "Function pointer type has too many parameters (");
+        safe_append(cur, rem, num_buf);
+        safe_append(cur, rem, "), maximum is 4 for bootstrap compiler compatibility");
+
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->params->length() > 0 ? (*node->params)[0]->loc : SourceLocation(), buffer, unit.getArena());
+    }
+
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     if (!mem) fatalError("Out of memory");
     DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());

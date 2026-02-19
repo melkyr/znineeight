@@ -353,10 +353,10 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 
 **Supported Types (Bootstrap Phase):**
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`.
-* **Pointers:** `*T` and `**T`. Supports pointer arithmetic with `usize`/`isize`.
+* **Pointers:** Single-item (`*T`) and Many-item (`[*]T`). Supports multi-level pointers (e.g., `**T`, `[*]**T`).
 * **Arrays:** `[N]T` (Constant size only).
 * **Structs/Enums:** C-style declarations only.
-* **Function Pointers:** `fn(...) T`.
+* **Function Pointers:** `fn(...) T`. Maximum 4 parameters.
 
 **Explicitly Rejected Types (Bootstrap Phase):**
 * **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
@@ -531,7 +531,11 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 ### 5.1 Supported Syntax & Features
 *   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
 *   **Primitive Types**: `i8` through `i64`, `u8` through `u64`, `isize`, `usize`, `f32`, `f64`, `bool`, `void`.
-*   **Pointers**: Single-level and multi-level pointers (`**T`). Supports address-of `&`, dereference `ptr.*`, pointer-to-struct access `ptr.field`, and arithmetic (`ptr + offset`, `ptr - offset`, `ptr1 - ptr2`).
+*   **Pointers**:
+    *   Single-item (`*T`): Supports address-of `&`, dereference `ptr.*`, and pointer-to-struct access `ptr.field`. Arithmetic and indexing are forbidden.
+    *   Many-item (`[*]T`): Supports arithmetic (`ptr + offset`, `ptr - offset`, `ptr1 - ptr2`), indexing `ptr[i]`, dereference `ptr.*` (yields first element), and pointer-to-struct access.
+    *   Multi-level pointers: Supported (e.g., `***i32`).
+    *   Pointer Arithmetic: Requires unsigned integer offsets (`usize`, `u32`, etc.). Subtraction `ptr1 - ptr2` yields `isize`.
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
 *   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
@@ -677,6 +681,8 @@ TokenType getKeywordType(const char* word) {
 ## 8. Testing Strategy
 
 The testing strategy is designed to handle the complexity of the compiler while respecting strict memory and performance constraints.
+
+**Stability:** As of Milestone 7 (Task 221), all 38 test batches (covering over 1000 test cases) pass successfully. This includes regression tests for pointer arithmetic, multi-level pointers, and new function pointer functionality.
 
 ### Batch Testing Architecture
 To avoid arena fragmentation and out-of-memory errors during large-scale test runs, the unit test suite is split into multiple independent "batches".

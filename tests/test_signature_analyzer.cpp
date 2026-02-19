@@ -106,8 +106,8 @@ TEST_FUNC(SignatureAnalysisMultiLevelPointers) {
     SignatureAnalyzer analyzer(unit);
     analyzer.analyze(ast);
 
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // Multi-level pointers are now allowed
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
     return true;
 }
 

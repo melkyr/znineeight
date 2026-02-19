@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
         test_TypeChecker_Dereference_VoidPointer,
         test_TypeChecker_Dereference_NullLiteral,
         test_TypeChecker_Dereference_ZeroLiteral,
-        test_TypeChecker_Dereference_NestedPointer_REJECT,
+        test_TypeChecker_Dereference_NestedPointer_ALLOW,
         test_TypeChecker_Dereference_ConstPointer,
         test_TypeChecker_AddressOf_Valid_LValues,
         test_TypeCheckerPointerOps_AddressOf_ValidLValue,

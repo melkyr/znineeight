@@ -911,6 +911,8 @@ bool DoubleFreeAnalyzer::isAllocationCall(ASTNode* node) {
         return isAllocationCall(node->as.orelse_expr->payload) || isAllocationCall(node->as.orelse_expr->else_expr);
     } else if (node->type == NODE_BINARY_OP) {
         return isAllocationCall(node->as.binary_op->left) || isAllocationCall(node->as.binary_op->right);
+    } else if (node->type == NODE_PTR_CAST) {
+        return isAllocationCall(node->as.ptr_cast->expr);
     }
     return false;
 }
@@ -935,6 +937,7 @@ bool DoubleFreeAnalyzer::isChangingPointerValue(ASTNode* rvalue) {
     if (rvalue->type == NODE_UNARY_OP && rvalue->as.unary_op.op == TOKEN_AMPERSAND) return true;
     if (rvalue->type == NODE_FUNCTION_CALL && !isAllocationCall(rvalue)) return true;
     if (rvalue->type == NODE_IDENTIFIER) return true; // Reassigning from another variable also loses track
+    if (rvalue->type == NODE_PTR_CAST) return isChangingPointerValue(rvalue->as.ptr_cast->expr);
     if (isAllocationCall(rvalue)) return true; // Reassigning to a new allocation also loses track of old one
 
     return false;
