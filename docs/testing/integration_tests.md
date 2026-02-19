@@ -90,15 +90,14 @@ Arithmetic expression tests verify that Zig expressions involving operators are 
 Function declaration tests verify that Zig function signatures and names are correctly handled, including mangling and bootstrap constraints.
 
 ### Test Categories:
-1. **Basic Signatures**: Functions with 0 to 4 parameters.
+1. **Basic Signatures**: Functions with various parameter counts.
 2. **Type Mapping**: Correct translation of parameter and return types (e.g., `*const u8` -> `const unsigned char*`).
 3. **Name Mangling**:
    - C keywords (e.g., `fn if()` -> `void z_if(void)`).
    - Long names (truncated to 31 characters).
 4. **Scoping**: Forward references and mutual recursion support.
 5. **Negative Tests**:
-   - Parameter count limit (rejecting 5+ parameters).
-   - Invalid bootstrap types (slices, error unions, multi-level pointers).
+   - Invalid bootstrap types (slices, error unions).
    - Duplicate function names in the same scope.
 
 ### Expected C89 Output Patterns:
@@ -111,13 +110,12 @@ Function declaration tests verify that Zig function signatures and names are cor
 Function call tests verify that calls to Zig functions are correctly resolved, argument types are checked, and mangled names are used in the generated C89 output.
 
 ### Test Categories:
-1. **Simple Calls**: 0-4 arguments, various return types (void, i32, f64, pointers).
+1. **Simple Calls**: Various argument counts and return types (void, i32, f64, pointers).
 2. **Nested Calls**: Functions used as arguments to other functions (e.g., `foo(bar())`).
 3. **Name Mangling**: Verification that calls to functions with C keyword names (e.g., `int()`) use the mangled name (e.g., `z_int()`).
 4. **Void Statements**: Verification that void-returning functions can be called as standalone statements.
 5. **Call Resolution**: Direct verification of the `CallSiteLookupTable` entries.
 6. **Negative Tests**:
-   - Argument count limit (rejecting 5+ arguments).
    - Type mismatches (passing incompatible types to parameters).
    - Undefined functions (calling a function that hasn't been declared).
    - Function pointers (rejecting indirect calls via variables in bootstrap).

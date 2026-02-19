@@ -114,6 +114,11 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
             // Now, perform standard pointer checks.
+            if (operand_type->kind == TYPE_FUNCTION_POINTER) {
+                unit.getErrorHandler().report(ERR_DEREF_FUNCTION_POINTER, node->operand->loc, "Cannot dereference a function pointer. Functions are called directly.");
+                return NULL;
+            }
+
             if (operand_type->kind != TYPE_POINTER) {
                 char type_str[64];
                 typeToString(operand_type, type_str, sizeof(type_str));
@@ -239,6 +244,22 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
     Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
     if (promoted_type) {
         return promoted_type;
+    }
+
+    // Reject arithmetic/relational on function pointers
+    if (left_type->kind == TYPE_FUNCTION_POINTER || right_type->kind == TYPE_FUNCTION_POINTER) {
+        if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
+            // Allow equality comparison between function pointers of compatible signatures
+            // areTypesCompatible handles signature matching for FUNCTION_POINTER.
+            if (!areTypesCompatible(left_type, right_type) && !areTypesCompatible(right_type, left_type)) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "cannot compare function pointers with incompatible signatures");
+                return NULL;
+            }
+            return get_g_type_bool();
+        } else {
+            unit.getErrorHandler().report(ERR_INVALID_OP_FUNCTION_POINTER, loc, "Invalid operation on function pointer. Only equality comparisons (==, !=) are allowed.");
+            return NULL;
+        }
     }
 
     switch (op) {
@@ -564,9 +585,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     // --- END NEW LOGIC FOR TASK 119 ---
 
-    if (node->args->length() > 4) {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, "Bootstrap compiler does not support function calls with more than 4 arguments.");
-    }
 
     Type* callee_type = visit(node->callee);
     if (!callee_type) {
@@ -976,6 +994,11 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     if (base->kind == TYPE_POINTER && base->as.pointer.is_many) {
         // Many-item pointer indexing: returns the base type
         return base->as.pointer.base;
+    }
+
+    if (base->kind == TYPE_FUNCTION_POINTER) {
+        unit.getErrorHandler().report(ERR_INDEX_FUNCTION_POINTER, node->array->loc, "Cannot index into a function pointer.");
+        return NULL;
     }
 
     if (base->kind != TYPE_ARRAY) {
@@ -2294,7 +2317,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
 
         // Must have the same base type
-        if (actual_base != expected_base) {
+        if (!areTypesEqual(actual_base, expected_base)) {
             return false;
         }
         // A mutable pointer can be assigned to a const pointer,
@@ -2725,7 +2748,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
 
         // Base types must match
-        if (src_base == tgt_base) {
+        if (areTypesEqual(src_base, tgt_base)) {
             if (source_type->as.pointer.is_many != target_type->as.pointer.is_many) {
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, "Cannot implicitly convert between single-item pointer (*T) and many-item pointer ([*]T)");
                 return false;
@@ -2842,6 +2865,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
 
 ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry) {
     Symbol* sym = NULL;
+    Type* callee_resolved_type = call->callee->resolved_type;
 
     if (call->callee->type == NODE_IDENTIFIER) {
         const char* callee_name = call->callee->as.identifier.name;
@@ -2868,6 +2892,13 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
     if (!sym) {
         if (call->callee->type != NODE_IDENTIFIER && call->callee->type != NODE_MEMBER_ACCESS) {
             entry.call_type = CALL_INDIRECT;
+            // If it's a function pointer, we allow it.
+            if (callee_resolved_type && (callee_resolved_type->kind == TYPE_FUNCTION_POINTER || callee_resolved_type->kind == TYPE_FUNCTION)) {
+                if (is_c89_compatible(callee_resolved_type)) {
+                    return RESOLVED;
+                }
+                return C89_INCOMPATIBLE;
+            }
             return INDIRECT_REJECTED;
         }
         return UNRESOLVED_SYMBOL;
@@ -3104,11 +3135,11 @@ Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
     Type* expr_type = visit(node->expr);
     if (!expr_type) return NULL;
 
-    if (target_type && target_type->kind != TYPE_POINTER) {
+    if (target_type && target_type->kind != TYPE_POINTER && target_type->kind != TYPE_FUNCTION_POINTER) {
         unit.getErrorHandler().report(ERR_CAST_TARGET_NOT_POINTER, node->target_type->loc, "Target type of @ptrCast must be a pointer type");
     }
 
-    if (expr_type && expr_type->kind != TYPE_POINTER) {
+    if (expr_type && expr_type->kind != TYPE_POINTER && expr_type->kind != TYPE_FUNCTION_POINTER && expr_type->kind != TYPE_FUNCTION) {
         unit.getErrorHandler().report(ERR_CAST_SOURCE_NOT_POINTER, node->expr->loc, "Source expression of @ptrCast must be a pointer type");
     }
 
@@ -3311,10 +3342,6 @@ Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
     Type* return_type = visit(node->return_type);
     if (!return_type) return NULL;
 
-    if (param_types->length() > 4) {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->params->length() > 0 ? (*node->params)[0]->loc : node->return_type->loc,
-            "Function pointers with more than 4 parameters are not supported in bootstrap");
-    }
 
     return createFunctionPointerType(unit.getArena(), param_types, return_type);
 }
