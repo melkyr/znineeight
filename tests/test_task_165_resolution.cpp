@@ -44,10 +44,10 @@ TEST_FUNC(Task165_C89Incompatible) {
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
 
-    // Use a function with too many parameters - SignatureAnalyzer or resolveCallSite will reject it.
+    // Use a function with incompatible type (slice)
     const char* source =
-        "fn tooMany(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
-        "fn main() void { tooMany(1, 2, 3, 4, 5); }\n";
+        "fn takeSlice(s: []i32) void {}\n"
+        "fn main() void { takeSlice(undefined); }\n";
 
     u32 file_id = unit.addSource("test.zig", source);
 

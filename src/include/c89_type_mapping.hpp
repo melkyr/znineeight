@@ -42,8 +42,6 @@ static const TypeMapping c89_type_map[] = {
  * - Function types, provided their parameters and return types are also C89-compatible.
  * - Struct and Enum types (relying on TypeChecker for internal field validation).
  *
- * It rejects functions with more than 4 parameters.
- *
  * @param type A pointer to the Type object to check.
  * @return True if the type is C89-compatible, false otherwise.
  */
@@ -64,9 +62,6 @@ static inline bool is_c89_compatible(Type* type) {
             if (!type->as.function_pointer.param_types || !type->as.function_pointer.return_type) {
                 return false;
             }
-            if (type->as.function_pointer.param_types->length() > 4) {
-                return false;
-            }
             if (!is_c89_compatible(type->as.function_pointer.return_type)) {
                 return false;
             }
@@ -81,11 +76,6 @@ static inline bool is_c89_compatible(Type* type) {
         case TYPE_FUNCTION: {
             // Check for uninitialized union members.
             if (!type->as.function.params || !type->as.function.return_type) {
-                return false;
-            }
-
-            // Rule: Must not have more than 4 parameters.
-            if (type->as.function.params->length() > 4) {
                 return false;
             }
 

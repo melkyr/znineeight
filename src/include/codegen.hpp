@@ -119,6 +119,29 @@ public:
     void emitType(Type* type, const char* name = NULL);
 
     /**
+     * @brief Emits a C89 declarator (recursive implementation).
+     * @param type The type of the declarator.
+     * @param name The name being declared (optional).
+     * @param params_node Optional function node for parameter names.
+     */
+    void emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node = NULL);
+
+    /**
+     * @brief Emits the prefix part of a C89 type (everything before the identifier).
+     */
+    void emitTypePrefix(Type* type);
+
+    /**
+     * @brief Emits the suffix part of a C89 type (everything after the identifier).
+     */
+    void emitTypeSuffix(Type* type);
+
+    /**
+     * @brief Emits the base part of a C89 type (primitives, structs, etc.)
+     */
+    void emitBaseType(Type* type);
+
+    /**
      * @brief Emits a global variable declaration.
      * @param node The variable declaration AST node.
      * @param is_public True if the variable should have external linkage.
@@ -294,6 +317,7 @@ private:
     ArenaAllocator& arena_;
     DynamicArray<GlobalNameEntry> global_names_;
     const char* module_name_;
+    char last_char_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

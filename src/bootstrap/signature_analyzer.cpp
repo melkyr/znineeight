@@ -143,8 +143,8 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     }
 }
 
-bool SignatureAnalyzer::isParameterCountValid(size_t count) {
-    return count <= 4;
+bool SignatureAnalyzer::isParameterCountValid(size_t /*count*/) {
+    return true;
 }
 
 bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {

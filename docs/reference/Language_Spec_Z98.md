@@ -83,4 +83,4 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **Function Pointers**: `fn(...) T` types are supported (Task 221).
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`.
-- **Parameter Limit**: Functions are limited to a maximum of **4 parameters**.
+- **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).

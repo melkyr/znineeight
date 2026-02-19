@@ -24,7 +24,7 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
-    // Test Case 3: Invalid function with more than 4 parameters
+    // Test Case 3: Valid function with more than 4 parameters
     {
         DynamicArray<Type*>* params = new (arena.alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(arena);
         params->append(get_g_type_i8());
@@ -33,7 +33,7 @@ TEST_FUNC(C89Compat_FunctionTypeValidation) {
         params->append(get_g_type_i64());
         params->append(get_g_type_u8()); // 5th parameter
         Type* func_type = createFunctionType(arena, params, get_g_type_void());
-        ASSERT_FALSE(is_c89_compatible(func_type));
+        ASSERT_TRUE(is_c89_compatible(func_type));
     }
 
     // Test Case 4: Invalid function with a function pointer as a parameter
