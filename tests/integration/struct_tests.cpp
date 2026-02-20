@@ -110,7 +110,7 @@ TEST_FUNC(StructIntegration_RejectStructMethods) {
     return expect_parser_abort(source);
 }
 
-TEST_FUNC(StructIntegration_RejectSliceField) {
+TEST_FUNC(StructIntegration_AllowSliceField) {
     const char* source =
         "const Buffer = struct {\n"
         "    data: []i32,\n"
@@ -121,13 +121,12 @@ TEST_FUNC(StructIntegration_RejectSliceField) {
     TestCompilationUnit unit(arena, interner);
 
     u32 file_id = unit.addSource("test.zig", source);
-    // Should fail in C89FeatureValidator (Pass 1)
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected failure for slice field, but it succeeded\n");
+    if (!unit.performFullPipeline(file_id)) {
+        printf("FAIL: Expected struct with slice field to succeed\n");
         return false;
     }
 
-    return unit.hasErrorMatching("Slices are not supported");
+    return true;
 }
 
 TEST_FUNC(StructIntegration_AllowMultiLevelPointerField) {

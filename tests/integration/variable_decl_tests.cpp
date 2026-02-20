@@ -108,7 +108,7 @@ TEST_FUNC(VariableIntegration_DuplicateNameError) {
     return true;
 }
 
-TEST_FUNC(VariableIntegration_RejectSlice) {
+TEST_FUNC(VariableIntegration_AllowSlice) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
@@ -116,9 +116,8 @@ TEST_FUNC(VariableIntegration_RejectSlice) {
     const char* source = "var s: []u8 = undefined;";
 
     u32 file_id = unit.addSource("test.zig", source);
-    // Should fail because slices are not supported in bootstrap
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected rejection of slice but pipeline succeeded\n");
+    if (!unit.performFullPipeline(file_id)) {
+        printf("FAIL: Expected slice variable declaration to succeed\n");
         return false;
     }
 

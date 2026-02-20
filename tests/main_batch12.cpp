@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
         test_VariableIntegration_MangleReserved,
         test_VariableIntegration_MangleLongName,
         test_VariableIntegration_DuplicateNameError,
-        test_VariableIntegration_RejectSlice,
+        test_VariableIntegration_AllowSlice,
         test_VariableIntegration_PointerToVoid,
         test_ArithmeticIntegration_IntAdd,
         test_ArithmeticIntegration_IntSub,

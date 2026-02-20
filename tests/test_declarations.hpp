@@ -702,7 +702,7 @@ TEST_FUNC(VariableIntegration_MangleKeyword);
 TEST_FUNC(VariableIntegration_MangleReserved);
 TEST_FUNC(VariableIntegration_MangleLongName);
 TEST_FUNC(VariableIntegration_DuplicateNameError);
-TEST_FUNC(VariableIntegration_RejectSlice);
+TEST_FUNC(VariableIntegration_AllowSlice);
 TEST_FUNC(VariableIntegration_PointerToVoid);
 
 // Task 172: Arithmetic Integration Tests
@@ -792,7 +792,7 @@ TEST_FUNC(StructIntegration_MemberAccess);
 TEST_FUNC(StructIntegration_NamedInitializerOrder);
 TEST_FUNC(StructIntegration_RejectAnonymousStruct);
 TEST_FUNC(StructIntegration_RejectStructMethods);
-TEST_FUNC(StructIntegration_RejectSliceField);
+TEST_FUNC(StructIntegration_AllowSliceField);
 TEST_FUNC(StructIntegration_AllowMultiLevelPointerField);
 
 // Task 178: Pointer Integration Tests

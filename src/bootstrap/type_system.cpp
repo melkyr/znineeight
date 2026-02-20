@@ -129,6 +129,19 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
     return new_type;
 }
 
+Type* createSliceType(ArenaAllocator& arena, Type* element_type, TypeInterner* interner) {
+    if (interner) {
+        return interner->getSliceType(element_type);
+    }
+
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_SLICE;
+    new_type->size = 8; // 32-bit: pointer (4) + length (4)
+    new_type->alignment = 4;
+    new_type->as.slice.element_type = element_type;
+    return new_type;
+}
+
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_STRUCT;
@@ -307,6 +320,25 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
     return t;
 }
 
+Type* TypeInterner::getSliceType(Type* element_type) {
+    u32 h = hashType(TYPE_SLICE, element_type, 0);
+    for (Entry* e = buckets[h]; e; e = e->next) {
+        if (e->type->kind == TYPE_SLICE &&
+            e->type->as.slice.element_type == element_type) {
+            dedupe_count++;
+            return e->type;
+        }
+    }
+
+    Type* t = createSliceType(arena_, element_type, NULL);
+    Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+    e->type = t;
+    e->next = buckets[h];
+    buckets[h] = e;
+    unique_count++;
+    return t;
+}
+
 Type* TypeInterner::getOptionalType(Type* payload) {
     u32 h = hashType(TYPE_OPTIONAL, payload, 0);
     for (Entry* e = buckets[h]; e; e = e->next) {
@@ -341,6 +373,8 @@ bool isTypeComplete(Type* type) {
             return true;
         case TYPE_ARRAY:
             return isTypeComplete(type->as.array.element_type);
+        case TYPE_SLICE:
+            return true; // Slices are always complete (size 8, align 4)
         case TYPE_STRUCT:
         case TYPE_UNION:
             // calculateStructLayout sets size > 0 for non-empty structs
@@ -400,6 +434,11 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             }
             safe_append(current, remaining, "]");
             typeToStringInternal(type->as.array.element_type, current, remaining);
+            break;
+        }
+        case TYPE_SLICE: {
+            safe_append(current, remaining, "[]");
+            typeToStringInternal(type->as.slice.element_type, current, remaining);
             break;
         }
         case TYPE_FUNCTION_POINTER: {
@@ -515,6 +554,9 @@ bool areTypesEqual(Type* a, Type* b) {
         case TYPE_ARRAY:
             return a->as.array.size == b->as.array.size &&
                    areTypesEqual(a->as.array.element_type, b->as.array.element_type);
+
+        case TYPE_SLICE:
+            return areTypesEqual(a->as.slice.element_type, b->as.slice.element_type);
 
         case TYPE_OPTIONAL:
             return areTypesEqual(a->as.optional.payload, b->as.optional.payload);

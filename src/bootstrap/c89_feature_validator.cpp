@@ -173,7 +173,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
             current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_SLICE:
-            reportNonC89Feature(node->loc, "Array slices are not supported in bootstrap compiler");
+            // Slices are now supported as a language extension for bootstrap
             current_parent_ = node;
             if (node->as.array_slice) {
                 visit(node->as.array_slice->array);
@@ -422,9 +422,7 @@ void C89FeatureValidator::visit(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitArrayType(ASTNode* node) {
-    if (node->as.array_type.size == NULL) {
-        reportNonC89Feature(node->loc, "Slices are not supported in bootstrap compiler. Consider using a pointer and length instead.");
-    }
+    // Slices ([]T) are now supported as a language extension for bootstrap
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
     visit(node->as.array_type.element_type);
