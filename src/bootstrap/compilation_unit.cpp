@@ -888,8 +888,8 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             collectImports(node->as.if_stmt->else_block, module);
             break;
         case NODE_WHILE_STMT:
-            collectImports(node->as.while_stmt.condition, module);
-            collectImports(node->as.while_stmt.body, module);
+            collectImports(node->as.while_stmt->condition, module);
+            collectImports(node->as.while_stmt->body, module);
             break;
         case NODE_FOR_STMT:
             collectImports(node->as.for_stmt->iterable_expr, module);

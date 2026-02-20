@@ -118,8 +118,8 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_WHILE_STMT:
             current_parent_ = node;
-            visit(node->as.while_stmt.condition);
-            visit(node->as.while_stmt.body);
+            visit(node->as.while_stmt->condition);
+            visit(node->as.while_stmt->body);
             current_parent_ = prev_parent;
             break;
         case NODE_BREAK_STMT:

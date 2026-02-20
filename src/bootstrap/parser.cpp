@@ -1269,7 +1269,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
  *        Grammar: `'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
  * @return A pointer to the ASTNode representing the for statement.
  */
-ASTNode* Parser::parseForStatement() {
+ASTNode* Parser::parseForStatement(const char* label) {
     Token for_token = expect(TOKEN_FOR, "Expected 'for' keyword");
     expect(TOKEN_LPAREN, "Expected '(' after 'for'");
     ASTNode* iterable_expr = parseExpression();
@@ -1298,6 +1298,8 @@ ASTNode* Parser::parseForStatement() {
     for_stmt_node->item_name = item_name;
     for_stmt_node->index_name = index_name;
     for_stmt_node->body = body;
+    for_stmt_node->label = label;
+    for_stmt_node->label_id = -1;
 
     ASTNode* node = createNodeAt(NODE_FOR_STMT, for_token.location);
     node->as.for_stmt = for_stmt_node;
@@ -1530,6 +1532,19 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
 }
 
 ASTNode* Parser::parseStatement() {
+    if (peek().type == TOKEN_IDENTIFIER && peekNext().type == TOKEN_COLON) {
+        Token label_token = advance();
+        advance(); // consume ':'
+
+        if (peek().type == TOKEN_WHILE) {
+            return parseWhileStatement(label_token.value.identifier);
+        } else if (peek().type == TOKEN_FOR) {
+            return parseForStatement(label_token.value.identifier);
+        } else {
+            error("Expected 'while' or 'for' after loop label");
+        }
+    }
+
     switch (peek().type) {
         case TOKEN_CONST:
         case TOKEN_VAR:
@@ -1656,10 +1671,18 @@ ASTNode* Parser::parseIfStatement() {
  */
 ASTNode* Parser::parseBreakStatement() {
     Token break_token = expect(TOKEN_BREAK, "Expected 'break' keyword");
+
+    const char* label = NULL;
+    if (match(TOKEN_COLON)) {
+        Token label_token = expect(TOKEN_IDENTIFIER, "Expected label after ':' in 'break'");
+        label = label_token.value.identifier;
+    }
+
     expect(TOKEN_SEMICOLON, "Expected ';' after 'break'");
 
     ASTNode* node = createNodeAt(NODE_BREAK_STMT, break_token.location);
-    // ASTBreakStmtNode is empty, so no fields to set.
+    node->as.break_stmt.label = label;
+    node->as.break_stmt.target_label_id = -1;
 
     return node;
 }
@@ -1671,10 +1694,18 @@ ASTNode* Parser::parseBreakStatement() {
  */
 ASTNode* Parser::parseContinueStatement() {
     Token continue_token = expect(TOKEN_CONTINUE, "Expected 'continue' keyword");
+
+    const char* label = NULL;
+    if (match(TOKEN_COLON)) {
+        Token label_token = expect(TOKEN_IDENTIFIER, "Expected label after ':' in 'continue'");
+        label = label_token.value.identifier;
+    }
+
     expect(TOKEN_SEMICOLON, "Expected ';' after 'continue'");
 
     ASTNode* node = createNodeAt(NODE_CONTINUE_STMT, continue_token.location);
-    // ASTContinueStmtNode is empty, so no fields to set.
+    node->as.continue_stmt.label = label;
+    node->as.continue_stmt.target_label_id = -1;
 
     return node;
 }
@@ -1684,7 +1715,7 @@ ASTNode* Parser::parseContinueStatement() {
  *        Grammar: `'while' '(' expr ')' block_statement`
  * @return A pointer to the ASTNode representing the while statement.
  */
-ASTNode* Parser::parseWhileStatement() {
+ASTNode* Parser::parseWhileStatement(const char* label) {
     Token while_token = expect(TOKEN_WHILE, "Expected 'while' keyword");
     expect(TOKEN_LPAREN, "Expected '(' after 'while'");
     ASTNode* condition = parseExpression();
@@ -1692,9 +1723,12 @@ ASTNode* Parser::parseWhileStatement() {
 
     ASTNode* body = parseBlockStatement();
 
-    ASTWhileStmtNode while_stmt_node;
-    while_stmt_node.condition = condition;
-    while_stmt_node.body = body;
+    ASTWhileStmtNode* while_stmt_node = (ASTWhileStmtNode*)arena_->alloc(sizeof(ASTWhileStmtNode));
+    if (!while_stmt_node) error("Out of memory");
+    while_stmt_node->condition = condition;
+    while_stmt_node->body = body;
+    while_stmt_node->label = label;
+    while_stmt_node->label_id = -1;
 
     ASTNode* node = createNodeAt(NODE_WHILE_STMT, while_token.location);
     node->as.while_stmt = while_stmt_node;

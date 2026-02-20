@@ -71,8 +71,19 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 
 ### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
-- **While Loops**: Mapped to C `while (cond) { ... }`.
-- **Break/Continue**: Mapped directly to C `break;` and `continue;`.
+- **While Loops**:
+  - **Unlabeled**: Mapped to C `while (cond) { ... }`.
+  - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
+    ```c
+    __zig_label_L_0_start: ;
+    if (!(cond)) goto __zig_label_L_0_end;
+    { /* body */ }
+    goto __zig_label_L_0_start;
+    __zig_label_L_0_end: ;
+    ```
+- **Break/Continue**:
+  - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
+  - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Return Statements**: Mapped to `return expr;` or `return;`.
 
 ### 4.4 Array and Struct Initializers
@@ -140,7 +151,7 @@ Examples:
 Indirect calls through function pointer variables or complex expressions (e.g., `fps[0]()`) are emitted directly as standard C function calls: `callee(args)`. C89 allows implicit dereferencing of function pointers.
 
 #### Limitations
-- **Parameter Limit**: Function pointers follow standard C89 parameter limits (maximum 4 parameters in bootstrap).
+- **Parameter Limit**: Arbitrary parameter limits (previously 4) have been removed; function pointers now support an unlimited number of parameters via dynamic allocation.
 - **Implicit Coercion**: Function declarations (names) implicitly coerce to their corresponding function pointer type when assigned or passed as arguments, provided signatures match exactly.
 - **Calling Convention**: Defaults to `__cdecl`. Custom calling conventions are not supported.
 - **Nullability**: Function pointers can be assigned `null` (temporary bootstrap extension).

@@ -243,7 +243,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTIfStmtNode`             | 12           | Pointer (4)     |
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
 | `ASTFnDeclNode`             | 16           | Pointer (4)     |
-| `ASTWhileStmtNode`          | 8            | Inline          |
+| `ASTWhileStmtNode`          | 16           | Pointer (4)     |
 | `ASTArrayTypeNode`          | 8            | Inline          |
 | `ASTParamDeclNode`          | 8            | Inline          |
 | `ASTIntegerLiteralNode`     | 8            | Inline          |
@@ -750,8 +750,8 @@ The `parseIfStatement` function handles the `if-else` control flow structure. It
 - **Not supported in bootstrap**: `while-else`, optional/error captures, continue expressions.
 
 ### `ASTWhileStmtNode`
-Represents a `while` loop.
-*   **Zig Code:** `while (condition) { ... }`
+Represents a `while` loop. Allocated out-of-line.
+*   **Zig Code:** `while (condition) { ... }`, `outer: while (condition) { ... }`
 *   **Structure:**
     ```cpp
     /**
@@ -759,18 +759,22 @@ Represents a `while` loop.
      * @brief Represents a while loop.
      * @var ASTWhileStmtNode::condition The loop condition expression.
      * @var ASTWhileStmtNode::body The loop body.
+     * @var ASTWhileStmtNode::label The optional loop label.
+     * @var ASTWhileStmtNode::label_id Unique identifier for codegen.
      */
     struct ASTWhileStmtNode {
         ASTNode* condition;
         ASTNode* body;
+        const char* label;
+        int label_id;
     };
     ```
 
 #### Parsing Logic (`parseWhileStatement`)
 The `parseWhileStatement` function is responsible for parsing a `while` loop. It adheres to the grammar:
-`'while' '(' expr ')' statement`
+`(label ':')? 'while' '(' expr ')' statement`
 
-- It consumes a `while` token, followed by a parenthesized expression parsed by `parseExpression`.
+- It consumes an optional label and colon, then the `while` token, followed by a parenthesized expression parsed by `parseExpression`.
 - It then requires a statement for the loop body. At this foundational stage, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
 - Any deviation from this structure results in a fatal error.
 
@@ -799,7 +803,7 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 
 ### `ASTForStmtNode`
 Represents a `for` loop, which iterates over an expression.
-*   **Zig Code:** `for (my_array) |item| { ... }`, `for (0..10) |val, i| { ... }`
+*   **Zig Code:** `for (my_array) |item| { ... }`, `outer: for (0..10) |val, i| { ... }`
 *   **Structure:**
     ```cpp
     /**
@@ -809,18 +813,22 @@ Represents a `for` loop, which iterates over an expression.
      * @var ASTForStmtNode::item_name The name of the item capture variable.
      * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
      * @var ASTForStmtNode::body The block statement that is the loop's body.
+     * @var ASTForStmtNode::label The optional loop label.
+     * @var ASTForStmtNode::label_id Unique identifier for codegen.
      */
     struct ASTForStmtNode {
         ASTNode* iterable_expr;
         const char* item_name;
         const char* index_name; // Can be NULL
         ASTNode* body;
+        const char* label;
+        int label_id;
     };
     ```
 
 #### Parsing Logic (`parseForStatement`)
 The `parseForStatement` function is responsible for parsing a `for` loop. It adheres to the grammar:
-`'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' statement`
+`(label ':')? 'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' statement`
 
 - It consumes a `for` token, a parenthesized expression for the iterable, and an opening `|`.
 - It then expects an identifier for the item capture variable.

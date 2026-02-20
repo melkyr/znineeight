@@ -109,7 +109,7 @@ public:
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
             case NODE_WHILE_STMT:
-                return emitWhileStatement(&node->as.while_stmt);
+                return emitWhileStatement(node->as.while_stmt);
             case NODE_FOR_STMT:
                 return "/* for loop */";
             case NODE_BREAK_STMT:
@@ -180,12 +180,23 @@ public:
     std::string emitWhileStatement(const ASTWhileStmtNode* node) {
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
-        ss << "while (" << emitExpression(node->condition) << ") ";
+
+        if (node->label) {
+            ss << "__zig_label_" << node->label << "_" << node->label_id << "_start: ; ";
+            ss << "if (!(" << emitExpression(node->condition) << ")) goto __zig_label_" << node->label << "_" << node->label_id << "_end; ";
+        } else {
+            ss << "while (" << emitExpression(node->condition) << ") ";
+        }
 
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
             ss << emitBlockStatement(&node->body->as.block_stmt);
         } else {
             ss << emitExpression(node->body);
+        }
+
+        if (node->label) {
+            ss << " goto __zig_label_" << node->label << "_" << node->label_id << "_start; ";
+            ss << "__zig_label_" << node->label << "_" << node->label_id << "_end: ;";
         }
 
         return ss.str();
@@ -194,14 +205,24 @@ public:
     /**
      * @brief Emits a C89 break statement.
      */
-    std::string emitBreakStatement(const ASTBreakStmtNode* /*node*/) {
+    std::string emitBreakStatement(const ASTBreakStmtNode* node) {
+        if (node->label) {
+            std::stringstream ss;
+            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_end;";
+            return ss.str();
+        }
         return "break;";
     }
 
     /**
      * @brief Emits a C89 continue statement.
      */
-    std::string emitContinueStatement(const ASTContinueStmtNode* /*node*/) {
+    std::string emitContinueStatement(const ASTContinueStmtNode* node) {
+        if (node->label) {
+            std::stringstream ss;
+            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_start;";
+            return ss.str();
+        }
         return "continue;";
     }
 

@@ -372,26 +372,36 @@ struct ASTIfStmtNode {
  * @brief Represents a while loop.
  * @var ASTWhileStmtNode::condition The loop condition expression.
  * @var ASTWhileStmtNode::body The statement block to execute while the condition is true.
+ * @var ASTWhileStmtNode::label The optional loop label (e.g., 'outer: while').
+ * @var ASTWhileStmtNode::label_id Unique identifier for codegen labels.
  */
 struct ASTWhileStmtNode {
     ASTNode* condition;
     ASTNode* body;
+    const char* label;
+    int label_id;
 };
 
 /**
  * @struct ASTBreakStmtNode
  * @brief Represents a break statement.
+ * @var ASTBreakStmtNode::label The optional label targeted by the break.
+ * @var ASTBreakStmtNode::target_label_id The label_id of the targeted loop.
  */
 struct ASTBreakStmtNode {
-    // No data needed.
+    const char* label;
+    int target_label_id;
 };
 
 /**
  * @struct ASTContinueStmtNode
  * @brief Represents a continue statement.
+ * @var ASTContinueStmtNode::label The optional label targeted by the continue.
+ * @var ASTContinueStmtNode::target_label_id The label_id of the targeted loop.
  */
 struct ASTContinueStmtNode {
-    // No data needed.
+    const char* label;
+    int target_label_id;
 };
 
 /**
@@ -419,12 +429,16 @@ struct ASTDeferStmtNode {
  * @var ASTForStmtNode::item_name The name of the item capture variable.
  * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
  * @var ASTForStmtNode::body The block statement that is the loop's body.
+ * @var ASTForStmtNode::label The optional loop label.
+ * @var ASTForStmtNode::label_id Unique identifier for codegen labels.
  */
 struct ASTForStmtNode {
     ASTNode* iterable_expr;
     const char* item_name;
     const char* index_name; // Can be NULL
     ASTNode* body;
+    const char* label;
+    int label_id;
 };
 
 /**
@@ -820,7 +834,7 @@ struct ASTNode {
         ASTBlockStmtNode block_stmt;
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
-        ASTWhileStmtNode while_stmt;
+        ASTWhileStmtNode* while_stmt; // Out-of-line
         ASTBreakStmtNode break_stmt;
         ASTContinueStmtNode continue_stmt;
         ASTReturnStmtNode return_stmt;

@@ -1395,6 +1395,13 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Verification**: Created and verified examples in `examples/quicksort/`, `examples/sort_strings/`, and `examples/func_ptr_return/`.
     - **Tests**: Verified with comprehensive Batch 38 and Batch 39 tests, including tests for many parameters (up to 33) and complex loop control flow.
 
+221.1 [COMPLETE] **Task 221.1: Support Labeled Loops (break and continue)**
+    - **AST**: Converted `ASTWhileStmtNode` to out-of-line storage. Added `label` and `label_id` fields to loop and control-flow nodes.
+    - **Parser**: Implemented detection of `label: while` and `break :label` syntax.
+    - **Type Checker**: Implemented label stack for scoping, uniqueness validation, and multi-level target resolution.
+    - **Codegen**: Implemented `goto`-based emission for labeled `while` loops to support multi-level jumps in C89.
+    - **Documentation**: Updated `AST_Parser.md`, `Language_Spec_Z98.md`, and `C89_Codegen.md`.
+
 222. **Task 222:** Slices (`[]T`)
     - **Parser**: Recognise `[]T` as a type expression. Create a new node `NODE_SLICE_TYPE`.
     - **AST**: Define `ASTSliceTypeNode` with element type.

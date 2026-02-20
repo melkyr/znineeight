@@ -18,11 +18,11 @@ TEST_FUNC(Parser_While_ValidStatement) {
     ASSERT_TRUE(stmt != NULL);
     ASSERT_TRUE(stmt->type == NODE_WHILE_STMT);
 
-    ASTWhileStmtNode while_node = stmt->as.while_stmt;
-    ASSERT_TRUE(while_node.condition != NULL);
-    ASSERT_TRUE(while_node.condition->type == NODE_INTEGER_LITERAL);
-    ASSERT_TRUE(while_node.body != NULL);
-    ASSERT_TRUE(while_node.body->type == NODE_BLOCK_STMT);
+    ASTWhileStmtNode* while_node = stmt->as.while_stmt;
+    ASSERT_TRUE(while_node->condition != NULL);
+    ASSERT_TRUE(while_node->condition->type == NODE_INTEGER_LITERAL);
+    ASSERT_TRUE(while_node->body != NULL);
+    ASSERT_TRUE(while_node->body->type == NODE_BLOCK_STMT);
 
     return true;
 }

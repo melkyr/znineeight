@@ -106,6 +106,14 @@ private:
     const char* current_struct_name_;
     int current_loop_depth;
     bool in_defer;
+
+    struct LoopLabel {
+        const char* name;
+        int id;
+    };
+    DynamicArray<LoopLabel> label_stack_;
+    DynamicArray<const char*> function_labels_;
+    int next_label_id_;
 };
 
 #endif // TYPE_CHECKER_HPP

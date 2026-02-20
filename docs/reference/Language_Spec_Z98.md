@@ -66,8 +66,11 @@ Memory is reclaimed by resetting or destroying the arena.
 
 ### 3.2 Loop Control
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
+- `break :label`: Exits the loop with the matching label.
 - `continue`: Jumps to the next iteration of the innermost loop. Only allowed within `while` or `for` loop bodies.
-- **Validation**: Both `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
+- `continue :label`: Jumps to the next iteration of the loop with the matching label.
+- **Loop Labels**: Loops can be labeled using `label: while ...` or `label: for ...`. Labels must be unique within their function.
+- **Validation**: Both `break` and `continue` (labeled or unlabeled) are strictly forbidden inside `defer` and `errdefer` blocks.
 
 ## 4. Built-in Functions
 - `@import("file.zig")`: Includes another module.

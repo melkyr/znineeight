@@ -319,7 +319,7 @@ TEST_FUNC(ParserIntegration_WhileWithFunctionCall) {
     ASSERT_TRUE(node->type == NODE_WHILE_STMT);
 
     // 2. Check WhileStmtNode details
-    ASTWhileStmtNode* while_stmt = &node->as.while_stmt;
+    ASTWhileStmtNode* while_stmt = node->as.while_stmt;
     ASSERT_TRUE(while_stmt->body != NULL);
     ASSERT_TRUE(while_stmt->body->type == NODE_BLOCK_STMT);
 

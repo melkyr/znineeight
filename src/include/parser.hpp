@@ -159,31 +159,33 @@ public:
 
     /**
      * @brief Parses a while statement.
-     *        Grammar: `'while' '(' expr ')' block_statement`
+     *        Grammar: `(label ':')? 'while' '(' expr ')' block_statement`
+     * @param label The optional loop label.
      * @return A pointer to the ASTNode representing the while statement.
      */
-    ASTNode* parseWhileStatement();
+    ASTNode* parseWhileStatement(const char* label = NULL);
 
     /**
      * @brief Parses a break statement.
-     *        Grammar: `'break' ';'`
+     *        Grammar: `'break' (':' label)? ';'`
      * @return A pointer to the ASTNode representing the break statement.
      */
     ASTNode* parseBreakStatement();
 
     /**
      * @brief Parses a continue statement.
-     *        Grammar: `'continue' ';'`
+     *        Grammar: `'continue' (':' label)? ';'`
      * @return A pointer to the ASTNode representing the continue statement.
      */
     ASTNode* parseContinueStatement();
 
     /**
      * @brief Parses a for statement.
-     *        Grammar: `'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
+     *        Grammar: `(label ':')? 'for' '(' expr ')' '|' IDENT (',' IDENT)? '|' block_statement`
+     * @param label The optional loop label.
      * @return A pointer to the ASTNode representing the for statement.
      */
-    ASTNode* parseForStatement();
+    ASTNode* parseForStatement(const char* label = NULL);
 
     /**
      * @brief Parses a defer statement.
