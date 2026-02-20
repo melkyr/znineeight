@@ -22,8 +22,11 @@ TEST_FUNC(AST_Statements)
     // Test ASTWhileStmtNode
     ASTNode while_node;
     while_node.type = NODE_WHILE_STMT;
-    while_node.as.while_stmt.condition = NULL;
-    while_node.as.while_stmt.body = NULL;
+    while_node.as.while_stmt = (ASTWhileStmtNode*)arena.alloc(sizeof(ASTWhileStmtNode));
+    while_node.as.while_stmt->condition = NULL;
+    while_node.as.while_stmt->body = NULL;
+    while_node.as.while_stmt->label = NULL;
+    while_node.as.while_stmt->label_id = -1;
     ASSERT_TRUE(while_node.type == NODE_WHILE_STMT);
 
     // Test ASTReturnStmtNode

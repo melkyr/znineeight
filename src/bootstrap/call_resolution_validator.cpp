@@ -43,8 +43,8 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
             }
             break;
         case NODE_WHILE_STMT:
-            traverse(node->as.while_stmt.condition, ctx);
-            traverse(node->as.while_stmt.body, ctx);
+            traverse(node->as.while_stmt->condition, ctx);
+            traverse(node->as.while_stmt->body, ctx);
             break;
         case NODE_FOR_STMT:
             if (node->as.for_stmt) {

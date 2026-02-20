@@ -40,6 +40,44 @@ TEST_FUNC(WhileLoopIntegration_BoolCondition) {
     return run_while_test(source, "foo", "void foo(int b) { while (b) { } }");
 }
 
+// --- Labeled Loops ---
+
+TEST_FUNC(WhileLoopIntegration_LabeledWhile) {
+    const char* source =
+        "fn foo() void {\n"
+        "    outer: while (true) {\n"
+        "        break :outer;\n"
+        "    }\n"
+        "}";
+    return run_while_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { goto __zig_label_outer_0_end; }  goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+}
+
+TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
+    const char* source =
+        "fn foo() void {\n"
+        "    outer: while (true) {\n"
+        "        continue :outer;\n"
+        "    }\n"
+        "}";
+    return run_while_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { goto __zig_label_outer_0_start; }  goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+}
+
+TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
+    const char* source =
+        "fn foo() void {\n"
+        "    outer: while (true) {\n"
+        "        inner: while (true) {\n"
+        "            break :outer;\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    // outer: id 0, inner: id 1
+    return run_while_test(source, "foo",
+        "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; "
+        "{ __zig_label_inner_1_start: ; if (!(1)) goto __zig_label_inner_1_end; { goto __zig_label_outer_0_end; }  goto __zig_label_inner_1_start; __zig_label_inner_1_end: ; } "
+        " goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+}
+
 TEST_FUNC(WhileLoopIntegration_IntCondition) {
     const char* source =
         "fn foo(x: i32) void {\n"

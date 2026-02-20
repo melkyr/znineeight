@@ -66,8 +66,8 @@ void NameCollisionDetector::visit(ASTNode* node) {
             break;
 
         case NODE_WHILE_STMT:
-            visit(node->as.while_stmt.condition);
-            visit(node->as.while_stmt.body);
+            visit(node->as.while_stmt->condition);
+            visit(node->as.while_stmt->body);
             break;
 
         case NODE_FOR_STMT:

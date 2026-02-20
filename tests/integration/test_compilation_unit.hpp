@@ -119,9 +119,9 @@ public:
             if (found) return found;
             return findFunctionCall(node->as.if_stmt->else_block, name);
         } else if (node->type == NODE_WHILE_STMT) {
-            const ASTNode* found = findFunctionCall(node->as.while_stmt.condition, name);
+            const ASTNode* found = findFunctionCall(node->as.while_stmt->condition, name);
             if (found) return found;
-            return findFunctionCall(node->as.while_stmt.body, name);
+            return findFunctionCall(node->as.while_stmt->body, name);
         } else if (node->type == NODE_RETURN_STMT) {
             return findFunctionCall(node->as.return_stmt.expression, name);
         } else if (node->type == NODE_EXPRESSION_STMT) {
@@ -289,7 +289,7 @@ public:
             if (found) return found;
             return findVariableDeclaration(node->as.if_stmt->else_block, name);
         } else if (node->type == NODE_WHILE_STMT) {
-            return findVariableDeclaration(node->as.while_stmt.body, name);
+            return findVariableDeclaration(node->as.while_stmt->body, name);
         }
 
         return NULL;
@@ -328,7 +328,7 @@ public:
             if (found) return found;
             return findVariableDeclarationNode(node->as.if_stmt->else_block, name);
         } else if (node->type == NODE_WHILE_STMT) {
-            return findVariableDeclarationNode(node->as.while_stmt.body, name);
+            return findVariableDeclarationNode(node->as.while_stmt->body, name);
         }
 
         return NULL;

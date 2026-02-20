@@ -497,15 +497,43 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitIf(node->as.if_stmt);
             break;
         case NODE_WHILE_STMT:
-            emitWhile(&node->as.while_stmt);
+            emitWhile(node->as.while_stmt);
             break;
         case NODE_BREAK_STMT:
             writeIndent();
-            writeString("break;\n");
+            if (node->as.break_stmt.label) {
+                char label_buf[256];
+                char* cur = label_buf;
+                size_t rem = sizeof(label_buf);
+                safe_append(cur, rem, "goto __zig_label_");
+                safe_append(cur, rem, node->as.break_stmt.label);
+                safe_append(cur, rem, "_");
+                char id_buf[16];
+                plat_i64_to_string(node->as.break_stmt.target_label_id, id_buf, sizeof(id_buf));
+                safe_append(cur, rem, id_buf);
+                safe_append(cur, rem, "_end;\n");
+                writeString(label_buf);
+            } else {
+                writeString("break;\n");
+            }
             break;
         case NODE_CONTINUE_STMT:
             writeIndent();
-            writeString("continue;\n");
+            if (node->as.continue_stmt.label) {
+                char label_buf[256];
+                char* cur = label_buf;
+                size_t rem = sizeof(label_buf);
+                safe_append(cur, rem, "goto __zig_label_");
+                safe_append(cur, rem, node->as.continue_stmt.label);
+                safe_append(cur, rem, "_");
+                char id_buf[16];
+                plat_i64_to_string(node->as.continue_stmt.target_label_id, id_buf, sizeof(id_buf));
+                safe_append(cur, rem, id_buf);
+                safe_append(cur, rem, "_start;\n");
+                writeString(label_buf);
+            } else {
+                writeString("continue;\n");
+            }
             break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
@@ -565,17 +593,57 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
 void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     if (!node) return;
 
-    writeIndent();
-    writeString("while (");
-    emitExpression(node->condition);
-    writeString(") ");
+    if (node->label) {
+        char label_base[256];
+        char* cur = label_base;
+        size_t rem = sizeof(label_base);
+        safe_append(cur, rem, "__zig_label_");
+        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, "_");
+        char id_buf[16];
+        plat_i64_to_string(node->label_id, id_buf, sizeof(id_buf));
+        safe_append(cur, rem, id_buf);
 
-    if (node->body->type == NODE_BLOCK_STMT) {
-        emitBlock(&node->body->as.block_stmt);
+        writeIndent();
+        writeString(label_base);
+        writeString("_start: ;\n");
+
+        writeIndent();
+        writeString("if (!(");
+        emitExpression(node->condition);
+        writeString(")) goto ");
+        writeString(label_base);
+        writeString("_end;\n");
+
+        if (node->body->type == NODE_BLOCK_STMT) {
+            writeIndent();
+            emitBlock(&node->body->as.block_stmt);
+        } else {
+            emitStatement(node->body);
+        }
+        writeString("\n");
+
+        writeIndent();
+        writeString("goto ");
+        writeString(label_base);
+        writeString("_start;\n");
+
+        writeIndent();
+        writeString(label_base);
+        writeString("_end: ;\n");
     } else {
-        emitStatement(node->body);
+        writeIndent();
+        writeString("while (");
+        emitExpression(node->condition);
+        writeString(") ");
+
+        if (node->body->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->body->as.block_stmt);
+        } else {
+            emitStatement(node->body);
+        }
+        writeString("\n");
     }
-    writeString("\n");
 }
 
 void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {

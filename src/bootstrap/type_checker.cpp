@@ -9,7 +9,10 @@
 
 // Helper to get the string representation of a binary operator token.
 
-TypeChecker::TypeChecker(CompilationUnit& unit) : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL), current_loop_depth(0), in_defer(false) {
+TypeChecker::TypeChecker(CompilationUnit& unit)
+    : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL),
+      current_loop_depth(0), in_defer(false), label_stack_(unit.getArena()),
+      function_labels_(unit.getArena()), next_label_id_(0) {
 }
 
 void TypeChecker::check(ASTNode* root) {
@@ -50,7 +53,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
-        case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(&node->as.while_stmt); break;
+        case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(node->as.while_stmt); break;
         case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(node); break;
         case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(node); break;
         case NODE_RETURN_STMT:      resolved_type = visitReturnStmt(node, &node->as.return_stmt); break;
@@ -1182,27 +1185,76 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
         }
     }
 
+    if (node->label) {
+        for (size_t i = 0; i < function_labels_.length(); ++i) {
+            if (plat_strcmp(function_labels_[i], node->label) == 0) {
+                unit.getErrorHandler().report(ERR_DUPLICATE_LABEL, node->condition->loc, "duplicate loop label");
+            }
+        }
+        node->label_id = next_label_id_++;
+        LoopLabel ll = { node->label, node->label_id };
+        label_stack_.append(ll);
+        function_labels_.append(node->label);
+    }
+
     current_loop_depth++;
     visit(node->body);
     current_loop_depth--;
+
+    if (node->label) {
+        label_stack_.pop_back();
+    }
+
     return NULL;
 }
 
 Type* TypeChecker::visitBreakStmt(ASTNode* node) {
+    ASTBreakStmtNode& break_node = node->as.break_stmt;
     if (in_defer) {
         unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement inside defer is not allowed");
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement outside of loop");
     }
+
+    if (break_node.label) {
+        bool found = false;
+        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
+            if (plat_strcmp(label_stack_[i].name, break_node.label) == 0) {
+                break_node.target_label_id = label_stack_[i].id;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            unit.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, "unknown loop label");
+        }
+    }
+
     return NULL;
 }
 
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
+    ASTContinueStmtNode& cont_node = node->as.continue_stmt;
     if (in_defer) {
         unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement inside defer is not allowed");
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement outside of loop");
     }
+
+    if (cont_node.label) {
+        bool found = false;
+        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
+            if (plat_strcmp(label_stack_[i].name, cont_node.label) == 0) {
+                cont_node.target_label_id = label_stack_[i].id;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            unit.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, "unknown loop label");
+        }
+    }
+
     return NULL;
 }
 
@@ -1247,6 +1299,18 @@ Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     Type* iterable_type = visit(node->iterable_expr);
 
+    if (node->label) {
+        for (size_t i = 0; i < function_labels_.length(); ++i) {
+            if (plat_strcmp(function_labels_[i], node->label) == 0) {
+                unit.getErrorHandler().report(ERR_DUPLICATE_LABEL, node->iterable_expr->loc, "duplicate loop label");
+            }
+        }
+        node->label_id = next_label_id_++;
+        LoopLabel ll = { node->label, node->label_id };
+        label_stack_.append(ll);
+        function_labels_.append(node->label);
+    }
+
     Type* item_type = get_g_type_void();
     if (iterable_type) {
         if (iterable_type->kind == TYPE_ARRAY) {
@@ -1285,6 +1349,11 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     current_loop_depth--;
 
     unit.getSymbolTable().exitScope();
+
+    if (node->label) {
+        label_stack_.pop_back();
+    }
+
     return NULL;
 }
 
@@ -1567,6 +1636,10 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
     current_fn_name = node->name;
     current_fn_return_type = fn_symbol->symbol_type->as.function.return_type;
 
+    int saved_next_label_id = next_label_id_;
+    next_label_id_ = 0;
+    function_labels_.clear();
+
     unit.getSymbolTable().enterScope();
 
     // Re-register parameters in the body scope
@@ -1594,6 +1667,8 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
     }
 
     unit.getSymbolTable().exitScope();
+
+    next_label_id_ = saved_next_label_id;
 
     current_fn_return_type = prev_fn_return_type;
     current_fn_name = prev_fn_name;

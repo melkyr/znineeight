@@ -43,7 +43,7 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
             visitIfStmt(node->as.if_stmt);
             break;
         case NODE_WHILE_STMT:
-            visitWhileStmt(&node->as.while_stmt);
+            visitWhileStmt(node->as.while_stmt);
             break;
         case NODE_FOR_STMT:
             visitForStmt(node->as.for_stmt);

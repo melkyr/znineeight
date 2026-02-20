@@ -483,15 +483,15 @@ void DoubleFreeAnalyzer::visitIfStmt(ASTNode* node) {
 }
 
 void DoubleFreeAnalyzer::visitWhileStmt(ASTNode* node) {
-    ASTWhileStmtNode& while_stmt = node->as.while_stmt;
-    visit(while_stmt.condition);
+    ASTWhileStmtNode* while_stmt = node->as.while_stmt;
+    visit(while_stmt->condition);
 
     // Save entry state
     pushScope(true);
 
     // Analyze body once
     pushScope(true);
-    if (while_stmt.body) visit(while_stmt.body);
+    if (while_stmt->body) visit(while_stmt->body);
     AllocationStateMap* loop_state = current_state_;
     popScope();
 
