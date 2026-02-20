@@ -106,7 +106,7 @@ TEST_FUNC(Task150_MoreComprehensiveElimination) {
     return true;
 }
 
-TEST_FUNC(C89Rejection_ArraySliceExpression) {
+TEST_FUNC(C89Support_ArraySliceExpression) {
     const char* source = "fn main() void { var a: [10]i32 = undefined; var b = a[0..5]; }";
 
     ArenaAllocator arena(1024 * 1024);
@@ -115,17 +115,7 @@ TEST_FUNC(C89Rejection_ArraySliceExpression) {
     unit.injectRuntimeSymbols();
 
     u32 file_id = unit.addSource("test.zig", source);
-    unit.performFullPipeline(file_id);
+    ASSERT_TRUE(unit.performFullPipeline(file_id));
 
-    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
-    bool found_msg = false;
-    for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        const char* msg = unit.getErrorHandler().getErrors()[i].message;
-        if (strstr(msg, "Array slices are not supported") || strstr(msg, "Slice expressions") || strstr(msg, "are not supported")) {
-            found_msg = true;
-            break;
-        }
-    }
-    ASSERT_TRUE(found_msg);
     return true;
 }

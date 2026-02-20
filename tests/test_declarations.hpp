@@ -379,7 +379,7 @@ TEST_FUNC(C89Rejection_OrelseExpression);
 TEST_FUNC(C89Rejection_NestedTryInMemberAccess);
 TEST_FUNC(C89Rejection_NestedTryInStructInitializer);
 TEST_FUNC(C89Rejection_NestedTryInArrayAccess);
-TEST_FUNC(TypeChecker_RejectSliceExpression);
+TEST_FUNC(TypeChecker_AllowSliceExpression);
 
 // Bug Fix Verification Tests
 TEST_FUNC(dynamic_array_destructor_fix);
@@ -538,7 +538,7 @@ TEST_FUNC(C89Rejection_GenericFnDecl_ShouldBeRejected);
 TEST_FUNC(C89Rejection_DeferAndErrDefer);
 TEST_FUNC(C89Rejection_ErrorTypeInParam_ShouldBeRejected);
 TEST_FUNC(Task150_MoreComprehensiveElimination);
-TEST_FUNC(C89Rejection_ArraySliceExpression);
+TEST_FUNC(C89Support_ArraySliceExpression);
 
 // Forward declarations for Task 151
 TEST_FUNC(Task151_ErrorTypeRejection);

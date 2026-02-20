@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_DeferAndErrDefer,
         test_C89Rejection_ErrorTypeInParam_ShouldBeRejected,
         test_Task150_MoreComprehensiveElimination,
-        test_C89Rejection_ArraySliceExpression,
+        test_C89Support_ArraySliceExpression,
         test_Task151_ErrorTypeRejection,
         test_Task151_OptionalTypeRejection,
         test_FunctionNameCollisionSameScope,

@@ -100,6 +100,12 @@ private:
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
 
+    ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
+    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
+    ASTNode* createMemberAccess(ASTNode* base, const char* member, Type* type, SourceLocation loc);
+    ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
+    ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
+
     CompilationUnit& unit;
     Type* current_fn_return_type;
     const char* current_fn_name;
