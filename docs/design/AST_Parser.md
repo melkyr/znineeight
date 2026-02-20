@@ -415,6 +415,7 @@ Represents a function call.
      * @brief Represents a function call expression.
      * @var ASTFunctionCallNode::callee The expression being called.
      * @var ASTFunctionCallNode::args A dynamic array of argument expressions.
+     * @note Supports dynamic argument allocation (unlimited).
      */
     struct ASTFunctionCallNode {
         ASTNode* callee;
@@ -1838,7 +1839,7 @@ A review of the Zig language specification has identified several language featu
 Task 174 introduced comprehensive integration testing for function calls, verifying the entire pipeline from Lexer to `CallSiteLookupTable`.
 
 ### Verified Scenarios
-- **Argument Limits**: Strict enforcement of the 4-argument limit for bootstrap.
+- **Argument Limits**: Supports unlimited arguments via dynamic allocation (Milestone 7 update).
 - **Nested Calls**: Correct recursive parsing and resolution of calls within argument lists.
 - **Mangled Naming**: Integration with the `NameMangler` to ensure C-keyword conflicts are resolved at call sites.
 - **Return Type Integration**: Verification that returned values are correctly typed and can be used in complex expressions.

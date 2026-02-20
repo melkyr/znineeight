@@ -321,7 +321,7 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 
 - **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221). Functions can be stored in variables, passed as arguments, and called indirectly.
-- **Function Parameters**: Function declarations and calls support standard C89 parameter limits (at least 31).
+- **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
 - **Single-level Pointers**: Multi-level pointers like `**T` are rejected to simplify memory safety analysis.
@@ -688,7 +688,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
-| `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (max 4 params). |
+| `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (unlimited params). |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
 
 ### Supported Type Syntax Examples
@@ -734,10 +734,8 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 -   **Returns `true`** for a struct, enum, or union type that has been associated with a name via a `const` declaration.
 -   **Returns `true`** for an array type (e.g., `[8]u8`, `[4][4]f32`) if its final base element type is a C89-compatible primitive.
 -   **Returns `true`** for a function type, but only if it meets the following strict criteria:
-    -   The function follows the bootstrap parameter limit (maximum 4 parameters).
     -   The return type must be C89-compatible.
     -   All parameter types must be C89-compatible.
-    -   Neither the return type nor any parameter type can be a function type itself (i.e., no function pointers).
 -   **Returns `false`** for `NULL` types.
 -   **Returns `false`** for any type not in the mapping table (e.g., `anyerror`).
 -   **Returns `false`** for multi-level pointers (e.g., `**i32`, `*const *u8`).

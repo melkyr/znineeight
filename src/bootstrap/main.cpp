@@ -16,7 +16,7 @@ static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
 /**
  * @brief Executes the full compilation pipeline for a single file.
  */
-static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
+RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 file_id) {
     bool pipeline_success = unit.performFullPipeline(file_id);
 
     if (unit.getErrorHandler().hasErrors()) {
@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
     const char* output_file = NULL;
     bool parse_only = false;
     bool full_pipeline = false;
+    RETR_UNUSED(full_pipeline);
 
     // We'll use a simple fixed-size array for temporary include path storage
     // before the CompilationUnit is created.

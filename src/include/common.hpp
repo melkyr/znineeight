@@ -55,4 +55,19 @@
     #endif
 #endif
 
+/**
+ * @brief Macro to suppress "unused variable" warnings.
+ */
+#define RETR_UNUSED(x) (void)(x)
+
+/**
+ * @brief Macro to suppress "unused function" warnings.
+ * Uses compiler-specific attributes where available (e.g., GCC's `__attribute__((unused))`).
+ */
+#ifdef _MSC_VER
+    #define RETR_UNUSED_FUNC
+#else
+    #define RETR_UNUSED_FUNC __attribute__((unused))
+#endif
+
 #endif // COMMON_HPP

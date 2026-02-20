@@ -32,7 +32,7 @@ static bool run_size_test(const char* zig_code, const char* expected_c89) {
     return true;
 }
 
-static bool run_size_error_test(const char* zig_code, const char* error_substring) {
+RETR_UNUSED_FUNC static bool run_size_error_test(const char* zig_code, const char* error_substring) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);

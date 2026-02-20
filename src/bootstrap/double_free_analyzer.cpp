@@ -923,6 +923,7 @@ bool DoubleFreeAnalyzer::isArenaFreeCall(ASTFunctionCallNode* call) {
 }
 
 bool DoubleFreeAnalyzer::isOwnershipTransferCall(ASTFunctionCallNode* call) {
+    RETR_UNUSED(call);
     // For bootstrap: assume any function call that isn't arena_free
     // and takes a pointer argument could be a transfer.
     // In a more advanced analyzer, we would check the function signature

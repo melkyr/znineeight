@@ -112,6 +112,7 @@ void GenericCatalogue::addDefinition(const char* name, SourceLocation loc, Gener
 }
 
 void GenericCatalogue::mergeFrom(const GenericCatalogue& other, const char* module_prefix) {
+    RETR_UNUSED(module_prefix);
     // For instantiations
     const DynamicArray<GenericInstantiation>* other_insts = other.getInstantiations();
     for (size_t i = 0; i < other_insts->length(); ++i) {

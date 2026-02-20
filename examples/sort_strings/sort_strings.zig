@@ -1,6 +1,7 @@
 extern fn __bootstrap_print(s: *const u8) void;
 
 fn strLessThan(a: [*]const u8, b: [*]const u8) bool {
+    if (a == null or b == null) { return false; }
     var i: usize = 0;
     while (a[i] != 0 and b[i] != 0) {
         if (a[i] < b[i]) { return true; }
@@ -11,6 +12,7 @@ fn strLessThan(a: [*]const u8, b: [*]const u8) bool {
 }
 
 fn sortStrings(ptr: [*][*]const u8, len: usize) void {
+    if (ptr == null) { return; }
     var i: usize = 1;
     while (i < len) {
         var j = i;
@@ -29,6 +31,7 @@ fn sortStrings(ptr: [*][*]const u8, len: usize) void {
 }
 
 fn printStrings(ptr: [*][*]const u8, len: usize) void {
+    if (ptr == null) { return; }
     var i: usize = 0;
     while (i < len) {
         __bootstrap_print(@ptrCast(*const u8, ptr[i]));

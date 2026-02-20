@@ -13,6 +13,7 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
 
     {
         Parser* parser2 = ctx.getParser();
+        RETR_UNUSED(parser2);
         // parser2 is a pointer and the object it points to is managed by the arena.
         // The object is not destroyed at the end of this scope.
     }

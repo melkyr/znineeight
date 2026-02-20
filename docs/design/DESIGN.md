@@ -356,7 +356,7 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 * **Pointers:** Single-item (`*T`) and Many-item (`[*]T`). Supports multi-level pointers (e.g., `**T`, `[*]**T`).
 * **Arrays:** `[N]T` (Constant size only).
 * **Structs/Enums:** C-style declarations only.
-* **Function Pointers:** `fn(...) T`. Maximum 4 parameters.
+*   **Function Pointers:** `fn(...) T`. Supports dynamic parameter allocation (unlimited).
 
 **Explicitly Rejected Types (Bootstrap Phase):**
 * **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
@@ -544,6 +544,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Control Flow**:
     *   `if (cond) { ... } else { ... }` (Braced blocks required).
     *   `while (cond) { ... }` (Supports `break` and `continue`).
+        *   Validation ensures `break` and `continue` only occur inside loops.
+        *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
     *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
 *   **Defer**: `defer statement;` or `defer { ... }`.

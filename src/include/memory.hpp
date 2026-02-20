@@ -20,7 +20,7 @@
  * @param remaining A reference to the remaining size of the buffer.
  * @param src The null-terminated string to append.
  */
-static void arena_safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
+RETR_UNUSED_FUNC static void arena_safe_append(char*& dest_ptr, size_t& remaining, const char* src) {
     if (remaining <= 1) return; // Not enough space for content + null terminator
     size_t len = plat_strlen(src);
     size_t to_copy = len;
