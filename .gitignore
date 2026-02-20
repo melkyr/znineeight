@@ -54,9 +54,14 @@ test_runner_batch*
 # Temporary binaries
 test_multi_file
 tests/batch_runner_*.cpp
+tr*
+zig0
+zig0.exe
 
 # Generated C89 files
 temp_codegen_*.c
 test_output/
 temp_hello/
 temp_prime/
+temp_*/
+examples/*/output/
