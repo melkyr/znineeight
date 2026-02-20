@@ -7,15 +7,11 @@ Standard C89 has specific limitations and conventions regarding function signatu
 
 ### 1. Non-C89 Types in Parameters
 The following types are strictly rejected when used as function parameters in the bootstrap phase:
-- **Slices**: `[]T` (Rejected as they lack a direct primitive mapping in C89)
 - **Error Unions**: `!T` or `E!T` (Rejected as error handling is handled via alternative designs in C89)
 - **Error Sets**: `error{...}` (Rejected as they are not compatible with C89 function signatures)
 - **Optional Types**: `?T` (Rejected as nullability is handled differently in C89)
 
-### 2. Multi-level Pointers
-- **Multi-level Pointers**: `* * T` (and deeper) are rejected to avoid complexity in the bootstrap translation and to maintain compatibility with simpler C89 patterns. Only single-level pointers (e.g., `*i32`, `*const u8`) are allowed.
-
-### 3. Parameter Count Limits
+### 2. Parameter Count Limits
 - **Parameter Count**: Functions follow standard C89 parameter limits (at least 31). Signatures with many parameters may still be problematic for very old MSVC 6.0 versions on extremely low-memory systems.
 
 ### 4. Void Parameters
@@ -32,10 +28,10 @@ fn foo(a: MyInt) void {} // Treated as fn foo(a: i32) - ALLOWED
 
 ### Allowed Constructs
 - **Primitive Types**: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`, `f32`, `f64`, `bool`.
-- **Single-level Pointers**: `*T` or `*const T` (where T is a C89-compatible type).
+- **Pointers**: `*T`, `[*]T`, and multi-level pointers (e.g., `**T`) are allowed.
+- **Slices**: `[]T` and `[]const T` are allowed as a bootstrap language extension.
 - **Enums**: Zig enums are allowed as they map to C89 integers/enums.
 - **Structs**: Structs are allowed as parameters if their fields are C89-compatible.
-- **Up to 4 Parameters**.
 
 ### Array Parameters (Warning)
 Zig sized arrays (e.g., `[10]i32`) are allowed in function parameters but trigger a warning (`WARN_ARRAY_PARAMETER`), as they are treated as pointers in the generated C89 code, losing their size information in the signature.

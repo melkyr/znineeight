@@ -17,18 +17,28 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 
 ### 1.2 Pointers
 - **Single-item pointers**: `*T` and `*const T`.
+- **Many-item pointers**: `[*]T` and `[*]const T`. Supported for C-style array access.
 - **Address-of**: `&variable` produces a pointer.
 - **Dereference**: `pointer.*` accesses the value.
-- **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a pointer to a struct.
+- **Indexing**: `ptr[i]` is allowed for many-item pointers, but strictly rejected for single-item pointers.
+- **Arithmetic**: `ptr + i`, `ptr - i`, and `ptr1 - ptr2` are allowed for many-item pointers.
+- **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
+- **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
 - **Enums**: `const E = enum(T) { Member, ... };`
 - **Unions**: `const U = union { field: T, ... };` (Bare unions only).
 
-### 1.4 Arrays
-- **Fixed-size**: `[N]T` where `N` is a compile-time constant.
-- **Indexing**: `arr[i]`.
+### 1.4 Arrays and Slices
+- **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
+- **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
+- **Indexing**: `base[i]` is supported for both arrays and slices.
+- **Slicing**: `base[start..end]` creates a slice from an array, slice, or many-item pointer.
+  - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
+  - For many-item pointers, both `start` and `end` **must** be explicitly provided.
+- **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
+- **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
 
 ## 2. Memory Management (Arena Pattern)
 
@@ -84,8 +94,8 @@ Memory is reclaimed by resetting or destroying the arena.
 ## 5. Explicit Limitations (Unsupported Features)
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
-- **No Slices**: `[]T` is rejected. Use a pointer and a length.
-- **Many-item Pointers**: `[*]T` is supported. Maps to raw C pointers and allows indexing/arithmetic.
+- **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
 - **No Error Unions**: `!T` syntax is recognized but requires Milestone 5 translation (not available in bootstrap).
 - **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
