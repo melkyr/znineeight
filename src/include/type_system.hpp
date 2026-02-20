@@ -96,6 +96,7 @@ struct Type {
         } array;
         struct {
             Type* element_type;
+            bool is_const;
         } slice;
         struct {
             // This is used for temporary types during type checking
@@ -153,7 +154,7 @@ public:
     TypeInterner(ArenaAllocator& arena);
     Type* getPointerType(Type* base_type, bool is_const, bool is_many = false);
     Type* getArrayType(Type* element_type, u64 size);
-    Type* getSliceType(Type* element_type);
+    Type* getSliceType(Type* element_type, bool is_const);
     Type* getOptionalType(Type* payload);
 
     size_t getUniqueCount() const { return unique_count; }
@@ -203,9 +204,10 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
  * @brief Creates a new slice Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param element_type A pointer to the Type of the slice elements.
+ * @param is_const True if the slice elements are const.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createSliceType(ArenaAllocator& arena, Type* element_type, TypeInterner* interner = NULL);
+Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const = false, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new struct Type object from the arena.

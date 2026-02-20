@@ -335,6 +335,9 @@ struct ASTArraySliceNode {
     ASTNode* array;
     ASTNode* start; // Can be NULL
     ASTNode* end;   // Can be NULL
+    // computed during type checking:
+    ASTNode* base_ptr; // expression for the pointer
+    ASTNode* len;      // expression for the length
 };
 
 /**
@@ -757,6 +760,7 @@ struct ASTPointerTypeNode {
 struct ASTArrayTypeNode {
     ASTNode* element_type;
     ASTNode* size; // Can be NULL for a slice
+    bool is_const; // For slices: []const T
 };
 
 /**

@@ -129,9 +129,9 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
     return new_type;
 }
 
-Type* createSliceType(ArenaAllocator& arena, Type* element_type, TypeInterner* interner) {
+Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, TypeInterner* interner) {
     if (interner) {
-        return interner->getSliceType(element_type);
+        return interner->getSliceType(element_type, is_const);
     }
 
     Type* new_type = allocateType(arena);
@@ -139,6 +139,7 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, TypeInterner* i
     new_type->size = 8; // 32-bit: pointer (4) + length (4)
     new_type->alignment = 4;
     new_type->as.slice.element_type = element_type;
+    new_type->as.slice.is_const = is_const;
     return new_type;
 }
 
@@ -320,17 +321,18 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
     return t;
 }
 
-Type* TypeInterner::getSliceType(Type* element_type) {
-    u32 h = hashType(TYPE_SLICE, element_type, 0);
+Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
+    u32 h = hashType(TYPE_SLICE, element_type, is_const ? 1 : 0);
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_SLICE &&
-            e->type->as.slice.element_type == element_type) {
+            e->type->as.slice.element_type == element_type &&
+            e->type->as.slice.is_const == is_const) {
             dedupe_count++;
             return e->type;
         }
     }
 
-    Type* t = createSliceType(arena_, element_type, NULL);
+    Type* t = createSliceType(arena_, element_type, is_const, NULL);
     Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
     e->type = t;
     e->next = buckets[h];
@@ -438,6 +440,9 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         }
         case TYPE_SLICE: {
             safe_append(current, remaining, "[]");
+            if (type->as.slice.is_const) {
+                safe_append(current, remaining, "const ");
+            }
             typeToStringInternal(type->as.slice.element_type, current, remaining);
             break;
         }
@@ -556,7 +561,8 @@ bool areTypesEqual(Type* a, Type* b) {
                    areTypesEqual(a->as.array.element_type, b->as.array.element_type);
 
         case TYPE_SLICE:
-            return areTypesEqual(a->as.slice.element_type, b->as.slice.element_type);
+            return a->as.slice.is_const == b->as.slice.is_const &&
+                   areTypesEqual(a->as.slice.element_type, b->as.slice.element_type);
 
         case TYPE_OPTIONAL:
             return areTypesEqual(a->as.optional.payload, b->as.optional.payload);

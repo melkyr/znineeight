@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) {
         test_C89Rejection_TryExpression,
         test_C89Rejection_CatchExpression,
         test_C89Rejection_OrelseExpression,
-        test_TypeChecker_RejectSliceExpression,
+        test_TypeChecker_AllowSliceExpression,
 
         // Bug Fix Verification
         test_dynamic_array_destructor_fix,

@@ -1032,9 +1032,102 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
-    // Slice expressions are not supported in C89.
-    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Slice expressions (e.g., array[start..end]) are not supported in C89 mode.", unit.getArena());
-    return NULL;
+    Type* base_type = visit(node->array);
+    if (!base_type) return NULL;
+
+    // Auto-dereference for pointer to array
+    if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_ARRAY) {
+        base_type = base_type->as.pointer.base;
+    }
+
+    if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
+        !(base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many)) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot slice a non-array/slice/many-item pointer type.", unit.getArena());
+        return NULL;
+    }
+
+    Type* element_type = NULL;
+    bool is_const = false;
+    if (base_type->kind == TYPE_ARRAY) {
+        element_type = base_type->as.array.element_type;
+        is_const = isLValueConst(node->array);
+    } else if (base_type->kind == TYPE_SLICE) {
+        element_type = base_type->as.slice.element_type;
+        is_const = base_type->as.slice.is_const;
+    } else { // Many-item pointer
+        element_type = base_type->as.pointer.base;
+        is_const = base_type->as.pointer.is_const;
+    }
+
+    // Resolve start and end
+    if (node->start) {
+        Type* start_type = visit(node->start);
+        if (start_type && !isIntegerType(start_type) && start_type->kind != TYPE_INTEGER_LITERAL) {
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, "Slice start index must be an integer", unit.getArena());
+        }
+    }
+    if (node->end) {
+        Type* end_type = visit(node->end);
+        if (end_type && !isIntegerType(end_type) && end_type->kind != TYPE_INTEGER_LITERAL) {
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->end->loc, "Slice end index must be an integer", unit.getArena());
+        }
+    }
+
+    // Enforce explicit indices for many-item pointers
+    if (base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many) {
+        if (!node->start || !node->end) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Slicing a many-item pointer requires explicit start and end indices.", unit.getArena());
+        }
+    }
+
+    // Bounds checking for arrays
+    if (base_type->kind == TYPE_ARRAY) {
+        i64 start_val = 0;
+        bool start_const = node->start ? evaluateConstantExpression(node->start, &start_val) : true;
+        i64 end_val = (i64)base_type->as.array.size;
+        bool end_const = node->end ? evaluateConstantExpression(node->end, &end_val) : true;
+
+        if (start_const && end_const) {
+            if (start_val < 0 || end_val < start_val || (u64)end_val > base_type->as.array.size) {
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Slice indices out of bounds for array", unit.getArena());
+            }
+        }
+    }
+
+    // Codegen Preparation
+    ASTNode* start_expr = node->start ? node->start : createIntegerLiteral(0, get_g_type_usize(), node->array->loc);
+
+    // base_ptr
+    if (base_type->kind == TYPE_ARRAY) {
+        // &base[start]
+        ASTNode* access = createArrayAccess(node->array, start_expr, element_type, node->array->loc);
+        node->base_ptr = createUnaryOp(access, TOKEN_AMPERSAND, createPointerType(unit.getArena(), element_type, is_const, false, &unit.getTypeInterner()), node->array->loc);
+    } else if (base_type->kind == TYPE_SLICE) {
+        // base.ptr + start
+        ASTNode* ptr_field = createMemberAccess(node->array, "ptr", createPointerType(unit.getArena(), element_type, is_const, true, &unit.getTypeInterner()), node->array->loc);
+        node->base_ptr = createBinaryOp(ptr_field, start_expr, TOKEN_PLUS, ptr_field->resolved_type, node->array->loc);
+    } else { // Many-item pointer
+        // base + start
+        node->base_ptr = createBinaryOp(node->array, start_expr, TOKEN_PLUS, node->array->resolved_type, node->array->loc);
+    }
+
+    // len
+    if (node->end) {
+        // end - start
+        node->len = createBinaryOp(node->end, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
+    } else {
+        if (base_type->kind == TYPE_ARRAY) {
+            // base_size - start
+            ASTNode* base_size = createIntegerLiteral(base_type->as.array.size, get_g_type_usize(), node->array->loc);
+            node->len = createBinaryOp(base_size, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
+        } else if (base_type->kind == TYPE_SLICE) {
+            // base.len - start
+            ASTNode* len_field = createMemberAccess(node->array, "len", get_g_type_usize(), node->array->loc);
+            node->len = createBinaryOp(len_field, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
+        }
+    }
+
+    return createSliceType(unit.getArena(), element_type, is_const, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
@@ -2129,7 +2222,7 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     if (!node->size) {
         Type* element_type = visit(node->element_type);
         if (!element_type) return NULL;
-        return createSliceType(unit.getArena(), element_type, &unit.getTypeInterner());
+        return createSliceType(unit.getArena(), element_type, node->is_const, &unit.getTypeInterner());
     }
 
     // 2. Ensure size is a constant integer literal
@@ -3474,4 +3567,65 @@ void TypeChecker::fatalError(const char* message) {
     plat_print_debug(message);
     plat_print_debug("\n");
     plat_abort();
+}
+
+ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_INTEGER_LITERAL;
+    node->loc = loc;
+    node->as.integer_literal.value = value;
+    node->as.integer_literal.is_unsigned = (type->kind >= TYPE_U8 && type->kind <= TYPE_USIZE);
+    node->as.integer_literal.is_long = (type->size > 4);
+    node->as.integer_literal.resolved_type = type;
+    node->resolved_type = type;
+    return node;
+}
+
+ASTNode* TypeChecker::createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_BINARY_OP;
+    node->loc = loc;
+    node->as.binary_op = (ASTBinaryOpNode*)unit.getArena().alloc(sizeof(ASTBinaryOpNode));
+    node->as.binary_op->left = left;
+    node->as.binary_op->right = right;
+    node->as.binary_op->op = op;
+    node->resolved_type = type;
+    return node;
+}
+
+ASTNode* TypeChecker::createMemberAccess(ASTNode* base, const char* member, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_MEMBER_ACCESS;
+    node->loc = loc;
+    node->as.member_access = (ASTMemberAccessNode*)unit.getArena().alloc(sizeof(ASTMemberAccessNode));
+    node->as.member_access->base = base;
+    node->as.member_access->field_name = member;
+    node->resolved_type = type;
+    return node;
+}
+
+ASTNode* TypeChecker::createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_ARRAY_ACCESS;
+    node->loc = loc;
+    node->as.array_access = (ASTArrayAccessNode*)unit.getArena().alloc(sizeof(ASTArrayAccessNode));
+    node->as.array_access->array = array;
+    node->as.array_access->index = index;
+    node->resolved_type = type;
+    return node;
+}
+
+ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_UNARY_OP;
+    node->loc = loc;
+    node->as.unary_op.operand = operand;
+    node->as.unary_op.op = op;
+    node->resolved_type = type;
+    return node;
 }

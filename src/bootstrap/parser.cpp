@@ -1905,11 +1905,13 @@ ASTNode* Parser::parseArrayType() {
 
     expect(TOKEN_RBRACKET, "Expected ']' after array size or for slice");
 
+    bool is_const = match(TOKEN_CONST);
     ASTNode* element_type = parseType();
 
     ASTNode* node = createNodeAt(NODE_ARRAY_TYPE, lbracket_token.location);
     node->as.array_type.element_type = element_type;
     node->as.array_type.size = size_expr; // Will be NULL for slices
+    node->as.array_type.is_const = is_const;
 
     return node;
 }
