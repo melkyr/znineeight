@@ -57,7 +57,7 @@ TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType) {
 
 TEST_FUNC(TypeChecker_C89_StructFieldValidation_Slice) {
     const char* source = "const S = struct { field: []u8 };";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_FALSE(expect_type_checker_abort(source));
     return true;
 }
 

@@ -29,6 +29,7 @@ enum TypeKind {
     TYPE_NULL,
     TYPE_UNDEFINED,
     TYPE_ARRAY,
+    TYPE_SLICE,
     TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_FUNCTION_POINTER,
@@ -94,6 +95,9 @@ struct Type {
             u64 size;
         } array;
         struct {
+            Type* element_type;
+        } slice;
+        struct {
             // This is used for temporary types during type checking
             // and does not represent a concrete storable type.
             i64 value;
@@ -149,6 +153,7 @@ public:
     TypeInterner(ArenaAllocator& arena);
     Type* getPointerType(Type* base_type, bool is_const, bool is_many = false);
     Type* getArrayType(Type* element_type, u64 size);
+    Type* getSliceType(Type* element_type);
     Type* getOptionalType(Type* payload);
 
     size_t getUniqueCount() const { return unique_count; }
@@ -193,6 +198,14 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  * @return A pointer to the newly allocated Type object.
  */
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner = NULL);
+
+/**
+ * @brief Creates a new slice Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param element_type A pointer to the Type of the slice elements.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createSliceType(ArenaAllocator& arena, Type* element_type, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new struct Type object from the arena.

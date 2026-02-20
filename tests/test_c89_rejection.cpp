@@ -2,8 +2,8 @@
 #include "test_utils.hpp"
 
 TEST_FUNC(C89Rejection_Slice) {
-    const char* source = "var my_slice: []u8;";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    const char* source = "var my_slice: []u8 = undefined;";
+    ASSERT_FALSE(expect_type_checker_abort(source));
     return true;
 }
 

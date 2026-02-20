@@ -1001,14 +1001,14 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         return NULL;
     }
 
-    if (base->kind != TYPE_ARRAY) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot index into a non-array type. Many-item pointers ([*]T) support indexing, but single-item pointers (*T) do not.", unit.getArena());
+    if (base->kind != TYPE_ARRAY && base->kind != TYPE_SLICE) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, "Cannot index into a non-array type. Many-item pointers ([*]T) and slices ([]T) support indexing, but single-item pointers (*T) do not.", unit.getArena());
         return NULL;
     }
 
     // Attempt to evaluate the index as a compile-time constant for bounds checking.
     i64 index_value;
-    if (evaluateConstantExpression(node->index, &index_value)) {
+    if (base->kind == TYPE_ARRAY && evaluateConstantExpression(node->index, &index_value)) {
         u64 array_size = base->as.array.size;
         if (index_value < 0 || (u64)index_value >= array_size) {
             char msg[128];
@@ -1028,7 +1028,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         }
     }
 
-    return base->as.array.element_type;
+    return (base->kind == TYPE_ARRAY) ? base->as.array.element_type : base->as.slice.element_type;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
@@ -1783,6 +1783,14 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = base_type->as.pointer.base;
     }
 
+    // Slice built-in properties
+    if (base_type->kind == TYPE_SLICE) {
+        if (plat_strcmp(node->field_name, "len") == 0) {
+            return get_g_type_usize();
+        }
+        // Fall through for error reporting if not "len"
+    }
+
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         // Module member access
         Module* target_mod = NULL;
@@ -2117,10 +2125,11 @@ Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
-    // 1. Reject slices
+    // 1. Handle slices
     if (!node->size) {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->element_type->loc, "Slices are not supported in bootstrap compiler. Consider using a pointer and length instead.");
-        return NULL;
+        Type* element_type = visit(node->element_type);
+        if (!element_type) return NULL;
+        return createSliceType(unit.getArena(), element_type, &unit.getTypeInterner());
     }
 
     // 2. Ensure size is a constant integer literal
@@ -2333,6 +2342,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     // Enum to Integer conversion (C89 compatible)
     if (actual->kind == TYPE_ENUM && isIntegerType(expected)) {
         return true;
+    }
+
+    // Array to Slice coercion
+    if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
+        return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
     }
 
     // Widening for signed integers
@@ -2761,6 +2775,11 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     // Enum to Integer conversion (C89 compatible)
     if (source_type->kind == TYPE_ENUM && isIntegerType(target_type)) {
         return true;
+    }
+
+    // Array to Slice coercion
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
+        return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
     }
 
     // Function Pointer assignment

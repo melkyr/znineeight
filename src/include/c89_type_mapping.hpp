@@ -107,6 +107,9 @@ static inline bool is_c89_compatible(Type* type) {
             return is_c89_compatible(current_type);
         }
 
+        case TYPE_SLICE:
+            return is_c89_compatible(type->as.slice.element_type);
+
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ENUM:

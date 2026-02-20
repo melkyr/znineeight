@@ -4,8 +4,8 @@
 #include "symbol_table.hpp"
 
 TEST_FUNC(TypeChecker_RejectSlice) {
-    const char* source = "var my_slice: []u8;";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    const char* source = "var my_slice: []u8 = undefined;";
+    ASSERT_FALSE(expect_type_checker_abort(source));
     return true;
 }
 
