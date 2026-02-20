@@ -1402,14 +1402,13 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Implemented `goto`-based emission for labeled `while` loops to support multi-level jumps in C89.
     - **Documentation**: Updated `AST_Parser.md`, `Language_Spec_Z98.md`, and `C89_Codegen.md`.
 
-222. **Task 222:** Slices (`[]T`)
-    - **Parser**: Recognise `[]T` as a type expression. Create a new node `NODE_SLICE_TYPE`.
-    - **AST**: Define `ASTSliceTypeNode` with element type.
-    - **Type system**: Add `TYPE_SLICE` (approx. 8 bytes, alignment 4 on 32-bit).
-    - **Codegen**: Emit `typedef struct { T* ptr; size_t len; } Slice_T;` for each used slice type.
-    - **Operations**: Support indexing `s[i]` -> `s.ptr[i]`, length `s.len` -> `s.len`.
-    - **Type checking**: Allow implicit conversion from fixed-size array to slice.
-    - **Tests**: Verify passing slices by value, accessing elements and length.
+222. [IN PROGRESS] **Task 222: Slices Support (`[]T`)**
+    - **Phase 1: AST and Type System (DONE)**: Introduced `TYPE_SLICE`, supporting `[]T` and `[]const T`. Implemented structural interning.
+    - **Phase 2: Basic Operations & Validation (DONE)**: Implemented `slice[i]` indexing, `.len` property access, and implicit array-to-slice coercion. Updated validators to allow slices.
+    - **Phase 3: Slicing Syntax (DONE)**: Implemented validation for `base[start..end]` for arrays, slices, and many-item pointers. Added const-propagation and compile-time bounds checking. Populated AST with `base_ptr` and `len` expressions for codegen.
+    - **Phase 4: Code Generation - Infrastructure (TODO)**: Emit `typedef` for slice structs and generate unique names.
+    - **Phase 5: Code Generation - Slicing & Helpers (TODO)**: Implement `__make_slice` static inline helpers and emit slice construction logic.
+    - **Phase 6: Verification & Integration (TODO)**: Integration tests for slice parameters, return values, and complex expressions.
 
 ## Phase 1: The Cross-Compiler (Zig)
 223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.

@@ -355,11 +355,11 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 * **Primitives:** `i8`-`i64`, `u8`-`u64`, `isize`, `usize`, `bool`, `f32`, `f64`, `void`.
 * **Pointers:** Single-item (`*T`) and Many-item (`[*]T`). Supports multi-level pointers (e.g., `**T`, `[*]**T`).
 * **Arrays:** `[N]T` (Constant size only).
+* **Slices**: `[]T` and `[]const T`. Supported as a language extension.
 * **Structs/Enums:** C-style declarations only.
-*   **Function Pointers:** `fn(...) T`. Supports dynamic parameter allocation (unlimited).
+* **Function Pointers:** `fn(...) T`. Supports dynamic parameter allocation (unlimited).
 
 **Explicitly Rejected Types (Bootstrap Phase):**
-* **Slices:** `[]T` (Requires runtime support and complex ABI mapping).
 * **Optionals:** `?T` (Rejected until Milestone 5 translation).
 * **Error Unions:** `!T` (Rejected until Milestone 5 translation).
 
@@ -537,6 +537,11 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   Multi-level pointers: Supported (e.g., `***i32`).
     *   Pointer Arithmetic: Requires unsigned integer offsets (`usize`, `u32`, etc.). Subtraction `ptr1 - ptr2` yields `isize`.
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
+*   **Slices**: `[]T` and `[]const T`. Supported for dynamic arrays and string parameters.
+    *   **Indexing**: `slice[i]`.
+    *   **Property**: `.len` property returns `usize`.
+    *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
+    *   **Coercion**: Implicit coercion from `[N]T` to `[]T`.
 *   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
 *   **Unions**: Named bare unions via `const U = union { ... };`.
@@ -568,7 +573,7 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
-*   **No Slices**: `[]T` is strictly rejected.
+*   **Slices**: `[]T` is **supported** as a bootstrap language extension.
 *   **No Error Handling**: `!T`, `try`, `catch`, `orelse`, and `errdefer` are rejected (though catalogued for future use).
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
@@ -916,6 +921,7 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Comments**: Standard C89 `/* ... */` comment emission.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
+- **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.
 
 ### 13.3 CVariableAllocator
 - **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.

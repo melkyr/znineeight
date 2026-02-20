@@ -244,7 +244,8 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
 | `ASTFnDeclNode`             | 16           | Pointer (4)     |
 | `ASTWhileStmtNode`          | 16           | Pointer (4)     |
-| `ASTArrayTypeNode`          | 8            | Inline          |
+| `ASTArraySliceNode`         | 20           | Pointer (4)     |
+| `ASTArrayTypeNode`          | 12           | Inline          |
 | `ASTParamDeclNode`          | 8            | Inline          |
 | `ASTIntegerLiteralNode`     | 8            | Inline          |
 | `ASTFloatLiteralNode`       | 8            | Inline          |
@@ -451,11 +452,15 @@ Represents an array slice expression.
      * @var ASTArraySliceNode::array The expression being sliced.
      * @var ASTArraySliceNode::start The start index expression (can be NULL).
      * @var ASTArraySliceNode::end The end index expression (can be NULL).
+     * @var ASTArraySliceNode::base_ptr Computed expression for the pointer to the first element (e.g., &arr[0] or s.ptr).
+     * @var ASTArraySliceNode::len Computed expression for the resulting length (e.g., end - start).
      */
     struct ASTArraySliceNode {
         ASTNode* array;
         ASTNode* start; // Can be NULL
         ASTNode* end;   // Can be NULL
+        ASTNode* base_ptr; // Computed during type checking
+        ASTNode* len;      // Computed during type checking
     };
     ```
 
@@ -612,7 +617,7 @@ Represents a pointer to another type.
 
 ### `ASTArrayTypeNode`
 Represents both fixed-size arrays and dynamic slices.
-*   **Zig Code:** `[8]u8` (sized array), `[]bool` (slice)
+*   **Zig Code:** `[8]u8` (sized array), `[]bool` (slice), `[]const u8` (const slice)
 *   **Structure:**
     ```cpp
     /**
@@ -620,10 +625,12 @@ Represents both fixed-size arrays and dynamic slices.
      * @brief Represents an array or slice type.
      * @var ASTArrayTypeNode::element_type A pointer to the ASTNode for the element type.
      * @var ASTArrayTypeNode::size An expression for the array size (can be NULL for a slice).
+     * @var ASTArrayTypeNode::is_const True if the slice is constant ([]const T).
      */
     struct ASTArrayTypeNode {
         ASTNode* element_type;
         ASTNode* size; // Can be NULL for a slice
+        bool is_const;
     };
     ```
 
