@@ -80,15 +80,16 @@ TEST_FUNC(FunctionIntegration_ForwardReference) {
 
 // --- Negative Tests ---
 
-TEST_FUNC(FunctionIntegration_RejectFiveParams) {
+TEST_FUNC(FunctionIntegration_AllowFiveParams) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
-    const char* source = "fn too_many(a: i32, b: i32, c: i32, d: i32, e: i32) void {}";
+    const char* source = "fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32) void {}";
     u32 file_id = unit.addSource("test.zig", source);
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected 5-param rejection but pipeline succeeded\n");
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Expected 5-param support but pipeline failed\n");
+        unit.getErrorHandler().printErrors();
         return false;
     }
     return true;

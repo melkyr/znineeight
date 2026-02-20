@@ -72,6 +72,11 @@ The compiler maintains 9 catalogues for feature tracking. Memory impact:
 
 **Guideline**: When implementing catalogue features, estimate memory per entry (≈ 32-64 bytes).
 
+### Milestone 7 (Task 221) Updates
+- **Dynamic Parameters**: The compiler now uses `DynamicArray<Type*>*` for function parameters and arguments, removing previous fixed limits (max 4).
+- **Control Flow Validation**: Semantic analysis enforces that `break` and `continue` only appear within loops and never inside `defer` or `errdefer`.
+- **Function Pointers**: Fully supported in C89 codegen using a recursive declarator strategy.
+
 ### Optimization Priority List
 When memory exceeds thresholds, optimize in this order:
 1. **Catalogue entries** (largest potential savings)

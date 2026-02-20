@@ -2,6 +2,7 @@ extern fn __bootstrap_print(s: *const u8) void;
 extern fn __bootstrap_print_int(n: i32) void;
 
 fn quicksort(ptr: [*]i32, len: usize, cmp: fn(i32, i32) bool) void {
+    if (ptr == null) { return; }
     if (len < 2) { return; }
     var pivot = ptr[0];
     var i: usize = 1;

@@ -621,6 +621,7 @@ void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitImportStmt(ASTNode* node) {
+    RETR_UNUSED(node);
     // Basic @import support is now implemented for multi-file loading.
 }
 
@@ -702,6 +703,7 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
 }
 
 const char* C89FeatureValidator::getExpressionContext(ASTNode* node) {
+    RETR_UNUSED(node);
     if (!current_parent_) return "expression";
 
     switch (current_parent_->type) {

@@ -665,7 +665,7 @@ TEST_FUNC(BootstrapTypes_Rejected_Slice);
 TEST_FUNC(BootstrapTypes_Rejected_ErrorUnion);
 TEST_FUNC(BootstrapTypes_Rejected_Optional);
 TEST_FUNC(BootstrapTypes_Allowed_FunctionPointer);
-TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs);
+TEST_FUNC(BootstrapTypes_Allowed_ManyArgs);
 TEST_FUNC(BootstrapTypes_Rejected_VoidVariable);
 
 // Task 169: MSVC Compatibility Tests
@@ -740,7 +740,7 @@ TEST_FUNC(FunctionIntegration_MangleKeyword);
 TEST_FUNC(FunctionIntegration_MangleLongName);
 TEST_FUNC(FunctionIntegration_Recursion);
 TEST_FUNC(FunctionIntegration_ForwardReference);
-TEST_FUNC(FunctionIntegration_RejectFiveParams);
+TEST_FUNC(FunctionIntegration_AllowFiveParams);
 TEST_FUNC(FunctionIntegration_RejectSliceReturn);
 TEST_FUNC(FunctionIntegration_AllowMultiLevelPointer);
 TEST_FUNC(FunctionIntegration_RejectDuplicateName);
@@ -753,7 +753,7 @@ TEST_FUNC(FunctionCallIntegration_Nested);
 TEST_FUNC(FunctionCallIntegration_MangleKeyword);
 TEST_FUNC(FunctionCallIntegration_VoidStatement);
 TEST_FUNC(FunctionCallIntegration_CallResolution);
-TEST_FUNC(FunctionCallIntegration_RejectFiveArgs);
+TEST_FUNC(FunctionCallIntegration_AllowFiveArgs);
 TEST_FUNC(FunctionCallIntegration_AllowFunctionPointer);
 TEST_FUNC(FunctionCallIntegration_TypeMismatch);
 TEST_FUNC(FunctionCallIntegration_UndefinedFunction);

@@ -278,6 +278,7 @@ TEST_FUNC(DoubleFree_TryAnalysis) {
             break;
         }
     }
+    RETR_UNUSED(has_leak);
     // If try is NOT visited, the function body analysis might be incomplete.
     // In this case, 'arena_free(p)' IS visited because it's after 'try'.
     // But if we want to test 'try' specifically, let's put an allocation/free inside it.

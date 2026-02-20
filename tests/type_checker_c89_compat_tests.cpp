@@ -11,13 +11,13 @@ TEST_FUNC(TypeCheckerC89Compat_AllowFunctionWithManyArgs);
 TEST_FUNC(TypeChecker_Call_WrongArgumentCount);
 TEST_FUNC(TypeChecker_Call_IncompatibleArgumentType);
 
-TEST_FUNC(TypeCheckerC89Compat_RejectFunctionWithTooManyArgs) {
+TEST_FUNC(TypeCheckerC89Compat_AllowFunctionWithManyArgs) {
     const char* source =
-        "fn five_args(a: i32, b: i32, c: i32, d: i32, e: i32) -> void {}\n"
-        "fn main() -> void {\n"
+        "fn five_args(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
+        "fn main() void {\n"
         "    five_args(1, 2, 3, 4, 5);\n"
         "}\n";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 

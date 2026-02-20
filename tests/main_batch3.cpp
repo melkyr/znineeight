@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
         test_TypeCheckerVoidTests_DisallowVoidVariableDeclaration,
         test_TypeCompatibility,
         test_TypeToString_Reentrancy,
-        test_TypeCheckerC89Compat_RejectFunctionWithTooManyArgs,
+        test_TypeCheckerC89Compat_AllowFunctionWithManyArgs,
         test_TypeChecker_Call_WrongArgumentCount,
         test_TypeChecker_Call_IncompatibleArgumentType,
         test_TypeCheckerC89Compat_FloatWidening_Fails,
