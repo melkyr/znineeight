@@ -82,9 +82,9 @@ TEST_FUNC(BootstrapTypes_Rejected_VoidVariable) {
     return true;
 }
 
-TEST_FUNC(BootstrapTypes_Rejected_TooManyArgs) {
+TEST_FUNC(BootstrapTypes_Allowed_ManyArgs) {
     /* Zig functions use -> return_type or just return_type */
     const char* source = "fn f(a: i32, b: i32, c: i32, d: i32, e: i32) void {}";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }

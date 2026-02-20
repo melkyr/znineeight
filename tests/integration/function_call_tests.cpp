@@ -113,19 +113,18 @@ TEST_FUNC(FunctionCallIntegration_CallResolution) {
 
 // --- Negative Tests ---
 
-TEST_FUNC(FunctionCallIntegration_RejectFiveArgs) {
+TEST_FUNC(FunctionCallIntegration_AllowFiveArgs) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
-    // Bootstrap limit is 4 arguments
+    // Bootstrap limit of 4 arguments was removed in Task 221
     const char* source =
-        "fn too_many(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
-        "fn main_func() void { too_many(1, 2, 3, 4, 5); }";
+        "fn many_args(a: i32, b: i32, c: i32, d: i32, e: i32) void {}\n"
+        "fn main_func() void { many_args(1, 2, 3, 4, 5); }";
 
     u32 file_id = unit.addSource("test.zig", source);
-    // Should fail validation
-    ASSERT_FALSE(unit.performTestPipeline(file_id));
+    ASSERT_TRUE(unit.performTestPipeline(file_id));
     return true;
 }
 

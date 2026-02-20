@@ -1,35 +1,25 @@
 # RetroZig Test Suite Status Report - Post Task 221
 
 **Date:** June 2024
-**Status:** 36/38 Batches Passing (2 Batches Failing)
+**Status:** 38/38 Batches Passing
 
 ## Summary
-Following the completion of Task 221 ("Function Pointers & Control Flow"), the RetroZig bootstrap compiler has transitioned from a fixed-limit parameter system (max 4 parameters) to a dynamic allocation strategy using `DynamicArray<Type*>*`. This change provides greater flexibility but has caused several legacy tests, which specifically enforced the 4-parameter limit, to fail.
+Following the completion of Task 221 ("Function Pointers & Control Flow"), the RetroZig bootstrap compiler has transitioned from a fixed-limit parameter system (max 4 parameters) to a dynamic allocation strategy using `DynamicArray<Type*>*`.
 
-All examples, including advanced ones such as `quicksort`, `sort_strings`, and `func_ptr_return`, compile and execute correctly.
+All legacy tests that previously enforced the 4-parameter limit have been updated to verify that 5+ parameters are now correctly accepted and compiled. With these updates, the entire test suite (38 batches) is passing.
+
+All advanced examples, including `quicksort`, `sort_strings`, and `func_ptr_return`, have been verified for correctness.
 
 ---
 
-## Failing Batches
+## Resolved legacy failures (Batches 3 and 12)
+The following tests were previously failing because they expected rejection of more than 4 parameters. They have been converted to positive tests:
 
-### Batch 3
-**Failing Test:** `TypeCheckerC89Compat_RejectFunctionWithTooManyArgs`
-- **Location:** `tests/type_checker_c89_compat_tests.cpp`
-- **Reason:** This test uses `ASSERT_TRUE(expect_type_checker_abort(source))` on a Zig function with 5 parameters. Since the compiler now supports 5+ parameters, it no longer aborts, causing the test assertion to fail.
-- **Recommendation:** Remove or update this test to reflect the new dynamic parameter support.
-
-### Batch 12
-**Failing Tests:**
-1. `BootstrapTypes_Rejected_TooManyArgs`
-   - **Location:** `tests/test_bootstrap_types.cpp`
-   - **Reason:** Explicitly expects a function with 5 parameters to be rejected.
-2. `FunctionIntegration_RejectFiveParams`
-   - **Location:** `tests/integration/function_decl_tests.cpp`
-   - **Reason:** Checks that the compilation pipeline fails for a 5-parameter function.
-3. `FunctionCallIntegration_RejectFiveArgs`
-   - **Location:** `tests/integration/function_call_tests.cpp`
-   - **Reason:** Asserts that `performTestPipeline` returns false for a function call with 5 arguments.
-- **Recommendation:** All three tests should be deleted or converted into positive tests that verify correct handling of 5+ parameters.
+- **Batch 3**: `TypeCheckerC89Compat_AllowFunctionWithManyArgs` (formerly `RejectFunctionWithTooManyArgs`)
+- **Batch 12**:
+    - `BootstrapTypes_Allowed_ManyArgs` (formerly `Rejected_TooManyArgs`)
+    - `FunctionIntegration_AllowFiveParams` (formerly `RejectFiveParams`)
+    - `FunctionCallIntegration_AllowFiveArgs` (formerly `RejectFiveArgs`)
 
 ---
 
