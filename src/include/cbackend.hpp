@@ -35,15 +35,16 @@ private:
      * @param output_dir The output directory.
      * @return True if successful.
      */
-    bool generateSourceFile(Module* module, const char* output_dir);
+    bool generateSourceFile(Module* module, const char* output_dir, DynamicArray<const char*>* public_slices);
 
     /**
      * @brief Generates the C89 header (.h) file for a specific module.
      * @param module The module to generate.
      * @param output_dir The output directory.
+     * @param public_slices Cache of slice types already emitted to the header.
      * @return True if successful.
      */
-    bool generateHeaderFile(Module* module, const char* output_dir);
+    bool generateHeaderFile(Module* module, const char* output_dir, DynamicArray<const char*>* public_slices);
 
     /**
      * @brief Generates a master main.c file that includes all modules.
@@ -65,6 +66,11 @@ private:
      * @return True if successful.
      */
     bool generateMakefile(const char* output_dir);
+
+    /**
+     * @brief Scans an AST node for slice types and ensures they are buffered in the emitter.
+     */
+    void scanForSlices(ASTNode* node, C89Emitter& emitter);
 
     CompilationUnit& unit_;
     const char* entry_filename_;

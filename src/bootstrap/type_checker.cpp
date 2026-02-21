@@ -727,6 +727,26 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             arg_type = promoted;
         }
 
+        // Implicit Array to Slice coercion
+        if (param_type->kind == TYPE_SLICE && arg_type->kind == TYPE_ARRAY) {
+            if (areTypesEqual(param_type->as.slice.element_type, arg_type->as.array.element_type)) {
+                // Wrap in synthetic slice node
+                ASTNode* slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+                plat_memset(slice_node, 0, sizeof(ASTNode));
+                slice_node->type = NODE_ARRAY_SLICE;
+                slice_node->loc = arg_node->loc;
+                slice_node->as.array_slice = (ASTArraySliceNode*)unit.getArena().alloc(sizeof(ASTArraySliceNode));
+                plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+                slice_node->as.array_slice->array = arg_node;
+
+                // Recursively call visitArraySlice to populate base_ptr and len
+                visitArraySlice(slice_node->as.array_slice);
+                slice_node->resolved_type = param_type;
+                (*node->args)[i] = slice_node;
+                arg_type = param_type;
+            }
+        }
+
         if (!areTypesCompatible(param_type, arg_type)) {
             char param_type_str[64];
             char arg_type_str[64];
@@ -816,6 +836,25 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     Type* promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
     if (promoted) {
         rvalue_type = promoted;
+    }
+
+    // Implicit Array to Slice coercion
+    if (lvalue_type->kind == TYPE_SLICE && rvalue_type->kind == TYPE_ARRAY) {
+        if (areTypesEqual(lvalue_type->as.slice.element_type, rvalue_type->as.array.element_type)) {
+            // Wrap in synthetic slice node
+            ASTNode* slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+            plat_memset(slice_node, 0, sizeof(ASTNode));
+            slice_node->type = NODE_ARRAY_SLICE;
+            slice_node->loc = node->rvalue->loc;
+            slice_node->as.array_slice = (ASTArraySliceNode*)unit.getArena().alloc(sizeof(ASTArraySliceNode));
+            plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+            slice_node->as.array_slice->array = node->rvalue;
+
+            visitArraySlice(slice_node->as.array_slice);
+            slice_node->resolved_type = lvalue_type;
+            node->rvalue = slice_node;
+            rvalue_type = lvalue_type;
+        }
     }
 
     // Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules.
@@ -1372,9 +1411,30 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         if (!node->expression) {
             // Error: non-void function must return a value
             unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, "non-void function must return a value");
-        } else if (return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
-            // Error: return type mismatch
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, "return type mismatch");
+        } else {
+            // Implicit Array to Slice coercion
+            if (current_fn_return_type->kind == TYPE_SLICE && return_type && return_type->kind == TYPE_ARRAY) {
+                if (areTypesEqual(current_fn_return_type->as.slice.element_type, return_type->as.array.element_type)) {
+                    // Wrap in synthetic slice node
+                    ASTNode* slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+                    plat_memset(slice_node, 0, sizeof(ASTNode));
+                    slice_node->type = NODE_ARRAY_SLICE;
+                    slice_node->loc = node->expression->loc;
+                    slice_node->as.array_slice = (ASTArraySliceNode*)unit.getArena().alloc(sizeof(ASTArraySliceNode));
+                    plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+                    slice_node->as.array_slice->array = node->expression;
+
+                    visitArraySlice(slice_node->as.array_slice);
+                    slice_node->resolved_type = current_fn_return_type;
+                    node->expression = slice_node;
+                    return_type = current_fn_return_type;
+                }
+            }
+
+            if (return_type && !areTypesCompatible(current_fn_return_type, return_type)) {
+                // Error: return type mismatch
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, "return type mismatch");
+            }
         }
     }
 
@@ -1607,6 +1667,27 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         } else {
             // Infer type from initializer
             declared_type = initializer_type;
+        }
+    }
+
+    // Implicit Array to Slice coercion for variable declaration
+    if (declared_type && declared_type->kind == TYPE_SLICE && node->initializer) {
+        Type* init_type = node->initializer->resolved_type;
+        if (init_type && init_type->kind == TYPE_ARRAY) {
+            if (areTypesEqual(declared_type->as.slice.element_type, init_type->as.array.element_type)) {
+                // Wrap in synthetic slice node
+                ASTNode* slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+                plat_memset(slice_node, 0, sizeof(ASTNode));
+                slice_node->type = NODE_ARRAY_SLICE;
+                slice_node->loc = node->initializer->loc;
+                slice_node->as.array_slice = (ASTArraySliceNode*)unit.getArena().alloc(sizeof(ASTArraySliceNode));
+                plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+                slice_node->as.array_slice->array = node->initializer;
+
+                visitArraySlice(slice_node->as.array_slice);
+                slice_node->resolved_type = declared_type;
+                node->initializer = slice_node;
+            }
         }
     }
 
@@ -2442,6 +2523,14 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
     }
 
+    // Slice to Slice assignment/coercion
+    if (expected->kind == TYPE_SLICE && actual->kind == TYPE_SLICE) {
+        if (areTypesEqual(expected->as.slice.element_type, actual->as.slice.element_type)) {
+            // Const correctness: []T can be used as []const T, but not vice-versa
+            return expected->as.slice.is_const || !actual->as.slice.is_const;
+        }
+    }
+
     // Widening for signed integers
     bool actual_is_signed = (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64) || actual->kind == TYPE_ISIZE;
     bool expected_is_signed = (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) || expected->kind == TYPE_ISIZE;
@@ -2873,6 +2962,14 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     // Array to Slice coercion
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
         return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
+    }
+
+    // Slice to Slice assignment/coercion
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
+        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
+            // Const correctness: []T can be used as []const T, but not vice-versa
+            return target_type->as.slice.is_const || !source_type->as.slice.is_const;
+        }
     }
 
     // Function Pointer assignment

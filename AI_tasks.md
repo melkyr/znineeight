@@ -1402,13 +1402,13 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Implemented `goto`-based emission for labeled `while` loops to support multi-level jumps in C89.
     - **Documentation**: Updated `AST_Parser.md`, `Language_Spec_Z98.md`, and `C89_Codegen.md`.
 
-222. [IN PROGRESS] **Task 222: Slices Support (`[]T`)**
+222. [COMPLETE] **Task 222: Slices Support (`[]T`)**
     - **Phase 1: AST and Type System (DONE)**: Introduced `TYPE_SLICE`, supporting `[]T` and `[]const T`. Implemented structural interning.
     - **Phase 2: Basic Operations & Validation (DONE)**: Implemented `slice[i]` indexing, `.len` property access, and implicit array-to-slice coercion. Updated validators to allow slices.
     - **Phase 3: Slicing Syntax (DONE)**: Implemented validation for `base[start..end]` for arrays, slices, and many-item pointers. Added const-propagation and compile-time bounds checking. Populated AST with `base_ptr` and `len` expressions for codegen.
-    - **Phase 4: Code Generation - Infrastructure (TODO)**: Emit `typedef` for slice structs and generate unique names.
-    - **Phase 5: Code Generation - Slicing & Helpers (TODO)**: Implement `__make_slice` static inline helpers and emit slice construction logic.
-    - **Phase 6: Verification & Integration (TODO)**: Integration tests for slice parameters, return values, and complex expressions.
+    - **Phase 4: Code Generation - Infrastructure (DONE)**: Implemented unique recursive mangling for slice struct names. Added on-demand `typedef` emission with buffering to ensure proper placement at file scope or block start.
+    - **Phase 5: Code Generation - Slicing & Helpers (DONE)**: Implemented `__make_slice_T` static inline helpers per module. Integrated implicit array-to-slice coercion via synthetic AST nodes.
+    - **Phase 6: Verification & Integration (DONE)**: Created comprehensive integration tests (Batch 40) covering declarations, parameters, return values, indexing, length, and slicing.
 
 ## Phase 1: The Cross-Compiler (Zig)
 223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.

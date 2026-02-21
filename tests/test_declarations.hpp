@@ -1064,4 +1064,18 @@ TEST_FUNC(Pointer_Conversion_Rejected);
 TEST_FUNC(ManyItemPointer_Null);
 TEST_FUNC(ManyItemPointer_TypeToString);
 
+// Batch 40: Slice Codegen
+TEST_FUNC(Slice_VarDecl_Basic);
+TEST_FUNC(Slice_Indexing);
+TEST_FUNC(Slice_Length);
+TEST_FUNC(Slice_From_Array_Coercion);
+TEST_FUNC(Slice_Slicing_Array);
+TEST_FUNC(Slice_Slicing_Slice);
+TEST_FUNC(Slice_Omitted_Start);
+TEST_FUNC(Slice_Omitted_End);
+TEST_FUNC(Slice_Omitted_Both);
+TEST_FUNC(Slice_Ptr_Coercion);
+TEST_FUNC(Slice_Nested_Slices);
+TEST_FUNC(Slice_Of_Pointers);
+
 #endif // TEST_DECLARATIONS_HPP
