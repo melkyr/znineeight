@@ -90,6 +90,10 @@ bool allPathsExit(const ASTNode* node) {
             if (!if_stmt->else_block) return false;
             return allPathsExit(if_stmt->then_block) && allPathsExit(if_stmt->else_block);
         }
+        case NODE_EXPRESSION_STMT:
+            return allPathsExit(node->as.expression_stmt.expression);
+        case NODE_PAREN_EXPR:
+            return allPathsExit(node->as.paren_expr.expr);
         default:
             return false;
     }

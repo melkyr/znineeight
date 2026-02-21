@@ -139,6 +139,22 @@ TEST_FUNC(DeferIntegration_RejectReturn) {
     return expect_type_checker_abort(source);
 }
 
+TEST_FUNC(DeferIntegration_NestedReturn) {
+    const char* source =
+        "fn foo() i32 {\n"
+        "    defer a();\n"
+        "    {\n"
+        "        defer b();\n"
+        "        return 42;\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    // Should emit both b() and a() before returning.
+    // The exact brace nesting depends on the emitter's implementation of early exits.
+    return run_defer_test(source, "foo", "int foo(void) { { { int __return_val = 42; b(); a(); return __return_val; } } }");
+}
+
 TEST_FUNC(DeferIntegration_RejectBreak) {
     const char* source =
         "fn foo() void {\n"
