@@ -1413,29 +1413,11 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Phase 8: Cleanup and Validation (DONE)**: Verified complete test suite passing and MSVC 6.0 compliance.
 
 	 
-Task 223: defer Statement
-
-Goal: Add full support for defer statements, which schedule code to run when the current scope exits (either normally or via return/break/continue/error). This is essential for resource cleanup (file handles, memory) and is widely used in Zig.
-
-Key changes:
-
-    Parser: Recognize defer followed by a statement (block or expression statement). Ensure defer is allowed inside functions but not at top level.
-
-    AST: ASTDeferStmtNode already exists; ensure it stores the deferred statement.
-
-    Type checker: Validate that the deferred statement is wellâ€‘typed. Also ensure that break/continue/return are not allowed inside defer (already done). Track a stack of defer statements per scope.
-
-    Code generation: Translate each defer into C code that is executed at scope exit. Implementation approach:
-
-        When emitting a block, collect all defer statements within it.
-
-        At the end of the block (before each return and at the natural end), emit the deferred statements in reverse order.
-
-        For functions with multiple return points, ensure that the same deferred code is emitted before each return. This can be done by generating a single copy of the deferred code and using goto to a cleanup label, or by duplicating the code. The simpler method: for each return, emit the deferred statements before it (duplicated). This is acceptable for small functions.
-
-        Ensure that deferred code is emitted exactly once per scope exit, even if the exit is via break from a nested loop? Actually, defer is attached to the block, so when the block is exited (by any means), the deferred code runs. So for a loop inside the block, break exits the loop but not the block; the block's defer runs only when the block itself is left. This is handled by placing the defer code at the block's exit points.
-
-Testing: Add integration tests for defer in various contexts: simple block, with return, nested scopes, mixing with loops, and ensure that deferred code runs in correct order (LIFO).
+223. [COMPLETE] **Task 223: defer Statement (DONE)**
+    - **Parser**: Recognized `defer` followed by any statement. Restricted to function scope.
+    - **Type checker**: Implemented semantic validation to reject `break`, `continue`, and `return` inside `defer`. Ensured all loops have stable `label_id` and all jumps have resolved `target_label_id`.
+    - **Codegen**: Implemented compile-time `DeferScope` stack in `C89Emitter`. Integrated deferred execution into block exit, `return`, `break`, and `continue` (including multi-level jumps). Used temporary variables for return value preservation.
+    - **Verification**: Verified with 9 new integration tests in `tests/integration/defer_tests.cpp`.
 Task 224: for Loops
 
 Goal: Implement full support for for loops over arrays, slices, and ranges. This is a fundamental iteration construct in Zig.

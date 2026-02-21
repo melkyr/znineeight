@@ -1330,19 +1330,18 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
                 unit.getErrorHandler().report(ERR_DUPLICATE_LABEL, node->condition->loc, "duplicate loop label");
             }
         }
-        node->label_id = next_label_id_++;
-        LoopLabel ll = { node->label, node->label_id };
-        label_stack_.append(ll);
         function_labels_.append(node->label);
     }
+
+    node->label_id = next_label_id_++;
+    LoopLabel ll = { node->label, node->label_id };
+    label_stack_.append(ll);
 
     current_loop_depth++;
     visit(node->body);
     current_loop_depth--;
 
-    if (node->label) {
-        label_stack_.pop_back();
-    }
+    label_stack_.pop_back();
 
     return NULL;
 }
@@ -1358,7 +1357,7 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
     if (break_node.label) {
         bool found = false;
         for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
-            if (plat_strcmp(label_stack_[i].name, break_node.label) == 0) {
+            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, break_node.label) == 0) {
                 break_node.target_label_id = label_stack_[i].id;
                 found = true;
                 break;
@@ -1366,6 +1365,10 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
         }
         if (!found) {
             unit.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, "unknown loop label");
+        }
+    } else {
+        if (label_stack_.length() > 0) {
+            break_node.target_label_id = label_stack_.back().id;
         }
     }
 
@@ -1383,7 +1386,7 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
     if (cont_node.label) {
         bool found = false;
         for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
-            if (plat_strcmp(label_stack_[i].name, cont_node.label) == 0) {
+            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, cont_node.label) == 0) {
                 cont_node.target_label_id = label_stack_[i].id;
                 found = true;
                 break;
@@ -1392,12 +1395,20 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
         if (!found) {
             unit.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, "unknown loop label");
         }
+    } else {
+        if (label_stack_.length() > 0) {
+            cont_node.target_label_id = label_stack_.back().id;
+        }
     }
 
     return NULL;
 }
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_RETURN_INSIDE_DEFER, node->expression ? node->expression->loc : parent->loc, "return statement inside defer is not allowed");
+    }
+
     Type* return_type = node->expression ? visit(node->expression) : get_g_type_void();
 
     if (!current_fn_return_type) {
@@ -1465,11 +1476,12 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
                 unit.getErrorHandler().report(ERR_DUPLICATE_LABEL, node->iterable_expr->loc, "duplicate loop label");
             }
         }
-        node->label_id = next_label_id_++;
-        LoopLabel ll = { node->label, node->label_id };
-        label_stack_.append(ll);
         function_labels_.append(node->label);
     }
+
+    node->label_id = next_label_id_++;
+    LoopLabel ll = { node->label, node->label_id };
+    label_stack_.append(ll);
 
     Type* item_type = get_g_type_void();
     if (iterable_type) {
@@ -1510,9 +1522,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 
     unit.getSymbolTable().exitScope();
 
-    if (node->label) {
-        label_stack_.pop_back();
-    }
+    label_stack_.pop_back();
 
     return NULL;
 }

@@ -9,6 +9,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), external_cache_(NULL),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
@@ -18,6 +19,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), external_cache_(NULL),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
     output_file_ = plat_open_file(path, true);
@@ -29,6 +31,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), external_cache_(NULL),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
@@ -443,6 +446,10 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     writeIndent();
 
+    Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
+    current_fn_ret_type_ = ret_type;
+    defer_stack_.clear();
+
     // Special handling for the main entry point
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
         writeString("int main(int argc, char* argv[])");
@@ -453,7 +460,6 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             writeString("static ");
         }
 
-        Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
         const char* mangled_name = getC89GlobalName(node->name);
 
         emitDeclarator(ret_type, mangled_name, node);
@@ -468,11 +474,15 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     }
 }
 
-void C89Emitter::emitBlock(const ASTBlockStmtNode* node) {
+void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     if (!node) return;
 
     writeString("{\n");
     indent();
+
+    DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
+    new (scope) DeferScope(arena_, label_id);
+    defer_stack_.append(scope);
 
     // Pass 1: Local declarations
     for (size_t i = 0; i < node->statements->length(); ++i) {
@@ -487,10 +497,19 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node) {
         ASTNode* stmt = (*node->statements)[i];
         if (stmt->type == NODE_VAR_DECL) {
             emitLocalVarDecl(stmt, true);
+        } else if (stmt->type == NODE_DEFER_STMT) {
+            scope->defers.append(&stmt->as.defer_stmt);
         } else {
             emitStatement(stmt);
         }
     }
+
+    // Emit defers for this block in reverse order
+    for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+        emitStatement(scope->defers[i]->statement);
+    }
+
+    defer_stack_.pop_back();
 
     dedent();
     writeIndent();
@@ -513,43 +532,17 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitWhile(node->as.while_stmt);
             break;
         case NODE_BREAK_STMT:
-            writeIndent();
-            if (node->as.break_stmt.label) {
-                char label_buf[256];
-                char* cur = label_buf;
-                size_t rem = sizeof(label_buf);
-                safe_append(cur, rem, "goto __zig_label_");
-                safe_append(cur, rem, node->as.break_stmt.label);
-                safe_append(cur, rem, "_");
-                char id_buf[16];
-                plat_i64_to_string(node->as.break_stmt.target_label_id, id_buf, sizeof(id_buf));
-                safe_append(cur, rem, id_buf);
-                safe_append(cur, rem, "_end;\n");
-                writeString(label_buf);
-            } else {
-                writeString("break;\n");
-            }
+            emitBreak(&node->as.break_stmt);
             break;
         case NODE_CONTINUE_STMT:
-            writeIndent();
-            if (node->as.continue_stmt.label) {
-                char label_buf[256];
-                char* cur = label_buf;
-                size_t rem = sizeof(label_buf);
-                safe_append(cur, rem, "goto __zig_label_");
-                safe_append(cur, rem, node->as.continue_stmt.label);
-                safe_append(cur, rem, "_");
-                char id_buf[16];
-                plat_i64_to_string(node->as.continue_stmt.target_label_id, id_buf, sizeof(id_buf));
-                safe_append(cur, rem, id_buf);
-                safe_append(cur, rem, "_start;\n");
-                writeString(label_buf);
-            } else {
-                writeString("continue;\n");
-            }
+            emitContinue(&node->as.continue_stmt);
             break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
+            break;
+        case NODE_DEFER_STMT:
+            writeIndent();
+            writeString("/* defer */\n");
             break;
         case NODE_EXPRESSION_STMT:
             writeIndent();
@@ -630,7 +623,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
         if (node->body->type == NODE_BLOCK_STMT) {
             writeIndent();
-            emitBlock(&node->body->as.block_stmt);
+            emitBlock(&node->body->as.block_stmt, node->label_id);
         } else {
             emitStatement(node->body);
         }
@@ -651,7 +644,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         writeString(") ");
 
         if (node->body->type == NODE_BLOCK_STMT) {
-            emitBlock(&node->body->as.block_stmt);
+            emitBlock(&node->body->as.block_stmt, node->label_id);
         } else {
             emitStatement(node->body);
         }
@@ -659,17 +652,6 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     }
 }
 
-void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
-    if (!node) return;
-
-    writeIndent();
-    writeString("return");
-    if (node->expression) {
-        writeString(" ");
-        emitExpression(node->expression);
-    }
-    writeString(";\n");
-}
 
 bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
     if (!node) return true;
@@ -1601,5 +1583,124 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
                 buf[4] = '\0';
                 writeString(buf);
             }
+    }
+}
+
+void C89Emitter::emitDefersForScopeExit(int target_label_id, bool is_continue) {
+    for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
+        DeferScope* scope = defer_stack_[i];
+        for (int j = (int)scope->defers.length() - 1; j >= 0; --j) {
+            emitStatement(scope->defers[j]->statement);
+        }
+        if (target_label_id != -1 && scope->label_id == target_label_id) {
+            if (is_continue) {
+                // For continue, we stay inside the targeted loop's scope
+                // so we've finished emitting the relevant defers.
+            }
+            break;
+        }
+    }
+}
+
+void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
+    writeIndent();
+    if (defer_stack_.length() > 0) {
+        writeString("/* defers for break */\n");
+        emitDefersForScopeExit(node->target_label_id, false);
+        writeIndent();
+    }
+
+    if (node->label) {
+        char label_buf[256];
+        char* cur = label_buf;
+        size_t rem = sizeof(label_buf);
+        safe_append(cur, rem, "goto __zig_label_");
+        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, "_");
+        char id_buf[16];
+        plat_i64_to_string(node->target_label_id, id_buf, sizeof(id_buf));
+        safe_append(cur, rem, id_buf);
+        safe_append(cur, rem, "_end;\n");
+        writeString(label_buf);
+    } else {
+        writeString("break;\n");
+    }
+}
+
+void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
+    writeIndent();
+    if (defer_stack_.length() > 0) {
+        writeString("/* defers for continue */\n");
+        emitDefersForScopeExit(node->target_label_id, true);
+        writeIndent();
+    }
+
+    if (node->label) {
+        char label_buf[256];
+        char* cur = label_buf;
+        size_t rem = sizeof(label_buf);
+        safe_append(cur, rem, "goto __zig_label_");
+        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, "_");
+        char id_buf[16];
+        plat_i64_to_string(node->target_label_id, id_buf, sizeof(id_buf));
+        safe_append(cur, rem, id_buf);
+        safe_append(cur, rem, "_start;\n");
+        writeString(label_buf);
+    } else {
+        writeString("continue;\n");
+    }
+}
+
+void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
+    if (!node) return;
+
+    bool has_defers = false;
+    for (size_t i = 0; i < defer_stack_.length(); ++i) {
+        if (defer_stack_[i]->defers.length() > 0) {
+            has_defers = true;
+            break;
+        }
+    }
+
+    if (has_defers) {
+        writeIndent();
+        writeString("{\n");
+        indent();
+
+        if (node->expression && current_fn_ret_type_->kind != TYPE_VOID) {
+            writeIndent();
+            emitType(current_fn_ret_type_, "__return_val");
+            writeString(" = ");
+            emitExpression(node->expression);
+            writeString(";\n");
+
+            emitDefersForScopeExit(-1, false);
+
+            writeIndent();
+            writeString("return __return_val;\n");
+        } else {
+            if (node->expression) {
+                writeIndent();
+                emitExpression(node->expression);
+                writeString(";\n");
+            }
+            emitDefersForScopeExit(-1, false);
+            writeIndent();
+            writeString("return;\n");
+        }
+
+        dedent();
+        writeIndent();
+        writeString("}\n");
+    } else {
+        writeIndent();
+        if (node->expression) {
+            writeString("return ");
+            emitExpression(node->expression);
+            writeString(";\n");
+        } else {
+            writeString("return;\n");
+        }
     }
 }
