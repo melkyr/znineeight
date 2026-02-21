@@ -236,8 +236,7 @@ public:
         return ss.str();
     }
 
-    std::string emitDefersForScopeExit(int target_label_id = -1, bool is_continue = false) {
-        (void)is_continue;
+    std::string emitDefersForScopeExit(int target_label_id = -1) {
         std::stringstream ss;
         for (int i = (int)defer_stack_.size() - 1; i >= 0; --i) {
             const MockDeferScope& scope = defer_stack_[i];
@@ -257,7 +256,7 @@ public:
     std::string emitBreakStatement(const ASTBreakStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id, false);
+            std::string defers = emitDefersForScopeExit(node->target_label_id);
             if (!defers.empty()) ss << "/* defers for break */ " << defers;
         }
 
@@ -275,7 +274,7 @@ public:
     std::string emitContinueStatement(const ASTContinueStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id, true);
+            std::string defers = emitDefersForScopeExit(node->target_label_id);
             if (!defers.empty()) ss << "/* defers for continue */ " << defers;
         }
 

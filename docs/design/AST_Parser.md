@@ -805,7 +805,7 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 `'defer' statement`
 
 - It consumes a `defer` token.
-- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- It then requires a subsequent statement, parsed via `parseStatement()`. This allows either a single expression statement (e.g., `defer x = 1;`) or a block statement (`defer { ... }`).
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTForStmtNode`

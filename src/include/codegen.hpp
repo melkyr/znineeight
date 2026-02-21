@@ -344,9 +344,8 @@ public:
     /**
      * @brief Emits deferred statements for a scope exit.
      * @param target_label_id The label_id of the target loop (for break/continue). -1 for return.
-     * @param is_continue True if exiting for a continue (don't exit the target scope).
      */
-    void emitDefersForScopeExit(int target_label_id = -1, bool is_continue = false);
+    void emitDefersForScopeExit(int target_label_id = -1);
 
 private:
     struct GlobalNameEntry {
