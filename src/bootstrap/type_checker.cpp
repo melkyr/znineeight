@@ -1071,11 +1071,14 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
-    Type* base_type = visit(node->array);
-    if (!base_type) return NULL;
+    Type* original_base_type = visit(node->array);
+    if (!original_base_type) return NULL;
+    Type* base_type = original_base_type;
 
+    bool reached_via_const_ptr = false;
     // Auto-dereference for pointer to array
     if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_ARRAY) {
+        reached_via_const_ptr = base_type->as.pointer.is_const;
         base_type = base_type->as.pointer.base;
     }
 
@@ -1089,7 +1092,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     bool is_const = false;
     if (base_type->kind == TYPE_ARRAY) {
         element_type = base_type->as.array.element_type;
-        is_const = isLValueConst(node->array);
+        if (original_base_type->kind == TYPE_POINTER) {
+            is_const = reached_via_const_ptr;
+        } else {
+            is_const = isLValueConst(node->array);
+        }
     } else if (base_type->kind == TYPE_SLICE) {
         element_type = base_type->as.slice.element_type;
         is_const = base_type->as.slice.is_const;
@@ -2452,17 +2459,32 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
         }
         case NODE_UNARY_OP:
             // Check for dereferencing a const pointer, e.g. *const u8
-            if (node->as.unary_op.op == TOKEN_STAR) {
-                Type* ptr_type = visit(node->as.unary_op.operand);
+            if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                Type* ptr_type = node->as.unary_op.operand->resolved_type ? node->as.unary_op.operand->resolved_type : visit(node->as.unary_op.operand);
                 return (ptr_type && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
             }
             return false;
-        case NODE_ARRAY_ACCESS:
+        case NODE_ARRAY_ACCESS: {
+            Type* array_type = node->as.array_access->array->resolved_type ? node->as.array_access->array->resolved_type : visit(node->as.array_access->array);
+            if (array_type && array_type->kind == TYPE_POINTER) {
+                return array_type->as.pointer.is_const;
+            }
+            if (array_type && array_type->kind == TYPE_SLICE) {
+                return array_type->as.slice.is_const;
+            }
             // An array access is const if the array itself is const.
             return isLValueConst(node->as.array_access->array);
-        case NODE_MEMBER_ACCESS:
+        }
+        case NODE_MEMBER_ACCESS: {
+            Type* base_type = node->as.member_access->base->resolved_type ? node->as.member_access->base->resolved_type : visit(node->as.member_access->base);
+            if (base_type && base_type->kind == TYPE_POINTER) {
+                return base_type->as.pointer.is_const;
+            }
             // A member access is const if the struct itself is const.
             return isLValueConst(node->as.member_access->base);
+        }
+        case NODE_PAREN_EXPR:
+            return isLValueConst(node->as.paren_expr.expr);
         default:
             return false;
     }

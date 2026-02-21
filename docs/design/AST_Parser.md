@@ -1861,3 +1861,23 @@ Task 174 introduced comprehensive integration testing for function calls, verify
 - **Error Condition Rejection**: Robust detection and rejection of non-C89 call patterns like variadics and indirect calls.
 
 For more details, see the integration test suite in `tests/integration/function_call_tests.cpp`.
+
+## 34. Slice Expressions (Task 222)
+
+Slices (`[]T`) are supported as a language extension in the bootstrap compiler.
+
+### AST Node: `ASTArraySliceNode`
+Represents an array or slice expression (e.g., `base[start..end]`).
+- **Fields**:
+    - `array`: The expression being sliced.
+    - `start`: Optional start index expression.
+    - `end`: Optional end index expression.
+    - `base_ptr`: Synthetic expression representing the raw pointer to the first element. Populated during type checking for use in codegen.
+    - `len`: Synthetic expression representing the resulting length. Populated during type checking.
+
+### Type Resolution
+The `TypeChecker` resolves slicing expressions and ensures:
+- The base type is a sized array, another slice, or a many-item pointer.
+- Start and end indices are integers.
+- Many-item pointers provide both indices.
+- Constness is correctly propagated to the resulting `TYPE_SLICE`.

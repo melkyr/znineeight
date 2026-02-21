@@ -855,7 +855,7 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 
 ### Week 6: Advanced Code Generation
 - [ ] Implement defer statement code generation
-- [ ] Handle slices and error unions
+- [x] Handle slices and error unions (Slices: DONE, Error Unions: Deferred)
 - [ ] Add Win32 imports for kernel32.dll
 - [ ] Test generated code correctness
 
