@@ -388,6 +388,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             if (!is_undefined) {
                 if (decl->initializer->type == NODE_STRUCT_INITIALIZER) {
                     emitInitializerAssignments(c_name, decl->initializer);
+                } else if (decl->initializer->type == NODE_SWITCH_EXPR) {
+                    emitSwitchExpr(decl->initializer, c_name);
                 } else {
                     writeIndent();
                     writeString(c_name);
@@ -558,14 +560,28 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeString("/* defer */\n");
             break;
         case NODE_EXPRESSION_STMT:
-            writeIndent();
-            emitExpression(node->as.expression_stmt.expression);
-            writeString(";\n");
+            if (node->as.expression_stmt.expression->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(node->as.expression_stmt.expression, NULL);
+            } else {
+                writeIndent();
+                emitExpression(node->as.expression_stmt.expression);
+                writeString(";\n");
+            }
             break;
         case NODE_ASSIGNMENT:
-            writeIndent();
-            emitExpression(node);
-            writeString(";\n");
+            if (node->as.assignment->rvalue->type == NODE_SWITCH_EXPR) {
+                if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
+                    emitSwitchExpr(node->as.assignment->rvalue, var_alloc_.allocate(node->as.assignment->lvalue->as.identifier.symbol));
+                } else {
+                    writeIndent();
+                    emitExpression(node);
+                    writeString(";\n");
+                }
+            } else {
+                writeIndent();
+                emitExpression(node);
+                writeString(";\n");
+            }
             break;
         case NODE_EMPTY_STMT:
             writeIndent();
@@ -607,6 +623,90 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
     }
     writeString("\n");
+}
+
+static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
+    if (!node) return false;
+    if (node->type == NODE_INTEGER_LITERAL) {
+        *out_value = (i64)node->as.integer_literal.value;
+        return true;
+    }
+    if (node->type == NODE_BOOL_LITERAL) {
+        *out_value = node->as.bool_literal.value ? 1 : 0;
+        return true;
+    }
+    if (node->type == NODE_UNARY_OP && node->as.unary_op.op == TOKEN_MINUS) {
+        i64 val;
+        if (evaluateSimpleConstant(node->as.unary_op.operand, &val)) {
+            *out_value = -val;
+            return true;
+        }
+    }
+    if (node->type == NODE_PAREN_EXPR) {
+        return evaluateSimpleConstant(node->as.paren_expr.expr, out_value);
+    }
+    return false;
+}
+
+void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
+    const ASTSwitchExprNode* switch_node = node->as.switch_expr;
+    writeIndent();
+    writeString("switch (");
+    emitExpression(switch_node->expression);
+    writeString(") {\n");
+    indent();
+    for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
+        const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
+        if (prong->is_else) {
+            writeIndent();
+            writeString("default:\n");
+        } else {
+            for (size_t j = 0; j < prong->items->length(); ++j) {
+                const ASTNode* item = (*prong->items)[j];
+                if (item->type == NODE_RANGE) {
+                    i64 start, end;
+                    if (evaluateSimpleConstant(item->as.range.start, &start) &&
+                        evaluateSimpleConstant(item->as.range.end, &end)) {
+                        for (i64 k = start; k <= end; ++k) {
+                            writeIndent();
+                            writeString("case ");
+                            char buf[32];
+                            plat_i64_to_string(k, buf, sizeof(buf));
+                            writeString(buf);
+                            writeString(":\n");
+                        }
+                    } else {
+                        writeIndent();
+                        writeString("/* error: non-constant range in switch */\n");
+                    }
+                } else {
+                    writeIndent();
+                    writeString("case ");
+                    emitExpression(item);
+                    writeString(":\n");
+                }
+            }
+        }
+        indent();
+        if (target_var) {
+            writeIndent();
+            writeString(target_var);
+            writeString(" = ");
+            emitExpression(prong->body);
+            writeString(";\n");
+        } else {
+            // Just emit expression for side effects if no target
+            writeIndent();
+            emitExpression(prong->body);
+            writeString(";\n");
+        }
+        writeIndent();
+        writeString("break;\n");
+        dedent();
+    }
+    dedent();
+    writeIndent();
+    writeString("}\n");
 }
 
 void C89Emitter::emitFor(const ASTForStmtNode* node) {
@@ -1219,6 +1319,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("}");
             break;
         }
+        case NODE_SWITCH_EXPR:
+            writeString("/* error: switch expression used in unsupported context (not lifted) */");
+            break;
         default:
             writeString("/* [Unimplemented Expression Type ");
             char num[16];
@@ -1887,9 +1990,16 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         if (node->expression && current_fn_ret_type_->kind != TYPE_VOID) {
             writeIndent();
             emitType(current_fn_ret_type_, "__return_val");
-            writeString(" = ");
-            emitExpression(node->expression);
             writeString(";\n");
+
+            if (node->expression->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(node->expression, "__return_val");
+            } else {
+                writeIndent();
+                writeString("__return_val = ");
+                emitExpression(node->expression);
+                writeString(";\n");
+            }
 
             emitDefersForScopeExit(-1);
 
@@ -1910,13 +2020,28 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         writeIndent();
         writeString("}\n");
     } else {
-        writeIndent();
-        if (node->expression) {
-            writeString("return ");
-            emitExpression(node->expression);
+        if (node->expression && current_fn_ret_type_->kind != TYPE_VOID && node->expression->type == NODE_SWITCH_EXPR) {
+            writeIndent();
+            writeString("{\n");
+            indent();
+            writeIndent();
+            emitType(current_fn_ret_type_, "__return_val");
             writeString(";\n");
+            emitSwitchExpr(node->expression, "__return_val");
+            writeIndent();
+            writeString("return __return_val;\n");
+            dedent();
+            writeIndent();
+            writeString("}\n");
         } else {
-            writeString("return;\n");
+            writeIndent();
+            if (node->expression) {
+                writeString("return ");
+                emitExpression(node->expression);
+                writeString(";\n");
+            } else {
+                writeString("return;\n");
+            }
         }
     }
 }

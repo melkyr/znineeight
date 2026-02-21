@@ -24,16 +24,16 @@ TEST_FUNC(Parser_SwitchExpression_Basic) {
     // Prong 1: 1 => 10
     ASTSwitchProngNode* prong1 = (*switch_node->prongs)[0];
     ASSERT_TRUE(!prong1->is_else);
-    ASSERT_EQ(prong1->cases->length(), 1);
-    ASSERT_EQ((*prong1->cases)[0]->type, NODE_INTEGER_LITERAL);
-    ASSERT_EQ((*prong1->cases)[0]->as.integer_literal.value, 1);
+    ASSERT_EQ(prong1->items->length(), 1);
+    ASSERT_EQ((*prong1->items)[0]->type, NODE_INTEGER_LITERAL);
+    ASSERT_EQ((*prong1->items)[0]->as.integer_literal.value, 1);
     ASSERT_EQ(prong1->body->type, NODE_INTEGER_LITERAL);
     ASSERT_EQ(prong1->body->as.integer_literal.value, 10);
 
     // Prong 2: else => 20
     ASTSwitchProngNode* prong2 = (*switch_node->prongs)[1];
     ASSERT_TRUE(prong2->is_else);
-    ASSERT_EQ(prong2->cases->length(), 0);
+    ASSERT_EQ(prong2->items->length(), 0);
     ASSERT_EQ(prong2->body->type, NODE_INTEGER_LITERAL);
     ASSERT_EQ(prong2->body->as.integer_literal.value, 20);
 
@@ -57,10 +57,10 @@ TEST_FUNC(Parser_SwitchExpression_MultiCaseProng) {
     // Prong 1: 1, 2, 3 => 42
     ASTSwitchProngNode* prong1 = (*switch_node->prongs)[0];
     ASSERT_TRUE(!prong1->is_else);
-    ASSERT_EQ(prong1->cases->length(), 3);
-    ASSERT_EQ((*prong1->cases)[0]->as.integer_literal.value, 1);
-    ASSERT_EQ((*prong1->cases)[1]->as.integer_literal.value, 2);
-    ASSERT_EQ((*prong1->cases)[2]->as.integer_literal.value, 3);
+    ASSERT_EQ(prong1->items->length(), 3);
+    ASSERT_EQ((*prong1->items)[0]->as.integer_literal.value, 1);
+    ASSERT_EQ((*prong1->items)[1]->as.integer_literal.value, 2);
+    ASSERT_EQ((*prong1->items)[2]->as.integer_literal.value, 3);
     ASSERT_EQ(prong1->body->as.integer_literal.value, 42);
 
     return true;

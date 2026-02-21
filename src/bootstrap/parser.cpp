@@ -507,6 +507,7 @@ static int get_token_precedence(TokenType type) {
         case TOKEN_CATCH:
         case TOKEN_PIPE_PIPE:
         case TOKEN_RANGE:
+        case TOKEN_ELLIPSIS:
             return 1;
 
         default:
@@ -601,12 +602,13 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             ASTNode* new_node = createNodeAt(NODE_ERROR_SET_MERGE, op_token.location);
             new_node->as.error_set_merge = merge_data;
             left = new_node;
-        } else if (op_token.type == TOKEN_RANGE) {
+        } else if (op_token.type == TOKEN_RANGE || op_token.type == TOKEN_ELLIPSIS) {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
             ASTRangeNode range_data;
             range_data.start = left;
             range_data.end = right;
+            range_data.is_inclusive = (op_token.type == TOKEN_ELLIPSIS);
 
             ASTNode* new_node = createNodeAt(NODE_RANGE, op_token.location);
             new_node->as.range = range_data;
@@ -740,21 +742,16 @@ ASTNode* Parser::parseSwitchExpression() {
 
     bool has_else = false;
 
-    if (peek().type == TOKEN_RBRACE) {
-        advance(); // consume '}'
-        error("Empty switch body {}");
-    }
-
-    do {
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
         ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
         if (!prong_node) {
             error("Out of memory");
         }
-        prong_node->cases = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        if (!prong_node->cases) {
+        prong_node->items = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!prong_node->items) {
             error("Out of memory");
         }
-        new (prong_node->cases) DynamicArray<ASTNode*>(*arena_);
+        new (prong_node->items) DynamicArray<ASTNode*>(*arena_);
         prong_node->is_else = false;
 
         if (match(TOKEN_ELSE)) {
@@ -764,9 +761,9 @@ ASTNode* Parser::parseSwitchExpression() {
             has_else = true;
             prong_node->is_else = true;
         } else {
-            // Parse one or more case expressions
+            // Parse one or more case items
             do {
-                prong_node->cases->append(parseExpression());
+                prong_node->items->append(parseExpression());
             } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
         }
 
@@ -779,8 +776,12 @@ ASTNode* Parser::parseSwitchExpression() {
 
         switch_node->prongs->append(prong_node);
 
-    } while (match(TOKEN_COMMA) && peek().type != TOKEN_RBRACE);
+        if (!match(TOKEN_COMMA)) break;
+    }
 
+    if (switch_node->prongs->length() == 0) {
+        error("Empty switch body {}");
+    }
 
     expect(TOKEN_RBRACE, "Expected '}' to close switch expression");
 

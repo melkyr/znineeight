@@ -475,17 +475,18 @@ struct ASTParenExprNode {
 struct ASTRangeNode {
     ASTNode* start;
     ASTNode* end;
+    bool is_inclusive;
 };
 
 /**
  * @struct ASTSwitchProngNode
  * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
- * @var ASTSwitchProngNode::cases A dynamic array of case expressions for this prong.
+ * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
  * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
  * @var ASTSwitchProngNode::body The expression to execute for this prong.
  */
 struct ASTSwitchProngNode {
-    DynamicArray<ASTNode*>* cases;
+    DynamicArray<ASTNode*>* items;
     bool is_else;
     ASTNode* body;
 };

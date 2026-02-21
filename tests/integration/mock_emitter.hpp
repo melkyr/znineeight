@@ -116,7 +116,7 @@ public:
             case NODE_DEFER_STMT:
                 return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
             case NODE_SWITCH_EXPR:
-                return "/* switch expression */";
+                return emitSwitchExpression(node->as.switch_expr);
             case NODE_BLOCK_STMT:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
@@ -126,7 +126,7 @@ public:
             case NODE_FOR_STMT:
                 return emitForStatement(node->as.for_stmt);
             case NODE_RANGE:
-                return emitExpression(node->as.range.start) + ".." + emitExpression(node->as.range.end);
+                return emitExpression(node->as.range.start) + (node->as.range.is_inclusive ? "..." : "..") + emitExpression(node->as.range.end);
             case NODE_BREAK_STMT:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:
@@ -796,6 +796,25 @@ private:
             case TOKEN_OR: return "||";
             default: return "??";
         }
+    }
+
+    std::string emitSwitchExpression(const ASTSwitchExprNode* node) {
+        if (!node) return "/* INVALID SWITCH */";
+        std::stringstream ss;
+        ss << "switch (" << emitExpression(node->expression) << ") { ";
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            const ASTSwitchProngNode* prong = (*node->prongs)[i];
+            if (prong->is_else) {
+                ss << "default: ";
+            } else {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    ss << "case " << emitExpression((*prong->items)[j]) << ": ";
+                }
+            }
+            ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+        }
+        ss << "}";
+        return ss.str();
     }
 
     const char* unaryOpToString(TokenType op) {

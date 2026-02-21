@@ -851,7 +851,7 @@ Represents a `for` loop, which iterates over an expression.
 
 #### `ASTRangeNode`
 Represents a range expression.
-*   **Zig Code:** `0..10`, `start..end`
+*   **Zig Code:** `0..10` (exclusive), `0...10` (inclusive)
 *   **Structure:**
     ```cpp
     /**
@@ -859,10 +859,12 @@ Represents a range expression.
      * @brief Represents a range expression.
      * @var ASTRangeNode::start The start expression.
      * @var ASTRangeNode::end The end expression.
+     * @var ASTRangeNode::is_inclusive True if using '...' syntax.
      */
     struct ASTRangeNode {
         ASTNode* start;
         ASTNode* end;
+        bool is_inclusive;
     };
     ```
 
@@ -1091,12 +1093,12 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
     /**
      * @struct ASTSwitchProngNode
      * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
-     * @var ASTSwitchProngNode::cases A dynamic array of case expressions for this prong.
+     * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
      * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
      * @var ASTSwitchProngNode::body The expression to execute for this prong.
      */
     struct ASTSwitchProngNode {
-        DynamicArray<ASTNode*>* cases;
+        DynamicArray<ASTNode*>* items;
         bool is_else;
         ASTNode* body;
     };
@@ -1867,7 +1869,7 @@ A review of the Zig language specification has identified several language featu
 
 *   **Control Flow:**
     *   `ForStmtNode`: For `for` loops. (DONE)
-    *   `SwitchExprNode`: For `switch` expressions, including prongs and cases. (DONE)
+    *   `SwitchExprNode`: For `switch` expressions, including prongs and case items. (DONE)
 
 *   **Error Handling:**
     *   `TryExprNode`: For the `try` expression. (DONE)

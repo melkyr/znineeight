@@ -1482,7 +1482,16 @@ Type* TypeChecker::visitRange(ASTRangeNode* node) {
         fatalError(node->end->loc, "Range end must be an integer");
     }
 
-    return get_g_type_usize();
+    // For inclusive ranges in switch, we check start <= end if they are constants
+    i64 start_val, end_val;
+    if (evaluateConstantExpression(node->start, &start_val) &&
+        evaluateConstantExpression(node->end, &end_val)) {
+        if (start_val > end_val) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, "Range start must be less than or equal to end");
+        }
+    }
+
+    return start_type;
 }
 
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
@@ -1577,35 +1586,61 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     Type* cond_type = visit(node->expression);
     if (!cond_type) return NULL;
 
-    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM) {
-        fatalError(node->expression->loc, "Switch condition must be integer or enum type");
+    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
+        fatalError(node->expression->loc, "Switch condition must be integer, enum, or boolean type");
         return NULL;
     }
 
+    bool has_else = false;
     Type* result_type = NULL;
+
     for (size_t i = 0; i < node->prongs->length(); ++i) {
         ASTSwitchProngNode* prong = (*node->prongs)[i];
 
-        if (!prong->is_else) {
-            for (size_t j = 0; j < prong->cases->length(); ++j) {
-                ASTNode* case_expr = (*prong->cases)[j];
-                Type* case_type = visit(case_expr);
-                if (case_type) {
-                    // Check compatibility between condition and case
-                    if (!areTypesCompatible(cond_type, case_type)) {
-                        // Allow enum members if cond is enum
-                        if (cond_type->kind == TYPE_ENUM && case_type->kind == TYPE_ENUM) {
-                            if (cond_type != case_type) {
-                                fatalError(case_expr->loc, "Switch case type mismatch");
-                            }
-                        } else if (cond_type->kind == TYPE_ENUM && isIntegerType(case_type)) {
-                            // C89 allows integers for enum cases
-                        } else if (isIntegerType(cond_type) && case_type->kind == TYPE_ENUM) {
-                             // Allow enum cases for integer discriminant?
-                        } else {
-                            fatalError(case_expr->loc, "Switch case type mismatch");
-                        }
+        if (prong->is_else) {
+            has_else = true;
+        } else {
+            for (size_t j = 0; j < prong->items->length(); ++j) {
+                ASTNode* item_expr = (*prong->items)[j];
+                Type* item_type = visit(item_expr);
+                if (item_type) {
+                    // Check compatibility between condition and case item
+                    bool compatible = false;
+                    if (areTypesCompatible(cond_type, item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
+                        // C89 allows integers for enum cases
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
+                        // Allow enum members for integer switch
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_BOOL && isIntegerType(item_type)) {
+                        compatible = true;
                     }
+
+                    if (!compatible) {
+                        fatalError(item_expr->loc, "Switch case type mismatch");
+                    }
+                }
+            }
+        }
+
+        // Reject prong bodies containing restricted control flow
+        // For simplicity in bootstrap, we don't allow return/break/continue in prong bodies
+        // unless we implemented full expression lifting with CFG.
+        if (prong->body->type == NODE_RETURN_STMT ||
+            prong->body->type == NODE_BREAK_STMT ||
+            prong->body->type == NODE_CONTINUE_STMT) {
+            fatalError(prong->body->loc, "Control flow statements are not allowed in switch prong bodies");
+        }
+        if (prong->body->type == NODE_BLOCK_STMT) {
+            DynamicArray<ASTNode*>* stmts = prong->body->as.block_stmt.statements;
+            for (size_t k = 0; k < stmts->length(); ++k) {
+                ASTNode* s = (*stmts)[k];
+                if (s->type == NODE_RETURN_STMT || s->type == NODE_BREAK_STMT || s->type == NODE_CONTINUE_STMT) {
+                    fatalError(s->loc, "Control flow statements are not allowed in switch prong bodies");
                 }
             }
         }
@@ -1613,10 +1648,15 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
         Type* prong_type = visit(prong->body);
         if (!result_type) {
             result_type = prong_type;
-        } else if (prong_type && result_type != prong_type) {
-            // Require exact match for switch expression resulting type for now.
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+        } else if (prong_type) {
+            if (!areTypesCompatible(result_type, prong_type)) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+            }
         }
+    }
+
+    if (!has_else) {
+        fatalError(node->expression->loc, "Switch expression must have an 'else' prong");
     }
 
     return result_type;

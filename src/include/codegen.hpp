@@ -203,6 +203,13 @@ public:
     void emitWhile(const ASTWhileStmtNode* node);
 
     /**
+     * @brief Emits a switch expression lifted to a statement.
+     * @param node The switch expression node.
+     * @param target_var The name of the variable to assign the result to (can be NULL).
+     */
+    void emitSwitchExpr(const ASTNode* node, const char* target_var);
+
+    /**
      * @brief Emits a for loop statement.
      * @param node The for loop statement node.
      */

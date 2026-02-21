@@ -34,7 +34,9 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
 - **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`.
-- **Ranges**: Exclusive ranges `start..end` are supported primarily for iteration. They represent a sequence of values from `start` (inclusive) to `end` (exclusive).
+- **Ranges**:
+  - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
+  - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
 - **Slicing**: `base[start..end]` creates a slice from an array, slice, or many-item pointer.
   - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
@@ -77,7 +79,13 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
   - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|` or `for (arr) |_|`). Discarded captures are not bound to a symbol and cannot be accessed.
   - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
-- `switch (expr) { ... }`: Pattern matching.
+- `switch (expr) { ... }`: Pattern matching and conditional evaluation.
+  - **Condition**: Must be an integer, enum, or boolean.
+  - **Prongs**: Comma-separated case items followed by `=>` and an expression.
+  - **Case Items**: Can be single values or inclusive ranges (`a...b`).
+  - **Else**: An `else` prong is **mandatory** in all switch expressions.
+  - **Result Type**: All prong bodies must have compatible types. The result type is inferred from the first prong.
+  - **Limitations**: Prong bodies currently cannot contain `return`, `break`, or `continue` statements.
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope.
   - The statement can be a single expression statement or a block `{ ... }`.
   - `defer` statements are executed in reverse order of declaration (LIFO).

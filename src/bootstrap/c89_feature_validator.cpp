@@ -322,9 +322,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
                         ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
                         if (prong) {
-                            if (!prong->is_else && prong->cases) {
-                                for (size_t j = 0; j < prong->cases->length(); ++j) {
-                                    visit((*prong->cases)[j]);
+                            if (!prong->is_else && prong->items) {
+                                for (size_t j = 0; j < prong->items->length(); ++j) {
+                                    visit((*prong->items)[j]);
                                 }
                             }
                             visit(prong->body);
