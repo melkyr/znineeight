@@ -71,6 +71,7 @@ enum NodeType {
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
+    NODE_RANGE,           ///< A range expression (e.g., `0..10`).
     NODE_SWITCH_EXPR,     ///< A switch expression.
     NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
@@ -164,6 +165,7 @@ struct ASTNode {
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
         ASTExpressionStmtNode expression_stmt;
+        ASTRangeNode range;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
@@ -843,6 +845,23 @@ Represents a `for` loop, which iterates over an expression.
         ASTNode* body;
         const char* label;
         int label_id;
+    };
+    ```
+
+#### `ASTRangeNode`
+Represents a range expression.
+*   **Zig Code:** `0..10`, `start..end`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTRangeNode
+     * @brief Represents a range expression.
+     * @var ASTRangeNode::start The start expression.
+     * @var ASTRangeNode::end The end expression.
+     */
+    struct ASTRangeNode {
+        ASTNode* start;
+        ASTNode* end;
     };
     ```
 

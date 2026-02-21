@@ -96,7 +96,7 @@ TEST_FUNC(TypeChecker_BreakInDefer_Error) {
 
     bool found_error = false;
     for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        if (unit.getErrorHandler().getErrors()[i].code == ERR_BREAK_OUTSIDE_LOOP) {
+        if (unit.getErrorHandler().getErrors()[i].code == ERR_BREAK_INSIDE_DEFER) {
             found_error = true;
             break;
         }

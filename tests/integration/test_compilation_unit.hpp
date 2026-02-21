@@ -16,6 +16,7 @@
 #include "ast.hpp"
 #include "utils.hpp"
 #include "mock_emitter.hpp"
+#include "codegen.hpp"
 #include <cstring>
 
 /**
@@ -336,6 +337,57 @@ public:
 
     const ASTNode* extractVariableDeclarationNode(const char* name) const {
         return findVariableDeclarationNode(last_ast, name);
+    }
+
+    /**
+     * @brief Validates that a function declaration (signature + body) emits the expected C89 string using the REAL emitter.
+     */
+    bool validateRealFunctionEmission(const char* name, const std::string& expectedC89) {
+        const ASTFnDeclNode* fn = extractFunctionDeclaration(name);
+        if (!fn) {
+            printf("FAIL: Could not find function declaration for '%s'.\n", name);
+            return false;
+        }
+
+        // We need a temporary file or a way to capture emitter output.
+        // C89Emitter now supports PlatFile.
+        // On many platforms we can use a memory-backed file, but for bootstrap let's just use a temp file.
+        const char* temp_path = "temp_test_emission.c";
+        C89Emitter emitter(*this, temp_path);
+        if (!emitter.isValid()) {
+            printf("FAIL: Could not open temp file for emission.\n");
+            return false;
+        }
+
+        emitter.emitFnDecl(fn);
+        emitter.flush();
+        emitter.close();
+
+        // Read back the file
+        PlatFile f = plat_open_file(temp_path, false);
+        if (f == PLAT_INVALID_FILE) return false;
+        char buffer[4096];
+        size_t bytes = plat_read_file_raw(f, buffer, sizeof(buffer) - 1);
+        buffer[bytes] = '\0';
+        plat_close_file(f);
+
+        std::string actual = buffer;
+        // Clean up: remove trailing newlines and spaces for easier comparison (C++98 compatible)
+        while (!actual.empty()) {
+            char c = actual[actual.length() - 1];
+            if (c == '\n' || c == '\r' || c == ' ') {
+                actual.erase(actual.length() - 1);
+            } else {
+                break;
+            }
+        }
+
+        if (actual != expectedC89) {
+            printf("FAIL: REAL emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
     }
 
     /**

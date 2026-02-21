@@ -34,6 +34,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
 - **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`.
+- **Ranges**: Exclusive ranges `start..end` are supported primarily for iteration. They represent a sequence of values from `start` (inclusive) to `end` (exclusive).
 - **Slicing**: `base[start..end]` creates a slice from an array, slice, or many-item pointer.
   - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
@@ -71,6 +72,9 @@ Memory is reclaimed by resetting or destroying the arena.
 - `if (cond) { ... } else { ... }`: Braces are **required**.
 - `while (cond) { ... }`: Simple loop.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
+  - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
+  - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
+  - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
 - `switch (expr) { ... }`: Pattern matching.
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope.
   - The statement can be a single expression statement or a block `{ ... }`.

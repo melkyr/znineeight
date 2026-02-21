@@ -1418,43 +1418,12 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Type checker**: Implemented semantic validation to reject `break`, `continue`, and `return` inside `defer`. Ensured all loops have stable `label_id` and all jumps have resolved `target_label_id`.
     - **Codegen**: Implemented compile-time `DeferScope` stack in `C89Emitter`. Integrated deferred execution into block exit, `return`, `break`, and `continue` (including multi-level jumps). Used temporary variables for return value preservation.
     - **Verification**: Verified with 9 new integration tests in `tests/integration/defer_tests.cpp`.
-Task 224: for Loops
 
-Goal: Implement full support for for loops over arrays, slices, and ranges. This is a fundamental iteration construct in Zig.
-
-Key changes:
-
-    Parser: Already parses for loops (syntax: for (iterable) |item| { ... } and for (iterable) |item, index| { ... }). Ensure that range syntax 0..n is also recognized (e.g., for (0..10) |i| { ... }). The AST node ASTForStmtNode exists; add fields for the index capture name if present.
-
-    Type checker:
-
-        Validate that the iterable is an array, slice, or range (range is a special case: start..end where both are integers). For arrays and slices, the element type becomes the capture type. For ranges, the capture type is usize (or the integer type of the range).
-
-        For range loops, ensure the range bounds are constant or at least integer expressions.
-
-        For capture variables, introduce them in a new scope (already handled by symbol table).
-
-        Support break and continue inside for loops (already handled by loop labels).
-
-    Code generation: Translate for loops into equivalent while loops:
-
-        For arrays/slices: create an index variable, a pointer to the element, and a loop over the length. For example:
-        c
-
-        size_t __idx = 0;
-        while (__idx < arr_len) {
-            elem_type item = arr[__idx];
-            // loop body
-            __idx++;
-        }
-
-        For ranges: similar but simpler: size_t i = start; while (i < end) { ... i++; }.
-
-        If an index capture is present, also provide the index variable.
-
-        Ensure that labeled break/continue work correctly (they already do for while).
-
-    Testing: Add integration tests for arrays, slices, and ranges, with and without index captures, and with nested loops and labels.
+224. [COMPLETE] **Task 224: for Loops (DONE)**
+    - **Parser**: Implemented `NODE_RANGE` and updated Pratt parser to handle `..` as a range operator with Level 1 precedence. Updated `for` loop parsing to handle ranges and captures correctly. Fixed regression in slicing by using higher precedence for slice components.
+    - **Type checker**: Implemented `visitRange` and updated `visitForStmt` to support arrays, slices, and ranges. Item and index captures are correctly scoped, typed, and symbols are preserved for codegen.
+    - **Codegen**: Implemented `emitFor` in `C89Emitter`. Translates `for` loops into C89-compatible `while` loops wrapped in a block. Handles unique naming for internal variables (`__for_idx_N`, `__for_len_N`, `__for_iter_N`) and supports labeled loops with `goto`.
+    - **Verification**: Created 5 new integration tests (Batch 41) covering all major scenarios. Verified that all 41 test batches pass.
 
 Task 225: switch Expressions
 

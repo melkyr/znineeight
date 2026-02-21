@@ -61,6 +61,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
+        case NODE_RANGE:            resolved_type = visitRange(&node->as.range); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
@@ -1468,6 +1469,22 @@ Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
     return NULL;
 }
 
+Type* TypeChecker::visitRange(ASTRangeNode* node) {
+    Type* start_type = visit(node->start);
+    Type* end_type = visit(node->end);
+
+    if (!start_type || !end_type) return NULL;
+
+    if (!isIntegerType(start_type)) {
+        fatalError(node->start->loc, "Range start must be an integer");
+    }
+    if (!isIntegerType(end_type)) {
+        fatalError(node->end->loc, "Range end must be an integer");
+    }
+
+    return get_g_type_usize();
+}
+
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     Type* iterable_type = visit(node->iterable_expr);
 
@@ -1490,6 +1507,10 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             item_type = iterable_type->as.array.element_type;
         } else if (iterable_type->kind == TYPE_POINTER && iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
             item_type = iterable_type->as.pointer.base->as.array.element_type;
+        } else if (iterable_type->kind == TYPE_SLICE) {
+            item_type = iterable_type->as.slice.element_type;
+        } else if (node->iterable_expr->type == NODE_RANGE) {
+            item_type = get_g_type_usize();
         }
     }
 
@@ -1504,6 +1525,9 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             .withFlags(SYMBOL_FLAG_LOCAL)
             .build();
         unit.getSymbolTable().insert(sym);
+        node->item_sym = unit.getSymbolTable().lookupInCurrentScope(node->item_name);
+    } else {
+        node->item_sym = NULL;
     }
 
     if (node->index_name) {
@@ -1515,6 +1539,9 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             .withFlags(SYMBOL_FLAG_LOCAL)
             .build();
         unit.getSymbolTable().insert(sym);
+        node->index_sym = unit.getSymbolTable().lookupInCurrentScope(node->index_name);
+    } else {
+        node->index_sym = NULL;
     }
 
     current_loop_depth++;

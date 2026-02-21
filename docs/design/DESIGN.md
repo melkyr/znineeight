@@ -552,7 +552,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
-    *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+    *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:

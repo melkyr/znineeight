@@ -35,8 +35,8 @@ TEST_FUNC(ForIntegration_Basic) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string emission = emitter.emitExpression(fn->body);
 
-    if (emission.find("/* for loop */") == std::string::npos) {
-        printf("FAIL: Expected '/* for loop */' in emission, got: %s\n", emission.c_str());
+    if (emission.find("while") == std::string::npos) {
+        printf("FAIL: Expected 'while' in emission, got: %s\n", emission.c_str());
         return false;
     }
 

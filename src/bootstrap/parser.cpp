@@ -332,7 +332,7 @@ ASTNode* Parser::parsePostfixExpression() {
 
                 // Parse start index (if present)
                 if (peek().type != TOKEN_RANGE) {
-                    slice_node->start = parseExpression();
+                    slice_node->start = parsePrecedenceExpr(2);
                     expect(TOKEN_RANGE, "Expected '..' after start index in slice expression");
                 } else {
                     slice_node->start = NULL; // Implicit start (array[..end])
@@ -341,7 +341,7 @@ ASTNode* Parser::parsePostfixExpression() {
 
                 // Parse end index (if present)
                 if (peek().type != TOKEN_RBRACKET) {
-                    slice_node->end = parseExpression();
+                    slice_node->end = parsePrecedenceExpr(2);
                 } else {
                     slice_node->end = NULL; // Implicit end (array[start..] or array[..])
                 }
@@ -506,6 +506,7 @@ static int get_token_precedence(TokenType type) {
         case TOKEN_ORELSE:
         case TOKEN_CATCH:
         case TOKEN_PIPE_PIPE:
+        case TOKEN_RANGE:
             return 1;
 
         default:
@@ -599,6 +600,16 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
 
             ASTNode* new_node = createNodeAt(NODE_ERROR_SET_MERGE, op_token.location);
             new_node->as.error_set_merge = merge_data;
+            left = new_node;
+        } else if (op_token.type == TOKEN_RANGE) {
+            ASTNode* right = parsePrecedenceExpr(precedence + 1);
+
+            ASTRangeNode range_data;
+            range_data.start = left;
+            range_data.end = right;
+
+            ASTNode* new_node = createNodeAt(NODE_RANGE, op_token.location);
+            new_node->as.range = range_data;
             left = new_node;
         } else {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);

@@ -81,6 +81,31 @@ C89 requires all local variable declarations to appear at the beginning of a blo
     goto __zig_label_L_0_start;
     __zig_label_L_0_end: ;
     ```
+- **For Loops**: Translated to an equivalent `while` loop wrapped in a new block to handle capture variables and unique loop state.
+  - **Arrays/Slices**:
+    ```c
+    {
+        size_t __for_idx_1 = 0;
+        size_t __for_len_1 = /* len */;
+        while (__for_idx_1 < __for_len_1) {
+            T item = iterable[__for_idx_1];
+            /* body */
+            __for_idx_1++;
+        }
+    }
+    ```
+  - **Ranges**:
+    ```c
+    {
+        size_t __for_idx_1 = start;
+        size_t __for_len_1 = end;
+        while (__for_idx_1 < __for_len_1) {
+            size_t item = __for_idx_1;
+            /* body */
+            __for_idx_1++;
+        }
+    }
+    ```
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.

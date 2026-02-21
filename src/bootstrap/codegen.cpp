@@ -65,6 +65,7 @@ void C89Emitter::emitPrologue() {
 
 void C89Emitter::beginFunction() {
     var_alloc_.reset();
+    for_loop_counter_ = 0;
 }
 
 void C89Emitter::emitType(Type* type, const char* name) {
@@ -540,6 +541,9 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_WHILE_STMT:
             emitWhile(node->as.while_stmt);
             break;
+        case NODE_FOR_STMT:
+            emitFor(node->as.for_stmt);
+            break;
         case NODE_BREAK_STMT:
             emitBreak(&node->as.break_stmt);
             break;
@@ -603,6 +607,200 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
     }
     writeString("\n");
+}
+
+void C89Emitter::emitFor(const ASTForStmtNode* node) {
+    if (!node) return;
+
+    for_loop_counter_++;
+    int current_for_id = for_loop_counter_;
+
+    char idx_name[32];
+    char len_name[32];
+    char iter_name[32];
+    char id_buf[16]; plat_i64_to_string(current_for_id, id_buf, sizeof(id_buf));
+
+    char* cur = idx_name; size_t rem = sizeof(idx_name);
+    safe_append(cur, rem, "__for_idx_");
+    safe_append(cur, rem, id_buf);
+
+    cur = len_name; rem = sizeof(len_name);
+    safe_append(cur, rem, "__for_len_");
+    safe_append(cur, rem, id_buf);
+
+    cur = iter_name; rem = sizeof(iter_name);
+    safe_append(cur, rem, "__for_iter_");
+    safe_append(cur, rem, id_buf);
+
+    bool is_range = (node->iterable_expr->type == NODE_RANGE);
+
+    writeIndent();
+    writeString("{\n");
+    indent();
+
+    // Iterable evaluate once
+    if (!is_range) {
+        writeIndent();
+        Type* iter_type = node->iterable_expr->resolved_type;
+        if (iter_type->kind == TYPE_ARRAY) {
+             // Emit as pointer
+             emitType(createPointerType(arena_, iter_type->as.array.element_type, true), iter_name);
+        } else {
+             emitType(iter_type, iter_name);
+        }
+        writeString(" = ");
+        emitExpression(node->iterable_expr);
+        writeString(";\n");
+    }
+
+    // Initializer
+    writeIndent();
+    writeString("size_t ");
+    writeString(idx_name);
+    writeString(" = ");
+    if (is_range) {
+        emitExpression(node->iterable_expr->as.range.start);
+    } else {
+        writeString("0");
+    }
+    writeString(";\n");
+
+    writeIndent();
+    writeString("size_t ");
+    writeString(len_name);
+    writeString(" = ");
+    if (is_range) {
+        emitExpression(node->iterable_expr->as.range.end);
+    } else {
+        Type* iterable_type = node->iterable_expr->resolved_type;
+        if (iterable_type && iterable_type->kind == TYPE_ARRAY) {
+            char size_buf[32];
+            plat_u64_to_string(iterable_type->as.array.size, size_buf, sizeof(size_buf));
+            writeString(size_buf);
+        } else if (iterable_type && iterable_type->kind == TYPE_SLICE) {
+            writeString(iter_name);
+            writeString(".len");
+        } else {
+            writeString("0 /* Unknown length */");
+        }
+    }
+    writeString(";\n");
+
+    char label_base[256];
+    bool has_label = (node->label != NULL);
+    if (has_label) {
+        char* lcur = label_base;
+        size_t lrem = sizeof(label_base);
+        safe_append(lcur, lrem, "__zig_label_");
+        safe_append(lcur, lrem, node->label);
+        safe_append(lcur, lrem, "_");
+        char lid_buf[16];
+        plat_i64_to_string(node->label_id, lid_buf, sizeof(lid_buf));
+        safe_append(lcur, lrem, lid_buf);
+
+        writeIndent();
+        writeString(label_base);
+        writeString("_start: ;\n");
+    }
+
+    writeIndent();
+    writeString("while (");
+    writeString(idx_name);
+    writeString(" < ");
+    writeString(len_name);
+    writeString(") {\n");
+
+    indent();
+
+    // Item capture
+    Type* item_type = NULL;
+    if (is_range) {
+        item_type = get_g_type_usize();
+    } else {
+        Type* iterable_type = node->iterable_expr->resolved_type;
+        if (iterable_type && iterable_type->kind == TYPE_ARRAY) {
+            item_type = iterable_type->as.array.element_type;
+        } else if (iterable_type && iterable_type->kind == TYPE_SLICE) {
+            item_type = iterable_type->as.slice.element_type;
+        }
+    }
+
+    if (item_type) {
+        const char* actual_item_name;
+        if (node->item_sym) {
+            actual_item_name = var_alloc_.allocate(node->item_sym);
+        } else {
+            actual_item_name = var_alloc_.generate(node->item_name);
+        }
+
+        writeIndent();
+        emitType(item_type, actual_item_name);
+        writeString(" = ");
+        if (is_range) {
+            writeString(idx_name);
+        } else {
+            writeString(iter_name);
+            if (node->iterable_expr->resolved_type && node->iterable_expr->resolved_type->kind == TYPE_SLICE) {
+                writeString(".ptr[");
+            } else {
+                writeString("[");
+            }
+            writeString(idx_name);
+            writeString("]");
+        }
+        writeString(";\n");
+    }
+
+    // Index capture
+    if (node->index_name) {
+        const char* actual_index_name;
+        if (node->index_sym) {
+            actual_index_name = var_alloc_.allocate(node->index_sym);
+        } else {
+            actual_index_name = var_alloc_.generate(node->index_name);
+        }
+
+        writeIndent();
+        writeString("size_t ");
+        writeString(actual_index_name);
+        writeString(" = ");
+        writeString(idx_name);
+        writeString(";\n");
+    }
+
+    // Emit the actual body
+    if (node->body->type == NODE_BLOCK_STMT) {
+        emitBlock(&node->body->as.block_stmt, node->label_id);
+    } else {
+        emitStatement(node->body);
+    }
+    writeString("\n");
+
+    // Increment
+    writeIndent();
+    writeString(idx_name);
+    writeString("++;\n");
+
+    if (has_label) {
+        writeIndent();
+        writeString("goto ");
+        writeString(label_base);
+        writeString("_start;\n");
+    }
+
+    dedent();
+    writeIndent();
+    writeString("}\n");
+
+    if (has_label) {
+        writeIndent();
+        writeString(label_base);
+        writeString("_end: ;\n");
+    }
+
+    dedent();
+    writeIndent();
+    writeString("}\n");
 }
 
 void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
@@ -829,6 +1027,12 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             emitExpression(node->as.paren_expr.expr);
             writeString(")");
             break;
+        case NODE_RANGE:
+            // This should only happen if range is used outside for/slicing
+            emitExpression(node->as.range.start);
+            writeString(" /* .. */ ");
+            emitExpression(node->as.range.end);
+            break;
         case NODE_UNARY_OP:
             writeString(getTokenSpelling(node->as.unary_op.op));
             emitExpression(node->as.unary_op.operand);
@@ -959,9 +1163,16 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         }
         case NODE_ASSIGNMENT:
-            emitExpression(node->as.assignment->lvalue);
-            writeString(" = ");
-            emitExpression(node->as.assignment->rvalue);
+            if (node->as.assignment->lvalue->type == NODE_IDENTIFIER &&
+                plat_strcmp(node->as.assignment->lvalue->as.identifier.name, "_") == 0) {
+                writeString("(void)(");
+                emitExpression(node->as.assignment->rvalue);
+                writeString(")");
+            } else {
+                emitExpression(node->as.assignment->lvalue);
+                writeString(" = ");
+                emitExpression(node->as.assignment->rvalue);
+            }
             break;
         case NODE_COMPOUND_ASSIGNMENT:
             emitExpression(node->as.compound_assignment->lvalue);
