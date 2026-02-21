@@ -1425,7 +1425,20 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Implemented `emitFor` in `C89Emitter`. Translates `for` loops into C89-compatible `while` loops wrapped in a block. Handles unique naming for internal variables (`__for_idx_N`, `__for_len_N`, `__for_iter_N`) and supports labeled loops with `goto`.
     - **Verification**: Created 5 new integration tests (Batch 41) covering all major scenarios. Verified that all 41 test batches pass.
 
-Task 225: switch Expressions
+225. [COMPLETE] **Task 225: switch Expressions (DONE)**
+    - **Parser**: Supported `switch (expr) { ... }` with multiple case items and inclusive ranges (`...`).
+    - **Type checker**: Implemented exhaustiveness check (mandatory `else`) and compatible prong types.
+    - **Codegen**: Implemented "lifted switch" using a result temporary variable. Expanded ranges into multiple C `case` labels.
+    - **Verification**: Verified with integer, enum, and boolean switches in Batch 18.
+
+225.1 [COMPLETE] **Task 225.1: Full switch Expression (noreturn/unreachable) (DONE)**
+    - **Type System**: Introduced `noreturn` type (`TYPE_NORETURN`).
+    - **Parser**: Updated to treat `return`, `break`, and `continue` as expressions. Added `unreachable` as a primary expression. Supported value-yielding blocks (ending in expression without semicolon).
+    - **Type Checker**: Enhanced `visitSwitchExpr` to merge `noreturn` prongs. Updated `allPathsExit` to recognize `unreachable` and divergent switches.
+    - **Codegen**: Handled divergent prongs by skipping result assignment. Fixed double semicolon issues for control flow expressions. Added support for value-yielding block prongs.
+    - **Verification**: Created comprehensive integration tests (Batch 43) including execution tests via `C89Validator`.
+
+Task 226: Error Unions (!T) and Error Sets
 
 Goal: Implement switch expressions, which are a powerful way to handle multiple cases. Zig's switch can be used as an expression (returning a value) and supports ranges and multiple values per case.
 

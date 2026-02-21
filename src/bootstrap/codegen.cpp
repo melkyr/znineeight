@@ -619,19 +619,31 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
             break;
+        case NODE_UNREACHABLE:
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
+            break;
         case NODE_DEFER_STMT:
             writeIndent();
             writeString("/* defer */\n");
             break;
-        case NODE_EXPRESSION_STMT:
-            if (node->as.expression_stmt.expression->type == NODE_SWITCH_EXPR) {
-                emitSwitchExpr(node->as.expression_stmt.expression, NULL);
+        case NODE_EXPRESSION_STMT: {
+            ASTNode* expr = node->as.expression_stmt.expression;
+            if (expr->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(expr, NULL);
+            } else if (expr->type == NODE_RETURN_STMT ||
+                       expr->type == NODE_BREAK_STMT ||
+                       expr->type == NODE_CONTINUE_STMT ||
+                       expr->type == NODE_UNREACHABLE) {
+                emitStatement(expr);
             } else {
                 writeIndent();
-                emitExpression(node->as.expression_stmt.expression);
+                emitExpression(expr);
                 writeString(";\n");
             }
             break;
+        }
         case NODE_ASSIGNMENT:
             if (node->as.assignment->rvalue->type == NODE_SWITCH_EXPR) {
                 if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
@@ -766,9 +778,16 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
             }
         } else {
             // Just emit expression for side effects if no target or if it diverges
-            writeIndent();
-            emitExpression(prong->body);
-            writeString(";\n");
+            if (prong->body->type == NODE_RETURN_STMT ||
+                prong->body->type == NODE_BREAK_STMT ||
+                prong->body->type == NODE_CONTINUE_STMT ||
+                prong->body->type == NODE_UNREACHABLE) {
+                emitStatement(prong->body);
+            } else {
+                writeIndent();
+                emitExpression(prong->body);
+                writeString(";\n");
+            }
         }
         writeIndent();
         writeString("break;\n");
@@ -1394,6 +1413,15 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         }
         case NODE_SWITCH_EXPR:
             writeString("/* error: switch expression used in unsupported context (not lifted) */");
+            break;
+        case NODE_RETURN_STMT:
+            emitReturn(&node->as.return_stmt);
+            break;
+        case NODE_BREAK_STMT:
+            emitBreak(&node->as.break_stmt);
+            break;
+        case NODE_CONTINUE_STMT:
+            emitContinue(&node->as.continue_stmt);
             break;
         default:
             writeString("/* [Unimplemented Expression Type ");

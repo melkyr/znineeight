@@ -14,6 +14,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 | `f32`, `f64` | Floating-point | `float`, `double` |
 | `bool` | Boolean (`true`, `false`) | `int` (1, 0) |
 | `void` | Empty type | `void` |
+| `noreturn` | Never-returning type | `void` |
 
 ### 1.2 Pointers
 - **Single-item pointers**: `*T` and `*const T`.
@@ -84,8 +85,9 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Prongs**: Comma-separated case items followed by `=>` and an expression.
   - **Case Items**: Can be single values or inclusive ranges (`a...b`).
   - **Else**: An `else` prong is **mandatory** in all switch expressions.
-  - **Result Type**: All prong bodies must have compatible types. The result type is inferred from the first prong.
-  - **Limitations**: Prong bodies currently cannot contain `return`, `break`, or `continue` statements.
+  - **Result Type**: Computed by merging the types of all non-divergent prongs. If all prongs diverge, the result type is `noreturn`.
+  - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`.
+  - **Value Blocks**: Switch prongs can use blocks that yield a value (e.g., `=> { var x = 5; x + 1 }`).
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope.
   - The statement can be a single expression statement or a block `{ ... }`.
   - `defer` statements are executed in reverse order of declaration (LIFO).
@@ -109,6 +111,7 @@ Memory is reclaimed by resetting or destroying the arena.
 - `@ptrCast(T, expr)`: Explicit pointer cast.
 - `@intCast(T, expr)`: Checked integer conversion.
 - `@floatCast(T, expr)`: Checked float conversion.
+- `unreachable`: Diverges with a panic. Has type `noreturn`.
 
 ## 5. Explicit Limitations (Unsupported Features)
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:

@@ -9,7 +9,8 @@ int main(int argc, char* argv[]) {
         test_SwitchNoreturn_LabeledBreakInProng,
         test_SwitchNoreturn_MixedTypesError,
         test_SwitchNoreturn_VariableNoreturnError,
-        test_SwitchNoreturn_BlockProng
+        test_SwitchNoreturn_BlockProng,
+        test_SwitchNoreturn_RealCodegen
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

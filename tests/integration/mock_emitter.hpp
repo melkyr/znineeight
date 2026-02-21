@@ -157,8 +157,11 @@ public:
                 }
                 return ss.str();
             }
-            case NODE_EXPRESSION_STMT:
-                return emitExpression(node->as.expression_stmt.expression) + ";";
+            case NODE_EXPRESSION_STMT: {
+                std::string expr = emitExpression(node->as.expression_stmt.expression);
+                if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
+                return expr + ";";
+            }
             case NODE_ASSIGNMENT:
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
             case NODE_VAR_DECL: {
@@ -815,7 +818,10 @@ private:
                 }
             }
             if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
-                ss << emitExpression(prong->body) << "; break; ";
+                std::string body = emitExpression(prong->body);
+                ss << body;
+                if (body.empty() || body[body.length()-1] != ';') ss << ";";
+                ss << " break; ";
             } else {
                 ss << "__ret = " << emitExpression(prong->body) << "; break; ";
             }

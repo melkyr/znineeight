@@ -1090,5 +1090,6 @@ TEST_FUNC(SwitchNoreturn_LabeledBreakInProng);
 TEST_FUNC(SwitchNoreturn_MixedTypesError);
 TEST_FUNC(SwitchNoreturn_VariableNoreturnError);
 TEST_FUNC(SwitchNoreturn_BlockProng);
+TEST_FUNC(SwitchNoreturn_RealCodegen);
 
 #endif // TEST_DECLARATIONS_HPP
