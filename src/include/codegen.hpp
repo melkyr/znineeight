@@ -9,6 +9,8 @@
 #include "error_handler.hpp"
 #include <cstddef>
 
+class CompilationUnit;
+
 /**
  * @class C89Emitter
  * @brief Handles buffered emission of C89 code to a file.
@@ -178,8 +180,9 @@ public:
     /**
      * @brief Emits a block of statements.
      * @param node The block statement node.
+     * @param label_id The label_id of the loop this block belongs to (if any).
      */
-    void emitBlock(const ASTBlockStmtNode* node);
+    void emitBlock(const ASTBlockStmtNode* node, int label_id = -1);
 
     /**
      * @brief Emits a single statement.
@@ -198,6 +201,18 @@ public:
      * @param node The while statement node.
      */
     void emitWhile(const ASTWhileStmtNode* node);
+
+    /**
+     * @brief Emits a break statement.
+     * @param node The break statement node.
+     */
+    void emitBreak(const ASTBreakStmtNode* node);
+
+    /**
+     * @brief Emits a continue statement.
+     * @param node The continue statement node.
+     */
+    void emitContinue(const ASTContinueStmtNode* node);
 
     /**
      * @brief Emits a return statement.
@@ -328,10 +343,23 @@ public:
      */
     void emitBufferedSliceDefinitions();
 
+    /**
+     * @brief Emits deferred statements for a scope exit.
+     * @param target_label_id The label_id of the target loop (for break/continue). -1 for return.
+     */
+    void emitDefersForScopeExit(int target_label_id = -1);
+
 private:
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
+    };
+
+    struct DeferScope {
+        int label_id;
+        DynamicArray<ASTDeferStmtNode*> defers;
+
+        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena) {}
     };
 
     char buffer_[4096];
@@ -346,6 +374,8 @@ private:
     DynamicArray<GlobalNameEntry> global_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*>* external_cache_;
+    DynamicArray<DeferScope*> defer_stack_;
+    Type* current_fn_ret_type_;
     char* type_def_buffer_;
     size_t type_def_pos_;
     size_t type_def_cap_;

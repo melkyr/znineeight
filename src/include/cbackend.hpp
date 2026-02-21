@@ -4,6 +4,7 @@
 #include "common.hpp"
 #include "memory.hpp"
 #include "module.hpp"
+#include "codegen.hpp"
 
 // Forward declarations
 class CompilationUnit;

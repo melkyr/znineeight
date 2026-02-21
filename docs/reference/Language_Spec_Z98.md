@@ -72,8 +72,12 @@ Memory is reclaimed by resetting or destroying the arena.
 - `while (cond) { ... }`: Simple loop.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
 - `switch (expr) { ... }`: Pattern matching.
-- `defer { ... }`: Executes at scope exit.
-- `errdefer { ... }`: Executes at scope exit if an error is returned.
+- `defer statement`: Schedules `statement` to be executed at the end of the current scope.
+  - The statement can be a single expression statement or a block `{ ... }`.
+  - `defer` statements are executed in reverse order of declaration (LIFO).
+  - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
+  - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
+- `errdefer { ... }`: Recognized but not yet implemented in the bootstrap compiler. Schedules code to execute only when the scope exits with an error.
 
 ### 3.2 Loop Control
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.

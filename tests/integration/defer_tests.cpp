@@ -1,7 +1,6 @@
 #include "test_framework.hpp"
 #include "test_compilation_unit.hpp"
 #include "../test_utils.hpp"
-#include "mock_emitter.hpp"
 #include <cstdio>
 #include <string>
 
@@ -10,34 +9,158 @@
  * @brief Integration tests for Zig defer statements in the RetroZig compiler.
  */
 
-TEST_FUNC(DeferIntegration_Basic) {
-    const char* source =
-        "fn foo() void {\n"
-        "    defer { bar(); }\n"
-        "}\n"
-        "fn bar() void {}";
-
+static bool run_defer_test(const char* zig_code, const char* fn_name, const char* expected_c89) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     TestCompilationUnit unit(arena, interner);
 
-    u32 file_id = unit.addSource("test.zig", source);
+    u32 file_id = unit.addSource("test.zig", zig_code);
     if (!unit.performTestPipeline(file_id)) {
-        printf("FAIL: Pipeline execution failed for:\n%s\n", source);
+        printf("FAIL: Pipeline execution failed for:\n%s\n", zig_code);
         unit.getErrorHandler().printErrors();
         return false;
     }
 
-    const ASTFnDeclNode* fn = unit.extractFunctionDeclaration("foo");
-    if (!fn) return false;
-
-    MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
-    std::string emission = emitter.emitExpression(fn->body);
-
-    if (emission.find("/* defer { bar(); } */") == std::string::npos) {
-        printf("FAIL: Expected '/* defer { bar(); } */' in emission, got: %s\n", emission.c_str());
+    if (!unit.validateFunctionEmission(fn_name, expected_c89)) {
         return false;
     }
 
     return true;
+}
+
+TEST_FUNC(DeferIntegration_Basic) {
+    const char* source =
+        "fn foo() void {\n"
+        "    var x: i32 = 0;\n"
+        "    defer x = 1;\n"
+        "    x = 2;\n"
+        "}";
+    // x = 1 should be emitted before the closing brace of foo's body block.
+    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 2; x = 1; }");
+}
+
+TEST_FUNC(DeferIntegration_LIFO) {
+    const char* source =
+        "fn foo() void {\n"
+        "    var x: i32 = 0;\n"
+        "    defer x = 1;\n"
+        "    defer x = 2;\n"
+        "    x = 10;\n"
+        "}";
+    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 10; x = 2; x = 1; }");
+}
+
+TEST_FUNC(DeferIntegration_Return) {
+    const char* source =
+        "fn foo() i32 {\n"
+        "    var x: i32 = 10;\n"
+        "    defer x = 20;\n"
+        "    return x;\n"
+        "}";
+    return run_defer_test(source, "foo", "int foo(void) { int x = 10; { int __return_val = x; x = 20; return __return_val; } }");
+}
+
+TEST_FUNC(DeferIntegration_NestedScopes) {
+    const char* source =
+        "fn foo() void {\n"
+        "    defer a();\n"
+        "    {\n"
+        "        defer b();\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    // b() should run at end of its block, a() at end of foo.
+    return run_defer_test(source, "foo", "void foo(void) { { b(); } a(); }");
+}
+
+TEST_FUNC(DeferIntegration_Break) {
+    const char* source =
+        "fn foo() void {\n"
+        "    while (true) {\n"
+        "        defer bar();\n"
+        "        break;\n"
+        "    }\n"
+        "}\n"
+        "fn bar() void {}";
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ bar(); break; } }");
+}
+
+TEST_FUNC(DeferIntegration_LabeledBreak) {
+    const char* source =
+        "fn foo() void {\n"
+        "    outer: while (true) {\n"
+        "        defer a();\n"
+        "        while (true) {\n"
+        "            defer b();\n"
+        "            break :outer;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    // Redundant a() at the end of outer block is acceptable as it is unreachable.
+    return run_defer_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { while (1) { /* defers for break */ b(); a(); goto __zig_label_outer_0_end; } a(); } goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+}
+
+TEST_FUNC(DeferIntegration_Continue) {
+    const char* source =
+        "fn foo() void {\n"
+        "    while (true) {\n"
+        "        defer bar();\n"
+        "        continue;\n"
+        "    }\n"
+        "}\n"
+        "fn bar() void {}";
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ bar(); continue; } }");
+}
+
+TEST_FUNC(DeferIntegration_NestedContinue) {
+    const char* source =
+        "fn foo() void {\n"
+        "    while (true) {\n"
+        "        defer a();\n"
+        "        {\n"
+        "            defer b();\n"
+        "            continue;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ b(); a(); continue; } } }");
+}
+
+TEST_FUNC(DeferIntegration_RejectReturn) {
+    const char* source =
+        "fn foo() void {\n"
+        "    defer return;\n"
+        "}";
+    return expect_type_checker_abort(source);
+}
+
+TEST_FUNC(DeferIntegration_NestedReturn) {
+    const char* source =
+        "fn foo() i32 {\n"
+        "    defer a();\n"
+        "    {\n"
+        "        defer b();\n"
+        "        return 42;\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    // Should emit both b() and a() before returning.
+    // The exact brace nesting depends on the emitter's implementation of early exits.
+    return run_defer_test(source, "foo", "int foo(void) { { { int __return_val = 42; b(); a(); return __return_val; } } }");
+}
+
+TEST_FUNC(DeferIntegration_RejectBreak) {
+    const char* source =
+        "fn foo() void {\n"
+        "    while (true) {\n"
+        "        defer break;\n"
+        "    }\n"
+        "}";
+    return expect_type_checker_abort(source);
 }

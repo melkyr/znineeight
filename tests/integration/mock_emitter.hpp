@@ -10,9 +10,11 @@
 #include "symbol_table.hpp"
 #include "c89_type_mapping.hpp"
 #include "call_site_lookup_table.hpp"
+#include "ast_utils.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 /**
  * @class MockC89Emitter
@@ -25,9 +27,16 @@ class MockC89Emitter {
     const CallSiteLookupTable* call_table_;
     SymbolTable* symbol_table_;
 
+    struct MockDeferScope {
+        int label_id;
+        std::vector<ASTDeferStmtNode*> defers;
+    };
+    std::vector<MockDeferScope> defer_stack_;
+    Type* current_fn_ret_type_;
+
 public:
     MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
-        : call_table_(call_table), symbol_table_(symbol_table) {}
+        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL) {}
 
     /**
      * @brief Emits a C89 variable declaration.
@@ -120,8 +129,30 @@ public:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:
                 return emitContinueStatement(&node->as.continue_stmt);
-            case NODE_RETURN_STMT:
-                return "return" + (node->as.return_stmt.expression ? " " + emitExpression(node->as.return_stmt.expression) : "") + ";";
+            case NODE_RETURN_STMT: {
+                std::stringstream ss;
+                bool has_defers = false;
+                for (size_t i = 0; i < defer_stack_.size(); ++i) {
+                    if (!defer_stack_[i].defers.empty()) {
+                        has_defers = true;
+                        break;
+                    }
+                }
+                if (has_defers) {
+                    ss << "{ ";
+                    if (node->as.return_stmt.expression && current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
+                        ss << getC89TypeName(current_fn_ret_type_) << " __return_val = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                        ss << emitDefersForScopeExit() << "return __return_val; ";
+                    } else {
+                        if (node->as.return_stmt.expression) ss << emitExpression(node->as.return_stmt.expression) << "; ";
+                        ss << emitDefersForScopeExit() << "return; ";
+                    }
+                    ss << "}";
+                } else {
+                    ss << "return" << (node->as.return_stmt.expression ? " " + emitExpression(node->as.return_stmt.expression) : "") << ";";
+                }
+                return ss.str();
+            }
             case NODE_EXPRESSION_STMT:
                 return emitExpression(node->as.expression_stmt.expression) + ";";
             case NODE_ASSIGNMENT:
@@ -193,7 +224,7 @@ public:
         }
 
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
-            ss << emitBlockStatement(&node->body->as.block_stmt);
+            ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
         } else {
             ss << emitExpression(node->body);
         }
@@ -206,42 +237,95 @@ public:
         return ss.str();
     }
 
+    std::string emitDefersForScopeExit(int target_label_id = -1) {
+        std::stringstream ss;
+        for (int i = (int)defer_stack_.size() - 1; i >= 0; --i) {
+            const MockDeferScope& scope = defer_stack_[i];
+            for (int j = (int)scope.defers.size() - 1; j >= 0; --j) {
+                ss << emitExpression(scope.defers[j]->statement) << " ";
+            }
+            if (target_label_id != -1 && scope.label_id == target_label_id) {
+                break;
+            }
+        }
+        return ss.str();
+    }
+
     /**
      * @brief Emits a C89 break statement.
      */
     std::string emitBreakStatement(const ASTBreakStmtNode* node) {
-        if (node->label) {
-            std::stringstream ss;
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_end;";
-            return ss.str();
+        std::stringstream ss;
+        if (!defer_stack_.empty()) {
+            std::string defers = emitDefersForScopeExit(node->target_label_id);
+            if (!defers.empty()) ss << "/* defers for break */ " << defers;
         }
-        return "break;";
+
+        if (node->label) {
+            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_end;";
+        } else {
+            ss << "break;";
+        }
+        return ss.str();
     }
 
     /**
      * @brief Emits a C89 continue statement.
      */
     std::string emitContinueStatement(const ASTContinueStmtNode* node) {
-        if (node->label) {
-            std::stringstream ss;
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_start;";
-            return ss.str();
+        std::stringstream ss;
+        if (!defer_stack_.empty()) {
+            std::string defers = emitDefersForScopeExit(node->target_label_id);
+            if (!defers.empty()) ss << "/* defers for continue */ " << defers;
         }
-        return "continue;";
+
+        if (node->label) {
+            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_start;";
+        } else {
+            ss << "continue;";
+        }
+        return ss.str();
     }
 
     /**
      * @brief Emits a C89 block statement.
      */
-    std::string emitBlockStatement(const ASTBlockStmtNode* block) {
+    std::string emitBlockStatement(const ASTBlockStmtNode* block, int label_id = -1) {
         if (!block) return "{ }";
+
+        MockDeferScope scope;
+        scope.label_id = label_id;
+        defer_stack_.push_back(scope);
+        size_t scope_idx = defer_stack_.size() - 1;
+
         std::stringstream ss;
         ss << "{ ";
+
+        bool exits = false;
         if (block->statements) {
             for (size_t i = 0; i < block->statements->length(); ++i) {
-                ss << emitExpression((*block->statements)[i]) << " ";
+                ASTNode* stmt = (*block->statements)[i];
+                if (stmt->type == NODE_DEFER_STMT) {
+                    defer_stack_[scope_idx].defers.push_back(&stmt->as.defer_stmt);
+                } else {
+                    ss << emitExpression(stmt) << " ";
+                    if (allPathsExit(stmt)) {
+                        exits = true;
+                        break;
+                    }
+                }
             }
         }
+
+        // Emit defers in reverse order, only if not already handled by a terminator
+        if (!exits) {
+            for (int i = (int)defer_stack_[scope_idx].defers.size() - 1; i >= 0; --i) {
+                ss << emitExpression(defer_stack_[scope_idx].defers[i]->statement) << " ";
+            }
+        }
+
+        defer_stack_.pop_back();
+
         ss << "}";
         return ss.str();
     }
@@ -287,7 +371,14 @@ public:
      */
     std::string emitFunctionDeclaration(const ASTFnDeclNode* fn, const Symbol* symbol) {
         std::stringstream ss;
-        ss << emitFunctionSignature(fn, symbol) << " " << emitExpression(fn->body);
+        defer_stack_.clear();
+        current_fn_ret_type_ = (symbol && symbol->symbol_type) ? symbol->symbol_type->as.function.return_type : NULL;
+        ss << emitFunctionSignature(fn, symbol) << " ";
+        if (fn->body && fn->body->type == NODE_BLOCK_STMT) {
+            ss << emitBlockStatement(&fn->body->as.block_stmt);
+        } else {
+            ss << emitExpression(fn->body);
+        }
         return ss.str();
     }
 

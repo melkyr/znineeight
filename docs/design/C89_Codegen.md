@@ -84,7 +84,12 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
-- **Return Statements**: Mapped to `return expr;` or `return;`.
+- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run.
+- **Defer Statements**: Implemented using a compile-time stack of deferred actions.
+  - When entering a block, a new scope is pushed onto the stack.
+  - `defer` statements are added to the current scope on the stack.
+  - At the natural end of a block, all defers in that scope are emitted in reverse order.
+  - For `return`, `break`, and `continue`, the emitter identifies all scopes being exited and emits their deferred actions in order (from innermost outward) before emitting the jump or return.
 
 ### 4.4 Slice Support
 Slices (`[]T`) are emitted as C structs containing a pointer and a length.

@@ -1315,8 +1315,8 @@ ASTNode* Parser::parseForStatement(const char* label) {
 ASTNode* Parser::parseDeferStatement() {
     Token defer_token = expect(TOKEN_DEFER, "Expected 'defer' keyword");
 
-    // The statement following 'defer' must be a block statement.
-    ASTNode* statement = parseBlockStatement();
+    // Accept any statement after 'defer' (e.g., defer x = 1; or defer { ... })
+    ASTNode* statement = parseStatement();
 
     ASTDeferStmtNode defer_stmt;
     defer_stmt.statement = statement;
