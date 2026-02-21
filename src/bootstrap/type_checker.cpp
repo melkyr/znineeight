@@ -61,6 +61,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
+        case NODE_RANGE:            resolved_type = visitRange(&node->as.range); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
@@ -822,8 +823,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -891,8 +892,8 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
 
     // Step 1: Check if the l-value is const.
     if (isLValueConst(node->lvalue)) {
-        fatalError(node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
-        return NULL; // Unreachable
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, "Cannot assign to a constant value (l-value is const).");
+        return NULL;
     }
 
     // Step 2: Resolve the type of the right-hand side.
@@ -1468,6 +1469,22 @@ Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
     return NULL;
 }
 
+Type* TypeChecker::visitRange(ASTRangeNode* node) {
+    Type* start_type = visit(node->start);
+    Type* end_type = visit(node->end);
+
+    if (!start_type || !end_type) return NULL;
+
+    if (!isIntegerType(start_type)) {
+        fatalError(node->start->loc, "Range start must be an integer");
+    }
+    if (!isIntegerType(end_type)) {
+        fatalError(node->end->loc, "Range end must be an integer");
+    }
+
+    return get_g_type_usize();
+}
+
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     Type* iterable_type = visit(node->iterable_expr);
 
@@ -1484,37 +1501,65 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     LoopLabel ll = { node->label, node->label_id };
     label_stack_.append(ll);
 
-    Type* item_type = get_g_type_void();
+    Type* item_type = NULL;
+    bool is_valid_iterable = false;
+
     if (iterable_type) {
         if (iterable_type->kind == TYPE_ARRAY) {
             item_type = iterable_type->as.array.element_type;
+            is_valid_iterable = true;
         } else if (iterable_type->kind == TYPE_POINTER && iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
             item_type = iterable_type->as.pointer.base->as.array.element_type;
+            is_valid_iterable = true;
+        } else if (iterable_type->kind == TYPE_SLICE) {
+            item_type = iterable_type->as.slice.element_type;
+            is_valid_iterable = true;
+        } else if (node->iterable_expr->type == NODE_RANGE) {
+            item_type = get_g_type_usize();
+            is_valid_iterable = true;
         }
+    }
+
+    if (!is_valid_iterable && iterable_type) {
+        char type_str[64];
+        typeToString(iterable_type, type_str, sizeof(type_str));
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "for loop over non-iterable type '");
+        safe_append(current, remaining, type_str);
+        safe_append(current, remaining, "'");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->iterable_expr->loc, msg_buffer, unit.getArena());
     }
 
     unit.getSymbolTable().enterScope();
 
-    if (node->item_name) {
+    if (node->item_name && plat_strcmp(node->item_name, "_") != 0) {
         Symbol sym = SymbolBuilder(unit.getArena())
             .withName(node->item_name)
             .ofType(SYMBOL_VARIABLE)
-            .withType(item_type)
+            .withType(item_type ? item_type : get_g_type_void())
             .atLocation(node->iterable_expr->loc)
-            .withFlags(SYMBOL_FLAG_LOCAL)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
             .build();
         unit.getSymbolTable().insert(sym);
+        node->item_sym = unit.getSymbolTable().lookupInCurrentScope(node->item_name);
+    } else {
+        node->item_sym = NULL;
     }
 
-    if (node->index_name) {
+    if (node->index_name && plat_strcmp(node->index_name, "_") != 0) {
         Symbol sym = SymbolBuilder(unit.getArena())
             .withName(node->index_name)
             .ofType(SYMBOL_VARIABLE)
             .withType(get_g_type_usize())
             .atLocation(node->iterable_expr->loc)
-            .withFlags(SYMBOL_FLAG_LOCAL)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
             .build();
         unit.getSymbolTable().insert(sym);
+        node->index_sym = unit.getSymbolTable().lookupInCurrentScope(node->index_name);
+    } else {
+        node->index_sym = NULL;
     }
 
     current_loop_depth++;
@@ -1776,7 +1821,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
                 .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
                 .withType(param_type)
                 .atLocation(param_node->type->loc)
-                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
                 .build();
             unit.getSymbolTable().insert(param_symbol);
             param_node->symbol = unit.getSymbolTable().lookupInCurrentScope(param_node->name);
@@ -1844,7 +1889,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                 .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
                 .withType(param_type)
                 .atLocation(param_node->type->loc)
-                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
                 .build();
             unit.getSymbolTable().insert(param_symbol);
             param_node->symbol = unit.getSymbolTable().lookupInCurrentScope(param_node->name);
@@ -2462,9 +2507,14 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
     switch (node->type) {
         case NODE_IDENTIFIER: {
             Symbol* symbol = unit.getSymbolTable().lookup(node->as.identifier.name);
-            if (symbol && symbol->details) {
-                ASTVarDeclNode* decl = (ASTVarDeclNode*)symbol->details;
-                return decl->is_const;
+            if (symbol) {
+                if (symbol->flags & SYMBOL_FLAG_CONST) {
+                    return true;
+                }
+                if (symbol->details) {
+                    ASTVarDeclNode* decl = (ASTVarDeclNode*)symbol->details;
+                    return decl->is_const;
+                }
             }
             return false;
         }

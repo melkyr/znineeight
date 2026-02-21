@@ -124,7 +124,9 @@ public:
             case NODE_WHILE_STMT:
                 return emitWhileStatement(node->as.while_stmt);
             case NODE_FOR_STMT:
-                return "/* for loop */";
+                return emitForStatement(node->as.for_stmt);
+            case NODE_RANGE:
+                return emitExpression(node->as.range.start) + ".." + emitExpression(node->as.range.end);
             case NODE_BREAK_STMT:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:
@@ -205,6 +207,33 @@ public:
                 ss << emitExpression(node->else_block);
             }
         }
+
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 for statement (mock).
+     */
+    std::string emitForStatement(const ASTForStmtNode* node) {
+        if (!node) return "/* INVALID FOR */";
+        std::stringstream ss;
+
+        ss << "{ ";
+        // Mock simplification of the complex for-to-while translation
+        ss << "size_t __idx = 0; ";
+        ss << "while (__idx < /* len */) { ";
+        if (node->item_name && plat_strcmp(node->item_name, "_") != 0) {
+            ss << getC89TypeName(get_g_type_usize()) << " " << node->item_name << " = /* ... */; ";
+        }
+        if (node->index_name && plat_strcmp(node->index_name, "_") != 0) {
+            ss << "size_t " << node->index_name << " = __idx; ";
+        }
+        if (node->body && node->body->type == NODE_BLOCK_STMT) {
+            ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+        } else {
+            ss << emitExpression(node->body);
+        }
+        ss << " __idx++; } }";
 
         return ss.str();
     }

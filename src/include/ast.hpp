@@ -51,6 +51,7 @@ enum NodeType {
     NODE_FOR_STMT,        ///< A for loop statement.
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
     NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
+    NODE_RANGE,           ///< A range expression (e.g., `0..10`).
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -119,6 +120,7 @@ struct ASTDeferStmtNode;
 struct ASTForStmtNode;
 struct ASTExpressionStmtNode;
 struct ASTParenExprNode;
+struct ASTRangeNode;
 struct ASTSwitchExprNode;
 struct ASTSwitchProngNode;
 struct ASTVarDeclNode;
@@ -442,6 +444,8 @@ struct ASTForStmtNode {
     ASTNode* body;
     const char* label;
     int label_id;
+    Symbol* item_sym;
+    Symbol* index_sym;
 };
 
 /**
@@ -460,6 +464,17 @@ struct ASTExpressionStmtNode {
  */
 struct ASTParenExprNode {
     ASTNode* expr;
+};
+
+/**
+ * @struct ASTRangeNode
+ * @brief Represents a range expression (e.g., `start..end`).
+ * @var ASTRangeNode::start The start expression.
+ * @var ASTRangeNode::end The end expression.
+ */
+struct ASTRangeNode {
+    ASTNode* start;
+    ASTNode* end;
 };
 
 /**
@@ -618,7 +633,7 @@ struct ASTParamDeclNode {
  * @brief Represents a `var` or `const` declaration. Allocated out-of-line.
  * @var ASTVarDeclNode::name The name of the variable (interned string).
  * @var ASTVarDeclNode::type A pointer to an ASTNode for the declared type (can be NULL for inferred types).
- * @var ASTVarDeclNode::initializer A pointer to the expression used to initialize the variable.
+ * @var ASTVarDeclNode::initializer a pointer to the expression used to initialize the variable.
  * @var ASTVarDeclNode::is_const True if the declaration is `const`.
  * @var ASTVarDeclNode::is_mut True if the declaration is `var` (mutable).
  */
@@ -846,6 +861,7 @@ struct ASTNode {
         ASTForStmtNode* for_stmt; // Out-of-line
         ASTExpressionStmtNode expression_stmt;
         ASTParenExprNode paren_expr;
+        ASTRangeNode range;
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line

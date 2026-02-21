@@ -552,7 +552,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
-    *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+    *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
@@ -585,6 +585,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.
 *   **No Async/Await**: Asynchronous programming constructs (`async`, `await`, `suspend`, `resume`) are not supported.
 *   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
+*   **Immutability**: Loop captures (`for` loops) and function parameters are strictly immutable.
 
 ### 5.3 C89 Mapping Decisions
 *   **Boolean**: Mapped to `int` (1 for true, 0 for false).

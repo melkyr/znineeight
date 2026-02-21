@@ -203,6 +203,12 @@ public:
     void emitWhile(const ASTWhileStmtNode* node);
 
     /**
+     * @brief Emits a for loop statement.
+     * @param node The for loop statement node.
+     */
+    void emitFor(const ASTForStmtNode* node);
+
+    /**
      * @brief Emits a break statement.
      * @param node The break statement node.
      */
@@ -382,6 +388,7 @@ private:
     bool in_type_def_mode_;
     const char* module_name_;
     char last_char_;
+    int for_loop_counter_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

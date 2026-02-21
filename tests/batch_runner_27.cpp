@@ -33,6 +33,7 @@
 #include "integration/literal_tests.cpp"
 #include "integration/multi_level_pointer_tests.cpp"
 #include "integration/multi_module_tests.cpp"
+#include "integration/param_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
 #include "integration/rejection_tests.cpp"
