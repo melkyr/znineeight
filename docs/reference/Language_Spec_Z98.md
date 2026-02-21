@@ -75,6 +75,8 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
+  - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|` or `for (arr) |_|`). Discarded captures are not bound to a symbol and cannot be accessed.
+  - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
 - `switch (expr) { ... }`: Pattern matching.
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope.
   - The statement can be a single expression statement or a block `{ ... }`.

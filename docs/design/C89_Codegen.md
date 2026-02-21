@@ -82,6 +82,7 @@ C89 requires all local variable declarations to appear at the beginning of a blo
     __zig_label_L_0_end: ;
     ```
 - **For Loops**: Translated to an equivalent `while` loop wrapped in a new block to handle capture variables and unique loop state.
+  - **Discarding Captures**: If a capture is named `_`, the emitter does not generate a C variable declaration or assignment for it.
   - **Arrays/Slices**:
     ```c
     {

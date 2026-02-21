@@ -832,11 +832,12 @@ Represents a `for` loop, which iterates over an expression.
      * @struct ASTForStmtNode
      * @brief Represents a for loop statement.
      * @var ASTForStmtNode::iterable_expr The expression being iterated over.
-     * @var ASTForStmtNode::item_name The name of the item capture variable.
-     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
+     * @var ASTForStmtNode::item_name The name of the item capture variable (can be "_" to discard).
+     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL or "_" to discard).
      * @var ASTForStmtNode::body The block statement that is the loop's body.
      * @var ASTForStmtNode::label The optional loop label.
      * @var ASTForStmtNode::label_id Unique identifier for codegen.
+     * @note Capture variables are immutable.
      */
     struct ASTForStmtNode {
         ASTNode* iterable_expr;
@@ -1062,9 +1063,10 @@ Represents a `for` loop statement. This is a large node, so it is allocated out-
      * @struct ASTForStmtNode
      * @brief Represents a for loop statement.
      * @var ASTForStmtNode::iterable_expr The expression being iterated over.
-     * @var ASTForStmtNode::item_name The name of the item capture variable.
-     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL).
+     * @var ASTForStmtNode::item_name The name of the item capture variable (can be "_" to discard).
+     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL or "_" to discard).
      * @var ASTForStmtNode::body The block statement that is the loop's body.
+     * @note Capture variables are immutable.
      */
     struct ASTForStmtNode {
         ASTNode* iterable_expr;

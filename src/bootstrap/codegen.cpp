@@ -725,7 +725,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         }
     }
 
-    if (item_type) {
+    if (item_type && node->item_name && plat_strcmp(node->item_name, "_") != 0) {
         const char* actual_item_name;
         if (node->item_sym) {
             actual_item_name = var_alloc_.allocate(node->item_sym);
@@ -752,7 +752,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
 
     // Index capture
-    if (node->index_name) {
+    if (node->index_name && plat_strcmp(node->index_name, "_") != 0) {
         const char* actual_index_name;
         if (node->index_sym) {
             actual_index_name = var_alloc_.allocate(node->index_sym);

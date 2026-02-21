@@ -222,8 +222,10 @@ public:
         // Mock simplification of the complex for-to-while translation
         ss << "size_t __idx = 0; ";
         ss << "while (__idx < /* len */) { ";
-        ss << getC89TypeName(get_g_type_usize()) << " " << node->item_name << " = /* ... */; ";
-        if (node->index_name) {
+        if (node->item_name && plat_strcmp(node->item_name, "_") != 0) {
+            ss << getC89TypeName(get_g_type_usize()) << " " << node->item_name << " = /* ... */; ";
+        }
+        if (node->index_name && plat_strcmp(node->index_name, "_") != 0) {
             ss << "size_t " << node->index_name << " = __idx; ";
         }
         if (node->body && node->body->type == NODE_BLOCK_STMT) {

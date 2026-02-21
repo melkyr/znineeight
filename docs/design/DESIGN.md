@@ -585,6 +585,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.
 *   **No Async/Await**: Asynchronous programming constructs (`async`, `await`, `suspend`, `resume`) are not supported.
 *   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
+*   **Immutability**: Loop captures (`for` loops) and function parameters are strictly immutable.
 
 ### 5.3 C89 Mapping Decisions
 *   **Boolean**: Mapped to `int` (1 for true, 0 for false).
