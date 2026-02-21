@@ -10,6 +10,7 @@
 #include "symbol_table.hpp"
 #include "c89_type_mapping.hpp"
 #include "call_site_lookup_table.hpp"
+#include "ast_utils.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -300,6 +301,7 @@ public:
         std::stringstream ss;
         ss << "{ ";
 
+        bool exits = false;
         if (block->statements) {
             for (size_t i = 0; i < block->statements->length(); ++i) {
                 ASTNode* stmt = (*block->statements)[i];
@@ -307,13 +309,19 @@ public:
                     defer_stack_[scope_idx].defers.push_back(&stmt->as.defer_stmt);
                 } else {
                     ss << emitExpression(stmt) << " ";
+                    if (allPathsExit(stmt)) {
+                        exits = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // Emit defers in reverse order
-        for (int i = (int)defer_stack_[scope_idx].defers.size() - 1; i >= 0; --i) {
-            ss << emitExpression(defer_stack_[scope_idx].defers[i]->statement) << " ";
+        // Emit defers in reverse order, only if not already handled by a terminator
+        if (!exits) {
+            for (int i = (int)defer_stack_[scope_idx].defers.size() - 1; i >= 0; --i) {
+                ss << emitExpression(defer_stack_[scope_idx].defers[i]->statement) << " ";
+            }
         }
 
         defer_stack_.pop_back();

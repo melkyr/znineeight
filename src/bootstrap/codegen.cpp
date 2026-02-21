@@ -1,4 +1,5 @@
 #include "codegen.hpp"
+#include "compilation_unit.hpp"
 #include "ast_utils.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
@@ -493,6 +494,7 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     }
 
     // Pass 2: Statements
+    bool exits = false;
     for (size_t i = 0; i < node->statements->length(); ++i) {
         ASTNode* stmt = (*node->statements)[i];
         if (stmt->type == NODE_VAR_DECL) {
@@ -501,12 +503,19 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             scope->defers.append(&stmt->as.defer_stmt);
         } else {
             emitStatement(stmt);
+            if (allPathsExit(stmt)) {
+                exits = true;
+                // Once we hit a path that always exits, any subsequent statements in this block are unreachable.
+                break;
+            }
         }
     }
 
-    // Emit defers for this block in reverse order
-    for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
-        emitStatement(scope->defers[i]->statement);
+    // Emit defers for this block in reverse order, only if not already handled by a terminator
+    if (!exits) {
+        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+            emitStatement(scope->defers[i]->statement);
+        }
     }
 
     defer_stack_.pop_back();

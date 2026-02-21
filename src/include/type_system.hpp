@@ -192,6 +192,15 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, b
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type);
 
 /**
+ * @brief Creates a new function pointer Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param params A dynamic array of pointers to the parameter types.
+ * @param return_type A pointer to the return type.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type);
+
+/**
  * @brief Creates a new array Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param element_type A pointer to the Type of the array elements.

@@ -9,6 +9,8 @@
 #include "error_handler.hpp"
 #include <cstddef>
 
+class CompilationUnit;
+
 /**
  * @class C89Emitter
  * @brief Handles buffered emission of C89 code to a file.

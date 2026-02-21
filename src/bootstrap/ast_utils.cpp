@@ -69,3 +69,32 @@ const char* getTokenSpelling(TokenType op) {
         default: return "unknown";
     }
 }
+
+bool allPathsExit(const ASTNode* node) {
+    if (!node) return false;
+    switch (node->type) {
+        case NODE_RETURN_STMT:
+        case NODE_BREAK_STMT:
+        case NODE_CONTINUE_STMT:
+            return true;
+        case NODE_BLOCK_STMT: {
+            const ASTBlockStmtNode& block = node->as.block_stmt;
+            if (!block.statements) return false;
+            for (size_t i = 0; i < block.statements->length(); ++i) {
+                if (allPathsExit((*block.statements)[i])) return true;
+            }
+            return false;
+        }
+        case NODE_IF_STMT: {
+            const ASTIfStmtNode* if_stmt = node->as.if_stmt;
+            if (!if_stmt->else_block) return false;
+            return allPathsExit(if_stmt->then_block) && allPathsExit(if_stmt->else_block);
+        }
+        case NODE_EXPRESSION_STMT:
+            return allPathsExit(node->as.expression_stmt.expression);
+        case NODE_PAREN_EXPR:
+            return allPathsExit(node->as.paren_expr.expr);
+        default:
+            return false;
+    }
+}
