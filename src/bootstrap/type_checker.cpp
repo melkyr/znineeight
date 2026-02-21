@@ -1460,6 +1460,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 }
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
+    // Semantic validation: Ensure break/continue/return are not inside defer
     bool old_in_defer = in_defer;
     in_defer = true;
     visit(node->statement);
