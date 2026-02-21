@@ -8,21 +8,30 @@
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
+      emitted_slices_(unit.getArena()), external_cache_(NULL),
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
+    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
+      emitted_slices_(unit.getArena()), external_cache_(NULL),
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
     output_file_ = plat_open_file(path, true);
+    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
 
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
+      emitted_slices_(unit.getArena()), external_cache_(NULL),
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
+    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
 C89Emitter::~C89Emitter() {
@@ -202,6 +211,10 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_F64: writeString("double"); break;
         case TYPE_ISIZE: writeString("int"); break;
         case TYPE_USIZE: writeString("unsigned int"); break;
+        case TYPE_SLICE:
+            ensureSliceType(type);
+            writeString(getMangledTypeName(type));
+            break;
         case TYPE_STRUCT:
             writeString("struct ");
             if (!type->c_name && type->as.struct_details.name) {
@@ -718,8 +731,22 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
 }
 
 void C89Emitter::write(const char* data, size_t len) {
-    if (output_file_ == PLAT_INVALID_FILE) return;
     if (len == 0) return;
+
+    if (in_type_def_mode_) {
+        if (type_def_pos_ + len > type_def_cap_) {
+            // Should really reallocate, but 64KB is huge for slice typedefs.
+            // For bootstrap simplicity, we'll just truncate or abort if absolutely necessary.
+            len = type_def_cap_ - type_def_pos_;
+            if (len == 0) return;
+        }
+        plat_memcpy(type_def_buffer_ + type_def_pos_, data, len);
+        type_def_pos_ += len;
+        last_char_ = data[len - 1];
+        return;
+    }
+
+    if (output_file_ == PLAT_INVALID_FILE) return;
 
     if (buffer_pos_ + len > sizeof(buffer_)) {
         flush();
@@ -877,6 +904,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(node->as.member_access->field_name);
             break;
         }
+        case NODE_ARRAY_SLICE:
+            emitArraySlice(node);
+            break;
         case NODE_ARRAY_ACCESS: {
             const ASTNode* array_node = node->as.array_access->array;
             Type* array_type = array_node->resolved_type;
@@ -994,6 +1024,96 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(num);
             writeString("] */");
             break;
+    }
+}
+
+void C89Emitter::emitArraySlice(const ASTNode* node) {
+    if (!node || node->type != NODE_ARRAY_SLICE) return;
+    const ASTArraySliceNode* slice = node->as.array_slice;
+    if (!slice || !slice->base_ptr || !slice->len) return;
+
+    Type* result_type = node->resolved_type;
+    if (!result_type || result_type->kind != TYPE_SLICE) return;
+
+    Type* elem_type = result_type->as.slice.element_type;
+
+    ensureSliceType(result_type);
+
+    writeString("__make_slice_");
+    writeString(getMangledTypeName(elem_type));
+    writeString("(");
+    emitExpression(slice->base_ptr);
+    writeString(", ");
+    emitExpression(slice->len);
+    writeString(")");
+}
+
+void C89Emitter::ensureSliceType(Type* type) {
+    if (!type || type->kind != TYPE_SLICE) return;
+
+    const char* mangled_name = getMangledTypeName(type);
+
+    // Check internal cache
+    for (size_t i = 0; i < emitted_slices_.length(); ++i) {
+        if (plat_strcmp(emitted_slices_[i], mangled_name) == 0) return;
+    }
+
+    // Check external cache (if any)
+    if (external_cache_) {
+        for (size_t j = 0; j < external_cache_->length(); ++j) {
+            if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
+        }
+    }
+
+    // Not emitted, so emit it now
+    emitted_slices_.append(mangled_name);
+    if (external_cache_) {
+        external_cache_->append(mangled_name);
+    }
+
+    bool was_in_type_def = in_type_def_mode_;
+    in_type_def_mode_ = true;
+
+    Type* elem_type = type->as.slice.element_type;
+    const char* slice_struct_name = mangled_name;
+
+    writeIndent();
+    writeString("typedef struct { ");
+    emitType(elem_type);
+    writeString("* ptr; usize len; } ");
+    writeString(slice_struct_name);
+    writeString(";\n");
+
+    // Emit helper: static inline Slice_T __make_slice_T(T* ptr, usize len)
+    writeIndent();
+    writeString("static RETR_UNUSED_FUNC ");
+    writeString(slice_struct_name);
+    writeString(" __make_slice_");
+    writeString(getMangledTypeName(elem_type));
+    writeString("(");
+    emitType(elem_type);
+    writeString("* ptr, usize len) {\n");
+    indent();
+    writeIndent();
+    writeString(slice_struct_name);
+    writeString(" s;\n");
+    writeIndent();
+    writeString("s.ptr = ptr;\n");
+    writeIndent();
+    writeString("s.len = len;\n");
+    writeIndent();
+    writeString("return s;\n");
+    dedent();
+    writeIndent();
+    writeString("}\n\n");
+
+    in_type_def_mode_ = was_in_type_def;
+}
+
+void C89Emitter::emitBufferedSliceDefinitions() {
+    if (type_def_pos_ > 0) {
+        write(type_def_buffer_, type_def_pos_);
+        type_def_pos_ = 0;
     }
 }
 
@@ -1370,6 +1490,83 @@ const char* C89Emitter::getZigTypeName(Type* type) const {
         case TYPE_USIZE: return "usize";
         default: return "unknown";
     }
+}
+
+const char* C89Emitter::getMangledTypeName(Type* type) {
+    if (!type) return "void";
+
+    char buf[1024];
+    char* cur = buf;
+    size_t rem = sizeof(buf);
+
+    switch (type->kind) {
+        case TYPE_VOID: safe_append(cur, rem, "void"); break;
+        case TYPE_BOOL: safe_append(cur, rem, "bool"); break;
+        case TYPE_I8:   safe_append(cur, rem, "i8"); break;
+        case TYPE_U8:   safe_append(cur, rem, "u8"); break;
+        case TYPE_I16:  safe_append(cur, rem, "i16"); break;
+        case TYPE_U16:  safe_append(cur, rem, "u16"); break;
+        case TYPE_I32:  safe_append(cur, rem, "i32"); break;
+        case TYPE_U32:  safe_append(cur, rem, "u32"); break;
+        case TYPE_I64:  safe_append(cur, rem, "i64"); break;
+        case TYPE_U64:  safe_append(cur, rem, "u64"); break;
+        case TYPE_F32:  safe_append(cur, rem, "f32"); break;
+        case TYPE_F64:  safe_append(cur, rem, "f64"); break;
+        case TYPE_ISIZE: safe_append(cur, rem, "isize"); break;
+        case TYPE_USIZE: safe_append(cur, rem, "usize"); break;
+        case TYPE_POINTER:
+            safe_append(cur, rem, "Ptr_");
+            safe_append(cur, rem, getMangledTypeName(type->as.pointer.base));
+            break;
+        case TYPE_SLICE:
+            safe_append(cur, rem, "Slice_");
+            safe_append(cur, rem, getMangledTypeName(type->as.slice.element_type));
+            break;
+        case TYPE_ARRAY: {
+            safe_append(cur, rem, "Arr_");
+            char size_buf[32];
+            plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
+            safe_append(cur, rem, size_buf);
+            safe_append(cur, rem, "_");
+            safe_append(cur, rem, getMangledTypeName(type->as.array.element_type));
+            break;
+        }
+        case TYPE_FUNCTION:
+        case TYPE_FUNCTION_POINTER: {
+            safe_append(cur, rem, "Fn_");
+            Type* ret = (type->kind == TYPE_FUNCTION) ? type->as.function.return_type : type->as.function_pointer.return_type;
+            safe_append(cur, rem, getMangledTypeName(ret));
+            DynamicArray<Type*>* params = (type->kind == TYPE_FUNCTION) ? type->as.function.params : type->as.function_pointer.param_types;
+            if (params) {
+                for (size_t i = 0; i < params->length(); ++i) {
+                    safe_append(cur, rem, "_");
+                    safe_append(cur, rem, getMangledTypeName((*params)[i]));
+                }
+            }
+            break;
+        }
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_ENUM: {
+            const char* name = NULL;
+            if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
+            else name = type->as.struct_details.name;
+
+            if (type->c_name) {
+                safe_append(cur, rem, type->c_name);
+            } else if (name) {
+                safe_append(cur, rem, getC89GlobalName(name));
+            } else {
+                safe_append(cur, rem, "anon");
+            }
+            break;
+        }
+        default:
+            safe_append(cur, rem, "unknown");
+            break;
+    }
+
+    return unit_.getStringInterner().intern(buf);
 }
 
 void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
