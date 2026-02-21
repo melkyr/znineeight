@@ -237,6 +237,7 @@ public:
     }
 
     std::string emitDefersForScopeExit(int target_label_id = -1, bool is_continue = false) {
+        (void)is_continue;
         std::stringstream ss;
         for (int i = (int)defer_stack_.size() - 1; i >= 0; --i) {
             const MockDeferScope& scope = defer_stack_[i];

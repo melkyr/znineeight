@@ -114,6 +114,22 @@ TEST_FUNC(DeferIntegration_Continue) {
     return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ bar(); continue; bar(); } }");
 }
 
+TEST_FUNC(DeferIntegration_NestedContinue) {
+    const char* source =
+        "fn foo() void {\n"
+        "    while (true) {\n"
+        "        defer a();\n"
+        "        {\n"
+        "            defer b();\n"
+        "            continue;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+        "fn a() void {}\n"
+        "fn b() void {}";
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ b(); a(); continue; b(); } a(); } }");
+}
+
 TEST_FUNC(DeferIntegration_RejectReturn) {
     const char* source =
         "fn foo() void {\n"

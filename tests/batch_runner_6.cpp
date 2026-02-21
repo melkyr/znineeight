@@ -1,0 +1,11 @@
+// Generated batch runner for tests/main_batch6.cpp
+#include "../src/bootstrap/bootstrap_all.cpp"
+#include "test_utils.cpp"
+#include "c89_validation/gcc_validator.cpp"
+#include "c89_validation/msvc6_validator.cpp"
+#include "test_enum_member_access.cpp"
+#include "test_generics_rejection.cpp"
+#include "test_task_135.cpp"
+#include "test_task_136.cpp"
+#include "type_checker_struct_tests.cpp"
+#include "main_batch6.cpp"

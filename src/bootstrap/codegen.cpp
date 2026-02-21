@@ -1587,16 +1587,13 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
 }
 
 void C89Emitter::emitDefersForScopeExit(int target_label_id, bool is_continue) {
+    RETR_UNUSED(is_continue);
     for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
         DeferScope* scope = defer_stack_[i];
         for (int j = (int)scope->defers.length() - 1; j >= 0; --j) {
             emitStatement(scope->defers[j]->statement);
         }
         if (target_label_id != -1 && scope->label_id == target_label_id) {
-            if (is_continue) {
-                // For continue, we stay inside the targeted loop's scope
-                // so we've finished emitting the relevant defers.
-            }
             break;
         }
     }
