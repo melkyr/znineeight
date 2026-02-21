@@ -33,10 +33,11 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
-- **Indexing**: `base[i]` is supported for both arrays and slices.
+- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`.
 - **Slicing**: `base[start..end]` creates a slice from an array, slice, or many-item pointer.
   - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
+  - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
 - **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
 - **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
 

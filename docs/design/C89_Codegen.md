@@ -101,6 +101,12 @@ For each unique slice type encountered, the compiler generates a `typedef` and a
 - **Slicing**: `base[start..end]` is emitted as a call to the generated helper: `__make_slice_T(computed_ptr, computed_len)`.
 - **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call.
 
+#### Helper Functions
+For each unique slice type, a construction helper is generated:
+- **Signature**: `static RETR_UNUSED_FUNC Slice_T __make_slice_T(T* ptr, usize len)`
+- **Implementation**: Returns a `Slice_T` struct initialized with the provided pointer and length.
+- **Usage**: Invoked for all slicing expressions (`base[start..end]`) and implicit array-to-slice coercions.
+
 ### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
 1. **Positional Initialization**: If a variable is initialized with `{ ... }`, the emitter generates a series of individual assignments for each field or array element.
