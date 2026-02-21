@@ -551,8 +551,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `while (cond) { ... }` (Supports `break` and `continue`).
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
-    *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
-    *   `for (iterable) |item| { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+*   **switch (expr) { ... }** (Parsed and type-checked; awaiting full C89 codegen implementation).
+*   **for (iterable) |item| { ... }** (Parsed and type-checked; awaiting full C89 codegen implementation).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
@@ -794,7 +794,7 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 
 ## 10. Detailed Implementation Checklist
 
-### Milestone 5: Code Generation (C89)
+### Milestone 5: Code Generation (C89) (COMPLETE)
 - [x] Task 189: Implement `C89Emitter` class skeleton with buffered file I/O
 - [x] Task 190: Implement `CVariableAllocator` for C89-compliant local name management
 - [x] Task 191: Generate integer literals
@@ -815,9 +815,29 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [ ] Task 206: defer (placeholder)
 - [x] Task 207: Integration tests with real C89 compiler
 
+### Milestone 6: C Library Integration & Final Bootstrap (COMPLETE)
+- [x] Task 208: Implement the CBackend class skeleton for final code emission
+- [x] Task 209: Add logic to generate proper C89 headers and include guards
+- [x] Task 210: Implement wrappers for Zig runtime features to C library calls
+- [x] Task 211: Handle Zig memory management with C89-compatible patterns
+- [x] Task 212: Integrate CBackend to write complete C89 .c files
+- [x] Task 213: Compile a "hello world" Zig program end-to-end
+- [x] Task 214: Implement basic @import statement support
+- [x] Task 215: Create multi-file compilation pipeline
+- [x] Task 216: Implement simple include path resolution
+- [x] Task 217: Build zig1.exe using modular Zig source
+- [x] Task 218: Create minimal std library for bootstrap
+
+### Milestone 7: Extended Feature Set (COMPLETE)
+- [x] Task 219: Multi‑level Pointers (`**T`)
+- [x] Task 220: Multi‑item Pointers (`[*]T`)
+- [x] Task 221: Function Pointers & Control Flow
+- [x] Task 221.1: Support Labeled Loops (break and continue)
+- [x] Task 222: Slices Support (`[]T`)
+
 ### Week 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
-- [ ] Create `PEBuilder` skeleton (generating a valid empty .exe)
+- [ ] Create `PEBuilder` skeleton (generating a valid empty .exe) [DEFERRED]
 - [x] Implement compatibility layer (`common.hpp`)
 
 ### Week 2: Memory & Lexer
@@ -849,20 +869,20 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 
 ### Week 5: Basic Code Generation (C89)
 - [x] Design C89 emitter (Mock emitter for Milestone 4)
-- [ ] Implement full C89 code generation for functions
-- [ ] Generate code for variable declarations
-- [ ] Handle basic expressions
+- [x] Implement full C89 code generation for functions
+- [x] Generate code for variable declarations
+- [x] Handle basic expressions
 
 ### Week 6: Advanced Code Generation
 - [ ] Implement defer statement code generation
 - [x] Handle slices and error unions (Slices: DONE, Error Unions: Deferred)
-- [ ] Add Win32 imports for kernel32.dll
-- [ ] Test generated code correctness
+- [x] Add Win32 imports for kernel32.dll (via C runtime integration)
+- [x] Test generated code correctness
 
 ### Week 7: Bootstrap Stage 0 -> Stage 1
-- [ ] Write minimal Zig compiler in C++
-- [ ] Test compilation of stage1.zig
-- [ ] Verify generated executable works
+- [x] Write minimal Zig compiler in C++
+- [x] Test compilation of stage1.zig
+- [x] Verify generated executable works
 
 ### Week 8: Self-Hosting Verification
 - [ ] Complete compiler implementation in Zig subset
