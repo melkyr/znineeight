@@ -1411,6 +1411,254 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multi�
     - **Phase 6: Slicing Validation (DONE)**: Audited and enhanced `visitArraySlice` with improved const propagation and robustness. Improved `isLValueConst` for better pointer and parenthesized expression handling.
     - **Phase 7: Verification & Integration (DONE)**: Created comprehensive integration tests (Batch 40) and updated all relevant documentation.
     - **Phase 8: Cleanup and Validation (DONE)**: Verified complete test suite passing and MSVC 6.0 compliance.
+Task 223: defer Statement
+
+Goal: Add full support for defer statements, which schedule code to run when the current scope exits (either normally or via return/break/continue/error). This is essential for resource cleanup (file handles, memory) and is widely used in Zig.
+
+Key changes:
+
+    Parser: Recognize defer followed by a statement (block or expression statement). Ensure defer is allowed inside functions but not at top level.
+
+    AST: ASTDeferStmtNode already exists; ensure it stores the deferred statement.
+
+    Type checker: Validate that the deferred statement is well‑typed. Also ensure that break/continue/return are not allowed inside defer (already done). Track a stack of defer statements per scope.
+
+    Code generation: Translate each defer into C code that is executed at scope exit. Implementation approach:
+
+        When emitting a block, collect all defer statements within it.
+
+        At the end of the block (before each return and at the natural end), emit the deferred statements in reverse order.
+
+        For functions with multiple return points, ensure that the same deferred code is emitted before each return. This can be done by generating a single copy of the deferred code and using goto to a cleanup label, or by duplicating the code. The simpler method: for each return, emit the deferred statements before it (duplicated). This is acceptable for small functions.
+
+        Ensure that deferred code is emitted exactly once per scope exit, even if the exit is via break from a nested loop? Actually, defer is attached to the block, so when the block is exited (by any means), the deferred code runs. So for a loop inside the block, break exits the loop but not the block; the block's defer runs only when the block itself is left. This is handled by placing the defer code at the block's exit points.
+
+Testing: Add integration tests for defer in various contexts: simple block, with return, nested scopes, mixing with loops, and ensure that deferred code runs in correct order (LIFO).
+Task 224: for Loops
+
+Goal: Implement full support for for loops over arrays, slices, and ranges. This is a fundamental iteration construct in Zig.
+
+Key changes:
+
+    Parser: Already parses for loops (syntax: for (iterable) |item| { ... } and for (iterable) |item, index| { ... }). Ensure that range syntax 0..n is also recognized (e.g., for (0..10) |i| { ... }). The AST node ASTForStmtNode exists; add fields for the index capture name if present.
+
+    Type checker:
+
+        Validate that the iterable is an array, slice, or range (range is a special case: start..end where both are integers). For arrays and slices, the element type becomes the capture type. For ranges, the capture type is usize (or the integer type of the range).
+
+        For range loops, ensure the range bounds are constant or at least integer expressions.
+
+        For capture variables, introduce them in a new scope (already handled by symbol table).
+
+        Support break and continue inside for loops (already handled by loop labels).
+
+    Code generation: Translate for loops into equivalent while loops:
+
+        For arrays/slices: create an index variable, a pointer to the element, and a loop over the length. For example:
+        c
+
+        size_t __idx = 0;
+        while (__idx < arr_len) {
+            elem_type item = arr[__idx];
+            // loop body
+            __idx++;
+        }
+
+        For ranges: similar but simpler: size_t i = start; while (i < end) { ... i++; }.
+
+        If an index capture is present, also provide the index variable.
+
+        Ensure that labeled break/continue work correctly (they already do for while).
+
+    Testing: Add integration tests for arrays, slices, and ranges, with and without index captures, and with nested loops and labels.
+
+Task 225: switch Expressions
+
+Goal: Implement switch expressions, which are a powerful way to handle multiple cases. Zig's switch can be used as an expression (returning a value) and supports ranges and multiple values per case.
+
+Key changes:
+
+    Parser: Parse switch (expr) { ... } with prongs. Each prong can have a list of items (values, ranges) and a => followed by an expression. The else prong is optional. The AST node ASTSwitchExprNode exists; ensure it captures the condition and a list of prongs.
+
+    Type checker:
+
+        The condition must be of an integer type, enum, or boolean (for now, limit to integers and enums).
+
+        Each prong's items must be constant expressions of the same type as the condition. Ranges are specified as a...b (inclusive) or a..b (exclusive? Zig uses a...b for inclusive). For simplicity, start with inclusive ranges using ....
+
+        The body of each prong is an expression. All prongs must have the same result type (or the result type is inferred from the first prong). The else prong, if present, provides a fallback.
+
+        The type checker must ensure that all possible values are covered (exhaustiveness checking). For now, we can require an else prong to simplify.
+
+    Code generation: Translate switch into a C switch statement. Since C89 does not have expression‑valued switches, we'll generate a statement that assigns to a temporary variable:
+    c
+
+    int result;
+    switch (cond) {
+        case 1: case 2: result = expr1; break;
+        case 3: result = expr2; break;
+        default: result = else_expr; break;
+    }
+    // use result
+
+    If the switch is used as an expression, we need to embed it in a scope. This is doable but careful about break. Alternatively, we can emit a chain of if-else for simple cases, but switch is more efficient. We'll use a temporary variable.
+
+    Testing: Test integer switches with multiple cases, ranges, and an else; also test that the result type is consistent.
+
+Task 226: Error Unions (!T) and Error Sets
+
+Goal: Add support for Zig's error handling system: error sets (error { ... }) and error union types (!T). This is crucial for robust error propagation.
+
+Key changes:
+
+    Parser:
+
+        Recognize error { ... } syntax (error set definition). Create ASTErrorSetDefinitionNode.
+
+        Recognize !T as a type expression (error union). Create ASTErrorUnionTypeNode.
+
+        Recognize error as a token for error values (e.g., error.FileNotFound). This is a special identifier; we'll treat it as a built‑in error literal.
+
+    AST: Add nodes for error set definitions, error union types, and error literals.
+
+    Type system:
+
+        Add TYPE_ERROR_SET and TYPE_ERROR_UNION. Error set is a distinct type (like an enum). Error union is !T – a tagged union of an error code and a payload.
+
+        Define an error set as a set of unique error tags. Each tag has an integer value (assigned by the compiler, starting from 1; 0 reserved for success). For now, we can use a simple mapping.
+
+        Error union representation in C: a struct { union { T payload; int err; } data; int is_error; }. The size and alignment depend on T and int. We'll need to compute layout.
+
+    Type checker:
+
+        Validate error set definitions: tags must be unique.
+
+        For error union types, ensure the payload is a valid type.
+
+        Implement try and catch (next task) that use error unions.
+
+        Support implicit coercion: a value of type T can be implicitly wrapped into !T (success). Also, an error set value can be implicitly coerced to any error union that includes that error? For simplicity, we'll allow implicit coercion from error set to error union if the error union's error set is a superset? This is complex; we may start with requiring explicit @errToInt etc. Actually, Zig has rich error handling rules. For bootstrap, we can implement a minimal subset: only allow returning error values from functions that return !T, and use try/catch to unwrap. We'll defer full error set compatibility.
+
+    Runtime representation: In C, error unions will be emitted as structs. For each distinct error union type, generate a typedef. Also generate a global array of error names for debugging? Not needed initially.
+
+    Testing: Add tests for error set declarations, functions returning error unions, and basic use of try/catch (next task).
+
+Task 227: try and catch Expressions
+
+Goal: Implement try and catch expressions to handle error unions. This builds on error union types.
+
+Key changes:
+
+    Parser:
+
+        Recognize try as a unary operator (prefix) that applies to an expression of type !T. Create ASTTryExprNode.
+
+        Recognize catch as a binary operator (e.g., expr catch fallback) that handles errors. Create ASTCatchExprNode. Also support catch |err| ... syntax to capture the error value.
+
+    Type checker:
+
+        try: The operand must be an error union. The result type is the payload type. The try expression unwraps the payload; if an error occurs, it returns from the current function with that error. So type checking must ensure that the enclosing function returns an error union (or has a compatible error set). This requires propagating error sets.
+
+        catch: The left operand must be an error union. The right operand is a fallback expression (if no error capture) or a block that handles the error. The result type is the common type of the payload and the fallback (or the block's result). The catch expression may also introduce a capture variable (the error).
+
+    Code generation:
+
+        For try, generate code that checks the error flag and returns if error. For example:
+        c
+
+        ErrorUnionType tmp = expr;
+        if (tmp.is_error) return tmp;  // assuming return type is error union
+        payload = tmp.data.payload;
+
+        If the function returns void or a non‑error type, this is invalid; type checker ensures it's only used in functions returning error union.
+
+        For catch, generate code that checks the error flag and uses the fallback:
+        c
+
+        ErrorUnionType tmp = expr;
+        result = tmp.is_error ? fallback : tmp.data.payload;
+
+        If there's an error capture, the fallback block may need the error value; we can emit a temporary and then use it.
+
+    Testing: Write tests for try in functions returning error unions, and catch with and without error capture.
+Task 228: Optional Types (?T) and null Handling
+
+Goal: Add support for Zig’s optional types, which allow any type to be nullable. This is used extensively in Zig for values that may be absent, and it’s a core safety feature. While pointers already have null, optionals extend nullability to non‑pointer types (e.g., ?i32). This task will enable the compiler to handle ?T types, null as a value of any optional type, and basic operations like unwrapping with orelse and if‑capture.
+
+Key changes:
+
+    Parser:
+
+        Recognize ?T syntax (optional type). Create ASTOptionalTypeNode.
+
+        null literal already exists and is currently allowed only for pointers. Update type checking to allow null to be assigned to any optional type.
+
+        Support orelse operator (binary) for providing a default when optional is null. This is similar to catch but for optionals. Create ASTOrelseExprNode.
+
+        Support if‑capture syntax: if (x) |value| { ... } else { ... } where x is an optional. This is a control flow construct that unwraps the optional. This may require extending ASTIfStmtNode to optionally capture the unwrapped value.
+
+    AST: Add nodes for optional types, orelse expressions, and extend if node for optional capture.
+
+    Type system:
+
+        Add TYPE_OPTIONAL to TypeKind. Define a struct that stores the child type (Type* base).
+
+        Size and alignment: an optional is typically represented as a struct with a payload and a boolean flag (or a pointer where null is the sentinel). For non‑pointer types, we need a tag. In C, we can represent ?T as a struct { T payload; bool valid; } (or int valid for C89). For pointers, we could use null as the sentinel, but to be uniform, we'll use a struct for all optionals. This may double the size for pointers, but it’s simple. Later we could optimise pointers to use null directly, but for now, use struct.
+
+        Compute size/alignment: size = size of payload + size of bool (with padding). alignment = max(alignof(payload), alignof(bool)). On 32‑bit, bool is 1 byte, so typical alignment 4, size round up to multiple of 4.
+
+    Type checker:
+
+        Validate optional type creation: base type must be complete.
+
+        Allow null to be implicitly convertible to any optional type.
+
+        Implement implicit wrapping: a value of type T can be implicitly converted to ?T (success). This is analogous to error union wrapping.
+
+        For orelse expression: left operand must be an optional; right operand must be a value of the optional's base type (or a block returning that type). The result type is the base type.
+
+        For if‑capture: condition must be an optional. The capture introduces a new immutable binding of the unwrapped value (if non‑null) in the then block. The else block may be omitted. The else block does not have the capture. This requires extending the symbol table for the then scope.
+
+        Ensure that if‑capture works with labeled loops? Not needed now.
+
+    Code generation:
+
+        For an optional type, emit a struct typedef: e.g., typedef struct { T payload; int valid; } Optional_T; (where valid is 1 if present, 0 if null). Use int for C89 compatibility.
+
+        For null assigned to optional, emit { (T)0, 0 }? But null is a literal; we need to generate an appropriate struct initializer. For null, we can emit ((Optional_T){ .payload = (T)0, .valid = 0 }) but C89 doesn't have designated initializers. We'll need to use a temporary or a macro. Perhaps we can use a helper function in the runtime: __make_null_optional_T() that returns the struct. But that adds overhead. Alternatively, we can treat null as a special constant and in contexts where an optional is expected, we can generate { 0, 0 } (assuming zero‑initialization is valid for payload). For non‑pointer payloads, zero may be a valid value (e.g., 0 for integers), but that's okay because the valid flag distinguishes. So we can emit { (T)0, 0 } directly. For pointers, (T)0 is null pointer.
+
+        For implicit wrapping of a value v into ?T, emit a struct initializer { v, 1 }.
+
+        For orelse, generate code that checks the flag and selects payload or fallback:
+        c
+
+        Optional_T tmp = expr;
+        result = tmp.valid ? tmp.payload : fallback;
+
+        For if‑capture, generate an if statement that checks the flag, and inside the then block, introduce a variable (with the captured name) initialized to the payload. The else block (if present) is emitted without the capture.
+        c
+
+        Optional_T tmp = cond;
+        if (tmp.valid) {
+            T value = tmp.payload;  // the capture
+            // then block using value
+        } else {
+            // else block
+        }
+
+    Runtime helpers: May need functions to create optionals from values and null, but inline struct initializers suffice for now. For more complex operations (like conversion from pointers), we might add helpers later.
+
+    Testing: Add integration tests for optional types, including:
+
+        Declaring optional variables and assigning null or a value.
+
+        Using orelse to provide defaults.
+
+        Using if‑capture with and without else.
+
+        Passing optionals to functions and returning them.
+
+        Edge cases: optional of optional? ??T – should work recursively.
 
 ## Phase 1: The Cross-Compiler (Zig)
 223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.
