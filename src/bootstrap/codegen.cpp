@@ -528,6 +528,70 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     writeString("}");
 }
 
+void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id) {
+    if (!node) return;
+
+    writeString("{\n");
+    indent();
+
+    DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
+    new (scope) DeferScope(arena_, label_id);
+    defer_stack_.append(scope);
+
+    // Pass 1: Local declarations
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, false);
+        }
+    }
+
+    // Pass 2: Statements
+    bool exits = false;
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, true);
+        } else if (stmt->type == NODE_DEFER_STMT) {
+            scope->defers.append(&stmt->as.defer_stmt);
+        } else {
+            // Check if it's the last expression in the block
+            if (i == node->statements->length() - 1 && target_var &&
+                stmt->type != NODE_EXPRESSION_STMT &&
+                stmt->type != NODE_IF_STMT && stmt->type != NODE_WHILE_STMT &&
+                stmt->type != NODE_FOR_STMT && stmt->type != NODE_RETURN_STMT &&
+                stmt->type != NODE_BREAK_STMT && stmt->type != NODE_CONTINUE_STMT &&
+                stmt->type != NODE_UNREACHABLE) {
+                 writeIndent();
+                 writeString(target_var);
+                 writeString(" = ");
+                 emitExpression(stmt);
+                 writeString(";\n");
+            } else {
+                emitStatement(stmt);
+            }
+
+            if (allPathsExit(stmt)) {
+                exits = true;
+                break;
+            }
+        }
+    }
+
+    // Emit defers for this block in reverse order, only if not already handled by a terminator
+    if (!exits) {
+        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+            emitStatement(scope->defers[i]->statement);
+        }
+    }
+
+    defer_stack_.pop_back();
+
+    dedent();
+    writeIndent();
+    writeString("}");
+}
+
 void C89Emitter::emitStatement(const ASTNode* node) {
     if (!node) return;
 
@@ -688,14 +752,20 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
             }
         }
         indent();
-        if (target_var) {
-            writeIndent();
-            writeString(target_var);
-            writeString(" = ");
-            emitExpression(prong->body);
-            writeString(";\n");
+        if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
+            if (prong->body->type == NODE_BLOCK_STMT) {
+                writeIndent();
+                emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
+                writeString("\n");
+            } else {
+                writeIndent();
+                writeString(target_var);
+                writeString(" = ");
+                emitExpression(prong->body);
+                writeString(";\n");
+            }
         } else {
-            // Just emit expression for side effects if no target
+            // Just emit expression for side effects if no target or if it diverges
             writeIndent();
             emitExpression(prong->body);
             writeString(";\n");
@@ -1107,6 +1177,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         case NODE_NULL_LITERAL:
             writeString("((void*)0)");
+            break;
+        case NODE_UNREACHABLE:
+            writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
             break;
         case NODE_IDENTIFIER:
             if (node->as.identifier.symbol) {

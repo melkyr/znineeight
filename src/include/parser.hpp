@@ -202,6 +202,27 @@ public:
     ASTNode* parseErrDeferStatement();
 
     /**
+     * @brief Parses a return expression.
+     *        Grammar: `'return' (expr)?`
+     * @return A pointer to the ASTNode representing the return expression.
+     */
+    ASTNode* parseReturnExpr();
+
+    /**
+     * @brief Parses a break expression.
+     *        Grammar: `'break' (':' label)?`
+     * @return A pointer to the ASTNode representing the break expression.
+     */
+    ASTNode* parseBreakExpr();
+
+    /**
+     * @brief Parses a continue expression.
+     *        Grammar: `'continue' (':' label)?`
+     * @return A pointer to the ASTNode representing the continue expression.
+     */
+    ASTNode* parseContinueExpr();
+
+    /**
      * @brief Parses a return statement.
      *        Grammar: `'return' (expr)? ';'`
      * @return A pointer to the ASTNode representing the return statement.

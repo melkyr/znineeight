@@ -88,6 +88,8 @@ public:
                 return node->as.bool_literal.value ? "1" : "0";
             case NODE_NULL_LITERAL:
                 return "((void*)0)";
+            case NODE_UNREACHABLE:
+                return "__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)";
             case NODE_UNDEFINED_LITERAL:
                 return "/* undefined */";
             case NODE_IDENTIFIER:
@@ -613,6 +615,7 @@ private:
             case TYPE_USIZE: return "usize";
             case TYPE_F32: return "f32";
             case TYPE_F64: return "f64";
+            case TYPE_NORETURN: return "noreturn";
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
             case TYPE_ARRAY: {
@@ -811,7 +814,11 @@ private:
                     ss << "case " << emitExpression((*prong->items)[j]) << ": ";
                 }
             }
-            ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+            if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
+                ss << emitExpression(prong->body) << "; break; ";
+            } else {
+                ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+            }
         }
         ss << "}";
         return ss.str();

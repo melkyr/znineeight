@@ -114,6 +114,7 @@ enum TokenType {
     TOKEN_TYPE,             ///< 'type' keyword.
     TOKEN_CALLCONV,         ///< 'callconv' keyword.
     TOKEN_NOALIAS,          ///< 'noalias' keyword.
+    TOKEN_NORETURN,         ///< 'noreturn' keyword.
     TOKEN_NOSUSPEND,        ///< 'nosuspend' keyword.
     TOKEN_OR,               ///< 'or' keyword.
     TOKEN_PACKED,           ///< 'packed' keyword.

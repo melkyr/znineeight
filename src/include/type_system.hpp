@@ -39,6 +39,7 @@ enum TypeKind {
     TYPE_ERROR_UNION,
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
+    TYPE_NORETURN,
     TYPE_TYPE,
     TYPE_ANYTYPE,
     TYPE_MODULE
@@ -338,6 +339,7 @@ Type* get_g_type_f64();
 Type* get_g_type_null();
 Type* get_g_type_undefined();
 Type* get_g_type_type();
+Type* get_g_type_noreturn();
 Type* get_g_type_anytype();
 
 #endif // TYPE_SYSTEM_HPP

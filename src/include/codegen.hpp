@@ -185,6 +185,14 @@ public:
     void emitBlock(const ASTBlockStmtNode* node, int label_id = -1);
 
     /**
+     * @brief Emits a block of statements, assigning the last expression to target_var.
+     * @param node The block statement node.
+     * @param target_var The name of the variable to assign the result to.
+     * @param label_id The label_id of the loop this block belongs to (if any).
+     */
+    void emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id = -1);
+
+    /**
      * @brief Emits a single statement.
      * @param node The statement node.
      */

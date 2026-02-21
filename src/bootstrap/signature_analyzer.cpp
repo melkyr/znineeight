@@ -140,6 +140,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_NORETURN:
             return true;
 
         case TYPE_POINTER:

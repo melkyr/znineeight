@@ -37,6 +37,7 @@ DEFINE_GET_TYPE_FUNC(g_type_f64,  TYPE_F64,  8, 8)
 DEFINE_GET_TYPE_FUNC(g_type_null, TYPE_NULL, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_undefined, TYPE_UNDEFINED, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_type, TYPE_TYPE, 0, 0)
+DEFINE_GET_TYPE_FUNC(g_type_noreturn, TYPE_NORETURN, 0, 1)
 DEFINE_GET_TYPE_FUNC(g_type_anytype, TYPE_ANYTYPE, 0, 0)
 
 static Type* allocateType(ArenaAllocator& arena) {
@@ -74,6 +75,7 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "f32") == 0) return get_g_type_f32();
     if (plat_strcmp(name, "f64") == 0) return get_g_type_f64();
     if (plat_strcmp(name, "type") == 0) return get_g_type_type();
+    if (plat_strcmp(name, "noreturn") == 0) return get_g_type_noreturn();
     if (plat_strcmp(name, "anytype") == 0) return get_g_type_anytype();
 
     return NULL; // Not a known primitive type
@@ -369,6 +371,7 @@ bool isTypeComplete(Type* type) {
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
         case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_F32: case TYPE_F64:
+        case TYPE_NORETURN: return true;
         case TYPE_POINTER:
         case TYPE_NULL:
         case TYPE_ENUM:
@@ -517,6 +520,7 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             break;
         }
         case TYPE_TYPE:    safe_append(current, remaining, "type"); break;
+        case TYPE_NORETURN: safe_append(current, remaining, "noreturn"); break;
         case TYPE_ANYTYPE: safe_append(current, remaining, "anytype"); break;
         case TYPE_MODULE:
             safe_append(current, remaining, "module ");
