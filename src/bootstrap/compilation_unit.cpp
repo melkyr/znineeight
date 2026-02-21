@@ -956,8 +956,8 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             if (prongs) {
                 for (size_t i = 0; i < prongs->length(); ++i) {
                     ASTSwitchProngNode* prong = (*prongs)[i];
-                    for (size_t j = 0; j < prong->cases->length(); ++j) {
-                        collectImports((*prong->cases)[j], module);
+                    for (size_t j = 0; j < prong->items->length(); ++j) {
+                        collectImports((*prong->items)[j], module);
                     }
                     collectImports(prong->body, module);
                 }

@@ -119,9 +119,9 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
                     for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
                         ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
                         if (prong) {
-                            if (!prong->is_else && prong->cases) {
-                                for (size_t j = 0; j < prong->cases->length(); ++j) {
-                                    traverse((*prong->cases)[j], ctx);
+                            if (!prong->is_else && prong->items) {
+                                for (size_t j = 0; j < prong->items->length(); ++j) {
+                                    traverse((*prong->items)[j], ctx);
                                 }
                             }
                             traverse(prong->body, ctx);

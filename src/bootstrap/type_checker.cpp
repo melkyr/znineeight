@@ -42,6 +42,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
         case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
+        case NODE_UNREACHABLE:      resolved_type = visitUnreachable(node); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
         case NODE_UNDEFINED_LITERAL: resolved_type = visitUndefinedLiteral(node); break;
@@ -1177,6 +1178,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     return createSliceType(unit.getArena(), element_type, is_const, &unit.getTypeInterner());
 }
 
+Type* TypeChecker::visitUnreachable(ASTNode* node) {
+    node->resolved_type = get_g_type_noreturn();
+    return node->resolved_type;
+}
+
 Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
     return resolvePrimitiveTypeName("bool");
 }
@@ -1275,11 +1281,17 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     unit.getSymbolTable().enterScope();
+    Type* last_type = get_g_type_void();
     for (size_t i = 0; i < node->statements->length(); ++i) {
-        visit((*node->statements)[i]);
+        last_type = visit((*node->statements)[i]);
+        if (last_type && last_type->kind == TYPE_NORETURN) {
+            // Unreachable code after divergence
+            // We could report a warning here, but for now we just continue and return noreturn
+            // to indicate the block diverges.
+        }
     }
     unit.getSymbolTable().exitScope();
-    return NULL; // Blocks don't have a type
+    return last_type;
 }
 
 Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
@@ -1373,7 +1385,7 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
@@ -1402,7 +1414,7 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
@@ -1457,7 +1469,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
@@ -1482,7 +1494,16 @@ Type* TypeChecker::visitRange(ASTRangeNode* node) {
         fatalError(node->end->loc, "Range end must be an integer");
     }
 
-    return get_g_type_usize();
+    // For inclusive ranges in switch, we check start <= end if they are constants
+    i64 start_val, end_val;
+    if (evaluateConstantExpression(node->start, &start_val) &&
+        evaluateConstantExpression(node->end, &end_val)) {
+        if (start_val > end_val) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, "Range start must be less than or equal to end");
+        }
+    }
+
+    return start_type;
 }
 
 Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
@@ -1577,49 +1598,76 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     Type* cond_type = visit(node->expression);
     if (!cond_type) return NULL;
 
-    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM) {
-        fatalError(node->expression->loc, "Switch condition must be integer or enum type");
+    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
+        fatalError(node->expression->loc, "Switch condition must be integer, enum, or boolean type");
         return NULL;
     }
 
-    Type* result_type = NULL;
+    bool has_else = false;
+    Type* common_type = NULL;
+    bool has_non_noreturn = false;
+
     for (size_t i = 0; i < node->prongs->length(); ++i) {
         ASTSwitchProngNode* prong = (*node->prongs)[i];
 
-        if (!prong->is_else) {
-            for (size_t j = 0; j < prong->cases->length(); ++j) {
-                ASTNode* case_expr = (*prong->cases)[j];
-                Type* case_type = visit(case_expr);
-                if (case_type) {
-                    // Check compatibility between condition and case
-                    if (!areTypesCompatible(cond_type, case_type)) {
-                        // Allow enum members if cond is enum
-                        if (cond_type->kind == TYPE_ENUM && case_type->kind == TYPE_ENUM) {
-                            if (cond_type != case_type) {
-                                fatalError(case_expr->loc, "Switch case type mismatch");
-                            }
-                        } else if (cond_type->kind == TYPE_ENUM && isIntegerType(case_type)) {
-                            // C89 allows integers for enum cases
-                        } else if (isIntegerType(cond_type) && case_type->kind == TYPE_ENUM) {
-                             // Allow enum cases for integer discriminant?
-                        } else {
-                            fatalError(case_expr->loc, "Switch case type mismatch");
-                        }
+        if (prong->is_else) {
+            has_else = true;
+        } else {
+            for (size_t j = 0; j < prong->items->length(); ++j) {
+                ASTNode* item_expr = (*prong->items)[j];
+                Type* item_type = visit(item_expr);
+                if (item_type) {
+                    // Check compatibility between condition and case item
+                    bool compatible = false;
+                    if (areTypesCompatible(cond_type, item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
+                        // C89 allows integers for enum cases
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
+                        // Allow enum members for integer switch
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_BOOL && isIntegerType(item_type)) {
+                        compatible = true;
+                    }
+
+                    if (!compatible) {
+                        fatalError(item_expr->loc, "Switch case type mismatch");
                     }
                 }
             }
         }
 
         Type* prong_type = visit(prong->body);
-        if (!result_type) {
-            result_type = prong_type;
-        } else if (prong_type && result_type != prong_type) {
-            // Require exact match for switch expression resulting type for now.
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+        if (prong_type && prong_type->kind != TYPE_NORETURN) {
+            if (!common_type) {
+                common_type = prong_type;
+                has_non_noreturn = true;
+            } else if (!areTypesEqual(common_type, prong_type)) {
+                // If they are not strictly equal, check if one can be coerced to the other.
+                // For simplicity, we currently expect them to match common_type.
+                if (areTypesCompatible(common_type, prong_type)) {
+                    // common_type is OK
+                } else if (areTypesCompatible(prong_type, common_type)) {
+                    common_type = prong_type;
+                } else {
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+                }
+            }
         }
     }
 
-    return result_type;
+    if (!has_else) {
+        fatalError(node->expression->loc, "Switch expression must have an 'else' prong");
+    }
+
+    if (!has_non_noreturn) {
+        return get_g_type_noreturn();
+    }
+
+    return common_type;
 }
 
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
@@ -1650,6 +1698,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (declared_type && declared_type->kind == TYPE_VOID) {
         unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'void'");
         return NULL; // Stop processing this declaration
+    }
+
+    if (declared_type && declared_type->kind == TYPE_NORETURN) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'noreturn'");
+        return NULL;
     }
 
     // Special handling for integer literal initializers to support C89-style assignments.
@@ -2496,8 +2549,7 @@ Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
 }
 
 Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
-    visit(node->expression);
-    return NULL; // Expression statements don't have a type
+    return visit(node->expression);
 }
 
 bool TypeChecker::isLValueConst(ASTNode* node) {
@@ -2578,6 +2630,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // undefined is compatible with anything
     if (actual->kind == TYPE_UNDEFINED) {
+        return true;
+    }
+
+    // noreturn is compatible with anything (coerces to anything)
+    if (actual->kind == TYPE_NORETURN) {
         return true;
     }
 
@@ -2954,6 +3011,8 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
     }
 
     switch (node->type) {
+        case NODE_UNREACHABLE:
+            return true;
         case NODE_RETURN_STMT:
             return true;
         case NODE_BLOCK_STMT: {
@@ -2979,6 +3038,16 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             // Actually, even simpler: just return false for now to avoid complexity,
             // and fix the test case.
             return false;
+        }
+        case NODE_EXPRESSION_STMT:
+            return all_paths_return(node->as.expression_stmt.expression);
+        case NODE_SWITCH_EXPR: {
+            ASTSwitchExprNode* sw = node->as.switch_expr;
+            if (!sw->prongs || sw->prongs->length() == 0) return false;
+            for (size_t i = 0; i < sw->prongs->length(); ++i) {
+                if (!all_paths_return((*sw->prongs)[i]->body)) return false;
+            }
+            return true;
         }
         default:
             return false;
@@ -3018,6 +3087,7 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
     if (source_type->kind == TYPE_UNDEFINED) return true;
+    if (source_type->kind == TYPE_NORETURN) return true;
 
     // Null literal handling
     if (source_type->kind == TYPE_NULL) {

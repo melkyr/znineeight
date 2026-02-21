@@ -52,6 +52,7 @@ enum NodeType {
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
     NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
     NODE_RANGE,           ///< A range expression (e.g., `0..10`).
+    NODE_UNREACHABLE,     ///< An 'unreachable' expression.
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -145,6 +146,7 @@ struct ASTOrelseExprNode;
 struct ASTErrDeferStmtNode;
 struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
+struct ASTUnreachableNode;
 struct ASTComptimeBlockNode;
 struct ASTPtrCastNode;
 struct ASTNumericCastNode;
@@ -475,17 +477,18 @@ struct ASTParenExprNode {
 struct ASTRangeNode {
     ASTNode* start;
     ASTNode* end;
+    bool is_inclusive;
 };
 
 /**
  * @struct ASTSwitchProngNode
  * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
- * @var ASTSwitchProngNode::cases A dynamic array of case expressions for this prong.
+ * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
  * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
  * @var ASTSwitchProngNode::body The expression to execute for this prong.
  */
 struct ASTSwitchProngNode {
-    DynamicArray<ASTNode*>* cases;
+    DynamicArray<ASTNode*>* items;
     bool is_else;
     ASTNode* body;
 };
@@ -566,6 +569,14 @@ struct ASTAwaitExprNode {
 };
 
 // --- Comptime Nodes ---
+
+/**
+ * @struct ASTUnreachableNode
+ * @brief Represents an 'unreachable' expression.
+ */
+struct ASTUnreachableNode {
+    // This node has no data.
+};
 
 /**
  * @struct ASTComptimeBlockNode
@@ -865,6 +876,7 @@ struct ASTNode {
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line
+        ASTUnreachableNode unreachable;
         ASTPtrCastNode* ptr_cast; // Out-of-line
         ASTNumericCastNode* numeric_cast; // Out-of-line
         ASTOffsetOfNode* offset_of; // Out-of-line

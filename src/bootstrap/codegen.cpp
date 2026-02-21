@@ -388,6 +388,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             if (!is_undefined) {
                 if (decl->initializer->type == NODE_STRUCT_INITIALIZER) {
                     emitInitializerAssignments(c_name, decl->initializer);
+                } else if (decl->initializer->type == NODE_SWITCH_EXPR) {
+                    emitSwitchExpr(decl->initializer, c_name);
                 } else {
                     writeIndent();
                     writeString(c_name);
@@ -526,6 +528,70 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     writeString("}");
 }
 
+void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id) {
+    if (!node) return;
+
+    writeString("{\n");
+    indent();
+
+    DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
+    new (scope) DeferScope(arena_, label_id);
+    defer_stack_.append(scope);
+
+    // Pass 1: Local declarations
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, false);
+        }
+    }
+
+    // Pass 2: Statements
+    bool exits = false;
+    for (size_t i = 0; i < node->statements->length(); ++i) {
+        ASTNode* stmt = (*node->statements)[i];
+        if (stmt->type == NODE_VAR_DECL) {
+            emitLocalVarDecl(stmt, true);
+        } else if (stmt->type == NODE_DEFER_STMT) {
+            scope->defers.append(&stmt->as.defer_stmt);
+        } else {
+            // Check if it's the last expression in the block
+            if (i == node->statements->length() - 1 && target_var &&
+                stmt->type != NODE_EXPRESSION_STMT &&
+                stmt->type != NODE_IF_STMT && stmt->type != NODE_WHILE_STMT &&
+                stmt->type != NODE_FOR_STMT && stmt->type != NODE_RETURN_STMT &&
+                stmt->type != NODE_BREAK_STMT && stmt->type != NODE_CONTINUE_STMT &&
+                stmt->type != NODE_UNREACHABLE) {
+                 writeIndent();
+                 writeString(target_var);
+                 writeString(" = ");
+                 emitExpression(stmt);
+                 writeString(";\n");
+            } else {
+                emitStatement(stmt);
+            }
+
+            if (allPathsExit(stmt)) {
+                exits = true;
+                break;
+            }
+        }
+    }
+
+    // Emit defers for this block in reverse order, only if not already handled by a terminator
+    if (!exits) {
+        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+            emitStatement(scope->defers[i]->statement);
+        }
+    }
+
+    defer_stack_.pop_back();
+
+    dedent();
+    writeIndent();
+    writeString("}");
+}
+
 void C89Emitter::emitStatement(const ASTNode* node) {
     if (!node) return;
 
@@ -553,19 +619,45 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
             break;
+        case NODE_UNREACHABLE:
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
+            break;
         case NODE_DEFER_STMT:
             writeIndent();
             writeString("/* defer */\n");
             break;
-        case NODE_EXPRESSION_STMT:
-            writeIndent();
-            emitExpression(node->as.expression_stmt.expression);
-            writeString(";\n");
+        case NODE_EXPRESSION_STMT: {
+            ASTNode* expr = node->as.expression_stmt.expression;
+            if (expr->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(expr, NULL);
+            } else if (expr->type == NODE_RETURN_STMT ||
+                       expr->type == NODE_BREAK_STMT ||
+                       expr->type == NODE_CONTINUE_STMT ||
+                       expr->type == NODE_UNREACHABLE) {
+                emitStatement(expr);
+            } else {
+                writeIndent();
+                emitExpression(expr);
+                writeString(";\n");
+            }
             break;
+        }
         case NODE_ASSIGNMENT:
-            writeIndent();
-            emitExpression(node);
-            writeString(";\n");
+            if (node->as.assignment->rvalue->type == NODE_SWITCH_EXPR) {
+                if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
+                    emitSwitchExpr(node->as.assignment->rvalue, var_alloc_.allocate(node->as.assignment->lvalue->as.identifier.symbol));
+                } else {
+                    writeIndent();
+                    emitExpression(node);
+                    writeString(";\n");
+                }
+            } else {
+                writeIndent();
+                emitExpression(node);
+                writeString(";\n");
+            }
             break;
         case NODE_EMPTY_STMT:
             writeIndent();
@@ -607,6 +699,103 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
     }
     writeString("\n");
+}
+
+static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
+    if (!node) return false;
+    if (node->type == NODE_INTEGER_LITERAL) {
+        *out_value = (i64)node->as.integer_literal.value;
+        return true;
+    }
+    if (node->type == NODE_BOOL_LITERAL) {
+        *out_value = node->as.bool_literal.value ? 1 : 0;
+        return true;
+    }
+    if (node->type == NODE_UNARY_OP && node->as.unary_op.op == TOKEN_MINUS) {
+        i64 val;
+        if (evaluateSimpleConstant(node->as.unary_op.operand, &val)) {
+            *out_value = -val;
+            return true;
+        }
+    }
+    if (node->type == NODE_PAREN_EXPR) {
+        return evaluateSimpleConstant(node->as.paren_expr.expr, out_value);
+    }
+    return false;
+}
+
+void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
+    const ASTSwitchExprNode* switch_node = node->as.switch_expr;
+    writeIndent();
+    writeString("switch (");
+    emitExpression(switch_node->expression);
+    writeString(") {\n");
+    indent();
+    for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
+        const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
+        if (prong->is_else) {
+            writeIndent();
+            writeString("default:\n");
+        } else {
+            for (size_t j = 0; j < prong->items->length(); ++j) {
+                const ASTNode* item = (*prong->items)[j];
+                if (item->type == NODE_RANGE) {
+                    i64 start, end;
+                    if (evaluateSimpleConstant(item->as.range.start, &start) &&
+                        evaluateSimpleConstant(item->as.range.end, &end)) {
+                        for (i64 k = start; k <= end; ++k) {
+                            writeIndent();
+                            writeString("case ");
+                            char buf[32];
+                            plat_i64_to_string(k, buf, sizeof(buf));
+                            writeString(buf);
+                            writeString(":\n");
+                        }
+                    } else {
+                        writeIndent();
+                        writeString("/* error: non-constant range in switch */\n");
+                    }
+                } else {
+                    writeIndent();
+                    writeString("case ");
+                    emitExpression(item);
+                    writeString(":\n");
+                }
+            }
+        }
+        indent();
+        if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
+            if (prong->body->type == NODE_BLOCK_STMT) {
+                writeIndent();
+                emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
+                writeString("\n");
+            } else {
+                writeIndent();
+                writeString(target_var);
+                writeString(" = ");
+                emitExpression(prong->body);
+                writeString(";\n");
+            }
+        } else {
+            // Just emit expression for side effects if no target or if it diverges
+            if (prong->body->type == NODE_RETURN_STMT ||
+                prong->body->type == NODE_BREAK_STMT ||
+                prong->body->type == NODE_CONTINUE_STMT ||
+                prong->body->type == NODE_UNREACHABLE) {
+                emitStatement(prong->body);
+            } else {
+                writeIndent();
+                emitExpression(prong->body);
+                writeString(";\n");
+            }
+        }
+        writeIndent();
+        writeString("break;\n");
+        dedent();
+    }
+    dedent();
+    writeIndent();
+    writeString("}\n");
 }
 
 void C89Emitter::emitFor(const ASTForStmtNode* node) {
@@ -1008,6 +1197,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_NULL_LITERAL:
             writeString("((void*)0)");
             break;
+        case NODE_UNREACHABLE:
+            writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
+            break;
         case NODE_IDENTIFIER:
             if (node->as.identifier.symbol) {
                 Symbol* sym = node->as.identifier.symbol;
@@ -1219,6 +1411,18 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("}");
             break;
         }
+        case NODE_SWITCH_EXPR:
+            writeString("/* error: switch expression used in unsupported context (not lifted) */");
+            break;
+        case NODE_RETURN_STMT:
+            emitReturn(&node->as.return_stmt);
+            break;
+        case NODE_BREAK_STMT:
+            emitBreak(&node->as.break_stmt);
+            break;
+        case NODE_CONTINUE_STMT:
+            emitContinue(&node->as.continue_stmt);
+            break;
         default:
             writeString("/* [Unimplemented Expression Type ");
             char num[16];
@@ -1887,9 +2091,16 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         if (node->expression && current_fn_ret_type_->kind != TYPE_VOID) {
             writeIndent();
             emitType(current_fn_ret_type_, "__return_val");
-            writeString(" = ");
-            emitExpression(node->expression);
             writeString(";\n");
+
+            if (node->expression->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(node->expression, "__return_val");
+            } else {
+                writeIndent();
+                writeString("__return_val = ");
+                emitExpression(node->expression);
+                writeString(";\n");
+            }
 
             emitDefersForScopeExit(-1);
 
@@ -1910,13 +2121,28 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         writeIndent();
         writeString("}\n");
     } else {
-        writeIndent();
-        if (node->expression) {
-            writeString("return ");
-            emitExpression(node->expression);
+        if (node->expression && current_fn_ret_type_->kind != TYPE_VOID && node->expression->type == NODE_SWITCH_EXPR) {
+            writeIndent();
+            writeString("{\n");
+            indent();
+            writeIndent();
+            emitType(current_fn_ret_type_, "__return_val");
             writeString(";\n");
+            emitSwitchExpr(node->expression, "__return_val");
+            writeIndent();
+            writeString("return __return_val;\n");
+            dedent();
+            writeIndent();
+            writeString("}\n");
         } else {
-            writeString("return;\n");
+            writeIndent();
+            if (node->expression) {
+                writeString("return ");
+                emitExpression(node->expression);
+                writeString(";\n");
+            } else {
+                writeString("return;\n");
+            }
         }
     }
 }

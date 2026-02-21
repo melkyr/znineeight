@@ -185,6 +185,14 @@ public:
     void emitBlock(const ASTBlockStmtNode* node, int label_id = -1);
 
     /**
+     * @brief Emits a block of statements, assigning the last expression to target_var.
+     * @param node The block statement node.
+     * @param target_var The name of the variable to assign the result to.
+     * @param label_id The label_id of the loop this block belongs to (if any).
+     */
+    void emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id = -1);
+
+    /**
      * @brief Emits a single statement.
      * @param node The statement node.
      */
@@ -201,6 +209,13 @@ public:
      * @param node The while statement node.
      */
     void emitWhile(const ASTWhileStmtNode* node);
+
+    /**
+     * @brief Emits a switch expression lifted to a statement.
+     * @param node The switch expression node.
+     * @param target_var The name of the variable to assign the result to (can be NULL).
+     */
+    void emitSwitchExpr(const ASTNode* node, const char* target_var);
 
     /**
      * @brief Emits a for loop statement.

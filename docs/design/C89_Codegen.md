@@ -110,7 +110,11 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
-- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run.
+- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, it is lifted to a statement and the result is returned via a temporary.
+- **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
+  - **Lifting Contexts**: Currently supported in direct assignments (`x = switch...`), variable initializers (`var x = switch...`), return statements (`return switch...`), and as expression statements.
+  - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
+  - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.

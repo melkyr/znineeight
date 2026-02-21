@@ -627,9 +627,9 @@ void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
             ASTSwitchProngNode* prong = (*sw->prongs)[i];
 
             pushScope(true);
-            if (prong->cases) {
-                for (size_t j = 0; j < prong->cases->length(); ++j) {
-                    visit((*prong->cases)[j]);
+            if (prong->items) {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    visit((*prong->items)[j]);
                 }
             }
             visit(prong->body);

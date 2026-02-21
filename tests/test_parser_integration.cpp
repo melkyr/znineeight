@@ -182,25 +182,25 @@ TEST_FUNC(ParserIntegration_SwitchExpression) {
     // Prong 1: 1 => return 10
     ASTSwitchProngNode* prong1 = (*switch_expr->prongs)[0];
     ASSERT_FALSE(prong1->is_else);
-    ASSERT_EQ(prong1->cases->length(), 1);
-    ASSERT_TRUE((*prong1->cases)[0]->type == NODE_INTEGER_LITERAL);
-    ASSERT_EQ((*prong1->cases)[0]->as.integer_literal.value, 1);
+    ASSERT_EQ(prong1->items->length(), 1);
+    ASSERT_TRUE((*prong1->items)[0]->type == NODE_INTEGER_LITERAL);
+    ASSERT_EQ((*prong1->items)[0]->as.integer_literal.value, 1);
     ASSERT_TRUE(prong1->body->type == NODE_RETURN_STMT);
 
     // Prong 2: 2, 3 => return 20
     ASTSwitchProngNode* prong2 = (*switch_expr->prongs)[1];
     ASSERT_FALSE(prong2->is_else);
-    ASSERT_EQ(prong2->cases->length(), 2);
-    ASSERT_TRUE((*prong2->cases)[0]->type == NODE_INTEGER_LITERAL);
-    ASSERT_EQ((*prong2->cases)[0]->as.integer_literal.value, 2);
-    ASSERT_TRUE((*prong2->cases)[1]->type == NODE_INTEGER_LITERAL);
-    ASSERT_EQ((*prong2->cases)[1]->as.integer_literal.value, 3);
+    ASSERT_EQ(prong2->items->length(), 2);
+    ASSERT_TRUE((*prong2->items)[0]->type == NODE_INTEGER_LITERAL);
+    ASSERT_EQ((*prong2->items)[0]->as.integer_literal.value, 2);
+    ASSERT_TRUE((*prong2->items)[1]->type == NODE_INTEGER_LITERAL);
+    ASSERT_EQ((*prong2->items)[1]->as.integer_literal.value, 3);
     ASSERT_TRUE(prong2->body->type == NODE_RETURN_STMT);
 
     // Prong 3: else => return 30
     ASTSwitchProngNode* prong3 = (*switch_expr->prongs)[2];
     ASSERT_TRUE(prong3->is_else);
-    ASSERT_TRUE(prong3->cases == NULL);
+    ASSERT_TRUE(prong3->items == NULL);
     ASSERT_TRUE(prong3->body->type == NODE_RETURN_STMT);
 
     return true;

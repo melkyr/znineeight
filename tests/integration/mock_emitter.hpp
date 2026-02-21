@@ -88,6 +88,8 @@ public:
                 return node->as.bool_literal.value ? "1" : "0";
             case NODE_NULL_LITERAL:
                 return "((void*)0)";
+            case NODE_UNREACHABLE:
+                return "__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)";
             case NODE_UNDEFINED_LITERAL:
                 return "/* undefined */";
             case NODE_IDENTIFIER:
@@ -116,7 +118,7 @@ public:
             case NODE_DEFER_STMT:
                 return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
             case NODE_SWITCH_EXPR:
-                return "/* switch expression */";
+                return emitSwitchExpression(node->as.switch_expr);
             case NODE_BLOCK_STMT:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
@@ -126,7 +128,7 @@ public:
             case NODE_FOR_STMT:
                 return emitForStatement(node->as.for_stmt);
             case NODE_RANGE:
-                return emitExpression(node->as.range.start) + ".." + emitExpression(node->as.range.end);
+                return emitExpression(node->as.range.start) + (node->as.range.is_inclusive ? "..." : "..") + emitExpression(node->as.range.end);
             case NODE_BREAK_STMT:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:
@@ -155,8 +157,11 @@ public:
                 }
                 return ss.str();
             }
-            case NODE_EXPRESSION_STMT:
-                return emitExpression(node->as.expression_stmt.expression) + ";";
+            case NODE_EXPRESSION_STMT: {
+                std::string expr = emitExpression(node->as.expression_stmt.expression);
+                if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
+                return expr + ";";
+            }
             case NODE_ASSIGNMENT:
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
             case NODE_VAR_DECL: {
@@ -613,6 +618,7 @@ private:
             case TYPE_USIZE: return "usize";
             case TYPE_F32: return "f32";
             case TYPE_F64: return "f64";
+            case TYPE_NORETURN: return "noreturn";
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
             case TYPE_ARRAY: {
@@ -796,6 +802,32 @@ private:
             case TOKEN_OR: return "||";
             default: return "??";
         }
+    }
+
+    std::string emitSwitchExpression(const ASTSwitchExprNode* node) {
+        if (!node) return "/* INVALID SWITCH */";
+        std::stringstream ss;
+        ss << "switch (" << emitExpression(node->expression) << ") { ";
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            const ASTSwitchProngNode* prong = (*node->prongs)[i];
+            if (prong->is_else) {
+                ss << "default: ";
+            } else {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    ss << "case " << emitExpression((*prong->items)[j]) << ": ";
+                }
+            }
+            if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
+                std::string body = emitExpression(prong->body);
+                ss << body;
+                if (body.empty() || body[body.length()-1] != ';') ss << ";";
+                ss << " break; ";
+            } else {
+                ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+            }
+        }
+        ss << "}";
+        return ss.str();
     }
 
     const char* unaryOpToString(TokenType op) {

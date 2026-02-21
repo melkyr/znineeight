@@ -831,6 +831,10 @@ TEST_FUNC(UnionIntegration_BareUnion);
 TEST_FUNC(UnionIntegration_RejectTaggedUnion);
 TEST_FUNC(SwitchIntegration_Basic);
 TEST_FUNC(SwitchIntegration_InferredType);
+TEST_FUNC(SwitchIntegration_MultipleItems);
+TEST_FUNC(SwitchIntegration_InclusiveRange);
+TEST_FUNC(SwitchIntegration_Enum);
+TEST_FUNC(SwitchIntegration_Bool);
 TEST_FUNC(ForIntegration_Basic);
 TEST_FUNC(ForIntegration_Scoping);
 TEST_FUNC(DeferIntegration_Basic);
@@ -1077,5 +1081,15 @@ TEST_FUNC(Slice_Omitted_Both);
 TEST_FUNC(Slice_Ptr_Coercion);
 TEST_FUNC(Slice_Nested_Slices);
 TEST_FUNC(Slice_Of_Pointers);
+
+// Task 225.1: Switch Expression Enhancements (noreturn/unreachable)
+TEST_FUNC(SwitchNoreturn_BasicDivergence);
+TEST_FUNC(SwitchNoreturn_AllDivergent);
+TEST_FUNC(SwitchNoreturn_BreakInProng);
+TEST_FUNC(SwitchNoreturn_LabeledBreakInProng);
+TEST_FUNC(SwitchNoreturn_MixedTypesError);
+TEST_FUNC(SwitchNoreturn_VariableNoreturnError);
+TEST_FUNC(SwitchNoreturn_BlockProng);
+TEST_FUNC(SwitchNoreturn_RealCodegen);
 
 #endif // TEST_DECLARATIONS_HPP
