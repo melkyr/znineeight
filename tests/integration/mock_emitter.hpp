@@ -88,6 +88,8 @@ public:
                 return node->as.bool_literal.value ? "1" : "0";
             case NODE_NULL_LITERAL:
                 return "((void*)0)";
+            case NODE_UNREACHABLE:
+                return "__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)";
             case NODE_UNDEFINED_LITERAL:
                 return "/* undefined */";
             case NODE_IDENTIFIER:
@@ -155,8 +157,11 @@ public:
                 }
                 return ss.str();
             }
-            case NODE_EXPRESSION_STMT:
-                return emitExpression(node->as.expression_stmt.expression) + ";";
+            case NODE_EXPRESSION_STMT: {
+                std::string expr = emitExpression(node->as.expression_stmt.expression);
+                if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
+                return expr + ";";
+            }
             case NODE_ASSIGNMENT:
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
             case NODE_VAR_DECL: {
@@ -613,6 +618,7 @@ private:
             case TYPE_USIZE: return "usize";
             case TYPE_F32: return "f32";
             case TYPE_F64: return "f64";
+            case TYPE_NORETURN: return "noreturn";
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
             case TYPE_ARRAY: {
@@ -811,7 +817,14 @@ private:
                     ss << "case " << emitExpression((*prong->items)[j]) << ": ";
                 }
             }
-            ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+            if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
+                std::string body = emitExpression(prong->body);
+                ss << body;
+                if (body.empty() || body[body.length()-1] != ';') ss << ";";
+                ss << " break; ";
+            } else {
+                ss << "__ret = " << emitExpression(prong->body) << "; break; ";
+            }
         }
         ss << "}";
         return ss.str();

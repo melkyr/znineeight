@@ -44,7 +44,11 @@ The suffixes `i64` and `ui64` are specific to **MSVC 6.0**. To support other com
 
 Every generated `.c` file should include `zig_runtime.h` at the top.
 
-### 1.3 The Compatibility Header (`zig_runtime.h`)
+### 1.3 `noreturn` Type
+
+The `noreturn` type is used for expressions that never produce a value (diverge). In C89 emission, `noreturn` is mapped to `void` for function return types, but it is primarily used for static analysis.
+
+### 1.4 The Compatibility Header (`zig_runtime.h`)
 
 The `zig_runtime.h` header serves several purposes:
 - **Portable Typedefs**: Defines `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `usize`, and `isize` in a way that is compatible with both MSVC 6.0 and modern compilers in C89 mode.
@@ -432,6 +436,47 @@ Zig `return` statements map directly to C `return`.
 |------------|--------------|
 | `return;`  | `return;`    |
 | `return x;`| `return x;`   |
+
+### 14.4 Switch Expressions
+
+Switch expressions are "lifted" into C89 `switch` statements using a temporary variable to hold the result.
+
+```c
+T __switch_result;
+switch (condition) {
+    case 1: __switch_result = val1; break;
+    case 2: __switch_result = val2; break;
+    default: __switch_result = else_val; break;
+}
+// Use __switch_result
+```
+
+#### 14.4.1 Divergent Prongs
+
+If a switch prong contains a control flow statement (`return`, `break`, `continue`) or `unreachable`, the assignment to the result temporary is skipped for that prong.
+
+```c
+T __switch_result;
+switch (condition) {
+    case 1: __switch_result = 10; break;
+    case 2: return 20; break; // No assignment
+    default: __bootstrap_panic(...); break; // No assignment
+}
+```
+
+To avoid double semicolons in the generated C code, the emitter carefully manages the output of control flow expressions when they are used in switch prongs or as expression statements.
+
+### 14.5 Blocks as Expressions
+
+Blocks that end in an expression (without a semicolon) are supported in switch prongs and as the right-hand side of assignments. They are emitted as C compound statements, with the final expression assigned to the target variable.
+
+```c
+__switch_result = {
+    int y = 5;
+    y + 5 // Yields 10
+};
+```
+*(Note: The emitter translates this into valid C89 by either lifting or using the two-pass block strategy.)*
 
 ## 15. Built-ins and Casts
 

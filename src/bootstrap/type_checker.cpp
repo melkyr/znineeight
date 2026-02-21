@@ -42,6 +42,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
         case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
+        case NODE_UNREACHABLE:      resolved_type = visitUnreachable(node); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
         case NODE_UNDEFINED_LITERAL: resolved_type = visitUndefinedLiteral(node); break;
@@ -1177,6 +1178,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     return createSliceType(unit.getArena(), element_type, is_const, &unit.getTypeInterner());
 }
 
+Type* TypeChecker::visitUnreachable(ASTNode* node) {
+    node->resolved_type = get_g_type_noreturn();
+    return node->resolved_type;
+}
+
 Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*node*/) {
     return resolvePrimitiveTypeName("bool");
 }
@@ -1275,11 +1281,17 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     unit.getSymbolTable().enterScope();
+    Type* last_type = get_g_type_void();
     for (size_t i = 0; i < node->statements->length(); ++i) {
-        visit((*node->statements)[i]);
+        last_type = visit((*node->statements)[i]);
+        if (last_type && last_type->kind == TYPE_NORETURN) {
+            // Unreachable code after divergence
+            // We could report a warning here, but for now we just continue and return noreturn
+            // to indicate the block diverges.
+        }
     }
     unit.getSymbolTable().exitScope();
-    return NULL; // Blocks don't have a type
+    return last_type;
 }
 
 Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
@@ -1373,7 +1385,7 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
@@ -1402,7 +1414,7 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
@@ -1457,7 +1469,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         }
     }
 
-    return NULL;
+    return get_g_type_noreturn();
 }
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
@@ -1592,7 +1604,8 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     }
 
     bool has_else = false;
-    Type* result_type = NULL;
+    Type* common_type = NULL;
+    bool has_non_noreturn = false;
 
     for (size_t i = 0; i < node->prongs->length(); ++i) {
         ASTSwitchProngNode* prong = (*node->prongs)[i];
@@ -1627,30 +1640,21 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             }
         }
 
-        // Reject prong bodies containing restricted control flow
-        // For simplicity in bootstrap, we don't allow return/break/continue in prong bodies
-        // unless we implemented full expression lifting with CFG.
-        if (prong->body->type == NODE_RETURN_STMT ||
-            prong->body->type == NODE_BREAK_STMT ||
-            prong->body->type == NODE_CONTINUE_STMT) {
-            fatalError(prong->body->loc, "Control flow statements are not allowed in switch prong bodies");
-        }
-        if (prong->body->type == NODE_BLOCK_STMT) {
-            DynamicArray<ASTNode*>* stmts = prong->body->as.block_stmt.statements;
-            for (size_t k = 0; k < stmts->length(); ++k) {
-                ASTNode* s = (*stmts)[k];
-                if (s->type == NODE_RETURN_STMT || s->type == NODE_BREAK_STMT || s->type == NODE_CONTINUE_STMT) {
-                    fatalError(s->loc, "Control flow statements are not allowed in switch prong bodies");
-                }
-            }
-        }
-
         Type* prong_type = visit(prong->body);
-        if (!result_type) {
-            result_type = prong_type;
-        } else if (prong_type) {
-            if (!areTypesCompatible(result_type, prong_type)) {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+        if (prong_type && prong_type->kind != TYPE_NORETURN) {
+            if (!common_type) {
+                common_type = prong_type;
+                has_non_noreturn = true;
+            } else if (!areTypesEqual(common_type, prong_type)) {
+                // If they are not strictly equal, check if one can be coerced to the other.
+                // For simplicity, we currently expect them to match common_type.
+                if (areTypesCompatible(common_type, prong_type)) {
+                    // common_type is OK
+                } else if (areTypesCompatible(prong_type, common_type)) {
+                    common_type = prong_type;
+                } else {
+                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs", unit.getArena());
+                }
             }
         }
     }
@@ -1659,7 +1663,11 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
         fatalError(node->expression->loc, "Switch expression must have an 'else' prong");
     }
 
-    return result_type;
+    if (!has_non_noreturn) {
+        return get_g_type_noreturn();
+    }
+
+    return common_type;
 }
 
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
@@ -1690,6 +1698,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (declared_type && declared_type->kind == TYPE_VOID) {
         unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'void'");
         return NULL; // Stop processing this declaration
+    }
+
+    if (declared_type && declared_type->kind == TYPE_NORETURN) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'noreturn'");
+        return NULL;
     }
 
     // Special handling for integer literal initializers to support C89-style assignments.
@@ -2536,8 +2549,7 @@ Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
 }
 
 Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
-    visit(node->expression);
-    return NULL; // Expression statements don't have a type
+    return visit(node->expression);
 }
 
 bool TypeChecker::isLValueConst(ASTNode* node) {
@@ -2618,6 +2630,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // undefined is compatible with anything
     if (actual->kind == TYPE_UNDEFINED) {
+        return true;
+    }
+
+    // noreturn is compatible with anything (coerces to anything)
+    if (actual->kind == TYPE_NORETURN) {
         return true;
     }
 
@@ -2994,6 +3011,8 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
     }
 
     switch (node->type) {
+        case NODE_UNREACHABLE:
+            return true;
         case NODE_RETURN_STMT:
             return true;
         case NODE_BLOCK_STMT: {
@@ -3019,6 +3038,16 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             // Actually, even simpler: just return false for now to avoid complexity,
             // and fix the test case.
             return false;
+        }
+        case NODE_EXPRESSION_STMT:
+            return all_paths_return(node->as.expression_stmt.expression);
+        case NODE_SWITCH_EXPR: {
+            ASTSwitchExprNode* sw = node->as.switch_expr;
+            if (!sw->prongs || sw->prongs->length() == 0) return false;
+            for (size_t i = 0; i < sw->prongs->length(); ++i) {
+                if (!all_paths_return((*sw->prongs)[i]->body)) return false;
+            }
+            return true;
         }
         default:
             return false;
@@ -3058,6 +3087,7 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
     if (source_type->kind == TYPE_UNDEFINED) return true;
+    if (source_type->kind == TYPE_NORETURN) return true;
 
     // Null literal handling
     if (source_type->kind == TYPE_NULL) {

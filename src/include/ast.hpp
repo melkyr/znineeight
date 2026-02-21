@@ -52,6 +52,7 @@ enum NodeType {
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
     NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
     NODE_RANGE,           ///< A range expression (e.g., `0..10`).
+    NODE_UNREACHABLE,     ///< An 'unreachable' expression.
 
     // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
@@ -145,6 +146,7 @@ struct ASTOrelseExprNode;
 struct ASTErrDeferStmtNode;
 struct ASTAsyncExprNode;
 struct ASTAwaitExprNode;
+struct ASTUnreachableNode;
 struct ASTComptimeBlockNode;
 struct ASTPtrCastNode;
 struct ASTNumericCastNode;
@@ -569,6 +571,14 @@ struct ASTAwaitExprNode {
 // --- Comptime Nodes ---
 
 /**
+ * @struct ASTUnreachableNode
+ * @brief Represents an 'unreachable' expression.
+ */
+struct ASTUnreachableNode {
+    // This node has no data.
+};
+
+/**
  * @struct ASTComptimeBlockNode
  * @brief Represents a `comptime` block, which contains an expression to be evaluated at compile-time.
  * @var ASTComptimeBlockNode::expression The expression inside the comptime block.
@@ -866,6 +876,7 @@ struct ASTNode {
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line
+        ASTUnreachableNode unreachable;
         ASTPtrCastNode* ptr_cast; // Out-of-line
         ASTNumericCastNode* numeric_cast; // Out-of-line
         ASTOffsetOfNode* offset_of; // Out-of-line

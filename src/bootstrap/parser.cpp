@@ -182,6 +182,11 @@ ASTNode* Parser::parsePrimaryExpr() {
             node->as.bool_literal.value = true;
             return node;
         }
+        case TOKEN_UNREACHABLE: {
+            ASTNode* node = createNode(NODE_UNREACHABLE);
+            advance();
+            return node;
+        }
         case TOKEN_FALSE: {
             ASTNode* node = createNode(NODE_BOOL_LITERAL);
             advance();
@@ -241,6 +246,12 @@ ASTNode* Parser::parsePrimaryExpr() {
             return NULL;
         case TOKEN_SWITCH:
             return parseSwitchExpression();
+        case TOKEN_RETURN:
+            return parseReturnExpr();
+        case TOKEN_BREAK:
+            return parseBreakExpr();
+        case TOKEN_CONTINUE:
+            return parseContinueExpr();
         case TOKEN_STRUCT:
             return parseStructDeclaration();
         case TOKEN_UNION:
@@ -1589,12 +1600,13 @@ ASTNode* Parser::parseStatement() {
         default: {
             ASTNode* expr = parseExpression();
             if (expr != NULL) {
-                expect(TOKEN_SEMICOLON, "Expected ';' after expression statement");
-
-                ASTNode* stmt_node = createNode(NODE_EXPRESSION_STMT);
-                stmt_node->loc = expr->loc;
-                stmt_node->as.expression_stmt.expression = expr;
-                return stmt_node;
+                if (match(TOKEN_SEMICOLON)) {
+                    ASTNode* stmt_node = createNode(NODE_EXPRESSION_STMT);
+                    stmt_node->loc = expr->loc;
+                    stmt_node->as.expression_stmt.expression = expr;
+                    return stmt_node;
+                }
+                return expr;
             } else {
                 error("Expected a statement");
                 return NULL; // Unreachable
@@ -1620,7 +1632,27 @@ ASTNode* Parser::parseBlockStatement() {
     new (statements) DynamicArray<ASTNode*>(*arena_); // Placement new
 
     while (!is_at_end() && peek().type != TOKEN_RBRACE) {
-        statements->append(parseStatement());
+        ASTNode* stmt = parseStatement();
+        statements->append(stmt);
+
+        // If it's not the last item, it must be a statement (have a semicolon)
+        // or be a control flow statement that doesn't need one (like if/while/block).
+        if (peek().type != TOKEN_RBRACE) {
+            bool needs_semicolon = true;
+            if (stmt->type == NODE_IF_STMT || stmt->type == NODE_WHILE_STMT ||
+                stmt->type == NODE_FOR_STMT || stmt->type == NODE_BLOCK_STMT ||
+                stmt->type == NODE_EXPRESSION_STMT || stmt->type == NODE_VAR_DECL ||
+                stmt->type == NODE_EMPTY_STMT || stmt->type == NODE_DEFER_STMT ||
+                stmt->type == NODE_ERRDEFER_STMT || stmt->type == NODE_RETURN_STMT ||
+                stmt->type == NODE_BREAK_STMT || stmt->type == NODE_CONTINUE_STMT ||
+                stmt->type == NODE_UNREACHABLE) {
+                needs_semicolon = false;
+            }
+
+            if (needs_semicolon) {
+                error("Expected ';' after expression");
+            }
+        }
     }
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
 
@@ -1681,7 +1713,7 @@ ASTNode* Parser::parseIfStatement() {
  *        Grammar: `'break' ';'`
  * @return A pointer to the ASTNode representing the break statement.
  */
-ASTNode* Parser::parseBreakStatement() {
+ASTNode* Parser::parseBreakExpr() {
     Token break_token = expect(TOKEN_BREAK, "Expected 'break' keyword");
 
     const char* label = NULL;
@@ -1690,11 +1722,31 @@ ASTNode* Parser::parseBreakStatement() {
         label = label_token.value.identifier;
     }
 
-    expect(TOKEN_SEMICOLON, "Expected ';' after 'break'");
-
     ASTNode* node = createNodeAt(NODE_BREAK_STMT, break_token.location);
     node->as.break_stmt.label = label;
     node->as.break_stmt.target_label_id = -1;
+
+    return node;
+}
+
+ASTNode* Parser::parseBreakStatement() {
+    ASTNode* node = parseBreakExpr();
+    expect(TOKEN_SEMICOLON, "Expected ';' after 'break'");
+    return node;
+}
+
+ASTNode* Parser::parseContinueExpr() {
+    Token continue_token = expect(TOKEN_CONTINUE, "Expected 'continue' keyword");
+
+    const char* label = NULL;
+    if (match(TOKEN_COLON)) {
+        Token label_token = expect(TOKEN_IDENTIFIER, "Expected label after ':' in 'continue'");
+        label = label_token.value.identifier;
+    }
+
+    ASTNode* node = createNodeAt(NODE_CONTINUE_STMT, continue_token.location);
+    node->as.continue_stmt.label = label;
+    node->as.continue_stmt.target_label_id = -1;
 
     return node;
 }
@@ -1705,20 +1757,8 @@ ASTNode* Parser::parseBreakStatement() {
  * @return A pointer to the ASTNode representing the continue statement.
  */
 ASTNode* Parser::parseContinueStatement() {
-    Token continue_token = expect(TOKEN_CONTINUE, "Expected 'continue' keyword");
-
-    const char* label = NULL;
-    if (match(TOKEN_COLON)) {
-        Token label_token = expect(TOKEN_IDENTIFIER, "Expected label after ':' in 'continue'");
-        label = label_token.value.identifier;
-    }
-
+    ASTNode* node = parseContinueExpr();
     expect(TOKEN_SEMICOLON, "Expected ';' after 'continue'");
-
-    ASTNode* node = createNodeAt(NODE_CONTINUE_STMT, continue_token.location);
-    node->as.continue_stmt.label = label;
-    node->as.continue_stmt.target_label_id = -1;
-
     return node;
 }
 
@@ -1748,20 +1788,14 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
     return node;
 }
 
-/**
- * @brief Parses a return statement.
- *        Grammar: `'return' (expr)? ';'`
- * @return A pointer to the ASTNode representing the return statement.
- */
-ASTNode* Parser::parseReturnStatement() {
+ASTNode* Parser::parseReturnExpr() {
     Token return_token = expect(TOKEN_RETURN, "Expected 'return' keyword");
 
     ASTNode* expression = NULL;
-    if (peek().type != TOKEN_SEMICOLON) {
+    TokenType t = peek().type;
+    if (t != TOKEN_SEMICOLON && t != TOKEN_RBRACE && t != TOKEN_COMMA && t != TOKEN_RPAREN && t != TOKEN_FAT_ARROW) {
         expression = parseExpression();
     }
-
-    expect(TOKEN_SEMICOLON, "Expected ';' after return statement");
 
     ASTReturnStmtNode return_stmt;
     return_stmt.expression = expression;
@@ -1769,6 +1803,17 @@ ASTNode* Parser::parseReturnStatement() {
     ASTNode* node = createNodeAt(NODE_RETURN_STMT, return_token.location);
     node->as.return_stmt = return_stmt;
 
+    return node;
+}
+
+/**
+ * @brief Parses a return statement.
+ *        Grammar: `'return' (expr)? ';'`
+ * @return A pointer to the ASTNode representing the return statement.
+ */
+ASTNode* Parser::parseReturnStatement() {
+    ASTNode* node = parseReturnExpr();
+    expect(TOKEN_SEMICOLON, "Expected ';' after return statement");
     return node;
 }
 
@@ -1797,10 +1842,19 @@ ASTNode* Parser::parseType() {
         left = parseErrorSetDefinition();
     } else if (peek().type == TOKEN_UNION || peek().type == TOKEN_STRUCT || peek().type == TOKEN_ENUM) {
         left = parsePrimaryExpr();
-    } else if (peek().type == TOKEN_IDENTIFIER) {
+    } else if (peek().type == TOKEN_IDENTIFIER || peek().type == TOKEN_NORETURN ||
+               peek().type == TOKEN_TYPE || peek().type == TOKEN_ANYTYPE) {
         Token type_name_token = advance();
         left = createNodeAt(NODE_TYPE_NAME, type_name_token.location);
-        left->as.type_name.name = type_name_token.value.identifier;
+        if (type_name_token.type == TOKEN_NORETURN) {
+            left->as.type_name.name = "noreturn";
+        } else if (type_name_token.type == TOKEN_TYPE) {
+            left->as.type_name.name = "type";
+        } else if (type_name_token.type == TOKEN_ANYTYPE) {
+            left->as.type_name.name = "anytype";
+        } else {
+            left->as.type_name.name = type_name_token.value.identifier;
+        }
     } else {
         error("Expected a type expression");
     }
