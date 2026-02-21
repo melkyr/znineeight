@@ -265,6 +265,12 @@ public:
     void emitCharLiteral(const ASTCharLiteralNode* node);
 
     /**
+     * @brief Emits an array/slice slicing expression.
+     * @param node The slice node.
+     */
+    void emitArraySlice(const ASTNode* node);
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
@@ -276,7 +282,7 @@ public:
      */
     const char* getC89GlobalName(const char* zig_name);
 
-private:
+public:
     /**
      * @brief Emits a byte with proper C89 escaping.
      * @param c The byte to emit.
@@ -301,6 +307,28 @@ private:
      */
     const char* getZigTypeName(Type* type) const;
 
+    /**
+     * @brief Gets a mangled name for a type (e.g. "ptr_i32" for *i32).
+     */
+    const char* getMangledTypeName(Type* type);
+
+    /**
+     * @brief Ensures a slice type is defined and its helper is emitted.
+     * @param type The slice type.
+     */
+    void ensureSliceType(Type* type);
+
+    /**
+     * @brief Sets an external cache for emitted slice types.
+     */
+    void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
+
+    /**
+     * @brief Emits any buffered slice definitions.
+     */
+    void emitBufferedSliceDefinitions();
+
+private:
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
@@ -316,6 +344,12 @@ private:
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    DynamicArray<const char*> emitted_slices_;
+    DynamicArray<const char*>* external_cache_;
+    char* type_def_buffer_;
+    size_t type_def_pos_;
+    size_t type_def_cap_;
+    bool in_type_def_mode_;
     const char* module_name_;
     char last_char_;
 

@@ -37,6 +37,7 @@
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
 #include "integration/rejection_tests.cpp"
+#include "integration/slice_codegen_tests.cpp"
 #include "integration/struct_tests.cpp"
 #include "integration/switch_tests.cpp"
 #include "integration/task182_183_tests.cpp"

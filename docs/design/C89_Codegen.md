@@ -86,7 +86,22 @@ C89 requires all local variable declarations to appear at the beginning of a blo
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Return Statements**: Mapped to `return expr;` or `return;`.
 
-### 4.4 Array and Struct Initializers
+### 4.4 Slice Support
+Slices (`[]T`) are emitted as C structs containing a pointer and a length.
+
+#### Type Definition
+For each unique slice type encountered, the compiler generates a `typedef` and a static inline helper function for construction.
+- **Naming**: Slice structs are named using a mangling scheme: `Slice_` + mangled element type (e.g., `Slice_i32`, `Slice_Ptr_i32`).
+- **Visibility**: If a slice is used in a `pub` declaration, its `typedef` and helper are placed in the module's header (`.h`). Otherwise, they are in the implementation file (`.c`).
+- **Const Qualifiers**: `const` is dropped in the emitted C code, so `[]const T` and `[]T` use the same C struct.
+
+#### Operations
+- **Indexing**: `s[i]` is emitted as `s.ptr[i]`.
+- **Length**: `s.len` is emitted as `s.len`.
+- **Slicing**: `base[start..end]` is emitted as a call to the generated helper: `__make_slice_T(computed_ptr, computed_len)`.
+- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call.
+
+### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
 1. **Positional Initialization**: If a variable is initialized with `{ ... }`, the emitter generates a series of individual assignments for each field or array element.
    - Zig `var arr = [3]i32{1, 2, 3};` becomes:

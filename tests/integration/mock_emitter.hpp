@@ -50,7 +50,7 @@ public:
             ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
         }
 
-        if (decl->initializer) {
+        if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
             ss << " = " << emitExpression(decl->initializer);
         }
         ss << ";";
@@ -79,12 +79,16 @@ public:
                 return node->as.bool_literal.value ? "1" : "0";
             case NODE_NULL_LITERAL:
                 return "((void*)0)";
+            case NODE_UNDEFINED_LITERAL:
+                return "/* undefined */";
             case NODE_IDENTIFIER:
                 return node->as.identifier.name;
             case NODE_FUNCTION_CALL:
                 return emitFunctionCall(node);
             case NODE_ARRAY_ACCESS:
                 return emitArrayAccess(node->as.array_access);
+            case NODE_ARRAY_SLICE:
+                return emitArraySlice(node->as.array_slice, node->resolved_type);
             case NODE_MEMBER_ACCESS:
                 return emitMemberAccess(node->as.member_access);
             case NODE_STRUCT_INITIALIZER:
@@ -394,7 +398,28 @@ public:
      */
     std::string emitArrayAccess(const ASTArrayAccessNode* node) {
         if (!node) return "/* INVALID ARRAY ACCESS */";
+
+        // Handle slice indexing: slice.ptr[index]
+        if (node->array->resolved_type && node->array->resolved_type->kind == TYPE_SLICE) {
+            return emitExpression(node->array) + ".ptr[" + emitExpression(node->index) + "]";
+        }
+
         return emitExpression(node->array) + "[" + emitExpression(node->index) + "]";
+    }
+
+    /**
+     * @brief Emits a C89 array slice expression.
+     */
+    std::string emitArraySlice(const ASTArraySliceNode* node, Type* resolved_type) {
+        if (!node || !node->base_ptr || !node->len || !resolved_type || resolved_type->kind != TYPE_SLICE) {
+             return "/* INVALID SLICE */";
+        }
+
+        Type* elem_type = resolved_type->as.slice.element_type;
+        std::stringstream ss;
+        ss << "__make_slice_" << getMangledTypeName(elem_type) << "(";
+        ss << emitExpression(node->base_ptr) << ", " << emitExpression(node->len) << ")";
+        return ss.str();
     }
 
     /**
@@ -451,8 +476,40 @@ public:
     }
 
 private:
+    std::string getMangledTypeName(Type* type) {
+        if (!type) return "void";
+        switch (type->kind) {
+            case TYPE_VOID: return "void";
+            case TYPE_BOOL: return "bool";
+            case TYPE_I8: return "i8";
+            case TYPE_U8: return "u8";
+            case TYPE_I16: return "i16";
+            case TYPE_U16: return "u16";
+            case TYPE_I32: return "i32";
+            case TYPE_U32: return "u32";
+            case TYPE_I64: return "i64";
+            case TYPE_U64: return "u64";
+            case TYPE_ISIZE: return "isize";
+            case TYPE_USIZE: return "usize";
+            case TYPE_F32: return "f32";
+            case TYPE_F64: return "f64";
+            case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
+            case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
+            case TYPE_ARRAY: {
+                std::stringstream ss;
+                ss << "Arr_" << type->as.array.size << "_" << getMangledTypeName(type->as.array.element_type);
+                return ss.str();
+            }
+            default: return "unknown";
+        }
+    }
+
     std::string getC89TypeName(Type* type) {
         if (!type) return "/* unknown type */";
+
+        if (type->kind == TYPE_SLICE) {
+            return getMangledTypeName(type);
+        }
 
         if (type->kind == TYPE_POINTER) {
             std::string base = getC89TypeName(type->as.pointer.base);
