@@ -203,6 +203,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `*T`                    | `*U` (different types) | ✗           | Incompatible pointer base types.                                   |
 | `*T`                    | `[*]T`                 | ✗           | Cannot implicitly convert between single and many-item pointers.   |
 | `[*]T`                  | `*T`                   | ✗           | Cannot implicitly convert between many and single-item pointers.   |
+| `[]T`                   | `[]const T`            | ✓           | Safe to add `const`.                                               |
+| `[]const T`             | `[]T`                  | ✗           | Unsafe to remove `const`.                                          |
 
 
 ## 4. Semantic Analysis

@@ -29,6 +29,15 @@ typedef unsigned int   u32;
 typedef float          f32;
 typedef double         f64;
 
+/**
+ * @brief Macro to suppress "unused function" warnings in generated C code.
+ */
+#ifdef _MSC_VER
+    #define RETR_UNUSED_FUNC
+#else
+    #define RETR_UNUSED_FUNC __attribute__((unused))
+#endif
+
 /* Pointer-sized integers */
 #ifdef _WIN32
     typedef int isize;
