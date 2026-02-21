@@ -1,4 +1,5 @@
 #include "codegen.hpp"
+#include "compilation_unit.hpp"
 #include "ast_utils.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
@@ -493,6 +494,7 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     }
 
     // Pass 2: Statements
+    bool exits = false;
     for (size_t i = 0; i < node->statements->length(); ++i) {
         ASTNode* stmt = (*node->statements)[i];
         if (stmt->type == NODE_VAR_DECL) {
@@ -501,12 +503,19 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             scope->defers.append(&stmt->as.defer_stmt);
         } else {
             emitStatement(stmt);
+            if (allPathsExit(stmt)) {
+                exits = true;
+                // Once we hit a path that always exits, any subsequent statements in this block are unreachable.
+                break;
+            }
         }
     }
 
-    // Emit defers for this block in reverse order
-    for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
-        emitStatement(scope->defers[i]->statement);
+    // Emit defers for this block in reverse order, only if not already handled by a terminator
+    if (!exits) {
+        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+            emitStatement(scope->defers[i]->statement);
+        }
     }
 
     defer_stack_.pop_back();
@@ -1586,8 +1595,7 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
     }
 }
 
-void C89Emitter::emitDefersForScopeExit(int target_label_id, bool is_continue) {
-    RETR_UNUSED(is_continue);
+void C89Emitter::emitDefersForScopeExit(int target_label_id) {
     for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
         DeferScope* scope = defer_stack_[i];
         for (int j = (int)scope->defers.length() - 1; j >= 0; --j) {
@@ -1603,7 +1611,7 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
     writeIndent();
     if (defer_stack_.length() > 0) {
         writeString("/* defers for break */\n");
-        emitDefersForScopeExit(node->target_label_id, false);
+        emitDefersForScopeExit(node->target_label_id);
         writeIndent();
     }
 
@@ -1628,7 +1636,7 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
     writeIndent();
     if (defer_stack_.length() > 0) {
         writeString("/* defers for continue */\n");
-        emitDefersForScopeExit(node->target_label_id, true);
+        emitDefersForScopeExit(node->target_label_id);
         writeIndent();
     }
 
@@ -1672,7 +1680,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
             emitExpression(node->expression);
             writeString(";\n");
 
-            emitDefersForScopeExit(-1, false);
+            emitDefersForScopeExit(-1);
 
             writeIndent();
             writeString("return __return_val;\n");
@@ -1682,7 +1690,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
                 emitExpression(node->expression);
                 writeString(";\n");
             }
-            emitDefersForScopeExit(-1, false);
+            emitDefersForScopeExit(-1);
             writeIndent();
             writeString("return;\n");
         }

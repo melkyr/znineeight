@@ -1349,7 +1349,7 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
 Type* TypeChecker::visitBreakStmt(ASTNode* node) {
     ASTBreakStmtNode& break_node = node->as.break_stmt;
     if (in_defer) {
-        unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement inside defer is not allowed");
+        unit.getErrorHandler().report(ERR_BREAK_INSIDE_DEFER, node->loc, "break statement inside defer is not allowed");
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, "break statement outside of loop");
     }
@@ -1378,7 +1378,7 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
     ASTContinueStmtNode& cont_node = node->as.continue_stmt;
     if (in_defer) {
-        unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement inside defer is not allowed");
+        unit.getErrorHandler().report(ERR_CONTINUE_INSIDE_DEFER, node->loc, "continue statement inside defer is not allowed");
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, "continue statement outside of loop");
     }

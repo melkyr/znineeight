@@ -805,8 +805,21 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 `'defer' statement`
 
 - It consumes a `defer` token.
-- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- It then requires a subsequent statement.
 - Any deviation from this structure results in a fatal error.
+
+#### Semantic Validation
+The `TypeChecker` enforces the following rules for `defer` and `errdefer` blocks:
+- **No `return`**: `return` statements are strictly forbidden inside a `defer` block.
+- **No `break`/`continue`**: `break` and `continue` statements are strictly forbidden inside a `defer` block.
+- **Scope Isolation**: Deferred statements are executed in a new scope created during code generation.
+
+#### Code Generation Strategy
+The `C89Emitter` implements `defer` using a compile-time stack of `DeferScope` objects.
+- **Stack-based LIFO**: As the emitter enters nested blocks, it pushes a new `DeferScope`. Deferred statements are added to the current scope.
+- **Scope Exit**: Upon natural exit from a block, all deferred statements in the current scope are emitted in reverse order (LIFO).
+- **Early Exit (return, break, continue)**: When an early exit statement is encountered, the emitter traverses the `DeferScope` stack from the current depth up to the target scope (the function level for `return`, or the loop level for `break`/`continue`). It emits all deferred statements in these scopes before emitting the C `return` or `goto` statement.
+- **Optimization**: To avoid redundant and messy C code, the emitter skips the natural-exit defer emission if a block is guaranteed to have already exited via a terminator (identified via `allPathsExit`).
 
 ### `ASTForStmtNode`
 Represents a `for` loop, which iterates over an expression.
