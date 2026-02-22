@@ -225,6 +225,16 @@ public:
     void emitSwitchExpr(const ASTNode* node, const char* target_var);
 
     /**
+     * @brief Emits a try expression lifted to a statement.
+     */
+    void emitTryExpr(const ASTNode* node, const char* target_var);
+
+    /**
+     * @brief Emits a catch expression lifted to a statement.
+     */
+    void emitCatchExpr(const ASTNode* node, const char* target_var);
+
+    /**
      * @brief Emits a for loop statement.
      * @param node The for loop statement node.
      */
@@ -368,6 +378,12 @@ public:
     void ensureSliceType(Type* type);
 
     /**
+     * @brief Ensures an error union type is defined.
+     * @param type The error union type.
+     */
+    void ensureErrorUnionType(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -384,6 +400,11 @@ public:
     void emitDefersForScopeExit(int target_label_id = -1);
 
 private:
+    /**
+     * @brief Emits logic to wrap a value into an error union.
+     */
+    void emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
+
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
@@ -407,6 +428,7 @@ private:
     ArenaAllocator& arena_;
     DynamicArray<GlobalNameEntry> global_names_;
     DynamicArray<const char*> emitted_slices_;
+    DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;

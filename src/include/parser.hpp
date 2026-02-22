@@ -347,6 +347,9 @@ private:
     /** @brief Parses an anonymous literal (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`). Helper for `parsePrimaryExpr`. */
     ASTNode* parseAnonymousLiteral();
 
+    /** @brief Parses an error literal (e.g., `error.FileNotFound`). */
+    ASTNode* parseErrorLiteral();
+
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();
 

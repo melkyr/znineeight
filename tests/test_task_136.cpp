@@ -45,7 +45,7 @@ TEST_FUNC(Task136_ErrorSet_Catalogue) {
 
 TEST_FUNC(Task136_ErrorSet_Rejection) {
     const char* source = "const E = error { A };";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 

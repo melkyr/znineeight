@@ -51,6 +51,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
         case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
         case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(node, &node->as.string_literal); break;
+        case NODE_ERROR_LITERAL:    resolved_type = visitErrorLiteral(&node->as.error_literal); break;
         case NODE_IDENTIFIER:       resolved_type = visitIdentifier(node); break;
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
@@ -1257,6 +1258,13 @@ Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode*
     return createPointerType(unit.getArena(), char_type, true, false, &unit.getTypeInterner());
 }
 
+Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
+    unit.getGlobalErrorRegistry().getOrAddTag(node->tag_name);
+    // Return an anonymous error set type representing the global set.
+    // This allows it to be coerced to any error union.
+    return createErrorSetType(unit.getArena(), NULL, NULL, true);
+}
+
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
     const char* name = node->as.identifier.name;
 
@@ -1490,8 +1498,14 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
     // Case 2: Function is non-void
     else {
         if (!node->expression) {
-            // Error: non-void function must return a value
-            unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, "non-void function must return a value");
+            // Allow 'return;' if return type is an error union with void payload
+            if (current_fn_return_type->kind == TYPE_ERROR_UNION &&
+                current_fn_return_type->as.error_union.payload->kind == TYPE_VOID) {
+                // This is OK.
+            } else {
+                // Error: non-void function must return a value
+                unit.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, "non-void function must return a value");
+            }
         } else {
             // Implicit Array to Slice coercion
             if (current_fn_return_type->kind == TYPE_SLICE && return_type && return_type->kind == TYPE_ARRAY) {
@@ -2519,6 +2533,11 @@ Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
 }
 
 Type* TypeChecker::visitErrorSetDefinition(ASTErrorSetDefinitionNode* node) {
+    if (node->tags) {
+        for (size_t i = 0; i < node->tags->length(); ++i) {
+            unit.getGlobalErrorRegistry().getOrAddTag((*node->tags)[i]);
+        }
+    }
     return createErrorSetType(unit.getArena(), node->name, node->tags, node->name == NULL);
 }
 
@@ -2725,6 +2744,18 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     // Array to Slice coercion
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
         return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
+    }
+
+    // Error Handling coercions
+    if (expected->kind == TYPE_ERROR_UNION) {
+        // T -> !T (success wrapping)
+        if (areTypesCompatible(expected->as.error_union.payload, actual)) {
+            return true;
+        }
+        // error.Tag -> !T (error wrapping)
+        if (actual->kind == TYPE_ERROR_SET) {
+            return true;
+        }
     }
 
     // Slice to Slice assignment/coercion
@@ -3164,9 +3195,14 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     // anytype target (like special discard '_') accepts anything
     if (target_type->kind == TYPE_ANYTYPE) return true;
 
-    // Error Union assignment (Zig-like for analysis purposes)
+    // Error Union assignment
     if (target_type->kind == TYPE_ERROR_UNION) {
+        // T -> !T (success wrapping)
         if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
+            return true;
+        }
+        // error.Tag -> !T (error wrapping)
+        if (source_type->kind == TYPE_ERROR_SET) {
             return true;
         }
     }

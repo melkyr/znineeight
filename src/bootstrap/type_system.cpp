@@ -580,6 +580,21 @@ bool areTypesEqual(Type* a, Type* b) {
         case TYPE_OPTIONAL:
             return areTypesEqual(a->as.optional.payload, b->as.optional.payload);
 
+        case TYPE_ERROR_UNION:
+            if (a->as.error_union.is_inferred != b->as.error_union.is_inferred) return false;
+            if (!a->as.error_union.is_inferred) {
+                if (!areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set)) return false;
+            }
+            return areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
+
+        case TYPE_ERROR_SET:
+            if (a->as.error_set.is_anonymous != b->as.error_set.is_anonymous) return false;
+            if (a->as.error_set.is_anonymous) return true; // Anonymous error sets are structurally equal if kind is same? Actually Zig rules are complex, but for us we can say yes.
+            if (a->as.error_set.name && b->as.error_set.name) {
+                return plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0;
+            }
+            return a->as.error_set.name == b->as.error_set.name;
+
         case TYPE_FUNCTION:
             return signaturesMatch(a->as.function.params, a->as.function.return_type,
                                   b->as.function.params, b->as.function.return_type);

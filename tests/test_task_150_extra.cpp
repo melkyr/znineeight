@@ -76,7 +76,10 @@ TEST_FUNC(C89Rejection_ErrorTypeInParam_ShouldBeRejected) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.performFullPipeline(file_id);
 
-    ASSERT_TRUE(unit.getErrorHandler().getErrors().length() > 0);
+    if (unit.getErrorHandler().hasErrors()) {
+        unit.getErrorHandler().printErrors();
+    }
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
     return true;
 }
 
@@ -98,8 +101,8 @@ TEST_FUNC(Task150_MoreComprehensiveElimination) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.performFullPipeline(file_id);
 
-    // Should have multiple errors
-    ASSERT_TRUE(unit.getErrorHandler().getErrors().length() > 0);
+    // Should NOT have multiple errors now
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
     // But they should all be conceptually eliminated
     ASSERT_TRUE(unit.areErrorTypesEliminated());
 

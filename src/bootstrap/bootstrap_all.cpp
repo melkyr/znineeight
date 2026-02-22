@@ -14,6 +14,7 @@
 #include "double_free_analyzer.cpp"
 #include "utils.cpp"
 #include "ast_utils.cpp"
+#include "error_registry.cpp"
 #include "error_set_catalogue.cpp"
 #include "generic_catalogue.cpp"
 #include "error_function_catalogue.cpp"

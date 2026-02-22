@@ -248,6 +248,11 @@ ASTNode* Parser::parsePrimaryExpr() {
             return NULL;
         case TOKEN_IF:
             return parseIfExpression();
+        case TOKEN_ERROR_SET:
+            if (peekNext().type == TOKEN_DOT) {
+                return parseErrorLiteral();
+            }
+            return parseErrorSetDefinition();
         case TOKEN_SWITCH:
             return parseSwitchExpression();
         case TOKEN_RETURN:
@@ -262,8 +267,6 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseUnionDeclaration();
         case TOKEN_ENUM:
             return parseEnumDeclaration();
-        case TOKEN_ERROR_SET:
-            return parseErrorSetDefinition();
         case TOKEN_AT_IMPORT:
             return parseImportStmt();
         case TOKEN_AT_SIZEOF:
@@ -940,6 +943,17 @@ ASTNode* Parser::parseAnonymousLiteral() {
         node->as.tuple_literal = tuple_data;
         return node;
     }
+}
+
+ASTNode* Parser::parseErrorLiteral() {
+    Token error_token = expect(TOKEN_ERROR_SET, "Expected 'error'");
+    expect(TOKEN_DOT, "Expected '.' after 'error'");
+    Token tag_token = expect(TOKEN_IDENTIFIER, "Expected error tag identifier");
+
+    ASTNode* node = createNode(NODE_ERROR_LITERAL);
+    node->loc = error_token.location;
+    node->as.error_literal.tag_name = tag_token.value.identifier;
+    return node;
 }
 
 ASTNode* Parser::parseEnumDeclaration() {

@@ -126,6 +126,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       error_handler_(source_manager_, arena),
       token_supplier_(source_manager_, interner_, token_arena_),
       default_error_set_catalogue_(arena),
+      global_error_registry_(arena),
       default_generic_catalogue_(arena),
       default_error_function_catalogue_(arena),
       default_try_expression_catalogue_(arena),
@@ -270,6 +271,10 @@ ErrorSetCatalogue& CompilationUnit::getErrorSetCatalogue(const char* module_name
     Module* mod = getModule(target);
     if (mod) return mod->error_set_catalogue;
     return default_error_set_catalogue_;
+}
+
+GlobalErrorRegistry& CompilationUnit::getGlobalErrorRegistry() {
+    return global_error_registry_;
 }
 
 GenericCatalogue& CompilationUnit::getGenericCatalogue(const char* module_name) {

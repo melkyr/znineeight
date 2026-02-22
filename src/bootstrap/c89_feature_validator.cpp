@@ -81,6 +81,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_ERROR_SET_MERGE:
             visitErrorSetMerge(node);
             break;
+        case NODE_ERROR_LITERAL:
+            // Error literals are now supported
+            break;
         case NODE_IMPORT_STMT:
             visitImportStmt(node);
             break;
@@ -207,19 +210,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
         case NODE_VAR_DECL:
             current_parent_ = node;
             if (node->as.var_decl) {
-                if (node->resolved_type && isErrorType(node->resolved_type)) {
-                    char type_str[128];
-                    typeToString(node->resolved_type, type_str, sizeof(type_str));
-                    char msg_buffer[256];
-                    char* current = msg_buffer;
-                    size_t remaining = sizeof(msg_buffer);
-                    safe_append(current, remaining, "Variable '");
-                    safe_append(current, remaining, node->as.var_decl->name ? node->as.var_decl->name : "<anonymous>");
-                    safe_append(current, remaining, "' has error type '");
-                    safe_append(current, remaining, type_str);
-                    safe_append(current, remaining, "' which is not supported in bootstrap compiler");
-                    reportNonC89Feature(node->loc, msg_buffer, true);
-                }
                 visit(node->as.var_decl->type);
                 if (node->as.var_decl->initializer) {
                     visit(node->as.var_decl->initializer);
@@ -280,19 +270,6 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_STRUCT_FIELD:
             current_parent_ = node;
-            if (node->resolved_type && isErrorType(node->resolved_type)) {
-                char type_str[128];
-                typeToString(node->resolved_type, type_str, sizeof(type_str));
-                char msg_buffer[256];
-                char* current = msg_buffer;
-                size_t remaining = sizeof(msg_buffer);
-                safe_append(current, remaining, "Struct field '");
-                safe_append(current, remaining, node->as.struct_field->name);
-                safe_append(current, remaining, "' has error type '");
-                safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' which is not supported in bootstrap compiler");
-                reportNonC89Feature(node->loc, msg_buffer, true);
-            }
             visit(node->as.struct_field->type);
             current_parent_ = prev_parent;
             break;
@@ -395,48 +372,10 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     reportNonC89Feature(node->loc, "anytype is not supported in bootstrap compiler");
                 }
             }
-            if (node->resolved_type && isErrorType(node->resolved_type)) {
-                char type_str[128];
-                typeToString(node->resolved_type, type_str, sizeof(type_str));
-                char msg_buffer[256];
-                char* current = msg_buffer;
-                size_t remaining = sizeof(msg_buffer);
-                safe_append(current, remaining, "Error type '");
-                safe_append(current, remaining, type_str);
-                safe_append(current, remaining, "' is not supported in bootstrap compiler");
-                reportNonC89Feature(node->loc, msg_buffer, true);
-            }
             break;
         default:
             // No action needed for literals, identifiers, etc.
             break;
-    }
-
-    // General safety check: if we somehow missed an error type in the specific nodes,
-    // catch it here, unless it's a node that is DESIGNED to handle error types
-    // (and thus already rejected/catalogued with a better message).
-    if (node->resolved_type && isErrorType(node->resolved_type)) {
-        if (node->type != NODE_TRY_EXPR &&
-            node->type != NODE_CATCH_EXPR &&
-            node->type != NODE_ORELSE_EXPR &&
-            node->type != NODE_ERROR_UNION_TYPE &&
-            node->type != NODE_ERROR_SET_DEFINITION &&
-            node->type != NODE_ERROR_SET_MERGE &&
-            node->type != NODE_VAR_DECL &&
-            node->type != NODE_STRUCT_FIELD &&
-            node->type != NODE_TYPE_NAME &&
-            node->type != NODE_FN_DECL)
-        {
-            char type_str[128];
-            typeToString(node->resolved_type, type_str, sizeof(type_str));
-            char msg_buffer[256];
-            char* current = msg_buffer;
-            size_t remaining = sizeof(msg_buffer);
-            safe_append(current, remaining, "Unsupported use of error type '");
-            safe_append(current, remaining, type_str);
-            safe_append(current, remaining, "' in this context");
-            reportNonC89Feature(node->loc, msg_buffer, true);
-        }
     }
 }
 
@@ -449,9 +388,12 @@ void C89FeatureValidator::visitArrayType(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
-    reportNonC89Feature(node->loc, "Error union types (!T) are not C89-compatible.");
+    // Error union types are now supported as a language extension for bootstrap
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
+    if (node->as.error_union_type->error_set) {
+        visit(node->as.error_union_type->error_set);
+    }
     visit(node->as.error_union_type->payload_type);
     current_parent_ = prev_parent;
 }
@@ -500,15 +442,6 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
         try_info.extraction_strategy = site.strategy;
         try_info.stack_safe = site.msvc6_safe;
     }
-
-    // Reject
-    char msg[256];
-    char* current = msg;
-    size_t remaining = sizeof(msg);
-    safe_append(current, remaining, "Try expression in ");
-    safe_append(current, remaining, context);
-    safe_append(current, remaining, " context is not C89-compatible.");
-    reportNonC89Feature(node->loc, msg, true);
 
     // Recursive visit with depth tracking
     try_expression_depth_++;
@@ -581,9 +514,6 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
         catch_info.stack_safe = site.msvc6_safe;
     }
 
-    // Reject
-    reportNonC89Feature(node->loc, "'catch' expressions are not supported for C89 compatibility.");
-
     // Visit else_expr (handler)
     bool prev_in_chain = in_catch_chain_;
     in_catch_chain_ = false; // Handler is not part of the chain
@@ -613,15 +543,6 @@ void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
         result_type
     );
 
-    // Reject
-    char msg[256];
-    char* current = msg;
-    size_t remaining = sizeof(msg);
-    safe_append(current, remaining, "Orelse expression in ");
-    safe_append(current, remaining, getExpressionContext(node));
-    safe_append(current, remaining, " context is not supported in bootstrap compiler. Consider using an 'if' statement for null checks.");
-    reportNonC89Feature(node->loc, msg, true);
-
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
     visit(orelse->payload);
@@ -630,11 +551,17 @@ void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitErrorSetDefinition(ASTNode* node) {
-    fatalError(node->loc, "Error sets are not supported for C89 compatibility.");
+    // Error sets are now supported
+    RETR_UNUSED(node);
 }
 
 void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
-    fatalError(node->loc, "Error set merging (||) is not supported for C89 compatibility.");
+    // Error set merging is now supported (handled as a type)
+    ASTNode* prev_parent = current_parent_;
+    current_parent_ = node;
+    visit(node->as.error_set_merge->left);
+    visit(node->as.error_set_merge->right);
+    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitImportStmt(ASTNode* node) {
@@ -778,20 +705,6 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
         );
     }
 
-    // Report diagnostics
-    if (returns_error) {
-        char type_str[128];
-        typeToString(return_type, type_str, sizeof(type_str));
-        char msg_buffer[256];
-        char* current = msg_buffer;
-        size_t remaining = sizeof(msg_buffer);
-        safe_append(current, remaining, "Function '");
-        safe_append(current, remaining, fn->name ? fn->name : "<anonymous>");
-        safe_append(current, remaining, "' returns error type '");
-        safe_append(current, remaining, type_str);
-        safe_append(current, remaining, "' (non-C89)");
-        reportNonC89Feature(node->loc, msg_buffer, true);
-    }
 
     // Continue traversal
     ASTNode* prev_parent = current_parent_;

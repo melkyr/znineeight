@@ -9,6 +9,7 @@
 #include "error_handler.hpp"
 #include "token_supplier.hpp"
 #include "error_set_catalogue.hpp"
+#include "error_registry.hpp"
 #include "generic_catalogue.hpp"
 #include "error_function_catalogue.hpp"
 #include "try_expression_catalogue.hpp"
@@ -52,6 +53,7 @@ public:
     const ErrorHandler& getErrorHandler() const;
     SourceManager& getSourceManager();
     ErrorSetCatalogue& getErrorSetCatalogue(const char* module_name = NULL);
+    GlobalErrorRegistry& getGlobalErrorRegistry();
     GenericCatalogue& getGenericCatalogue(const char* module_name = NULL);
     ErrorFunctionCatalogue& getErrorFunctionCatalogue(const char* module_name = NULL);
     TryExpressionCatalogue& getTryExpressionCatalogue(const char* module_name = NULL);
@@ -144,6 +146,7 @@ private:
     TokenSupplier token_supplier_;
     // Per-module catalogues fallback for early access
     ErrorSetCatalogue default_error_set_catalogue_;
+    GlobalErrorRegistry global_error_registry_;
     GenericCatalogue default_generic_catalogue_;
     ErrorFunctionCatalogue default_error_function_catalogue_;
     TryExpressionCatalogue default_try_expression_catalogue_;

@@ -272,6 +272,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTIfExprNode`             | 12           | Pointer (4)     |
 | `ASTTupleLiteralNode`       | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
+| `ASTErrorLiteralNode`       | 4            | Inline          |
 | `ASTErrorUnionTypeNode`     | 20           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 | `ASTFunctionTypeNode`       | 8            | Pointer (4)     |
@@ -356,6 +357,21 @@ Represents a string literal. The `value` field points to an interned string to s
      */
     struct ASTStringLiteralNode {
         const char* value;
+    };
+    ```
+
+#### `ASTErrorLiteralNode`
+Represents an unqualified error literal.
+*   **Zig Code:** `error.FileNotFound`, `error.OutOfMemory`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTErrorLiteralNode
+     * @brief Represents an unqualified error literal.
+     * @var ASTErrorLiteralNode::tag_name The name of the error tag (interned string).
+     */
+    struct ASTErrorLiteralNode {
+        const char* tag_name;
     };
     ```
 
@@ -1385,7 +1401,10 @@ struct ASTErrorSetMergeNode {
 The error set merge operator `||` is parsed within `parsePrecedenceExpr` (or recursively in `parseType`) when two error sets are combined.
 
 ### Detection and Cataloguing
-Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. This allows for documentation and analysis of all errors used in the codebase, even though they are eventually rejected by the `C89FeatureValidator`.
+Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUnit` during the parsing phase. In addition, all unique error tags encountered in definitions or literals are registered in a `GlobalErrorRegistry` to assign them unique integer IDs for code generation.
+
+### Error Literal Resolution
+Unqualified error literals (`error.Tag`) are resolved by the `TypeChecker` using the `GlobalErrorRegistry`. If a tag has not been seen before, a new unique positive integer ID is assigned.
 
 ## 13. Try Expression Detection (Task 143)
 
