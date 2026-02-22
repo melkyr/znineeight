@@ -42,7 +42,8 @@ enum TypeKind {
     TYPE_NORETURN,
     TYPE_TYPE,
     TYPE_ANYTYPE,
-    TYPE_MODULE
+    TYPE_MODULE,
+    TYPE_TUPLE
 };
 
 /**
@@ -132,6 +133,9 @@ struct Type {
             const char* name;
             struct Module* module_ptr;
         } module;
+        struct {
+            DynamicArray<Type*>* elements;
+        } tuple;
     } as;
 };
 
@@ -287,6 +291,11 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
  * @brief Creates a new module Type object.
  */
 Type* createModuleType(ArenaAllocator& arena, const char* name);
+
+/**
+ * @brief Creates a new tuple Type object.
+ */
+Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements);
 
 /**
  * @brief Converts a Type object to its string representation.

@@ -59,6 +59,15 @@ Type* createModuleType(ArenaAllocator& arena, const char* name) {
     return new_type;
 }
 
+Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_TUPLE;
+    new_type->size = 0; // Not used for runtime storage in bootstrap
+    new_type->alignment = 0;
+    new_type->as.tuple.elements = elements;
+    return new_type;
+}
+
 Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "void") == 0) return get_g_type_void();
     if (plat_strcmp(name, "bool") == 0) return get_g_type_bool();

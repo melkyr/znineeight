@@ -1438,6 +1438,13 @@ With the bootstrap compiler (`zig0`) now stable and capable of generating multiâ
     - **Codegen**: Handled divergent prongs by skipping result assignment. Fixed double semicolon issues for control flow expressions. Added support for value-yielding block prongs.
     - **Verification**: Created comprehensive integration tests (Batch 43) including execution tests via `C89Validator`.
 
+225.2 [COMPLETE] **Task 225.2: If Expressions and Print Lowering (DONE)**
+    - **AST**: Defined `NODE_IF_EXPR` and `NODE_TUPLE_LITERAL`.
+    - **Parser**: Implemented braceless `if (cond) a else b` expressions. Added support for positional anonymous literals `.{ arg1, arg2 }`.
+    - **Type Checker**: Implemented result type merging for `if` expressions, including `noreturn` paths. Added special validation for `std.debug.print`.
+    - **Codegen**: Implemented "lifted if" expressions using temporary variables. Added compiler-assisted lowering for `std.debug.print` by decomposing format strings into multiple runtime calls (`__bootstrap_print`, `__bootstrap_print_int`).
+    - **Verification**: Created `examples/days_in_month/` demo. Verified end-to-end execution with GCC. Added Batch 44 integration tests.
+
 Task 226: Error Unions (!T) and Error Sets
 
 Goal: Implement switch expressions, which are a powerful way to handle multiple cases. Zig's switch can be used as an expression (returning a value) and supports ranges and multiple values per case.

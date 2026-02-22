@@ -28,6 +28,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
     NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
     NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
+    NODE_TUPLE_LITERAL,   ///< A tuple literal (e.g., `.{ 1, 2, 3 }`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -43,6 +44,7 @@ enum NodeType {
     NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
     NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
+    NODE_IF_EXPR,         ///< An if-else expression (mandatory else, can be braceless).
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_BREAK_STMT,      ///< A break statement.
     NODE_CONTINUE_STMT,   ///< A continue statement.
@@ -157,6 +159,8 @@ struct ASTArraySliceNode;
 struct ASTMemberAccessNode;
 struct ASTStructInitializerNode;
 struct ASTNamedInitializer;
+struct ASTTupleLiteralNode;
+struct ASTIfExprNode;
 
 
 // --- Node-specific data structs ---
@@ -207,6 +211,15 @@ struct ASTNamedInitializer {
 struct ASTStructInitializerNode {
     ASTNode* type_expr;
     DynamicArray<ASTNamedInitializer*>* fields;
+};
+
+/**
+ * @struct ASTTupleLiteralNode
+ * @brief Represents a tuple literal (e.g., `.{ 1, 2, 3 }`).
+ * @var ASTTupleLiteralNode::elements A dynamic array of pointers to the element expressions.
+ */
+struct ASTTupleLiteralNode {
+    DynamicArray<ASTNode*>* elements;
 };
 
 /**
@@ -372,6 +385,19 @@ struct ASTIfStmtNode {
     ASTNode* condition;
     ASTNode* then_block;
     ASTNode* else_block; // Can be NULL
+};
+
+/**
+ * @struct ASTIfExprNode
+ * @brief Represents an if-else expression.
+ * @var ASTIfExprNode::condition The condition expression.
+ * @var ASTIfExprNode::then_expr The expression to evaluate if the condition is true.
+ * @var ASTIfExprNode::else_expr The expression to evaluate if the condition is false.
+ */
+struct ASTIfExprNode {
+    ASTNode* condition;
+    ASTNode* then_expr;
+    ASTNode* else_expr;
 };
 
 /**
@@ -851,6 +877,7 @@ struct ASTNode {
         ASTArraySliceNode* array_slice; // Out-of-line
         ASTMemberAccessNode* member_access; // Out-of-line
         ASTStructInitializerNode* struct_initializer; // Out-of-line
+        ASTTupleLiteralNode* tuple_literal; // Out-of-line
 
         // Literals
         ASTBoolLiteralNode bool_literal;
@@ -864,6 +891,7 @@ struct ASTNode {
         ASTBlockStmtNode block_stmt;
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
+        ASTIfExprNode* if_expr; // Out-of-line
         ASTWhileStmtNode* while_stmt; // Out-of-line
         ASTBreakStmtNode break_stmt;
         ASTContinueStmtNode continue_stmt;

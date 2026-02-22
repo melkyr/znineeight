@@ -170,3 +170,13 @@ void __bootstrap_print_int(i32 n) {
         fputc(buf[--i], stderr);
     }
 }
+
+u8 __bootstrap_u8_from_i32(i32 x) {
+    if (x < 0 || x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+u8 __bootstrap_u8_from_usize(usize x) {
+    if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (u8)x;
+}

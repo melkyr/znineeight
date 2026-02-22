@@ -240,10 +240,12 @@ ASTNode* Parser::parsePrimaryExpr() {
         case TOKEN_DOT:
             if (peekNext().type == TOKEN_LBRACE) {
                 advance(); // consume '.'
-                return parseStructInitializer(NULL);
+                return parseAnonymousLiteral();
             }
-            error("Expected '.' followed by '{' for anonymous struct literal");
+            error("Expected '.' followed by '{' for anonymous literal");
             return NULL;
+        case TOKEN_IF:
+            return parseIfExpression();
         case TOKEN_SWITCH:
             return parseSwitchExpression();
         case TOKEN_RETURN:
@@ -875,6 +877,67 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
     node->loc = lbrace.location;
     node->as.struct_initializer = init_data;
     return node;
+}
+
+/**
+ * @brief Parses an anonymous literal (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`).
+ *        Grammar: `'.{' (field_init (',' field_init)* | expr (',' expr)*)? '}'`
+ * @return A pointer to the ASTNode representing the anonymous struct or tuple literal.
+ */
+ASTNode* Parser::parseAnonymousLiteral() {
+    Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start anonymous literal");
+
+    if (peek().type == TOKEN_DOT) {
+        // Named fields -> anonymous struct initializer
+        ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+        if (!init_data) error("Out of memory");
+        init_data->type_expr = NULL;
+        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+        if (!array_mem) error("Out of memory");
+        init_data->fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+
+        while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+            expect(TOKEN_DOT, "Expected '.' before field name in anonymous struct initializer");
+            Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name");
+            expect(TOKEN_EQUAL, "Expected '=' after field name");
+            ASTNode* value = parseExpression();
+
+            ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+            if (!named_init) error("Out of memory");
+            named_init->field_name = field_name_token.value.identifier;
+            named_init->value = value;
+            named_init->loc = field_name_token.location;
+
+            init_data->fields->append(named_init);
+
+            if (!match(TOKEN_COMMA)) break;
+        }
+        expect(TOKEN_RBRACE, "Expected '}' after anonymous struct initializer");
+
+        ASTNode* node = createNode(NODE_STRUCT_INITIALIZER);
+        node->loc = lbrace.location;
+        node->as.struct_initializer = init_data;
+        return node;
+    } else {
+        // Positional -> tuple literal
+        ASTTupleLiteralNode* tuple_data = (ASTTupleLiteralNode*)arena_->alloc(sizeof(ASTTupleLiteralNode));
+        if (!tuple_data) error("Out of memory");
+        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!array_mem) error("Out of memory");
+        tuple_data->elements = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+
+        while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+            tuple_data->elements->append(parseExpression());
+
+            if (!match(TOKEN_COMMA)) break;
+        }
+        expect(TOKEN_RBRACE, "Expected '}' after tuple literal");
+
+        ASTNode* node = createNode(NODE_TUPLE_LITERAL);
+        node->loc = lbrace.location;
+        node->as.tuple_literal = tuple_data;
+        return node;
+    }
 }
 
 ASTNode* Parser::parseEnumDeclaration() {
@@ -1704,6 +1767,33 @@ ASTNode* Parser::parseIfStatement() {
     node->loc = if_token.location;
     node->resolved_type = NULL;
     node->as.if_stmt = if_stmt_node;
+
+    return node;
+}
+
+/**
+ * @brief Parses an if expression.
+ *        Grammar: `'if' '(' expr ')' expr 'else' expr`
+ * @return A pointer to the ASTNode representing the if expression.
+ */
+ASTNode* Parser::parseIfExpression() {
+    Token if_token = expect(TOKEN_IF, "Expected 'if' keyword");
+    expect(TOKEN_LPAREN, "Expected '(' after 'if'");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Expected ')' after if condition");
+
+    ASTNode* then_expr = parseExpression();
+    expect(TOKEN_ELSE, "If expressions must have an 'else' branch");
+    ASTNode* else_expr = parseExpression();
+
+    ASTIfExprNode* if_expr_data = (ASTIfExprNode*)arena_->alloc(sizeof(ASTIfExprNode));
+    if (!if_expr_data) error("Out of memory");
+    if_expr_data->condition = condition;
+    if_expr_data->then_expr = then_expr;
+    if_expr_data->else_expr = else_expr;
+
+    ASTNode* node = createNodeAt(NODE_IF_EXPR, if_token.location);
+    node->as.if_expr = if_expr_data;
 
     return node;
 }

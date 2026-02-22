@@ -27,12 +27,13 @@ private:
     CompilationUnit& unit_;
     ErrorHandler& error_handler_;
     int invalid_count_;
+    const char* current_fn_name_;
 
     void visit(ASTNode* node);
     void visitFnDecl(ASTFnDeclNode* node);
 
     // Check if a type is valid for C89 function parameter
-    bool isParameterTypeValid(Type* type, SourceLocation loc);
+    bool isParameterTypeValid(Type* type, SourceLocation loc, const char* fn_name);
 
     // Check if a type is valid for C89 function return
     bool isReturnTypeValid(Type* type, SourceLocation loc);

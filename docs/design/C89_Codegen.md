@@ -71,6 +71,9 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 
 ### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
+- **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
+  - **Lifting Contexts**: Supported in assignments, variable initializers, return statements, switch prongs, and as expression statements.
+  - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
 - **While Loops**:
   - **Unlabeled**: Mapped to C `while (cond) { ... }`.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
@@ -115,6 +118,7 @@ C89 requires all local variable declarations to appear at the beginning of a blo
   - **Lifting Contexts**: Currently supported in direct assignments (`x = switch...`), variable initializers (`var x = switch...`), return statements (`return switch...`), and as expression statements.
   - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
   - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
+  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
@@ -157,7 +161,11 @@ Standard C89 does not allow array or struct assignment after declaration (e.g., 
 
 ### 4.5 Built-in Intrinsics
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
-- **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they are intended to emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
+- **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
+- **std.debug.print**: Lowered to a sequence of `__bootstrap_print(const char*)` and `__bootstrap_print_int(i32)` calls. The compiler parses the format string at compile-time and decomposes it into multiple calls, mapping `{}` placeholders to the positional arguments provided in the tuple literal.
+
+### 4.6 Tuple Literals
+Tuple literals `.{ arg1, arg2 }` are supported primarily for `std.debug.print` lowering. When used in other constant contexts, they are emitted as C-style array/struct initializers `{ arg1, arg2 }`.
 
 ### 4.6 Many-item Pointers ([*]T)
 Many-item pointers (e.g., `[*]u8`, `[*]const i32`) are supported in the bootstrap compiler. They represent pointers to zero or more items of type `T`, mapping directly to C's raw pointers (`T*`).

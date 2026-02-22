@@ -5,7 +5,7 @@
 #include "utils.hpp"
 
 SignatureAnalyzer::SignatureAnalyzer(CompilationUnit& unit)
-    : unit_(unit), error_handler_(unit.getErrorHandler()), invalid_count_(0) {
+    : unit_(unit), error_handler_(unit.getErrorHandler()), invalid_count_(0), current_fn_name_(NULL) {
 }
 
 void SignatureAnalyzer::analyze(ASTNode* root) {
@@ -104,12 +104,15 @@ void SignatureAnalyzer::visit(ASTNode* node) {
 void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     if (!node) return;
 
+    const char* prev_fn_name = current_fn_name_;
+    current_fn_name_ = node->name;
+
     // 2. Check each parameter type
     if (node->params) {
         for (size_t i = 0; i < node->params->length(); ++i) {
             ASTParamDeclNode* param = (*node->params)[i];
             if (param && param->type && param->type->resolved_type) {
-                if (!isParameterTypeValid(param->type->resolved_type, param->type->loc)) {
+                if (!isParameterTypeValid(param->type->resolved_type, param->type->loc, current_fn_name_)) {
                     invalid_count_++;
                 }
             }
@@ -122,6 +125,8 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
             invalid_count_++;
         }
     }
+
+    current_fn_name_ = prev_fn_name;
 }
 
 
@@ -174,7 +179,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
     }
 }
 
-bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
+bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, const char* fn_name) {
     if (!type) return true;
 
     switch (type->kind) {
@@ -216,6 +221,13 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc) {
 
         case TYPE_OPTIONAL:
             error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
+            return false;
+
+        case TYPE_ANYTYPE:
+            if (fn_name && plat_strcmp(fn_name, "print") == 0) {
+                return true;
+            }
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, "anytype is not supported in bootstrap compiler", unit_.getArena());
             return false;
 
         default:

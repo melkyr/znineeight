@@ -47,6 +47,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
     NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
     NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
+    NODE_TUPLE_LITERAL,   ///< A tuple literal (e.g., `.{ 1, 2, 3 }`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -61,6 +62,7 @@ enum NodeType {
     NODE_BLOCK_STMT,      ///< A block of statements enclosed in `{}`.
     NODE_EMPTY_STMT,      ///< An empty statement (`;`).
     NODE_IF_STMT,         ///< An if-else statement.
+    NODE_IF_EXPR,         ///< An if-else expression (mandatory else, braceless).
     NODE_WHILE_STMT,      ///< A while loop statement.
     NODE_BREAK_STMT,      ///< A break statement.
     NODE_CONTINUE_STMT,   ///< A continue statement.
@@ -147,6 +149,7 @@ struct ASTNode {
         ASTArraySliceNode* array_slice; // Out-of-line
         ASTMemberAccessNode* member_access; // Out-of-line
         ASTStructInitializerNode* struct_initializer; // Out-of-line
+        ASTTupleLiteralNode* tuple_literal; // Out-of-line
 
         // Literals
         ASTIntegerLiteralNode integer_literal;
@@ -159,6 +162,7 @@ struct ASTNode {
         ASTBlockStmtNode block_stmt;
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
+        ASTIfExprNode* if_expr; // Out-of-line
         ASTWhileStmtNode while_stmt;
         ASTBreakStmtNode break_stmt;
         ASTContinueStmtNode continue_stmt;
@@ -265,6 +269,8 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
 | `ASTImportStmtNode`         | 4            | Pointer (4)     |
 | `ASTOrelseExprNode`         | 8            | Pointer (4)     |
+| `ASTIfExprNode`             | 12           | Pointer (4)     |
+| `ASTTupleLiteralNode`       | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
 | `ASTErrorUnionTypeNode`     | 20           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
