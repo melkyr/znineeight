@@ -30,6 +30,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Structs**: `const S = struct { field: T, ... };`
 - **Enums**: `const E = enum(T) { Member, ... };`
 - **Unions**: `const U = union { field: T, ... };` (Bare unions only).
+- **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
@@ -72,7 +73,8 @@ Memory is reclaimed by resetting or destroying the arena.
 ## 3. Control Flow
 
 ### 3.1 Statements
-- `if (cond) { ... } else { ... }`: Braces are **required**.
+- `if (cond) { ... } else { ... }`: Braces are **required** for standalone if statements.
+- **If Expressions**: `if (cond) a else b`. Braces are NOT required. Must have an `else` branch. Result type is merged from both branches.
 - `while (cond) { ... }`: Simple loop.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
@@ -105,6 +107,7 @@ Memory is reclaimed by resetting or destroying the arena.
 
 ## 4. Built-in Functions
 - `@import("file.zig")`: Includes another module.
+- `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls. Decomposes `{}` in the format string. Supports tuple literals for `args`.
 - `@sizeOf(T)`: Byte size of type `T`.
 - `@alignOf(T)`: Alignment of type `T`.
 - `@offsetOf(T, "field")`: Byte offset of a field.
@@ -123,6 +126,6 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.
-- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment.
-- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`.
+- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}`).
+- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).

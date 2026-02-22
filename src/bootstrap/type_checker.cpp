@@ -42,6 +42,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
         case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
+        case NODE_TUPLE_LITERAL:    resolved_type = visitTupleLiteral(node->as.tuple_literal); break;
         case NODE_UNREACHABLE:      resolved_type = visitUnreachable(node); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
@@ -54,6 +55,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
         case NODE_EMPTY_STMT:       resolved_type = visitEmptyStmt(&node->as.empty_stmt); break;
         case NODE_IF_STMT:          resolved_type = visitIfStmt(node->as.if_stmt); break;
+        case NODE_IF_EXPR:          resolved_type = visitIfExpr(node->as.if_expr); break;
         case NODE_WHILE_STMT:       resolved_type = visitWhileStmt(node->as.while_stmt); break;
         case NODE_BREAK_STMT:       resolved_type = visitBreakStmt(node); break;
         case NODE_CONTINUE_STMT:    resolved_type = visitContinueStmt(node); break;
@@ -543,6 +545,25 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 }
 
 Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node) {
+    // Special handling for std.debug.print (Task 225.2)
+    const char* callee_str = exprToString(node->callee);
+    if (plat_strcmp(callee_str, "std.debug.print") == 0 ||
+        plat_strcmp(callee_str, "debug.print") == 0) {
+        if (node->args->length() != 2) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "std.debug.print expects 2 arguments");
+        } else {
+            visit((*node->args)[0]); // format string
+            Type* tuple_type = visit((*node->args)[1]); // tuple literal
+            if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, (*node->args)[1]->loc, "std.debug.print second argument must be a tuple literal");
+            }
+        }
+        // Even if we lower it, we still want to resolve the callee to avoid undefined identifier errors
+        // if the user provided a mock.
+    }
+
+    Type* callee_type = visit(node->callee);
+
     // Detect and catalogue generic instantiation if this is a generic call
     catalogGenericInstantiation(node);
 
@@ -587,8 +608,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     // --- END NEW LOGIC FOR TASK 119 ---
 
-
-    Type* callee_type = visit(node->callee);
     if (!callee_type) {
         // Error already reported (e.g., undefined function)
         int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
@@ -1319,6 +1338,37 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
         visit(node->else_block);
     }
     return NULL;
+}
+
+Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
+    Type* condition_type = visit(node->condition);
+    if (condition_type) {
+        if (condition_type->kind == TYPE_VOID) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "if expression condition cannot be void");
+        } else if (condition_type->kind != TYPE_BOOL &&
+                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+                   condition_type->kind != TYPE_POINTER) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "if expression condition must be a bool, integer, or pointer");
+        }
+    }
+
+    Type* then_type = visit(node->then_expr);
+    Type* else_type = visit(node->else_expr);
+
+    if (!then_type || !else_type) return NULL;
+
+    if (then_type->kind == TYPE_NORETURN) return else_type;
+    if (else_type->kind == TYPE_NORETURN) return then_type;
+
+    if (areTypesEqual(then_type, else_type)) return then_type;
+
+    if (areTypesCompatible(then_type, else_type)) return then_type;
+    if (areTypesCompatible(else_type, then_type)) return else_type;
+
+    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->else_expr->loc, "incompatible types in if expression branches");
+    return then_type;
 }
 
 Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
@@ -2235,6 +2285,20 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
         }
     }
     return true;
+}
+
+Type* TypeChecker::visitTupleLiteral(ASTTupleLiteralNode* node) {
+    void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
+    if (!mem) fatalError("Out of memory");
+    DynamicArray<Type*>* element_types = new (mem) DynamicArray<Type*>(unit.getArena());
+
+    for (size_t i = 0; i < node->elements->length(); ++i) {
+        Type* t = visit((*node->elements)[i]);
+        if (t) element_types->append(t);
+        else element_types->append(get_g_type_void());
+    }
+
+    return createTupleType(unit.getArena(), element_types);
 }
 
 Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
@@ -3240,12 +3304,17 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     const char* callee_name = NULL;
     if (node->callee->type == NODE_IDENTIFIER) {
         callee_name = node->callee->as.identifier.name;
-        Symbol* sym = unit.getSymbolTable().lookup(callee_name);
+        Symbol* sym = node->callee->as.identifier.symbol;
+        if (!sym) sym = unit.getSymbolTable().lookup(callee_name);
         if (sym && sym->is_generic) {
             is_implicit = true;
         }
     } else if (node->callee->type == NODE_MEMBER_ACCESS) {
         callee_name = node->callee->as.member_access->field_name;
+        Symbol* sym = node->callee->as.member_access->symbol;
+        if (sym && sym->is_generic) {
+            is_implicit = true;
+        }
     }
 
     if (is_explicit || is_implicit) {

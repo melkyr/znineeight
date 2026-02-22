@@ -88,6 +88,10 @@ void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNod
         } else {
             for (size_t i = 0; i < params_node->params->length(); ++i) {
                 ASTParamDeclNode* param = (*params_node->params)[i];
+                if (param->is_anytype) {
+                    writeString("...");
+                    break;
+                }
                 // For definition (within FnDecl), use mangled local name.
                 // For prototype, use original name.
                 const char* param_name = param->symbol ? var_alloc_.allocate(param->symbol) : param->name;
@@ -166,6 +170,10 @@ void C89Emitter::emitTypeSuffix(Type* type) {
                 writeString("void");
             } else {
                 for (size_t i = 0; i < params->length(); ++i) {
+                    if ((*params)[i]->kind == TYPE_ANYTYPE) {
+                        writeString("...");
+                        break;
+                    }
                     emitDeclarator((*params)[i], NULL);
                     if (i < params->length() - 1) writeString(", ");
                 }
@@ -252,6 +260,9 @@ void C89Emitter::emitBaseType(Type* type) {
             } else {
                 writeString("/* anonymous */");
             }
+            break;
+        case TYPE_ANYTYPE:
+            writeString("...");
             break;
         default:
             writeString("/* unsupported type */");
@@ -390,6 +401,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                     emitInitializerAssignments(c_name, decl->initializer);
                 } else if (decl->initializer->type == NODE_SWITCH_EXPR) {
                     emitSwitchExpr(decl->initializer, c_name);
+                } else if (decl->initializer->type == NODE_IF_EXPR) {
+                    emitIfExpr(decl->initializer, c_name);
                 } else {
                     writeIndent();
                     writeString(c_name);
@@ -596,6 +609,9 @@ void C89Emitter::emitStatement(const ASTNode* node) {
     if (!node) return;
 
     switch (node->type) {
+        case NODE_IF_EXPR:
+            emitIfExpr(node, NULL);
+            break;
         case NODE_BLOCK_STMT:
             writeIndent();
             emitBlock(&node->as.block_stmt);
@@ -632,6 +648,23 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             ASTNode* expr = node->as.expression_stmt.expression;
             if (expr->type == NODE_SWITCH_EXPR) {
                 emitSwitchExpr(expr, NULL);
+            } else if (expr->type == NODE_IF_EXPR) {
+                emitIfExpr(expr, NULL);
+            } else if (expr->type == NODE_FUNCTION_CALL) {
+                // Check if it's std.debug.print
+                bool is_print = false;
+                const ASTNode* callee = expr->as.function_call->callee;
+                if (callee->type == NODE_MEMBER_ACCESS && plat_strcmp(callee->as.member_access->field_name, "print") == 0) {
+                    is_print = true;
+                }
+
+                if (is_print) {
+                    emitPrintCall(expr->as.function_call);
+                } else {
+                    writeIndent();
+                    emitExpression(expr);
+                    writeString(";\n");
+                }
             } else if (expr->type == NODE_RETURN_STMT ||
                        expr->type == NODE_BREAK_STMT ||
                        expr->type == NODE_CONTINUE_STMT ||
@@ -648,6 +681,14 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             if (node->as.assignment->rvalue->type == NODE_SWITCH_EXPR) {
                 if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
                     emitSwitchExpr(node->as.assignment->rvalue, var_alloc_.allocate(node->as.assignment->lvalue->as.identifier.symbol));
+                } else {
+                    writeIndent();
+                    emitExpression(node);
+                    writeString(";\n");
+                }
+            } else if (node->as.assignment->rvalue->type == NODE_IF_EXPR) {
+                if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
+                    emitIfExpr(node->as.assignment->rvalue, var_alloc_.allocate(node->as.assignment->lvalue->as.identifier.symbol));
                 } else {
                     writeIndent();
                     emitExpression(node);
@@ -701,6 +742,50 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
     writeString("\n");
 }
 
+void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
+    const ASTIfExprNode* if_expr = node->as.if_expr;
+    writeIndent();
+    writeString("if (");
+    emitExpression(if_expr->condition);
+    writeString(") {\n");
+    indent();
+    if (target_var && (!if_expr->then_expr->resolved_type || if_expr->then_expr->resolved_type->kind != TYPE_NORETURN)) {
+        if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
+            emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var);
+            writeString("\n");
+        } else {
+            writeIndent();
+            writeString(target_var);
+            writeString(" = ");
+            emitExpression(if_expr->then_expr);
+            writeString(";\n");
+        }
+    } else {
+        emitStatement(if_expr->then_expr);
+    }
+    dedent();
+    writeIndent();
+    writeString("} else {\n");
+    indent();
+    if (target_var && (!if_expr->else_expr->resolved_type || if_expr->else_expr->resolved_type->kind != TYPE_NORETURN)) {
+        if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
+            emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var);
+            writeString("\n");
+        } else {
+            writeIndent();
+            writeString(target_var);
+            writeString(" = ");
+            emitExpression(if_expr->else_expr);
+            writeString(";\n");
+        }
+    } else {
+        emitStatement(if_expr->else_expr);
+    }
+    dedent();
+    writeIndent();
+    writeString("}\n");
+}
+
 static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
     if (!node) return false;
     if (node->type == NODE_INTEGER_LITERAL) {
@@ -722,6 +807,73 @@ static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
         return evaluateSimpleConstant(node->as.paren_expr.expr, out_value);
     }
     return false;
+}
+
+void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
+    if (!node->args || node->args->length() != 2) return;
+
+    ASTNode* fmt_node = (*node->args)[0];
+    ASTNode* tuple_node = (*node->args)[1];
+
+    if (fmt_node->type != NODE_STRING_LITERAL) {
+        // Fallback: just emit as a normal call if we can't lower it
+        writeIndent();
+        writeString("/* warning: could not lower std.debug.print (not a string literal) */\n");
+        return;
+    }
+
+    const char* fmt = fmt_node->as.string_literal.value;
+    DynamicArray<ASTNode*>* elements = (tuple_node->type == NODE_TUPLE_LITERAL) ?
+                                      tuple_node->as.tuple_literal->elements : NULL;
+
+    size_t element_idx = 0;
+    const char* start = fmt;
+    const char* p = fmt;
+
+    while (*p) {
+        if (*p == '{' && *(p+1) == '}') {
+            // Print what we have so far
+            if (p > start) {
+                writeIndent();
+                writeString("__bootstrap_print(\"");
+                const char* s = start;
+                while (s < p) {
+                    emitEscapedByte((unsigned char)*s, false);
+                    s++;
+                }
+                writeString("\");\n");
+            }
+
+            // Print the element
+            if (elements && element_idx < elements->length()) {
+                writeIndent();
+                writeString("__bootstrap_print_int(");
+                emitExpression((*elements)[element_idx]);
+                writeString(");\n");
+                element_idx++;
+            } else {
+                writeIndent();
+                writeString("__bootstrap_print(\"{}\");\n");
+            }
+
+            p += 2;
+            start = p;
+        } else {
+            p++;
+        }
+    }
+
+    // Print remaining part
+    if (*start) {
+        writeIndent();
+        writeString("__bootstrap_print(\"");
+        const char* s = start;
+        while (*s) {
+            emitEscapedByte((unsigned char)*s, false);
+            s++;
+        }
+        writeString("\");\n");
+    }
 }
 
 void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
@@ -769,6 +921,10 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
                 writeIndent();
                 emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
                 writeString("\n");
+            } else if (prong->body->type == NODE_IF_EXPR) {
+                emitIfExpr(prong->body, target_var);
+            } else if (prong->body->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(prong->body, target_var);
             } else {
                 writeIndent();
                 writeString(target_var);
@@ -1086,6 +1242,13 @@ bool C89Emitter::isConstantInitializer(const ASTNode* node) const {
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
             return isConstantInitializer(node->as.ptr_cast->expr); // All cast nodes have expr at same offset
+        case NODE_TUPLE_LITERAL: {
+            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                if (!isConstantInitializer((*elements)[i])) return false;
+            }
+            return true;
+        }
         case NODE_STRUCT_INITIALIZER: {
             DynamicArray<ASTNamedInitializer*>* fields = node->as.struct_initializer->fields;
             for (size_t i = 0; i < fields->length(); ++i) {
@@ -1197,6 +1360,18 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_NULL_LITERAL:
             writeString("((void*)0)");
             break;
+        case NODE_TUPLE_LITERAL: {
+            writeString("{");
+            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
+            for (size_t i = 0; i < elements->length(); ++i) {
+                emitExpression((*elements)[i]);
+                if (i < elements->length() - 1) {
+                    writeString(", ");
+                }
+            }
+            writeString("}");
+            break;
+        }
         case NODE_UNREACHABLE:
             writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
             break;
@@ -1413,6 +1588,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         }
         case NODE_SWITCH_EXPR:
             writeString("/* error: switch expression used in unsupported context (not lifted) */");
+            break;
+        case NODE_IF_EXPR:
+            writeString("/* error: if expression used in unsupported context (not lifted) */");
             break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
@@ -2095,6 +2273,8 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
             if (node->expression->type == NODE_SWITCH_EXPR) {
                 emitSwitchExpr(node->expression, "__return_val");
+            } else if (node->expression->type == NODE_IF_EXPR) {
+                emitIfExpr(node->expression, "__return_val");
             } else {
                 writeIndent();
                 writeString("__return_val = ");
@@ -2121,14 +2301,19 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         writeIndent();
         writeString("}\n");
     } else {
-        if (node->expression && current_fn_ret_type_->kind != TYPE_VOID && node->expression->type == NODE_SWITCH_EXPR) {
+        if (node->expression && current_fn_ret_type_->kind != TYPE_VOID &&
+            (node->expression->type == NODE_SWITCH_EXPR || node->expression->type == NODE_IF_EXPR)) {
             writeIndent();
             writeString("{\n");
             indent();
             writeIndent();
             emitType(current_fn_ret_type_, "__return_val");
             writeString(";\n");
-            emitSwitchExpr(node->expression, "__return_val");
+            if (node->expression->type == NODE_SWITCH_EXPR) {
+                emitSwitchExpr(node->expression, "__return_val");
+            } else {
+                emitIfExpr(node->expression, "__return_val");
+            }
             writeIndent();
             writeString("return __return_val;\n");
             dedent();

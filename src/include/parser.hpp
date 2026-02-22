@@ -157,6 +157,12 @@ public:
      */
     ASTNode* parseIfStatement();
 
+    /** @brief Parses an if expression.
+     *        Grammar: `'if' '(' expr ')' expr 'else' expr`
+     * @return A pointer to the ASTNode representing the if expression.
+     */
+    ASTNode* parseIfExpression();
+
     /**
      * @brief Parses a while statement.
      *        Grammar: `(label ':')? 'while' '(' expr ')' block_statement`
@@ -337,6 +343,9 @@ private:
 
     /** @brief Parses a struct initializer (e.g., `Point { .x = 10 }`). Helper for `parsePostfixExpression`. */
     ASTNode* parseStructInitializer(ASTNode* type_expr);
+
+    /** @brief Parses an anonymous literal (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`). Helper for `parsePrimaryExpr`. */
+    ASTNode* parseAnonymousLiteral();
 
     /** @brief Parses a comptime block. Helper for `parseStatement`. */
     ASTNode* parseComptimeBlock();

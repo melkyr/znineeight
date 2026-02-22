@@ -1092,4 +1092,9 @@ TEST_FUNC(SwitchNoreturn_VariableNoreturnError);
 TEST_FUNC(SwitchNoreturn_BlockProng);
 TEST_FUNC(SwitchNoreturn_RealCodegen);
 
+// Task 225.2: If Expressions and Print Lowering
+TEST_FUNC(Task225_2_BracelessIfExpr);
+TEST_FUNC(Task225_2_PrintLowering);
+TEST_FUNC(Task225_2_SwitchIfExpr);
+
 #endif // TEST_DECLARATIONS_HPP

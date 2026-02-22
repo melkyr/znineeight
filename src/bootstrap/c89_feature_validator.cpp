@@ -137,7 +137,15 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 reportNonC89Feature(node->loc, "comptime parameters are not supported in C89 mode");
             }
             if (node->as.param_decl.is_anytype) {
-                reportNonC89Feature(node->loc, "anytype parameters are not supported in C89 mode");
+                bool is_exception = false;
+                if (current_parent_ && current_parent_->type == NODE_FN_DECL &&
+                    current_parent_->as.fn_decl->name &&
+                    plat_strcmp(current_parent_->as.fn_decl->name, "print") == 0) {
+                    is_exception = true;
+                }
+                if (!is_exception) {
+                    reportNonC89Feature(node->loc, "anytype parameters are not supported in C89 mode");
+                }
             }
             if (node->as.param_decl.is_type_param) {
                 reportNonC89Feature(node->loc, "type parameters are not supported in C89 mode");
@@ -374,7 +382,18 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 reportNonC89Feature(node->loc, "Type parameters/variables are not supported in bootstrap compiler");
             }
             if (plat_strcmp(node->as.type_name.name, "anytype") == 0) {
-                reportNonC89Feature(node->loc, "anytype is not supported in bootstrap compiler");
+                bool is_exception = false;
+                if (current_parent_ && current_parent_->type == NODE_PARAM_DECL) {
+                    is_exception = true;
+                } else if (current_parent_ && current_parent_->type == NODE_FN_DECL) {
+                    if (current_parent_->as.fn_decl->name &&
+                        plat_strcmp(current_parent_->as.fn_decl->name, "print") == 0) {
+                        is_exception = true;
+                    }
+                }
+                if (!is_exception) {
+                    reportNonC89Feature(node->loc, "anytype is not supported in bootstrap compiler");
+                }
             }
             if (node->resolved_type && isErrorType(node->resolved_type)) {
                 char type_str[128];
@@ -735,7 +754,10 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     bool returns_error = isErrorType(return_type);
 
     if (is_generic || (fn->name && unit.getGenericCatalogue().isFunctionGeneric(fn->name))) {
-        reportNonC89Feature(node->loc, "Generic functions are not supported in C89 mode.");
+        bool is_exception = (fn->name && plat_strcmp(fn->name, "print") == 0);
+        if (!is_exception) {
+            reportNonC89Feature(node->loc, "Generic functions are not supported in C89 mode.");
+        }
     }
 
     // Catalogue BEFORE rejection

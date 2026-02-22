@@ -205,6 +205,13 @@ public:
     void emitIf(const ASTIfStmtNode* node);
 
     /**
+     * @brief Emits an if expression lifted to a statement.
+     * @param node The if expression node.
+     * @param target_var The name of the variable to assign the result to (can be NULL).
+     */
+    void emitIfExpr(const ASTNode* node, const char* target_var);
+
+    /**
      * @brief Emits a while statement.
      * @param node The while statement node.
      */
@@ -263,6 +270,12 @@ public:
      * @param node The expression node.
      */
     void emitExpression(const ASTNode* node);
+
+    /**
+     * @brief Emits a special compiler-assisted lowering for std.debug.print.
+     * @param node The function call node.
+     */
+    void emitPrintCall(const ASTFunctionCallNode* node);
 
     /**
      * @brief Emits an @intCast intrinsic call.

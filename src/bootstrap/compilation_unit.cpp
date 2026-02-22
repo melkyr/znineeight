@@ -887,6 +887,11 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             collectImports(node->as.if_stmt->then_block, module);
             collectImports(node->as.if_stmt->else_block, module);
             break;
+        case NODE_IF_EXPR:
+            collectImports(node->as.if_expr->condition, module);
+            collectImports(node->as.if_expr->then_expr, module);
+            collectImports(node->as.if_expr->else_expr, module);
+            break;
         case NODE_WHILE_STMT:
             collectImports(node->as.while_stmt->condition, module);
             collectImports(node->as.while_stmt->body, module);
@@ -914,6 +919,15 @@ void CompilationUnit::collectImports(ASTNode* node, Module* module) {
             if (args) {
                 for (size_t i = 0; i < args->length(); ++i) {
                     collectImports((*args)[i], module);
+                }
+            }
+            break;
+        }
+        case NODE_TUPLE_LITERAL: {
+            DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
+            if (elements) {
+                for (size_t i = 0; i < elements->length(); ++i) {
+                    collectImports((*elements)[i], module);
                 }
             }
             break;
