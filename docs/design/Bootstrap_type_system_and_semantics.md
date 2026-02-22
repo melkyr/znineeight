@@ -664,8 +664,8 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_ISIZE`      | `"int"`                | Size: 4, Align: 4              |
 | `TYPE_USIZE`      | `"unsigned int"`       | Size: 4, Align: 4              |
 | `TYPE_ENUM`       | `"typedef T"`          | Dependent on backing type.      |
-| `TYPE_ERROR_UNION` | No equivalent         | Internal; rejected by validator |
-| `TYPE_ERROR_SET`   | No equivalent         | Internal; rejected by validator |
+| `TYPE_ERROR_UNION` | `struct`              | Size/Align: calculated dynamically. |
+| `TYPE_ERROR_SET`   | `int`                 | Size: 4, Align: 4. |
 
 ### Bootstrap Type Compatibility Matrix
 
@@ -685,8 +685,8 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `[*]T` | ✓ | `T*` | Many-item pointer. (Supports indexing/arithmetic). |
 | `**T` | ✓ | `T**` | Multi-level pointers are supported. |
 | `[]T` | ✓ | `struct` | **Supported.** Represented as `{T* ptr, size_t len}`. |
-| `!T` | ✗ | - | **Rejected.** Error unions are rejected until Milestone 5 translation. |
-| `?T` | ✗ | - | **Rejected.** Optionals are rejected until Milestone 5 translation. |
+| `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
+| `?T` | ✗ | - | **Rejected.** Optionals are recognized but rejected. |
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |

@@ -55,7 +55,9 @@
  */
 #define ASSERT_EQ(expected, actual) \
     if ((expected) != (actual)) { \
-        printf("FAIL: Expected %s but got %s at %s:%d\n", #expected, #actual, __FILE__, __LINE__); \
+        char __buf[256]; \
+        sprintf(__buf, "FAIL: Expected %ld but got %ld at %s:%d\n", (long)(expected), (long)(actual), __FILE__, __LINE__); \
+        printf("%s", __buf); \
         return false; \
     }
 

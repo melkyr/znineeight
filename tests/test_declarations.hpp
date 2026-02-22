@@ -1107,5 +1107,8 @@ TEST_FUNC(ErrorHandling_CatchExpression);
 TEST_FUNC(ErrorHandling_NestedErrorUnion);
 TEST_FUNC(ErrorHandling_StructField);
 TEST_FUNC(ErrorHandling_C89Execution);
+TEST_FUNC(ErrorHandling_DuplicateTags);
+TEST_FUNC(ErrorHandling_SetMerging);
+TEST_FUNC(ErrorHandling_Layout);
 
 #endif // TEST_DECLARATIONS_HPP
