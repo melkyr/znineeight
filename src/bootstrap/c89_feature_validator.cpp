@@ -125,6 +125,21 @@ void C89FeatureValidator::visit(ASTNode* node) {
             visit(node->as.while_stmt->body);
             current_parent_ = prev_parent;
             break;
+        case NODE_IF_EXPR:
+            current_parent_ = node;
+            if (node->as.if_expr) {
+                visit(node->as.if_expr->condition);
+                visit(node->as.if_expr->then_expr);
+                visit(node->as.if_expr->else_expr);
+            }
+            current_parent_ = prev_parent;
+            break;
+        case NODE_RANGE:
+            current_parent_ = node;
+            visit(node->as.range.start);
+            visit(node->as.range.end);
+            current_parent_ = prev_parent;
+            break;
         case NODE_BREAK_STMT:
         case NODE_CONTINUE_STMT:
             // Allowed in standard C89
@@ -528,6 +543,8 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
+    reportNonC89Feature(node->loc, "orelse expressions are not supported in bootstrap compiler");
+
     ASTOrelseExprNode* orelse = node->as.orelse_expr;
     if (!orelse) return;
 

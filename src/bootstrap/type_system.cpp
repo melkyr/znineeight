@@ -194,8 +194,46 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred) {
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ERROR_UNION;
-    new_type->size = 8; // Placeholder: error union size is usually tag + payload
-    new_type->alignment = 4;
+
+    size_t int_size = 4;
+    size_t int_align = 4;
+
+    if (payload->kind == TYPE_VOID) {
+        // struct { int err; int is_error; }
+        new_type->alignment = int_align;
+        new_type->size = int_size * 2;
+    } else {
+        // struct { union { T payload; int err; } data; int is_error; }
+        size_t union_align = payload->alignment;
+        if (int_align > union_align) union_align = int_align;
+
+        size_t union_size = payload->size;
+        if (int_size > union_size) union_size = int_size;
+
+        // Pad union_size to its alignment if necessary (usually unions are already sized correctly)
+        if (union_size % union_align != 0) {
+            union_size += (union_align - (union_size % union_align));
+        }
+
+        size_t current_offset = union_size;
+        size_t struct_align = union_align;
+        if (int_align > struct_align) struct_align = int_align;
+
+        // Align for is_error (int)
+        if (current_offset % int_align != 0) {
+            current_offset += (int_align - (current_offset % int_align));
+        }
+        current_offset += int_size;
+
+        // Final struct padding
+        if (current_offset % struct_align != 0) {
+            current_offset += (struct_align - (current_offset % struct_align));
+        }
+
+        new_type->size = current_offset;
+        new_type->alignment = struct_align;
+    }
+
     new_type->as.error_union.payload = payload;
     new_type->as.error_union.error_set = error_set;
     new_type->as.error_union.is_inferred = is_inferred;
@@ -218,8 +256,8 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
 Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ERROR_SET;
-    new_type->size = 2; // Placeholder: error sets are typically 16-bit integers
-    new_type->alignment = 2;
+    new_type->size = 4; // Error sets map to int in C89
+    new_type->alignment = 4;
     new_type->as.error_set.name = name;
     new_type->as.error_set.tags = tags;
     new_type->as.error_set.is_anonymous = is_anonymous;

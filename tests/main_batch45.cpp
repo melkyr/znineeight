@@ -11,7 +11,10 @@ int main(int argc, char* argv[]) {
         test_ErrorHandling_CatchExpression,
         test_ErrorHandling_NestedErrorUnion,
         test_ErrorHandling_StructField,
-        test_ErrorHandling_C89Execution
+        test_ErrorHandling_C89Execution,
+        test_ErrorHandling_DuplicateTags,
+        test_ErrorHandling_SetMerging,
+        test_ErrorHandling_Layout
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

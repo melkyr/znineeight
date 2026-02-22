@@ -25,6 +25,7 @@
 #include "integration/end_to_end_hello.cpp"
 #include "integration/enum_tests.cpp"
 #include "integration/error_handling_tests.cpp"
+#include "integration/error_revision_tests.cpp"
 #include "integration/for_tests.cpp"
 #include "integration/function_call_tests.cpp"
 #include "integration/function_decl_tests.cpp"
