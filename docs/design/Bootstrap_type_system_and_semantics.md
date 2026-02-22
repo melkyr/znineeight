@@ -692,6 +692,8 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
 | `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (unlimited params). |
 | `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
+| `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
+| `error { ... }` | ✓ | `int` | **Supported.** Error sets map to integer error codes. |
 
 ### Supported Type Syntax Examples
 
@@ -750,10 +752,10 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 ### Error Handling Types
 | Zig Feature | C89 Equivalent | Status | Rejection Point |
 |-------------|----------------|--------|-----------------|
-| `!T` (error union) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `!T` (error union) | `struct` | SUPPORTED | - |
 | `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
-| `error { ... }` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `fn() !T` (error return) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `error { ... }` | `int` | SUPPORTED | - |
+| `fn() !T` (error return) | `struct` | SUPPORTED | - |
 | `try expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `catch expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `orelse expr` | No equivalent | REJECTED | `C89FeatureValidator` |

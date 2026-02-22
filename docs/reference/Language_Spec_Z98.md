@@ -46,6 +46,14 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
 - **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
 
+### 1.5 Error Handling Types
+- **Error Sets**: `const MyErrors = error { Foo, Bar };`
+- **Error Unions**: `!T` or `MyErrors!T`. Represented as a C struct containing a union for the payload and the error code.
+- **Error Literals**: `error.TagName`. Unqualified error values.
+- **Coercion**:
+  - A value of type `T` can be implicitly coerced to `!T` (success).
+  - An error literal can be implicitly coerced to any error union `!T`.
+
 ## 2. Memory Management (Arena Pattern)
 
 Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pattern simplifies memory management and ensures performance on legacy systems.
@@ -121,7 +129,6 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
-- **No Error Unions**: `!T` syntax is recognized but requires Milestone 5 translation (not available in bootstrap).
 - **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.

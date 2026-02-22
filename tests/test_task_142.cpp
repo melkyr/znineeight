@@ -40,6 +40,6 @@ TEST_FUNC(Task142_ErrorFunctionDetection) {
 
 TEST_FUNC(Task142_ErrorFunctionRejection) {
     const char* source = "fn open() !i32 { return 0; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }

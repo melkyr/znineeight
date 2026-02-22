@@ -27,9 +27,9 @@ TEST_FUNC(SignatureAnalysisNonC89Types) {
     analyzer.analyze(ast);
 
     // bad2 has !i32 which is TYPE_ERROR_UNION.
-    // TYPE_ERROR_UNION is rejected by SignatureAnalyzer.
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // TYPE_ERROR_UNION is now ALLOWED by SignatureAnalyzer.
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
+    ASSERT_EQ(0, analyzer.getInvalidSignatureCount());
     return true;
 }
 
@@ -54,9 +54,9 @@ TEST_FUNC(SignatureAnalysisReturnTypeRejection) {
     SignatureAnalyzer analyzer(unit);
     analyzer.analyze(ast);
 
-    // badRet has !i32 return type, should be rejected.
-    ASSERT_TRUE(analyzer.hasInvalidSignatures());
-    ASSERT_EQ(1, analyzer.getInvalidSignatureCount());
+    // badRet has !i32 return type, should be accepted.
+    ASSERT_FALSE(analyzer.hasInvalidSignatures());
+    ASSERT_EQ(0, analyzer.getInvalidSignatureCount());
     return true;
 }
 

@@ -57,7 +57,7 @@ TEST_FUNC(DeferIntegration_Return) {
         "    defer x = 20;\n"
         "    return x;\n"
         "}";
-    return run_defer_test(source, "foo", "int foo(void) { int x = 10; { int __return_val = x; x = 20; return __return_val; } }");
+    return run_defer_test(source, "foo", "int foo(void) { int x = 10; { int __return_val; __return_val = x; x = 20; return __return_val; } }");
 }
 
 TEST_FUNC(DeferIntegration_NestedScopes) {
@@ -152,7 +152,7 @@ TEST_FUNC(DeferIntegration_NestedReturn) {
         "fn b() void {}";
     // Should emit both b() and a() before returning.
     // The exact brace nesting depends on the emitter's implementation of early exits.
-    return run_defer_test(source, "foo", "int foo(void) { { { int __return_val = 42; b(); a(); return __return_val; } } }");
+    return run_defer_test(source, "foo", "int foo(void) { { { int __return_val; __return_val = 42; b(); a(); return __return_val; } } }");
 }
 
 TEST_FUNC(DeferIntegration_RejectBreak) {

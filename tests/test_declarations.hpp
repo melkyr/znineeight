@@ -1097,4 +1097,15 @@ TEST_FUNC(Task225_2_BracelessIfExpr);
 TEST_FUNC(Task225_2_PrintLowering);
 TEST_FUNC(Task225_2_SwitchIfExpr);
 
+// Task 226: Error Unions and Error Sets
+TEST_FUNC(ErrorHandling_ErrorSetDefinition);
+TEST_FUNC(ErrorHandling_ErrorLiteral);
+TEST_FUNC(ErrorHandling_SuccessWrapping);
+TEST_FUNC(ErrorHandling_VoidPayload);
+TEST_FUNC(ErrorHandling_TryExpression);
+TEST_FUNC(ErrorHandling_CatchExpression);
+TEST_FUNC(ErrorHandling_NestedErrorUnion);
+TEST_FUNC(ErrorHandling_StructField);
+TEST_FUNC(ErrorHandling_C89Execution);
+
 #endif // TEST_DECLARATIONS_HPP

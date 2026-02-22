@@ -56,12 +56,14 @@ TEST_FUNC(BootstrapTypes_Allowed_Enums) {
 // --- Negative Tests: Rejected Types ---
 
 TEST_FUNC(BootstrapTypes_Rejected_Slice) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: []u8 = 0;"));
+    // Slices are now allowed
+    ASSERT_TRUE(run_type_checker_test_successfully("const arr: [5]u8 = undefined; var x: []u8 = arr[0..5];"));
     return true;
 }
 
 TEST_FUNC(BootstrapTypes_Rejected_ErrorUnion) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: !i32 = 0;"));
+    // Error unions are now allowed
+    ASSERT_TRUE(run_type_checker_test_successfully("var x: !i32 = 0;"));
     return true;
 }
 

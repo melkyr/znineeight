@@ -34,6 +34,7 @@ public:
     Type* visitFloatLiteral(ASTNode* parent, ASTFloatLiteralNode* node);
     Type* visitCharLiteral(ASTNode* parent, ASTCharLiteralNode* node);
     Type* visitStringLiteral(ASTNode* parent, ASTStringLiteralNode* node);
+    Type* visitErrorLiteral(ASTErrorLiteralNode* node);
     Type* visitIdentifier(ASTNode* node);
     Type* visitBlockStmt(ASTBlockStmtNode* node);
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);

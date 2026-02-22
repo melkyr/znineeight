@@ -20,9 +20,7 @@ int main(int argc, char* argv[]) {
         test_ForIntegration_Basic,
         test_ForIntegration_Scoping,
         test_DeferIntegration_Basic,
-        test_RejectionIntegration_ErrorUnion,
-        test_RejectionIntegration_Optional,
-        test_RejectionIntegration_TryExpression
+        test_RejectionIntegration_Optional
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

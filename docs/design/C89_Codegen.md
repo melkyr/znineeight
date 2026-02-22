@@ -228,6 +228,57 @@ To simplify code generation and avoid complex C declaration syntax (e.g., `int* 
 
 This is safe because the Zig compiler frontend already enforces const-correctness during semantic analysis. The generated C code serves only as an intermediate representation where these qualifiers are not required for correctness.
 
+### 4.10 Error Handling Support
+Error handling in the bootstrap compiler is implemented using a C89-compatible structure and a global error registry.
+
+#### Error Tag Registry
+All unique error tags encountered across all modules (in definitions or literals) are registered in a global registry and assigned unique positive integers starting from 1. The value 0 is reserved for "success". These are emitted as `#define` constants in the prologue of each generated C file.
+
+```c
+/* Error tags */
+#define ERROR_FileNotFound 1
+#define ERROR_OutOfMemory 2
+```
+
+#### Error Union Types (!T)
+Error unions are represented as C `struct`s containing a `union` for the payload and the error code, plus a boolean flag.
+
+- **Naming**: Error union structs are named using a mangling scheme: `ErrorUnion_` + mangled payload type (e.g., `ErrorUnion_i32`).
+- **Structure**:
+```c
+typedef struct {
+    union {
+        T payload;   /* Valid if is_error is 0 */
+        int err;     /* Valid if is_error is 1 */
+    } data;
+    int is_error;    /* 0 = success, 1 = error */
+} ErrorUnion_T;
+```
+
+For `void` payloads, the `union` is omitted to simplify the structure:
+```c
+typedef struct {
+    int err;
+    int is_error;
+} ErrorUnion_void;
+```
+
+#### Implicit Wrapping
+When a value of type `T` is assigned to an error union `!T` (including variable initializers and returns), the emitter generates code to wrap it as a success value:
+```c
+target.data.payload = value;
+target.is_error = 0;
+```
+
+When an error literal `error.Tag` is assigned to an error union, it is wrapped as an error using the registered tag ID:
+```c
+target.data.err = ERROR_Tag;
+target.is_error = 1;
+```
+
+#### Return Statements
+Returning from a function that returns an error union performs implicit wrapping if the returned expression is not already an error union. This is implemented by using a temporary variable `__return_val` and then returning it.
+
 ## 5. Master STU File & Build System
 
 To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.

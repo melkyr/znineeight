@@ -24,6 +24,7 @@
  * parsed and typed, and can be mapped to valid C89 syntax.
  */
 class MockC89Emitter {
+public:
     const CallSiteLookupTable* call_table_;
     SymbolTable* symbol_table_;
 
@@ -33,10 +34,13 @@ class MockC89Emitter {
     };
     std::vector<MockDeferScope> defer_stack_;
     Type* current_fn_ret_type_;
+    int try_expr_counter_;
+    int catch_expr_counter_;
 
 public:
     MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
-        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL) {}
+        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL),
+          try_expr_counter_(0), catch_expr_counter_(0) {}
 
     /**
      * @brief Emits a C89 variable declaration.
@@ -60,7 +64,24 @@ public:
         }
 
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
-            ss << " = " << emitExpression(decl->initializer);
+            Type* src_type = decl->initializer->resolved_type;
+            if (type && type->kind == TYPE_ERROR_UNION && src_type && src_type->kind != TYPE_ERROR_UNION) {
+                // Mock wrapping
+                if (src_type->kind == TYPE_ERROR_SET) {
+                    ss << "; " << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+                    if (type->as.error_union.payload->kind != TYPE_VOID) ss << ".data.err = "; else ss << ".err = ";
+                    ss << emitExpression(decl->initializer) << "; ";
+                    ss << (symbol->mangled_name ? symbol->mangled_name : decl->name) << ".is_error = 1";
+                } else {
+                    ss << "; ";
+                    if (type->as.error_union.payload->kind != TYPE_VOID) {
+                        ss << (symbol->mangled_name ? symbol->mangled_name : decl->name) << ".data.payload = " << emitExpression(decl->initializer) << "; ";
+                    }
+                    ss << (symbol->mangled_name ? symbol->mangled_name : decl->name) << ".is_error = 0";
+                }
+            } else {
+                ss << " = " << emitExpression(decl->initializer);
+            }
         }
         ss << ";";
 
@@ -117,6 +138,12 @@ public:
                 return emitNumericCast(node);
             case NODE_DEFER_STMT:
                 return "/* defer " + emitExpression(node->as.defer_stmt.statement) + " */";
+            case NODE_TRY_EXPR:
+                return emitTryExpression(&node->as.try_expr);
+            case NODE_CATCH_EXPR:
+                return emitCatchExpression(node->as.catch_expr);
+            case NODE_ERROR_LITERAL:
+                return "ERROR_" + std::string(node->as.error_literal.tag_name);
             case NODE_SWITCH_EXPR:
                 return emitSwitchExpression(node->as.switch_expr);
             case NODE_BLOCK_STMT:
@@ -136,16 +163,38 @@ public:
             case NODE_RETURN_STMT: {
                 std::stringstream ss;
                 bool has_defers = false;
-                for (size_t i = 0; i < defer_stack_.size(); ++i) {
+                for (size_t i = 0; i < (size_t)defer_stack_.size(); ++i) {
                     if (!defer_stack_[i].defers.empty()) {
                         has_defers = true;
                         break;
                     }
                 }
-                if (has_defers) {
+
+                Type* source_type = (node->as.return_stmt.expression && node->as.return_stmt.expression->resolved_type) ?
+                                    node->as.return_stmt.expression->resolved_type : get_g_type_void();
+                bool needs_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
+                                       source_type && source_type->kind != TYPE_ERROR_UNION);
+
+                if (has_defers || needs_wrapping) {
                     ss << "{ ";
-                    if (node->as.return_stmt.expression && current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
-                        ss << getC89TypeName(current_fn_ret_type_) << " __return_val = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                    if (current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
+                        ss << getC89TypeName(current_fn_ret_type_) << " __return_val; ";
+                        if (needs_wrapping) {
+                            if (node->as.return_stmt.expression && source_type->kind == TYPE_ERROR_SET) {
+                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) ss << "__return_val.data.err = "; else ss << "__return_val.err = ";
+                                ss << emitExpression(node->as.return_stmt.expression) << "; __return_val.is_error = 1; ";
+                            } else if (node->as.return_stmt.expression) {
+                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
+                                    ss << "__return_val.data.payload = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                                }
+                                ss << "__return_val.is_error = 0; ";
+                            } else {
+                                // return; in a !void function
+                                ss << "__return_val.is_error = 0; ";
+                            }
+                        } else if (node->as.return_stmt.expression) {
+                            ss << "__return_val = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                        }
                         ss << emitDefersForScopeExit() << "return __return_val; ";
                     } else {
                         if (node->as.return_stmt.expression) ss << emitExpression(node->as.return_stmt.expression) << "; ";
@@ -162,8 +211,28 @@ public:
                 if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
                 return expr + ";";
             }
-            case NODE_ASSIGNMENT:
+            case NODE_ASSIGNMENT: {
+                Type* target_type = node->as.assignment->lvalue->resolved_type;
+                Type* source_type = node->as.assignment->rvalue->resolved_type;
+                if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
+                    std::string lval = emitExpression(node->as.assignment->lvalue);
+                    std::string rval = emitExpression(node->as.assignment->rvalue);
+                    if (source_type->kind == TYPE_ERROR_SET) {
+                        std::string res = lval;
+                        if (target_type->as.error_union.payload->kind != TYPE_VOID) res += ".data.err = "; else res += ".err = ";
+                        res += rval + "; " + lval + ".is_error = 1";
+                        return res;
+                    } else {
+                        std::string res = "";
+                        if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+                            res += lval + ".data.payload = " + rval + "; ";
+                        }
+                        res += lval + ".is_error = 0";
+                        return res;
+                    }
+                }
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
+            }
             case NODE_VAR_DECL: {
                 if (symbol_table_) {
                     Symbol* sym = symbol_table_->findInAnyScope(node->as.var_decl->name);
@@ -403,6 +472,16 @@ public:
     /**
      * @brief Emits a C89 function declaration (signature + body).
      */
+    std::string emitFnDecl(const ASTFnDeclNode* fn) {
+        if (!fn) return "/* NULL FN */";
+        // Need to find the symbol for this fn
+        Symbol* sym = NULL;
+        if (symbol_table_ && fn->name) {
+            sym = symbol_table_->lookup(fn->name);
+        }
+        return emitFunctionDeclaration(fn, sym);
+    }
+
     std::string emitFunctionDeclaration(const ASTFnDeclNode* fn, const Symbol* symbol) {
         std::stringstream ss;
         defer_stack_.clear();
@@ -413,7 +492,8 @@ public:
         } else {
             ss << emitExpression(fn->body);
         }
-        return ss.str();
+        last_output_ = ss.str();
+        return last_output_;
     }
 
     /**
@@ -621,6 +701,8 @@ private:
             case TYPE_NORETURN: return "noreturn";
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
+            case TYPE_ERROR_UNION: return "ErrorUnion_" + getMangledTypeName(type->as.error_union.payload);
+            case TYPE_ERROR_SET: return "ErrorSet";
             case TYPE_ARRAY: {
                 std::stringstream ss;
                 ss << "Arr_" << type->as.array.size << "_" << getMangledTypeName(type->as.array.element_type);
@@ -633,7 +715,7 @@ private:
     std::string getC89TypeName(Type* type) {
         if (!type) return "/* unknown type */";
 
-        if (type->kind == TYPE_SLICE) {
+        if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION) {
             return getMangledTypeName(type);
         }
 
@@ -666,6 +748,10 @@ private:
                 return "enum " + std::string(type->as.enum_details.name);
             }
             return "enum /* ... */";
+        }
+
+        if (type->kind == TYPE_ERROR_SET) {
+            return "int";
         }
 
         if (type->kind == TYPE_ARRAY) {
@@ -829,6 +915,34 @@ private:
         ss << "}";
         return ss.str();
     }
+
+    std::string emitTryExpression(const ASTTryExprNode* node) {
+        if (!node) return "/* INVALID TRY */";
+        std::stringstream ss;
+        ss << "{ " << getMangledTypeName(node->expression->resolved_type) << " __try_res_" << try_expr_counter_++ << " = " << emitExpression(node->expression) << "; ";
+        ss << "if (__try_res_" << (try_expr_counter_ - 1) << ".is_error) " << emitDefersForScopeExit() << "return __ret_err; ";
+        ss << "__ret = __try_res_" << (try_expr_counter_ - 1) << ".data.payload; }";
+        return ss.str();
+    }
+
+    std::string emitCatchExpression(const ASTCatchExprNode* node) {
+        if (!node) return "/* INVALID CATCH */";
+        std::stringstream ss;
+        ss << "{ " << getMangledTypeName(node->payload->resolved_type) << " __catch_res_" << catch_expr_counter_++ << " = " << emitExpression(node->payload) << "; ";
+        ss << "if (__catch_res_" << (catch_expr_counter_ - 1) << ".is_error) { ";
+        if (node->error_name) ss << "int " << node->error_name << " = __catch_res_" << (catch_expr_counter_ - 1) << ".data.err; ";
+        ss << "__ret = " << emitExpression(node->else_expr) << "; } ";
+        ss << "else { __ret = __catch_res_" << (catch_expr_counter_ - 1) << ".data.payload; } }";
+        return ss.str();
+    }
+
+public:
+    bool contains(const std::string& s) const {
+        return last_output_.find(s) != std::string::npos;
+    }
+
+    std::string last_output_;
+private:
 
     const char* unaryOpToString(TokenType op) {
         switch (op) {

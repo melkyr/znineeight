@@ -5,10 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef __cplusplus
 /* Boolean support for C89 */
 typedef int bool;
 #define true 1
 #define false 0
+#endif
 
 /* MSVC 6.0 specific hacks for 64-bit integers */
 #ifdef _MSC_VER

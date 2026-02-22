@@ -24,7 +24,7 @@ TEST_FUNC(C89Rejection_NestedTryInMemberAccess) {
         "const S = struct { f: i32 };\n"
         "fn getS() !S { return S { .f = 42 }; }\n"
         "fn main() void { var x = (try getS()).f; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 
@@ -33,7 +33,7 @@ TEST_FUNC(C89Rejection_NestedTryInStructInitializer) {
         "const S = struct { f: i32 };\n"
         "fn f() !i32 { return 42; }\n"
         "fn main() void { var s = S { .f = try f() }; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 
@@ -41,19 +41,19 @@ TEST_FUNC(C89Rejection_NestedTryInArrayAccess) {
     const char* source =
         "fn getArr() ![5]i32 { return undefined; }\n"
         "fn main() void { var x = (try getArr())[0]; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 
 TEST_FUNC(C89Rejection_TryExpression) {
-    const char* source = "fn f() !void {}\n fn main() void { try f(); }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    const char* source = "fn f() !void { return; }\n fn main() void { try f(); }";
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 
 TEST_FUNC(C89Rejection_CatchExpression) {
-    const char* source = "fn f() !void {}\n fn main() void { f() catch {}; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    const char* source = "fn f() !void { return; }\n fn main() void { f() catch {}; }";
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 

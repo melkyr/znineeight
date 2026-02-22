@@ -38,6 +38,7 @@ enum NodeType {
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
     NODE_STRING_LITERAL,  ///< A string literal (e.g., `"hello"`).
+    NODE_ERROR_LITERAL,   ///< An error literal (e.g., `error.FileNotFound`).
     NODE_IDENTIFIER,      ///< An identifier (e.g., a variable name `my_var`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
@@ -111,6 +112,7 @@ struct ASTIntegerLiteralNode;
 struct ASTFloatLiteralNode;
 struct ASTCharLiteralNode;
 struct ASTStringLiteralNode;
+struct ASTErrorLiteralNode;
 struct ASTIdentifierNode;
 struct ASTBlockStmtNode;
 struct ASTEmptyStmtNode;
@@ -307,6 +309,15 @@ struct ASTCharLiteralNode {
  */
 struct ASTStringLiteralNode {
     const char* value;
+};
+
+/**
+ * @struct ASTErrorLiteralNode
+ * @brief Represents an unqualified error literal (e.g., `error.FileNotFound`).
+ * @var ASTErrorLiteralNode::tag_name The name of the error tag (interned string).
+ */
+struct ASTErrorLiteralNode {
+    const char* tag_name;
 };
 
 /**
@@ -885,6 +896,7 @@ struct ASTNode {
         ASTFloatLiteralNode float_literal;
         ASTCharLiteralNode char_literal;
         ASTStringLiteralNode string_literal;
+        ASTErrorLiteralNode error_literal;
         ASTIdentifierNode identifier;
 
         // Statements

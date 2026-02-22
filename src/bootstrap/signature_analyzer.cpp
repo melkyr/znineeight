@@ -162,12 +162,10 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union return type not supported in bootstrap compiler", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set return type not supported in bootstrap compiler", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_OPTIONAL:
             error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
@@ -212,12 +210,10 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
             return true;
 
         case TYPE_ERROR_UNION:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error union type in parameter not supported in bootstrap compiler", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_ERROR_SET:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Error set type in parameter not supported in bootstrap compiler", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_OPTIONAL:
             error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
