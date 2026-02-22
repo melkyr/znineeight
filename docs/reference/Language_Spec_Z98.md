@@ -103,7 +103,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
-- `errdefer { ... }`: Recognized but not yet implemented in the bootstrap compiler. Schedules code to execute only when the scope exits with an error.
+- `errdefer statement`: Recognized but NOT supported in the C89 backend. Strictly rejected by the validator. Schedules code to execute only when the scope exits with an error.
 
 ### 3.2 Loop Control
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
@@ -129,7 +129,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
-- **No Optionals**: `?T` is recognized but strictly rejected in the bootstrap phase.
+- **No Optionals**: `?T` and `orelse` are recognized by the parser but strictly rejected by the validator in the bootstrap phase.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.

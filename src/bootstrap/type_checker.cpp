@@ -76,7 +76,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
         case NODE_UNION_DECL:       resolved_type = visitUnionDecl(node, node->as.union_decl); break;
         case NODE_ENUM_DECL:        resolved_type = visitEnumDecl(node->as.enum_decl); break;
-        case NODE_ERROR_SET_DEFINITION: resolved_type = visitErrorSetDefinition(node->as.error_set_decl); break;
+        case NODE_ERROR_SET_DEFINITION: resolved_type = visitErrorSetDefinition(node); break;
         case NODE_ERROR_SET_MERGE:  resolved_type = visitErrorSetMerge(node->as.error_set_merge); break;
         case NODE_TYPE_NAME:        resolved_type = visitTypeName(node, &node->as.type_name); break;
         case NODE_POINTER_TYPE:     resolved_type = visitPointerType(&node->as.pointer_type); break;
@@ -2532,22 +2532,66 @@ Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
     return createErrorUnionType(unit.getArena(), payload, error_set, node->error_set == NULL);
 }
 
-Type* TypeChecker::visitErrorSetDefinition(ASTErrorSetDefinitionNode* node) {
-    if (node->tags) {
-        for (size_t i = 0; i < node->tags->length(); ++i) {
-            unit.getGlobalErrorRegistry().getOrAddTag((*node->tags)[i]);
+Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
+    ASTErrorSetDefinitionNode* decl = node->as.error_set_decl;
+    if (decl->tags) {
+        for (size_t i = 0; i < decl->tags->length(); ++i) {
+            const char* tag = (*decl->tags)[i];
+            // Check for duplicates within this set
+            for (size_t j = 0; j < i; ++j) {
+                if (plat_strcmp((*decl->tags)[j], tag) == 0) {
+                    char msg[256];
+                    char* cur = msg;
+                    size_t rem = sizeof(msg);
+                    safe_append(cur, rem, "Duplicate error tag '");
+                    safe_append(cur, rem, tag);
+                    safe_append(cur, rem, "' in error set definition");
+                    unit.getErrorHandler().report(ERR_REDEFINITION, node->loc, msg, unit.getArena());
+                    break;
+                }
+            }
+            unit.getGlobalErrorRegistry().getOrAddTag(tag);
         }
     }
-    return createErrorSetType(unit.getArena(), node->name, node->tags, node->name == NULL);
+    return createErrorSetType(unit.getArena(), decl->name, decl->tags, decl->name == NULL);
 }
 
 Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
-    visit(node->left);
-    visit(node->right);
+    Type* left = visit(node->left);
+    Type* right = visit(node->right);
 
-    // For now, we just return an anonymous error set type.
-    // In a real compiler we'd merge the tags, but for rejection it's enough to know it's an error set.
-    return createErrorSetType(unit.getArena(), NULL, NULL, true);
+    if (!left || left->kind != TYPE_ERROR_SET || !right || right->kind != TYPE_ERROR_SET) {
+        return createErrorSetType(unit.getArena(), NULL, NULL, true);
+    }
+
+    // Merge tags
+    void* tags_mem = unit.getArena().alloc(sizeof(DynamicArray<const char*>));
+    if (!tags_mem) plat_abort();
+    DynamicArray<const char*>* merged_tags = new (tags_mem) DynamicArray<const char*>(unit.getArena());
+
+    if (left->as.error_set.tags) {
+        for (size_t i = 0; i < left->as.error_set.tags->length(); ++i) {
+            merged_tags->append((*left->as.error_set.tags)[i]);
+        }
+    }
+
+    if (right->as.error_set.tags) {
+        for (size_t i = 0; i < right->as.error_set.tags->length(); ++i) {
+            const char* tag = (*right->as.error_set.tags)[i];
+            bool found = false;
+            for (size_t j = 0; j < merged_tags->length(); ++j) {
+                if (plat_strcmp((*merged_tags)[j], tag) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                merged_tags->append(tag);
+            }
+        }
+    }
+
+    return createErrorSetType(unit.getArena(), NULL, merged_tags, true);
 }
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {

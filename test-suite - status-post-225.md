@@ -7,8 +7,8 @@ Status: **ALL PASSING** (after minor fixes)
 As of Task 225.2, several regressions and a segmentation fault were identified. These have been investigated and addressed to ensure a stable baseline.
 
 ## Test Batches Status
-Total Batches: 44
-- **Passing:** 44
+Total Batches: 45
+- **Passing:** 45
 - **Failing:** 0
 
 ### Key Investigations
@@ -38,3 +38,12 @@ All examples in the `examples/` directory have been verified.
 1. **`std.debug.print` Signature:** The move to a 2-argument `print` (matching Zig's signature) is a significant change. Documentation and all future examples must adhere to this.
 2. **Missing `return 0` in `main`:** The C89 backend currently emits `int main(int argc, char* argv[])` without an explicit `return 0;` at the end of the block. In C89, this results in an undefined exit code, which can cause CI/CD or batch scripts (like `run_all_examples.sh`) to fail even if the program logic was correct. **Recommendation:** Update the code generator to ensure `main` always returns 0.
 3. **AST Node Initialization:** The Batch 21 segfault highlights the danger of uninitialized memory in the AST. The fix has been applied to the parser, but developers should remain vigilant about other arena-allocated structures.
+
+## Task 226 Revision Status
+As of Task 226 revision:
+- Implemented correct size and alignment calculations for error unions and error sets.
+- Added duplicate error tag detection in `error { ... }` blocks.
+- Implemented robust error set merging (`E1 || E2`).
+- Modified `C89FeatureValidator` to strictly reject partially implemented features like `orelse`.
+- Updated documentation across all major `.md` files.
+- All 45 test batches are passing, including new tests for these features in Batch 45.

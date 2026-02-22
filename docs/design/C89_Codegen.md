@@ -254,14 +254,19 @@ typedef struct {
     int is_error;    /* 0 = success, 1 = error */
 } ErrorUnion_T;
 ```
-
-For `void` payloads, the `union` is omitted to simplify the structure:
+For `void` payloads, the `union` is omitted:
 ```c
 typedef struct {
     int err;
     int is_error;
 } ErrorUnion_void;
 ```
+Size and alignment are calculated to match a 32-bit target: `ErrorUnion_void` is 8 bytes with 4-byte alignment. `ErrorUnion_T` size depends on `T`.
+
+#### Error Set Types
+Error sets map to the C `int` type.
+- **Naming**: Mapped to `ErrorSet` in internal mangling, but used directly as `int` in most contexts.
+- **Error Codes**: Unique positive integers starting from 1 (0 is success). Emitted as `#define ERROR_Tag ID` constants.
 
 #### Implicit Wrapping
 When a value of type `T` is assigned to an error union `!T` (including variable initializers and returns), the emitter generates code to wrap it as a success value:
