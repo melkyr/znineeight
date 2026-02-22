@@ -5,6 +5,7 @@
 #include "error_handler.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include <new>
 
 
 // Helper to get the string representation of a binary operator token.
