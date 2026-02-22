@@ -20,8 +20,8 @@ TEST_FUNC(EndToEnd_HelloWorld) {
 
     const char* std_debug_source =
         "extern fn __bootstrap_print(s: *const u8) void;\n"
-        "pub fn print(msg: *const u8) void {\n"
-        "    __bootstrap_print(msg);\n"
+        "pub fn print(fmt: *const u8, args: anytype) void {\n"
+        "    __bootstrap_print(fmt);\n"
         "}\n";
 
     const char* std_source =
@@ -30,7 +30,7 @@ TEST_FUNC(EndToEnd_HelloWorld) {
     const char* greetings_source =
         "const std = @import(\"std.zig\");\n"
         "pub fn sayHello() void {\n"
-        "    std.debug.print(\"Hello, world!\\n\");\n"
+        "    std.debug.print(\"Hello, world!\\n\", .{});\n"
         "}\n";
 
     const char* main_source =

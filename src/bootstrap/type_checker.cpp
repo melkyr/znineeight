@@ -3294,7 +3294,8 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     bool is_explicit = false;
     for (size_t i = 0; i < node->args->length(); ++i) {
-        if (isTypeExpression((*node->args)[i], unit.getSymbolTable())) {
+        ASTNode* arg = (*node->args)[i];
+        if (isTypeExpression(arg, unit.getSymbolTable())) {
             is_explicit = true;
             break;
         }
@@ -3305,7 +3306,9 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     if (node->callee->type == NODE_IDENTIFIER) {
         callee_name = node->callee->as.identifier.name;
         Symbol* sym = node->callee->as.identifier.symbol;
-        if (!sym) sym = unit.getSymbolTable().lookup(callee_name);
+        if (!sym) {
+             sym = unit.getSymbolTable().lookup(callee_name);
+        }
         if (sym && sym->is_generic) {
             is_implicit = true;
         }
