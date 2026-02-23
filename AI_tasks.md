@@ -1499,6 +1499,242 @@ Key changes:
     - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation. Fixed bug in standalone optional assignments.
     - **Verification**: Created Batch 47 with 9 comprehensive integration tests covering the requested test matrix (null assignment, implicit wrapping, orelse fallbacks, if-captures, nested optionals, and optional structs). Verified all 47 batches pass.
 
+
+## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
+
+### Overview
+This milestone introduces a dedicated AST transformation pass that lifts all expression‑valued control‑flow constructs out of nested contexts, replacing them with temporary variables. The result is a simplified AST that the C89 code generator can emit directly. The work is broken into small, testable tasks that incrementally build the pass.
+
+---
+
+### Task 229. AST Cloning Utilities
+**Goal**: Implement a deep‑clone function for all AST node types.
+
+**Why**: To duplicate a node (with its transformed children) as the initializer of a temporary variable.
+
+**Pseudocode**:
+```cpp
+// In ast_utils.cpp
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
+    if (!node) return nullptr;
+    ASTNode* copy = (ASTNode*)arena->alloc(sizeof(ASTNode));
+    memcpy(copy, node, sizeof(ASTNode)); // shallow copy
+    // Then recursively clone children based on node type
+    switch (node->type) {
+        case NODE_IDENTIFIER:
+            // no children, just copy
+            break;
+        case NODE_BINARY_OP:
+            copy->as.binary_op->left = cloneASTNode(node->as.binary_op->left, arena);
+            copy->as.binary_op->right = cloneASTNode(node->as.binary_op->right, arena);
+            break;
+        // ... handle every node type that has children
+        // For out‑of‑line nodes, we need to allocate new struct and copy fields.
+        default:
+            // If we haven't implemented a case, assert or return copy (may be incomplete)
+            break;
+    }
+    return copy;
+}
+```
+- Start with a basic implementation and expand as needed.
+- Ensure that semantic info (resolved_type, symbol pointers) is shared, not duplicated.
+
+**Test**: Write unit tests that clone a simple expression and verify the copy is independent (modifying clone doesn't affect original).
+
+---
+
+### Task 230: Lifter Skeleton and Traversal
+**Goal**: Create `ControlFlowLifter` class with basic traversal and stack management.
+
+**Why**: To set up the infrastructure for visiting the AST and tracking context.
+
+**Pseudocode**:
+```cpp
+// ast_lifter.hpp
+class ControlFlowLifter {
+    ArenaAllocator* arena;
+    int tmp_counter;
+    Vector<ASTNode*> stmt_stack;   // stack of current statement ancestors
+    Vector<ASTBlockStmtNode*> block_stack; // stack of enclosing blocks
+public:
+    ControlFlowLifter(ArenaAllocator* arena);
+    void lift(CompilationUnit* unit); // iterate modules
+
+private:
+    void transformModule(Module* mod);
+    void transformNode(ASTNode* node, ASTNode* parent, int child_idx);
+    void pushStatement(ASTNode* stmt);
+    void popStatement();
+    void pushBlock(ASTBlockStmtNode* block);
+    void popBlock();
+};
+```
+- In `transformModule`, call `transformNode` on the module's AST root with parent=nullptr.
+- Implement `transformNode` initially as a stub that just recurses into children (for now, no lifting).
+- Maintain stacks: when entering a statement node, push it; when leaving, pop. For blocks, also push onto block stack.
+
+**Test**: Add a test that runs the lifter on a simple program and verifies that the stacks are correctly updated (e.g., by adding debug prints). No actual transformation yet.
+
+---
+
+### Task 231: Full Node Traversal
+**Goal**: Implement traversal for every AST node type, ensuring all expressions are visited.
+
+**Why**: To guarantee that we catch every control‑flow expression that might need lifting.
+
+**Pseudocode**: Extend `transformNode` with a `switch` over all `NodeType` values. For each node type:
+- If it has children (e.g., binary op has left/right), recursively call `transformNode` on each child with appropriate parent and child index.
+- For statement nodes, push onto `stmt_stack` before recursing and pop after.
+- For block nodes, also push onto `block_stack`.
+- For expression nodes that are control‑flow (`NODE_IF_EXPR`, etc.), after processing children, we will later decide to lift (to be added in next tasks). For now, just continue.
+
+**Test**: Run the lifter on a variety of ASTs (from existing tests) and ensure it doesn't crash. Use a debug build with assertions.
+
+---
+
+### Task 232: Lifting Decision Logic
+**Goal**: Implement `needsLifting` function that decides whether a control‑flow expression must be lifted based on its parent.
+
+**Why**: To identify which nodes are in unsafe positions (e.g., inside a binary operator) and need transformation.
+
+**Pseudocode**:
+```cpp
+bool needsLifting(ASTNode* node, ASTNode* parent, int child_idx) {
+    if (!parent) return false; // root
+    switch (parent->type) {
+        case NODE_EXPRESSION_STMT:
+        case NODE_VAR_DECL: // assuming child is initializer
+        case NODE_RETURN_STMT:
+        case NODE_ASSIGNMENT: // assuming child is RHS
+            return false;
+        default:
+            return true;
+    }
+}
+```
+- This function will be called after processing children, inside `transformNode` for each control‑flow expression node.
+- For now, we can just print a message when lifting is needed.
+
+**Test**: Write unit tests that feed various parent‑child relationships and verify the decision is correct.
+
+---
+
+### Task 233: Lifting for `if` Expressions
+**Goal**: Implement `liftNode` for `NODE_IF_EXPR` to create a temporary variable, insert its declaration, and replace the node.
+
+**Why**: To handle `if` expressions that appear in nested contexts.
+
+**Pseudocode** (inside `transformNode` for `NODE_IF_EXPR`):
+```cpp
+if (needsLifting(node, parent, child_idx)) {
+    liftIfExpr(node, parent, child_idx);
+}
+```
+
+Implementation of `liftIfExpr`:
+```cpp
+void liftIfExpr(ASTNode* node, ASTNode* parent, int child_idx) {
+    // 1. Generate unique name
+    char name[64];
+    snprintf(name, sizeof(name), "__tmp_if_%d", ++tmp_counter);
+    const char* interned = string_interner.intern(name);
+
+    // 2. Clone the node (children already transformed)
+    ASTNode* init = cloneASTNode(node, arena);
+
+    // 3. Create variable declaration
+    ASTVarDeclNode* var_decl = createVarDecl(interned, node->resolved_type, init, true);
+
+    // 4. Insert at top of current block
+    ASTBlockStmtNode* block = block_stack.back();
+    block->statements->insert(0, (ASTNode*)var_decl);
+
+    // 5. Create identifier
+    ASTIdentifierNode* ident = createIdentifier(interned);
+    ident->resolved_type = node->resolved_type;
+
+    // 6. Replace node in parent
+    replaceChild(parent, child_idx, (ASTNode*)ident);
+}
+```
+- Need helper `replaceChild` that knows how to set the appropriate field based on parent type and child index. We'll need a function that, given parent, child index, and new node, updates the correct pointer. This can be done by storing during traversal the exact field pointer. Simpler: we already have the child pointer via `parent->children[child_idx]` if we store all children in a uniform way? Not all nodes have a uniform child array. So we need a more precise method: during traversal, we can pass a pointer to the pointer that holds the child. That's why we had `ASTNode** parent_slot` earlier. We'll adopt that: `transformNode` receives `ASTNode** parent_slot` (the address of the pointer in the parent). Then replacement is simply `*parent_slot = new_node`. So we need to adjust the traversal to pass the slot. This is more precise and avoids needing child indices.
+
+Thus, we'll modify the traversal to pass `ASTNode** parent_slot`. Then `needsLifting` can use the parent node (obtained via dereferencing? Not directly, but we can store parent node separately). Actually, we can still pass both parent node and parent slot. We'll do that.
+
+**Test**: Add integration tests where `if` appears in various nested positions (e.g., inside function call argument). After lifting, the AST should have a new variable declaration and the original `if` replaced by an identifier. Verify with a test that dumps the AST (or use the existing code generator to see the emitted C).
+
+---
+
+### Task 234: Lifting for `switch` Expressions
+**Goal**: Implement lifting for `NODE_SWITCH_EXPR` similar to `if`.
+
+**Pseudocode**: Same pattern as for `if`, but using a different name prefix (`__tmp_switch_`).
+
+**Test**: Add tests for `switch` in nested contexts.
+
+---
+
+### Task 235: Lifting for `try` Expressions
+**Goal**: Implement lifting for `NODE_TRY_EXPR`.
+
+**Pseudocode**: Same pattern, using `__tmp_try_` prefix.
+
+**Test**: Add tests for `try` in nested contexts (e.g., `foo(try bar())`).
+
+---
+
+### Task 236: Lifting for `catch` and `orelse` Expressions
+**Goal**: Implement lifting for `NODE_CATCH_EXPR` and `NODE_ORELSE_EXPR`.
+
+**Pseudocode**: Same pattern, using `__tmp_catch_` and `__tmp_orelse_` prefixes.
+
+**Test**: Add tests for these constructs in nested contexts.
+
+---
+
+### Task 237: Integration and Codegen Updates
+**Goal**: Hook the lifter into the compilation pipeline and simplify the `C89Emitter`.
+
+**Why**: After lifting, the code generator no longer needs ad‑hoc lifting logic.
+
+**Steps**:
+1. In `CompilationUnit::performFullPipeline`, after type checking, call `ControlFlowLifter::lift(this)`.
+2. Update `C89Emitter`:
+   - Remove all `target_var` parameters from expression‑emitting functions? Actually, we still need them because expressions may appear as initializers (where we have a target variable) or as standalone statements (no target). We'll keep the parameter but now it's simpler: for an `if` expression that is the initializer of a variable, we will have a target (the variable name). For a standalone `if` expression (e.g., in an expression statement), we will have `target_var = NULL`, and we can emit the `if` as a statement that computes the value and discards it? But in Zig, an `if` expression used as a statement must have type `void`. So we can just emit the branches without assigning to a target. That's fine.
+   - Simplify each `emit*Expr` function: they no longer need to handle lifting; they can assume they are in a context where they can emit a block that assigns to `target_var` if non‑NULL. For example, `emitIfExpr` can emit:
+     ```c
+     if (condition) { target = then_val; } else { target = else_val; }
+     ```
+     or if `target_var` is NULL, just the branches without assignment.
+   - Remove any old lifting code (e.g., special cases for nested expressions).
+
+**Test**: Run existing integration tests that use control‑flow expressions; they should still pass. Also run the new lifting tests.
+
+---
+
+### Task 238: Testing and Documentation
+**Goal**: Add comprehensive tests for all lifting scenarios and update documentation.
+
+**Steps**:
+1. Create `tests/integration/lifting_tests.cpp` covering:
+   - `try` inside function argument.
+   - `catch` inside binary operator.
+   - `if` inside array index.
+   - `switch` inside return.
+   - Nested combinations.
+   - Interaction with `defer` (ensure deferred code runs on error paths).
+2. Update `C89_Codegen.md` to describe the new unified lifting pass and remove old sections.
+3. Update `AST_Parser.md` to note that after type checking, a lifting pass may modify the AST.
+4. Update `DESIGN.md` to mention Milestone 8.
+5. Optionally create `docs/design/UnifiedLifting.md` with detailed design.
+
+**Test**: Ensure all tests pass and the documentation is accurate.
+
+---
+
+
+
 ## Phase 1: The Cross-Compiler (Zig)
 223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.
 224. **Task 224:** Use the C++ bootstrap compiler (`zig0.exe`) to compile the new Zig compiler (`zig1.exe`).
