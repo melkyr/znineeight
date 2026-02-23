@@ -278,6 +278,15 @@ When instructing the AI agent, provide a structured prompt that includes:
 
 ## Implementation Guidelines
 
+### Recent Lessons from JSON Parser "Baptism of Fire"
+
+1.  **Recursive Types**: The `TypeChecker` currently struggles with mutually recursive types (e.g., `Type A` containing a slice of `Type B`, and `Type B` containing `Type A`). This can lead to infinite recursion.
+    -   *Guideline*: Always implement a recursion depth check or use a placeholder strategy when resolving complex types.
+2.  **Cross-Module Symbol Resolution**: Accessing members like enums or structs from imported modules (e.g., `mod.Enum.Member`) requires careful handling in `visitMemberAccess`. Ensure the target module's symbols are fully resolved before lookup.
+3.  **Union Layouts**: Bare unions are preferred for bootstrap. Explicitly calculate union layouts (max size, max alignment) to ensure C89 compatibility.
+4.  **Optional Types**: Be cautious when using optional types of pointers or structs across modules. Ensure the `TypeInterner` is used to deduplicate these types and prevent inconsistent type pointers.
+5.  **Z98 Compatibility**: Avoid Zig features that are not yet fully lowered to C89 in the bootstrap phase, such as tagged union captures in `switch` and complex `inline` logic.
+
 ### For New Features
 1. **Memory Estimate First**: Calculate expected memory impact before coding.
 2. **Phase Placement**: Place features in appropriate compilation phase.

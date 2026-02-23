@@ -1,0 +1,11 @@
+{
+  "name": "RetroZig",
+  "version": 0.1,
+  "is_awesome": true,
+  "tags": ["compiler", "c89", "retro"],
+  "meta": {
+    "target": "Windows 98",
+    "year": 1998
+  },
+  "null_val": null
+}

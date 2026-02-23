@@ -328,7 +328,7 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 
 ### Known Limitations
 
-- **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
+- **Recursive and Mutually Recursive Types**: The bootstrap compiler does not currently support recursive or mutually recursive types (e.g., `const Node = struct { next: *Node };` or `const A = struct { b: B }; const B = struct { a: A };`). Attempting to use such types currently causes infinite recursion and a segmentation fault in the `TypeChecker`. A "placeholder" strategy is required to break these cycles during type resolution.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
