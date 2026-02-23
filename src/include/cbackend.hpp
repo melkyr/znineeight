@@ -69,9 +69,9 @@ private:
     bool generateMakefile(const char* output_dir);
 
     /**
-     * @brief Scans an AST node for slice types and ensures they are buffered in the emitter.
+     * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
      */
-    void scanForSlices(ASTNode* node, C89Emitter& emitter);
+    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter);
 
     CompilationUnit& unit_;
     const char* entry_filename_;

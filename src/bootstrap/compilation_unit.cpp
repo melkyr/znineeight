@@ -1142,30 +1142,11 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 bool CompilationUnit::areErrorTypesEliminated() const {
     if (!validation_completed_) return false;
 
-    // Conceptual elimination: they are eliminated from final C89 output via rejection.
-    // If validation passed (c89_validation_passed_ is true), then NO error types should be present.
-    // If validation failed, it means error types were detected and rejected.
-    if (c89_validation_passed_) {
-        if (default_error_function_catalogue_.count() > 0 ||
-            default_error_set_catalogue_.count() > 0 ||
-            default_try_expression_catalogue_.count() > 0 ||
-            default_catch_expression_catalogue_.count() > 0 ||
-            default_orelse_expression_catalogue_.count() > 0) {
-            return false;
-        }
+    // In the bootstrap phase, "eliminated" means that any used error handling
+    // features have passed the C89 validator and are ready for lowering.
+    // As of Task 227, error unions, error sets, try, and catch are fully
+    // supported by the backend, so their presence in catalogues is allowed
+    // and expected when the pipeline passes.
 
-        for (size_t i = 0; i < modules_.length(); ++i) {
-            Module* m = modules_[i];
-            if (m->error_function_catalogue.count() > 0 ||
-                m->error_set_catalogue.count() > 0 ||
-                m->try_expression_catalogue.count() > 0 ||
-                m->catch_expression_catalogue.count() > 0 ||
-                m->orelse_expression_catalogue.count() > 0) {
-                return false;
-            }
-        }
-    }
-
-    // Validation failed, which means the non-C89 error types were successfully rejected.
-    return true;
+    return c89_validation_passed_;
 }

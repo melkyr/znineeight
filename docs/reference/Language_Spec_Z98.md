@@ -113,6 +113,31 @@ Memory is reclaimed by resetting or destroying the arena.
 - **Loop Labels**: Loops can be labeled using `label: while ...` or `label: for ...`. Labels must be unique within their function.
 - **Validation**: Both `break` and `continue` (labeled or unlabeled) are strictly forbidden inside `defer` and `errdefer` blocks.
 
+### 3.3 Error Handling Expressions
+- `try expr`: Unwraps an error union. If `expr` is an error, it is returned from the current function. Otherwise, the payload is yielded.
+  - The enclosing function must return a compatible error union.
+  - Example:
+    ```zig
+    fn mightFail() !i32 { return error.Bad; }
+    fn callIt() !i32 {
+        const val = try mightFail();
+        return val + 1;
+    }
+    ```
+- `expr catch |err| fallback`: Handles an error from an error union.
+  - If `expr` is an error, the `err` variable is bound to the error code and `fallback` is evaluated.
+  - If `expr` is a success, the payload is yielded and `fallback` is NOT evaluated.
+  - The `|err|` capture is optional.
+  - The `fallback` can be any expression, including a block `{ ... }`.
+  - The result type of the `catch` expression is the payload type of `expr`. The `fallback` must yield a value of the same type or diverge (`return`, `break`, etc.).
+  - Example:
+    ```zig
+    const res = mightFail() catch |err| {
+        if (err == error.Bad) return 0;
+        return 1;
+    };
+    ```
+
 ## 4. Built-in Functions
 - `@import("file.zig")`: Includes another module.
 - `std.debug.print(fmt: []const u8, args: anytype)`: Lowered by the compiler to a sequence of runtime print calls. Decomposes `{}` in the format string. Supports tuple literals for `args`.

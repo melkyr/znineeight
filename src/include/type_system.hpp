@@ -161,6 +161,8 @@ public:
     Type* getArrayType(Type* element_type, u64 size);
     Type* getSliceType(Type* element_type, bool is_const);
     Type* getOptionalType(Type* payload);
+    Type* getErrorUnionType(Type* payload, Type* error_set, bool is_inferred);
+    Type* getErrorSetType(const char* name, DynamicArray<const char*>* tags, bool is_anonymous);
 
     size_t getUniqueCount() const { return unique_count; }
     size_t getDeduplicationCount() const { return dedupe_count; }
@@ -249,7 +251,7 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
  * @param is_inferred True if the error set is inferred (!T).
  * @return A pointer to the newly allocated Type object.
  */
-Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred);
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new optional Type object from the arena.
@@ -267,7 +269,7 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
  * @param is_anonymous True if the error set is anonymous.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous);
+Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner = NULL);
 
 /**
  * @brief Calculates the layout (offsets, total size, alignment) of a struct type.

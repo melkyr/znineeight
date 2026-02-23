@@ -113,12 +113,36 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
-- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, it is lifted to a statement and the result is returned via a temporary.
+- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
 - **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
   - **Lifting Contexts**: Currently supported in direct assignments (`x = switch...`), variable initializers (`var x = switch...`), return statements (`return switch...`), and as expression statements.
   - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
   - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
   - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block.
+- **Try Expressions**: Unwraps an error union or propagates the error. Lifted to an `if` check on the `is_error` flag.
+  - **Defer Interaction**: When `try` detects an error, it performs an early return. The emitter ensures that all active `defer` statements in the current scope (and any outer scopes being exited) are executed in LIFO order before the `return` statement is emitted. This is verified by integration tests.
+  ```c
+  {
+      ErrorUnion_T __try_res = expr;
+      if (__try_res.is_error) {
+          /* emit defers */
+          return __try_res;
+      }
+      result = __try_res.data.payload;
+  }
+  ```
+- **Catch Expressions**: Handles errors from an error union. Lifted to an `if-else` statement.
+  ```c
+  {
+      ErrorUnion_T __catch_res = expr;
+      if (__catch_res.is_error) {
+          int err = __catch_res.data.err;
+          result = fallback_expr;
+      } else {
+          result = __catch_res.data.payload;
+      }
+  }
+  ```
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
