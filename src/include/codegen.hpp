@@ -235,6 +235,11 @@ public:
     void emitCatchExpr(const ASTNode* node, const char* target_var);
 
     /**
+     * @brief Emits an orelse expression lifted to a statement.
+     */
+    void emitOrelseExpr(const ASTNode* node, const char* target_var);
+
+    /**
      * @brief Emits a for loop statement.
      * @param node The for loop statement node.
      */
@@ -384,6 +389,12 @@ public:
     void ensureErrorUnionType(Type* type);
 
     /**
+     * @brief Ensures an optional type is defined.
+     * @param type The optional type.
+     */
+    void ensureOptionalType(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -404,6 +415,11 @@ private:
      * @brief Emits logic to wrap a value into an error union.
      */
     void emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
+
+    /**
+     * @brief Emits logic to wrap a value into an optional.
+     */
+    void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
 
     struct GlobalNameEntry {
         const char* zig_name;
@@ -429,6 +445,7 @@ private:
     DynamicArray<GlobalNameEntry> global_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
+    DynamicArray<const char*> emitted_optionals_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;

@@ -31,8 +31,8 @@ TEST_FUNC(Task151_ErrorTypeRejection) {
 TEST_FUNC(Task151_OptionalTypeRejection) {
     const char* source = "fn test_func(x: ?i32) void { _ = x; }";
 
-    // Should be rejected
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    // In bootstrap, Optional Types are now supported.
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
 
     return true;
 }

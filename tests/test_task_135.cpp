@@ -9,7 +9,7 @@ TEST_FUNC(C89Rejection_ErrorUnionType_FnReturn) {
 
 TEST_FUNC(C89Rejection_OptionalType_VarDecl) {
     const char* source = "var x: ?i32 = null;";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }
 

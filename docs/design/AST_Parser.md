@@ -246,7 +246,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | --------------------------- | ------------ | --------------- |
 | `ASTNode`                   | **32**       | -               |
 | `ASTBinaryOpNode`           | 12           | Pointer (4)     |
-| `ASTIfStmtNode`             | 12           | Pointer (4)     |
+| `ASTIfStmtNode`             | 20           | Pointer (4)     |
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
 | `ASTFnDeclNode`             | 16           | Pointer (4)     |
 | `ASTWhileStmtNode`          | 16           | Pointer (4)     |
@@ -269,7 +269,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
 | `ASTImportStmtNode`         | 4            | Pointer (4)     |
 | `ASTOrelseExprNode`         | 8            | Pointer (4)     |
-| `ASTIfExprNode`             | 12           | Pointer (4)     |
+| `ASTIfExprNode`             | 20           | Pointer (4)     |
 | `ASTTupleLiteralNode`       | 4            | Pointer (4)     |
 | `ASTCharLiteralNode`        | 1            | Inline          |
 | `ASTErrorLiteralNode`       | 4            | Inline          |
@@ -749,11 +749,15 @@ Represents an `if` statement with an optional `else` clause.
      * @var ASTIfStmtNode::condition The condition expression.
      * @var ASTIfStmtNode::then_block The statement block for the 'if' branch.
      * @var ASTIfStmtNode::else_block The statement block for the 'else' branch (can be NULL).
+     * @var ASTIfStmtNode::capture_name The optional name for if capture (|val|).
+     * @var ASTIfStmtNode::capture_sym The resolved symbol for the capture.
      */
     struct ASTIfStmtNode {
         ASTNode* condition;
         ASTNode* then_block;
         ASTNode* else_block; // Can be NULL
+        const char* capture_name;
+        Symbol* capture_sym;
     };
     ```
 
@@ -1717,12 +1721,12 @@ The parser recognizes `!` as an error union type operator:
 The parser recognizes `?` as an optional type operator:
 - Syntax: `?` payload_type
 - Example: `?i32`, `?*u8`
-- Rejected by C89FeatureValidator
+- Supported as of Milestone 7.
 
 ### Detection Strategy
 Both validators traverse type expressions recursively:
-1. C89FeatureValidator: Reports fatal errors
-2. TypeChecker: Logs locations for documentation
+1. C89FeatureValidator: Whitelists them.
+2. TypeChecker: Resolves them to `TYPE_OPTIONAL`.
 
 ## 25. Generic Function Detection (Tasks 156-160)
 

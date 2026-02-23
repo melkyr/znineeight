@@ -126,6 +126,10 @@ struct Type {
             DynamicArray<const char*>* tags;
             bool is_anonymous;
         } error_set;
+
+        struct {
+            Type* payload;
+        } optional;
     } as;
 };
 ```
@@ -205,6 +209,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `[*]T`                  | `*T`                   | ✗           | Cannot implicitly convert between many and single-item pointers.   |
 | `[]T`                   | `[]const T`            | ✓           | Safe to add `const`.                                               |
 | `[]const T`             | `[]T`                  | ✗           | Unsafe to remove `const`.                                          |
+| `T`                     | `?T`                   | ✓           | Implicit wrapping into optional.                                   |
+| `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
 
 
 ## 4. Semantic Analysis
@@ -686,7 +692,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `**T` | ✓ | `T**` | Multi-level pointers are supported. |
 | `[]T` | ✓ | `struct` | **Supported.** Represented as `{T* ptr, size_t len}`. |
 | `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
-| `?T` | ✗ | - | **Rejected.** Optionals are recognized but rejected. |
+| `?T` | ✓ | `struct` | **Supported.** Optional types map to C structs. |
 | `[N]T` | ✓ | `T[N]` | Sized arrays are supported. |
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
@@ -1380,7 +1386,7 @@ To maintain stability in test environments, child processes explicitly call `abo
 | Error Sets | SUPPORTED | Global Integer Registry | `#define` constants |
 | `try` | SUPPORTED | Expression Lifting | `if (res.is_error) return ...` |
 | `catch` | SUPPORTED | Expression Lifting | `if (res.is_error) fallback else payload` |
-| `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
+| `orelse` | SUPPORTED | Expression Lifting | `if (res.has_value) val else fallback` |
 | `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
 | Generics | Rejected | Template Specialization / Mangling | Mangled Functions |
 
@@ -1409,3 +1415,32 @@ The `catch` expression provides a fallback mechanism.
 
 ### 22.4 Comparisons
 - `ErrorSet` values can be compared using equality (`==`) and inequality (`!=`) with integers or other error codes. Ordering comparisons are not supported.
+
+## 23. Optional Types Extensions (Milestone 7)
+
+**Preamble:** Optional types (`?T`) are supported as part of the bootstrap language extension. They enable nullable values for both pointers and value types using a uniform struct representation.
+
+### 23.1 Optional Types (`?T`)
+Optional types represent a value that can either be a payload of type `T` or `null`. In C89, these are represented as structures with a mangled name `Optional_T`.
+
+- **Implicit Wrapping**: Assigning a value of type `T` to `?T` automatically wraps it as a present value.
+- **Null Assignment**: Assigning `null` to `?T` sets the `has_value` flag to 0.
+
+### 23.2 `orelse` Expression
+The `orelse` expression provides a fallback mechanism for optional types.
+- `expr orelse fallback`: If `expr` is `null`, `fallback` is evaluated and yielded.
+- **Lifting**: Like other control-flow expressions, `orelse` expressions are lifted to statement blocks when necessary to avoid double-evaluation.
+
+### 23.3 `if` with Optional Capture
+Zig supports unwrapping optionals using `if`:
+```zig
+if (optional_val) |val| {
+    // val is of type T
+} else {
+    // null case
+}
+```
+In the bootstrap compiler, this is implemented by:
+1.  Evaluating the condition once into a temporary variable.
+2.  Checking the `has_value` flag.
+3.  In the `then` block, declaring the capture variable and assigning the `value` field to it.

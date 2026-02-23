@@ -71,9 +71,11 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 
 ### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
+  - **Optional Capture**: If the condition is an optional type and uses the `|val|` capture, the emitter generates a temporary variable to hold the condition's result and an `if (tmp.has_value)` check. Inside the `then` block, it declares the capture variable and assigns `tmp.value` to it.
 - **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
   - **Lifting Contexts**: Supported in assignments, variable initializers, return statements, switch prongs, and as expression statements.
   - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
+  - **Optional Capture**: Supported similar to `if` statements.
 - **While Loops**:
   - **Unlabeled**: Mapped to C `while (cond) { ... }`.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
@@ -402,4 +404,54 @@ Generated C:
 ```
 
 ### Known Limitations
-Deeply nested `try` or `catch` expressions within complex binary operations or array indices may not be fully supported by the current lifting mechanism. A more robust second-pass lifter is planned for a future enhancement.
+Deeply nested `try`, `catch`, or `orelse` expressions within complex binary operations or array indices may not be fully supported by the current lifting mechanism. A more robust second-pass lifter is planned for a future enhancement.
+
+## 4.12 Optional Types Code Generation (Milestone 7)
+
+**Preamble:** Optional types (`?T`) are supported as part of the bootstrap language extension. They enable nullable values for both pointers and value types using a uniform struct representation.
+
+### Optional Representation
+Optional types are emitted as C structures. The name is mangled as `Optional_T`.
+
+```c
+typedef struct {
+    T value;         /* Valid if has_value is 1 */
+    int has_value;   /* 1 = has value, 0 = null */
+} Optional_T;
+```
+
+### Lifting Strategy
+Like other control-flow expressions, `orelse` is "lifted" into a statement block.
+
+#### `orelse` Expression
+Zig:
+```zig
+var x = opt orelse 0;
+```
+
+Generated C:
+```c
+{
+    Optional_i32 __orelse_res = opt;
+    if (__orelse_res.has_value) {
+        x = __orelse_res.value;
+    } else {
+        x = 0;
+    }
+}
+```
+
+### Implicit Wrapping
+When a value of type `T` is assigned to an optional `?T`, the emitter generates code to wrap it:
+```c
+target.value = value;
+target.has_value = 1;
+```
+
+When the `null` literal is assigned to an optional, it is wrapped as null:
+```c
+target.has_value = 0;
+```
+
+### Defer Interaction
+While `orelse` itself doesn't cause early returns (unlike `try`), the fallback expression (right side of `orelse`) can contain a `return` or `unreachable`. The emitter correctly handles these by executing any active `defer` statements before the `return` or emitting a panic for `unreachable`.

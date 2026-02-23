@@ -17,11 +17,12 @@ TEST_FUNC(RejectionIntegration_Optional) {
     TestCompilationUnit unit(arena, interner);
 
     u32 file_id = unit.addSource("test.zig", source);
-    if (unit.performTestPipeline(file_id)) {
-        printf("FAIL: Expected rejection of optional but pipeline succeeded\n");
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Expected success for optional but pipeline failed\n");
+        unit.getErrorHandler().printErrors();
         return false;
     }
 
-    return unit.hasErrorMatching("Optional types");
+    return true;
 }
 

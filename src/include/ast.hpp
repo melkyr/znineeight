@@ -396,6 +396,8 @@ struct ASTIfStmtNode {
     ASTNode* condition;
     ASTNode* then_block;
     ASTNode* else_block; // Can be NULL
+    const char* capture_name; // For optional/error unwrapping
+    Symbol* capture_sym;
 };
 
 /**
@@ -409,6 +411,8 @@ struct ASTIfExprNode {
     ASTNode* condition;
     ASTNode* then_expr;
     ASTNode* else_expr;
+    const char* capture_name; // For optional/error unwrapping
+    Symbol* capture_sym;
 };
 
 /**

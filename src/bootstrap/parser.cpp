@@ -1756,6 +1756,13 @@ ASTNode* Parser::parseIfStatement() {
     ASTNode* condition = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after if condition");
 
+    const char* capture_name = NULL;
+    if (match(TOKEN_PIPE)) {
+        Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier for if capture");
+        capture_name = id_token.value.identifier;
+        expect(TOKEN_PIPE, "Expected closing '|' after if capture");
+    }
+
     ASTNode* then_block = parseBlockStatement();
     ASTNode* else_block = NULL;
 
@@ -1774,6 +1781,8 @@ ASTNode* Parser::parseIfStatement() {
     if_stmt_node->condition = condition;
     if_stmt_node->then_block = then_block;
     if_stmt_node->else_block = else_block;
+    if_stmt_node->capture_name = capture_name;
+    if_stmt_node->capture_sym = NULL;
 
     ASTNode* node = createNodeAt(NODE_IF_STMT, if_token.location);
     node->as.if_stmt = if_stmt_node;
@@ -1792,6 +1801,13 @@ ASTNode* Parser::parseIfExpression() {
     ASTNode* condition = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after if condition");
 
+    const char* capture_name = NULL;
+    if (match(TOKEN_PIPE)) {
+        Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier for if capture");
+        capture_name = id_token.value.identifier;
+        expect(TOKEN_PIPE, "Expected closing '|' after if capture");
+    }
+
     ASTNode* then_expr = parseExpression();
     expect(TOKEN_ELSE, "If expressions must have an 'else' branch");
     ASTNode* else_expr = parseExpression();
@@ -1801,6 +1817,8 @@ ASTNode* Parser::parseIfExpression() {
     if_expr_data->condition = condition;
     if_expr_data->then_expr = then_expr;
     if_expr_data->else_expr = else_expr;
+    if_expr_data->capture_name = capture_name;
+    if_expr_data->capture_sym = NULL;
 
     ASTNode* node = createNodeAt(NODE_IF_EXPR, if_token.location);
     node->as.if_expr = if_expr_data;

@@ -1341,6 +1341,8 @@ Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
 
 Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
     Type* condition_type = visit(node->condition);
+    bool is_optional = (condition_type && condition_type->kind == TYPE_OPTIONAL);
+
     if (condition_type) {
         if (condition_type->kind == TYPE_VOID) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
@@ -1348,14 +1350,40 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
                                            unit.getArena());
         } else if (condition_type->kind != TYPE_BOOL &&
                    !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-                   condition_type->kind != TYPE_POINTER) {
+                   condition_type->kind != TYPE_POINTER &&
+                   condition_type->kind != TYPE_OPTIONAL) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           "if statement condition must be a bool, integer, or pointer",
+                                           "if statement condition must be a bool, integer, pointer, or optional",
                                            unit.getArena());
         }
     }
 
-    visit(node->then_block);
+    if (node->capture_name) {
+        if (!is_optional) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "Capture in 'if' requires an optional type condition",
+                                           unit.getArena());
+        }
+
+        unit.getSymbolTable().enterScope();
+        Type* unwrapped_type = is_optional ? condition_type->as.optional.payload : get_g_type_void();
+        Symbol sym_data = SymbolBuilder(unit.getArena())
+            .withName(node->capture_name)
+            .withType(unwrapped_type)
+            .ofType(SYMBOL_VARIABLE)
+            .atLocation(node->condition->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+            .build();
+        unit.getSymbolTable().insert(sym_data);
+        Symbol* sym = unit.getSymbolTable().lookupInCurrentScope(node->capture_name);
+        node->capture_sym = sym;
+
+        visit(node->then_block);
+        unit.getSymbolTable().exitScope();
+    } else {
+        visit(node->then_block);
+    }
+
     if (node->else_block) {
         visit(node->else_block);
     }
@@ -1364,19 +1392,46 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
 
 Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
     Type* condition_type = visit(node->condition);
+    bool is_optional = (condition_type && condition_type->kind == TYPE_OPTIONAL);
+
     if (condition_type) {
         if (condition_type->kind == TYPE_VOID) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
                                            "if expression condition cannot be void");
         } else if (condition_type->kind != TYPE_BOOL &&
                    !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-                   condition_type->kind != TYPE_POINTER) {
+                   condition_type->kind != TYPE_POINTER &&
+                   condition_type->kind != TYPE_OPTIONAL) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           "if expression condition must be a bool, integer, or pointer");
+                                           "if expression condition must be a bool, integer, pointer, or optional");
         }
     }
 
-    Type* then_type = visit(node->then_expr);
+    Type* then_type = NULL;
+    if (node->capture_name) {
+        if (!is_optional) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
+                                           "Capture in 'if' requires an optional type condition");
+        }
+
+        unit.getSymbolTable().enterScope();
+        Type* unwrapped_type = is_optional ? condition_type->as.optional.payload : get_g_type_void();
+        Symbol sym_data = SymbolBuilder(unit.getArena())
+            .withName(node->capture_name)
+            .withType(unwrapped_type)
+            .ofType(SYMBOL_VARIABLE)
+            .atLocation(node->condition->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+            .build();
+        unit.getSymbolTable().insert(sym_data);
+        Symbol* sym = unit.getSymbolTable().lookupInCurrentScope(node->capture_name);
+        node->capture_sym = sym;
+
+        then_type = visit(node->then_expr);
+        unit.getSymbolTable().exitScope();
+    } else {
+        then_type = visit(node->then_expr);
+    }
     Type* else_type = visit(node->else_expr);
 
     if (!then_type || !else_type) return NULL;
@@ -2725,13 +2780,39 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
 }
 
 Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
-    /* Type* left_type = */ visit(node->payload);
-    visit(node->else_expr);
+    Type* left_type = visit(node->payload);
+    Type* right_type = visit(node->else_expr);
 
-    // If it's an optional type, result is the payload.
-    // For now, we return NULL as optionals are not fully supported,
-    // but if we had TYPE_OPTIONAL, we'd return its payload.
-    return NULL;
+    if (!left_type) return NULL;
+
+    if (left_type->kind != TYPE_OPTIONAL) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->payload->loc, "Left side of orelse must be an optional type", unit.getArena());
+        return NULL;
+    }
+
+    Type* payload_type = left_type->as.optional.payload;
+
+    if (right_type) {
+        if (right_type->kind == TYPE_NORETURN) {
+            return payload_type;
+        }
+
+        if (!IsTypeAssignableTo(right_type, payload_type, node->else_expr->loc)) {
+            char expected_buf[128], actual_buf[128];
+            typeToString(payload_type, expected_buf, sizeof(expected_buf));
+            typeToString(right_type, actual_buf, sizeof(actual_buf));
+
+            char msg[256];
+            plat_strcpy(msg, "Expected type '");
+            plat_strcat(msg, expected_buf);
+            plat_strcat(msg, "' for orelse fallback, found '");
+            plat_strcat(msg, actual_buf);
+            plat_strcat(msg, "'");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->else_expr->loc, msg, unit.getArena());
+        }
+    }
+
+    return payload_type;
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
@@ -2847,8 +2928,8 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return true;
     }
 
-    // Handle null assignment to any pointer or function pointer
-    if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER)) {
+    // Handle null assignment to any pointer, function pointer, or optional
+    if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER || expected->kind == TYPE_OPTIONAL)) {
         return true;
     }
 
@@ -2860,6 +2941,14 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     // Array to Slice coercion
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
         return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
+    }
+
+    // Optional types coercions
+    if (expected->kind == TYPE_OPTIONAL) {
+        // T -> ?T (implicit wrapping)
+        if (areTypesCompatible(expected->as.optional.payload, actual)) {
+            return true;
+        }
     }
 
     // Error Handling coercions
@@ -3305,7 +3394,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Null literal handling
     if (source_type->kind == TYPE_NULL) {
-        return (target_type->kind == TYPE_POINTER || target_type->kind == TYPE_FUNCTION_POINTER);
+        return (target_type->kind == TYPE_POINTER || target_type->kind == TYPE_FUNCTION_POINTER || target_type->kind == TYPE_OPTIONAL);
     }
 
     // Exact match always works
@@ -3313,6 +3402,14 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // anytype target (like special discard '_') accepts anything
     if (target_type->kind == TYPE_ANYTYPE) return true;
+
+    // Optional types assignment
+    if (target_type->kind == TYPE_OPTIONAL) {
+        // T -> ?T (implicit wrapping)
+        if (IsTypeAssignableTo(source_type, target_type->as.optional.payload, loc)) {
+            return true;
+        }
+    }
 
     // Error Union assignment
     if (target_type->kind == TYPE_ERROR_UNION) {
