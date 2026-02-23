@@ -90,6 +90,8 @@ Type* resolvePrimitiveTypeName(const char* name) {
     return NULL; // Not a known primitive type
 }
 
+void calculateUnionLayout(Type* union_type);
+void calculateStructLayout(Type* struct_type);
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
     if (interner) {
@@ -166,27 +168,20 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
 
 Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
     Type* new_type = allocateType(arena);
+    if (!new_type) {
+        plat_abort();
+    }
     new_type->kind = TYPE_UNION;
-    new_type->size = 0; // Should be max field size
-    new_type->alignment = 1; // Should be max field alignment
+    new_type->size = 0; // Should be max field size, calculated by calculateUnionLayout
+    new_type->alignment = 1; // Should be max field alignment, calculated by calculateUnionLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
 
-    // Calculate union size and alignment
-    size_t max_size = 0;
-    size_t max_align = 1;
-    for (size_t i = 0; i < fields->length(); ++i) {
-        StructField& field = (*fields)[i];
-        if (field.type->size > max_size) max_size = field.type->size;
-        if (field.type->alignment > max_align) max_align = field.type->alignment;
-        field.offset = 0; // All union fields are at offset 0
+    // If fields are provided, calculate layout now.
+    // If fields are NULL (e.g. during recursive resolution), layout must be called later.
+    if (fields) {
+        calculateUnionLayout(new_type);
     }
-    // Pad total size to max_align
-    if (max_size % max_align != 0) {
-        max_size += (max_align - (max_size % max_align));
-    }
-    new_type->size = max_size;
-    new_type->alignment = max_align;
 
     return new_type;
 }
@@ -301,7 +296,43 @@ Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<c
     return new_type;
 }
 
+void calculateUnionLayout(Type* union_type) {
+    if (union_type->kind != TYPE_UNION) return;
+
+    DynamicArray<StructField>* fields = union_type->as.struct_details.fields;
+    if (!fields) return;
+
+    size_t max_size = 0;
+    size_t max_alignment = 1;
+
+    for (size_t i = 0; i < fields->length(); ++i) {
+        StructField& field = (*fields)[i];
+        size_t field_size = field.type->size;
+        size_t field_alignment = field.type->alignment;
+        if (field_alignment == 0) field_alignment = 1;
+
+        field.offset = 0;
+        field.size = field_size;
+        field.alignment = field_alignment;
+
+        if (field_size > max_size) max_size = field_size;
+        if (field_alignment > max_alignment) max_alignment = field_alignment;
+    }
+
+    // Align size to union alignment
+    if (max_size % max_alignment != 0) {
+        max_size += (max_alignment - (max_size % max_alignment));
+    }
+
+    union_type->size = max_size;
+    union_type->alignment = max_alignment;
+}
+
 void calculateStructLayout(Type* struct_type) {
+    if (struct_type->kind == TYPE_UNION) {
+        calculateUnionLayout(struct_type);
+        return;
+    }
     if (struct_type->kind != TYPE_STRUCT) return;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
@@ -367,7 +398,7 @@ u32 TypeInterner::hashType(TypeKind kind, void* p1, u64 v1) {
 }
 
 Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many) {
-    u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const | ((u64)is_many << 8));
+    u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const | ((u64)is_many << 8)) % 256;
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_POINTER &&
             e->type->as.pointer.base == base_type &&
@@ -388,7 +419,7 @@ Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many)
 }
 
 Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_inferred) {
-    u32 h = hashType(TYPE_ERROR_UNION, payload, (u64)((size_t)error_set ^ (is_inferred ? 1 : 0)));
+    u32 h = hashType(TYPE_ERROR_UNION, payload, (u64)((size_t)error_set) | ((u64)is_inferred << 1)) % 256;
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_ERROR_UNION &&
             e->type->as.error_union.payload == payload &&
@@ -436,7 +467,7 @@ Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>*
 }
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
-    u32 h = hashType(TYPE_ARRAY, element_type, size);
+    u32 h = hashType(TYPE_ARRAY, element_type, size) % 256;
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_ARRAY &&
             e->type->as.array.element_type == element_type &&
@@ -456,7 +487,7 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
 }
 
 Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
-    u32 h = hashType(TYPE_SLICE, element_type, is_const ? 1 : 0);
+    u32 h = hashType(TYPE_SLICE, element_type, (u64)is_const) % 256;
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_SLICE &&
             e->type->as.slice.element_type == element_type &&
@@ -476,7 +507,7 @@ Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
 }
 
 Type* TypeInterner::getOptionalType(Type* payload) {
-    u32 h = hashType(TYPE_OPTIONAL, payload, 0);
+    u32 h = hashType(TYPE_OPTIONAL, payload, 0) % 256;
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_OPTIONAL &&
             e->type->as.optional.payload == payload) {
