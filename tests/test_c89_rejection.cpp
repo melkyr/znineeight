@@ -58,7 +58,7 @@ TEST_FUNC(C89Rejection_CatchExpression) {
 }
 
 TEST_FUNC(C89Rejection_OrelseExpression) {
-    const char* source = "fn f() ?*i32 { return null; }\n fn main() void { f() orelse null; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    const char* source = "fn f() ?*i32 { return null; }\n fn main() void { var x = f() orelse null; }";
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
     return true;
 }

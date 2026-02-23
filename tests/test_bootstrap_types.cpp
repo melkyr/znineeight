@@ -68,7 +68,8 @@ TEST_FUNC(BootstrapTypes_Rejected_ErrorUnion) {
 }
 
 TEST_FUNC(BootstrapTypes_Rejected_Optional) {
-    ASSERT_TRUE(expect_type_checker_abort("var x: ?i32 = null;"));
+    // Optional types are now allowed
+    ASSERT_TRUE(run_type_checker_test_successfully("var x: ?i32 = null;"));
     return true;
 }
 

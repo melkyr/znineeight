@@ -54,6 +54,13 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - A value of type `T` can be implicitly coerced to `!T` (success).
   - An error literal can be implicitly coerced to any error union `!T`.
 
+### 1.6 Optional Types
+- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag.
+- **Null Literal**: `null`.
+- **Coercion**:
+  - A value of type `T` can be implicitly coerced to `?T` (present).
+  - The `null` literal can be implicitly coerced to any optional type `?T`.
+
 ## 2. Memory Management (Arena Pattern)
 
 Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pattern simplifies memory management and ensures performance on legacy systems.
@@ -82,7 +89,9 @@ Memory is reclaimed by resetting or destroying the arena.
 
 ### 3.1 Statements
 - `if (cond) { ... } else { ... }`: Braces are **required** for standalone if statements.
+  - **Optional Capture**: `if (optional_val) |val| { ... }`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required. Must have an `else` branch. Result type is merged from both branches.
+  - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
 - `while (cond) { ... }`: Simple loop.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
@@ -104,6 +113,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
 - `errdefer statement`: Recognized but NOT supported in the C89 backend. Strictly rejected by the validator. Schedules code to execute only when the scope exits with an error.
+- `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block.
 
 ### 3.2 Loop Control
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.
@@ -154,7 +164,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
-- **No Optionals**: `?T` and `orelse` are recognized by the parser but strictly rejected by the validator in the bootstrap phase.
+- **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.

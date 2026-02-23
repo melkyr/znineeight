@@ -414,7 +414,7 @@ void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitOptionalType(ASTNode* node) {
-    reportNonC89Feature(node->loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.");
+    // Optional types are now supported as a language extension for bootstrap
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
     visit(node->as.optional_type->payload_type);
@@ -543,8 +543,7 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
 }
 
 void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
-    reportNonC89Feature(node->loc, "orelse expressions are not supported in bootstrap compiler");
-
+    // orelse expressions are now supported as a language extension for bootstrap
     ASTOrelseExprNode* orelse = node->as.orelse_expr;
     if (!orelse) return;
 

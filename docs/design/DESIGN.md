@@ -555,6 +555,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
+*   **Optional Types**: Supported as of Milestone 7. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
     *   `@sizeOf(T)` -> `usize` literal
@@ -575,7 +576,7 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
-*   **Error Handling**: Basic support for `!T`, `try`, and `catch`. `orelse` and `errdefer` remain rejected in the bootstrap phase.
+*   **Error Handling**: Basic support for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remain rejected in the bootstrap phase.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
 *   **No Struct Methods**: Functions cannot be declared inside a struct.

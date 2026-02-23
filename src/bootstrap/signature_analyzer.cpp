@@ -168,8 +168,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         case TYPE_OPTIONAL:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
-            return false;
+            return true;
 
         default:
             error_handler_.report(ERR_NON_C89_FEATURE, loc, "Non-C89 return type not supported", unit_.getArena());
@@ -216,8 +215,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
             return true;
 
         case TYPE_OPTIONAL:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Optional types (?T) are not supported in bootstrap compiler. Consider using a nullable pointer (*T) or separate boolean flag.", unit_.getArena());
-            return false;
+            return true;
 
         case TYPE_ANYTYPE:
             if (fn_name && plat_strcmp(fn_name, "print") == 0) {

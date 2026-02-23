@@ -9,7 +9,7 @@
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -19,7 +19,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -31,7 +31,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -252,6 +252,10 @@ void C89Emitter::emitBaseType(Type* type) {
             ensureErrorUnionType(type);
             writeString(getMangledTypeName(type));
             break;
+        case TYPE_OPTIONAL:
+            ensureOptionalType(type);
+            writeString(getMangledTypeName(type));
+            break;
         case TYPE_ERROR_SET:
             writeString("int");
             break;
@@ -429,6 +433,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
                 if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
                     emitErrorUnionWrapping(c_name, node, target_type, decl->initializer);
+                } else if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
+                    emitOptionalWrapping(c_name, node, target_type, decl->initializer);
                 } else if (decl->initializer->type == NODE_STRUCT_INITIALIZER) {
                     emitInitializerAssignments(c_name, decl->initializer);
                 } else if (decl->initializer->type == NODE_SWITCH_EXPR) {
@@ -439,6 +445,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                     emitTryExpr(decl->initializer, c_name);
                 } else if (decl->initializer->type == NODE_CATCH_EXPR) {
                     emitCatchExpr(decl->initializer, c_name);
+                } else if (decl->initializer->type == NODE_ORELSE_EXPR) {
+                    emitOrelseExpr(decl->initializer, c_name);
                 } else {
                     writeIndent();
                     writeString(c_name);
@@ -701,6 +709,8 @@ void C89Emitter::emitStatement(const ASTNode* node) {
                 emitTryExpr(expr, NULL);
             } else if (expr->type == NODE_CATCH_EXPR) {
                 emitCatchExpr(expr, NULL);
+            } else if (expr->type == NODE_ORELSE_EXPR) {
+                emitOrelseExpr(expr, NULL);
             } else if (expr->type == NODE_ASSIGNMENT) {
                 // Assignments might need lifting if rvalue is try/catch/if/switch
                 const ASTNode* rvalue = expr->as.assignment->rvalue;
@@ -721,6 +731,16 @@ void C89Emitter::emitStatement(const ASTNode* node) {
                         emitCatchExpr(rvalue, var_alloc_.allocate(lvalue->as.identifier.symbol));
                     } else if (lvalue->type == NODE_IDENTIFIER && plat_strcmp(lvalue->as.identifier.name, "_") == 0) {
                         emitCatchExpr(rvalue, NULL);
+                    } else {
+                        writeIndent();
+                        emitExpression(expr);
+                        writeString(";\n");
+                    }
+                } else if (rvalue->type == NODE_ORELSE_EXPR) {
+                    if (lvalue->type == NODE_IDENTIFIER && lvalue->as.identifier.symbol) {
+                        emitOrelseExpr(rvalue, var_alloc_.allocate(lvalue->as.identifier.symbol));
+                    } else if (lvalue->type == NODE_IDENTIFIER && plat_strcmp(lvalue->as.identifier.name, "_") == 0) {
+                        emitOrelseExpr(rvalue, NULL);
                     } else {
                         writeIndent();
                         emitExpression(expr);
@@ -845,28 +865,84 @@ void C89Emitter::emitStatement(const ASTNode* node) {
 void C89Emitter::emitIf(const ASTIfStmtNode* node) {
     if (!node) return;
 
-    writeIndent();
-    writeString("if (");
-    emitExpression(node->condition);
-    writeString(") ");
+    Type* cond_type = node->condition->resolved_type;
+    bool is_optional = (cond_type && cond_type->kind == TYPE_OPTIONAL);
 
-    if (node->then_block->type == NODE_BLOCK_STMT) {
-        emitBlock(&node->then_block->as.block_stmt);
-    } else {
-        emitStatement(node->then_block);
-    }
+    if (is_optional) {
+        writeIndent();
+        writeString("{\n");
+        indent();
+        const char* cond_tmp = var_alloc_.generate("opt_tmp");
+        writeIndent();
+        emitType(cond_type, cond_tmp);
+        writeString(" = ");
+        emitExpression(node->condition);
+        writeString(";\n");
 
-    if (node->else_block) {
-        writeString(" else ");
-        if (node->else_block->type == NODE_IF_STMT) {
-            emitIf(node->else_block->as.if_stmt);
-        } else if (node->else_block->type == NODE_BLOCK_STMT) {
-            emitBlock(&node->else_block->as.block_stmt);
-        } else {
-            emitStatement(node->else_block);
+        writeIndent();
+        writeString("if (");
+        writeString(cond_tmp);
+        writeString(".has_value) {\n");
+        indent();
+        if (node->capture_name && node->capture_sym) {
+            writeIndent();
+            const char* c_name = var_alloc_.allocate(node->capture_sym);
+            emitType(node->capture_sym->symbol_type, c_name);
+            writeString(" = ");
+            writeString(cond_tmp);
+            writeString(".value;\n");
         }
+        if (node->then_block->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->then_block->as.block_stmt);
+        } else {
+            emitStatement(node->then_block);
+        }
+        dedent();
+        writeIndent();
+        writeString("}");
+        if (node->else_block) {
+            writeString(" else {\n");
+            indent();
+            if (node->else_block->type == NODE_IF_STMT) {
+                emitIf(node->else_block->as.if_stmt);
+            } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->else_block->as.block_stmt);
+            } else {
+                emitStatement(node->else_block);
+            }
+            dedent();
+            writeIndent();
+            writeString("}\n");
+        } else {
+            writeString("\n");
+        }
+        dedent();
+        writeIndent();
+        writeString("}\n");
+    } else {
+        writeIndent();
+        writeString("if (");
+        emitExpression(node->condition);
+        writeString(") ");
+
+        if (node->then_block->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->then_block->as.block_stmt);
+        } else {
+            emitStatement(node->then_block);
+        }
+
+        if (node->else_block) {
+            writeString(" else ");
+            if (node->else_block->type == NODE_IF_STMT) {
+                emitIf(node->else_block->as.if_stmt);
+            } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->else_block->as.block_stmt);
+            } else {
+                emitStatement(node->else_block);
+            }
+        }
+        writeString("\n");
     }
-    writeString("\n");
 }
 
 void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
@@ -876,11 +952,44 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
         writeString("/* error: if expression components are NULL */");
         return;
     }
+
+    Type* cond_type = if_expr->condition->resolved_type;
+    bool is_optional = (cond_type && cond_type->kind == TYPE_OPTIONAL);
+
+    writeIndent();
+    writeString("{\n");
+    indent();
+
+    const char* cond_var = NULL;
+    if (is_optional) {
+        cond_var = var_alloc_.generate("opt_tmp");
+        writeIndent();
+        emitType(cond_type, cond_var);
+        writeString(" = ");
+        emitExpression(if_expr->condition);
+        writeString(";\n");
+    }
+
     writeIndent();
     writeString("if (");
-    emitExpression(if_expr->condition);
+    if (is_optional) {
+        writeString(cond_var);
+        writeString(".has_value");
+    } else {
+        emitExpression(if_expr->condition);
+    }
     writeString(") {\n");
     indent();
+
+    if (is_optional && if_expr->capture_name && if_expr->capture_sym) {
+        writeIndent();
+        const char* c_name = var_alloc_.allocate(if_expr->capture_sym);
+        emitType(if_expr->capture_sym->symbol_type, c_name);
+        writeString(" = ");
+        writeString(cond_var);
+        writeString(".value;\n");
+    }
+
     if (target_var && (!if_expr->then_expr->resolved_type || if_expr->then_expr->resolved_type->kind != TYPE_NORETURN)) {
         if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
             emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var);
@@ -913,6 +1022,9 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
     } else {
         emitStatement(if_expr->else_expr);
     }
+    dedent();
+    writeIndent();
+    writeString("}\n");
     dedent();
     writeIndent();
     writeString("}\n");
@@ -1456,6 +1568,74 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString("}\n");
 }
 
+void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var) {
+    if (!node || node->type != NODE_ORELSE_EXPR) return;
+    const ASTOrelseExprNode* orelse = node->as.orelse_expr;
+
+    Type* inner_type = orelse->payload->resolved_type;
+    const char* mangled_inner = getMangledTypeName(inner_type);
+
+    writeIndent();
+    writeString("{\n");
+    indent();
+
+    writeIndent();
+    writeString(mangled_inner);
+    writeString(" __orelse_res = ");
+    emitExpression(orelse->payload);
+    writeString(";\n");
+
+    writeIndent();
+    writeString("if (__orelse_res.has_value) {\n");
+    indent();
+    if (target_var) {
+        writeIndent();
+        writeString(target_var);
+        writeString(" = ");
+        if (inner_type->as.optional.payload->kind != TYPE_VOID) {
+            writeString("__orelse_res.value");
+        } else {
+            writeString("0 /* void */");
+        }
+        writeString(";\n");
+    }
+    dedent();
+    writeIndent();
+    writeString("} else {\n");
+    indent();
+    if (target_var) {
+        if (orelse->else_expr->type == NODE_IF_EXPR) {
+            emitIfExpr(orelse->else_expr, target_var);
+        } else if (orelse->else_expr->type == NODE_SWITCH_EXPR) {
+            emitSwitchExpr(orelse->else_expr, target_var);
+        } else if (orelse->else_expr->type == NODE_BLOCK_STMT) {
+            emitBlockWithAssignment(&orelse->else_expr->as.block_stmt, target_var);
+            writeString("\n");
+        } else if (orelse->else_expr->type == NODE_UNREACHABLE) {
+             writeIndent();
+             emitExpression(orelse->else_expr);
+             writeString(";\n");
+        } else {
+            writeIndent();
+            writeString(target_var);
+            writeString(" = ");
+            emitExpression(orelse->else_expr);
+            writeString(";\n");
+        }
+    } else {
+        writeIndent();
+        emitExpression(orelse->else_expr);
+        writeString(";\n");
+    }
+    dedent();
+    writeIndent();
+    writeString("}\n");
+
+    dedent();
+    writeIndent();
+    writeString("}\n");
+}
+
 void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     if (!node) return;
 
@@ -1956,6 +2136,52 @@ void C89Emitter::emitArraySlice(const ASTNode* node) {
     writeString(", ");
     emitExpression(slice->len);
     writeString(")");
+}
+
+void C89Emitter::ensureOptionalType(Type* type) {
+    if (!type || type->kind != TYPE_OPTIONAL) return;
+
+    const char* mangled_name = getMangledTypeName(type);
+
+    // Check cache
+    for (size_t i = 0; i < emitted_optionals_.length(); ++i) {
+        if (plat_strcmp(emitted_optionals_[i], mangled_name) == 0) return;
+    }
+
+    // Check external cache (if any)
+    if (external_cache_) {
+        for (size_t j = 0; j < external_cache_->length(); ++j) {
+            if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
+        }
+    }
+
+    emitted_optionals_.append(mangled_name);
+    if (external_cache_) {
+        external_cache_->append(mangled_name);
+    }
+
+    bool was_in_type_def = in_type_def_mode_;
+    in_type_def_mode_ = true;
+
+    Type* payload = type->as.optional.payload;
+
+    writeIndent();
+    writeString("typedef struct {\n");
+    indent();
+    if (payload->kind != TYPE_VOID) {
+        writeIndent();
+        emitType(payload, "value");
+        writeString(";\n");
+    }
+    writeIndent();
+    writeString("int has_value;\n");
+    dedent();
+    writeIndent();
+    writeString("} ");
+    writeString(mangled_name);
+    writeString(";\n\n");
+
+    in_type_def_mode_ = was_in_type_def;
 }
 
 void C89Emitter::ensureErrorUnionType(Type* type) {
@@ -2493,6 +2719,10 @@ const char* C89Emitter::getMangledTypeName(Type* type) {
             safe_append(cur, rem, "ErrorUnion_");
             safe_append(cur, rem, getMangledTypeName(type->as.error_union.payload));
             break;
+        case TYPE_OPTIONAL:
+            safe_append(cur, rem, "Optional_");
+            safe_append(cur, rem, getMangledTypeName(type->as.optional.payload));
+            break;
         case TYPE_ERROR_SET:
             safe_append(cur, rem, "ErrorSet");
             break;
@@ -2575,6 +2805,28 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
                 buf[4] = '\0';
                 writeString(buf);
             }
+    }
+}
+
+void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue) {
+    if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
+    Type* source_type = rvalue->resolved_type;
+
+    if (source_type->kind == TYPE_NULL) {
+        writeIndent();
+        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(".has_value = 0;\n");
+    } else {
+        if (target_type->as.optional.payload->kind != TYPE_VOID) {
+            writeIndent();
+            if (target_name) writeString(target_name); else emitExpression(target_node);
+            writeString(".value = ");
+            emitExpression(rvalue);
+            writeString(";\n");
+        }
+        writeIndent();
+        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(".has_value = 1;\n");
     }
 }
 
@@ -2689,12 +2941,15 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
     Type* source_type = (node->expression && node->expression->resolved_type) ? node->expression->resolved_type : get_g_type_void();
     bool needs_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
                            source_type && source_type->kind != TYPE_ERROR_UNION);
+    bool needs_opt_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_OPTIONAL &&
+                               source_type && source_type->kind != TYPE_OPTIONAL);
     bool is_special = (node->expression && (node->expression->type == NODE_TRY_EXPR ||
                                           node->expression->type == NODE_CATCH_EXPR ||
+                                          node->expression->type == NODE_ORELSE_EXPR ||
                                           node->expression->type == NODE_SWITCH_EXPR ||
                                           node->expression->type == NODE_IF_EXPR));
 
-    if (has_defers || needs_wrapping || is_special) {
+    if (has_defers || needs_wrapping || needs_opt_wrapping || is_special) {
         writeIndent();
         writeString("{\n");
         indent();
@@ -2712,8 +2967,12 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
                 emitTryExpr(node->expression, "__return_val");
             } else if (node->expression->type == NODE_CATCH_EXPR) {
                 emitCatchExpr(node->expression, "__return_val");
+            } else if (node->expression->type == NODE_ORELSE_EXPR) {
+                emitOrelseExpr(node->expression, "__return_val");
             } else if (needs_wrapping) {
                 emitErrorUnionWrapping("__return_val", NULL, current_fn_ret_type_, node->expression);
+            } else if (needs_opt_wrapping) {
+                emitOptionalWrapping("__return_val", NULL, current_fn_ret_type_, node->expression);
             } else if (node->expression) {
                 writeIndent();
                 writeString("__return_val = ");
@@ -2741,7 +3000,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
         writeString("}\n");
     } else {
         if (node->expression && current_fn_ret_type_->kind != TYPE_VOID &&
-            (node->expression->type == NODE_SWITCH_EXPR || node->expression->type == NODE_IF_EXPR)) {
+            (node->expression->type == NODE_SWITCH_EXPR || node->expression->type == NODE_IF_EXPR || node->expression->type == NODE_ORELSE_EXPR)) {
             writeIndent();
             writeString("{\n");
             indent();
@@ -2750,8 +3009,10 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
             writeString(";\n");
             if (node->expression->type == NODE_SWITCH_EXPR) {
                 emitSwitchExpr(node->expression, "__return_val");
-            } else {
+            } else if (node->expression->type == NODE_IF_EXPR) {
                 emitIfExpr(node->expression, "__return_val");
+            } else {
+                emitOrelseExpr(node->expression, "__return_val");
             }
             writeIndent();
             writeString("return __return_val;\n");

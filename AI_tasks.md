@@ -1491,84 +1491,13 @@ Key changes:
     - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
     - **Note**: Deeply nested `try`/`catch` in complex expressions are handled via a second-pass lifter; basic nesting is fully supported.
     - **Verification**: Created comprehensive integration tests (Batch 46) covering nested scenarios and defer interactions.
-Task 228: Optional Types (?T) and null Handling
 
-Goal: Add support for Zig’s optional types, which allow any type to be nullable. This is used extensively in Zig for values that may be absent, and it’s a core safety feature. While pointers already have null, optionals extend nullability to non‑pointer types (e.g., ?i32). This task will enable the compiler to handle ?T types, null as a value of any optional type, and basic operations like unwrapping with orelse and if‑capture.
-
-Key changes:
-
-    Parser:
-
-        Recognize ?T syntax (optional type). Create ASTOptionalTypeNode.
-
-        null literal already exists and is currently allowed only for pointers. Update type checking to allow null to be assigned to any optional type.
-
-        Support orelse operator (binary) for providing a default when optional is null. This is similar to catch but for optionals. Create ASTOrelseExprNode.
-
-        Support if‑capture syntax: if (x) |value| { ... } else { ... } where x is an optional. This is a control flow construct that unwraps the optional. This may require extending ASTIfStmtNode to optionally capture the unwrapped value.
-
-    AST: Add nodes for optional types, orelse expressions, and extend if node for optional capture.
-
-    Type system:
-
-        Add TYPE_OPTIONAL to TypeKind. Define a struct that stores the child type (Type* base).
-
-        Size and alignment: an optional is typically represented as a struct with a payload and a boolean flag (or a pointer where null is the sentinel). For non‑pointer types, we need a tag. In C, we can represent ?T as a struct { T payload; bool valid; } (or int valid for C89). For pointers, we could use null as the sentinel, but to be uniform, we'll use a struct for all optionals. This may double the size for pointers, but it’s simple. Later we could optimise pointers to use null directly, but for now, use struct.
-
-        Compute size/alignment: size = size of payload + size of bool (with padding). alignment = max(alignof(payload), alignof(bool)). On 32‑bit, bool is 1 byte, so typical alignment 4, size round up to multiple of 4.
-
-    Type checker:
-
-        Validate optional type creation: base type must be complete.
-
-        Allow null to be implicitly convertible to any optional type.
-
-        Implement implicit wrapping: a value of type T can be implicitly converted to ?T (success). This is analogous to error union wrapping.
-
-        For orelse expression: left operand must be an optional; right operand must be a value of the optional's base type (or a block returning that type). The result type is the base type.
-
-        For if‑capture: condition must be an optional. The capture introduces a new immutable binding of the unwrapped value (if non‑null) in the then block. The else block may be omitted. The else block does not have the capture. This requires extending the symbol table for the then scope.
-
-        Ensure that if‑capture works with labeled loops? Not needed now.
-
-    Code generation:
-
-        For an optional type, emit a struct typedef: e.g., typedef struct { T payload; int valid; } Optional_T; (where valid is 1 if present, 0 if null). Use int for C89 compatibility.
-
-        For null assigned to optional, emit { (T)0, 0 }? But null is a literal; we need to generate an appropriate struct initializer. For null, we can emit ((Optional_T){ .payload = (T)0, .valid = 0 }) but C89 doesn't have designated initializers. We'll need to use a temporary or a macro. Perhaps we can use a helper function in the runtime: __make_null_optional_T() that returns the struct. But that adds overhead. Alternatively, we can treat null as a special constant and in contexts where an optional is expected, we can generate { 0, 0 } (assuming zero‑initialization is valid for payload). For non‑pointer payloads, zero may be a valid value (e.g., 0 for integers), but that's okay because the valid flag distinguishes. So we can emit { (T)0, 0 } directly. For pointers, (T)0 is null pointer.
-
-        For implicit wrapping of a value v into ?T, emit a struct initializer { v, 1 }.
-
-        For orelse, generate code that checks the flag and selects payload or fallback:
-        c
-
-        Optional_T tmp = expr;
-        result = tmp.valid ? tmp.payload : fallback;
-
-        For if‑capture, generate an if statement that checks the flag, and inside the then block, introduce a variable (with the captured name) initialized to the payload. The else block (if present) is emitted without the capture.
-        c
-
-        Optional_T tmp = cond;
-        if (tmp.valid) {
-            T value = tmp.payload;  // the capture
-            // then block using value
-        } else {
-            // else block
-        }
-
-    Runtime helpers: May need functions to create optionals from values and null, but inline struct initializers suffice for now. For more complex operations (like conversion from pointers), we might add helpers later.
-
-    Testing: Add integration tests for optional types, including:
-
-        Declaring optional variables and assigning null or a value.
-
-        Using orelse to provide defaults.
-
-        Using if‑capture with and without else.
-
-        Passing optionals to functions and returning them.
-
-        Edge cases: optional of optional? ??T – should work recursively.
+228. [COMPLETE] **Task 228: Optional Types (?T) and null Handling (DONE)**
+    - **Parser**: Added support for `?T` type expressions and `orelse` binary operator. Updated `if` statements and expressions to handle `|capture|` syntax.
+    - **Type System**: Introduced `TYPE_OPTIONAL`. Implemented structural interning and dynamic size/alignment calculation (uniform struct representation).
+    - **Type Checker**: Implemented implicit wrapping from `T` to `?T` and enabled `null` assignment to optional types. Validated `orelse` and `if` capture semantics, including proper scope management for captured symbols.
+    - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation.
+    - **Verification**: Created Batch 47 with 9 comprehensive integration tests covering the requested test matrix (null assignment, implicit wrapping, orelse fallbacks, if-captures, nested optionals, and optional structs). Verified all 47 batches pass.
 
 ## Phase 1: The Cross-Compiler (Zig)
 223. **Task 223:** Translate the C++ compiler logic into the supported Zig subset.
