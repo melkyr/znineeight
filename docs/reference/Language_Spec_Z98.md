@@ -60,6 +60,11 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `?T` (present).
   - The `null` literal can be implicitly coerced to any optional type `?T`.
+- **Example**:
+  ```zig
+  var x: ?i32 = null;
+  x = 42; // implicitly wrapped
+  ```
 
 ## 2. Memory Management (Arena Pattern)
 
@@ -114,6 +119,14 @@ Memory is reclaimed by resetting or destroying the arena.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
 - `errdefer statement`: Recognized but NOT supported in the C89 backend. Strictly rejected by the validator. Schedules code to execute only when the scope exits with an error.
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block.
+  - **Example**:
+    ```zig
+    const val: i32 = optional_int orelse 0;
+    const ptr: *i32 = optional_ptr orelse {
+        // block fallback
+        return;
+    };
+    ```
 
 ### 3.2 Loop Control
 - `break`: Exits the innermost loop. Only allowed within `while` or `for` loop bodies.

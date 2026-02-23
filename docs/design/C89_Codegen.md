@@ -72,6 +72,22 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 ### 4.3 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
   - **Optional Capture**: If the condition is an optional type and uses the `|val|` capture, the emitter generates a temporary variable to hold the condition's result and an `if (tmp.has_value)` check. Inside the `then` block, it declares the capture variable and assigns `tmp.value` to it.
+  - **Example (if-capture)**:
+    ```zig
+    if (optional_ptr) |ptr| {
+        ptr.* = 10;
+    }
+    ```
+    Generated C:
+    ```c
+    {
+        Optional_Ptr_i32 opt_tmp = optional_ptr;
+        if (opt_tmp.has_value) {
+            int* ptr = opt_tmp.value;
+            *ptr = 10;
+        }
+    }
+    ```
 - **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
   - **Lifting Contexts**: Supported in assignments, variable initializers, return statements, switch prongs, and as expression statements.
   - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
