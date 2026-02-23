@@ -1467,6 +1467,11 @@ struct ASTTryExprNode {
 };
 ```
 
+### Transformation Note: Lifting
+In the C89 backend, `try` is not an expression but a statement block. During code generation, any `ASTTryExprNode` encountered in an expression context (like assignment or return) is "lifted" into a preceding C block. The result is stored in a temporary variable which is then used in the original expression.
+
+**Limitation**: The current `C89Emitter` only supports lifting for certain contexts (see `docs/current_lifting_strategies.md`). Deeply nested `try` expressions or `try` inside complex operators may not be lifted correctly and will result in a compiler error.
+
 ### Detection Context
 Try expressions are detected in various contexts to provide detailed analysis:
 1. **Return statements**: `return try func();` -> `context: "return"`
