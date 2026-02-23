@@ -65,6 +65,7 @@ public:
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
+    DynamicArray<const char*>& getEmittedTypesCache() { return emitted_types_cache_; }
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
@@ -159,6 +160,7 @@ private:
     CallSiteLookupTable call_site_table_;
     CompilationOptions options_;
     const char* current_module_;
+    DynamicArray<const char*> emitted_types_cache_;
 
     DynamicArray<const char*> include_paths_;
     const char* default_lib_path_;
