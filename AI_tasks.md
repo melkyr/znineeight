@@ -1494,9 +1494,9 @@ Key changes:
 
 228. [COMPLETE] **Task 228: Optional Types (?T) and null Handling (DONE)**
     - **Parser**: Added support for `?T` type expressions and `orelse` binary operator. Updated `if` statements and expressions to handle `|capture|` syntax.
-    - **Type System**: Introduced `TYPE_OPTIONAL`. Implemented structural interning and dynamic size/alignment calculation (uniform struct representation).
+    - **Type System**: Introduced `TYPE_OPTIONAL`. Implemented structural interning and dynamic size/alignment calculation (uniform struct representation). Fixed bug in `@sizeOf`/`@alignOf` for optional types.
     - **Type Checker**: Implemented implicit wrapping from `T` to `?T` and enabled `null` assignment to optional types. Validated `orelse` and `if` capture semantics, including proper scope management for captured symbols.
-    - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation.
+    - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation. Fixed bug in standalone optional assignments.
     - **Verification**: Created Batch 47 with 9 comprehensive integration tests covering the requested test matrix (null assignment, implicit wrapping, orelse fallbacks, if-captures, nested optionals, and optional structs). Verified all 47 batches pass.
 
 ## Phase 1: The Cross-Compiler (Zig)

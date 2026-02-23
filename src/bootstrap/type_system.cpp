@@ -251,8 +251,37 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
 
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_OPTIONAL;
-    new_type->size = 8; // Placeholder: optional size is usually tag + payload
-    new_type->alignment = 4;
+
+    size_t int_size = 4;
+    size_t int_align = 4;
+
+    if (payload->kind == TYPE_VOID) {
+        new_type->alignment = int_align;
+        new_type->size = int_size;
+    } else {
+        size_t payload_align = payload->alignment;
+        size_t payload_size = payload->size;
+
+        size_t struct_align = payload_align;
+        if (int_align > struct_align) struct_align = int_align;
+
+        size_t current_offset = payload_size;
+
+        // Align for has_value (int)
+        if (int_align > 0 && current_offset % int_align != 0) {
+            current_offset += (int_align - (current_offset % int_align));
+        }
+        current_offset += int_size;
+
+        // Final struct padding to meet max alignment
+        if (struct_align > 0 && current_offset % struct_align != 0) {
+            current_offset += (struct_align - (current_offset % struct_align));
+        }
+
+        new_type->size = current_offset;
+        new_type->alignment = struct_align;
+    }
+
     new_type->as.optional.payload = payload;
     return new_type;
 }
@@ -481,6 +510,8 @@ bool isTypeComplete(Type* type) {
             return true;
         case TYPE_ARRAY:
             return isTypeComplete(type->as.array.element_type);
+        case TYPE_OPTIONAL:
+            return isTypeComplete(type->as.optional.payload);
         case TYPE_SLICE:
             return true; // Slices are always complete (size 8, align 4)
         case TYPE_STRUCT:

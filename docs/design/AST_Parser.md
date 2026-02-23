@@ -656,6 +656,23 @@ Represents both fixed-size arrays and dynamic slices.
     };
     ```
 
+### `ASTOptionalTypeNode`
+Represents an optional type. Allocated out-of-line.
+*   **Zig Code:** `?i32`, `?*u8`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTOptionalTypeNode
+     * @brief Represents an optional type (e.g., `?T`).
+     * @var ASTOptionalTypeNode::payload_type A pointer to the ASTNode for the payload type.
+     * @var ASTOptionalTypeNode::loc Source location of the '?' token.
+     */
+    struct ASTOptionalTypeNode {
+        ASTNode* payload_type;
+        SourceLocation loc;
+    };
+    ```
+
 ### `ASTFunctionTypeNode`
 Represents a function pointer type.
 *   **Zig Code:** `fn(i32, i32) void`
