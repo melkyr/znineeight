@@ -30,7 +30,7 @@ bool CBackend::generate(const char* output_dir) {
         entry_filename_ = "main.c";
     }
 
-    DynamicArray<const char*> shared_type_cache(unit_.getArena());
+    DynamicArray<const char*>& shared_type_cache = unit_.getEmittedTypesCache();
     for (size_t i = 0; i < modules.length(); ++i) {
         if (!generateHeaderFile(modules[i], output_dir, &shared_type_cache)) return false;
         if (!generateSourceFile(modules[i], output_dir, &shared_type_cache)) return false;
@@ -357,6 +357,24 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter) {
                 scanForSpecialTypes((*node->as.block_stmt.statements)[i], emitter);
             }
         }
+    } else if (node->type == NODE_PAREN_EXPR) {
+        scanForSpecialTypes(node->as.paren_expr.expr, emitter);
+    } else if (node->type == NODE_TUPLE_LITERAL) {
+        if (node->as.tuple_literal->elements) {
+            for (size_t i = 0; i < node->as.tuple_literal->elements->length(); ++i) {
+                scanForSpecialTypes((*node->as.tuple_literal->elements)[i], emitter);
+            }
+        }
+    } else if (node->type == NODE_PTR_CAST) {
+        scanForSpecialTypes(node->as.ptr_cast->target_type, emitter);
+        scanForSpecialTypes(node->as.ptr_cast->expr, emitter);
+    } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST) {
+        scanForSpecialTypes(node->as.numeric_cast->target_type, emitter);
+        scanForSpecialTypes(node->as.numeric_cast->expr, emitter);
+    } else if (node->type == NODE_OFFSET_OF) {
+        scanForSpecialTypes(node->as.offset_of->type_expr, emitter);
+    } else if (node->type == NODE_COMPTIME_BLOCK) {
+        scanForSpecialTypes(node->as.comptime_block.expression, emitter);
     } else if (node->type == NODE_IF_STMT) {
         scanForSpecialTypes(node->as.if_stmt->condition, emitter);
         scanForSpecialTypes(node->as.if_stmt->then_block, emitter);
@@ -372,6 +390,12 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter) {
     } else if (node->type == NODE_ASSIGNMENT) {
         scanForSpecialTypes(node->as.assignment->lvalue, emitter);
         scanForSpecialTypes(node->as.assignment->rvalue, emitter);
+    } else if (node->type == NODE_COMPOUND_ASSIGNMENT) {
+        scanForSpecialTypes(node->as.compound_assignment->lvalue, emitter);
+        scanForSpecialTypes(node->as.compound_assignment->rvalue, emitter);
+    } else if (node->type == NODE_RANGE) {
+        scanForSpecialTypes(node->as.range.start, emitter);
+        scanForSpecialTypes(node->as.range.end, emitter);
     } else if (node->type == NODE_BINARY_OP) {
         scanForSpecialTypes(node->as.binary_op->left, emitter);
         scanForSpecialTypes(node->as.binary_op->right, emitter);

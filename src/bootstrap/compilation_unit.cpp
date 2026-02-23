@@ -139,6 +139,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       call_site_table_(arena),
       options_(),
       current_module_(NULL),
+      emitted_types_cache_(arena),
       include_paths_(arena),
       default_lib_path_(NULL),
       modules_(arena),

@@ -9,7 +9,7 @@
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -19,7 +19,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -31,7 +31,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -870,7 +870,12 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
 }
 
 void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
+    if (!node || node->type != NODE_IF_EXPR) return;
     const ASTIfExprNode* if_expr = node->as.if_expr;
+    if (!if_expr || !if_expr->condition || !if_expr->then_expr || !if_expr->else_expr) {
+        writeString("/* error: if expression components are NULL */");
+        return;
+    }
     writeIndent();
     writeString("if (");
     emitExpression(if_expr->condition);
@@ -1007,6 +1012,11 @@ void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var) {
     if (!node || node->type != NODE_TRY_EXPR) return;
     const ASTTryExprNode& try_node = node->as.try_expr;
 
+    if (!try_node.expression) {
+        writeString("/* error: try expression is NULL */");
+        return;
+    }
+
     Type* inner_type = try_node.expression->resolved_type;
     if (!inner_type) {
         writeString("/* error: try operand type not resolved */");
@@ -1091,6 +1101,11 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
     if (!node || node->type != NODE_CATCH_EXPR) return;
     const ASTCatchExprNode* catch_node = node->as.catch_expr;
 
+    if (!catch_node || !catch_node->payload || !catch_node->else_expr) {
+        writeString("/* error: catch components are NULL */");
+        return;
+    }
+
     Type* inner_type = catch_node->payload->resolved_type;
     const char* mangled_inner = getMangledTypeName(inner_type);
 
@@ -1165,7 +1180,12 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
 }
 
 void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
+    if (!node || node->type != NODE_SWITCH_EXPR) return;
     const ASTSwitchExprNode* switch_node = node->as.switch_expr;
+    if (!switch_node || !switch_node->expression || !switch_node->prongs) {
+        writeString("/* error: switch expression components are NULL */");
+        return;
+    }
     writeIndent();
     writeString("switch (");
     emitExpression(switch_node->expression);

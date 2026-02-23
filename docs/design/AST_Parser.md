@@ -1254,6 +1254,7 @@ These nodes represent Zig's error handling mechanisms.
 
 ### `ASTTryExprNode`
 Represents a `try` expression, which either unwraps a successful value or propagates an error.
+Note that these may be transformed by the later lifting pass during code generation.
 *   **Zig Code:** `try fallible_operation()`
 *   **Structure:**
     ```cpp
@@ -1266,6 +1267,8 @@ Represents a `try` expression, which either unwraps a successful value or propag
         ASTNode* expression;
     };
     ```
+*   **Fields:**
+    *   `expression`: The child expression being "tried". It must resolve to an error union type (`!T`).
 
 #### Parsing Logic (`parseUnaryExpr` for `try`)
 The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExpr` function.
@@ -1275,15 +1278,16 @@ The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExp
 
 ### `ASTCatchExprNode`
 Represents a `catch` expression, providing a fallback value in case of an error.
+Note that these may be transformed by the later lifting pass during code generation.
 *   **Zig Code:** `my_value catch |err| fallback_value`
 *   **Structure:**
     ```cpp
     /**
      * @struct ASTCatchExprNode
      * @brief Represents a `catch` expression. Allocated out-of-line.
-     * @var ASTCatchExprNode::payload The expression that may produce an error.
+     * @var ASTCatchExprNode::payload The expression being evaluated that may result in an error.
      * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
-     * @var ASTCatchExprNode::else_expr The expression to evaluate if an error occurs.
+     * @var ASTCatchExprNode::else_expr The expression to execute if the payload is an error.
      */
     struct ASTCatchExprNode {
         ASTNode* payload;
@@ -1291,6 +1295,10 @@ Represents a `catch` expression, providing a fallback value in case of an error.
         ASTNode* else_expr;
     };
     ```
+*   **Fields:**
+    *   `payload`: The left-hand side expression that might return an error union.
+    *   `error_name`: If the `|err|` syntax is used, this contains the interned name of the error variable.
+    *   `else_expr`: The right-hand side expression (fallback) evaluated only on error.
 
 #### Parsing Logic (`parsePrecedenceExpr` for `catch`)
 The `catch` expression is parsed as a binary operator within `parsePrecedenceExpr` with a precedence of 1.

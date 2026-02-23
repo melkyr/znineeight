@@ -1478,82 +1478,19 @@ Key changes:
 
     Testing: Test integer switches with multiple cases, ranges, and an else; also test that the result type is consistent.
 
-Task 226: Error Unions (!T) and Error Sets (DONE)
+226. [COMPLETE] **Task 226: Error Unions (!T) and Error Sets (DONE)**
+    - **Parser**: Recognized `error { ... }` syntax and `!T` as a type expression. Handled `error.Tag` literals.
+    - **Type System**: Added `TYPE_ERROR_SET` and `TYPE_ERROR_UNION`. Implemented structural interning and dynamic C89 layout calculation.
+    - **Type Checker**: Validated unique tags in error sets and handled implicit wrapping/unwrapping.
+    - **Codegen**: Emitted error unions as C structs with a union for the payload and an `is_error` flag. Managed a global error registry for unique tag IDs.
+    - **Verification**: Verified with tests for error set declarations and functions returning error unions.
 
-Goal: Add support for Zig's error handling system: error sets (error { ... }) and error union types (!T). This is crucial for robust error propagation.
-
-Key changes:
-
-    Parser:
-
-        Recognize error { ... } syntax (error set definition). Create ASTErrorSetDefinitionNode.
-
-        Recognize !T as a type expression (error union). Create ASTErrorUnionTypeNode.
-
-        Recognize error as a token for error values (e.g., error.FileNotFound). This is a special identifier; we'll treat it as a built‑in error literal.
-
-    AST: Add nodes for error set definitions, error union types, and error literals.
-
-    Type system:
-
-        Add TYPE_ERROR_SET and TYPE_ERROR_UNION. Error set is a distinct type (like an enum). Error union is !T – a tagged union of an error code and a payload.
-
-        Define an error set as a set of unique error tags. Each tag has an integer value (assigned by the compiler, starting from 1; 0 reserved for success). For now, we can use a simple mapping.
-
-        Error union representation in C: a struct { union { T payload; int err; } data; int is_error; }. The size and alignment depend on T and int. We'll need to compute layout.
-
-    Type checker:
-
-        Validate error set definitions: tags must be unique.
-
-        For error union types, ensure the payload is a valid type.
-
-        Implement try and catch (next task) that use error unions.
-
-        Support implicit coercion: a value of type T can be implicitly wrapped into !T (success). Also, an error set value can be implicitly coerced to any error union that includes that error? For simplicity, we'll allow implicit coercion from error set to error union if the error union's error set is a superset? This is complex; we may start with requiring explicit @errToInt etc. Actually, Zig has rich error handling rules. For bootstrap, we can implement a minimal subset: only allow returning error values from functions that return !T, and use try/catch to unwrap. We'll defer full error set compatibility.
-
-    Runtime representation: In C, error unions will be emitted as structs. For each distinct error union type, generate a typedef. Also generate a global array of error names for debugging? Not needed initially.
-
-    Testing: Add tests for error set declarations, functions returning error unions, and basic use of try/catch (next task).
-
-Task 227: try and catch Expressions (DONE)
-
-Goal: Implement try and catch expressions to handle error unions. This builds on error union types.
-
-Key changes:
-
-    Parser:
-
-        Recognize try as a unary operator (prefix) that applies to an expression of type !T. Create ASTTryExprNode.
-
-        Recognize catch as a binary operator (e.g., expr catch fallback) that handles errors. Create ASTCatchExprNode. Also support catch |err| ... syntax to capture the error value.
-
-    Type checker:
-
-        try: The operand must be an error union. The result type is the payload type. The try expression unwraps the payload; if an error occurs, it returns from the current function with that error. So type checking must ensure that the enclosing function returns an error union (or has a compatible error set). This requires propagating error sets.
-
-        catch: The left operand must be an error union. The right operand is a fallback expression (if no error capture) or a block that handles the error. The result type is the common type of the payload and the fallback (or the block's result). The catch expression may also introduce a capture variable (the error).
-
-    Code generation:
-
-        For try, generate code that checks the error flag and returns if error. For example:
-        c
-
-        ErrorUnionType tmp = expr;
-        if (tmp.is_error) return tmp;  // assuming return type is error union
-        payload = tmp.data.payload;
-
-        If the function returns void or a non‑error type, this is invalid; type checker ensures it's only used in functions returning error union.
-
-        For catch, generate code that checks the error flag and uses the fallback:
-        c
-
-        ErrorUnionType tmp = expr;
-        result = tmp.is_error ? fallback : tmp.data.payload;
-
-        If there's an error capture, the fallback block may need the error value; we can emit a temporary and then use it.
-
-    Testing: Write tests for try in functions returning error unions, and catch with and without error capture.
+227. [COMPLETE] **Task 227: try and catch Expressions (DONE)**
+    - **Parser**: Implemented `try` as a prefix unary operator and `catch` as a binary operator (with optional `|err|` capture).
+    - **Type Checker**: Validated that `try` operands are error unions and that enclosing functions return compatible error unions. Handled result type merging for `catch`.
+    - **Codegen**: Implemented "lifting" of `try` and `catch` expressions into statement blocks with temporary variables. Ensured LIFO `defer` execution on early returns from `try`.
+    - **Note**: Deeply nested `try`/`catch` in complex expressions are handled via a second-pass lifter; basic nesting is fully supported.
+    - **Verification**: Created comprehensive integration tests (Batch 46) covering nested scenarios and defer interactions.
 Task 228: Optional Types (?T) and null Handling
 
 Goal: Add support for Zig’s optional types, which allow any type to be nullable. This is used extensively in Zig for values that may be absent, and it’s a core safety feature. While pointers already have null, optionals extend nullability to non‑pointer types (e.g., ?i32). This task will enable the compiler to handle ?T types, null as a value of any optional type, and basic operations like unwrapping with orelse and if‑capture.
