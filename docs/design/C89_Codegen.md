@@ -413,6 +413,8 @@ Deeply nested `try`, `catch`, or `orelse` expressions within complex binary oper
 ### Optional Representation
 Optional types are emitted as C structures. The name is mangled as `Optional_T`.
 
+**Uniform Struct Representation (Bootstrap Limitation)**: While modern Zig optimizes `?*T` to be the same size as a raw pointer (using 0 as null), the Z98 bootstrap compiler uses a uniform struct representation for all optional types.
+
 ```c
 typedef struct {
     T value;         /* Valid if has_value is 1 */
