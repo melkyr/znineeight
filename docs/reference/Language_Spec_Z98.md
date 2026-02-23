@@ -55,7 +55,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - An error literal can be implicitly coerced to any error union `!T`.
 
 ### 1.6 Optional Types
-- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag.
+- **Optional Types**: `?T`. Represented as a C struct containing the payload and a `has_value` flag. (Note: pointers `?*T` also use this uniform struct representation in the bootstrap compiler).
 - **Null Literal**: `null`.
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `?T` (present).

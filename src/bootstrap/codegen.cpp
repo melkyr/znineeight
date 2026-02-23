@@ -715,8 +715,14 @@ void C89Emitter::emitStatement(const ASTNode* node) {
                 // Assignments might need lifting if rvalue is try/catch/if/switch
                 const ASTNode* rvalue = expr->as.assignment->rvalue;
                 const ASTNode* lvalue = expr->as.assignment->lvalue;
+                Type* target_type = lvalue->resolved_type;
+                Type* source_type = rvalue->resolved_type;
 
-                if (rvalue->type == NODE_TRY_EXPR) {
+                if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
+                    emitErrorUnionWrapping(NULL, lvalue, target_type, rvalue);
+                } else if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
+                    emitOptionalWrapping(NULL, lvalue, target_type, rvalue);
+                } else if (rvalue->type == NODE_TRY_EXPR) {
                     if (lvalue->type == NODE_IDENTIFIER && lvalue->as.identifier.symbol) {
                         emitTryExpr(rvalue, var_alloc_.allocate(lvalue->as.identifier.symbol));
                     } else if (lvalue->type == NODE_IDENTIFIER && plat_strcmp(lvalue->as.identifier.name, "_") == 0) {
@@ -804,6 +810,8 @@ void C89Emitter::emitStatement(const ASTNode* node) {
 
             if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
                 emitErrorUnionWrapping(NULL, node->as.assignment->lvalue, target_type, node->as.assignment->rvalue);
+            } else if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
+                emitOptionalWrapping(NULL, node->as.assignment->lvalue, target_type, node->as.assignment->rvalue);
             } else if (node->as.assignment->rvalue->type == NODE_SWITCH_EXPR) {
                 if (node->as.assignment->lvalue->type == NODE_IDENTIFIER && node->as.assignment->lvalue->as.identifier.symbol) {
                     emitSwitchExpr(node->as.assignment->rvalue, var_alloc_.allocate(node->as.assignment->lvalue->as.identifier.symbol));
