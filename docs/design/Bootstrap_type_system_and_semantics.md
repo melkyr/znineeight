@@ -756,8 +756,8 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `error { ... }` | `int` | SUPPORTED | - |
 | `fn() !T` (error return) | `struct` | SUPPORTED | - |
-| `try expr` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `catch expr` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `try expr` | `if` check | SUPPORTED | - |
+| `catch expr` | `if-else` | SUPPORTED | - |
 | `orelse expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `errdefer` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
@@ -1132,6 +1132,8 @@ Existing tests were refactored to align with these stricter rules:
 
 ## 13. Error Handling & Milestone 5 Translation Strategy
 
+**Note:** As of Milestone 7 (Task 227), basic error handling (`!T`, `error { ... }`, `try`, and `catch`) is fully supported in the bootstrap compiler. The strategies described below have been implemented and validated.
+
 ### 13.1 Global Error Registry
 The bootstrap compiler maintains a global registry of all unique error tags encountered during compilation.
 - **Success Convention**: The integer value `0` is reserved for "success".
@@ -1363,21 +1365,47 @@ To maintain stability in test environments, child processes explicitly call `abo
 
 | Feature | Zig Syntax Example | Rationale |
 |---------|-------------------|-----------|
-| **Error Unions** | `var v: !i32;` | C89 uses error codes or `errno`. |
+| **Error Handling** | `try foo()` | Supported as of Milestone 7 (Task 227). |
 | **Optionals** | `var v: ?*i32;` | Optionals are implemented as tagged unions or pointers, which is a higher-level concept. |
 | **Function Pointers** | `var f = func;` | Supported as of Milestone 7 (Task 221). |
 | **Struct Methods** | `s.method()` | C89 structs do not have associated functions. Equivalent is passing a struct pointer to a global function. |
 | **Variadic Functions** | `fn f(args: ...)` | Not supported to simplify calling convention and type checking. |
 | **Generics** | `comptime T: type`| C89 does not support compile-time type parameters or templates. |
 
-### Milestone 5 Integration & Translation Strategy
+### Milestone 7 Integration & Translation Strategy
 
-| Zig Feature | Milestone 4 Status | Milestone 5 Translation Strategy | C89 Equivalent |
+| Zig Feature | Milestone 7 Status | Milestone 7 Translation Strategy | C89 Equivalent |
 |-------------|--------------------|-----------------------------------|----------------|
-| Error Unions | Rejected | Extraction Strategy (Stack/Arena/Out) | Struct + Union |
-| Error Sets | Rejected | Global Integer Registry | #define constants |
-| `try` | Rejected | Pattern-based Generation | `if (err) return err;` |
-| `catch` | Rejected | Fallback Pattern Generation | `if (err) { val = fallback; }` |
+| Error Unions | SUPPORTED | Struct + Union Mangling | `struct { ... }` |
+| Error Sets | SUPPORTED | Global Integer Registry | `#define` constants |
+| `try` | SUPPORTED | Expression Lifting | `if (res.is_error) return ...` |
+| `catch` | SUPPORTED | Expression Lifting | `if (res.is_error) fallback else payload` |
 | `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
 | `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
 | Generics | Rejected | Template Specialization / Mangling | Mangled Functions |
+
+## 22. Error Handling Extensions (Milestone 7)
+
+**Preamble:** These features are part of the extended feature set enabled after Milestone 7, building on the core bootstrap compiler. They enable Zig-style error propagation and handling while remaining compatible with C89.
+
+### 22.1 Error Unions (`!T`)
+Error unions represent a value that can either be a success value of type `T` or an error code. In C89, these are represented as structures with a mangled name `ErrorUnion_T`.
+
+- **Success Wrapping**: Assigning a value of type `T` to `!T` automatically wraps it as a success.
+- **Error Wrapping**: Assigning an error literal (e.g., `error.Bad`) to `!T` wraps it as an error.
+
+### 22.2 `try` Expression
+The `try` expression unwraps an error union.
+- If the value is a success, the payload is yielded.
+- If the value is an error, the error is immediately returned from the current function.
+- **Lifting**: To support `try` in expression contexts (like function arguments), the compiler "lifts" the expression into a block with a temporary variable.
+- **Defer Interaction**: Early returns triggered by `try` correctly execute all active `defer` statements in LIFO order.
+
+### 22.3 `catch` Expression
+The `catch` expression provides a fallback mechanism.
+- `expr catch fallback`: If `expr` is an error, `fallback` is evaluated and yielded.
+- `expr catch |err| fallback`: Captures the error code in `err` for use in the fallback expression.
+- **Lifting**: Like `try`, `catch` expressions are lifted to statement blocks when necessary.
+
+### 22.4 Comparisons
+- `ErrorSet` values can be compared using equality (`==`) and inequality (`!=`) with integers or other error codes. Ordering comparisons are not supported.

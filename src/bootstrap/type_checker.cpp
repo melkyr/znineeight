@@ -363,8 +363,12 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                     return get_g_type_bool(); // Result is always bool
                 } else if (isIntegerType(left_type) && isIntegerType(right_type)) {
                     // Allow comparison between different integer types if one is an ErrorSet or literal
-                    if (left_type->kind == TYPE_ERROR_SET || right_type->kind == TYPE_ERROR_SET ||
-                        left_type->kind == TYPE_INTEGER_LITERAL || right_type->kind == TYPE_INTEGER_LITERAL) {
+                    if (left_type->kind == TYPE_INTEGER_LITERAL || right_type->kind == TYPE_INTEGER_LITERAL) {
+                        return get_g_type_bool();
+                    }
+                    // ErrorSets only allow equality comparisons
+                    if ((left_type->kind == TYPE_ERROR_SET || right_type->kind == TYPE_ERROR_SET) &&
+                        (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL)) {
                         return get_g_type_bool();
                     }
                     // Fall through to error for mismatched standard integers (e.g. u8 == i32)

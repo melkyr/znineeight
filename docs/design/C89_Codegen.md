@@ -322,3 +322,84 @@ If any module contains a `pub fn main`, the backend generates a master Single Tr
 The backend automatically generates basic build scripts in the output directory:
 - **`build.bat`**: A Windows batch script that invokes the MSVC compiler (`cl`) to produce `app.exe`.
 - **`Makefile`**: A standard Makefile for Unix-like environments that uses `gcc` to produce the `app` binary.
+
+## 4.11 Error Handling Code Generation (Milestone 7)
+
+**Preamble:** These features are part of the extended feature set enabled after Milestone 7, building on the core bootstrap compiler. They enable Zig-style error propagation and handling while remaining compatible with C89.
+
+### Error Union Representation
+Error unions (`!T`) are emitted as C structures. The name is mangled as `ErrorUnion_T`.
+
+```c
+typedef struct {
+    union {
+        T payload;   /* Valid if is_error is 0 */
+        int err;     /* Valid if is_error is 1 */
+    } data;
+    int is_error;    /* 0 = success, 1 = error */
+} ErrorUnion_T;
+```
+
+### Lifting Strategy
+Since C89 does not support expressions with control flow, `try` and `catch` expressions are "lifted" into statement blocks that assign their result to a temporary variable or a target location.
+
+#### `try` Expression
+Zig:
+```zig
+var x = try mightFail();
+```
+
+Generated C:
+```c
+{
+    ErrorUnion_i32 __try_res = mightFail();
+    if (__try_res.is_error) {
+        /* emit defers */
+        return __try_res;
+    }
+    x = __try_res.data.payload;
+}
+```
+
+#### `catch` Expression
+Zig:
+```zig
+var x = mightFail() catch 0;
+```
+
+Generated C:
+```c
+{
+    ErrorUnion_i32 __catch_res = mightFail();
+    if (__catch_res.is_error) {
+        x = 0;
+    } else {
+        x = __catch_res.data.payload;
+    }
+}
+```
+
+#### `catch` with Error Capture
+Zig:
+```zig
+var x = mightFail() catch |err| {
+    if (err == error.Oops) return 0;
+    return 1;
+};
+```
+
+Generated C:
+```c
+{
+    ErrorUnion_i32 __catch_res = mightFail();
+    if (__catch_res.is_error) {
+        int err = __catch_res.data.err;
+        /* lifted block body */
+    } else {
+        x = __catch_res.data.payload;
+    }
+}
+```
+
+### Known Limitations
+Deeply nested `try` or `catch` expressions within complex binary operations or array indices may not be fully supported by the current lifting mechanism. A more robust second-pass lifter is planned for a future enhancement.
