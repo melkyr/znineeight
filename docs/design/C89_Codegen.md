@@ -89,9 +89,10 @@ C89 requires all local variable declarations to appear at the beginning of a blo
     }
     ```
 - **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Supported in assignments, variable initializers, return statements, switch prongs, and as expression statements.
+  - **Lifting Contexts**: Supported in assignments to identifiers, variable initializers, return statements, switch prongs, and as expression statements.
   - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
   - **Optional Capture**: Supported similar to `if` statements.
+  - **Nesting Limitation**: Standalone `if` expressions in branches do not support further lifting unless wrapped in a block `{ ... }`.
 - **While Loops**:
   - **Unlabeled**: Mapped to C `while (cond) { ... }`.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
@@ -133,10 +134,10 @@ C89 requires all local variable declarations to appear at the beginning of a blo
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
 - **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Currently supported in direct assignments (`x = switch...`), variable initializers (`var x = switch...`), return statements (`return switch...`), and as expression statements.
+  - **Lifting Contexts**: Currently supported in direct assignments to identifiers, variable initializers, return statements, and as expression statements.
   - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
   - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
-  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block.
+  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block. Note that `try`, `catch`, and `orelse` are NOT recursively lifted in this context unless wrapped in a block.
 - **Try Expressions**: Unwraps an error union or propagates the error. Lifted to an `if` check on the `is_error` flag.
   - **Defer Interaction**: When `try` detects an error, it performs an early return. The emitter ensures that all active `defer` statements in the current scope (and any outer scopes being exited) are executed in LIFO order before the `return` statement is emitted. This is verified by integration tests.
   ```c

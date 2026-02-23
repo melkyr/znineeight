@@ -178,6 +178,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
+- **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.
