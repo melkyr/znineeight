@@ -1253,15 +1253,10 @@ The `parseEnumDeclaration` function handles anonymous enum literals. It is invok
 These nodes represent Zig's error handling mechanisms.
 
 ### `ASTTryExprNode`
-Represents a `try` expression, which either unwraps a successful value or propagates an error.
+Represents a `try` expression, which either unwraps a successful value or propagates an error. It is stored **inline** in the `ASTNode` union.
 *   **Zig Code:** `try fallible_operation()`
 *   **Structure:**
     ```cpp
-    /**
-     * @struct ASTTryExprNode
-     * @brief Represents a `try` expression.
-     * @var ASTTryExprNode::expression The expression that may return an error.
-     */
     struct ASTTryExprNode {
         ASTNode* expression;
     };
@@ -1274,21 +1269,35 @@ The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExp
 - An `ASTTryExprNode` is created, wrapping the parsed expression.
 
 ### `ASTCatchExprNode`
-Represents a `catch` expression, providing a fallback value in case of an error.
+Represents a `catch` expression, providing a fallback value in case of an error. It is allocated **out-of-line**.
 *   **Zig Code:** `my_value catch |err| fallback_value`
 *   **Structure:**
     ```cpp
-    /**
-     * @struct ASTCatchExprNode
-     * @brief Represents a `catch` expression. Allocated out-of-line.
-     * @var ASTCatchExprNode::payload The expression that may produce an error.
-     * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
-     * @var ASTCatchExprNode::else_expr The expression to evaluate if an error occurs.
-     */
     struct ASTCatchExprNode {
         ASTNode* payload;
         const char* error_name; // Can be NULL
         ASTNode* else_expr;
+    };
+    ```
+
+### `ASTOrelseExprNode`
+Represents an `orelse` expression, providing a fallback value for an optional type. It is allocated **out-of-line**.
+*   **Zig Code:** `optional_value orelse default_value`
+*   **Structure:**
+    ```cpp
+    struct ASTOrelseExprNode {
+        ASTNode* payload;
+        ASTNode* else_expr;
+    };
+    ```
+
+### `ASTErrDeferStmtNode`
+Represents an `errdefer` statement, which is executed only if the function returns an error. It is stored **inline** in the `ASTNode` union.
+*   **Zig Code:** `errdefer cleanup();`
+*   **Structure:**
+    ```cpp
+    struct ASTErrDeferStmtNode {
+        ASTNode* statement;
     };
     ```
 

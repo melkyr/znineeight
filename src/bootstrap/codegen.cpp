@@ -2560,7 +2560,7 @@ void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
 
 void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
-    Type* source_type = rvalue->resolved_type;
+    Type* source_type = rvalue ? rvalue->resolved_type : get_g_type_void();
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
@@ -2580,7 +2580,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         if (target_name) writeString(target_name); else emitExpression(target_node);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             writeString(".data.payload = ");
-            emitExpression(rvalue);
+            if (rvalue) emitExpression(rvalue); else writeString("0");
             writeString(";\n");
         }
         writeIndent();
@@ -2686,11 +2686,11 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
             if (node->expression && node->expression->type == NODE_SWITCH_EXPR) {
                 emitSwitchExpr(node->expression, "__return_val");
-            } else if (node->expression->type == NODE_IF_EXPR) {
+            } else if (node->expression && node->expression->type == NODE_IF_EXPR) {
                 emitIfExpr(node->expression, "__return_val");
-            } else if (node->expression->type == NODE_TRY_EXPR) {
+            } else if (node->expression && node->expression->type == NODE_TRY_EXPR) {
                 emitTryExpr(node->expression, "__return_val");
-            } else if (node->expression->type == NODE_CATCH_EXPR) {
+            } else if (node->expression && node->expression->type == NODE_CATCH_EXPR) {
                 emitCatchExpr(node->expression, "__return_val");
             } else if (needs_wrapping) {
                 emitErrorUnionWrapping("__return_val", NULL, current_fn_ret_type_, node->expression);

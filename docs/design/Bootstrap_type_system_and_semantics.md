@@ -756,8 +756,8 @@ This function is a cornerstone of the semantic analysis phase, allowing the `Typ
 | `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `error { ... }` | `int` | SUPPORTED | - |
 | `fn() !T` (error return) | `struct` | SUPPORTED | - |
-| `try expr` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `catch expr` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `try expr` | `if (err) return` | SUPPORTED | - |
+| `catch expr` | `if (err) fallback`| SUPPORTED | - |
 | `orelse expr` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `errdefer` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
@@ -1130,7 +1130,87 @@ Existing tests were refactored to align with these stricter rules:
 3.  **Strict numeric match**: Binary operations like `TypeCheckerBinaryOps_NumericArithmetic` now use consistent types to avoid mismatch errors during setup.
 
 
-## 13. Error Handling & Milestone 5 Translation Strategy
+## 13. Error Handling Extensions (Task 227)
+
+Following the completion of Milestone 7, the bootstrap compiler now supports a significant subset of Zig's error handling system, mapping it directly to C89 patterns.
+
+### 13.1 Error Union Representation (`!T`)
+Error unions are represented in C89 as structures containing a union of the payload and the error code, plus a boolean flag.
+
+```c
+/* Zig: !i32 */
+typedef struct {
+    union {
+        int payload;    /* Valid if is_error is 0 */
+        int err;        /* Valid if is_error is 1 */
+    } data;
+    int is_error;
+} ErrorUnion_i32;
+```
+
+For `!void`, the structure is simplified:
+```c
+/* Zig: !void */
+typedef struct {
+    int err;
+    int is_error;
+} ErrorUnion_void;
+```
+
+### 13.2 `try` Expression Semantics
+The `try` expression is supported in various contexts (assignments, returns, expression statements). It is implemented using a **lifting strategy** where the expression is transformed into a C block.
+
+**Zig Source:**
+```zig
+const x = try pass();
+```
+
+**Generated C89:**
+```c
+{
+    ErrorUnion_i32 __try_res = z_main_pass();
+    if (__try_res.is_error) {
+        /* Defers for early return are emitted here */
+        return __try_res;
+    }
+    x = __try_res.data.payload;
+}
+```
+
+### 13.3 `catch` Expression Semantics
+The `catch` expression provides error handling with an optional capture.
+
+**Zig Source:**
+```zig
+const res = fail() catch |err| if (err == error.Oops) 42 else 0;
+```
+
+**Generated C89:**
+```c
+{
+    ErrorUnion_i32 __catch_res = z_main_fail();
+    if (__catch_res.is_error) {
+        int err = __catch_res.data.err;
+        res = (err == ERROR_Oops) ? 42 : 0;
+    } else {
+        res = __catch_res.data.payload;
+    }
+}
+```
+
+### 13.4 Lifting Strategy & Contexts
+Expressions like `try` and `catch` that require statement-level control flow in C89 are "lifted" into their own scopes.
+
+#### Implementation State (Milestone 7)
+The current implementation of the `C89Emitter` uses a context-aware lifting strategy. When a liftable node (like `NODE_TRY_EXPR` or `NODE_CATCH_EXPR`) is encountered, the emitter generates a preceding C block that executes the operation and stores the result in a temporary variable or the final target.
+
+- **Primary Support**: Lifting is fully supported when the `try`/`catch` expression is the direct r-value of an assignment, the initializer of a variable declaration, or the expression in a return statement.
+- **Deep Nesting Limitation**: In the current bootstrap version, deeply nested control-flow expressions (e.g., `var x = (try a()) + (try b());` or `foo(try g())`) may result in invalid C89 generation or emission failures. This is because the emitter does not yet implement a fully recursive, statement-preceding lifting pass for arbitrary sub-expressions.
+- **Recommended Practice**: For maximum compatibility with the current bootstrap compiler, it is recommended to bind the results of `try` and `catch` expressions to local variables before using them in more complex expressions.
+
+A robust, multi-pass lifting mechanism that supports arbitrary nesting is planned as a future enhancement once the core bootstrap pipeline is fully stabilized.
+
+## 14. Error Handling & Milestone 5 Translation Strategy
 
 ### 13.1 Global Error Registry
 The bootstrap compiler maintains a global registry of all unique error tags encountered during compilation.
@@ -1363,21 +1443,23 @@ To maintain stability in test environments, child processes explicitly call `abo
 
 | Feature | Zig Syntax Example | Rationale |
 |---------|-------------------|-----------|
-| **Error Unions** | `var v: !i32;` | C89 uses error codes or `errno`. |
+| **Error Unions** | `var v: !i32;` | Supported. Represented as C structs with a union and status flag. |
 | **Optionals** | `var v: ?*i32;` | Optionals are implemented as tagged unions or pointers, which is a higher-level concept. |
 | **Function Pointers** | `var f = func;` | Supported as of Milestone 7 (Task 221). |
 | **Struct Methods** | `s.method()` | C89 structs do not have associated functions. Equivalent is passing a struct pointer to a global function. |
 | **Variadic Functions** | `fn f(args: ...)` | Not supported to simplify calling convention and type checking. |
 | **Generics** | `comptime T: type`| C89 does not support compile-time type parameters or templates. |
 
-### Milestone 5 Integration & Translation Strategy
+### Milestone 7 Integration & Translation Strategy
 
-| Zig Feature | Milestone 4 Status | Milestone 5 Translation Strategy | C89 Equivalent |
+| Zig Feature | Bootstrap Status | Translation Strategy | C89 Equivalent |
 |-------------|--------------------|-----------------------------------|----------------|
-| Error Unions | Rejected | Extraction Strategy (Stack/Arena/Out) | Struct + Union |
-| Error Sets | Rejected | Global Integer Registry | #define constants |
-| `try` | Rejected | Pattern-based Generation | `if (err) return err;` |
-| `catch` | Rejected | Fallback Pattern Generation | `if (err) { val = fallback; }` |
+| Error Unions | **SUPPORTED** | Struct-based Tagged Union | `struct` + `union` |
+| Error Sets | **SUPPORTED** | Global Integer Registry | `#define` constants |
+| `try` | **SUPPORTED** | Block Lifting & Early Return | `if (err) return err;` |
+| `catch` | **SUPPORTED** | Block Lifting & Fallback | `if (err) { res = fallback; }` |
 | `orelse` | Rejected | Optional Unwrapping Pattern | `if (val) { ... } else { ... }` |
 | `errdefer` | Rejected | Goto-based Cleanup | `goto cleanup;` |
 | Generics | Rejected | Template Specialization / Mangling | Mangled Functions |
+
+These features are part of the **extended feature set** enabled after Milestone 7, allowing more idiomatic Zig code to be compiled by the bootstrap compiler.

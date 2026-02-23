@@ -551,8 +551,10 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `while (cond) { ... }` (Supports `break` and `continue`).
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
-    *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
+    *   `switch (expr) { ... }` (Full support with inclusive ranges and divergent prongs).
     *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
+    *   `try expression`: Early return on error union.
+    *   `expression catch |err| fallback`: Error handling with optional capture.
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
@@ -574,7 +576,7 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
-*   **No Error Handling**: `!T`, `try`, `catch`, `orelse`, and `errdefer` are rejected (though catalogued for future use).
+*   **Error Handling**: `!T`, `try`, and `catch` are **supported** as part of the extended feature set. `orelse` and `errdefer` are currently rejected.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
 *   **No Struct Methods**: Functions cannot be declared inside a struct.

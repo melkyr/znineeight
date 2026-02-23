@@ -1522,38 +1522,20 @@ Goal: Implement try and catch expressions to handle error unions. This builds on
 
 Key changes:
 
-    Parser:
-
+    Parser: (DONE)
         Recognize try as a unary operator (prefix) that applies to an expression of type !T. Create ASTTryExprNode.
-
         Recognize catch as a binary operator (e.g., expr catch fallback) that handles errors. Create ASTCatchExprNode. Also support catch |err| ... syntax to capture the error value.
 
-    Type checker:
-
+    Type checker: (DONE)
         try: The operand must be an error union. The result type is the payload type. The try expression unwraps the payload; if an error occurs, it returns from the current function with that error. So type checking must ensure that the enclosing function returns an error union (or has a compatible error set). This requires propagating error sets.
-
         catch: The left operand must be an error union. The right operand is a fallback expression (if no error capture) or a block that handles the error. The result type is the common type of the payload and the fallback (or the block's result). The catch expression may also introduce a capture variable (the error).
 
-    Code generation:
+    Code generation: (DONE)
+        Implemented using an expression lifting strategy that transforms try/catch into statement blocks. Supports lifting in assignments, variable initializers, return statements, and expression statements.
+        KNOWN LIMITATION: Deeply nested try/catch expressions (e.g., in function arguments or complex binary operations) are not yet supported and may generate invalid C code or emission errors. Manually hoisting these expressions into local variables is recommended.
 
-        For try, generate code that checks the error flag and returns if error. For example:
-        c
-
-        ErrorUnionType tmp = expr;
-        if (tmp.is_error) return tmp;  // assuming return type is error union
-        payload = tmp.data.payload;
-
-        If the function returns void or a non‑error type, this is invalid; type checker ensures it's only used in functions returning error union.
-
-        For catch, generate code that checks the error flag and uses the fallback:
-        c
-
-        ErrorUnionType tmp = expr;
-        result = tmp.is_error ? fallback : tmp.data.payload;
-
-        If there's an error capture, the fallback block may need the error value; we can emit a temporary and then use it.
-
-    Testing: Write tests for try in functions returning error unions, and catch with and without error capture.
+    Testing: (DONE)
+        Verified with comprehensive integration tests for try, catch (with/without capture), nested try-catch, and interaction with LIFO defer execution on error return. Added Batch 46 to the test suite.
 Task 228: Optional Types (?T) and null Handling
 
 Goal: Add support for Zig’s optional types, which allow any type to be nullable. This is used extensively in Zig for values that may be absent, and it’s a core safety feature. While pointers already have null, optionals extend nullability to non‑pointer types (e.g., ?i32). This task will enable the compiler to handle ?T types, null as a value of any optional type, and basic operations like unwrapping with orelse and if‑capture.

@@ -113,36 +113,12 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
-- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
-- **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Currently supported in direct assignments (`x = switch...`), variable initializers (`var x = switch...`), return statements (`return switch...`), and as expression statements.
-  - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
-  - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
-  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block.
-- **Try Expressions**: Unwraps an error union or propagates the error. Lifted to an `if` check on the `is_error` flag.
+- **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression requires lifting (e.g. `switch`, `try`, or `catch`), the result is returned via a temporary `__return_val`.
+- **Switch Expressions**: Handled via the expression lifting strategy.
+  - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple C `case` labels for each value in the range.
+- **Try Expressions**: Handled via the expression lifting strategy.
   - **Defer Interaction**: When `try` detects an error, it performs an early return. The emitter ensures that all active `defer` statements in the current scope (and any outer scopes being exited) are executed in LIFO order before the `return` statement is emitted. This is verified by integration tests.
-  ```c
-  {
-      ErrorUnion_T __try_res = expr;
-      if (__try_res.is_error) {
-          /* emit defers */
-          return __try_res;
-      }
-      result = __try_res.data.payload;
-  }
-  ```
-- **Catch Expressions**: Handles errors from an error union. Lifted to an `if-else` statement.
-  ```c
-  {
-      ErrorUnion_T __catch_res = expr;
-      if (__catch_res.is_error) {
-          int err = __catch_res.data.err;
-          result = fallback_expr;
-      } else {
-          result = __catch_res.data.payload;
-      }
-  }
-  ```
+- **Catch Expressions**: Handled via the expression lifting strategy.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
@@ -308,7 +284,74 @@ target.is_error = 1;
 #### Return Statements
 Returning from a function that returns an error union performs implicit wrapping if the returned expression is not already an error union. This is implemented by using a temporary variable `__return_val` and then returning it.
 
-## 5. Master STU File & Build System
+## 5. Expression Lifting Strategy
+
+Since C89 does not support expression-valued control flow or complex error handling, the RetroZig compiler "lifts" these constructs into C statements. This is done by wrapping the operation in a C block `{ ... }` and assigning the result to a target location or a compiler-generated temporary variable.
+
+### 5.1 Lifting Contexts
+Lifting is automatically applied when one of the following appears as the top-level expression of:
+- **Variable Initializers**: `const x = try foo();`
+- **Assignments**: `y = switch(x) { ... };`
+- **Return Statements**: `return mightFail() catch 42;`
+- **Expression Statements**: `try bar();` (result discarded)
+
+#### Known Limitations (Deep Nesting)
+The current implementation primarily supports lifting at the top level of the contexts listed above. Deeply nested `try` or `catch` expressions within more complex expressions (e.g., as arguments to binary operators or array indices) may not be fully supported by the current lifting mechanism.
+
+Example of unsupported/partially supported nesting:
+```zig
+var x = (try a()) + (try b()); // May generate invalid C or fail to lift correctly
+var y = arr[try index()];     // May fail to lift
+```
+
+For such cases, it is recommended to "hoist" the expression manually into a temporary variable:
+```zig
+const val_a = try a();
+const val_b = try b();
+var x = val_a + val_b;
+```
+
+A more robust, recursive lifting mechanism is planned for a future enhancement to support arbitrary nesting of control-flow expressions.
+
+### 5.2 `try` Expression Lifting
+Transforms `try expr` into an error check and early return.
+
+**Generated C Pattern:**
+```c
+{
+    ErrorUnion_T __try_res = /* expr */;
+    if (__try_res.is_error) {
+        /* 1. Execute all defers for current and outer scopes */
+        /* 2. Propagate error */
+        return __try_res;
+    }
+    /* 3. Extract payload to target */
+    target = __try_res.data.payload;
+}
+```
+
+### 5.3 `catch` Expression Lifting
+Transforms `expr catch fallback` into an `if-else` block.
+
+**Generated C Pattern:**
+```c
+{
+    ErrorUnion_T __catch_res = /* expr */;
+    if (__catch_res.is_error) {
+        /* Handle error capture if |err| present */
+        int err = __catch_res.data.err;
+        /* Execute fallback and assign to target */
+        target = /* fallback */;
+    } else {
+        target = __catch_res.data.payload;
+    }
+}
+```
+
+### 5.4 `if` and `switch` Lifting
+Similar to `catch`, these are lifted into `if-else` or `switch` statements that assign results to the target variable. Divergent branches (containing `return`, `break`, etc.) skip the assignment.
+
+## 6. Master STU File & Build System
 
 To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.
 
