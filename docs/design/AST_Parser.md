@@ -1265,6 +1265,7 @@ Represents a `try` expression, which either unwraps a successful value or propag
     struct ASTTryExprNode {
         ASTNode* expression;
     };
+    ```
 
 #### Parsing Logic (`parseUnaryExpr` for `try`)
 The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExpr` function.
@@ -1272,6 +1273,30 @@ The `try` keyword is parsed as a prefix unary operator within the `parseUnaryExp
 - The function then recursively calls `parseUnaryExpr` to handle the subsequent expression. This allows `try` to correctly compose with other unary operators (e.g., `try !fallible_operation()`).
 - An `ASTTryExprNode` is created, wrapping the parsed expression.
 
+### `ASTCatchExprNode`
+Represents a `catch` expression, providing a fallback value in case of an error.
+*   **Zig Code:** `my_value catch |err| fallback_value`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTCatchExprNode
+     * @brief Represents a `catch` expression. Allocated out-of-line.
+     * @var ASTCatchExprNode::payload The expression that may produce an error.
+     * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
+     * @var ASTCatchExprNode::else_expr The expression to evaluate if an error occurs.
+     */
+    struct ASTCatchExprNode {
+        ASTNode* payload;
+        const char* error_name; // Can be NULL
+        ASTNode* else_expr;
+    };
+    ```
+
+#### Parsing Logic (`parsePrecedenceExpr` for `catch`)
+The `catch` expression is parsed as a binary operator within `parsePrecedenceExpr` with a precedence of 1.
+- When `TOKEN_CATCH` is encountered, it is consumed.
+- The parser optionally handles the `|err|` capture syntax using `|` tokens and an identifier.
+- The fallback expression is parsed recursively with the same precedence level to support chaining (left-associative).
 
 ## Parser Skeleton Design (Task 44a)
 

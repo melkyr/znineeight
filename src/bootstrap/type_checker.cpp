@@ -84,8 +84,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ERROR_UNION_TYPE: resolved_type = visitErrorUnionType(node->as.error_union_type); break;
         case NODE_OPTIONAL_TYPE:    resolved_type = visitOptionalType(node->as.optional_type); break;
         case NODE_FUNCTION_TYPE:    resolved_type = visitFunctionType(node->as.function_type); break;
-        case NODE_TRY_EXPR:         resolved_type = visitTryExpr(&node->as.try_expr); break;
-        case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node->as.catch_expr); break;
+        case NODE_TRY_EXPR:         resolved_type = visitTryExpr(node); break;
+        case NODE_CATCH_EXPR:       resolved_type = visitCatchExpr(node); break;
         case NODE_ORELSE_EXPR:      resolved_type = visitOrelseExpr(node->as.orelse_expr); break;
         case NODE_ERRDEFER_STMT:    resolved_type = visitErrdeferStmt(&node->as.errdefer_stmt); break;
         case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
@@ -361,6 +361,16 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             if (isNumericType(left_type) && isNumericType(right_type)) {
                 if (left_type == right_type) {
                     return get_g_type_bool(); // Result is always bool
+                } else if (isIntegerType(left_type) && isIntegerType(right_type)) {
+                    // Allow comparison between different integer types if one is an ErrorSet or literal
+                    if (left_type->kind == TYPE_ERROR_SET || right_type->kind == TYPE_ERROR_SET ||
+                        left_type->kind == TYPE_INTEGER_LITERAL || right_type->kind == TYPE_INTEGER_LITERAL) {
+                        return get_g_type_bool();
+                    }
+                    // Fall through to error for mismatched standard integers (e.g. u8 == i32)
+                }
+
+                if (false) { // dummy for diff
                 } else {
                     char left_type_str[64];
                     char right_type_str[64];
@@ -2186,6 +2196,24 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return get_g_type_anytype();
     }
 
+    if (base_type->kind == TYPE_ERROR_SET) {
+        // Error set tag access: ErrorSetName.TagName
+        DynamicArray<const char*>* tags = base_type->as.error_set.tags;
+        bool found = false;
+        if (tags) {
+            for (size_t i = 0; i < tags->length(); ++i) {
+                if (identifiers_equal((*tags)[i], node->field_name)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (found) {
+            return base_type;
+        }
+        // Fall through to error
+    }
+
     if (base_type->kind == TYPE_ENUM) {
         // Enum member access
         DynamicArray<EnumMember>* members = base_type->as.enum_details.members;
@@ -2517,19 +2545,48 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     return createArrayType(unit.getArena(), element_type, array_size, &unit.getTypeInterner());
 }
 
-Type* TypeChecker::visitTryExpr(ASTTryExprNode* node) {
-    Type* inner_type = visit(node->expression);
-    if (inner_type && inner_type->kind == TYPE_ERROR_UNION) {
-        return inner_type->as.error_union.payload;
+Type* TypeChecker::visitTryExpr(ASTNode* node) {
+    ASTTryExprNode& try_node = node->as.try_expr;
+    Type* inner_type = visit(try_node.expression);
+    if (!inner_type) return NULL;
+
+    if (inner_type->kind != TYPE_ERROR_UNION) {
+        unit.getErrorHandler().report(ERR_TRY_ON_NON_ERROR_UNION, node->loc, "try expression operand must be an error union");
+        return inner_type;
     }
-    return inner_type;
+
+    Type* payload = inner_type->as.error_union.payload;
+    Type* operand_err_set = inner_type->as.error_union.error_set;
+
+    // Check enclosing function return type
+    if (!current_fn_return_type) {
+        unit.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, "try expression can only be used inside a function");
+        return payload;
+    }
+
+    if (current_fn_return_type->kind != TYPE_ERROR_UNION) {
+        unit.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, "try expression can only be used in a function that returns an error union");
+    } else {
+        Type* fn_err_set = current_fn_return_type->as.error_union.error_set;
+
+        // Check error set compatibility.
+        // For bootstrap, we'll use pointer equality for interned sets.
+        if (operand_err_set != fn_err_set) {
+            // If both are inferred, they might be different pointers but compatible in our simplified model.
+            if (!(inner_type->as.error_union.is_inferred && current_fn_return_type->as.error_union.is_inferred)) {
+                 unit.getErrorHandler().report(ERR_TRY_INCOMPATIBLE_ERROR_SETS, node->loc, "error set of try operand is not compatible with function return type");
+            }
+        }
+    }
+
+    return payload;
 }
 
 Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
     Type* payload = visit(node->payload_type);
     Type* error_set = node->error_set ? visit(node->error_set) : NULL;
 
-    return createErrorUnionType(unit.getArena(), payload, error_set, node->error_set == NULL);
+    return createErrorUnionType(unit.getArena(), payload, error_set, node->error_set == NULL, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
@@ -2553,7 +2610,7 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
             unit.getGlobalErrorRegistry().getOrAddTag(tag);
         }
     }
-    return createErrorSetType(unit.getArena(), decl->name, decl->tags, decl->name == NULL);
+    return createErrorSetType(unit.getArena(), decl->name, decl->tags, decl->name == NULL, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
@@ -2561,7 +2618,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
     Type* right = visit(node->right);
 
     if (!left || left->kind != TYPE_ERROR_SET || !right || right->kind != TYPE_ERROR_SET) {
-        return createErrorSetType(unit.getArena(), NULL, NULL, true);
+        return createErrorSetType(unit.getArena(), NULL, NULL, true, &unit.getTypeInterner());
     }
 
     // Merge tags
@@ -2591,7 +2648,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
         }
     }
 
-    return createErrorSetType(unit.getArena(), NULL, merged_tags, true);
+    return createErrorSetType(unit.getArena(), NULL, merged_tags, true, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
@@ -2623,33 +2680,44 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
     plat_print_debug(buffer);
 }
 
-Type* TypeChecker::visitCatchExpr(ASTCatchExprNode* node) {
-    Type* payload_type = visit(node->payload);
+Type* TypeChecker::visitCatchExpr(ASTNode* node) {
+    ASTCatchExprNode* catch_node = node->as.catch_expr;
+    Type* operand_type = visit(catch_node->payload);
+    if (!operand_type) return NULL;
 
-    Type* result_type = NULL;
-    Type* error_set = NULL;
-    if (payload_type && payload_type->kind == TYPE_ERROR_UNION) {
-        result_type = payload_type->as.error_union.payload;
-        error_set = payload_type->as.error_union.error_set;
+    if (operand_type->kind != TYPE_ERROR_UNION) {
+         unit.getErrorHandler().report(ERR_CATCH_ON_NON_ERROR_UNION, node->loc, "catch expression operand must be an error union");
+         visit(catch_node->else_expr);
+         return operand_type;
     }
 
-    if (node->error_name) {
+    Type* payload_type = operand_type->as.error_union.payload;
+    Type* error_set = operand_type->as.error_union.error_set;
+
+    if (catch_node->error_name) {
         unit.getSymbolTable().enterScope();
         Symbol sym = SymbolBuilder(unit.getArena())
-            .withName(node->error_name)
+            .withName(catch_node->error_name)
             .ofType(SYMBOL_VARIABLE)
-            .withType(error_set) // Use error set as type if available
+            .withType(error_set ? error_set : get_g_type_i32())
+            .withFlags(SYMBOL_FLAG_CONST | SYMBOL_FLAG_LOCAL)
             .build();
         unit.getSymbolTable().insert(sym);
     }
 
-    visit(node->else_expr);
+    Type* fallback_type = visit(catch_node->else_expr);
 
-    if (node->error_name) {
+    if (catch_node->error_name) {
         unit.getSymbolTable().exitScope();
     }
 
-    return result_type;
+    if (fallback_type && !areTypesEqual(payload_type, fallback_type)) {
+        if (fallback_type->kind != TYPE_NORETURN) {
+            unit.getErrorHandler().report(ERR_CATCH_TYPE_MISMATCH, node->loc, "catch fallback expression type must match payload type");
+        }
+    }
+
+    return payload_type;
 }
 
 Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
@@ -2902,7 +2970,9 @@ bool TypeChecker::isNumericType(Type* type) {
     if (!type) {
         return false;
     }
-    return (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) || type->kind == TYPE_INTEGER_LITERAL;
+    return (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) ||
+           type->kind == TYPE_INTEGER_LITERAL ||
+           type->kind == TYPE_ERROR_SET;
 }
 
 bool TypeChecker::isIntegerType(Type* type) {
@@ -2911,7 +2981,8 @@ bool TypeChecker::isIntegerType(Type* type) {
     }
     return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
            type->kind == TYPE_INTEGER_LITERAL ||
-           type->kind == TYPE_BOOL;
+           type->kind == TYPE_BOOL ||
+           type->kind == TYPE_ERROR_SET;
 }
 
 bool TypeChecker::isUnsignedIntegerType(Type* type) {

@@ -68,8 +68,8 @@ public:
     Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node);
-    Type* visitTryExpr(ASTTryExprNode* node);
-    Type* visitCatchExpr(ASTCatchExprNode* node);
+    Type* visitTryExpr(ASTNode* node);
+    Type* visitCatchExpr(ASTNode* node);
     Type* visitOrelseExpr(ASTOrelseExprNode* node);
     Type* visitErrdeferStmt(ASTErrDeferStmtNode* node);
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);

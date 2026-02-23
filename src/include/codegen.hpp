@@ -389,9 +389,9 @@ public:
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
 
     /**
-     * @brief Emits any buffered slice definitions.
+     * @brief Emits any buffered type definitions (slices, error unions).
      */
-    void emitBufferedSliceDefinitions();
+    void emitBufferedTypeDefinitions();
 
     /**
      * @brief Emits deferred statements for a scope exit.

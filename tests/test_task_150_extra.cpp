@@ -87,10 +87,11 @@ TEST_FUNC(Task150_MoreComprehensiveElimination) {
     // A complex case with multiple error handling features
     const char* source =
         "fn foo(x: i32) !i32 { if (x > 0) { return x; } return 0; }\n"
-        "fn main() void {\n"
+        "fn main() !void {\n"
         "    var res: i32 = foo(1) catch 0;\n"
         "    var res2: i32 = 0;\n"
         "    if (res > 0) { res2 = try foo(res); }\n"
+        "    return;\n"
         "}\n";
 
     ArenaAllocator arena(1024 * 1024);

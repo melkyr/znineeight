@@ -191,7 +191,11 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
     return new_type;
 }
 
-Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred) {
+Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
+    if (interner) {
+        return interner->getErrorUnionType(payload, error_set, is_inferred);
+    }
+
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ERROR_UNION;
 
@@ -253,7 +257,11 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     return new_type;
 }
 
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
+Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner) {
+    if (interner) {
+        return interner->getErrorSetType(name, tags, is_anonymous);
+    }
+
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ERROR_SET;
     new_type->size = 4; // Error sets map to int in C89
@@ -346,6 +354,54 @@ Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many)
     e->type = t;
     e->next = buckets[h];
     buckets[h] = e;
+    unique_count++;
+    return t;
+}
+
+Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_inferred) {
+    u32 h = hashType(TYPE_ERROR_UNION, payload, (u64)((size_t)error_set ^ (is_inferred ? 1 : 0)));
+    for (Entry* e = buckets[h]; e; e = e->next) {
+        if (e->type->kind == TYPE_ERROR_UNION &&
+            e->type->as.error_union.payload == payload &&
+            e->type->as.error_union.error_set == error_set &&
+            e->type->as.error_union.is_inferred == is_inferred) {
+            dedupe_count++;
+            return e->type;
+        }
+    }
+
+    Type* t = createErrorUnionType(arena_, payload, error_set, is_inferred, NULL);
+    Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+    e->type = t;
+    e->next = buckets[h];
+    buckets[h] = e;
+    unique_count++;
+    return t;
+}
+
+Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
+    // For error sets, interning is primarily based on name for named sets.
+    // Anonymous sets are trickier. For bootstrap, we'll intern by name.
+    if (!is_anonymous && name) {
+        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
+        for (Entry* e = buckets[h]; e; e = e->next) {
+            if (e->type->kind == TYPE_ERROR_SET &&
+                !e->type->as.error_set.is_anonymous &&
+                e->type->as.error_set.name == name) {
+                dedupe_count++;
+                return e->type;
+            }
+        }
+    }
+
+    Type* t = createErrorSetType(arena_, name, tags, is_anonymous, NULL);
+    if (!is_anonymous && name) {
+        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
+        Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
+        e->type = t;
+        e->next = buckets[h];
+        buckets[h] = e;
+    }
     unique_count++;
     return t;
 }

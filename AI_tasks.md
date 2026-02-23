@@ -1478,7 +1478,7 @@ Key changes:
 
     Testing: Test integer switches with multiple cases, ranges, and an else; also test that the result type is consistent.
 
-Task 226: Error Unions (!T) and Error Sets
+Task 226: Error Unions (!T) and Error Sets (DONE)
 
 Goal: Add support for Zig's error handling system: error sets (error { ... }) and error union types (!T). This is crucial for robust error propagation.
 
@@ -1516,7 +1516,7 @@ Key changes:
 
     Testing: Add tests for error set declarations, functions returning error unions, and basic use of try/catch (next task).
 
-Task 227: try and catch Expressions
+Task 227: try and catch Expressions (DONE)
 
 Goal: Implement try and catch expressions to handle error unions. This builds on error union types.
 

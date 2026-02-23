@@ -248,7 +248,7 @@ TEST_FUNC(ErrorHandling_C89Execution) {
         }
 
         // 2. Types
-        emitter.emitBufferedSliceDefinitions();
+        emitter.emitBufferedTypeDefinitions();
 
         // 3. Prototypes
         for (size_t i = 0; i < unit.getModules().length(); ++i) {
