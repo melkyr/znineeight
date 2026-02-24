@@ -1076,26 +1076,18 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         const char* interned_abs_path = interner_.intern(abs_path);
 
         // Cycle detection: check if this path is already in the current stack
+        bool is_cycle = false;
         for (size_t k = 0; k < stack.length(); ++k) {
             if (plat_strcmp(stack[k], interned_abs_path) == 0) {
-                char cycle_msg[1024];
-                char* cur = cycle_msg;
-                size_t rem = sizeof(cycle_msg);
-                safe_append(cur, rem, "Circular import detected: ");
-                for (size_t j = k; j < stack.length(); ++j) {
-                    safe_append(cur, rem, stack[j]);
-                    safe_append(cur, rem, " -> ");
-                }
-                safe_append(cur, rem, interned_abs_path);
-                error_handler_.report(ERR_SYNTAX_ERROR, import_node->loc, cycle_msg);
-                return false;
+                is_cycle = true;
+                break;
             }
         }
 
         // Check if module already loaded
         Module* imported_mod = getModuleByFilename(interned_abs_path);
 
-        if (!imported_mod || !imported_mod->ast_root) {
+        if (!is_cycle && (!imported_mod || !imported_mod->ast_root)) {
             if (!imported_mod) {
                 // Load and parse
                 char* source = NULL;

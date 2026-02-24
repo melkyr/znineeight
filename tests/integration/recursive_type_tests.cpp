@@ -83,3 +83,36 @@ TEST_FUNC(RecursiveTypes_IllegalDirectRecursion) {
 
     return unit.getErrorHandler().hasErrors(); // We expect errors
 }
+
+TEST_FUNC(RecursiveTypes_CrossModuleCircular) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+
+    // a.zig
+    FILE* fa = fopen("a_circular.zig", "w");
+    fprintf(fa, "const b = @import(\"b_circular.zig\");\n");
+    fprintf(fa, "pub const A = struct { b: *b.B };\n");
+    fclose(fa);
+
+    // b.zig
+    FILE* fb = fopen("b_circular.zig", "w");
+    fprintf(fb, "const a = @import(\"a_circular.zig\");\n");
+    fprintf(fb, "pub const B = struct { a: *a.A };\n");
+    fclose(fb);
+
+    const char* main_source =
+        "const a = @import(\"a_circular.zig\");\n"
+        "fn main() void {\n"
+        "    var x: a.A = undefined;\n"
+        "}\n";
+
+    u32 main_id = unit.addSource("main_circular.zig", main_source);
+    unit.addIncludePath(".");
+    bool success = unit.performFullPipeline(main_id);
+
+    remove("a_circular.zig");
+    remove("b_circular.zig");
+
+    return success && !unit.getErrorHandler().hasErrors();
+}

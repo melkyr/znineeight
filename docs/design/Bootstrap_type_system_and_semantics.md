@@ -331,10 +331,11 @@ For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently perform
 The bootstrap compiler supports recursive and mutually recursive structs and unions using a placeholder mechanism:
 1. **Placeholder Types**: When a type definition (`const T = struct { ... }`) is encountered, a `TYPE_PLACEHOLDER` is immediately registered in the symbol table.
 2. **Pre-registration Pass**: Before full type checking, a pre-scan of all modules registers placeholders for all top-level types. This ensures that cross-module mutual recursion (Module A uses Type B, Module B uses Type A) works correctly.
-3. **On-demand Resolution**: Any reference to `T` (including qualified references like `mod.T`) will trigger on-demand resolution of the placeholder if it hasn't been resolved yet.
-4. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
-5. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type.
-6. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
+3. **Name Mangling**: During placeholder registration, the `c_name` is immediately computed using the defining module's name (`z_mod_Name`). This ensures consistent mangling even when the type is accessed from other modules.
+4. **On-demand Resolution**: Any reference to `T` (including qualified references like `mod.T`) will trigger on-demand resolution of the placeholder if it hasn't been resolved yet. The `resolvePlaceholder` helper switches its internal context to the target module to ensure that identifiers within that module are correctly resolved.
+5. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
+6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
+7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
 
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).

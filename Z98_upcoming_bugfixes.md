@@ -55,7 +55,7 @@ Type* resolveTypeDefinition(ASTVarDeclNode* node) {
 
 ---
 
-### Task 9.2: Cross‑Module Enum Member Access
+### Task 9.2: Cross‑Module Enum Member Access [DONE]
 **Goal**: Allow access to enum members from an imported module using the module prefix (e.g., `json.JsonValueTag.Number`).
 
 **Why**: The JSON parser uses such qualified names, and they currently fail with “enum has no such member”.
