@@ -1839,8 +1839,15 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     Type* cond_type = visit(node->expression);
     if (!cond_type) return NULL;
 
-    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-        fatalError(node->expression->loc, "Switch condition must be integer, enum, or boolean type");
+    if (cond_type->kind == TYPE_PLACEHOLDER) {
+        cond_type = resolvePlaceholder(cond_type);
+    }
+
+    bool is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    Type* tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
+
+    if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
+        fatalError(node->expression->loc, "Switch condition must be tagged union, integer, enum, or boolean type");
         return NULL;
     }
 
@@ -1856,11 +1863,48 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
         } else {
             for (size_t j = 0; j < prong->items->length(); ++j) {
                 ASTNode* item_expr = (*prong->items)[j];
-                Type* item_type = visit(item_expr);
+                Type* item_type = NULL;
+
+                if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                    // Resolve .Tag against union's tag type
+                    if (!tag_type || tag_type->kind != TYPE_ENUM) {
+                        fatalError(item_expr->loc, "Union tag type must be an enum");
+                    }
+                    const char* tag_name = item_expr->as.member_access->field_name;
+                    DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
+                    if (!members) {
+                        fatalError(item_expr->loc, "Union tag enum has no members");
+                    }
+                    bool found = false;
+                    size_t member_idx = 0;
+                    for (size_t k = 0; k < members->length(); ++k) {
+                        if (plat_strcmp((*members)[k].name, tag_name) == 0) {
+                            found = true;
+                            member_idx = k;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        fatalError(item_expr->loc, "Tag not found in union");
+                    }
+
+                    // Constant fold to integer literal of the tag
+                    item_expr->type = NODE_INTEGER_LITERAL;
+                    item_expr->as.integer_literal.value = (u64)(*members)[member_idx].value;
+                    item_expr->as.integer_literal.resolved_type = tag_type;
+                    item_expr->as.integer_literal.original_name = (*members)[member_idx].name;
+                    item_expr->resolved_type = tag_type;
+                    item_type = tag_type;
+                } else {
+                    item_type = visit(item_expr);
+                }
+
                 if (item_type) {
                     // Check compatibility between condition and case item
                     bool compatible = false;
-                    if (areTypesCompatible(cond_type, item_type)) {
+                    if (is_tagged_union) {
+                        compatible = areTypesEqual(tag_type, item_type);
+                    } else if (areTypesCompatible(cond_type, item_type)) {
                         compatible = true;
                     } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
                         // C89 allows integers for enum cases
@@ -1881,7 +1925,38 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             }
         }
 
+        if (prong->capture_name) {
+            if (!is_tagged_union) {
+                fatalError(node->expression->loc, "Capture only supported for tagged union switch");
+            }
+            if (prong->is_else) {
+                fatalError(node->expression->loc, "Capture not supported for else prong");
+            }
+            if (prong->items->length() != 1) {
+                fatalError(node->expression->loc, "Capture in switch prong only allowed with a single case");
+            }
+
+            ASTNode* item_expr = (*prong->items)[0];
+            const char* field_name = item_expr->as.integer_literal.original_name;
+            Type* field_type = findStructField(cond_type, field_name);
+
+            unit.getSymbolTable().enterScope();
+            Symbol sym = SymbolBuilder(unit.getArena())
+                .withName(prong->capture_name)
+                .ofType(SYMBOL_VARIABLE)
+                .withType(field_type ? field_type : get_g_type_void())
+                .atLocation(node->expression->loc)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+                .build();
+            unit.getSymbolTable().insert(sym);
+            prong->capture_sym = unit.getSymbolTable().lookupInCurrentScope(prong->capture_name);
+        }
+
         Type* prong_type = visit(prong->body);
+
+        if (prong->capture_name) {
+            unit.getSymbolTable().exitScope();
+        }
         if (prong_type && prong_type->kind != TYPE_NORETURN) {
             if (!common_type) {
                 common_type = prong_type;
@@ -2069,9 +2144,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             if (initializer_type->c_name) {
                 placeholder->c_name = initializer_type->c_name;
             }
+            // Capture these before overwriting the union
             placeholder->as = initializer_type->as;
             initializer_type = placeholder;
-            placeholder->as.placeholder.is_resolving = false;
+            // No longer a placeholder, don't touch as.placeholder.is_resolving
+            // as it will corrupt the new type's data (e.g. tag_type).
         }
 
         if (declared_type) {
@@ -2343,6 +2420,28 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, "anonymous unions are not supported in bootstrap compiler");
     }
 
+    Type* tag_type = NULL;
+    if (node->is_tagged) {
+        if (node->tag_type_expr && node->tag_type_expr->type == NODE_IDENTIFIER &&
+            plat_strcmp(node->tag_type_expr->as.identifier.name, "enum") == 0) {
+            // union(enum) - implicit enum
+        } else if (node->tag_type_expr) {
+            tag_type = visit(node->tag_type_expr);
+            if (tag_type && tag_type->kind == TYPE_PLACEHOLDER) {
+                tag_type = resolvePlaceholder(tag_type);
+            }
+            if (tag_type && tag_type->kind == TYPE_TYPE) {
+                // If visit returned TYPE_TYPE, we need the actual type
+                if (node->tag_type_expr->resolved_type) {
+                    tag_type = node->tag_type_expr->resolved_type;
+                    if (tag_type->kind == TYPE_PLACEHOLDER) {
+                        tag_type = resolvePlaceholder(tag_type);
+                    }
+                }
+            }
+        }
+    }
+
     // Process fields
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
     DynamicArray<StructField>* fields = new (mem) DynamicArray<StructField>(unit.getArena());
@@ -2387,7 +2486,31 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
     }
 
-    Type* union_type = createUnionType(unit.getArena(), fields, union_name);
+    if (node->is_tagged && !tag_type) {
+        // Create implicit enum for union(enum)
+        void* members_mem = unit.getArena().alloc(sizeof(DynamicArray<EnumMember>));
+        DynamicArray<EnumMember>* members = new (members_mem) DynamicArray<EnumMember>(unit.getArena());
+        for (size_t i = 0; i < fields->length(); ++i) {
+            EnumMember m;
+            m.name = (*fields)[i].name;
+            m.value = (i64)i;
+            m.loc = parent->loc;
+            members->append(m);
+        }
+        char* enum_name = NULL;
+        if (union_name) {
+            size_t len = plat_strlen(union_name) + 5;
+            enum_name = (char*)unit.getArena().alloc(len);
+            plat_strcpy(enum_name, union_name);
+            plat_strcat(enum_name, "_Tag");
+        }
+        tag_type = createEnumType(unit.getArena(), enum_name, get_g_type_i32(), members, 0, (i64)fields->length() - 1);
+        if (enum_name) {
+            tag_type->c_name = unit.getNameMangler().mangleTypeName(enum_name, unit.getCurrentModule());
+        }
+    }
+
+    Type* union_type = createUnionType(unit.getArena(), fields, union_name, node->is_tagged, tag_type);
     if (union_name) {
         union_type->c_name = unit.getNameMangler().mangleTypeName(union_name, unit.getCurrentModule());
     }

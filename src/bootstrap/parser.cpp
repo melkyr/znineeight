@@ -243,8 +243,20 @@ ASTNode* Parser::parsePrimaryExpr() {
             if (peekNext().type == TOKEN_LBRACE) {
                 advance(); // consume '.'
                 return parseAnonymousLiteral();
+            } else if (peekNext().type == TOKEN_IDENTIFIER) {
+                advance(); // consume '.'
+                Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier after '.'");
+                ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+                if (!member_node) error("Out of memory");
+                member_node->base = NULL;
+                member_node->field_name = id_token.value.identifier;
+                member_node->symbol = NULL;
+
+                ASTNode* node = createNodeAt(NODE_MEMBER_ACCESS, id_token.location);
+                node->as.member_access = member_node;
+                return node;
             }
-            error("Expected '.' followed by '{' for anonymous literal");
+            error("Expected '.' followed by '{' or identifier");
             return NULL;
         case TOKEN_IF:
             return parseIfExpression();
@@ -765,6 +777,7 @@ ASTNode* Parser::parseSwitchExpression() {
         if (!prong_node) {
             error("Out of memory");
         }
+        plat_memset(prong_node, 0, sizeof(ASTSwitchProngNode));
         prong_node->items = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
         if (!prong_node->items) {
             error("Out of memory");
@@ -786,6 +799,13 @@ ASTNode* Parser::parseSwitchExpression() {
         }
 
         expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
+
+        // Support for captures: |payload|
+        if (match(TOKEN_PIPE)) {
+            Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
+            prong_node->capture_name = cap_token.value.identifier;
+            expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
+        }
 
         prong_node->body = parseExpression();
         if (prong_node->body == NULL) {
@@ -1036,6 +1056,23 @@ ASTNode* Parser::parseEnumDeclaration() {
  */
 ASTNode* Parser::parseUnionDeclaration() {
     Token union_token = expect(TOKEN_UNION, "Expected 'union' keyword");
+    bool is_tagged = false;
+    ASTNode* tag_type_expr = NULL;
+
+    if (match(TOKEN_LPAREN)) {
+        is_tagged = true;
+        if (peek().type == TOKEN_ENUM) {
+            // union(enum) - implicit enum
+            tag_type_expr = createNode(NODE_IDENTIFIER);
+            tag_type_expr->as.identifier.name = "enum";
+            advance();
+        } else {
+            // union(TagType) - explicit enum
+            tag_type_expr = parseType();
+        }
+        expect(TOKEN_RPAREN, "Expected ')' after union tag type");
+    }
+
     expect(TOKEN_LBRACE, "Expected '{' to begin union declaration");
 
     ASTUnionDeclNode* union_decl = (ASTUnionDeclNode*)arena_->alloc(sizeof(ASTUnionDeclNode));
@@ -1047,6 +1084,8 @@ ASTNode* Parser::parseUnionDeclaration() {
         error("Out of memory");
     }
     new (union_decl->fields) DynamicArray<ASTNode*>(*arena_);
+    union_decl->is_tagged = is_tagged;
+    union_decl->tag_type_expr = tag_type_expr;
 
     // Handle fields
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {

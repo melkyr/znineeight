@@ -116,6 +116,8 @@ struct Type {
         struct {
             const char* name;
             DynamicArray<StructField>* fields;
+            bool is_tagged;
+            Type* tag_type;
         } struct_details;
         struct {
             Type* payload;
@@ -246,9 +248,11 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
  * @param arena The ArenaAllocator to use for allocation.
  * @param fields A dynamic array of the union's fields.
  * @param name The optional name of the union type.
+ * @param is_tagged True if it's a tagged union.
+ * @param tag_type The tag enum type for a tagged union.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL);
+Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL, bool is_tagged = false, Type* tag_type = NULL);
 
 /**
  * @brief Creates a new error union Type object from the arena.

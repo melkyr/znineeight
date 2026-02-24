@@ -172,29 +172,60 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
     return new_type;
 }
 
-Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
+Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_UNION;
-    new_type->size = 0; // Should be max field size
-    new_type->alignment = 1; // Should be max field alignment
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
+    new_type->as.struct_details.is_tagged = is_tagged;
+    new_type->as.struct_details.tag_type = tag_type;
 
-    // Calculate union size and alignment
-    size_t max_size = 0;
-    size_t max_align = 1;
-    for (size_t i = 0; i < fields->length(); ++i) {
-        StructField& field = (*fields)[i];
-        if (field.type->size > max_size) max_size = field.type->size;
-        if (field.type->alignment > max_align) max_align = field.type->alignment;
-        field.offset = 0; // All union fields are at offset 0
+    if (is_tagged) {
+        // Tagged union: struct { tag_type tag; union { fields } data; }
+        size_t tag_size = tag_type ? tag_type->size : 4;
+        size_t tag_align = tag_type ? tag_type->alignment : 4;
+
+        size_t max_union_size = 0;
+        size_t max_union_align = 1;
+        for (size_t i = 0; i < fields->length(); ++i) {
+            StructField& field = (*fields)[i];
+            if (field.type->size > max_union_size) max_union_size = field.type->size;
+            if (field.type->alignment > max_union_align) max_union_align = field.type->alignment;
+            field.offset = 0; // Offset within the 'data' union
+        }
+
+        // Align the union 'data' after the tag
+        size_t current_offset = tag_size;
+        if (max_union_align > 0 && current_offset % max_union_align != 0) {
+            current_offset += (max_union_align - (current_offset % max_union_align));
+        }
+
+        size_t total_size = current_offset + max_union_size;
+        size_t total_align = tag_align > max_union_align ? tag_align : max_union_align;
+
+        // Final struct padding
+        if (total_align > 0 && total_size % total_align != 0) {
+            total_size += (total_align - (total_size % total_align));
+        }
+
+        new_type->size = total_size;
+        new_type->alignment = total_align;
+    } else {
+        // Bare union: union { fields }
+        size_t max_size = 0;
+        size_t max_align = 1;
+        for (size_t i = 0; i < fields->length(); ++i) {
+            StructField& field = (*fields)[i];
+            if (field.type->size > max_size) max_size = field.type->size;
+            if (field.type->alignment > max_align) max_align = field.type->alignment;
+            field.offset = 0;
+        }
+        if (max_align > 0 && max_size % max_align != 0) {
+            max_size += (max_align - (max_size % max_align));
+        }
+        new_type->size = max_size;
+        new_type->alignment = max_align;
     }
-    // Pad total size to max_align
-    if (max_size % max_align != 0) {
-        max_size += (max_align - (max_size % max_align));
-    }
-    new_type->size = max_size;
-    new_type->alignment = max_align;
 
     return new_type;
 }
