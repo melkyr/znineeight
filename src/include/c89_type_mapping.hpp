@@ -120,6 +120,7 @@ static inline bool is_c89_compatible(Type* type) {
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ENUM:
+        case TYPE_PLACEHOLDER:
             return true;
 
         default: {

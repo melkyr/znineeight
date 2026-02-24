@@ -1973,6 +1973,21 @@ ASTNode* Parser::parseType() {
         } else {
             left->as.type_name.name = type_name_token.value.identifier;
         }
+
+        // Handle member access in types (e.g., json.JsonValue)
+        while (match(TOKEN_DOT)) {
+            Token field_token = expect(TOKEN_IDENTIFIER, "Expected field name after '.' in type");
+
+            ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
+            if (!member_node) error("Out of memory");
+            member_node->base = left;
+            member_node->field_name = field_token.value.identifier;
+            member_node->symbol = NULL;
+
+            ASTNode* new_node = createNodeAt(NODE_MEMBER_ACCESS, field_token.location);
+            new_node->as.member_access = member_node;
+            left = new_node;
+        }
     } else {
         error("Expected a type expression");
     }

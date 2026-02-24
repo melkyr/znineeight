@@ -412,6 +412,16 @@ struct Type {
 ### 4.5 Layer 5: Symbol Table (`symbol_table.hpp`)
 **Concept:** A hierarchical table for managing identifiers (variables, functions, types) across different scopes. It is designed to be extensible to support the growing complexity of the language.
 
+#### 4.5.1 Recursive Type Handling (Task 229)
+To support self-referential and mutually recursive types (e.g., linked list nodes), the compiler uses a **Placeholder Type** mechanism:
+1. When starting to resolve a type definition (struct, union, or enum), a transient `TYPE_PLACEHOLDER` is inserted into the symbol table under that name.
+2. If the type resolution encounters the same name (directly or indirectly), it returns the placeholder. This allows pointers and slices to reference the type before its layout is fully known.
+3. Once the layout is determined, the placeholder is mutated in-place into the final type (`TYPE_STRUCT`, etc.), ensuring all existing references are automatically updated.
+4. Direct recursion (a struct containing itself without a pointer/slice) is detected and rejected as an "infinite size" error.
+
+#### 4.5.2 Cross-Module Resolution
+The symbol table and type checker support cross-module access via dot notation (e.g., `module.Type`). Symbols from imported modules are resolved on-demand by looking up the imported module's symbol table.
+
 **Scoping:** The table uses a stack of `Scope` objects. When the parser enters a new block, it calls `enterScope()`, and when it exits, it calls `exitScope()`. Lookups search from the innermost scope outwards, correctly handling symbol shadowing.
 
 **Symbol Creation:** To manage the creation of increasingly complex `Symbol` structs, a `SymbolBuilder` is used. This follows the Builder pattern, allowing for clear and flexible symbol construction.

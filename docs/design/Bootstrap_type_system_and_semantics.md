@@ -326,9 +326,15 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently performs basic field name uniqueness validation. Full union type creation and layout are deferred to future milestones.
 
-### Known Limitations
+### Recursive Type Handling (Task 228+)
 
-- **Recursive Structs:** The bootstrap compiler does not currently support recursive structs (e.g., `const Node = struct { next: *Node };`). This is because the type identifier is only registered in the symbol table after the struct declaration has been fully processed.
+The bootstrap compiler supports recursive and mutually recursive structs and unions using a placeholder mechanism:
+1. **Placeholder Types**: When a type definition (`const T = struct { ... }`) is encountered, a `TYPE_PLACEHOLDER` is immediately registered in the symbol table.
+2. **On-demand Resolution**: Any reference to `T` during the resolution of its own fields will find this placeholder.
+3. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects.
+4. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type.
+5. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete`.
+
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
@@ -883,6 +889,12 @@ To maintain simplicity, the bootstrap compiler assumes a 32-bit little-endian ta
 | `f32` | 4 | 4 |
 | `f64` | 8 | 8 |
 | `bool` | 4 | 4 (C89 `int`) |
+
+### Cross-Module Resolution (Task 215+)
+
+The bootstrap compiler supports multi-module programs. Types and constants defined in one module can be accessed from another using the `@import` mechanism and dot notation (e.g., `const json = @import("json.zig"); var v: json.JsonValue;`).
+- **Qualified Lookups**: The `Parser` and `TypeChecker` handle qualified identifiers by first resolving the module symbol and then looking up the member within that module's symbol table.
+- **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed, ensuring that type aliases and nested constants are available even if the imported module hasn't been fully processed yet.
 
 ### `resolvePrimitiveTypeName`
 

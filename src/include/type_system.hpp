@@ -43,7 +43,8 @@ enum TypeKind {
     TYPE_TYPE,
     TYPE_ANYTYPE,
     TYPE_MODULE,
-    TYPE_TUPLE
+    TYPE_TUPLE,
+    TYPE_PLACEHOLDER
 };
 
 /**
@@ -136,6 +137,9 @@ struct Type {
         struct {
             DynamicArray<Type*>* elements;
         } tuple;
+        struct {
+            const char* name;
+        } placeholder;
     } as;
 };
 
