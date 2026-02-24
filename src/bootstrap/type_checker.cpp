@@ -1827,7 +1827,9 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
-            placeholder->c_name = resolved->c_name;
+            if (resolved->c_name) {
+                placeholder->c_name = resolved->c_name;
+            }
             placeholder->as = resolved->as;
         }
     }
@@ -1919,9 +1921,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     Type* placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-            if (existing_sym->symbol_type->as.placeholder.is_resolving) {
-                return existing_sym->symbol_type; // Recursive call encountered placeholder
-            }
             placeholder = existing_sym->symbol_type;
         } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
             return existing_sym->symbol_type;
@@ -2062,7 +2061,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             placeholder->kind = initializer_type->kind;
             placeholder->size = initializer_type->size;
             placeholder->alignment = initializer_type->alignment;
-            placeholder->c_name = initializer_type->c_name;
+            if (initializer_type->c_name) {
+                placeholder->c_name = initializer_type->c_name;
+            }
             placeholder->as = initializer_type->as;
             initializer_type = placeholder;
             placeholder->as.placeholder.is_resolving = false;
@@ -2385,9 +2386,16 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     Type* base_type = visit(node->base);
     if (!base_type) return NULL;
 
+    if (base_type->kind == TYPE_PLACEHOLDER) {
+        base_type = resolvePlaceholder(base_type);
+    }
+
     // Auto-dereference for single level pointer
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
+        if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+            base_type = resolvePlaceholder(base_type);
+        }
     }
 
     // Slice built-in properties
@@ -2499,7 +2507,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return base_type; // Result type is the enum type itself
     }
 
-    if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION) {
+    if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION && base_type->kind != TYPE_ENUM) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, "member access '.' only allowed on structs, unions, enums or pointers to structs/unions", unit.getArena());
         return NULL;
     }
@@ -3744,11 +3752,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     safe_append(current, remaining, src_str);
     safe_append(current, remaining, "' to '");
     safe_append(current, remaining, tgt_str);
-    safe_append(current, remaining, "' (target kind: ");
-    char kind_buf[16];
-    plat_i64_to_string((i64)target_type->kind, kind_buf, sizeof(kind_buf));
-    safe_append(current, remaining, kind_buf);
-    safe_append(current, remaining, ")");
+    safe_append(current, remaining, "'");
     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
     return false;
 }

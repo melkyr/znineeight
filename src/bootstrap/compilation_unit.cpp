@@ -1078,17 +1078,12 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         // Cycle detection: check if this path is already in the current stack
         for (size_t k = 0; k < stack.length(); ++k) {
             if (plat_strcmp(stack[k], interned_abs_path) == 0) {
-                char cycle_msg[1024];
-                char* cur = cycle_msg;
-                size_t rem = sizeof(cycle_msg);
-                safe_append(cur, rem, "Circular import detected: ");
-                for (size_t j = k; j < stack.length(); ++j) {
-                    safe_append(cur, rem, stack[j]);
-                    safe_append(cur, rem, " -> ");
+                // Circular import detected. We allow this to support mutual recursion.
+                Module* imported_mod = getModuleByFilename(interned_abs_path);
+                if (imported_mod) {
+                    import_node->as.import_stmt->module_ptr = imported_mod;
+                    return true;
                 }
-                safe_append(cur, rem, interned_abs_path);
-                error_handler_.report(ERR_SYNTAX_ERROR, import_node->loc, cycle_msg);
-                return false;
             }
         }
 
