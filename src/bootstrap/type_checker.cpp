@@ -565,12 +565,12 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     if (plat_strcmp(callee_str, "std.debug.print") == 0 ||
         plat_strcmp(callee_str, "debug.print") == 0) {
         if (node->args->length() != 2) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "std.debug.print expects 2 arguments");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, "std.debug.print expects 2 arguments", unit.getArena());
         } else {
             visit((*node->args)[0]); // format string
             Type* tuple_type = visit((*node->args)[1]); // tuple literal
             if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, (*node->args)[1]->loc, "std.debug.print second argument must be a tuple literal");
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, (*node->args)[1]->loc, "std.debug.print second argument must be a tuple literal", unit.getArena());
             }
         }
         // Even if we lower it, we still want to resolve the callee to avoid undefined identifier errors
@@ -1806,15 +1806,44 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     // Avoid double resolution but ensure flags are set
     Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
-    if (existing_sym && existing_sym->symbol_type && (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL))) {
-        return existing_sym->symbol_type;
+    if (existing_sym && existing_sym->symbol_type) {
+        if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
+            return existing_sym->symbol_type; // Recursive call encountered placeholder
+        }
+        if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
+            return existing_sym->symbol_type;
+        }
     }
 
     // Capture struct/union name if it's a const declaration
     const char* prev_struct_name = current_struct_name_;
+    Type* placeholder = NULL;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
         current_struct_name_ = node->name;
+
+        // Create and register placeholder
+        placeholder = (Type*)unit.getArena().alloc(sizeof(Type));
+        plat_memset(placeholder, 0, sizeof(Type));
+        placeholder->kind = TYPE_PLACEHOLDER;
+        placeholder->as.placeholder.name = node->name;
+
+        Symbol sym = SymbolBuilder(unit.getArena())
+            .withName(node->name)
+            .withModule(unit.getCurrentModule())
+            .ofType(SYMBOL_VARIABLE) // Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type
+            .withType(placeholder)
+            .atLocation(node->name_loc)
+            .definedBy(node)
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST) // Assuming global for now
+            .build();
+
+        if (!existing_sym) {
+            unit.getSymbolTable().insert(sym);
+            existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+        } else {
+            existing_sym->symbol_type = placeholder;
+        }
     }
 
     Type* declared_type = node->type ? visit(node->type) : NULL;
@@ -1907,6 +1936,16 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             }
         } else {
             initializer_type = visit(node->initializer);
+        }
+
+        // If we created a placeholder, mutate it in-place now
+        if (placeholder && initializer_type) {
+            placeholder->kind = initializer_type->kind;
+            placeholder->size = initializer_type->size;
+            placeholder->alignment = initializer_type->alignment;
+            placeholder->c_name = initializer_type->c_name;
+            placeholder->as = initializer_type->as;
+            initializer_type = placeholder;
         }
 
         if (declared_type) {
@@ -2138,6 +2177,18 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
              return NULL; // Error already reported
         }
 
+        if (!isTypeComplete(field_type)) {
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_data->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, msg, unit.getArena());
+             return NULL;
+        }
 
         StructField sf;
         sf.name = field_data->name;
@@ -2174,6 +2225,19 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         Type* field_type = visit(field_node->type);
         if (field_type && !is_c89_compatible(field_type)) {
             unit.getErrorHandler().report(ERR_NON_C89_FEATURE, field_node->type->loc, "Union field type is not C89-compatible");
+        }
+
+        if (field_type && !isTypeComplete(field_type)) {
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_node->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, msg, unit.getArena());
+             field_type = NULL;
         }
 
         // Check for duplicate names
@@ -2551,7 +2615,9 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
                 } else if (sym->symbol_type->kind == TYPE_STRUCT ||
                            sym->symbol_type->kind == TYPE_UNION ||
                            sym->symbol_type->kind == TYPE_ENUM ||
-                           sym->symbol_type->kind == TYPE_ARRAY) {
+                           sym->symbol_type->kind == TYPE_ARRAY ||
+                           sym->symbol_type->kind == TYPE_PLACEHOLDER ||
+                           sym->symbol_type->kind == TYPE_MODULE) {
                     resolved_type = sym->symbol_type;
                 }
             }

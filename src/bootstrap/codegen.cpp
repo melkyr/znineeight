@@ -892,7 +892,7 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         writeString(cond_tmp);
         writeString(".has_value) {\n");
         indent();
-        if (node->capture_name && node->capture_sym) {
+        if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
             writeIndent();
             const char* c_name = var_alloc_.allocate(node->capture_sym);
             emitType(node->capture_sym->symbol_type, c_name);
@@ -989,7 +989,7 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
     writeString(") {\n");
     indent();
 
-    if (is_optional && if_expr->capture_name && if_expr->capture_sym) {
+    if (is_optional && if_expr->capture_name && if_expr->capture_sym && if_expr->capture_sym->symbol_type->kind != TYPE_VOID) {
         writeIndent();
         const char* c_name = var_alloc_.allocate(if_expr->capture_sym);
         emitType(if_expr->capture_sym->symbol_type, c_name);

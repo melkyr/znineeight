@@ -366,7 +366,27 @@ u32 TypeInterner::hashType(TypeKind kind, void* p1, u64 v1) {
     return h % 256;
 }
 
+static bool containsPlaceholder(Type* type) {
+    if (!type) return false;
+    if (type->kind == TYPE_PLACEHOLDER) return true;
+
+    // Recursive check for components
+    switch (type->kind) {
+        case TYPE_POINTER: return containsPlaceholder(type->as.pointer.base);
+        case TYPE_ARRAY:   return containsPlaceholder(type->as.array.element_type);
+        case TYPE_SLICE:   return containsPlaceholder(type->as.slice.element_type);
+        case TYPE_OPTIONAL: return containsPlaceholder(type->as.optional.payload);
+        case TYPE_ERROR_UNION:
+            return containsPlaceholder(type->as.error_union.payload) ||
+                   (!type->as.error_union.is_inferred && containsPlaceholder(type->as.error_union.error_set));
+        default: return false;
+    }
+}
+
 Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many) {
+    if (containsPlaceholder(base_type)) {
+        return createPointerType(arena_, base_type, is_const, is_many, NULL);
+    }
     u32 h = hashType(TYPE_POINTER, base_type, (u64)is_const | ((u64)is_many << 8));
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_POINTER &&
@@ -388,6 +408,9 @@ Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many)
 }
 
 Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_inferred) {
+    if (containsPlaceholder(payload) || (!is_inferred && containsPlaceholder(error_set))) {
+        return createErrorUnionType(arena_, payload, error_set, is_inferred, NULL);
+    }
     u32 h = hashType(TYPE_ERROR_UNION, payload, (u64)((size_t)error_set ^ (is_inferred ? 1 : 0)));
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_ERROR_UNION &&
@@ -436,6 +459,9 @@ Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>*
 }
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
+    if (containsPlaceholder(element_type)) {
+        return createArrayType(arena_, element_type, size, NULL);
+    }
     u32 h = hashType(TYPE_ARRAY, element_type, size);
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_ARRAY &&
@@ -456,6 +482,9 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
 }
 
 Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
+    if (containsPlaceholder(element_type)) {
+        return createSliceType(arena_, element_type, is_const, NULL);
+    }
     u32 h = hashType(TYPE_SLICE, element_type, is_const ? 1 : 0);
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_SLICE &&
@@ -476,6 +505,9 @@ Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
 }
 
 Type* TypeInterner::getOptionalType(Type* payload) {
+    if (containsPlaceholder(payload)) {
+        return createOptionalType(arena_, payload, NULL);
+    }
     u32 h = hashType(TYPE_OPTIONAL, payload, 0);
     for (Entry* e = buckets[h]; e; e = e->next) {
         if (e->type->kind == TYPE_OPTIONAL &&
@@ -507,13 +539,20 @@ bool isTypeComplete(Type* type) {
         case TYPE_POINTER:
         case TYPE_NULL:
         case TYPE_ENUM:
+        case TYPE_FUNCTION_POINTER:
             return true;
         case TYPE_ARRAY:
             return isTypeComplete(type->as.array.element_type);
         case TYPE_OPTIONAL:
             return isTypeComplete(type->as.optional.payload);
+        case TYPE_ERROR_UNION:
+            return isTypeComplete(type->as.error_union.payload);
+        case TYPE_ERROR_SET:
+            return true;
         case TYPE_SLICE:
             return true; // Slices are always complete (size 8, align 4)
+        case TYPE_PLACEHOLDER:
+            return false;
         case TYPE_STRUCT:
         case TYPE_UNION:
             // calculateStructLayout sets size > 0 for non-empty structs
@@ -661,6 +700,10 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             safe_append(current, remaining, type->as.module.name);
             break;
         case TYPE_INTEGER_LITERAL: safe_append(current, remaining, "comptime_int"); break;
+        case TYPE_PLACEHOLDER:
+            safe_append(current, remaining, "(placeholder) ");
+            safe_append(current, remaining, type->as.placeholder.name);
+            break;
         default:
             safe_append(current, remaining, "unknown");
             break;

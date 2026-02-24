@@ -1111,4 +1111,11 @@ TEST_FUNC(ErrorHandling_DuplicateTags);
 TEST_FUNC(ErrorHandling_SetMerging);
 TEST_FUNC(ErrorHandling_Layout);
 
+// Milestone 7 additions
+TEST_FUNC(RecursiveTypes_SelfRecursiveStruct);
+TEST_FUNC(RecursiveTypes_MutualRecursiveStructs);
+TEST_FUNC(RecursiveTypes_RecursiveSlice);
+TEST_FUNC(RecursiveTypes_IllegalDirectRecursion);
+TEST_FUNC(CrossModule_EnumAccess);
+
 #endif // TEST_DECLARATIONS_HPP
