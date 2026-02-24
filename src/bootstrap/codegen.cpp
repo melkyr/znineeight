@@ -2757,6 +2757,13 @@ const char* C89Emitter::getMangledTypeName(Type* type) {
             }
             break;
         }
+        case TYPE_PLACEHOLDER:
+            if (type->c_name) {
+                safe_append(cur, rem, type->c_name);
+            } else {
+                safe_append(cur, rem, type->as.placeholder.name);
+            }
+            break;
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ENUM: {

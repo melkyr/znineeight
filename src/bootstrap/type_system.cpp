@@ -92,6 +92,7 @@ Type* resolvePrimitiveTypeName(const char* name) {
 
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
+    if (!base_type) return get_g_type_undefined();
     if (interner) {
         return interner->getPointerType(base_type, is_const, is_many);
     }
@@ -127,20 +128,27 @@ Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* para
 }
 
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner) {
+    if (!element_type) return get_g_type_undefined();
     if (interner) {
         return interner->getArrayType(element_type, size);
     }
 
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ARRAY;
-    new_type->size = element_type->size * size;
-    new_type->alignment = element_type->alignment;
+    if (isTypeComplete(element_type)) {
+        new_type->size = element_type->size * size;
+        new_type->alignment = element_type->alignment;
+    } else {
+        new_type->size = 0;
+        new_type->alignment = 0;
+    }
     new_type->as.array.element_type = element_type;
     new_type->as.array.size = size;
     return new_type;
 }
 
 Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, TypeInterner* interner) {
+    if (!element_type) return get_g_type_undefined();
     if (interner) {
         return interner->getSliceType(element_type, is_const);
     }
@@ -192,6 +200,7 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
 }
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
+    if (!payload) return get_g_type_undefined();
     if (interner) {
         return interner->getErrorUnionType(payload, error_set, is_inferred);
     }
@@ -202,7 +211,10 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
     size_t int_size = 4;
     size_t int_align = 4;
 
-    if (payload->kind == TYPE_VOID) {
+    if (!isTypeComplete(payload)) {
+        new_type->size = 0;
+        new_type->alignment = 0;
+    } else if (payload->kind == TYPE_VOID) {
         // struct { int err; int is_error; }
         new_type->alignment = int_align;
         new_type->size = int_size * 2;
@@ -215,7 +227,7 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
         if (int_size > union_size) union_size = int_size;
 
         // Pad union_size to its alignment if necessary (usually unions are already sized correctly)
-        if (union_size % union_align != 0) {
+        if (union_align > 0 && union_size % union_align != 0) {
             union_size += (union_align - (union_size % union_align));
         }
 
@@ -224,13 +236,13 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
         if (int_align > struct_align) struct_align = int_align;
 
         // Align for is_error (int)
-        if (current_offset % int_align != 0) {
+        if (int_align > 0 && current_offset % int_align != 0) {
             current_offset += (int_align - (current_offset % int_align));
         }
         current_offset += int_size;
 
         // Final struct padding
-        if (current_offset % struct_align != 0) {
+        if (struct_align > 0 && current_offset % struct_align != 0) {
             current_offset += (struct_align - (current_offset % struct_align));
         }
 
@@ -245,6 +257,7 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
 }
 
 Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* interner) {
+    if (!payload) return get_g_type_undefined();
     if (interner) {
         return interner->getOptionalType(payload);
     }
@@ -255,7 +268,10 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     size_t int_size = 4;
     size_t int_align = 4;
 
-    if (payload->kind == TYPE_VOID) {
+    if (!isTypeComplete(payload)) {
+        new_type->size = 0;
+        new_type->alignment = 0;
+    } else if (payload->kind == TYPE_VOID) {
         new_type->alignment = int_align;
         new_type->size = int_size;
     } else {
@@ -379,6 +395,15 @@ static bool containsPlaceholder(Type* type) {
         case TYPE_ERROR_UNION:
             return containsPlaceholder(type->as.error_union.payload) ||
                    (!type->as.error_union.is_inferred && containsPlaceholder(type->as.error_union.error_set));
+        case TYPE_FUNCTION_POINTER: {
+            if (containsPlaceholder(type->as.function_pointer.return_type)) return true;
+            if (type->as.function_pointer.param_types) {
+                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                    if (containsPlaceholder((*type->as.function_pointer.param_types)[i])) return true;
+                }
+            }
+            return false;
+        }
         default: return false;
     }
 }
@@ -552,6 +577,13 @@ bool isTypeComplete(Type* type) {
         case TYPE_SLICE:
             return true; // Slices are always complete (size 8, align 4)
         case TYPE_PLACEHOLDER:
+        case TYPE_INTEGER_LITERAL:
+        case TYPE_ANYTYPE:
+        case TYPE_TYPE:
+        case TYPE_UNDEFINED:
+        case TYPE_MODULE:
+        case TYPE_TUPLE:
+        case TYPE_FUNCTION:
             return false;
         case TYPE_STRUCT:
         case TYPE_UNION:

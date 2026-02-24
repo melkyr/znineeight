@@ -1117,5 +1117,8 @@ TEST_FUNC(RecursiveTypes_MutualRecursiveStructs);
 TEST_FUNC(RecursiveTypes_RecursiveSlice);
 TEST_FUNC(RecursiveTypes_IllegalDirectRecursion);
 TEST_FUNC(CrossModule_EnumAccess);
+bool test_OptionalStabilization_UndefinedPayload();
+bool test_OptionalStabilization_RecursiveOptional();
+bool test_OptionalStabilization_AlignedLayout();
 
 #endif // TEST_DECLARATIONS_HPP

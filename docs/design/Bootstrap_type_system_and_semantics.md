@@ -1460,3 +1460,12 @@ In the bootstrap compiler, this is implemented by:
 1.  Evaluating the condition once into a temporary variable.
 2.  Checking the `has_value` flag.
 3.  In the `then` block, declaring the capture variable and assigning the `value` field to it.
+
+### 23.4 Task 9.3 Stabilization and Hardening
+As part of Task 9.3, the optional type implementation was hardened to support complex real-world code like the JSON parser:
+- **NULL Safety**: Type creation factories (`createOptionalType`, `createArrayType`, etc.) now strictly check for NULL payloads/elements, returning `TYPE_UNDEFINED` instead of crashing. This prevents segfaults during the resolution of undefined types.
+- **Placeholder Awareness**: Optional types now correctly handle payloads that are currently being resolved (placeholders). Size and alignment are deferred (set to 0) until the payload type is complete.
+- **Dynamic Layout**: Size and alignment of `?T` are dynamically computed based on `T`'s resolved layout.
+    - `sizeof(?T) = align_up(sizeof(T), alignof(int)) + sizeof(int)`, then padded to `max(alignof(T), alignof(int))`.
+    - This ensures that types with large alignment (like `f64`) are correctly represented in the `Optional_T` C struct.
+- **Interning Logic**: The `TypeInterner` now correctly identifies types containing placeholders and bypasses interning for them, ensuring that they remain unique until they are fully resolved and can be safely deduplicated.
