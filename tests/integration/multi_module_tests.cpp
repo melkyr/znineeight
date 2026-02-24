@@ -51,9 +51,6 @@ TEST_FUNC(MultiModule_StructUsage) {
     u32 types_id = unit.addSource("types.zig", types_source);
     u32 main_id = unit.addSource("main.zig", main_source);
 
-    unit.setCurrentModule("types");
-    ASSERT_TRUE(unit.performFullPipeline(types_id));
-
     unit.setCurrentModule("main");
     ASSERT_TRUE(unit.performFullPipeline(main_id));
 

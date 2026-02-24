@@ -13,6 +13,7 @@ public:
      */
     TypeChecker(CompilationUnit& unit);
 
+    void registerPlaceholders(ASTNode* root);
     void check(ASTNode* root);
     Type* visit(ASTNode* node);
     Type* visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node);
@@ -104,6 +105,7 @@ private:
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
+    Type* resolvePlaceholder(Type* placeholder);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);

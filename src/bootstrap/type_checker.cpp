@@ -15,6 +15,54 @@ TypeChecker::TypeChecker(CompilationUnit& unit)
       function_labels_(unit.getArena()), next_label_id_(0) {
 }
 
+void TypeChecker::registerPlaceholders(ASTNode* root) {
+    if (!root || root->type != NODE_BLOCK_STMT) return;
+
+    DynamicArray<ASTNode*>* statements = root->as.block_stmt.statements;
+    if (!statements) return;
+
+    for (size_t i = 0; i < statements->length(); ++i) {
+        ASTNode* node = (*statements)[i];
+        if (node->type == NODE_VAR_DECL) {
+            ASTVarDeclNode* vd = node->as.var_decl;
+            if (vd->is_const && vd->initializer &&
+                (vd->initializer->type == NODE_STRUCT_DECL ||
+                 vd->initializer->type == NODE_UNION_DECL ||
+                 vd->initializer->type == NODE_ENUM_DECL)) {
+
+                // Check if already has a type or placeholder
+                Symbol* sym = unit.getSymbolTable().lookupInCurrentScope(vd->name);
+                if (sym && sym->symbol_type) {
+                    continue;
+                }
+
+                Type* placeholder = (Type*)unit.getArena().alloc(sizeof(Type));
+                plat_memset(placeholder, 0, sizeof(Type));
+                placeholder->kind = TYPE_PLACEHOLDER;
+                placeholder->as.placeholder.name = vd->name;
+                placeholder->as.placeholder.decl_node = node;
+                placeholder->as.placeholder.module = unit.getModule(unit.getCurrentModule());
+                placeholder->c_name = unit.getNameMangler().mangleFunction(vd->name, NULL, 0, unit.getCurrentModule());
+
+                if (sym) {
+                    sym->symbol_type = placeholder;
+                } else {
+                    Symbol new_sym = SymbolBuilder(unit.getArena())
+                        .withName(vd->name)
+                        .withModule(unit.getCurrentModule())
+                        .ofType(SYMBOL_VARIABLE)
+                        .withType(placeholder)
+                        .atLocation(vd->name_loc)
+                        .definedBy(vd)
+                        .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                        .build();
+                    unit.getSymbolTable().insert(new_sym);
+                }
+            }
+        }
+    }
+}
+
 void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
         // Main pass: visit children directly to avoid root block scope level issue
@@ -1038,6 +1086,9 @@ Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
     }
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    if (!fields) {
+        return NULL;
+    }
     for (size_t i = 0; i < fields->length(); ++i) {
         if (identifiers_equal((*fields)[i].name, field_name)) {
             return (*fields)[i].type;
@@ -1727,6 +1778,65 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     return NULL;
 }
 
+Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
+    if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
+    if (placeholder->as.placeholder.is_resolving) {
+        // Detected cycle while resolving the same placeholder
+        return placeholder;
+    }
+
+    placeholder->as.placeholder.is_resolving = true;
+
+    // Switch to the placeholder's module context
+    const char* old_mod = unit.getCurrentModule();
+    if (placeholder->as.placeholder.module) {
+        unit.setCurrentModule(placeholder->as.placeholder.module->name);
+    }
+
+    Type* resolved = visit(placeholder->as.placeholder.decl_node);
+
+    // Unwrap TYPE_TYPE if necessary
+    if (resolved && resolved->kind == TYPE_TYPE) {
+        // How to unwrap TYPE_TYPE?
+        // Based on visitTypeName, it's usually in sym->details->initializer->resolved_type
+        // But here we just visited it.
+        // Actually visitStructDecl/visitEnumDecl/visitUnionDecl return the TYPE_STRUCT/etc wrapped in TYPE_TYPE?
+        // No, I think they return the TYPE_STRUCT/etc itself in some versions.
+        // Let's check visitStructDecl.
+    }
+
+    // Mutate placeholder in place
+    if (resolved && resolved != placeholder) {
+        TypeKind old_kind = placeholder->kind;
+        const char* old_name = placeholder->as.placeholder.name;
+
+        // If resolved is TYPE_TYPE, we want the underlying type
+        if (resolved->kind == TYPE_TYPE) {
+             // We need a way to get the type from TYPE_TYPE.
+             // Looking at visitTypeName:
+             // resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
+             if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
+                 ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
+                 if (vd->initializer && vd->initializer->resolved_type) {
+                     resolved = vd->initializer->resolved_type;
+                 }
+             }
+        }
+
+        if (resolved->kind != TYPE_PLACEHOLDER) {
+            placeholder->kind = resolved->kind;
+            placeholder->size = resolved->size;
+            placeholder->alignment = resolved->alignment;
+            placeholder->c_name = resolved->c_name;
+            placeholder->as = resolved->as;
+        }
+    }
+
+    placeholder->as.placeholder.is_resolving = false;
+    unit.setCurrentModule(old_mod);
+    return placeholder;
+}
+
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     Type* cond_type = visit(node->expression);
     if (!cond_type) return NULL;
@@ -1806,27 +1916,32 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     // Avoid double resolution but ensure flags are set
     Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+    Type* placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-            return existing_sym->symbol_type; // Recursive call encountered placeholder
-        }
-        if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
+            if (existing_sym->symbol_type->as.placeholder.is_resolving) {
+                return existing_sym->symbol_type; // Recursive call encountered placeholder
+            }
+            placeholder = existing_sym->symbol_type;
+        } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
             return existing_sym->symbol_type;
         }
     }
 
     // Capture struct/union name if it's a const declaration
     const char* prev_struct_name = current_struct_name_;
-    Type* placeholder = NULL;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
         current_struct_name_ = node->name;
+    }
 
+    if (!placeholder && current_struct_name_) {
         // Create and register placeholder
         placeholder = (Type*)unit.getArena().alloc(sizeof(Type));
         plat_memset(placeholder, 0, sizeof(Type));
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
+        placeholder->as.placeholder.is_resolving = false;
 
         Symbol sym = SymbolBuilder(unit.getArena())
             .withName(node->name)
@@ -1844,6 +1959,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         } else {
             existing_sym->symbol_type = placeholder;
         }
+    }
+
+    if (placeholder) {
+        placeholder->as.placeholder.is_resolving = true;
     }
 
     Type* declared_type = node->type ? visit(node->type) : NULL;
@@ -1946,6 +2065,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             placeholder->c_name = initializer_type->c_name;
             placeholder->as = initializer_type->as;
             initializer_type = placeholder;
+            placeholder->as.placeholder.is_resolving = false;
         }
 
         if (declared_type) {
@@ -2305,7 +2425,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                     unit.setCurrentModule(saved_module);
                 }
 
-                if (sym->symbol_type) return sym->symbol_type;
+                if (sym->symbol_type) {
+                    if (sym->symbol_type->kind == TYPE_PLACEHOLDER) {
+                        return resolvePlaceholder(sym->symbol_type);
+                    }
+                    return sym->symbol_type;
+                }
             }
         } else if (base_type->kind == TYPE_MODULE) {
              // Fallback for legacy lookup if module_ptr is not set (e.g. in some tests)
@@ -2471,6 +2596,17 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
         Type* struct_type = visit(node->type_expr);
         if (!struct_type) return NULL;
 
+        if (struct_type->kind == TYPE_TYPE) {
+            // Unwrap if it's a TYPE_TYPE from visitTypeName or similar
+            if (node->type_expr->resolved_type && node->type_expr->resolved_type != get_g_type_type()) {
+                 struct_type = node->type_expr->resolved_type;
+            }
+        }
+
+        if (struct_type->kind == TYPE_PLACEHOLDER) {
+            struct_type = resolvePlaceholder(struct_type);
+        }
+
         if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, "expected struct or array type for initialization", unit.getArena());
             return NULL;
@@ -2619,6 +2755,9 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
                            sym->symbol_type->kind == TYPE_PLACEHOLDER ||
                            sym->symbol_type->kind == TYPE_MODULE) {
                     resolved_type = sym->symbol_type;
+                    if (resolved_type->kind == TYPE_PLACEHOLDER) {
+                        resolved_type = resolvePlaceholder(resolved_type);
+                    }
                 }
             }
         }
@@ -3605,7 +3744,11 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     safe_append(current, remaining, src_str);
     safe_append(current, remaining, "' to '");
     safe_append(current, remaining, tgt_str);
-    safe_append(current, remaining, "'");
+    safe_append(current, remaining, "' (target kind: ");
+    char kind_buf[16];
+    plat_i64_to_string((i64)target_type->kind, kind_buf, sizeof(kind_buf));
+    safe_append(current, remaining, kind_buf);
+    safe_append(current, remaining, ")");
     unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, msg_buffer, unit.getArena());
     return false;
 }

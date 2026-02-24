@@ -1250,7 +1250,7 @@ The `TypeChecker` validates enums by:
 2.  **Value Calculation**: Handles explicit values and Zig-style auto-incrementing.
 3.  **Range Checking**: Verifies each member value fits within the backing type's range.
 4.  **Nominal Typing**: Enums are distinct types based on their declaration identity.
-5.  **Dot Notation Access**: Supports `EnumName.MemberName` via `visitMemberAccess`.
+5.  **Dot Notation Access**: Supports `EnumName.MemberName` and `mod.EnumName.MemberName` via `visitMemberAccess`.
 6.  **C89 Compatibility**: Allows implicit conversion from enums to integer types.
 
 #### Parsing Logic (`parseEnumDeclaration`)
@@ -1607,8 +1607,9 @@ The `parseComptimeBlock` function is responsible for parsing a `comptime` block.
 
 The parser is responsible for parsing type expressions from the token stream. The grammar for type expressions is as follows:
 
-`type = primitive | pointer_type | array_type | slice_type`
+`type = primitive | pointer_type | array_type | slice_type | qualified_type`
 `primitive = IDENTIFIER` (e.g., `i32`, `u8`, `usize`, `isize`, `bool`)
+`qualified_type = IDENTIFIER ('.' IDENTIFIER)*` (e.g., `std.debug.PrintOptions`)
 `pointer_type = ('*' | '[*]') type`
 `array_type = '[' <expr> ']' type`
 `slice_type = '[]' type`
