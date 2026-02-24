@@ -527,11 +527,15 @@ struct ASTRangeNode {
  * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
  * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
  * @var ASTSwitchProngNode::body The expression to execute for this prong.
+ * @var ASTSwitchProngNode::capture_name Optional capture variable name (e.g., `|payload|`).
+ * @var ASTSwitchProngNode::capture_sym Resolved symbol for the capture variable.
  */
 struct ASTSwitchProngNode {
     DynamicArray<ASTNode*>* items;
     bool is_else;
     ASTNode* body;
+    const char* capture_name;
+    Symbol* capture_sym;
 };
 
 /**
@@ -747,9 +751,13 @@ struct ASTStructDeclNode {
  * @struct ASTUnionDeclNode
  * @brief Represents a `union` declaration. Allocated out-of-line.
  * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTVarDeclNode representing the union fields.
+ * @var ASTUnionDeclNode::tag_type_expr Optional tag type expression (e.g., `enum` or explicit enum type).
+ * @var ASTUnionDeclNode::is_tagged True if it's a tagged union.
  */
 struct ASTUnionDeclNode {
     DynamicArray<ASTNode*>* fields;
+    ASTNode* tag_type_expr;
+    bool is_tagged;
 };
 
 /**

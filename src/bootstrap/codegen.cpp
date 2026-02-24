@@ -1306,10 +1306,33 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
         writeString("/* error: switch expression components are NULL */");
         return;
     }
-    writeIndent();
-    writeString("switch (");
-    emitExpression(switch_node->expression);
-    writeString(") {\n");
+
+    Type* cond_type = switch_node->expression->resolved_type;
+    bool is_tagged_union = (cond_type && cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    const char* switch_tmp = NULL;
+
+    if (is_tagged_union) {
+        switch_tmp = var_alloc_.generate("switch_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        emitType(cond_type, switch_tmp);
+        writeString(" = ");
+        emitExpression(switch_node->expression);
+        writeString(";\n");
+
+        writeIndent();
+        writeString("switch (");
+        writeString(switch_tmp);
+        writeString(".tag) {\n");
+    } else {
+        writeIndent();
+        writeString("switch (");
+        emitExpression(switch_node->expression);
+        writeString(") {\n");
+    }
+
     indent();
     for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
         const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
@@ -1344,6 +1367,22 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
             }
         }
         indent();
+
+        if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+            writeIndent();
+            writeString("{\n");
+            indent();
+            writeIndent();
+            emitType(prong->capture_sym->symbol_type, var_alloc_.allocate(prong->capture_sym));
+            writeString(" = ");
+            writeString(switch_tmp);
+            writeString(".data.");
+            // Field name is preserved in original_name of the case item literal
+            ASTNode* item_expr = (*prong->items)[0];
+            writeString(item_expr->as.integer_literal.original_name);
+            writeString(";\n");
+        }
+
         if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
             if (prong->body->type == NODE_BLOCK_STMT) {
                 writeIndent();
@@ -1373,6 +1412,13 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
                 writeString(";\n");
             }
         }
+
+        if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+            dedent();
+            writeIndent();
+            writeString("}\n");
+        }
+
         writeIndent();
         writeString("break;\n");
         dedent();
@@ -1380,6 +1426,12 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
     dedent();
     writeIndent();
     writeString("}\n");
+
+    if (is_tagged_union) {
+        dedent();
+        writeIndent();
+        writeString("}\n");
+    }
 }
 
 void C89Emitter::emitFor(const ASTForStmtNode* node) {
@@ -2358,19 +2410,46 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 type->c_name = getC89GlobalName(decl->name);
             }
             writeIndent();
-            writeString("union ");
-            writeString(type->c_name);
-            writeString(" {\n");
-            indent();
-            DynamicArray<StructField>* fields = type->as.struct_details.fields;
-            for (size_t i = 0; i < fields->length(); ++i) {
+            if (type->as.struct_details.is_tagged) {
+                // If the tag type is an implicit enum with a name, we should ensure it's defined.
+                // For now, assume it's either primitive (int) or was already scanned.
+                writeString("struct ");
+                writeString(type->c_name);
+                writeString(" {\n");
+                indent();
                 writeIndent();
-                emitType((*fields)[i].type, (*fields)[i].name);
+                emitType(type->as.struct_details.tag_type, "tag");
                 writeString(";\n");
+                writeIndent();
+                writeString("union {\n");
+                indent();
+                DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    writeIndent();
+                    emitType((*fields)[i].type, (*fields)[i].name);
+                    writeString(";\n");
+                }
+                dedent();
+                writeIndent();
+                writeString("} data;\n");
+                dedent();
+                writeIndent();
+                writeString("};\n\n");
+            } else {
+                writeString("union ");
+                writeString(type->c_name);
+                writeString(" {\n");
+                indent();
+                DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    writeIndent();
+                    emitType((*fields)[i].type, (*fields)[i].name);
+                    writeString(";\n");
+                }
+                dedent();
+                writeIndent();
+                writeString("};\n\n");
             }
-            dedent();
-            writeIndent();
-            writeString("};\n\n");
         } else if (type->kind == TYPE_ENUM) {
             // C89 doesn't support specific backing types for enums, they are always int.
             // But we can emit a typedef if needed.

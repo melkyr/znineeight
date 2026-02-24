@@ -43,6 +43,7 @@
 #include "integration/rejection_tests.cpp"
 #include "integration/slice_tests.cpp"
 #include "integration/struct_tests.cpp"
+#include "integration/tagged_union_tests.cpp"
 #include "integration/switch_noreturn_tests.cpp"
 #include "integration/switch_tests.cpp"
 #include "integration/task182_183_tests.cpp"

@@ -114,6 +114,9 @@ static inline bool is_c89_compatible(Type* type) {
         case TYPE_ERROR_UNION:
             return is_c89_compatible(type->as.error_union.payload);
 
+        case TYPE_OPTIONAL:
+            return is_c89_compatible(type->as.optional.payload);
+
         case TYPE_ERROR_SET:
             return true;
 
