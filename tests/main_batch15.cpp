@@ -13,6 +13,7 @@ int main(int argc, char* argv[]) {
         test_TaggedUnion_BasicSwitch,
         test_TaggedUnion_ImplicitEnum,
         test_TaggedUnion_ElseProng,
+        test_TaggedUnion_ExplicitEnumCustomValues,
         test_TaggedUnion_CaptureImmutability
     };
 

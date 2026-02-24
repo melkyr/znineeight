@@ -37,6 +37,33 @@ TEST_FUNC(TaggedUnion_BasicSwitch) {
     return true;
 }
 
+TEST_FUNC(TaggedUnion_ExplicitEnumCustomValues) {
+    const char* source =
+        "const Tag = enum(i32) { a = 100, b = 200 };\n"
+        "const U = union(Tag) { a: i32, b: f32 };\n"
+        "fn foo(u: U) i32 {\n"
+        "    return switch (u) {\n"
+        "        .a => |val| val,\n"
+        "        .b => |_| 0,\n"
+        "        else => 0,\n"
+        "    };\n"
+        "}\n";
+
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Pipeline execution failed for:\n%s\n", source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    return true;
+}
+
 TEST_FUNC(TaggedUnion_ImplicitEnum) {
     const char* source =
         "const U = union(enum) { a: i32, b: f32 };\n"

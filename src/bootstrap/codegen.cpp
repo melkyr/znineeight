@@ -2374,7 +2374,6 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
     if (!node) return;
 
     if (node->type == NODE_VAR_DECL) {
-        // plat_print_debug("emitTypeDefinition: var_decl\n");
         const ASTVarDeclNode* decl = node->as.var_decl;
         if (!decl || !decl->initializer) return;
 
@@ -2956,7 +2955,6 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 }
 
 void C89Emitter::emitDefersForScopeExit(int target_label_id) {
-    /* plat_print_debug("emitDefersForScopeExit\n"); */
     for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
         DeferScope* scope = defer_stack_[i];
         if (!scope) continue;
