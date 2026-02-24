@@ -415,9 +415,11 @@ struct Type {
 #### 4.5.1 Recursive Type Handling (Task 229)
 To support self-referential and mutually recursive types (e.g., linked list nodes), the compiler uses a **Placeholder Type** mechanism:
 1. When starting to resolve a type definition (struct, union, or enum), a transient `TYPE_PLACEHOLDER` is inserted into the symbol table under that name.
-2. If the type resolution encounters the same name (directly or indirectly), it returns the placeholder. This allows pointers and slices to reference the type before its layout is fully known.
-3. Once the layout is determined, the placeholder is mutated in-place into the final type (`TYPE_STRUCT`, etc.), ensuring all existing references are automatically updated.
-4. Direct recursion (a struct containing itself without a pointer/slice) is detected and rejected as an "infinite size" error.
+2. **Name Mangling**: During placeholder registration, the `c_name` is immediately computed using the defining module's name (`z_mod_Name`). This ensures consistent mangling even when the type is accessed from other modules.
+3. If the type resolution encounters the same name (directly or indirectly), it returns the placeholder. This allows pointers and slices to reference the type before its layout is fully known.
+4. Once the layout is determined, the placeholder is mutated in-place into the final type (`TYPE_STRUCT`, etc.), ensuring all existing references are automatically updated.
+5. **Sticky Mangled Names**: The mutation process preserves the `c_name` of the placeholder, ensuring that the defining-module prefix is used everywhere.
+6. Direct recursion (a struct containing itself without a pointer/slice) is detected and rejected as an "infinite size" error.
 
 #### 4.5.2 Cross-Module Resolution
 The symbol table and type checker support cross-module access via dot notation (e.g., `module.Type` or `module.Enum.Member`).
@@ -611,6 +613,7 @@ To maintain C89 compatibility and compiler simplicity:
     *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
+    *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
 **Defer Statement Semantics:**

@@ -118,6 +118,7 @@ private:
     const char* current_fn_name;
     const char* current_struct_name_;
     int current_loop_depth;
+    int type_resolution_depth_;
     bool in_defer; ///< True if currently checking a deferred statement.
 
     struct LoopLabel {

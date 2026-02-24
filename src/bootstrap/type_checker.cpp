@@ -11,7 +11,7 @@
 
 TypeChecker::TypeChecker(CompilationUnit& unit)
     : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL),
-      current_loop_depth(0), in_defer(false), label_stack_(unit.getArena()),
+      current_loop_depth(0), type_resolution_depth_(0), in_defer(false), label_stack_(unit.getArena()),
       function_labels_(unit.getArena()), next_label_id_(0) {
 }
 
@@ -42,7 +42,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit.getModule(unit.getCurrentModule());
-                placeholder->c_name = unit.getNameMangler().mangleFunction(vd->name, NULL, 0, unit.getCurrentModule());
+                placeholder->c_name = unit.getNameMangler().mangleTypeName(vd->name, unit.getCurrentModule());
 
                 if (sym) {
                     sym->symbol_type = placeholder;
@@ -1780,12 +1780,11 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 
 Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
-    if (placeholder->as.placeholder.is_resolving) {
-        // Detected cycle while resolving the same placeholder
-        return placeholder;
-    }
 
-    placeholder->as.placeholder.is_resolving = true;
+    type_resolution_depth_++;
+    if (type_resolution_depth_ > 100) {
+        fatalError("Recursion limit reached during type resolution");
+    }
 
     // Switch to the placeholder's module context
     const char* old_mod = unit.getCurrentModule();
@@ -1807,9 +1806,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     // Mutate placeholder in place
     if (resolved && resolved != placeholder) {
-        TypeKind old_kind = placeholder->kind;
-        const char* old_name = placeholder->as.placeholder.name;
-
         // If resolved is TYPE_TYPE, we want the underlying type
         if (resolved->kind == TYPE_TYPE) {
              // We need a way to get the type from TYPE_TYPE.
@@ -1827,13 +1823,15 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
-            placeholder->c_name = resolved->c_name;
+            if (resolved->c_name) {
+                placeholder->c_name = resolved->c_name;
+            }
             placeholder->as = resolved->as;
         }
     }
 
-    placeholder->as.placeholder.is_resolving = false;
     unit.setCurrentModule(old_mod);
+    type_resolution_depth_--;
     return placeholder;
 }
 
@@ -1942,6 +1940,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
         placeholder->as.placeholder.is_resolving = false;
+        placeholder->c_name = unit.getNameMangler().mangleTypeName(node->name, unit.getCurrentModule());
 
         Symbol sym = SymbolBuilder(unit.getArena())
             .withName(node->name)
@@ -1983,6 +1982,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     if (declared_type && declared_type->kind == TYPE_NORETURN) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, "variables cannot be declared as 'noreturn'");
+        return NULL;
+    }
+
+    if (declared_type && declared_type->kind == TYPE_MODULE) {
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, "module is not a type");
         return NULL;
     }
 
@@ -2062,7 +2066,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             placeholder->kind = initializer_type->kind;
             placeholder->size = initializer_type->size;
             placeholder->alignment = initializer_type->alignment;
-            placeholder->c_name = initializer_type->c_name;
+            if (initializer_type->c_name) {
+                placeholder->c_name = initializer_type->c_name;
+            }
             placeholder->as = initializer_type->as;
             initializer_type = placeholder;
             placeholder->as.placeholder.is_resolving = false;
@@ -2321,6 +2327,9 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
     // 3. Create struct type and calculate layout
     Type* struct_type = createStructType(unit.getArena(), fields, struct_name);
+    if (struct_name) {
+        struct_type->c_name = unit.getNameMangler().mangleTypeName(struct_name, unit.getCurrentModule());
+    }
     calculateStructLayout(struct_type);
 
     return struct_type;
@@ -2378,12 +2387,20 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
     }
 
-    return createUnionType(unit.getArena(), fields, union_name);
+    Type* union_type = createUnionType(unit.getArena(), fields, union_name);
+    if (union_name) {
+        union_type->c_name = unit.getNameMangler().mangleTypeName(union_name, unit.getCurrentModule());
+    }
+    return union_type;
 }
 
 Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
     Type* base_type = visit(node->base);
     if (!base_type) return NULL;
+
+    if (base_type->kind == TYPE_PLACEHOLDER) {
+        base_type = resolvePlaceholder(base_type);
+    }
 
     // Auto-dereference for single level pointer
     if (base_type->kind == TYPE_POINTER) {
@@ -2440,6 +2457,14 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                  return sym->symbol_type;
              }
         }
+
+        char msg[256];
+        plat_strcpy(msg, "module '");
+        plat_strcat(msg, base_type->as.module.name);
+        plat_strcat(msg, "' has no member named '");
+        plat_strcat(msg, node->field_name);
+        plat_strcat(msg, "'");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, msg, unit.getArena());
 
         return get_g_type_anytype();
     }
@@ -2596,15 +2621,18 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
         Type* struct_type = visit(node->type_expr);
         if (!struct_type) return NULL;
 
+        if (struct_type->kind == TYPE_PLACEHOLDER) {
+            struct_type = resolvePlaceholder(struct_type);
+        }
+
         if (struct_type->kind == TYPE_TYPE) {
             // Unwrap if it's a TYPE_TYPE from visitTypeName or similar
             if (node->type_expr->resolved_type && node->type_expr->resolved_type != get_g_type_type()) {
                  struct_type = node->type_expr->resolved_type;
+                 if (struct_type->kind == TYPE_PLACEHOLDER) {
+                     struct_type = resolvePlaceholder(struct_type);
+                 }
             }
-        }
-
-        if (struct_type->kind == TYPE_PLACEHOLDER) {
-            struct_type = resolvePlaceholder(struct_type);
         }
 
         if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY) {
@@ -2723,7 +2751,11 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     current_struct_name_ = NULL; // Reset for nested enums
 
     // 4. Create and return the new enum type.
-    return createEnumType(unit.getArena(), enum_name, backing_type, members, min_val, max_val);
+    Type* enum_type = createEnumType(unit.getArena(), enum_name, backing_type, members, min_val, max_val);
+    if (enum_name) {
+        enum_type->c_name = unit.getNameMangler().mangleTypeName(enum_name, unit.getCurrentModule());
+    }
+    return enum_type;
 }
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
