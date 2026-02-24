@@ -60,7 +60,8 @@ TEST_FUNC(Import_Circular) {
     remove("a_circ.zig");
     remove("b_circ.zig");
 
-    ASSERT_FALSE(success);
+    // Circular imports are now allowed to support mutual recursion across modules
+    ASSERT_TRUE(success);
     return true;
 }
 

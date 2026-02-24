@@ -420,7 +420,10 @@ To support self-referential and mutually recursive types (e.g., linked list node
 4. Direct recursion (a struct containing itself without a pointer/slice) is detected and rejected as an "infinite size" error.
 
 #### 4.5.2 Cross-Module Resolution
-The symbol table and type checker support cross-module access via dot notation (e.g., `module.Type`). Symbols from imported modules are resolved on-demand by looking up the imported module's symbol table.
+The symbol table and type checker support cross-module access via dot notation (e.g., `module.Type` or `module.Enum.Member`).
+- **Qualified Identifiers**: The `Parser` produces `NODE_MEMBER_ACCESS` for qualified names.
+- **On-Demand Resolution**: Symbols from imported modules are resolved on-demand. If a member access refers to a module, the `TypeChecker` switches its internal context to the target module to resolve the requested symbol, ensuring that constants and types are correctly evaluated even if the target module hasn't been fully type-checked yet.
+- **Circular Imports**: The compiler supports circular `@import` dependencies between modules, provided they are used for cross-module type definitions (e.g., pointers to types in another module).
 
 **Scoping:** The table uses a stack of `Scope` objects. When the parser enters a new block, it calls `enterScope()`, and when it exits, it calls `exitScope()`. Lookups search from the innermost scope outwards, correctly handling symbol shadowing.
 
@@ -552,8 +555,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   **Property**: `.len` property returns `usize`.
     *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
     *   **Coercion**: Implicit coercion from `[N]T` to `[]T`.
-*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`.
-*   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`.
+*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`.
+*   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`. Supports qualified member access `mod.E.Member`.
 *   **Unions**: Named bare unions via `const U = union { ... };`.
 *   **Functions**: Function declarations with standard C89 parameter limits. Supports recursion and forward references.
 *   **Control Flow**:

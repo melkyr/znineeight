@@ -139,6 +139,9 @@ struct Type {
         } tuple;
         struct {
             const char* name;
+            struct ASTNode* decl_node;
+            struct Module* module;
+            bool is_resolving;
         } placeholder;
     } as;
 };

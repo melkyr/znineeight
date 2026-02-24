@@ -733,6 +733,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
+    // Phase 0: Register Placeholders for all modules
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (!m->ast_root) continue;
+        setCurrentModule(m->name);
+        TypeChecker checker(*this);
+        checker.registerPlaceholders(m->ast_root);
+    }
+
     // Now run semantic analysis on ALL modules
     bool all_success = true;
 
@@ -1086,36 +1095,40 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
         // Check if module already loaded
         Module* imported_mod = getModuleByFilename(interned_abs_path);
 
-        if (!imported_mod) {
-            // Load and parse
-            char* source = NULL;
-            size_t size = 0;
-            if (!plat_file_read(interned_abs_path, &source, &size)) {
-                error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, "Could not read imported file");
-                return false;
-            }
+        if (!imported_mod || !imported_mod->ast_root) {
+            if (!imported_mod) {
+                // Load and parse
+                char* source = NULL;
+                size_t size = 0;
+                if (!plat_file_read(interned_abs_path, &source, &size)) {
+                    error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, "Could not read imported file");
+                    return false;
+                }
 
-            u32 file_id = addSource(interned_abs_path, source);
-            // addSource now creates the module and its symbol table
+                u32 file_id = addSource(interned_abs_path, source);
+                // addSource now creates the module and its symbol table
 
-            // Find the module we just added
-            for (size_t j = 0; j < modules_.length(); ++j) {
-                if (modules_[j]->file_id == file_id) {
-                    imported_mod = modules_[j];
-                    break;
+                // Find the module we just added
+                for (size_t j = 0; j < modules_.length(); ++j) {
+                    if (modules_[j]->file_id == file_id) {
+                        imported_mod = modules_[j];
+                        break;
+                    }
                 }
             }
 
-            Parser* parser = createParser(file_id);
-            ASTNode* ast = parser->parse();
-            if (!ast) return false;
+            if (imported_mod && !imported_mod->ast_root) {
+                Parser* parser = createParser(imported_mod->file_id);
+                ASTNode* ast = parser->parse();
+                if (!ast) return false;
 
-            imported_mod->ast_root = ast;
+                imported_mod->ast_root = ast;
 
-            collectImports(ast, imported_mod);
+                collectImports(ast, imported_mod);
 
-            if (!resolveImportsRecursive(imported_mod, stack)) {
-                return false;
+                if (!resolveImportsRecursive(imported_mod, stack)) {
+                    return false;
+                }
             }
         }
 
