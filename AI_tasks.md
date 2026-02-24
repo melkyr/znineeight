@@ -783,6 +783,14 @@ Output: Runtime assertions in codegen module
     - Updated documentation in AST_parser.md and type system docs.
     - Confirmed all call types are correctly resolved or catalogued for rejection.
 
+229.1 [COMPLETE] **Task 9.2: Cross-Module Qualified Type Names (DONE)**
+    - **Name Mangling**: Implemented consistent type mangling (`z_mod_Name`) across all modules. `c_name` is now computed during the symbol pre-pass and preserved through placeholder mutation.
+    - **Cross-Module Resolution**: Enhanced `visitMemberAccess` and `visitStructInitializer` to support qualified names like `a.Point` and `a.b.c.Type`.
+    - **Stability**: Added recursion depth guards to type resolution and improved circular import handling to support mutual recursion across modules.
+    - **Error Handling**: Added descriptive error messages for missing module members and explicit rejection of modules used as types.
+    - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the Name Mangling Contract and resolution details.
+    - **Verification**: Expanded `cross_module_tests.cpp` and `recursive_type_tests.cpp` with comprehensive edge cases.
+
 169. **Task 169:** Write bootstrap-specific unit tests
     - Risk Level: MEDIUM
     - Test basic type checking functionality and verify C89 compatibility of generated types

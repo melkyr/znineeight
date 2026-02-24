@@ -79,6 +79,35 @@ const char* NameMangler::mangleFunction(const char* name,
     return interner_.intern(buffer);
 }
 
+const char* NameMangler::mangleTypeName(const char* name, const char* module) {
+    char buffer[256];
+    char* ptr = buffer;
+    size_t remaining = sizeof(buffer);
+
+    // Handle module prefix (skip for main and test modules)
+    if (module && plat_strcmp(module, "main") != 0 &&
+        plat_strcmp(module, "test") != 0) {
+
+        safe_append(ptr, remaining, "z_");
+        safe_append(ptr, remaining, module);
+        safe_append(ptr, remaining, "_");
+    } else if (isCKeyword(name)) {
+        safe_append(ptr, remaining, "z_");
+    }
+
+    // Append name
+    safe_append(ptr, remaining, name);
+
+    ::sanitizeForC89(buffer);
+
+    // Limit to 31 characters for MSVC 6.0 compatibility
+    if (plat_strlen(buffer) > 31) {
+        buffer[31] = '\0';
+    }
+
+    return interner_.intern(buffer);
+}
+
 const char* NameMangler::mangleType(Type* type) {
     if (!type) return "void";
 
@@ -140,6 +169,14 @@ const char* NameMangler::mangleType(Type* type) {
             const char* payload = mangleType(type->as.optional.payload);
             safe_append(ptr, remaining, payload);
             return interner_.intern(buf);
+        }
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_ENUM: {
+            if (type->c_name) return type->c_name;
+            const char* name = (type->kind == TYPE_ENUM) ? type->as.enum_details.name : type->as.struct_details.name;
+            if (name) return name;
+            return "anonymous";
         }
         case TYPE_ERROR_SET: {
             if (type->as.error_set.name) {

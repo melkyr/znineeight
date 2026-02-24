@@ -25,6 +25,11 @@ public:
      */
     const char* mangleType(Type* type);
 
+    /**
+     * @brief Mangles a named type with a module prefix.
+     */
+    const char* mangleTypeName(const char* name, const char* module);
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
