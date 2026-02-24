@@ -90,35 +90,21 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 ---
 
-### Task 9.3: Fix Optional Type Segfault
+### Task 9.3: Fix Optional Type Segfault [DONE]
 **Goal**: Resolve the segmentation fault when processing optional types like `?File`.
 
-**Why**: This might be related to recursive types or a missing `visit` method. If the crash occurs in `createOptionalType`, check that the base type is not null and that the `TypeInterner` handles it correctly.
+**Result**: Resolved by adding NULL checks in `createOptionalType` and related factories, and implementing dynamic size/alignment calculation based on the payload type's completeness.
 
-**Steps**:
-- Add null checks in `createOptionalType` and `createPointerType`.
-- Ensure that `TypeInterner::getOrCreate` returns a valid type for optional types.
-- Verify that the optional type’s size/alignment are computed correctly (use base type’s size and alignment, plus an `int` flag). The current hardcoded values (8 and 4) may be insufficient for types with larger alignment (e.g., `?f64`). We need dynamic computation.
+**Fix Details**:
+- Added NULL checks to `createOptionalType`, `createPointerType`, `createArrayType`, `createSliceType`, and `createErrorUnionType`. These now return `TYPE_UNDEFINED` instead of crashing when given a NULL payload.
+- Implemented dynamic layout calculation for `?T` in `createOptionalType`, correctly handling padding and alignment for payloads with alignment > 4 (e.g., `f64`).
+- Updated `isTypeComplete` to handle `TYPE_OPTIONAL` and other complex types properly.
+- Updated `TypeInterner` to bypass interning for types containing `TYPE_PLACEHOLDER`, preventing issues with mutating types.
+- Updated `getMangledTypeName` in codegen to handle `TYPE_PLACEHOLDER` gracefully.
 
-**Implementation**:
-- In `createOptionalType`, compute:
-  ```cpp
-  size_t flag_size = 4; // sizeof(int)
-  size_t flag_align = 4;
-  size_t base_align = base->alignment;
-  size_t union_align = (base_align > flag_align) ? base_align : flag_align;
-  size_t union_size = (base->size > flag_size) ? base->size : flag_size;
-  // Round union_size up to union_align
-  union_size = (union_size + union_align - 1) & ~(union_align - 1);
-  size_t total_size = union_size + flag_size;
-  size_t total_align = (base_align > flag_align) ? base_align : flag_align;
-  // Round total_size up to total_align
-  total_size = (total_size + total_align - 1) & ~(total_align - 1);
-  ```
-- Set these values in the optional type.
-
-**Testing**:
-- Add a simple test using `?i32` and `?f64` to ensure no crash and correct size/alignment.
+**Verification**:
+- Added regression tests for undefined optional payloads and recursive optional types.
+- Verified correct size calculation for `?f64` and other aligned types.
 
 ---
 

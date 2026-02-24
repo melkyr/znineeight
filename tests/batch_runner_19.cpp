@@ -50,6 +50,7 @@
 #include "integration/task225_2_tests.cpp"
 #include "integration/task227_try_catch_tests.cpp"
 #include "integration/task228_optional_tests.cpp"
+#include "integration/task9_3_optional_stabilization_tests.cpp"
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"

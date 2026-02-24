@@ -570,7 +570,9 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
-*   **Optional Types**: Supported as of Milestone 7. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`). Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types including pointers.
+*   **Optional Types**: Fully supported as of Task 9.3 stabilization. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
+    *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types. Size and alignment are dynamically calculated based on the payload type `T` and an `int` flag, including proper padding for alignment.
+    *   **Stability**: Hardened with NULL checks and placeholder awareness during type creation.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
     *   `@sizeOf(T)` -> `usize` literal
