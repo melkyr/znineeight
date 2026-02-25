@@ -71,12 +71,12 @@ private:
     /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
      */
-    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, DynamicArray<Type*>& visited);
+    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, DynamicArray<Type*>& visited, int depth = 0);
 
     /**
      * @brief Recursively scans a type for special components.
      */
-    void scanType(Type* type, C89Emitter& emitter, DynamicArray<Type*>& visited);
+    void scanType(Type* type, C89Emitter& emitter, DynamicArray<Type*>& visited, int depth = 0);
 
     CompilationUnit& unit_;
     const char* entry_filename_;

@@ -21,7 +21,11 @@ TEST_FUNC(CrossModule_EnumAccess) {
 
     unit.performFullPipeline(main_id);
 
-    return !unit.getErrorHandler().hasErrors();
+    if (unit.getErrorHandler().hasErrors()) {
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+    return true;
 }
 
 TEST_FUNC(CrossModule_FunctionSignature) {

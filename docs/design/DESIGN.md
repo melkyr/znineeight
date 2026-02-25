@@ -957,7 +957,21 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 - **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.
 
-### 13.3 CVariableAllocator
+### 13.3 Type Discovery and Emission Order
+To handle mutually recursive types and complex dependencies in C89, the backend uses a multi-pass approach:
+
+1.  **Type Discovery Pass (`scanForSpecialTypes`)**: Recursively traverses the AST and resolved types to find all structs, unions, enums, slices, optionals, and error unions.
+    - **Forward Declarations**: Every struct, union, and enum encountered is immediately forward-declared (e.g., `struct Foo;`) in a buffered section. This allows pointers to these types to be used in dependent typedefs.
+    - **Dependent Typedefs**: Slices, optionals, and error unions are emitted as `typedef` structs (e.g., `typedef struct { Foo* ptr; usize len; } Slice_Foo;`).
+    - **Recursion Guard**: To prevent stack overflow in 1998-era environments (MSVC 6.0 default stack is 1MB), the discovery pass is limited to a recursion depth of 200.
+2.  **Emission Phase**:
+    - **Buffered Definitions**: The forward declarations and dependent typedefs collected during the discovery pass are dumped at the top of the file (or header).
+    - **Full Definitions**: The complete definitions of structs, unions, and enums are then emitted. Because the dependent typedefs (like slices) are already defined, they can be used as direct members of these structs.
+    - **Global Declarations & Functions**: Finally, variables and function definitions are emitted.
+
+This order ensures that circular dependencies between structs and slices of those structs are correctly resolved by the C compiler.
+
+### 13.4 CVariableAllocator
 - **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.
 - **MSVC 6.0 Compatibility**: Enforces a strict 31-character limit for all identifiers.
 - **Uniquification**: Appends numeric suffixes to resolve name collisions within a function scope.

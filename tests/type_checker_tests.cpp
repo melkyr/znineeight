@@ -119,7 +119,9 @@ TEST_FUNC(TypeCheckerStringLiteralType) {
     ASSERT_TRUE(result_type != NULL);
     ASSERT_EQ(result_type->kind, TYPE_POINTER);
     ASSERT_TRUE(result_type->as.pointer.base != NULL);
-    ASSERT_EQ(result_type->as.pointer.base->kind, TYPE_U8);
+    // String literals are pointers to arrays in Z98
+    ASSERT_EQ(result_type->as.pointer.base->kind, TYPE_ARRAY);
+    ASSERT_EQ(result_type->as.pointer.base->as.array.element_type->kind, TYPE_U8);
 
     return true;
 }

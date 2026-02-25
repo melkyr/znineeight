@@ -287,6 +287,13 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Emits an expression with potential implicit coercion.
+     * @param expected The expected type.
+     * @param node The expression node.
+     */
+    void emitCoercedExpression(Type* expected, const ASTNode* node);
+
+    /**
      * @brief Emits a special compiler-assisted lowering for std.debug.print.
      * @param node The function call node.
      */
@@ -395,6 +402,12 @@ public:
     void ensureOptionalType(Type* type);
 
     /**
+     * @brief Ensures a forward declaration for a struct, union, or enum is emitted.
+     * @param type The type to forward declare.
+     */
+    void ensureForwardDeclaration(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -446,6 +459,7 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> forward_decls_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;

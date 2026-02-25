@@ -1310,10 +1310,13 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
+Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* node) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    // String literals are pointers to constant characters.
-    return createPointerType(unit.getArena(), char_type, true, false, &unit.getTypeInterner());
+    // String literals are pointers to constant characters of a fixed size (array).
+    // This allows slicing via pointer-to-array auto-deref.
+    size_t len = plat_strlen(node->value);
+    Type* array_type = createArrayType(unit.getArena(), char_type, (u64)len, &unit.getTypeInterner());
+    return createPointerType(unit.getArena(), array_type, true, false, &unit.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
@@ -2403,16 +2406,18 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             char type_str[64];
-             typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_data->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-             return NULL;
+             if (!containsPlaceholder(field_type)) {
+                 char type_str[64];
+                 typeToString(field_type, type_str, sizeof(type_str));
+                 char msg[256];
+                 plat_strcpy(msg, "field '");
+                 plat_strcat(msg, field_data->name);
+                 plat_strcat(msg, "' has incomplete type '");
+                 plat_strcat(msg, type_str);
+                 plat_strcat(msg, "'");
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+                 return NULL;
+             }
         }
 
         StructField sf;
@@ -2485,16 +2490,18 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             char type_str[64];
-             typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_node->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-             return NULL;
+             if (!containsPlaceholder(field_type)) {
+                 char type_str[64];
+                 typeToString(field_type, type_str, sizeof(type_str));
+                 char msg[256];
+                 plat_strcpy(msg, "field '");
+                 plat_strcat(msg, field_node->name);
+                 plat_strcat(msg, "' has incomplete type '");
+                 plat_strcat(msg, type_str);
+                 plat_strcat(msg, "'");
+                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+                 return NULL;
+             }
         }
 
         // Check for duplicate names
@@ -3394,6 +3401,14 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
     }
 
+    // Slice to Many-item Pointer coercion (e.g. for extern C calls)
+    if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many && actual->kind == TYPE_SLICE) {
+        if (areTypesEqual(expected->as.pointer.base, actual->as.slice.element_type)) {
+            // Const correctness: []T can be used as [*]const T, but not vice-versa
+            return expected->as.pointer.is_const || !actual->as.slice.is_const;
+        }
+    }
+
     // Widening for signed integers
     bool actual_is_signed = (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64) || actual->kind == TYPE_ISIZE;
     bool expected_is_signed = (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) || expected->kind == TYPE_ISIZE;
@@ -3445,6 +3460,18 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         Type* actual_base = actual->as.pointer.base;
         Type* expected_base = expected->as.pointer.base;
+
+        // Pointer to array decays to pointer to element (C-style decay for Zig bootstrap)
+        if (actual_base->kind == TYPE_ARRAY && areTypesEqual(actual_base->as.array.element_type, expected_base)) {
+            return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+        }
+
+        // Single-item to Many-item pointer coercion (*T -> [*]T)
+        if (!actual->as.pointer.is_many && expected->as.pointer.is_many) {
+            if (areTypesEqual(actual_base, expected_base)) {
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
+        }
 
         // Allow T* -> void* (implicit)
         if (expected_base->kind == TYPE_VOID && actual_base->kind != TYPE_VOID) {
@@ -3857,11 +3884,43 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
     }
 
+    // Pointer-to-Array to Slice coercion
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
+        source_type->as.pointer.base->kind == TYPE_ARRAY) {
+        return areTypesEqual(target_type->as.slice.element_type, source_type->as.pointer.base->as.array.element_type);
+    }
+
     // Slice to Slice assignment/coercion
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
         if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
             // Const correctness: []T can be used as []const T, but not vice-versa
             return target_type->as.slice.is_const || !source_type->as.slice.is_const;
+        }
+    }
+
+    // Slice to Many-item Pointer coercion
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many && source_type->kind == TYPE_SLICE) {
+        if (areTypesEqual(target_type->as.pointer.base, source_type->as.slice.element_type)) {
+            return target_type->as.pointer.is_const || !source_type->as.slice.is_const;
+        }
+    }
+
+    // Pointer to Pointer coercion (const correctness, single to many)
+    if (target_type->kind == TYPE_POINTER && source_type->kind == TYPE_POINTER) {
+        // Pointer to array decays to pointer to element
+        if (source_type->as.pointer.base->kind == TYPE_ARRAY &&
+            areTypesEqual(source_type->as.pointer.base->as.array.element_type, target_type->as.pointer.base)) {
+            return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+        }
+
+        if (areTypesEqual(target_type->as.pointer.base, source_type->as.pointer.base)) {
+            // Allow *T to [*]T
+            if (target_type->as.pointer.is_many || !source_type->as.pointer.is_many) {
+                // Const correctness
+                if (target_type->as.pointer.is_const || !source_type->as.pointer.is_const) {
+                    return true;
+                }
+            }
         }
     }
 

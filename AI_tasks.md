@@ -1517,13 +1517,22 @@ Key changes:
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the Name Mangling Contract and resolution details.
     - **Verification**: Expanded `cross_module_tests.cpp` and `recursive_type_tests.cpp` with comprehensive edge cases.
 
-230. [IN PROGRESS] **Task 9.5: Incremental Error Handling Overhaul**
+230. [COMPLETE] **Task 9.5: Incremental Error Handling Overhaul**
     - **Phase 0 (Harness & PAL)**: Implemented `plat_write_str` and `Z98_ASSERT` for robust debugging. Synchronized the test harness with `ErrorHandler::hasErrors()` to maintain compatibility with legacy tests.
     - **Phase 1 (Parser)**: Transitioned parser errors to record diagnostics before aborting.
     - **Phase 2 & 3 (Type Checker Recovery)**: Converted all semantic `fatalError` calls to recoverable `report()` calls. Visitors now return sentinel values (`NULL`/`false`) to allow multi-error reporting.
     - **Phase 4 (Centralization)**: Centralized all error messages in `ErrorHandler::getMessage(code)`. Updated all compiler passes to use consistent messaging and moved metadata to the `hint` field.
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the new two-tier error model.
-    - **Remaining**: Fix minor regressions in Batch 45/47 and implement the multi-error integration test.
+    - **Verification**: Verified with Batch 49 multi-error reporting test.
+
+231. [COMPLETE] **Task 9.7: Recursive Slice Stability and Coercion (DONE)**
+    - **C89 Backend Hardening**: Implemented `ensureForwardDeclaration` and two-phase emission (Forward Decls -> Dependent Typedefs -> Full Definitions) to resolve struct-slice circularities.
+    - **Isolation**: Moved type cache to `Module` level for headers to prevent cross-module pollution.
+    - **Safety**: Added recursion depth guard (limit 200) to type discovery.
+    - **Type System**: Enabled implicit coercion from `[]T` to `[*]T` in all assignment-like contexts (args, returns, vars).
+    - **Hardening**: Refined placeholder resolution in struct/union fields to avoid premature "incomplete type" errors.
+    - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the discovery pass and dependency tracking rules.
+    - **Verification**: Verified with reproduction suite covering mutual recursion and coercion. Note: Subsumes Task 9.6.
 
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 

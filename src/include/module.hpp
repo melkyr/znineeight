@@ -45,10 +45,12 @@ struct Module {
     ExtractionAnalysisCatalogue extraction_analysis_catalogue;
     ErrDeferCatalogue errdefer_catalogue;
     IndirectCallCatalogue indirect_call_catalogue;
+    DynamicArray<const char*> emitted_types_cache;
 
     Module(ArenaAllocator& arena)
         : imports(arena),
           import_nodes(arena),
+          emitted_types_cache(arena),
           error_set_catalogue(arena),
           generic_catalogue(arena),
           error_function_catalogue(arena),
