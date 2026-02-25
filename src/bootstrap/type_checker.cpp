@@ -2406,18 +2406,16 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_data->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 return NULL;
-             }
+            char type_str[64];
+            typeToString(field_type, type_str, sizeof(type_str));
+            char msg[256];
+            plat_strcpy(msg, "field '");
+            plat_strcat(msg, field_data->name);
+            plat_strcat(msg, "' has incomplete type '");
+            plat_strcat(msg, type_str);
+            plat_strcat(msg, "' (direct or circular recursion without pointer/slice is not allowed)");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+            return NULL;
         }
 
         StructField sf;
@@ -2490,18 +2488,16 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_node->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 return NULL;
-             }
+            char type_str[64];
+            typeToString(field_type, type_str, sizeof(type_str));
+            char msg[256];
+            plat_strcpy(msg, "field '");
+            plat_strcat(msg, field_node->name);
+            plat_strcat(msg, "' has incomplete type '");
+            plat_strcat(msg, type_str);
+            plat_strcat(msg, "' (direct or circular recursion without pointer/slice is not allowed)");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+            return NULL;
         }
 
         // Check for duplicate names
