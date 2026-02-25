@@ -90,8 +90,9 @@ void Parser::error(const char* msg) {
     plat_print_debug("\n");
 
     /* Note: In the future, we might add a recovery mechanism here.
-       For now, we return and let the caller handle it.
-       The test harness will still abort if it detects errors. */
+       For now, we abort to prevent unstable execution (infinite loops, etc.)
+       as the parser is not yet designed for recovery. */
+    plat_abort();
 }
 
 ASTNode* Parser::createNode(NodeType type) {
