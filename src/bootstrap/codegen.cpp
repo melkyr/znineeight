@@ -2030,7 +2030,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_ARRAY_ACCESS: {
             const ASTNode* array_node = node->as.array_access->array;
             Type* array_type = array_node->resolved_type;
+            bool is_slice = (array_type && array_type->kind == TYPE_SLICE);
             bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
+                                    array_type->as.pointer.base &&
                                     array_type->as.pointer.base->kind == TYPE_ARRAY);
 
             if (is_ptr_to_array) {
@@ -2044,6 +2046,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 
             if (is_ptr_to_array) {
                 writeString(")");
+            }
+
+            if (is_slice) {
+                writeString(".ptr");
             }
 
             writeString("[");
