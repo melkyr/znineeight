@@ -1,0 +1,11 @@
+{
+  "name": "RetroZig",
+  "version": 0.1,
+  "is_fun": true,
+  "tags": ["compiler", "C89", "Win95"],
+  "author": {
+    "name": "Jules",
+    "role": "Engineer"
+  },
+  "null_val": null
+}

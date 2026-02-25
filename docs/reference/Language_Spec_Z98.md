@@ -93,11 +93,11 @@ Memory is reclaimed by resetting or destroying the arena.
 ## 3. Control Flow
 
 ### 3.1 Statements
-- `if (cond) { ... } else { ... }`: Braces are **required** for standalone if statements.
+- `if (cond) { ... } else { ... }`: Braces are **strictly required** for all `if` statement bodies in the bootstrap compiler.
   - **Optional Capture**: `if (optional_val) |val| { ... }`. Unwraps the optional value if it is not null. `val` is immutable.
-- **If Expressions**: `if (cond) a else b`. Braces are NOT required. Must have an `else` branch. Result type is merged from both branches.
+- **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
-- `while (cond) { ... }`: Simple loop.
+- `while (cond) { ... }`: Simple loop. Braces are **strictly required** for the loop body. The `while (cond) : (iter)` syntax is currently **NOT supported**.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
@@ -176,7 +176,7 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic.
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals and slices do **not** implicitly decay to many-item pointers; use `.ptr` and `@ptrCast` explicitly.
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
