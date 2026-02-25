@@ -44,10 +44,10 @@ TEST_FUNC(Task165_C89Incompatible) {
     CompilationUnit unit(arena, interner);
     unit.injectRuntimeSymbols();
 
-    // Use a function with incompatible type (optional)
+    // Use a function with incompatible type
     const char* source =
-        "fn takeOptional(s: ?i32) void {}\n"
-        "fn main() void { takeOptional(undefined); }\n";
+        "fn takeIncompatible(e: test_incompatible) void {}\n"
+        "fn main() void { takeIncompatible(undefined); }\n";
 
     u32 file_id = unit.addSource("test.zig", source);
 

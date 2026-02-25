@@ -134,39 +134,46 @@ public:
 ```
 
 ### 3.4 Error Handling System (`error_handler.hpp`)
+**Philosophy:** The RetroZig compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
+
 ```cpp
 class ErrorHandler {
 public:
-    ErrorHandler(SourceManager& sm);
-    void printErrorReport(const ErrorReport& report);
+    ErrorHandler(SourceManager& sm, ArenaAllocator& arena);
+
+    // Reports a recoverable error. The compiler continues analysis.
+    void report(ErrorCode code, SourceLocation location, const char* message, const char* hint = NULL);
+
+    // Centralized mapping of error codes to descriptive base messages.
+    static const char* getMessage(ErrorCode code);
+
+    bool hasErrors() const;
+    void printErrors();
 };
 
 enum ErrorCode {
     ERR_SYNTAX_ERROR = 1000,
     ERR_TYPE_MISMATCH = 2000,
     ERR_UNDEFINED_VARIABLE = 3000,
-    ERR_INVALID_OPERATION = 4000,
-    ERR_OUT_OF_MEMORY = 5000
-};
-
-struct ErrorReport {
-    ErrorCode code;
-    SourceLocation location;
-    const char* message;
-    const char* hint;
+    // ...
+    ERR_INTERNAL_ERROR = 5001
 };
 ```
+
+#### 3.4.1 Error Tiers
+1.  **Fatal Errors / Assertions:** Truly unrecoverable issues (e.g., Out of Memory, Internal Compiler Inconsistency) use the `Z98_ASSERT(cond)` macro or `plat_abort()`. These terminate the compiler immediately.
+2.  **Recoverable Semantic Errors:** Standard compilation errors (type mismatches, undefined identifiers) are reported via `ErrorHandler::report()`. Visitors return sentinel values (like `NULL` for types) to allow the compiler to continue and potentially discover more errors in the same file.
+
+#### 3.4.2 Test Suite Compatibility
+To maintain over 500 legacy tests that expect immediate process termination on the first error, the test harness (`tests/test_utils.cpp`) is synchronized with the `ErrorHandler`. After each compilation phase in a test child-process, the harness checks `hasErrors()` and manually calls `plat_abort()` if any were reported. This preserves "abort-on-error" behavior for tests while allowing the compiler itself to be recoverable.
+
 **Diagnostic Format:**
 ```
-filename.zig(23:5): error 2001: Cannot assign 'string' to 'int'
+filename.zig:23:5: error: type mismatch
     my_var = "hello";
-    ^^^^^^
-    Hint: Convert string to integer using parseInt()
+    ^
+    hint: Incompatible assignment: '[]u8' to 'i32'
 ```
-**Error Recovery Strategy:**
-- **Synchronization Points:** After semicolons, closing braces, or specific keywords
-- **Recovery Tokens:** 'fn', 'var', 'const', ';', '}', ')'
-- **Maximum Skip:** 50 tokens before giving up
 
 ## 4. Compilation Pipeline
 

@@ -1,4 +1,5 @@
 #include "parser.hpp"
+#include "error_handler.hpp"
 #include "error_set_catalogue.hpp"
 #include "generic_catalogue.hpp"
 #include "ast.hpp"
@@ -10,12 +11,13 @@
 /**
  * @brief Constructs a new Parser instance.
  */
-Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner, const char* module_name)
+Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorHandler* error_handler, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner, const char* module_name)
     : tokens_(tokens),
       token_count_(count),
       current_index_(0),
       arena_(arena),
       symbol_table_(symbol_table),
+      error_handler_(error_handler),
       catalogue_(catalogue),
       generic_catalogue_(generic_catalogue),
       type_interner_(type_interner),
@@ -25,6 +27,7 @@ Parser::Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolT
 {
     assert(arena_ != NULL && "ArenaAllocator cannot be null");
     assert(symbol_table_ != NULL && "SymbolTable cannot be null");
+    assert(error_handler_ != NULL && "ErrorHandler cannot be null");
     // Initialize the EOF token.
     eof_token_.type = TOKEN_EOF;
     eof_token_.value.identifier = NULL;
@@ -65,11 +68,18 @@ Token Parser::expect(TokenType type, const char* msg) {
 }
 
 void Parser::error(const char* msg) {
+    Token t = peek();
+
+    /* Report error via ErrorHandler */
+    if (error_handler_) {
+        error_handler_->report(ERR_SYNTAX_ERROR, t.location, ErrorHandler::getMessage(ERR_SYNTAX_ERROR), msg);
+    }
+
+    /* Keep old debug output for now */
     plat_print_debug("Parser Error: ");
     plat_print_debug(msg);
     plat_print_debug(" at token ");
     char buf[64];
-    Token t = peek();
     plat_i64_to_string(t.type, buf, sizeof(buf));
     plat_print_debug(buf);
     if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_STRING_LITERAL) {

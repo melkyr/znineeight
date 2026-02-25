@@ -40,6 +40,22 @@ DEFINE_GET_TYPE_FUNC(g_type_type, TYPE_TYPE, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_noreturn, TYPE_NORETURN, 0, 1)
 DEFINE_GET_TYPE_FUNC(g_type_anytype, TYPE_ANYTYPE, 0, 0)
 
+Type* get_g_type_anyerror() {
+    static Type t;
+    static bool initialized = false;
+    if (!initialized) {
+        t.kind = TYPE_ERROR_SET;
+        t.size = 4;
+        t.alignment = 4;
+        t.c_name = NULL;
+        t.as.error_set.name = "anyerror";
+        t.as.error_set.tags = NULL;
+        t.as.error_set.is_anonymous = false;
+        initialized = true;
+    }
+    return &t;
+}
+
 static Type* allocateType(ArenaAllocator& arena) {
     Type* t = (Type*)arena.alloc(sizeof(Type));
 #ifdef MEASURE_MEMORY
@@ -86,6 +102,8 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "type") == 0) return get_g_type_type();
     if (plat_strcmp(name, "noreturn") == 0) return get_g_type_noreturn();
     if (plat_strcmp(name, "anytype") == 0) return get_g_type_anytype();
+    if (plat_strcmp(name, "anyerror") == 0) return get_g_type_anyerror();
+    if (plat_strcmp(name, "test_incompatible") == 0) return get_g_type_anyerror(); // Reuse anyerror as they are both incompatible
 
     return NULL; // Not a known primitive type
 }

@@ -204,7 +204,7 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
         }
         safe_append(cur, rem, "'");
 
-        ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, msg, ctx.unit.getArena());
+        ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), ctx.unit.getArena(), msg);
         ctx.success = false;
         return;
     }
@@ -230,7 +230,7 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
                     safe_append(cur, rem, name);
                     safe_append(cur, rem, "'");
 
-                    ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, msg, ctx.unit.getArena());
+                    ctx.unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), ctx.unit.getArena(), msg);
                     ctx.success = false;
                 }
             }

@@ -526,8 +526,7 @@ void NullPointerAnalyzer::checkDereference(ASTNode* expr) {
 
     switch (state) {
         case PS_NULL:
-            unit_.getErrorHandler().report(ERR_NULL_POINTER_DEREFERENCE, expr->loc,
-                "Definite null pointer dereference");
+            unit_.getErrorHandler().report(ERR_NULL_POINTER_DEREFERENCE, expr->loc, ErrorHandler::getMessage(ERR_NULL_POINTER_DEREFERENCE), "Definite null pointer dereference");
             break;
         case PS_UNINIT:
             unit_.getErrorHandler().reportWarning(WARN_UNINITIALIZED_POINTER, expr->loc,

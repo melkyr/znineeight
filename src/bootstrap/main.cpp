@@ -29,7 +29,7 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
     }
 
     if (!unit.areErrorTypesEliminated()) {
-        unit.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), "Error types were not effectively eliminated during validation.");
+        unit.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Error types were not effectively eliminated during validation.");
         unit.getErrorHandler().printErrors();
         return false;
     }

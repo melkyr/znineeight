@@ -87,6 +87,12 @@ void run_parser_test_in_child(const char* source) {
     u32 file_id = comp_unit.addSource("test.zig", source);
     Parser* p = comp_unit.createParser(file_id);
     p->parse();
+
+    if (comp_unit.getErrorHandler().hasErrors()) {
+        fprintf(stderr, "Child process: parser errors found, aborting...\n");
+        comp_unit.getErrorHandler().printErrors();
+        abort();
+    }
 }
 
 void run_type_checker_test_in_child(const char* source) {

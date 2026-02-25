@@ -93,7 +93,7 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
         safe_append(current, remaining, var_name);
         safe_append(current, remaining, "' creates dangling pointer");
 
-        unit_.getErrorHandler().report(ERR_LIFETIME_VIOLATION, node->expression->loc, msg_buffer, unit_.getArena());
+        unit_.getErrorHandler().report(ERR_LIFETIME_VIOLATION, node->expression->loc, ErrorHandler::getMessage(ERR_LIFETIME_VIOLATION), unit_.getArena(), msg_buffer);
     }
 }
 

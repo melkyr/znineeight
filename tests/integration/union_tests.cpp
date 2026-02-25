@@ -35,8 +35,13 @@ TEST_FUNC(UnionIntegration_BareUnion) {
 }
 
 TEST_FUNC(UnionIntegration_RejectTaggedUnion) {
-    // Tagged unions use: union(Enum) { ... }
-    // The current parser does not support the parenthesized tag.
+    /* Tagged unions are now supported in the bootstrap compiler. */
     const char* source = "const Tag = enum { A, B };\nconst U = union(Tag) { a: i32, b: f32 };";
-    return expect_parser_abort(source);
+
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+    return unit.performTestPipeline(file_id);
 }

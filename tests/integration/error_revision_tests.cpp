@@ -19,7 +19,7 @@ TEST_FUNC(ErrorHandling_DuplicateTags) {
     const DynamicArray<ErrorReport>& errors = unit.getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
         if (errors[i].code == ERR_REDEFINITION &&
-            strstr(errors[i].message, "Duplicate error tag 'Foo'")) {
+            errors[i].hint && strstr(errors[i].hint, "Duplicate error tag 'Foo'")) {
             found_dup_error = true;
             break;
         }

@@ -194,6 +194,16 @@ public:
         return errors_.length() > 0;
     }
 
+    /**
+     * @brief Checks if an error with the given code has been reported.
+     */
+    bool hasErrorCode(ErrorCode code) const;
+
+    /**
+     * @brief Returns a descriptive message for the given error code.
+     */
+    static const char* getMessage(ErrorCode code);
+
     const DynamicArray<ErrorReport>& getErrors() const {
         return errors_;
     }

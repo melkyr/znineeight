@@ -820,9 +820,16 @@ The `TypeChecker` is integrated into the main compilation pipeline as a distinct
 3. The `check` method of the `TypeChecker` is called with the root of the `AST`.
 4. The `TypeChecker` traverses the tree, and if it finds any type errors, it reports them using the `ErrorHandler` in the `CompilationUnit`.
 
-### Error Handling
+### Error Handling & Multi-Error Reporting
 
-The `TypeChecker` uses the existing `ErrorHandler` to report type-related errors. This ensures that type errors are reported in the same format as parsing errors, providing a consistent user experience.
+The `TypeChecker` and other semantic passes (Analyzers, Validators) use a recoverable error handling model. This allows the compiler to discover multiple independent errors in a single execution.
+
+1.  **Reporting**: All semantic errors are reported via `unit.getErrorHandler().report()`. This system uses centralized error codes and base messages defined in `ErrorHandler::getMessage(code)`.
+2.  **Recovery via Sentinels**: When a visitor encounters an error, it records it and returns a **sentinel value**:
+    -   `visit` methods returning `Type*` return `NULL`.
+    -   Methods returning `bool` return `false`.
+3.  **Propagation Control**: Callers of these visitors (e.g., `visitBinaryOp` calling `visit` on operands) are responsible for checking for `NULL` sentinels. If a sub-expression fails, the caller typically reports no further errors for that specific node and returns its own sentinel, effectively pruning that branch of the error tree while allowing sibling branches to be analyzed.
+4.  **Harness Synchronization**: To maintain compatibility with thousands of existing tests that expect process termination on the first error, the test harness (`test_utils.cpp`) manually calls `plat_abort()` if `hasErrors()` is true after any compilation phase.
 
 ### Memory Impact of the Refactored Symbol Table
 

@@ -533,6 +533,9 @@ public:
             if (strstr(errors[i].message, substring) != NULL) {
                 return true;
             }
+            if (errors[i].hint && strstr(errors[i].hint, substring) != NULL) {
+                return true;
+            }
         }
         return false;
     }

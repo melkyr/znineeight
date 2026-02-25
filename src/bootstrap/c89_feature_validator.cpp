@@ -24,9 +24,9 @@ bool C89FeatureValidator::validate(ASTNode* node) {
 
 void C89FeatureValidator::reportNonC89Feature(SourceLocation location, const char* message, bool copy_message) {
     if (copy_message) {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message, unit.getArena());
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit.getArena(), message);
     } else {
-        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, message);
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, location, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), message);
     }
     error_found_ = true;
 }
