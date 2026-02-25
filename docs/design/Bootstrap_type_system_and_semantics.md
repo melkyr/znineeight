@@ -822,7 +822,13 @@ The `TypeChecker` is integrated into the main compilation pipeline as a distinct
 
 ### Error Handling & Multi-Error Reporting
 
-The `TypeChecker` and other semantic passes (Analyzers, Validators) use a recoverable error handling model. This allows the compiler to discover multiple independent errors in a single execution.
+The RetroZig compiler uses a tiered error handling model to balance developer productivity with bootstrap reliability.
+
+#### Syntactic Errors (Parser)
+The `Parser` is currently **not recoverable**. To prevent unstable execution, infinite loops, or secondary crashes in the bootstrap phase, any syntactic error triggers an immediate `plat_abort()` after being reported via the `ErrorHandler`. Future work includes implementing synchronization points (e.g., on semicolons) to enable multi-error reporting in the syntactic phase.
+
+#### Semantic Errors (TypeChecker, Analyzers)
+The `TypeChecker` and other semantic passes (Analyzers, Validators) use a **recoverable** model. This allows the compiler to discover multiple independent errors in a single execution.
 
 1.  **Reporting**: All semantic errors are reported via `unit.getErrorHandler().report()`. This system uses centralized error codes and base messages defined in `ErrorHandler::getMessage(code)`.
 2.  **Recovery via Sentinels**: When a visitor encounters an error, it records it and returns a **sentinel value**:

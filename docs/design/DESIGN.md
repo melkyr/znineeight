@@ -162,9 +162,15 @@ enum ErrorCode {
 
 #### 3.4.1 Error Tiers
 1.  **Fatal Errors / Assertions:** Truly unrecoverable issues (e.g., Out of Memory, Internal Compiler Inconsistency) use the `Z98_ASSERT(cond)` macro or `plat_abort()`. These terminate the compiler immediately.
-2.  **Recoverable Semantic Errors:** Standard compilation errors (type mismatches, undefined identifiers) are reported via `ErrorHandler::report()`. Visitors return sentinel values (like `NULL` for types) to allow the compiler to continue and potentially discover more errors in the same file.
+2.  **Syntactic Errors (Parser):** Currently, the parser is not designed for full recovery (synchronization). To prevent unstable execution (e.g., infinite loops) or secondary crashes, any syntax error triggers an immediate `plat_abort()` after being reported.
+3.  **Recoverable Semantic Errors:** Standard semantic errors (type mismatches, undefined identifiers) are reported via `ErrorHandler::report()`. Visitors return sentinel values (like `NULL` for types) to allow the compiler to continue and potentially discover more errors in the same file.
 
-#### 3.4.2 Test Suite Compatibility
+#### 3.4.2 Pending Improvements
+The following improvements to the error handling system are planned:
+- **Parser Synchronization:** Implementation of recovery mechanisms (e.g., synchronizing on semicolons or keywords) to allow the parser to continue after a syntax error and report multiple syntactic issues in a single pass.
+- **Formal Test-Types:** Replacing internal hacks like `test_incompatible` with a formal set of internal types specifically designed for compiler testing.
+
+#### 3.4.3 Test Suite Compatibility
 To maintain over 500 legacy tests that expect immediate process termination on the first error, the test harness (`tests/test_utils.cpp`) is synchronized with the `ErrorHandler`. After each compilation phase in a test child-process, the harness checks `hasErrors()` and manually calls `plat_abort()` if any were reported. This preserves "abort-on-error" behavior for tests while allowing the compiler itself to be recoverable.
 
 **Diagnostic Format:**
