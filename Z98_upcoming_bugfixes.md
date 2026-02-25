@@ -163,3 +163,36 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 | 9.6 | Re‑run JSON parser and document | Verification |
 
 After these tasks, the compiler should be able to handle the JSON parser and similar real‑world code, paving the way for self‑compilation.
+
+---
+
+### Task 9.7: Unified Lifting Strategy (Milestone 8)
+**Goal**: Transform all control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) into statement-level operations with temporary variables using a dedicated AST transformation pass.
+
+**Why**: The current ad-hoc lifting in the C89 backend is fragile, especially for deeply nested expressions. It frequently triggers "Expected a primary expression" errors and complicates code generation.
+
+**Solution**: Implement Milestone 8 as described in `AI_tasks.md`. This will simplify the `C89Emitter` and ensure that all control flow is handled at the statement level before code generation begins.
+
+---
+
+### Task 9.8: Parser Grammar Refinement
+**Goal**: Support more flexible Zig syntax and improve error recovery.
+
+**Why**:
+- Braces are currently mandatory for almost all `if`/`while` bodies, which is stricter than Zig.
+- `while (cond) : (iter)` is a common Zig pattern that is currently missing.
+- Syntax errors trigger an immediate `plat_abort`, making it hard to debug large files.
+
+**Solution**:
+- Update `parseWhileStatement` to support the optional `: (iter)` expression.
+- Refine `parseIfStatement` and others to allow single-statement bodies without braces where appropriate.
+- Implement parser synchronization on semicolons or keywords to allow multi-error reporting for syntactic issues.
+
+---
+
+### Task 9.9: Type System Hardening for Recursion
+**Goal**: Ensure `TYPE_SLICE` and `TYPE_OPTIONAL` correctly handle `TYPE_PLACEHOLDER` during all phases of resolution.
+
+**Why**: The JSON parser revealed that even indirect recursion through slices can cause resolution loops or "incomplete type" errors if the placeholder is not correctly mutated or if interning is bypassed incorrectly.
+
+**Solution**: Audit `TypeInterner` and `TypeChecker::resolvePlaceholder` to ensure that all compound types containing placeholders are correctly handled.

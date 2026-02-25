@@ -2888,6 +2888,11 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
                            sym->symbol_type->kind == TYPE_UNION ||
                            sym->symbol_type->kind == TYPE_ENUM ||
                            sym->symbol_type->kind == TYPE_ARRAY ||
+                           sym->symbol_type->kind == TYPE_POINTER ||
+                           sym->symbol_type->kind == TYPE_SLICE ||
+                           sym->symbol_type->kind == TYPE_ERROR_SET ||
+                           sym->symbol_type->kind == TYPE_ERROR_UNION ||
+                           sym->symbol_type->kind == TYPE_OPTIONAL ||
                            sym->symbol_type->kind == TYPE_PLACEHOLDER ||
                            sym->symbol_type->kind == TYPE_MODULE) {
                     resolved_type = sym->symbol_type;
