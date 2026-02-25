@@ -142,7 +142,9 @@ TEST_FUNC(TypeChecker_StringLiteralInference) {
     Type* type_ptr_const_u8 = get_resolved_type_of_literal("\"hello world\"", arena, interner);
     ASSERT_TRUE(type_ptr_const_u8 != NULL);
     ASSERT_EQ(type_ptr_const_u8->kind, TYPE_POINTER);
-    ASSERT_EQ(type_ptr_const_u8->as.pointer.base->kind, TYPE_U8);
+    // In Z98, string literals are pointers to arrays of u8
+    ASSERT_EQ(type_ptr_const_u8->as.pointer.base->kind, TYPE_ARRAY);
+    ASSERT_EQ(type_ptr_const_u8->as.pointer.base->as.array.element_type->kind, TYPE_U8);
     ASSERT_TRUE(type_ptr_const_u8->as.pointer.is_const);
 
     return true;

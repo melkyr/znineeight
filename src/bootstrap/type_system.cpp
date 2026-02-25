@@ -239,6 +239,13 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
+
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            addDependentRecursively((*fields)[i].type, new_type);
+        }
+    }
+
     return new_type;
 }
 
@@ -249,6 +256,15 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
     new_type->as.struct_details.fields = fields;
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
+
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            addDependentRecursively((*fields)[i].type, new_type);
+        }
+    }
+    if (tag_type) {
+        addDependentRecursively(tag_type, new_type);
+    }
 
     if (is_tagged) {
         // Tagged union: struct { tag_type tag; union { fields } data; }
@@ -570,7 +586,7 @@ u32 TypeInterner::hashType(TypeKind kind, void* p1, u64 v1) {
     return h % 256;
 }
 
-static bool containsPlaceholder(Type* type) {
+bool containsPlaceholder(Type* type) {
     if (!type) return false;
     if (type->kind == TYPE_PLACEHOLDER) return true;
 

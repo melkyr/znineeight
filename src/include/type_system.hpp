@@ -355,6 +355,11 @@ bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray
      */
     bool isTypeComplete(Type* type);
 
+    /**
+     * @brief Recursively checks if a type contains a placeholder.
+     */
+    bool containsPlaceholder(Type* type);
+
 // Accessor functions for global primitive types to prevent static init order fiasco.
 Type* get_g_type_void();
 Type* get_g_type_bool();
