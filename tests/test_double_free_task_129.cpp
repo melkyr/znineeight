@@ -99,9 +99,10 @@ TEST_FUNC(DoubleFree_DeferContextInError) {
     const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
         if (errors[i].code == ERR_DOUBLE_FREE) {
-            // Message should contain "via defer at" and the location of the FIRST free (line 6)
-            if (contains_substring(errors[i].message, "via defer at") &&
-                contains_substring(errors[i].message, ":6:")) {
+            // Check in hint
+            if (errors[i].hint &&
+                contains_substring(errors[i].hint, "via defer at") &&
+                contains_substring(errors[i].hint, ":6:")) {
                 found_double_free_with_defer = true;
             }
         }
@@ -141,9 +142,10 @@ TEST_FUNC(DoubleFree_ErrdeferContextInError) {
     const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
         if (errors[i].code == ERR_DOUBLE_FREE) {
-            // Message should contain "via errdefer at" and the location of the FIRST free (line 6)
-            if (contains_substring(errors[i].message, "via errdefer at") &&
-                contains_substring(errors[i].message, ":6:")) {
+            // Check in hint
+            if (errors[i].hint &&
+                contains_substring(errors[i].hint, "via errdefer at") &&
+                contains_substring(errors[i].hint, ":6:")) {
                 found_double_free_with_errdefer = true;
             }
         }

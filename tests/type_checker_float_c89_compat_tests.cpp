@@ -24,7 +24,8 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails) {
         ASSERT_TRUE(eh.hasErrors());
         const DynamicArray<ErrorReport>& errors = eh.getErrors();
         ASSERT_EQ(errors.length(), 1);
-        ASSERT_TRUE(strcmp(errors[0].message, "C89 assignment requires identical types: 'f32' to 'f64'") == 0);
+        ASSERT_STREQ(errors[0].message, "type mismatch");
+        ASSERT_TRUE(errors[0].hint != NULL && strstr(errors[0].hint, "C89 assignment requires identical types: 'f32' to 'f64'") != NULL);
     }
 
     // Test case 2: Unsafe narrowing from f64 to f32 should be rejected.
@@ -43,7 +44,8 @@ TEST_FUNC(TypeCheckerC89Compat_FloatWidening_Fails) {
         ASSERT_TRUE(eh.hasErrors());
         const DynamicArray<ErrorReport>& errors = eh.getErrors();
         ASSERT_EQ(errors.length(), 1);
-        ASSERT_TRUE(strcmp(errors[0].message, "C89 assignment requires identical types: 'f64' to 'f32'") == 0);
+        ASSERT_STREQ(errors[0].message, "type mismatch");
+        ASSERT_TRUE(errors[0].hint != NULL && strstr(errors[0].hint, "C89 assignment requires identical types: 'f64' to 'f32'") != NULL);
     }
 
     return true;

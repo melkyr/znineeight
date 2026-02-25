@@ -37,7 +37,8 @@ TEST_FUNC(TypeChecker_VarDecl_Multiple_Errors) {
     const DynamicArray<ErrorReport>& errors = eh.getErrors();
     ASSERT_TRUE(errors.length() >= 1);
     /* We now report multiple errors, so just check the first one and use strstr for robustness */
-    ASSERT_TRUE(strstr(errors[0].message, "Incompatible assignment: '*const u8' to 'i32'") != NULL);
+    ASSERT_STREQ(errors[0].message, "type mismatch");
+    ASSERT_TRUE(errors[0].hint != NULL && strstr(errors[0].hint, "Incompatible assignment: '*const u8' to 'i32'") != NULL);
 
     return true;
 }
@@ -59,7 +60,8 @@ TEST_FUNC(TypeChecker_VarDecl_Invalid_Mismatch) {
 
     const DynamicArray<ErrorReport>& errors = eh.getErrors();
     ASSERT_TRUE(errors.length() >= 1);
-    ASSERT_TRUE(strstr(errors[0].message, "Incompatible assignment: '*const u8' to 'i32'") != NULL);
+    ASSERT_STREQ(errors[0].message, "type mismatch");
+    ASSERT_TRUE(errors[0].hint != NULL && strstr(errors[0].hint, "Incompatible assignment: '*const u8' to 'i32'") != NULL);
 
     return true;
 }

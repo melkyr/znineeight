@@ -28,7 +28,8 @@ TEST_FUNC(Assignment_NumericWidening_Fails) {
     ASSERT_FALSE(checker.IsTypeAssignableTo(i32_type, i64_type, loc));
     ErrorHandler& eh = unit.getErrorHandler();
     ASSERT_TRUE(eh.hasErrors());
-    ASSERT_STREQ(eh.getErrors()[0].message, "C89 assignment requires identical types: 'i32' to 'i64'");
+    ASSERT_STREQ(eh.getErrors()[0].message, "type mismatch");
+    ASSERT_TRUE(eh.getErrors()[0].hint != NULL && strstr(eh.getErrors()[0].hint, "C89 assignment requires identical types: 'i32' to 'i64'") != NULL);
     return true;
 }
 
@@ -114,7 +115,8 @@ TEST_FUNC(Assignment_ConstPointerToPointer_Invalid) {
     ASSERT_FALSE(checker.IsTypeAssignableTo(ptr_i32_const, ptr_i32_mut, loc));
     ErrorHandler& eh = unit.getErrorHandler();
     ASSERT_TRUE(eh.hasErrors());
-    ASSERT_STREQ(eh.getErrors()[0].message, "Cannot assign const pointer to non-const");
+    ASSERT_STREQ(eh.getErrors()[0].message, "type mismatch");
+    ASSERT_TRUE(eh.getErrors()[0].hint != NULL && strstr(eh.getErrors()[0].hint, "Cannot assign const pointer to non-const") != NULL);
     return true;
 }
 
@@ -130,6 +132,7 @@ TEST_FUNC(Assignment_IncompatiblePointers_Invalid) {
     ASSERT_FALSE(checker.IsTypeAssignableTo(ptr_i32, ptr_f32, loc));
     ErrorHandler& eh = unit.getErrorHandler();
     ASSERT_TRUE(eh.hasErrors());
-    ASSERT_STREQ(eh.getErrors()[0].message, "Incompatible assignment: '*i32' to '*f32'");
+    ASSERT_STREQ(eh.getErrors()[0].message, "type mismatch");
+    ASSERT_TRUE(eh.getErrors()[0].hint != NULL && strstr(eh.getErrors()[0].hint, "Incompatible assignment: '*i32' to '*f32'") != NULL);
     return true;
 }

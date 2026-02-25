@@ -20,7 +20,8 @@ TEST_FUNC(C89Rejection_GenericFnDecl_ShouldBeRejected) {
     ASSERT_TRUE(unit.getErrorHandler().hasErrors());
     bool found_msg = false;
     for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        if (strstr(unit.getErrorHandler().getErrors()[i].message, "Generic functions are not supported")) {
+        const ErrorReport& err = unit.getErrorHandler().getErrors()[i];
+        if (err.hint && strstr(err.hint, "Generic functions are not supported")) {
             found_msg = true;
             break;
         }
@@ -49,10 +50,10 @@ TEST_FUNC(C89Rejection_DeferAndErrDefer) {
     bool found_defer_error = false;
 
     for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        const char* msg = unit.getErrorHandler().getErrors()[i].message;
-        if (strstr(msg, "errdefer statements are not supported")) {
+        const char* msg = unit.getErrorHandler().getErrors()[i].hint;
+        if (msg && strstr(msg, "errdefer statements are not supported")) {
             found_errdefer = true;
-        } else if (strstr(msg, "defer statements are not supported")) {
+        } else if (msg && strstr(msg, "defer statements are not supported")) {
             // This should only match if "errdefer" is NOT present in this specific string
             // but since we are in else if, it already ensures it didn't match the first one.
             found_defer_error = true;
