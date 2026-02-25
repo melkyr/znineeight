@@ -1538,7 +1538,27 @@ Key changes:
 
 ### Overview
 This milestone introduces a dedicated AST transformation pass that lifts all expression‑valued control‑flow constructs out of nested contexts, replacing them with temporary variables. The result is a simplified AST that the C89 code generator can emit directly. The work is broken into small, testable tasks that incrementally build the pass.
+Phase 1: Isolate Lifting Logic
 
+    Move all ad‑hoc lifting code (e.g., emitIfExpr, emitTryExpr, etc.) into a separate set of functions that operate on an AST node and produce a lifting plan: a list of statements (prelude) and a final expression (temporary variable or identifier). This plan can be represented as a small struct.
+
+    Keep the existing emitter as a thin wrapper that calls these planners and then emits the plan using a uniform mechanism (e.g., a helper that outputs prelude statements and then the final expression).
+
+    This refactoring does not change behavior but centralizes the logic.
+
+Phase 2: Introduce an Optional AST Transformation Pass
+
+    Create a new pass (off by default) that runs after type checking and applies the same planners to the AST, replacing each lifted expression with a temporary variable and inserting the prelude statements into the enclosing block. This transforms the AST into a form without nested control‑flow expressions.
+
+    Use a compiler flag (e.g., -funified-lifting) to enable this pass. For now, keep it disabled.
+
+Phase 3: Validate with Existing Tests
+
+    Enable the pass in a separate test runner (e.g., a new batch) and compare the generated C code with the original (or at least verify that it compiles). If discrepancies arise, adjust the planners or the pass until they match.
+
+Phase 4: Flip the Default
+
+    Once the new pass produces identical output for all existing tests, make it the default and remove the old ad‑hoc lifting code from the emitter. The emitter becomes a simple printer.
 ---
 
 ### Task 229. AST Cloning Utilities
