@@ -395,6 +395,12 @@ public:
     void ensureOptionalType(Type* type);
 
     /**
+     * @brief Ensures a forward declaration of a struct or union.
+     * @param type The struct or union type.
+     */
+    void ensureForwardDeclaration(Type* type);
+
+    /**
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
@@ -446,6 +452,7 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> emitted_forwards_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;

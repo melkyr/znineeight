@@ -336,6 +336,10 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 5. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
 6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
 7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
+8. **C89 Emission Strategy**: To ensure C89 compatibility for mutually recursive types (like a slice pointing back to its containing struct):
+    - A **recursive discovery pass** (`scanForSpecialTypes`) identifies all special types (slices, optionals, error unions) nested within structs or functions.
+    - **Forward declarations** (`struct z_mod_Name;`) are emitted for all encountered structs/unions before any typedefs. This allows slice typedefs to reference struct types that are not yet fully defined.
+    - **Include Guards**: Typedefs for special types are wrapped in `#ifndef Z98_TYPE_...` guards to allow safe inclusion in multi-module Single Translation Unit builds.
 
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
@@ -1357,6 +1361,7 @@ To ensure C89 compatibility and maintain Zig's safety guarantees, the following 
 - **`ptr - unsigned`**: Result is a pointer of the same type. Allowed on `[*]T` and `[]T`.
 - **`ptr1 - ptr2`**: Result is an `isize`. Valid if both point to same base type (ignoring `const`) and are many-item pointers or slices.
 - **Prohibited**: Arithmetic on single-item pointers (`*T`), `*void`, or incomplete types is strictly rejected.
+- **Slice Stability (Task 9.7)**: Slices of incomplete/placeholder types are considered stable because their size/alignment in C89 is constant (size 8, align 4). However, operations that access the elements (indexing, `.ptr`) trigger a mandatory resolution of the element type via `resolvePlaceholder`.
 
 ### Implicit Pointer Conversions
 - **`*void` to `*T`**: The bootstrap compiler allows implicit conversion from a `void` pointer to any typed pointer, provided the target base type is C89-compatible. This matches standard C89 behavior and is essential for using `arena_alloc`.

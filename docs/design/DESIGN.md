@@ -942,6 +942,7 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 
 ### 13.1 CBackend
 - **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
+- **Recursive Discovery Pass**: Implements a deep, recursive scan (`scanForSpecialTypes`) of the AST across all modules. This pass traverses structs, unions, enums, function bodies, and expressions to identify all "special" types (Slices, Optionals, Error Unions) before code generation begins. This ensures that all required typedefs are emitted in the correct order, even when deeply nested or mutually recursive.
 - **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
 - **Master Entry Point**: If a `pub fn main` is present, generates a master `main.c` (or `master.c` if conflicted) that `#include`s all module implementation files, facilitating a Single Translation Unit (STU) build.
 - **Build Scripts**: Automatically generates `build.bat` (MSVC) and `Makefile` (GCC) in the output directory.
@@ -953,8 +954,11 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **Comments**: Standard C89 `/* ... */` comment emission.
+- **Forward Declarations**: Automatically emits incomplete `struct` and `union` declarations for all types encountered during the discovery pass. This enables early typedefs (like Slices or Optionals) to reference struct types that are defined later in the translation unit, resolving circular and mutual recursion issues.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
+- **Per-Module Type Caches**: To ensure C headers are self-contained and avoid redefinition errors, each module maintains its own cache of emitted special types.
+- **Include Guards for Special Types**: All Slice, Optional, and Error Union typedefs are wrapped in `#ifndef Z98_TYPE_<MangledName>` guards. This allows multiple modules in a Single Translation Unit to safely share the same type definitions without conflict.
 - **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.
 
 ### 13.3 CVariableAllocator

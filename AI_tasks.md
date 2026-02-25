@@ -1517,13 +1517,20 @@ Key changes:
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the Name Mangling Contract and resolution details.
     - **Verification**: Expanded `cross_module_tests.cpp` and `recursive_type_tests.cpp` with comprehensive edge cases.
 
-230. [IN PROGRESS] **Task 9.5: Incremental Error Handling Overhaul**
+230. [COMPLETE] Task 9.5: Incremental Error Handling Overhaul (DONE)
     - **Phase 0 (Harness & PAL)**: Implemented `plat_write_str` and `Z98_ASSERT` for robust debugging. Synchronized the test harness with `ErrorHandler::hasErrors()` to maintain compatibility with legacy tests.
     - **Phase 1 (Parser)**: Transitioned parser errors to record diagnostics before aborting.
     - **Phase 2 & 3 (Type Checker Recovery)**: Converted all semantic `fatalError` calls to recoverable `report()` calls. Visitors now return sentinel values (`NULL`/`false`) to allow multi-error reporting.
     - **Phase 4 (Centralization)**: Centralized all error messages in `ErrorHandler::getMessage(code)`. Updated all compiler passes to use consistent messaging and moved metadata to the `hint` field.
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the new two-tier error model.
-    - **Remaining**: Fix minor regressions in Batch 45/47 and implement the multi-error integration test.
+    - **Verification**: Verified with `multi_error_tests.cpp`.
+
+231. [COMPLETE] Task 9.6: Fix Recursive Type Instability for Slices (DONE)
+    - **Recursive Discovery**: Refactored `CBackend::scanForSpecialTypes` to be fully recursive, ensuring nested slices/optionals are discovered.
+    - **Forward Declarations**: Implemented `ensureForwardDeclaration` in `C89Emitter` to emit incomplete struct declarations before typedefs, resolving mutual recursion in C.
+    - **Header Guards**: Added `#ifndef` guards and per-module caches to special type typedefs for safe multi-module STU builds.
+    - **Type System Stability**: Added recursion guards to `refreshTypeLayout` and hardened placeholder resolution.
+    - **Verification**: Verified with `task9_6_recursive_slice.cpp` covering mutual recursion across modules and cascading struct/optional/slice types.
 
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 

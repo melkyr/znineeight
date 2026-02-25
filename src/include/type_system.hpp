@@ -78,6 +78,7 @@ struct Type {
     size_t size;
     size_t alignment;
     const char* c_name; // Mangled C89 name for structs, unions, enums
+    bool is_calculating_layout; // To detect infinite recursion
 
     union {
         struct {

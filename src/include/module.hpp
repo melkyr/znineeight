@@ -45,6 +45,7 @@ struct Module {
     ExtractionAnalysisCatalogue extraction_analysis_catalogue;
     ErrDeferCatalogue errdefer_catalogue;
     IndirectCallCatalogue indirect_call_catalogue;
+    DynamicArray<const char*> emitted_types_cache;
 
     Module(ArenaAllocator& arena)
         : imports(arena),
@@ -57,7 +58,8 @@ struct Module {
           orelse_expression_catalogue(arena),
           extraction_analysis_catalogue(arena),
           errdefer_catalogue(arena),
-          indirect_call_catalogue(arena) {
+          indirect_call_catalogue(arena),
+          emitted_types_cache(arena) {
         name = NULL;
         filename = NULL;
         ast_root = NULL;

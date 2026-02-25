@@ -30,10 +30,10 @@ bool CBackend::generate(const char* output_dir) {
         entry_filename_ = "main.c";
     }
 
-    DynamicArray<const char*>& shared_type_cache = unit_.getEmittedTypesCache();
     for (size_t i = 0; i < modules.length(); ++i) {
-        if (!generateHeaderFile(modules[i], output_dir, &shared_type_cache)) return false;
-        if (!generateSourceFile(modules[i], output_dir, &shared_type_cache)) return false;
+        DynamicArray<const char*>* module_cache = &modules[i]->emitted_types_cache;
+        if (!generateHeaderFile(modules[i], output_dir, module_cache)) return false;
+        if (!generateSourceFile(modules[i], output_dir, module_cache)) return false;
     }
 
     if (!generateMasterMain(output_dir)) return false;
@@ -74,11 +74,22 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         for (size_t i = 0; i < stmts->length(); ++i) {
             scanForSpecialTypes((*stmts)[i], emitter, visited);
         }
+
+        // Pass 0A: Private Enum Definitions (Must come before slices)
+        for (size_t i = 0; i < stmts->length(); ++i) {
+            ASTNode* node = (*stmts)[i];
+            if (node->type == NODE_VAR_DECL && !node->as.var_decl->is_pub) {
+                ASTVarDeclNode* decl = node->as.var_decl;
+                if (decl->initializer && decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_ENUM) {
+                    emitter.emitTypeDefinition(node);
+                }
+            }
+        }
     }
     emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
-    // Pass 0: Header includes
+    // Pass 0B: Header includes
     emitter.writeString("#include \"");
     emitter.writeString(module->name);
     emitter.writeString(".h\"\n");
@@ -98,11 +109,14 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-    // Pass 1: Private Type Definitions (Public types are in the .h file)
+    // Pass 1: Private Struct/Union Definitions (Public types are in the .h file)
     for (size_t i = 0; i < stmts->length(); ++i) {
-        if ((*stmts)[i]->type == NODE_VAR_DECL) {
-            if (!(*stmts)[i]->as.var_decl->is_pub) {
-                emitter.emitTypeDefinition((*stmts)[i]);
+        ASTNode* node = (*stmts)[i];
+        if (node->type == NODE_VAR_DECL && !node->as.var_decl->is_pub) {
+            ASTVarDeclNode* decl = node->as.var_decl;
+            if (decl->initializer && decl->initializer->resolved_type &&
+                (decl->initializer->resolved_type->kind == TYPE_STRUCT || decl->initializer->resolved_type->kind == TYPE_UNION)) {
+                emitter.emitTypeDefinition(node);
             }
         }
     }
@@ -262,7 +276,19 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
                 scanForSpecialTypes(node, emitter, visited);
             }
         }
+
+        // Pass 1A: Public Enum Definitions (Must come before slices)
+        for (size_t i = 0; i < stmts->length(); ++i) {
+            ASTNode* node = (*stmts)[i];
+            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
+                ASTVarDeclNode* decl = node->as.var_decl;
+                if (decl->initializer && decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_ENUM) {
+                    emitter.emitTypeDefinition(node);
+                }
+            }
+        }
     }
+    // Now emit buffered types (forwards and slices)
     emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
@@ -277,11 +303,14 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-        // Pass 1: Public Type Definitions
+        // Pass 1B: Public Struct/Union Definitions
         for (size_t i = 0; i < stmts->length(); ++i) {
-            if ((*stmts)[i]->type == NODE_VAR_DECL) {
-                if ((*stmts)[i]->as.var_decl->is_pub) {
-                    emitter.emitTypeDefinition((*stmts)[i]);
+            ASTNode* node = (*stmts)[i];
+            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
+                ASTVarDeclNode* decl = node->as.var_decl;
+                if (decl->initializer && decl->initializer->resolved_type &&
+                    (decl->initializer->resolved_type->kind == TYPE_STRUCT || decl->initializer->resolved_type->kind == TYPE_UNION)) {
+                    emitter.emitTypeDefinition(node);
                 }
             }
         }
@@ -395,6 +424,8 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, DynamicArray<Type*>& vi
         emitter.ensureErrorUnionType(type);
     } else if (type->kind == TYPE_OPTIONAL) {
         emitter.ensureOptionalType(type);
+    } else if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+        emitter.ensureForwardDeclaration(type);
     }
 }
 

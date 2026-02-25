@@ -62,9 +62,9 @@ TEST_FUNC(RecursiveSlice_MutualTaggedUnion) {
     bool success = unit.performFullPipeline(file_id);
 
     plat_free(source);
-    plat_delete_file("test_recursive_slice/main.zig");
-    plat_delete_file("test_recursive_slice/a.zig");
-    plat_delete_file("test_recursive_slice/b.zig");
+    // plat_delete_file("test_recursive_slice/main.zig");
+    // plat_delete_file("test_recursive_slice/a.zig");
+    // plat_delete_file("test_recursive_slice/b.zig");
 
     if (!success) {
         unit.getErrorHandler().printErrors();
@@ -108,4 +108,11 @@ TEST_FUNC(RecursiveSlice_CascadingIncomplete) {
     }
     ASSERT_TRUE(success);
     return true;
+}
+
+int run_task9_6_recursive_slice_tests() {
+    int failed = 0;
+    if (!test_RecursiveSlice_MutualTaggedUnion()) { printf("FAILED: RecursiveSlice_MutualTaggedUnion\n"); failed++; }
+    if (!test_RecursiveSlice_CascadingIncomplete()) { printf("FAILED: RecursiveSlice_CascadingIncomplete\n"); failed++; }
+    return failed;
 }

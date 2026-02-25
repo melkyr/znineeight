@@ -164,7 +164,7 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 After these tasks, the compiler should be able to handle the JSON parser and similar real‑world code, paving the way for self‑compilation.
 
-Task 9.6: Fix Recursive Type Instability for Slices
+Task 9.6: Fix Recursive Type Instability for Slices [DONE]
 
 Goal: Ensure that types containing slices of themselves (e.g., JsonValue with []JsonValue) resolve correctly without incomplete‑type errors.
 

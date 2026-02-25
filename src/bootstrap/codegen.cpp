@@ -9,7 +9,7 @@
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forwards_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -19,7 +19,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forwards_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -31,7 +31,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forwards_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0') {
@@ -289,7 +289,7 @@ void C89Emitter::emitBaseType(Type* type) {
             if (type->c_name) {
                 writeString(type->c_name);
             } else {
-                writeString("/* anonymous */");
+                writeString("int /* anonymous enum */");
             }
             break;
         case TYPE_ANYTYPE:
@@ -2230,6 +2230,15 @@ void C89Emitter::ensureOptionalType(Type* type) {
     Type* payload = type->as.optional.payload;
 
     writeIndent();
+    writeString("#ifndef Z98_TYPE_");
+    writeString(mangled_name);
+    writeString("\n");
+    writeIndent();
+    writeString("#define Z98_TYPE_");
+    writeString(mangled_name);
+    writeString("\n");
+
+    writeIndent();
     writeString("typedef struct {\n");
     indent();
     if (payload->kind != TYPE_VOID) {
@@ -2243,7 +2252,10 @@ void C89Emitter::ensureOptionalType(Type* type) {
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
-    writeString(";\n\n");
+    writeString(";\n");
+
+    writeIndent();
+    writeString("#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
 }
@@ -2276,6 +2288,15 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     Type* payload = type->as.error_union.payload;
 
     writeIndent();
+    writeString("#ifndef Z98_TYPE_");
+    writeString(mangled_name);
+    writeString("\n");
+    writeIndent();
+    writeString("#define Z98_TYPE_");
+    writeString(mangled_name);
+    writeString("\n");
+
+    writeIndent();
     writeString("typedef struct {\n");
     indent();
     if (payload->kind != TYPE_VOID) {
@@ -2300,9 +2321,32 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
-    writeString(";\n\n");
+    writeString(";\n");
+
+    writeIndent();
+    writeString("#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
+}
+
+void C89Emitter::ensureForwardDeclaration(Type* type) {
+    if (!type || (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION)) return;
+
+    if (!type->c_name && type->as.struct_details.name) {
+        type->c_name = getC89GlobalName(type->as.struct_details.name);
+    }
+
+    if (!type->c_name) return;
+
+    // Check if already emitted in this emitter
+    for (size_t i = 0; i < emitted_forwards_.length(); ++i) {
+        if (plat_strcmp(emitted_forwards_[i], type->c_name) == 0) return;
+    }
+    emitted_forwards_.append(type->c_name);
+
+    writeString(type->kind == TYPE_STRUCT ? "struct " : "union ");
+    writeString(type->c_name);
+    writeString(";\n");
 }
 
 void C89Emitter::ensureSliceType(Type* type) {
@@ -2335,6 +2379,15 @@ void C89Emitter::ensureSliceType(Type* type) {
     const char* slice_struct_name = mangled_name;
 
     writeIndent();
+    writeString("#ifndef Z98_TYPE_");
+    writeString(slice_struct_name);
+    writeString("\n");
+    writeIndent();
+    writeString("#define Z98_TYPE_");
+    writeString(slice_struct_name);
+    writeString("\n");
+
+    writeIndent();
     writeString("typedef struct { ");
     emitType(elem_type);
     writeString("* ptr; usize len; } ");
@@ -2362,7 +2415,10 @@ void C89Emitter::ensureSliceType(Type* type) {
     writeString("return s;\n");
     dedent();
     writeIndent();
-    writeString("}\n\n");
+    writeString("}\n");
+
+    writeIndent();
+    writeString("#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
 }

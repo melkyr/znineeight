@@ -462,7 +462,13 @@ void calculateStructLayout(Type* struct_type) {
 }
 
 void refreshTypeLayout(Type* type) {
+    static int depth = 0;
     if (!type) return;
+
+    if (++depth > 100) {
+        depth--;
+        return;
+    }
 
     switch (type->kind) {
         case TYPE_ARRAY:
@@ -539,6 +545,8 @@ void refreshTypeLayout(Type* type) {
         default:
             break;
     }
+
+    depth--;
 }
 
 Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {

@@ -1779,6 +1779,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 
 Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
+    if (placeholder->is_calculating_layout) return placeholder;
 
     type_resolution_depth_++;
     if (type_resolution_depth_ > 100) {
@@ -1997,6 +1998,12 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     return common_type;
 }
 
+struct LayoutCalculationGuard {
+    Type* type;
+    LayoutCalculationGuard(Type* t) : type(t) { if (type) type->is_calculating_layout = true; }
+    ~LayoutCalculationGuard() { if (type) type->is_calculating_layout = false; }
+};
+
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     // Avoid double resolution but ensure flags are set
     Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
@@ -2048,9 +2055,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    if (placeholder) {
-        placeholder->as.placeholder.is_resolving = true;
-    }
+    LayoutCalculationGuard layout_guard(placeholder);
 
     Type* declared_type = node->type ? visit(node->type) : NULL;
 
@@ -2402,16 +2407,8 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
              return NULL; // Error already reported
         }
 
-        if (field_type && !isTypeComplete(field_type)) {
-             char type_str[64];
-             typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_data->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+        if (field_type->kind == TYPE_PLACEHOLDER && field_type->is_calculating_layout) {
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->loc, "illegal direct recursion", "struct cannot contain itself directly");
              return NULL;
         }
 
@@ -2484,18 +2481,11 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             unit.getErrorHandler().report(ERR_NON_C89_FEATURE, field_node->type->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "Union field type is not C89-compatible");
         }
 
-        if (field_type && !isTypeComplete(field_type)) {
-             char type_str[64];
-             typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_node->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+        if (field_type && field_type->kind == TYPE_PLACEHOLDER && field_type->is_calculating_layout) {
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, "illegal direct recursion", "union cannot contain itself directly");
              return NULL;
         }
+
 
         // Check for duplicate names
         for (size_t j = 0; j < fields->length(); ++j) {
