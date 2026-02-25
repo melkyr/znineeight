@@ -1088,7 +1088,11 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 
     if (base->kind == TYPE_POINTER && base->as.pointer.is_many) {
         // Many-item pointer indexing: returns the base type
-        return base->as.pointer.base;
+        Type* res = base->as.pointer.base;
+        if (res && res->kind == TYPE_PLACEHOLDER) {
+            res = resolvePlaceholder(res);
+        }
+        return res;
     }
 
     if (base->kind == TYPE_FUNCTION_POINTER) {
@@ -1713,6 +1717,10 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         } else if (node->iterable_expr->type == NODE_RANGE) {
             item_type = get_g_type_usize();
             is_valid_iterable = true;
+        }
+
+        if (item_type && item_type->kind == TYPE_PLACEHOLDER) {
+            item_type = resolvePlaceholder(item_type);
         }
     }
 
@@ -2395,19 +2403,16 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             // If it contains a placeholder, it might resolve later.
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_data->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 return NULL;
-             }
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_data->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+             return NULL;
         }
 
         StructField sf;
@@ -2480,18 +2485,16 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_node->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 field_type = NULL;
-             }
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_node->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+             return NULL;
         }
 
         // Check for duplicate names
