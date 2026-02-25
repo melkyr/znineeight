@@ -108,6 +108,52 @@ Type* resolvePrimitiveTypeName(const char* name) {
     return NULL; // Not a known primitive type
 }
 
+static void addDependent(Type* placeholder, Type* dependent) {
+    if (!placeholder || placeholder->kind != TYPE_PLACEHOLDER || !dependent) return;
+    if (placeholder->as.placeholder.dependents) {
+        // Avoid duplicates
+        for (size_t i = 0; i < placeholder->as.placeholder.dependents->length(); ++i) {
+            if ((*placeholder->as.placeholder.dependents)[i] == dependent) return;
+        }
+        placeholder->as.placeholder.dependents->append(dependent);
+    }
+}
+
+void addDependentRecursively(Type* type, Type* dependent) {
+    if (!type || !dependent) return;
+    if (type->kind == TYPE_PLACEHOLDER) {
+        addDependent(type, dependent);
+    } else {
+        switch (type->kind) {
+            case TYPE_POINTER: addDependentRecursively(type->as.pointer.base, dependent); break;
+            case TYPE_ARRAY:   addDependentRecursively(type->as.array.element_type, dependent); break;
+            case TYPE_SLICE:   addDependentRecursively(type->as.slice.element_type, dependent); break;
+            case TYPE_OPTIONAL: addDependentRecursively(type->as.optional.payload, dependent); break;
+            case TYPE_ERROR_UNION:
+                addDependentRecursively(type->as.error_union.payload, dependent);
+                if (!type->as.error_union.is_inferred && type->as.error_union.error_set)
+                    addDependentRecursively(type->as.error_union.error_set, dependent);
+                break;
+            case TYPE_FUNCTION:
+                if (type->as.function.params) {
+                    for (size_t i = 0; i < type->as.function.params->length(); ++i) {
+                        addDependentRecursively((*type->as.function.params)[i], dependent);
+                    }
+                }
+                addDependentRecursively(type->as.function.return_type, dependent);
+                break;
+            case TYPE_FUNCTION_POINTER:
+                if (type->as.function_pointer.param_types) {
+                    for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                        addDependentRecursively((*type->as.function_pointer.param_types)[i], dependent);
+                    }
+                }
+                addDependentRecursively(type->as.function_pointer.return_type, dependent);
+                break;
+            default: break;
+        }
+    }
+}
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
     if (!base_type) return get_g_type_undefined();
@@ -122,6 +168,8 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, b
     new_type->as.pointer.base = base_type;
     new_type->as.pointer.is_const = is_const;
     new_type->as.pointer.is_many = is_many;
+
+    addDependentRecursively(base_type, new_type);
     return new_type;
 }
 
@@ -162,6 +210,8 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
     }
     new_type->as.array.element_type = element_type;
     new_type->as.array.size = size;
+
+    addDependentRecursively(element_type, new_type);
     return new_type;
 }
 
@@ -177,6 +227,8 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
     new_type->alignment = 4;
     new_type->as.slice.element_type = element_type;
     new_type->as.slice.is_const = is_const;
+
+    addDependentRecursively(element_type, new_type);
     return new_type;
 }
 
@@ -302,6 +354,11 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
     new_type->as.error_union.payload = payload;
     new_type->as.error_union.error_set = error_set;
     new_type->as.error_union.is_inferred = is_inferred;
+
+    addDependentRecursively(payload, new_type);
+    if (error_set) {
+        addDependentRecursively(error_set, new_type);
+    }
     return new_type;
 }
 
@@ -348,6 +405,8 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     }
 
     new_type->as.optional.payload = payload;
+
+    addDependentRecursively(payload, new_type);
     return new_type;
 }
 
@@ -400,6 +459,86 @@ void calculateStructLayout(Type* struct_type) {
 
     struct_type->size = current_offset;
     struct_type->alignment = max_alignment;
+}
+
+void refreshTypeLayout(Type* type) {
+    if (!type) return;
+
+    switch (type->kind) {
+        case TYPE_ARRAY:
+            if (isTypeComplete(type->as.array.element_type)) {
+                type->size = type->as.array.element_type->size * type->as.array.size;
+                type->alignment = type->as.array.element_type->alignment;
+            }
+            break;
+        case TYPE_OPTIONAL:
+            if (isTypeComplete(type->as.optional.payload)) {
+                // Re-run createOptionalType logic essentially
+                size_t int_size = 4;
+                size_t int_align = 4;
+                Type* payload = type->as.optional.payload;
+
+                if (payload->kind == TYPE_VOID) {
+                    type->alignment = int_align;
+                    type->size = int_size;
+                } else {
+                    size_t payload_align = payload->alignment;
+                    size_t payload_size = payload->size;
+                    size_t struct_align = payload_align;
+                    if (int_align > struct_align) struct_align = int_align;
+                    size_t current_offset = payload_size;
+                    if (int_align > 0 && current_offset % int_align != 0) {
+                        current_offset += (int_align - (current_offset % int_align));
+                    }
+                    current_offset += int_size;
+                    if (struct_align > 0 && current_offset % struct_align != 0) {
+                        current_offset += (struct_align - (current_offset % struct_align));
+                    }
+                    type->size = current_offset;
+                    type->alignment = struct_align;
+                }
+            }
+            break;
+        case TYPE_ERROR_UNION:
+            if (isTypeComplete(type->as.error_union.payload)) {
+                // Re-run createErrorUnionType logic essentially
+                size_t int_size = 4;
+                size_t int_align = 4;
+                Type* payload = type->as.error_union.payload;
+
+                if (payload->kind == TYPE_VOID) {
+                    type->alignment = int_align;
+                    type->size = int_size * 2;
+                } else {
+                    size_t union_align = payload->alignment;
+                    if (int_align > union_align) union_align = int_align;
+                    size_t union_size = payload->size;
+                    if (int_size > union_size) union_size = int_size;
+                    if (union_align > 0 && union_size % union_align != 0) {
+                        union_size += (union_align - (union_size % union_align));
+                    }
+                    size_t current_offset = union_size;
+                    size_t struct_align = union_align;
+                    if (int_align > struct_align) struct_align = int_align;
+                    if (int_align > 0 && current_offset % int_align != 0) {
+                        current_offset += (int_align - (current_offset % int_align));
+                    }
+                    current_offset += int_size;
+                    if (struct_align > 0 && current_offset % struct_align != 0) {
+                        current_offset += (struct_align - (current_offset % struct_align));
+                    }
+                    type->size = current_offset;
+                    type->alignment = struct_align;
+                }
+            }
+            break;
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            calculateStructLayout(type);
+            break;
+        default:
+            break;
+    }
 }
 
 Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
@@ -526,7 +665,6 @@ Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>*
         Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
         e->type = t;
         e->next = buckets[h];
-        buckets[h] = e;
     }
     unique_count++;
     return t;
