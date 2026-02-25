@@ -143,7 +143,7 @@ TEST_FUNC(TaggedUnion_CaptureImmutability) {
     bool found_error = false;
     const DynamicArray<ErrorReport>& errors = unit.getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
-        if (strstr(errors[i].message, "l-value is const")) {
+        if (errors[i].hint && strstr(errors[i].hint, "l-value is const")) {
             found_error = true;
             break;
         }

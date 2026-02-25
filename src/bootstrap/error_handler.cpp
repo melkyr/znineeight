@@ -57,6 +57,86 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
     errors_.append(new_report);
 }
 
+bool ErrorHandler::hasErrorCode(ErrorCode code) const {
+    for (size_t i = 0; i < errors_.length(); ++i) {
+        if (errors_[i].code == code) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const char* ErrorHandler::getMessage(ErrorCode code) {
+    switch (code) {
+        /* Syntax Errors */
+        case ERR_SYNTAX_ERROR:                  return "syntax error";
+        case ERR_NON_C89_FEATURE:               return "non-C89 feature";
+
+        /* Type Errors */
+        case ERR_TYPE_MISMATCH:                 return "type mismatch";
+        case ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION: return "void function should not return a value";
+        case ERR_MISSING_RETURN_VALUE:          return "missing return value";
+        case ERR_LIFETIME_VIOLATION:            return "lifetime violation";
+        case ERR_NULL_POINTER_DEREFERENCE:      return "null pointer dereference";
+        case ERR_DOUBLE_FREE:                   return "double free";
+        case ERR_BANNED_ALLOCATION_FUNCTION:    return "call to forbidden allocation function";
+        case ERR_CAST_TARGET_NOT_POINTER:       return "target type of @ptrCast must be a pointer";
+        case ERR_CAST_SOURCE_NOT_POINTER:       return "source of @ptrCast must be a pointer";
+        case ERR_SIZE_OF_INCOMPLETE_TYPE:       return "@sizeOf applied to incomplete type";
+        case ERR_INT_CAST_OVERFLOW:             return "integer cast overflow";
+        case ERR_FLOAT_CAST_OVERFLOW:           return "float cast overflow";
+        case ERR_CAST_SOURCE_NOT_INTEGER:       return "source of @intCast must be an integer";
+        case ERR_CAST_SOURCE_NOT_FLOAT:         return "source of @floatCast must be a float";
+        case ERR_CAST_TARGET_NOT_INTEGER:       return "target of @intCast must be an integer";
+        case ERR_CAST_TARGET_NOT_FLOAT:         return "target of @floatCast must be a float";
+        case ERR_OFFSETOF_NON_AGGREGATE:        return "@offsetOf called on non-aggregate type";
+        case ERR_OFFSETOF_FIELD_NOT_FOUND:      return "field not found in @offsetOf";
+        case ERR_OFFSETOF_INCOMPLETE_TYPE:      return "@offsetOf cannot be used on incomplete type";
+        case ERR_GLOBAL_VAR_NON_CONSTANT_INIT:  return "global variable must have constant initializer";
+        case ERR_FUNCTION_CANNOT_RETURN_ARRAY:  return "functions cannot return arrays in C89";
+        case ERR_TRY_ON_NON_ERROR_UNION:        return "try operand must be an error union";
+        case ERR_TRY_IN_NON_ERROR_FUNCTION:     return "try can only be used in error-returning functions";
+        case ERR_CATCH_ON_NON_ERROR_UNION:      return "catch operand must be an error union";
+        case ERR_CATCH_TYPE_MISMATCH:           return "catch fallback type mismatch";
+        case ERR_TRY_INCOMPATIBLE_ERROR_SETS:   return "incompatible error sets in try";
+
+        /* Semantic Errors */
+        case ERR_UNDEFINED_VARIABLE:            return "use of undeclared identifier";
+        case ERR_UNDECLARED_TYPE:               return "use of undeclared type";
+        case ERR_REDEFINITION:                  return "redefinition";
+        case ERR_VARIABLE_CANNOT_BE_VOID:       return "variables cannot be declared as 'void'";
+        case ERR_LVALUE_EXPECTED:               return "l-value expected";
+        case ERR_UNDEFINED_ENUM_MEMBER:         return "enum has no such member";
+        case ERR_EXTERN_FN_WITH_BODY:           return "extern function cannot have a body";
+        case ERR_BREAK_OUTSIDE_LOOP:            return "break outside of loop";
+        case ERR_CONTINUE_OUTSIDE_LOOP:         return "continue outside of loop";
+        case ERR_UNKNOWN_LABEL:                 return "unknown loop label";
+        case ERR_DUPLICATE_LABEL:               return "duplicate loop label";
+        case ERR_RETURN_INSIDE_DEFER:           return "return inside defer";
+        case ERR_BREAK_INSIDE_DEFER:            return "break inside defer";
+        case ERR_CONTINUE_INSIDE_DEFER:         return "continue inside defer";
+
+        /* Operational Errors */
+        case ERR_INVALID_OPERATION:             return "invalid operation";
+        case ERR_INVALID_VOID_POINTER_ARITHMETIC: return "pointer arithmetic on 'void*' is not allowed";
+        case ERR_DIVISION_BY_ZERO:              return "division by zero";
+        case ERR_POINTER_ARITHMETIC_INVALID_OPERATOR: return "invalid operator for pointer arithmetic";
+        case ERR_POINTER_ARITHMETIC_NON_UNSIGNED: return "pointer arithmetic requires an unsigned offset";
+        case ERR_POINTER_ARITHMETIC_VOID:       return "arithmetic on void or incomplete pointer is not allowed";
+        case ERR_POINTER_SUBTRACTION_INCOMPATIBLE: return "cannot subtract pointers to different types";
+        case ERR_INVALID_OP_FUNCTION_POINTER:   return "invalid operation on function pointer";
+        case ERR_DEREF_FUNCTION_POINTER:        return "cannot dereference a function pointer";
+        case ERR_INDEX_FUNCTION_POINTER:        return "cannot index into a function pointer";
+
+        /* System Errors */
+        case ERR_OUT_OF_MEMORY:                 return "out of memory";
+        case ERR_INTERNAL_ERROR:                return "internal compiler error";
+        case ERR_FILE_NOT_FOUND:                return "file not found";
+
+        default:                                return "unknown error";
+    }
+}
+
 void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message) {
     WarningReport new_warning;
     new_warning.code = code;
@@ -78,7 +158,14 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
     char* msg_copy = (char*)arena.alloc(msg_len + 1);
     plat_memcpy(msg_copy, message, msg_len + 1);
 
-    report(code, location, msg_copy, hint);
+    char* hint_copy = NULL;
+    if (hint) {
+        size_t hint_len = plat_strlen(hint);
+        hint_copy = (char*)arena.alloc(hint_len + 1);
+        plat_memcpy(hint_copy, hint, hint_len + 1);
+    }
+
+    report(code, location, msg_copy, hint_copy);
 }
 
 void ErrorHandler::printErrors() {

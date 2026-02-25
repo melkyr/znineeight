@@ -238,7 +238,7 @@ Parser* CompilationUnit::createParser(u32 file_id) {
 
     void* mem = arena_.alloc(sizeof(Parser));
     if (mem == NULL) fatalError("Out of memory allocating Parser");
-    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
+    return new (mem) Parser(token_stream.tokens, token_stream.count, &arena_, mod->symbols, &error_handler_, &mod->error_set_catalogue, &mod->generic_catalogue, &type_interner_, &interner_, mod->name);
 }
 
 /**
@@ -785,7 +785,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         if (m->is_analyzed || !m->ast_root) continue;
         setCurrentModule(m->name);
         if (!CallResolutionValidator::validate(*this, m->ast_root)) {
-            error_handler_.report(ERR_INTERNAL_ERROR, m->ast_root->loc, "Call resolution validation failed");
+            error_handler_.report(ERR_INTERNAL_ERROR, m->ast_root->loc, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Call resolution validation failed");
             all_success = false;
         }
     }
@@ -1069,7 +1069,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             char error_msg[1024];
             plat_strcpy(error_msg, "Could not find imported file: ");
             plat_strcat(error_msg, rel_path);
-            error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, error_msg);
+            error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, ErrorHandler::getMessage(ERR_FILE_NOT_FOUND), error_msg);
             return false;
         }
 
@@ -1093,7 +1093,7 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
                 char* source = NULL;
                 size_t size = 0;
                 if (!plat_file_read(interned_abs_path, &source, &size)) {
-                    error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, "Could not read imported file");
+                    error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, ErrorHandler::getMessage(ERR_FILE_NOT_FOUND), "Could not read imported file");
                     return false;
                 }
 

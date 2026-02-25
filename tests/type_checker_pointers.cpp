@@ -139,7 +139,8 @@ TEST_FUNC(TypeChecker_Dereference_Invalid_NonPointer) {
     ASSERT_EQ(1, comp_unit.getErrorHandler().getErrors().length());
     const ErrorReport& err = comp_unit.getErrorHandler().getErrors()[0];
     ASSERT_EQ(ERR_TYPE_MISMATCH, err.code);
-    ASSERT_TRUE(strcmp(err.message, "Cannot dereference a non-pointer type 'i32'") == 0);
+    ASSERT_STREQ(err.message, "type mismatch");
+    ASSERT_TRUE(err.hint != NULL && strstr(err.hint, "Cannot dereference a non-pointer type 'i32'") != NULL);
 
 
     return true;
@@ -196,7 +197,8 @@ TEST_FUNC(TypeChecker_Dereference_VoidPointer) {
     ASSERT_EQ(1, comp_unit.getErrorHandler().getErrors().length());
     const ErrorReport& err = comp_unit.getErrorHandler().getErrors()[0];
     ASSERT_EQ(ERR_TYPE_MISMATCH, err.code);
-    ASSERT_TRUE(strcmp(err.message, "Cannot dereference a void pointer") == 0);
+    ASSERT_STREQ(err.message, "type mismatch");
+    ASSERT_TRUE(err.hint != NULL && strstr(err.hint, "Cannot dereference a void pointer") != NULL);
 
     return true;
 }

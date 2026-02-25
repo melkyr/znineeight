@@ -1507,6 +1507,23 @@ Key changes:
     - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation. Fixed bug in standalone optional assignments.
     - **Verification**: Created Batch 47 with 9 comprehensive integration tests covering the requested test matrix (null assignment, implicit wrapping, orelse fallbacks, if-captures, nested optionals, and optional structs). Verified all 47 batches pass.
 
+### Bugfixes & Hardening (Milestone 7)
+
+229.1 [COMPLETE] **Task 9.2: Cross-Module Qualified Type Names (DONE)**
+    - **Name Mangling**: Implemented consistent type mangling (`z_mod_Name`) across all modules. `c_name` is now computed during the symbol pre-pass and preserved through placeholder mutation.
+    - **Cross-Module Resolution**: Enhanced `visitMemberAccess` and `visitStructInitializer` to support qualified names like `a.Point` and `a.b.c.Type`.
+    - **Stability**: Added recursion depth guards to type resolution and improved circular import handling to support mutual recursion across modules.
+    - **Error Handling**: Added descriptive error messages for missing module members and explicit rejection of modules used as types.
+    - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the Name Mangling Contract and resolution details.
+    - **Verification**: Expanded `cross_module_tests.cpp` and `recursive_type_tests.cpp` with comprehensive edge cases.
+
+230. [IN PROGRESS] **Task 9.5: Incremental Error Handling Overhaul**
+    - **Phase 0 (Harness & PAL)**: Implemented `plat_write_str` and `Z98_ASSERT` for robust debugging. Synchronized the test harness with `ErrorHandler::hasErrors()` to maintain compatibility with legacy tests.
+    - **Phase 1 (Parser)**: Transitioned parser errors to record diagnostics before aborting.
+    - **Phase 2 & 3 (Type Checker Recovery)**: Converted all semantic `fatalError` calls to recoverable `report()` calls. Visitors now return sentinel values (`NULL`/`false`) to allow multi-error reporting.
+    - **Phase 4 (Centralization)**: Centralized all error messages in `ErrorHandler::getMessage(code)`. Updated all compiler passes to use consistent messaging and moved metadata to the `hint` field.
+    - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the new two-tier error model.
+    - **Remaining**: Fix minor regressions in Batch 45/47 and implement the multi-error integration test.
 
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 

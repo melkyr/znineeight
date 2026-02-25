@@ -135,11 +135,12 @@ TEST_FUNC(DoubleFree_LocationInDoubleFreeError) {
     const DynamicArray<ErrorReport>& errors = ctx.getCompilationUnit().getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
         if (errors[i].code == ERR_DOUBLE_FREE) {
-            // Check if message contains allocation AND first free info.
-            if (contains(errors[i].message, "allocated at") &&
-                contains(errors[i].message, ":2:") &&
-                contains(errors[i].message, "first freed at") &&
-                contains(errors[i].message, ":3:")) {
+            // Check if hint contains allocation AND first free info.
+            if (errors[i].hint &&
+                contains(errors[i].hint, "allocated at") &&
+                contains(errors[i].hint, ":2:") &&
+                contains(errors[i].hint, "first freed at") &&
+                contains(errors[i].hint, ":3:")) {
                 found_double_free_with_loc = true;
             }
         }

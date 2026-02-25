@@ -109,6 +109,14 @@ void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
 }
 
+void plat_write_str(const char* s) {
+    DWORD written;
+    HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hStdErr != INVALID_HANDLE_VALUE && hStdErr != NULL) {
+        WriteFile(hStdErr, s, (DWORD)plat_strlen(s), &written, NULL);
+    }
+}
+
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
     if (value == 0) {
@@ -402,6 +410,16 @@ void plat_print_error(const char* message) {
 void plat_print_debug(const char* message) {
     plat_print_error("[DEBUG] ");
     plat_print_error(message);
+}
+
+void plat_write_str(const char* s) {
+    size_t len = plat_strlen(s);
+    size_t total_written = 0;
+    while (total_written < len) {
+        ssize_t written = write(STDERR_FILENO, s + total_written, len - total_written);
+        if (written <= 0) break;
+        total_written += written;
+    }
 }
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {

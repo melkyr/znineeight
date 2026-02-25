@@ -118,6 +118,10 @@ static inline bool is_c89_compatible(Type* type) {
             return is_c89_compatible(type->as.optional.payload);
 
         case TYPE_ERROR_SET:
+            /* anyerror is not supported in C89 backend yet */
+            if (type->as.error_set.name && plat_strcmp(type->as.error_set.name, "anyerror") == 0) {
+                return false;
+            }
             return true;
 
         case TYPE_STRUCT:

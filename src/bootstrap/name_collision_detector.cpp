@@ -200,5 +200,5 @@ void NameCollisionDetector::reportCollision(SourceLocation loc, const char* name
     safe_append(cur, rem, entity_type);
     safe_append(cur, rem, " in the same scope");
 
-    error_handler_.report(ERR_REDEFINITION, loc, buffer, unit_.getArena());
+    error_handler_.report(ERR_REDEFINITION, loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), buffer);
 }

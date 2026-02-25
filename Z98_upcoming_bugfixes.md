@@ -124,7 +124,7 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 ---
 
-### Task 9.5: Improve Error Messages and Robustness
+### Task 9.5: Improve Error Messages and Robustness [DONE]
 **Goal**: Add better error messages for common failures (e.g., undefined symbols, type mismatches) and increase overall robustness.
 
 **Why**: During the JSON parser attempt, many errors were silent or led to crashes. Better diagnostics would speed up development.
@@ -133,8 +133,10 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 - Audit `ErrorHandler` to ensure all error codes have descriptive messages.
 - Add assertions in critical places (with `assert`) in debug builds to catch null pointers early.
 - Improve `TypeChecker` to report the location and reason for type mismatches more clearly.
+- **Implemented a transition from fatal aborts to recoverable reporting**, enabling multi-error detection in a single pass.
+- **Centralized error messages** and moved context-specific info into hints.
 
-**Testing**: No specific tests, but the improved messages will be evident when running the JSON parser again.
+**Testing**: Added `tests/integration/multi_error_tests.cpp` to verify multiple error reporting and ensured all existing tests pass through a harness-level abort synchronization.
 
 ---
 

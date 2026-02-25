@@ -171,7 +171,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
             return true;
 
         default:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Non-C89 return type not supported", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "Non-C89 return type not supported");
             return false;
     }
 }
@@ -181,7 +181,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
 
     switch (type->kind) {
         case TYPE_VOID:
-            error_handler_.report(ERR_TYPE_MISMATCH, loc, "Parameter cannot be 'void'", unit_.getArena());
+            error_handler_.report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Parameter cannot be 'void'");
             return false;
 
         case TYPE_BOOL:
@@ -221,11 +221,11 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
             if (fn_name && plat_strcmp(fn_name, "print") == 0) {
                 return true;
             }
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "anytype is not supported in bootstrap compiler", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "anytype is not supported in bootstrap compiler");
             return false;
 
         default:
-            error_handler_.report(ERR_NON_C89_FEATURE, loc, "Non-C89 type in parameter not supported", unit_.getArena());
+            error_handler_.report(ERR_NON_C89_FEATURE, loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), "Non-C89 type in parameter not supported");
             return false;
     }
 }

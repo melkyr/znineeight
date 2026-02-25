@@ -1034,7 +1034,7 @@ void DoubleFreeAnalyzer::reportDoubleFree(const char* name, SourceLocation loc) 
         }
     }
 
-    unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, msg, unit_.getArena());
+    unit_.getErrorHandler().report(ERR_DOUBLE_FREE, loc, ErrorHandler::getMessage(ERR_DOUBLE_FREE), unit_.getArena(), msg);
 }
 
 void DoubleFreeAnalyzer::reportLeak(const char* name, SourceLocation loc, bool is_reassignment) {

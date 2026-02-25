@@ -371,7 +371,7 @@ TEST_FUNC(Task228_OptionalTypeMismatch) {
     bool found_error = false;
     const DynamicArray<ErrorReport>& errors = unit.getErrorHandler().getErrors();
     for (size_t i = 0; i < errors.length(); ++i) {
-        if (strstr(errors[i].message, "Incompatible assignment: '?i32' to 'i32'")) {
+        if (errors[i].hint && strstr(errors[i].hint, "Incompatible assignment: '?i32' to 'i32'")) {
             found_error = true;
             break;
         }

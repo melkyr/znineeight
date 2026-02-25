@@ -1120,5 +1120,6 @@ TEST_FUNC(CrossModule_EnumAccess);
 bool test_OptionalStabilization_UndefinedPayload();
 bool test_OptionalStabilization_RecursiveOptional();
 bool test_OptionalStabilization_AlignedLayout();
+TEST_FUNC(MultiError_Reporting);
 
 #endif // TEST_DECLARATIONS_HPP

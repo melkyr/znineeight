@@ -318,9 +318,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     }
 
     if (decl->initializer && !isConstantInitializer(decl->initializer)) {
-        error_handler_.report(ERR_GLOBAL_VAR_NON_CONSTANT_INIT, decl->name_loc,
-            "Global variable must have a constant initializer for C89 compatibility",
-            "Try using a literal or a constant expression");
+        error_handler_.report(ERR_GLOBAL_VAR_NON_CONSTANT_INIT, decl->name_loc, ErrorHandler::getMessage(ERR_GLOBAL_VAR_NON_CONSTANT_INIT), "Try using a literal or a constant expression");
         return;
     }
 

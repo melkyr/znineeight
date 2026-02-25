@@ -70,4 +70,23 @@
     #define RETR_UNUSED_FUNC __attribute__((unused))
 #endif
 
+/* Assertion support */
+#define Z98_STRINGIFY_HELPER(x) #x
+#define Z98_STRINGIFY(x) Z98_STRINGIFY_HELPER(x)
+
+#ifndef NDEBUG
+    /* Forward declarations to avoid including platform.hpp here */
+    void plat_write_str(const char* s);
+    void plat_abort();
+
+    #define Z98_ASSERT(cond) do { \
+        if (!(cond)) { \
+            plat_write_str("Assertion failed: " #cond " at " __FILE__ ":" Z98_STRINGIFY(__LINE__) "\n"); \
+            plat_abort(); \
+        } \
+    } while(0)
+#else
+    #define Z98_ASSERT(cond) ((void)0)
+#endif
+
 #endif // COMMON_HPP
