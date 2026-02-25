@@ -164,35 +164,130 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 After these tasks, the compiler should be able to handle the JSON parser and similar real‑world code, paving the way for self‑compilation.
 
----
+Task 9.6: Fix Recursive Type Instability for Slices
 
-### Task 9.7: Unified Lifting Strategy (Milestone 8)
-**Goal**: Transform all control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) into statement-level operations with temporary variables using a dedicated AST transformation pass.
+Goal: Ensure that types containing slices of themselves (e.g., JsonValue with []JsonValue) resolve correctly without incomplete‑type errors.
 
-**Why**: The current ad-hoc lifting in the C89 backend is fragile, especially for deeply nested expressions. It frequently triggers "Expected a primary expression" errors and complicates code generation.
+Root Cause: The placeholder system currently handles pointers well, but slices are represented as structs that contain a pointer and a length. When a slice’s element type is the type being defined, the placeholder resolution may not properly update the slice’s element type, leading to “incomplete type” errors when accessing fields later.
 
-**Solution**: Implement Milestone 8 as described in `AI_tasks.md`. This will simplify the `C89Emitter` and ensure that all control flow is handled at the statement level before code generation begins.
+Implementation:
 
----
+    In createSliceType, if the element type is a placeholder, store a reference to that placeholder and mark the slice as “pending.”
 
-### Task 9.8: Parser Grammar Refinement
-**Goal**: Support more flexible Zig syntax and improve error recovery.
+    After the placeholder is resolved to a real type, update all dependent slice types in‑place (similar to how pointers are handled). This may require keeping a list of dependent slices on the placeholder.
 
-**Why**:
-- Braces are currently mandatory for almost all `if`/`while` bodies, which is stricter than Zig.
-- `while (cond) : (iter)` is a common Zig pattern that is currently missing.
-- Syntax errors trigger an immediate `plat_abort`, making it hard to debug large files.
+    Alternatively, ensure that slice types are always created with the placeholder and that any later use forces resolution of the placeholder before the slice’s size/alignment is needed. Currently, slice size is fixed (two words) regardless of element type, so the slice itself can be considered complete even if the element type is a placeholder. The problem arises when trying to access fields of the element type. So we need to ensure that when we access an element of the slice, the element type is resolved.
 
-**Solution**:
-- Update `parseWhileStatement` to support the optional `: (iter)` expression.
-- Refine `parseIfStatement` and others to allow single-statement bodies without braces where appropriate.
-- Implement parser synchronization on semicolons or keywords to allow multi-error reporting for syntactic issues.
+Verification:
+Write a test that defines a mutually recursive slice type across two modules:
+zig
 
----
+// a.zig
+const b = @import("b.zig");
+pub const A = struct { data: []B };
 
-### Task 9.9: Type System Hardening for Recursion
-**Goal**: Ensure `TYPE_SLICE` and `TYPE_OPTIONAL` correctly handle `TYPE_PLACEHOLDER` during all phases of resolution.
+// b.zig
+const a = @import("a.zig");
+pub const B = struct { value: i32, next: ?*A };
 
-**Why**: The JSON parser revealed that even indirect recursion through slices can cause resolution loops or "incomplete type" errors if the placeholder is not correctly mutated or if interning is bypassed incorrectly.
+Compile a.zig and ensure no “incomplete type” errors occur. Also verify that the generated C code contains the correct struct definitions.
+Task 9.7: Implicit Coercion from Slices to Many‑Item Pointers
 
-**Solution**: Audit `TypeInterner` and `TypeChecker::resolvePlaceholder` to ensure that all compound types containing placeholders are correctly handled.
+Goal: Allow a slice []T to be implicitly converted to a many‑item pointer [*]T when used as an argument to an extern function expecting a raw pointer.
+
+Rationale: Currently, passing a string literal or slice to a C function like fopen requires explicit .ptr and @ptrCast. This is verbose and error‑prone. Adding implicit coercion makes the code more natural.
+
+Implementation:
+
+    In areTypesCompatible, add a rule: if the destination type is a many‑item pointer ([*]T) and the source type is a slice ([]T) with the same element type, they are compatible. This allows the type checker to accept the conversion.
+
+    In code generation, when emitting a slice as a many‑item pointer, just use the slice’s .ptr field. No extra code is needed because the representation already stores the pointer.
+
+    Ensure that this coercion only works in contexts where a raw pointer is expected (e.g., function arguments, assignments to [*]T variables). It should not be allowed in other contexts (e.g., arithmetic) because that would change semantics.
+
+Verification:
+Write a test that calls an external C function expecting a [*]const u8 (like puts) with a string literal and a slice:
+zig
+
+extern fn puts(s: [*]const u8) i32;
+const msg = "hello";
+pub fn main() void {
+    _ = puts(msg);          // should work implicitly
+    const slice = msg[0..3];
+    _ = puts(slice);        // should also work implicitly
+}
+
+Compile and run (if possible) to confirm no type errors and correct output.
+Task 9.8: Parser Support for while Continue Expressions
+
+Goal: Implement the Zig syntax while (cond) : (iter) stmt, where iter is an expression evaluated after each loop iteration.
+
+Rationale: The JSON parser originally used this pattern. While we can work around it by moving the iteration to the end of the loop, supporting the syntax directly improves compatibility.
+
+Implementation:
+
+    Extend the AST: add an optional iter_expr field to ASTWhileStmtNode.
+
+    Modify parseWhileStatement to look for a colon after the condition. If present, parse the iteration expression (which can be any expression) and expect a closing parenthesis.
+
+    In the type checker, ensure the iteration expression is well‑typed (it can be any expression, typically an assignment or increment).
+
+    In code generation, emit the loop as:
+    c
+
+    while (cond) {
+        // body
+        iter_expr;
+    }
+
+    This matches Zig semantics (the iteration expression is evaluated after the body, before the next condition check).
+
+Verification:
+Write a test that uses a while loop with a continue expression to sum numbers:
+zig
+
+pub fn sum_up_to(n: u32) u32 {
+    var i: u32 = 0;
+    var total: u32 = 0;
+    while (i < n) : (i += 1) {
+        total += i;
+    }
+    return total;
+}
+
+Ensure it parses, type‑checks, and generates correct C code that when run returns the correct sum.
+Task 9.9: Stabilize Tagged Unions and Switch Captures
+
+Goal: Fix remaining issues with tagged unions (union(enum)) and switch captures (|payload|) that cause type‑checking failures in complex nested initializations.
+
+Root Cause: The current implementation may not fully resolve placeholders when accessing union fields or capturing payloads. Also, the type of the capture variable may not be correctly inferred from the union field.
+
+Implementation:
+
+    Audit visitTaggedUnionDecl to ensure that field types are correctly resolved (using placeholders where needed) and that the union’s layout is computed after all fields are resolved.
+
+    In visitSwitchExpr, when a prong has a capture, look up the corresponding field in the union’s field list and set the capture variable’s type to that field’s type. Ensure that any placeholders in the field type are resolved before use.
+
+    Add defensive checks: if a field type is still a placeholder when the switch is being checked, trigger resolution (similar to resolveTypePlaceholder).
+
+    Test with a variety of tagged union initializations and switch captures, including nested unions and recursive types.
+
+Verification:
+Write a test that defines a tagged union and uses it in a switch with capture:
+zig
+
+const Value = union(enum) {
+    Int: i32,
+    Float: f64,
+    Text: []const u8,
+};
+
+fn describe(val: Value) []const u8 {
+    return switch (val) {
+        .Int => |i| "int",
+        .Float => |f| "float",
+        .Text => |s| "text",
+    };
+}
+
+Also test nested tagged unions (e.g., a union containing another union) and ensure captures work correctly. Compile and run (if possible) to verify correct values.
