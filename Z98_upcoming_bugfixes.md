@@ -151,18 +151,274 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 ---
 
-### Summary of Milestone 9 Tasks
+## Refactor to ensure Slices and lifting is properly handled
 
-| Task | Description | Priority |
-|------|-------------|----------|
-| 9.1 | Recursive type handling (placeholder types) | Critical |
-| 9.2 | Cross‑module enum access (workaround or fix) | High |
-| 9.3 | Optional type size/alignment and segfault fix | High |
-| 9.4 | Tagged union captures in switch | Medium |
-| 9.5 | Improve error messages and robustness | Medium |
-| 9.6 | Re‑run JSON parser and document | Verification |
+### Part 1: What is RAII and Why Do We Need It Here?
 
-After these tasks, the compiler should be able to handle the JSON parser and similar real‑world code, paving the way for self‑compilation.
+**RAII (Resource Acquisition Is Initialization)** is a C++ programming idiom where resource management (memory, file handles, locks, *state*) is tied to object lifetime.
+- **Acquisition:** Happens in the **Constructor**.
+- **Release:** Happens in the **Destructor** (automatically called when the object goes out of scope, even during errors/returns).
+
+**Why do you need it in `codegen.cpp`?**
+Currently, your code manages state manually (e.g., `indent()`, `dedent()`, `defer_stack_.append()`, `defer_stack_.pop_back()`).
+- **The Risk:** If `emitBlock` calls `indent()` and then hits an early `return` (due to an error or logic check), `dedent()` is never called. Your `indent_level_` becomes desynchronized, corrupting all subsequent output.
+- **The RAII Solution:** Wrap the state change in a local object. When the function exits (for any reason), the destructor runs and fixes the state automatically.
+
+---
+
+### Part 2: Stabilization Plan with Pseudocode
+
+Here is the phased plan to harden stability before attempting lifting unification.
+
+#### Phase 1: Hardening I/O and Error Handling
+*Goal: Prevent silent data corruption and invalid C generation.*
+
+**Task 9.5.1: Fail-Hard on Buffer Overflow**
+Currently, `C89Emitter::write` truncates data if `type_def_buffer_` is full. This creates silent bugs.
+**Action:** Replace truncation with a fatal error.
+
+```cpp
+// Pseudocode for C89Emitter::write
+void write(const char* data, size_t len) {
+    if (len == 0) return;
+
+    if (in_type_def_mode_) {
+        // CHECK: Do we have space?
+        if (type_def_pos_ + len > type_def_cap_) {
+            // OLD: len = type_def_cap_ - type_def_pos_; // Truncation (BAD)
+            // NEW: Hard Fail
+            error_handler_.report(ERR_INTERNAL, NULL, "Type definition buffer overflow");
+            plat_abort(); 
+        }
+        plat_memcpy(type_def_buffer_ + type_def_pos_, data, len);
+        type_def_pos_ += len;
+        last_char_ = data[len - 1];
+        return;
+    }
+
+    // ... existing buffer flush logic ...
+}
+```
+
+**Task 9.5.2: Standardize Error Reporting**
+Currently, some errors write `/* error: ... */` into the C file. This makes the C compilable but logically wrong.
+**Action:** Force all codegen errors to stop emission for that node.
+
+```cpp
+// Pseudocode for emitTryExpr (and similar lifting funcs)
+void emitTryExpr(const ASTNode* node, const char* target_var) {
+    if (!node || node->type != NODE_TRY_EXPR) {
+        // OLD: writeString("/* error: try expression is NULL */");
+        // NEW: Report and Return
+        error_handler_.report(ERR_INTERNAL, node->loc, "Null try expression node");
+        return; 
+    }
+    
+    // ... rest of logic ...
+}
+```
+
+#### Phase 2: Implementing RAII State Guards
+*Goal: Ensure `indent_level_` and `defer_stack_` are always balanced.*
+
+**Task 9.5.3: Indentation Scope Guard**
+Create a local helper class inside `codegen.cpp` (or in a helper header) to manage indentation.
+
+```cpp
+// Pseudocode: Define this class inside codegen.cpp or codegen.hpp
+class IndentScope {
+public:
+    C89Emitter* emitter;
+    IndentScope(C89Emitter* e) : emitter(e) {
+        emitter->indent();
+    }
+    ~IndentScope() {
+        emitter->dedent();
+    }
+};
+
+// Usage in emitBlock
+void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
+    writeString("{\n");
+    
+    // RAII: Automatically dedents when this function returns
+    IndentScope scope(this); 
+
+    // ... logic ...
+    // Even if we 'return' early here, ~IndentScope() runs dedent()
+}
+```
+
+**Task 9.5.4: Defer Scope Guard**
+Manage the `defer_stack_` lifecycle similarly to prevent leaks or mismatches.
+
+```cpp
+// Pseudocode: DeferScopeGuard
+class DeferScopeGuard {
+public:
+    C89Emitter* emitter;
+    DeferScope* scope;
+    bool exited_cleanly;
+
+    DeferScopeGuard(C89Emitter* e, int label_id) : emitter(e), exited_cleanly(false) {
+        scope = (DeferScope*)e->arena_.alloc(sizeof(DeferScope));
+        new (scope) DeferScope(e->arena_, label_id);
+        e->defer_stack_.append(scope);
+    }
+
+    ~DeferScopeGuard() {
+        // Emit defers only if we didn't hit a terminator (return/break)
+        // Note: You need a way to tell the guard if the block exited early.
+        // For now, assume we emit defers unless marked otherwise.
+        if (!exited_cleanly) { 
+             // Actually, logic is complex here. 
+             // Better: The guard pops the stack. The emitter decides when to emit defers.
+        }
+        emitter->defer_stack_.pop_back();
+    }
+    
+    void markCleanExit() { exited_cleanly = true; }
+};
+
+// Usage in emitBlock
+void C89Emitter::emitBlock(...) {
+    writeString("{\n");
+    IndentScope indent(this);
+    DeferScopeGuard defer_guard(this, label_id);
+
+    // ... process statements ...
+    
+    if (!exits) {
+        // emit defers
+    }
+    // ~DeferScopeGuard pops the stack automatically
+}
+```
+
+#### Phase 3: Legibility and Maintainability Refactors
+*Goal: Reduce cognitive load in large functions.*
+
+**Task 9.5.5: Extract Assignment Logic**
+`emitStatement` and `emitLocalVarDecl` both have massive `if/else` chains for handling `TRY`, `CATCH`, `IF` assignments. Unify this.
+
+```cpp
+// Pseudocode: Helper Function
+void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode* rvalue) {
+    if (!target_var) {
+        emitExpression(rvalue);
+        return;
+    }
+
+    switch (rvalue->type) {
+        case NODE_TRY_EXPR:   emitTryExpr(rvalue, target_var); break;
+        case NODE_CATCH_EXPR: emitCatchExpr(rvalue, target_var); break;
+        case NODE_IF_EXPR:    emitIfExpr(rvalue, target_var); break;
+        case NODE_SWITCH_EXPR: emitSwitchExpr(rvalue, target_var); break;
+        case NODE_ORELSE_EXPR: emitOrelseExpr(rvalue, target_var); break;
+        default:
+            writeString(target_var);
+            writeString(" = ");
+            emitExpression(rvalue);
+            writeString(";");
+            break;
+    }
+}
+
+// Usage in emitStatement
+// Replace the huge 50-line if/else block with:
+emitAssignmentWithLifting(lvalue_symbol, rvalue);
+```
+
+**Task 9.5.6: Break Down `emitExpression` Switch**
+The `emitExpression` switch is too large. Group related handlers into private methods.
+
+```cpp
+// Pseudocode: Grouping
+void C89Emitter::emitExpression(const ASTNode* node) {
+    switch (node->type) {
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_BOOL_LITERAL:
+            emitLiteral(node); // New helper
+            break;
+        case NODE_BINARY_OP:
+        case NODE_UNARY_OP:
+            emitOperator(node); // New helper
+            break;
+        // ... keep control flow separate ...
+    }
+}
+```
+
+#### Phase 4: Type System Safety
+*Goal: Prevent crashes in `type_system.cpp` due to null pointers.*
+
+**Task 9.5.7: Guard Type Creators**
+Functions like `createPointerType` assume `base_type` is valid.
+
+```cpp
+// Pseudocode: type_system.cpp
+Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, ...) {
+    // NEW: Safety Check
+    if (!base_type) {
+        plat_print_debug("Error: Creating pointer to null type\n");
+        return get_g_type_undefined();
+    }
+    
+    // ... existing logic ...
+}
+```
+
+**Task 9.5.8: Interner Null Checks**
+Ensure the `TypeInterner` doesn't hash null pointers.
+
+```cpp
+// Pseudocode: TypeInterner::getPointerType
+Type* TypeInterner::getPointerType(Type* base_type, ...) {
+    if (!base_type) return createPointerType(...); // Handle error case first
+    
+    if (containsPlaceholder(base_type)) { ... }
+    
+    // Hashing is safe now
+    u32 h = hashType(TYPE_POINTER, base_type, ...);
+    // ...
+}
+```
+
+---
+
+### Part 3: 9.5.9 Additional Refactor Suggestions for Legibility
+
+1.  **Consistent Naming Convention:**
+    *   **Current:** Mix of `emitBlock`, `emit_block` (not seen but common in C), `var_alloc_`.
+    *   **Suggestion:** Stick to `camelCase` for methods (`emitBlock`) and `snake_case_` for members (`indent_level_`). The code mostly follows this, but ensure new helpers do too.
+    *   **Specific:** Rename `writeString` to `write` (overload) or `writeLit` to distinguish from `write` (buffer). Currently `write` takes `(const char*, size_t)` and `writeString` takes `(const char*)`. This is fine, but ensure `write` isn't called with raw strings accidentally without `strlen`.
+
+2.  **Magic Numbers:**
+    *   **Current:** `65536` for `type_def_cap_`, `256` for buffers.
+    *   **Suggestion:** Define constants at the top of `codegen.cpp`.
+    ```cpp
+    static const size_t TYPE_DEF_BUFFER_SIZE = 65536;
+    static const size_t TEMP_BUFFER_SIZE = 256;
+    ```
+
+3.  **Early Returns:**
+    *   **Current:** Some functions nest deeply (`if (node) { if (type) { ... } }`).
+    *   **Suggestion:** Use guard clauses.
+    ```cpp
+    // Instead of:
+    if (node) {
+        if (node->type == X) { ... }
+    }
+    // Use:
+    if (!node) return;
+    if (node->type != X) return;
+    ```
+
+4.  **Comment Documentation:**
+    *   **Current:** Comments explain *what* (e.g., `// Emit defers`).
+    *   **Suggestion:** Explain *why* for complex logic (e.g., `// Defers must emit in reverse order to match Zig semantics`).
+
 
 ### Task 9.6: Fix Recursive Type Instability for Slices
 
