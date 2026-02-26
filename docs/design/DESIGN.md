@@ -952,6 +952,8 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 ### 13.2 C89Emitter
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
+- **RAII State Guards**: Uses `IndentScope` and `DeferScopeGuard` to ensure state consistency (indentation level and defer stack) across complex control flow.
+- **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize expression lifting, type coercion, and initializer decomposition, ensuring consistent behavior across variable declarations and assignments.
 - **Comments**: Standard C89 `/* ... */` comment emission.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.

@@ -22,6 +22,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **Indentation Management**: Maintains a simple indentation level counter and provides a `writeIndent()` helper to ensure consistent code formatting (fixed at 4 spaces).
 - **C89-Compliant Comments**: Provides an `emitComment()` helper that ensures all comments use the `/* ... */` style, as `//` comments are not supported in standard C89.
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
+- **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
 
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
@@ -67,9 +68,18 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 ### 4.2 Two-Pass Block Emission
 C89 requires all local variable declarations to appear at the beginning of a block, before any executable statements. To support Zig's flexible declaration placement, the `C89Emitter::emitBlock` method employs a two-pass strategy:
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
-2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`).
+2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.
 
-### 4.3 Control Flow Mapping
+### 4.3 Unified Assignment and Lifting
+The `C89Emitter::emitAssignmentWithLifting` method provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
+- **Expression Lifting**: Transforms control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) into statement blocks when used in an assignment context.
+- **Type Coercion**: Generates the necessary C code to wrap values into `Optional` or `ErrorUnion` structures.
+- **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments.
+- **Discarding Results**: Correctly handles assignments to the blank identifier `_` by evaluating the RHS for side effects and casting to `(void)`.
+
+This unification reduces code duplication and ensures consistent behavior across different parts of the code generator.
+
+### 4.4 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
   - **Optional Capture**: If the condition is an optional type and uses the `|val|` capture, the emitter generates a temporary variable to hold the condition's result and an `if (tmp.has_value)` check. Inside the `then` block, it declares the capture variable and assigns `tmp.value` to it.
   - **Example (if-capture)**:
