@@ -287,6 +287,11 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Emits a function call expression.
+     */
+    void emitFunctionCall(const ASTFunctionCallNode* call);
+
+    /**
      * @brief Emits an expression with potential implicit coercion.
      * @param expected The expected type.
      * @param node The expression node.
@@ -384,6 +389,19 @@ public:
     const char* getMangledTypeName(Type* type);
 
     /**
+     * @brief Evaluates an expression and captures its logic into the current preamble.
+     * @param node The expression node.
+     * @param expected Optional expected type for coercion.
+     * @return The simple expression string (variable name or literal).
+     */
+    const char* emitExpressionWithCapture(const ASTNode* node, Type* expected = NULL);
+
+    /**
+     * @brief Emits the current preamble's declarations and code, then clears it.
+     */
+    void flushPreamble();
+
+    /**
      * @brief Ensures a slice type is defined and its helper is emitted.
      * @param type The slice type.
      */
@@ -423,6 +441,14 @@ public:
      */
     void emitDefersForScopeExit(int target_label_id = -1);
 
+    /**
+     * @brief Generates a unique temporary variable and registers it for function-level declaration.
+     */
+    const char* generateTemporary(Type* type, const char* prefix);
+
+    void pushPreambleFrame();
+    void popPreambleFrame();
+
 private:
     /**
      * @brief Emits logic to wrap a value into an error union.
@@ -434,6 +460,8 @@ private:
      */
     void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
 
+    void emitCoercedAssignment(const char* target_expr, const char* source_expr, Type* target_type, Type* source_type);
+
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
@@ -444,6 +472,13 @@ private:
         DynamicArray<ASTDeferStmtNode*> defers;
 
         DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena) {}
+    };
+
+    struct PreambleFrame {
+        DynamicArray<const char*> decls;
+        DynamicArray<const char*> code;
+
+        PreambleFrame(ArenaAllocator& arena) : decls(arena), code(arena) {}
     };
 
     char buffer_[4096];
@@ -462,11 +497,24 @@ private:
     DynamicArray<const char*> forward_decls_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
+    DynamicArray<PreambleFrame*> preamble_stack_;
+    DynamicArray<char>* redirection_buffer_;
     Type* current_fn_ret_type_;
     char* type_def_buffer_;
     size_t type_def_pos_;
     size_t type_def_cap_;
     bool in_type_def_mode_;
+
+    char* fn_buffer_;
+    size_t fn_pos_;
+    size_t fn_cap_;
+    bool is_redirecting_to_fn_;
+
+    struct TempDecl {
+        Type* type;
+        const char* name;
+    };
+    DynamicArray<TempDecl> function_temporaries_;
     const char* module_name_;
     char last_char_;
     int for_loop_counter_;

@@ -10,7 +10,7 @@
 // Helper to get the string representation of a binary operator token.
 
 TypeChecker::TypeChecker(CompilationUnit& unit)
-    : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL),
+    : unit(unit), current_expected_type(NULL), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL),
       current_loop_depth(0), type_resolution_depth_(0), in_defer(false), label_stack_(unit.getArena()),
       function_labels_(unit.getArena()), next_label_id_(0) {
 }
@@ -91,8 +91,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_ARRAY_ACCESS:     resolved_type = visitArrayAccess(node->as.array_access); break;
         case NODE_ARRAY_SLICE:      resolved_type = visitArraySlice(node->as.array_slice); break;
         case NODE_MEMBER_ACCESS:    resolved_type = visitMemberAccess(node, node->as.member_access); break;
-        case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node->as.struct_initializer); break;
-        case NODE_TUPLE_LITERAL:    resolved_type = visitTupleLiteral(node->as.tuple_literal); break;
+        case NODE_STRUCT_INITIALIZER: resolved_type = visitStructInitializer(node); break;
+        case NODE_TUPLE_LITERAL:    resolved_type = visitTupleLiteral(node); break;
         case NODE_UNREACHABLE:      resolved_type = visitUnreachable(node); break;
         case NODE_BOOL_LITERAL:     resolved_type = visitBoolLiteral(node, &node->as.bool_literal); break;
         case NODE_NULL_LITERAL:     resolved_type = visitNullLiteral(node); break;
@@ -797,9 +797,16 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
     for (size_t i = 0; i < actual_args; ++i) {
         ASTNode* arg_node = (*node->args)[i];
+        Type* param_type = (i < expected_args) ? 
+            ((callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i]) :
+            NULL;
+
+        Type* old_expected = current_expected_type;
+        current_expected_type = param_type;
         Type* arg_type = visit(arg_node);
+        current_expected_type = old_expected;
+
         if (i >= expected_args) continue;
-        Type* param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         if (!arg_type) {
             // Error in argument expression, already reported.
@@ -900,7 +907,11 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     // Identifiers, array accesses, and pointer dereferences are the main valid l-values.
 
     // First, resolve the type of the left-hand side.
+    Type* old_expected = current_expected_type;
+    current_expected_type = NULL;
     Type* lvalue_type = visit(node->lvalue);
+    current_expected_type = old_expected;
+
     if (!lvalue_type) {
         return NULL; // Error already reported (e.g., undeclared variable)
     }
@@ -912,7 +923,10 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     }
 
     // Step 2: Resolve the type of the right-hand side.
+    current_expected_type = lvalue_type;
     Type* rvalue_type = visit(node->rvalue);
+    current_expected_type = old_expected;
+
     if (!rvalue_type) {
         return NULL; // Error already reported.
     }
@@ -1265,7 +1279,13 @@ Type* TypeChecker::visitBoolLiteral(ASTNode* /*parent*/, ASTBoolLiteralNode* /*n
     return resolvePrimitiveTypeName("bool");
 }
 
-Type* TypeChecker::visitNullLiteral(ASTNode* /*node*/) {
+Type* TypeChecker::visitNullLiteral(ASTNode* node) {
+    if (current_expected_type && (current_expected_type->kind == TYPE_POINTER || 
+                                   current_expected_type->kind == TYPE_FUNCTION_POINTER || 
+                                   current_expected_type->kind == TYPE_OPTIONAL)) {
+        node->resolved_type = current_expected_type;
+        return current_expected_type;
+    }
     return get_g_type_null();
 }
 
@@ -1596,7 +1616,10 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         unit.getErrorHandler().report(ERR_RETURN_INSIDE_DEFER, node->expression ? node->expression->loc : parent->loc, ErrorHandler::getMessage(ERR_RETURN_INSIDE_DEFER));
     }
 
+    Type* old_expected = current_expected_type;
+    current_expected_type = current_fn_return_type;
     Type* return_type = node->expression ? visit(node->expression) : get_g_type_void();
+    current_expected_type = old_expected;
 
     if (!current_fn_return_type) {
         // This can happen if we are parsing a return outside of a function,
@@ -2055,7 +2078,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.is_resolving = true;
     }
 
+    Type* old_expected = current_expected_type;
+    current_expected_type = NULL;
     Type* declared_type = node->type ? visit(node->type) : NULL;
+    current_expected_type = old_expected;
 
     // Reject anonymous structs/enums in variable declarations
     if (declared_type && !node->is_const) {
@@ -2149,7 +2175,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "anonymous struct initializer requires a declared struct or array type");
             }
         } else {
+            Type* old_expected_inner = current_expected_type;
+            current_expected_type = declared_type;
             initializer_type = visit(node->initializer);
+            current_expected_type = old_expected_inner;
         }
 
         // If we created a placeholder, mutate it in-place now
@@ -2768,7 +2797,10 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
         }
 
         // 2. Type check initializer values
+        Type* old_expected = current_expected_type;
+        current_expected_type = field_type;
         Type* val_type = visit(init->value);
+        current_expected_type = old_expected;
         if (!IsTypeAssignableTo(val_type, field_type, init->loc)) {
              // IsTypeAssignableTo already reports the error
         }
@@ -2776,13 +2808,49 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
     return true;
 }
 
-Type* TypeChecker::visitTupleLiteral(ASTTupleLiteralNode* node) {
+Type* TypeChecker::visitTupleLiteral(ASTNode* node) {
+    ASTTupleLiteralNode* tuple = node->as.tuple_literal;
+    // If we have an expected type, try to coerce the tuple to it.
+    if (current_expected_type) {
+        if (current_expected_type->kind == TYPE_STRUCT) {
+            DynamicArray<StructField>* fields = current_expected_type->as.struct_details.fields;
+            if (fields && fields->length() == tuple->elements->length()) {
+                for (size_t i = 0; i < tuple->elements->length(); ++i) {
+                    Type* old_expected = current_expected_type;
+                    current_expected_type = (*fields)[i].type;
+                    Type* elem_type = visit((*tuple->elements)[i]);
+                    current_expected_type = old_expected;
+                    if (elem_type && !IsTypeAssignableTo(elem_type, (*fields)[i].type, (*tuple->elements)[i]->loc)) {
+                        // Error already reported
+                    }
+                }
+                node->resolved_type = current_expected_type;
+                return current_expected_type;
+            }
+        } else if (current_expected_type->kind == TYPE_ARRAY) {
+            if (current_expected_type->as.array.size == tuple->elements->length()) {
+                Type* element_type = current_expected_type->as.array.element_type;
+                for (size_t i = 0; i < tuple->elements->length(); ++i) {
+                    Type* old_expected = current_expected_type;
+                    current_expected_type = element_type;
+                    Type* elem_type = visit((*tuple->elements)[i]);
+                    current_expected_type = old_expected;
+                    if (elem_type && !IsTypeAssignableTo(elem_type, element_type, (*tuple->elements)[i]->loc)) {
+                        // Error already reported
+                    }
+                }
+                node->resolved_type = current_expected_type;
+                return current_expected_type;
+            }
+        }
+    }
+
     void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
     if (!mem) fatalError("Out of memory");
     DynamicArray<Type*>* element_types = new (mem) DynamicArray<Type*>(unit.getArena());
 
-    for (size_t i = 0; i < node->elements->length(); ++i) {
-        Type* t = visit((*node->elements)[i]);
+    for (size_t i = 0; i < tuple->elements->length(); ++i) {
+        Type* t = visit((*tuple->elements)[i]);
         if (t) element_types->append(t);
         else element_types->append(get_g_type_void());
     }
@@ -2790,9 +2858,10 @@ Type* TypeChecker::visitTupleLiteral(ASTTupleLiteralNode* node) {
     return createTupleType(unit.getArena(), element_types);
 }
 
-Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
-    if (node->type_expr) {
-        Type* struct_type = visit(node->type_expr);
+Type* TypeChecker::visitStructInitializer(ASTNode* node) {
+    ASTStructInitializerNode* struct_init = node->as.struct_initializer;
+    if (struct_init->type_expr) {
+        Type* struct_type = visit(struct_init->type_expr);
         if (!struct_type) return NULL;
 
         if (struct_type->kind == TYPE_PLACEHOLDER) {
@@ -2801,8 +2870,8 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
 
         if (struct_type->kind == TYPE_TYPE) {
             // Unwrap if it's a TYPE_TYPE from visitTypeName or similar
-            if (node->type_expr->resolved_type && node->type_expr->resolved_type != get_g_type_type()) {
-                 struct_type = node->type_expr->resolved_type;
+            if (struct_init->type_expr->resolved_type && struct_init->type_expr->resolved_type != get_g_type_type()) {
+                 struct_type = struct_init->type_expr->resolved_type;
                  if (struct_type->kind == TYPE_PLACEHOLDER) {
                      struct_type = resolvePlaceholder(struct_type);
                  }
@@ -2810,20 +2879,23 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
         }
 
         if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY && struct_type->kind != TYPE_UNION) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "expected struct, union or array type for initialization");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, struct_init->type_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "expected struct, union or array type for initialization");
             return NULL;
         }
 
         if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION) {
-            if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
+            if (checkStructInitializerFields(struct_init, struct_type, struct_init->type_expr->loc)) {
                 return struct_type;
             }
         } else {
             // For arrays, we just verify each element matches the element type
             Type* element_type = struct_type->as.array.element_type;
-            for (size_t i = 0; i < node->fields->length(); ++i) {
-                ASTNamedInitializer* init = (*node->fields)[i];
+            for (size_t i = 0; i < struct_init->fields->length(); ++i) {
+                ASTNamedInitializer* init = (*struct_init->fields)[i];
+                Type* old_expected = current_expected_type;
+                current_expected_type = element_type;
                 Type* val_type = visit(init->value);
+                current_expected_type = old_expected;
                 if (val_type && !IsTypeAssignableTo(val_type, element_type, init->loc)) {
                     // Error already reported
                 }
@@ -2831,6 +2903,30 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             return struct_type;
         }
         return NULL;
+    }
+
+    // For anonymous structs, check if we have an expected type
+    if (!struct_init->type_expr && current_expected_type) {
+        if (current_expected_type->kind == TYPE_STRUCT || current_expected_type->kind == TYPE_UNION) {
+            if (checkStructInitializerFields(struct_init, current_expected_type, node->loc)) {
+                node->resolved_type = current_expected_type;
+                return current_expected_type;
+            }
+        } else if (current_expected_type->kind == TYPE_ARRAY) {
+            Type* element_type = current_expected_type->as.array.element_type;
+            for (size_t i = 0; i < struct_init->fields->length(); ++i) {
+                ASTNamedInitializer* init = (*struct_init->fields)[i];
+                Type* old_expected = current_expected_type;
+                current_expected_type = element_type;
+                Type* val_type = visit(init->value);
+                current_expected_type = old_expected;
+                if (val_type && !IsTypeAssignableTo(val_type, element_type, init->loc)) {
+                    // Error already reported
+                }
+            }
+            node->resolved_type = current_expected_type;
+            return current_expected_type;
+        }
     }
 
     // For anonymous structs, we return NULL and wait for context (e.g. visitVarDecl)
@@ -3371,6 +3467,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     // Optional types coercions
     if (expected->kind == TYPE_OPTIONAL) {
+        // ?S -> ?T (Optional Covariance)
+        if (actual->kind == TYPE_OPTIONAL) {
+            return areTypesCompatible(expected->as.optional.payload, actual->as.optional.payload);
+        }
         // T -> ?T (implicit wrapping)
         if (areTypesCompatible(expected->as.optional.payload, actual)) {
             return true;
@@ -3852,6 +3952,10 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     // Optional types assignment
     if (target_type->kind == TYPE_OPTIONAL) {
+        // ?S -> ?T (Optional Covariance)
+        if (source_type->kind == TYPE_OPTIONAL) {
+            return IsTypeAssignableTo(source_type->as.optional.payload, target_type->as.optional.payload, loc);
+        }
         // T -> ?T (implicit wrapping)
         if (IsTypeAssignableTo(source_type, target_type->as.optional.payload, loc)) {
             return true;
