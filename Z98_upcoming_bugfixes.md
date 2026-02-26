@@ -173,7 +173,7 @@ Here is the phased plan to harden stability before attempting lifting unificatio
 #### Phase 1: Hardening I/O and Error Handling
 *Goal: Prevent silent data corruption and invalid C generation.*
 
-**Task 9.5.1: Fail-Hard on Buffer Overflow**
+**Task 9.5.1: Fail-Hard on Buffer Overflow [DONE]**
 Currently, `C89Emitter::write` truncates data if `type_def_buffer_` is full. This creates silent bugs.
 **Action:** Replace truncation with a fatal error.
 

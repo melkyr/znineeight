@@ -5,14 +5,15 @@
 #include "utils.hpp"
 #include "symbol_table.hpp"
 
+static const size_t TYPE_DEF_BUFFER_SIZE = 131072;
 
 C89Emitter::C89Emitter(CompilationUnit& unit)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
-      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0') {
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
@@ -21,8 +22,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
-      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0') {
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
@@ -33,8 +34,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
-      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(65536), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0') {
+      type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
@@ -1822,11 +1823,9 @@ void C89Emitter::write(const char* data, size_t len) {
     if (len == 0) return;
 
     if (in_type_def_mode_) {
-        if (type_def_pos_ + len > type_def_cap_) {
-            // Should really reallocate, but 64KB is huge for slice typedefs.
-            // For bootstrap simplicity, we'll just truncate or abort if absolutely necessary.
-            len = type_def_cap_ - type_def_pos_;
-            if (len == 0) return;
+        if (len > type_def_cap_ || type_def_pos_ > type_def_cap_ - len) {
+            error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Type definition buffer overflow");
+            plat_abort();
         }
         plat_memcpy(type_def_buffer_ + type_def_pos_, data, len);
         type_def_pos_ += len;
