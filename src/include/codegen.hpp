@@ -499,6 +499,7 @@ private:
     DynamicArray<DeferScope*> defer_stack_;
     DynamicArray<PreambleFrame*> preamble_stack_;
     DynamicArray<char>* redirection_buffer_;
+    DynamicArray<char>* value_capture_buffer_;
     Type* current_fn_ret_type_;
     char* type_def_buffer_;
     size_t type_def_pos_;

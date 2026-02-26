@@ -571,6 +571,7 @@ struct ASTCatchExprNode {
     ASTNode* payload;
     const char* error_name; // Can be NULL
     ASTNode* else_expr;
+    Symbol* error_sym;
 };
 
 /**

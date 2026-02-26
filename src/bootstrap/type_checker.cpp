@@ -3277,13 +3277,15 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
 
     if (catch_node->error_name) {
         unit.getSymbolTable().enterScope();
-        Symbol sym = SymbolBuilder(unit.getArena())
+        Symbol* sym = (Symbol*)unit.getArena().alloc(sizeof(Symbol));
+        *sym = SymbolBuilder(unit.getArena())
             .withName(catch_node->error_name)
             .ofType(SYMBOL_VARIABLE)
             .withType(error_set ? error_set : get_g_type_i32())
             .withFlags(SYMBOL_FLAG_CONST | SYMBOL_FLAG_LOCAL)
             .build();
-        unit.getSymbolTable().insert(sym);
+        unit.getSymbolTable().insert(*sym);
+        catch_node->error_sym = unit.getSymbolTable().lookupInCurrentScope(catch_node->error_name);
     }
 
     Type* fallback_type = visit(catch_node->else_expr);
