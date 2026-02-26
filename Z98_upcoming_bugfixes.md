@@ -221,7 +221,7 @@ void emitTryExpr(const ASTNode* node, const char* target_var) {
 #### Phase 2: Implementing RAII State Guards
 *Goal: Ensure `indent_level_` and `defer_stack_` are always balanced.*
 
-**Task 9.5.3: Indentation Scope Guard**
+**Task 9.5.3: Indentation Scope Guard [DONE]**
 Create a local helper class inside `codegen.cpp` (or in a helper header) to manage indentation.
 
 ```cpp

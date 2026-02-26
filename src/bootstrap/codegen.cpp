@@ -538,9 +538,10 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     if (!node) return;
 
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
+        DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
     new (scope) DeferScope(arena_, label_id);
     defer_stack_.append(scope);
 
@@ -570,16 +571,15 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         }
     }
 
-    // Emit defers for this block in reverse order, only if not already handled by a terminator
-    if (!exits) {
-        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
-            emitStatement(scope->defers[i]->statement);
+        // Emit defers for this block in reverse order, only if not already handled by a terminator
+        if (!exits) {
+            for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+                emitStatement(scope->defers[i]->statement);
+            }
         }
+
+        defer_stack_.pop_back();
     }
-
-    defer_stack_.pop_back();
-
-    dedent();
     writeIndent();
     writeString("}");
 }
@@ -588,9 +588,10 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
     if (!node) return;
 
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
+        DeferScope* scope = (DeferScope*)arena_.alloc(sizeof(DeferScope));
     new (scope) DeferScope(arena_, label_id);
     defer_stack_.append(scope);
 
@@ -645,16 +646,15 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
         }
     }
 
-    // Emit defers for this block in reverse order, only if not already handled by a terminator
-    if (!exits) {
-        for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
-            emitStatement(scope->defers[i]->statement);
+        // Emit defers for this block in reverse order, only if not already handled by a terminator
+        if (!exits) {
+            for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+                emitStatement(scope->defers[i]->statement);
+            }
         }
+
+        defer_stack_.pop_back();
     }
-
-    defer_stack_.pop_back();
-
-    dedent();
     writeIndent();
     writeString("}");
 }
@@ -879,8 +879,9 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
     if (is_optional) {
         writeIndent();
         writeString("{\n");
-        indent();
-        const char* cond_tmp = var_alloc_.generate("opt_tmp");
+        {
+            IndentScope scope_indent(*this);
+            const char* cond_tmp = var_alloc_.generate("opt_tmp");
         writeIndent();
         emitType(cond_type, cond_tmp);
         writeString(" = ");
@@ -891,8 +892,9 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         writeString("if (");
         writeString(cond_tmp);
         writeString(".has_value) {\n");
-        indent();
-        if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+        {
+            IndentScope if_indent(*this);
+            if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
             writeIndent();
             const char* c_name = var_alloc_.allocate(node->capture_sym);
             emitType(node->capture_sym->symbol_type, c_name);
@@ -900,31 +902,32 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
             writeString(cond_tmp);
             writeString(".value;\n");
         }
-        if (node->then_block->type == NODE_BLOCK_STMT) {
-            emitBlock(&node->then_block->as.block_stmt);
-        } else {
-            emitStatement(node->then_block);
+            if (node->then_block->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->then_block->as.block_stmt);
+            } else {
+                emitStatement(node->then_block);
+            }
         }
-        dedent();
         writeIndent();
         writeString("}");
         if (node->else_block) {
             writeString(" else {\n");
-            indent();
-            if (node->else_block->type == NODE_IF_STMT) {
+            {
+                IndentScope else_indent(*this);
+                if (node->else_block->type == NODE_IF_STMT) {
                 emitIf(node->else_block->as.if_stmt);
             } else if (node->else_block->type == NODE_BLOCK_STMT) {
                 emitBlock(&node->else_block->as.block_stmt);
-            } else {
-                emitStatement(node->else_block);
+                } else {
+                    emitStatement(node->else_block);
+                }
             }
-            dedent();
             writeIndent();
             writeString("}\n");
         } else {
             writeString("\n");
         }
-        dedent();
+        }
         writeIndent();
         writeString("}\n");
     } else {
@@ -969,9 +972,10 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
 
     writeIndent();
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    const char* cond_var = NULL;
+        const char* cond_var = NULL;
     if (is_optional) {
         cond_var = var_alloc_.generate("opt_tmp");
         writeIndent();
@@ -981,18 +985,19 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
         writeString(";\n");
     }
 
-    writeIndent();
-    writeString("if (");
-    if (is_optional) {
-        writeString(cond_var);
-        writeString(".has_value");
-    } else {
-        emitExpression(if_expr->condition);
-    }
-    writeString(") {\n");
-    indent();
+        writeIndent();
+        writeString("if (");
+        if (is_optional) {
+            writeString(cond_var);
+            writeString(".has_value");
+        } else {
+            emitExpression(if_expr->condition);
+        }
+        writeString(") {\n");
+        {
+            IndentScope then_indent(*this);
 
-    if (is_optional && if_expr->capture_name && if_expr->capture_sym && if_expr->capture_sym->symbol_type->kind != TYPE_VOID) {
+            if (is_optional && if_expr->capture_name && if_expr->capture_sym && if_expr->capture_sym->symbol_type->kind != TYPE_VOID) {
         writeIndent();
         const char* c_name = var_alloc_.allocate(if_expr->capture_sym);
         emitType(if_expr->capture_sym->symbol_type, c_name);
@@ -1001,42 +1006,43 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
         writeString(".value;\n");
     }
 
-    if (target_var && (!if_expr->then_expr->resolved_type || if_expr->then_expr->resolved_type->kind != TYPE_NORETURN)) {
-        if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
-            emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var);
-            writeString("\n");
-        } else {
-            writeIndent();
-            writeString(target_var);
-            writeString(" = ");
-            emitExpression(if_expr->then_expr);
-            writeString(";\n");
+            if (target_var && (!if_expr->then_expr->resolved_type || if_expr->then_expr->resolved_type->kind != TYPE_NORETURN)) {
+                if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
+                    emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var);
+                    writeString("\n");
+                } else {
+                    writeIndent();
+                    writeString(target_var);
+                    writeString(" = ");
+                    emitExpression(if_expr->then_expr);
+                    writeString(";\n");
+                }
+            } else {
+                emitStatement(if_expr->then_expr);
+            }
         }
-    } else {
-        emitStatement(if_expr->then_expr);
-    }
-    dedent();
-    writeIndent();
-    writeString("} else {\n");
-    indent();
-    if (target_var && (!if_expr->else_expr->resolved_type || if_expr->else_expr->resolved_type->kind != TYPE_NORETURN)) {
-        if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
-            emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var);
-            writeString("\n");
-        } else {
-            writeIndent();
-            writeString(target_var);
-            writeString(" = ");
-            emitExpression(if_expr->else_expr);
-            writeString(";\n");
+        writeIndent();
+        writeString("} else {\n");
+        {
+            IndentScope else_indent(*this);
+            if (target_var && (!if_expr->else_expr->resolved_type || if_expr->else_expr->resolved_type->kind != TYPE_NORETURN)) {
+                if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
+                    emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var);
+                    writeString("\n");
+                } else {
+                    writeIndent();
+                    writeString(target_var);
+                    writeString(" = ");
+                    emitExpression(if_expr->else_expr);
+                    writeString(";\n");
+                }
+            } else {
+                emitStatement(if_expr->else_expr);
+            }
         }
-    } else {
-        emitStatement(if_expr->else_expr);
+        writeIndent();
+        writeString("}\n");
     }
-    dedent();
-    writeIndent();
-    writeString("}\n");
-    dedent();
     writeIndent();
     writeString("}\n");
 }
@@ -1152,19 +1158,21 @@ void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var) {
 
     writeIndent();
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    writeIndent();
+        writeIndent();
     writeString(mangled_inner);
     writeString(" __try_res = ");
     emitExpression(try_node.expression);
     writeString(";\n");
 
-    writeIndent();
-    writeString("if (__try_res.is_error) {\n");
-    indent();
+        writeIndent();
+        writeString("if (__try_res.is_error) {\n");
+        {
+            IndentScope err_indent(*this);
 
-    if (!current_fn_ret_type_) {
+            if (!current_fn_ret_type_) {
         emitDefersForScopeExit(-1);
         writeIndent();
         writeString("return;\n");
@@ -1195,30 +1203,29 @@ void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var) {
             }
         }
         writeString(";\n");
-        writeIndent();
-        writeString("return __ret_err;\n");
-    } else {
-        emitDefersForScopeExit(-1);
-        writeIndent();
-        writeString("return;\n");
-    }
-    dedent();
-    writeIndent();
-    writeString("}\n");
-
-    if (target_var) {
-        writeIndent();
-        writeString(target_var);
-        writeString(" = ");
-        if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString("__try_res.data.payload");
-        } else {
-            writeString("0");
+                writeIndent();
+                writeString("return __ret_err;\n");
+            } else {
+                emitDefersForScopeExit(-1);
+                writeIndent();
+                writeString("return;\n");
+            }
         }
-        writeString(";\n");
-    }
+        writeIndent();
+        writeString("}\n");
 
-    dedent();
+        if (target_var) {
+            writeIndent();
+            writeString(target_var);
+            writeString(" = ");
+            if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
+                writeString("__try_res.data.payload");
+            } else {
+                writeString("0");
+            }
+            writeString(";\n");
+        }
+    }
     writeIndent();
     writeString("}\n");
 }
@@ -1240,18 +1247,20 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
 
     writeIndent();
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    writeIndent();
+        writeIndent();
     writeString(mangled_inner);
     writeString(" __catch_res = ");
     emitExpression(catch_node->payload);
     writeString(";\n");
 
-    writeIndent();
-    writeString("if (__catch_res.is_error) {\n");
-    indent();
-    if (catch_node->error_name) {
+        writeIndent();
+        writeString("if (__catch_res.is_error) {\n");
+        {
+            IndentScope err_indent(*this);
+            if (catch_node->error_name) {
         writeIndent();
         writeString("int ");
         writeString(catch_node->error_name);
@@ -1281,29 +1290,29 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
         }
     } else {
         writeIndent();
-        emitExpression(catch_node->else_expr);
-        writeString(";\n");
-    }
-    dedent();
-    writeIndent();
-    writeString("} else {\n");
-    indent();
-    if (target_var) {
+            emitExpression(catch_node->else_expr);
+            writeString(";\n");
+        }
+        }
+        writeIndent();
+        writeString("} else {\n");
+        {
+            IndentScope payload_indent(*this);
+            if (target_var) {
         writeIndent();
         writeString(target_var);
-        writeString(" = ");
-        if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString("__catch_res.data.payload");
-        } else {
-            writeString("0");
+                writeString(" = ");
+                if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
+                    writeString("__catch_res.data.payload");
+                } else {
+                    writeString("0");
+                }
+                writeString(";\n");
+            }
         }
-        writeString(";\n");
+        writeIndent();
+        writeString("}\n");
     }
-    dedent();
-    writeIndent();
-    writeString("}\n");
-
-    dedent();
     writeIndent();
     writeString("}\n");
 }
@@ -1327,17 +1336,19 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
         switch_tmp = var_alloc_.generate("switch_tmp");
         writeIndent();
         writeString("{\n");
-        indent();
-        writeIndent();
-        emitType(cond_type, switch_tmp);
-        writeString(" = ");
-        emitExpression(switch_node->expression);
-        writeString(";\n");
+        {
+            IndentScope scope_indent(*this);
+            writeIndent();
+            emitType(cond_type, switch_tmp);
+            writeString(" = ");
+            emitExpression(switch_node->expression);
+            writeString(";\n");
 
-        writeIndent();
-        writeString("switch (");
-        writeString(switch_tmp);
-        writeString(".tag) {\n");
+            writeIndent();
+            writeString("switch (");
+            writeString(switch_tmp);
+            writeString(".tag) {\n");
+        }
     } else {
         writeIndent();
         writeString("switch (");
@@ -1345,102 +1356,104 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
         writeString(") {\n");
     }
 
-    indent();
-    for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
-        const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
-        if (prong->is_else) {
-            writeIndent();
-            writeString("default:\n");
-        } else {
-            for (size_t j = 0; j < prong->items->length(); ++j) {
-                const ASTNode* item = (*prong->items)[j];
-                if (item->type == NODE_RANGE) {
-                    i64 start, end;
-                    if (evaluateSimpleConstant(item->as.range.start, &start) &&
-                        evaluateSimpleConstant(item->as.range.end, &end)) {
-                        for (i64 k = start; k <= end; ++k) {
-                            writeIndent();
-                            writeString("case ");
-                            char buf[32];
-                            plat_i64_to_string(k, buf, sizeof(buf));
-                            writeString(buf);
-                            writeString(":\n");
+    {
+        IndentScope switch_indent(*this);
+        for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
+            const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
+            if (prong->is_else) {
+                writeIndent();
+                writeString("default:\n");
+            } else {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    const ASTNode* item = (*prong->items)[j];
+                    if (item->type == NODE_RANGE) {
+                        i64 start, end;
+                        if (evaluateSimpleConstant(item->as.range.start, &start) &&
+                            evaluateSimpleConstant(item->as.range.end, &end)) {
+                            for (i64 k = start; k <= end; ++k) {
+                                writeIndent();
+                                writeString("case ");
+                                char buf[32];
+                                plat_i64_to_string(k, buf, sizeof(buf));
+                                writeString(buf);
+                                writeString(":\n");
+                            }
+                        } else {
+                            error_handler_.report(ERR_UNSUPPORTED_FEATURE, item->loc, "Non-constant range in switch is not yet supported");
+                            return;
                         }
                     } else {
-                        error_handler_.report(ERR_UNSUPPORTED_FEATURE, item->loc, "Non-constant range in switch is not yet supported");
-                        return;
+                        writeIndent();
+                        writeString("case ");
+                        emitExpression(item);
+                        writeString(":\n");
                     }
-                } else {
-                    writeIndent();
-                    writeString("case ");
-                    emitExpression(item);
-                    writeString(":\n");
                 }
             }
-        }
-        indent();
+            {
+                IndentScope prong_indent(*this);
 
-        if (is_tagged_union && prong->capture_name && prong->capture_sym) {
-            writeIndent();
-            writeString("{\n");
-            indent();
-            writeIndent();
-            emitType(prong->capture_sym->symbol_type, var_alloc_.allocate(prong->capture_sym));
-            writeString(" = ");
-            writeString(switch_tmp);
-            writeString(".data.");
-            // Field name is preserved in original_name of the case item literal
-            ASTNode* item_expr = (*prong->items)[0];
-            writeString(item_expr->as.integer_literal.original_name);
-            writeString(";\n");
-        }
+                if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+                    writeIndent();
+                    writeString("{\n");
+                    {
+                        IndentScope capture_indent(*this);
+                        writeIndent();
+                        emitType(prong->capture_sym->symbol_type, var_alloc_.allocate(prong->capture_sym));
+                        writeString(" = ");
+                        writeString(switch_tmp);
+                        writeString(".data.");
+                        // Field name is preserved in original_name of the case item literal
+                        ASTNode* item_expr = (*prong->items)[0];
+                        writeString(item_expr->as.integer_literal.original_name);
+                        writeString(";\n");
+                    }
+                }
 
-        if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
-            if (prong->body->type == NODE_BLOCK_STMT) {
+                if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
+                    if (prong->body->type == NODE_BLOCK_STMT) {
+                        writeIndent();
+                        emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
+                        writeString("\n");
+                    } else if (prong->body->type == NODE_IF_EXPR) {
+                        emitIfExpr(prong->body, target_var);
+                    } else if (prong->body->type == NODE_SWITCH_EXPR) {
+                        emitSwitchExpr(prong->body, target_var);
+                    } else {
+                        writeIndent();
+                        writeString(target_var);
+                        writeString(" = ");
+                        emitExpression(prong->body);
+                        writeString(";\n");
+                    }
+                } else {
+                    // Just emit expression for side effects if no target or if it diverges
+                    if (prong->body->type == NODE_RETURN_STMT ||
+                        prong->body->type == NODE_BREAK_STMT ||
+                        prong->body->type == NODE_CONTINUE_STMT ||
+                        prong->body->type == NODE_UNREACHABLE) {
+                        emitStatement(prong->body);
+                    } else {
+                        writeIndent();
+                        emitExpression(prong->body);
+                        writeString(";\n");
+                    }
+                }
+
+                if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+                    writeIndent();
+                    writeString("}\n");
+                }
+
                 writeIndent();
-                emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
-                writeString("\n");
-            } else if (prong->body->type == NODE_IF_EXPR) {
-                emitIfExpr(prong->body, target_var);
-            } else if (prong->body->type == NODE_SWITCH_EXPR) {
-                emitSwitchExpr(prong->body, target_var);
-            } else {
-                writeIndent();
-                writeString(target_var);
-                writeString(" = ");
-                emitExpression(prong->body);
-                writeString(";\n");
+                writeString("break;\n");
             }
-        } else {
-            // Just emit expression for side effects if no target or if it diverges
-            if (prong->body->type == NODE_RETURN_STMT ||
-                prong->body->type == NODE_BREAK_STMT ||
-                prong->body->type == NODE_CONTINUE_STMT ||
-                prong->body->type == NODE_UNREACHABLE) {
-                emitStatement(prong->body);
-            } else {
-                writeIndent();
-                emitExpression(prong->body);
-                writeString(";\n");
-            }
         }
-
-        if (is_tagged_union && prong->capture_name && prong->capture_sym) {
-            dedent();
-            writeIndent();
-            writeString("}\n");
-        }
-
-        writeIndent();
-        writeString("break;\n");
-        dedent();
     }
-    dedent();
     writeIndent();
     writeString("}\n");
 
     if (is_tagged_union) {
-        dedent();
         writeIndent();
         writeString("}\n");
     }
@@ -1473,9 +1486,10 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     writeIndent();
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    // Iterable evaluate once
+        // Iterable evaluate once
     if (!is_range) {
         writeIndent();
         Type* iter_type = node->iterable_expr->resolved_type;
@@ -1540,16 +1554,17 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         writeString("_start: ;\n");
     }
 
-    writeIndent();
-    writeString("while (");
-    writeString(idx_name);
-    writeString(" < ");
-    writeString(len_name);
-    writeString(") {\n");
+        writeIndent();
+        writeString("while (");
+        writeString(idx_name);
+        writeString(" < ");
+        writeString(len_name);
+        writeString(") {\n");
 
-    indent();
+        {
+            IndentScope while_indent(*this);
 
-    // Item capture
+            // Item capture
     Type* item_type = NULL;
     if (is_range) {
         item_type = get_g_type_usize();
@@ -1613,29 +1628,29 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
     writeString("\n");
 
-    // Increment
-    writeIndent();
-    writeString(idx_name);
-    writeString("++;\n");
+            // Increment
+            writeIndent();
+            writeString(idx_name);
+            writeString("++;\n");
 
-    if (has_label) {
+            if (has_label) {
+                writeIndent();
+                writeString("goto ");
+                writeString(label_base);
+                writeString("_start;\n");
+            }
+        }
+
         writeIndent();
-        writeString("goto ");
-        writeString(label_base);
-        writeString("_start;\n");
+        writeString("}\n");
+
+        if (has_label) {
+            writeIndent();
+            writeString(label_base);
+            writeString("_end: ;\n");
+        }
     }
 
-    dedent();
-    writeIndent();
-    writeString("}\n");
-
-    if (has_label) {
-        writeIndent();
-        writeString(label_base);
-        writeString("_end: ;\n");
-    }
-
-    dedent();
     writeIndent();
     writeString("}\n");
 }
@@ -1649,18 +1664,20 @@ void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var) {
 
     writeIndent();
     writeString("{\n");
-    indent();
+    {
+        IndentScope scope_indent(*this);
 
-    writeIndent();
-    writeString(mangled_inner);
-    writeString(" __orelse_res = ");
-    emitExpression(orelse->payload);
-    writeString(";\n");
+        writeIndent();
+        writeString(mangled_inner);
+        writeString(" __orelse_res = ");
+        emitExpression(orelse->payload);
+        writeString(";\n");
 
-    writeIndent();
-    writeString("if (__orelse_res.has_value) {\n");
-    indent();
-    if (target_var) {
+        writeIndent();
+        writeString("if (__orelse_res.has_value) {\n");
+        {
+            IndentScope then_indent(*this);
+            if (target_var) {
         writeIndent();
         writeString(target_var);
         writeString(" = ");
@@ -1669,13 +1686,14 @@ void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var) {
         } else {
             writeString("0 /* void */");
         }
-        writeString(";\n");
-    }
-    dedent();
-    writeIndent();
-    writeString("} else {\n");
-    indent();
-    if (target_var) {
+                writeString(";\n");
+            }
+        }
+        writeIndent();
+        writeString("} else {\n");
+        {
+            IndentScope else_indent(*this);
+            if (target_var) {
         if (orelse->else_expr->type == NODE_IF_EXPR) {
             emitIfExpr(orelse->else_expr, target_var);
         } else if (orelse->else_expr->type == NODE_SWITCH_EXPR) {
@@ -1694,16 +1712,16 @@ void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var) {
             emitExpression(orelse->else_expr);
             writeString(";\n");
         }
-    } else {
+            } else {
+                writeIndent();
+                emitExpression(orelse->else_expr);
+                writeString(";\n");
+            }
+        }
         writeIndent();
-        emitExpression(orelse->else_expr);
-        writeString(";\n");
+        writeString("}\n");
     }
-    dedent();
-    writeIndent();
-    writeString("}\n");
 
-    dedent();
     writeIndent();
     writeString("}\n");
 }
@@ -2234,15 +2252,16 @@ void C89Emitter::ensureOptionalType(Type* type) {
 
     writeIndent();
     writeString("typedef struct {\n");
-    indent();
-    if (payload->kind != TYPE_VOID) {
+    {
+        IndentScope struct_indent(*this);
+        if (payload->kind != TYPE_VOID) {
+            writeIndent();
+            emitType(payload, "value");
+            writeString(";\n");
+        }
         writeIndent();
-        emitType(payload, "value");
-        writeString(";\n");
+        writeString("int has_value;\n");
     }
-    writeIndent();
-    writeString("int has_value;\n");
-    dedent();
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
@@ -2280,26 +2299,28 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 
     writeIndent();
     writeString("typedef struct {\n");
-    indent();
-    if (payload->kind != TYPE_VOID) {
+    {
+        IndentScope struct_indent(*this);
+        if (payload->kind != TYPE_VOID) {
+            writeIndent();
+            writeString("union {\n");
+            {
+                IndentScope union_indent(*this);
+                writeIndent();
+                emitType(payload, "payload");
+                writeString(";\n");
+                writeIndent();
+                writeString("int err;\n");
+            }
+            writeIndent();
+            writeString("} data;\n");
+        } else {
+            writeIndent();
+            writeString("int err;\n");
+        }
         writeIndent();
-        writeString("union {\n");
-        indent();
-        writeIndent();
-        emitType(payload, "payload");
-        writeString(";\n");
-        writeIndent();
-        writeString("int err;\n");
-        dedent();
-        writeIndent();
-        writeString("} data;\n");
-    } else {
-        writeIndent();
-        writeString("int err;\n");
+        writeString("int is_error;\n");
     }
-    writeIndent();
-    writeString("int is_error;\n");
-    dedent();
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
@@ -2353,17 +2374,18 @@ void C89Emitter::ensureSliceType(Type* type) {
     writeString("(");
     emitType(elem_type);
     writeString("* ptr, usize len) {\n");
-    indent();
-    writeIndent();
-    writeString(slice_struct_name);
-    writeString(" s;\n");
-    writeIndent();
-    writeString("s.ptr = ptr;\n");
-    writeIndent();
-    writeString("s.len = len;\n");
-    writeIndent();
-    writeString("return s;\n");
-    dedent();
+    {
+        IndentScope func_indent(*this);
+        writeIndent();
+        writeString(slice_struct_name);
+        writeString(" s;\n");
+        writeIndent();
+        writeString("s.ptr = ptr;\n");
+        writeIndent();
+        writeString("s.len = len;\n");
+        writeIndent();
+        writeString("return s;\n");
+    }
     writeIndent();
     writeString("}\n\n");
 
@@ -2401,14 +2423,15 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             writeString("struct ");
             writeString(type->c_name);
             writeString(" {\n");
-            indent();
-            DynamicArray<StructField>* fields = type->as.struct_details.fields;
-            for (size_t i = 0; i < fields->length(); ++i) {
-                writeIndent();
-                emitType((*fields)[i].type, (*fields)[i].name);
-                writeString(";\n");
+            {
+                IndentScope struct_indent(*this);
+                DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    writeIndent();
+                    emitType((*fields)[i].type, (*fields)[i].name);
+                    writeString(";\n");
+                }
             }
-            dedent();
             writeIndent();
             writeString("};\n\n");
         } else if (type->kind == TYPE_UNION) {
@@ -2422,37 +2445,40 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 writeString("struct ");
                 writeString(type->c_name);
                 writeString(" {\n");
-                indent();
-                writeIndent();
-                emitType(type->as.struct_details.tag_type, "tag");
-                writeString(";\n");
-                writeIndent();
-                writeString("union {\n");
-                indent();
-                DynamicArray<StructField>* fields = type->as.struct_details.fields;
-                for (size_t i = 0; i < fields->length(); ++i) {
+                {
+                    IndentScope struct_indent(*this);
                     writeIndent();
-                    emitType((*fields)[i].type, (*fields)[i].name);
+                    emitType(type->as.struct_details.tag_type, "tag");
                     writeString(";\n");
+                    writeIndent();
+                    writeString("union {\n");
+                    {
+                        IndentScope union_indent(*this);
+                        DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                        for (size_t i = 0; i < fields->length(); ++i) {
+                            writeIndent();
+                            emitType((*fields)[i].type, (*fields)[i].name);
+                            writeString(";\n");
+                        }
+                    }
+                    writeIndent();
+                    writeString("} data;\n");
                 }
-                dedent();
-                writeIndent();
-                writeString("} data;\n");
-                dedent();
                 writeIndent();
                 writeString("};\n\n");
             } else {
                 writeString("union ");
                 writeString(type->c_name);
                 writeString(" {\n");
-                indent();
-                DynamicArray<StructField>* fields = type->as.struct_details.fields;
-                for (size_t i = 0; i < fields->length(); ++i) {
-                    writeIndent();
-                    emitType((*fields)[i].type, (*fields)[i].name);
-                    writeString(";\n");
+                {
+                    IndentScope union_indent(*this);
+                    DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                    for (size_t i = 0; i < fields->length(); ++i) {
+                        writeIndent();
+                        emitType((*fields)[i].type, (*fields)[i].name);
+                        writeString(";\n");
+                    }
                 }
-                dedent();
                 writeIndent();
                 writeString("};\n\n");
             }
@@ -2467,23 +2493,24 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             const char* enum_name = type->c_name;
             writeString(enum_name);
             writeString(" {\n");
-            indent();
-            DynamicArray<EnumMember>* members = type->as.enum_details.members;
-            for (size_t i = 0; i < members->length(); ++i) {
-                writeIndent();
-                writeString(enum_name);
-                writeString("_");
-                writeString((*members)[i].name);
-                writeString(" = ");
-                char buf[32];
-                plat_i64_to_string((*members)[i].value, buf, sizeof(buf));
-                writeString(buf);
-                if (i < members->length() - 1) {
-                    writeString(",");
+            {
+                IndentScope enum_indent(*this);
+                DynamicArray<EnumMember>* members = type->as.enum_details.members;
+                for (size_t i = 0; i < members->length(); ++i) {
+                    writeIndent();
+                    writeString(enum_name);
+                    writeString("_");
+                    writeString((*members)[i].name);
+                    writeString(" = ");
+                    char buf[32];
+                    plat_i64_to_string((*members)[i].value, buf, sizeof(buf));
+                    writeString(buf);
+                    if (i < members->length() - 1) {
+                        writeString(",");
+                    }
+                    writeString("\n");
                 }
-                writeString("\n");
             }
-            dedent();
             writeIndent();
             writeString("};\n");
             writeIndent();
@@ -3051,9 +3078,10 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
     if (has_defers || needs_wrapping || needs_opt_wrapping || is_special) {
         writeIndent();
         writeString("{\n");
-        indent();
+        {
+            IndentScope scope_indent(*this);
 
-        if (current_fn_ret_type_->kind != TYPE_VOID) {
+            if (current_fn_ret_type_->kind != TYPE_VOID) {
             writeIndent();
             emitType(current_fn_ret_type_, "__return_val");
             writeString(";\n");
@@ -3089,12 +3117,12 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
                 emitExpression(node->expression);
                 writeString(";\n");
             }
-            emitDefersForScopeExit(-1);
-            writeIndent();
-            writeString("return;\n");
+                emitDefersForScopeExit(-1);
+                writeIndent();
+                writeString("return;\n");
+            }
         }
 
-        dedent();
         writeIndent();
         writeString("}\n");
     } else {
@@ -3102,10 +3130,11 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
             (node->expression->type == NODE_SWITCH_EXPR || node->expression->type == NODE_IF_EXPR || node->expression->type == NODE_ORELSE_EXPR)) {
             writeIndent();
             writeString("{\n");
-            indent();
-            writeIndent();
-            emitType(current_fn_ret_type_, "__return_val");
-            writeString(";\n");
+            {
+                IndentScope scope_indent(*this);
+                writeIndent();
+                emitType(current_fn_ret_type_, "__return_val");
+                writeString(";\n");
             if (node->expression->type == NODE_SWITCH_EXPR) {
                 emitSwitchExpr(node->expression, "__return_val");
             } else if (node->expression->type == NODE_IF_EXPR) {
@@ -3113,9 +3142,9 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
             } else {
                 emitOrelseExpr(node->expression, "__return_val");
             }
-            writeIndent();
-            writeString("return __return_val;\n");
-            dedent();
+                writeIndent();
+                writeString("return __return_val;\n");
+            }
             writeIndent();
             writeString("}\n");
         } else {

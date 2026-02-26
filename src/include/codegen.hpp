@@ -411,6 +411,18 @@ public:
     void emitDefersForScopeExit(int target_label_id = -1);
 
 private:
+    class IndentScope {
+    public:
+        IndentScope(C89Emitter& emitter) : emitter_(emitter) { emitter_.indent(); }
+        ~IndentScope() { emitter_.dedent(); }
+    private:
+        C89Emitter& emitter_;
+
+        // Prevent copying
+        IndentScope(const IndentScope&);
+        IndentScope& operator=(const IndentScope&);
+    };
+
     /**
      * @brief Emits logic to wrap a value into an error union.
      */
