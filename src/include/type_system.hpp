@@ -144,7 +144,6 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
             bool is_resolving;
-            DynamicArray<struct Type*>* dependents;
         } placeholder;
     } as;
 };
@@ -288,17 +287,6 @@ Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<c
  * @param struct_type The struct type to calculate the layout for.
  */
 void calculateStructLayout(Type* struct_type);
-
-/**
- * @brief Refreshes the layout of a type (recalculates size and alignment).
- *        Useful when a placeholder base type has been resolved.
- */
-void refreshTypeLayout(Type* type);
-
-/**
- * @brief Registers a dependent type that should be updated when the given base type is resolved.
- */
-void addDependentRecursively(Type* base, Type* dependent);
 
 /**
  * @brief Creates a new enum Type object from the arena.

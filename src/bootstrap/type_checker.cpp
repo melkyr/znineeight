@@ -42,8 +42,6 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit.getModule(unit.getCurrentModule());
-                placeholder->as.placeholder.dependents = (DynamicArray<Type*>*)unit.getArena().alloc(sizeof(DynamicArray<Type*>));
-                new (placeholder->as.placeholder.dependents) DynamicArray<Type*>(unit.getArena());
                 placeholder->c_name = unit.getNameMangler().mangleTypeName(vd->name, unit.getCurrentModule());
 
                 if (sym) {
@@ -1123,13 +1121,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         }
     }
 
-    Type* result = (base->kind == TYPE_ARRAY) ? base->as.array.element_type : base->as.slice.element_type;
-
-    if (result && result->kind == TYPE_PLACEHOLDER) {
-        result = resolvePlaceholder(result);
-    }
-
-    return result;
+    return (base->kind == TYPE_ARRAY) ? base->as.array.element_type : base->as.slice.element_type;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
@@ -1152,16 +1144,8 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 
     Type* element_type = NULL;
     bool is_const = false;
-
-    if (base_type->kind == TYPE_PLACEHOLDER) {
-        base_type = resolvePlaceholder(base_type);
-    }
-
     if (base_type->kind == TYPE_ARRAY) {
         element_type = base_type->as.array.element_type;
-        if (element_type->kind == TYPE_PLACEHOLDER) {
-            element_type = resolvePlaceholder(element_type);
-        }
         if (original_base_type->kind == TYPE_POINTER) {
             is_const = reached_via_const_ptr;
         } else {
@@ -1169,15 +1153,9 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         }
     } else if (base_type->kind == TYPE_SLICE) {
         element_type = base_type->as.slice.element_type;
-        if (element_type->kind == TYPE_PLACEHOLDER) {
-            element_type = resolvePlaceholder(element_type);
-        }
         is_const = base_type->as.slice.is_const;
     } else { // Many-item pointer
         element_type = base_type->as.pointer.base;
-        if (element_type->kind == TYPE_PLACEHOLDER) {
-            element_type = resolvePlaceholder(element_type);
-        }
         is_const = base_type->as.pointer.is_const;
     }
 
@@ -1783,9 +1761,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         unit.setCurrentModule(placeholder->as.placeholder.module->name);
     }
 
-    // Capture dependents before mutation
-    DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
-
     Type* resolved = visit(placeholder->as.placeholder.decl_node);
 
     // Unwrap TYPE_TYPE if necessary
@@ -1821,13 +1796,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
                 placeholder->c_name = resolved->c_name;
             }
             placeholder->as = resolved->as;
-
-            // Trigger updates for dependents
-            if (dependents) {
-                for (size_t i = 0; i < dependents->length(); ++i) {
-                    refreshTypeLayout((*dependents)[i]);
-                }
-            }
         }
     }
 
@@ -2018,8 +1986,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
         placeholder->as.placeholder.is_resolving = false;
-        placeholder->as.placeholder.dependents = (DynamicArray<Type*>*)unit.getArena().alloc(sizeof(DynamicArray<Type*>));
-        new (placeholder->as.placeholder.dependents) DynamicArray<Type*>(unit.getArena());
         placeholder->c_name = unit.getNameMangler().mangleTypeName(node->name, unit.getCurrentModule());
 
         Symbol sym = SymbolBuilder(unit.getArena())
@@ -2143,8 +2109,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
         // If we created a placeholder, mutate it in-place now
         if (placeholder && initializer_type) {
-            DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
-
             placeholder->kind = initializer_type->kind;
             placeholder->size = initializer_type->size;
             placeholder->alignment = initializer_type->alignment;
@@ -2156,13 +2120,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             initializer_type = placeholder;
             // No longer a placeholder, don't touch as.placeholder.is_resolving
             // as it will corrupt the new type's data (e.g. tag_type).
-
-            // Trigger updates for dependents
-            if (dependents) {
-                for (size_t i = 0; i < dependents->length(); ++i) {
-                    refreshTypeLayout((*dependents)[i]);
-                }
-            }
         }
 
         if (declared_type) {
@@ -2394,20 +2351,17 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
              return NULL; // Error already reported
         }
 
-        if (field_type && !isTypeComplete(field_type)) {
-             // If it contains a placeholder, it might resolve later.
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_data->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 return NULL;
-             }
+        if (!isTypeComplete(field_type)) {
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_data->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+             return NULL;
         }
 
         StructField sf;
@@ -2425,13 +2379,6 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         struct_type->c_name = unit.getNameMangler().mangleTypeName(struct_name, unit.getCurrentModule());
     }
     calculateStructLayout(struct_type);
-
-    // Register as dependent for any incomplete fields
-    for (size_t i = 0; i < fields->length(); ++i) {
-        if (!isTypeComplete((*fields)[i].type)) {
-            addDependentRecursively((*fields)[i].type, struct_type);
-        }
-    }
 
     return struct_type;
 }
@@ -2480,18 +2427,16 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
 
         if (field_type && !isTypeComplete(field_type)) {
-             if (!containsPlaceholder(field_type)) {
-                 char type_str[64];
-                 typeToString(field_type, type_str, sizeof(type_str));
-                 char msg[256];
-                 plat_strcpy(msg, "field '");
-                 plat_strcat(msg, field_node->name);
-                 plat_strcat(msg, "' has incomplete type '");
-                 plat_strcat(msg, type_str);
-                 plat_strcat(msg, "'");
-                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
-                 field_type = NULL;
-             }
+             char type_str[64];
+             typeToString(field_type, type_str, sizeof(type_str));
+             char msg[256];
+             plat_strcpy(msg, "field '");
+             plat_strcat(msg, field_node->name);
+             plat_strcat(msg, "' has incomplete type '");
+             plat_strcat(msg, type_str);
+             plat_strcat(msg, "'");
+             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg);
+             field_type = NULL;
         }
 
         // Check for duplicate names
@@ -2540,14 +2485,6 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     if (union_name) {
         union_type->c_name = unit.getNameMangler().mangleTypeName(union_name, unit.getCurrentModule());
     }
-
-    // Register as dependent for any incomplete fields
-    for (size_t i = 0; i < fields->length(); ++i) {
-        if (!isTypeComplete((*fields)[i].type)) {
-            addDependentRecursively((*fields)[i].type, union_type);
-        }
-    }
-
     return union_type;
 }
 
@@ -2569,10 +2506,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (plat_strcmp(node->field_name, "len") == 0) {
             return get_g_type_usize();
         }
-        if (plat_strcmp(node->field_name, "ptr") == 0) {
-            return createPointerType(unit.getArena(), base_type->as.slice.element_type, base_type->as.slice.is_const, true, &unit.getTypeInterner());
-        }
-        // Fall through for error reporting if not "len" or "ptr"
+        // Fall through for error reporting if not "len"
     }
 
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
@@ -2705,12 +2639,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION)) return false;
+    if (!struct_type || struct_type->kind != TYPE_STRUCT) return false;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
 
     // 1. Check for missing fields
-    if (struct_type->kind == TYPE_STRUCT) {
     for (size_t i = 0; i < fields->length(); ++i) {
         const char* expected_name = (*fields)[i].name;
         bool found = false;
@@ -2728,13 +2661,6 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
              safe_append(current, remaining, expected_name);
              safe_append(current, remaining, "' in struct initializer");
              unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
-             return false;
-        }
-    }
-    } else {
-        // Union: must have exactly one field
-        if (node->fields->length() != 1) {
-             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "union initializer must have exactly one field");
              return false;
         }
     }
@@ -2803,12 +2729,12 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             }
         }
 
-        if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY && struct_type->kind != TYPE_UNION) {
-            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "expected struct, union or array type for initialization");
+        if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "expected struct or array type for initialization");
             return NULL;
         }
 
-        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION) {
+        if (struct_type->kind == TYPE_STRUCT) {
             if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
                 return struct_type;
             }
@@ -3809,7 +3735,6 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 }
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
-    if (!source_type || !target_type) return false;
     if (source_type->kind == TYPE_UNDEFINED) return true;
     if (source_type->kind == TYPE_NORETURN) return true;
 
