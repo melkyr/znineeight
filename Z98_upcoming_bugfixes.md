@@ -140,7 +140,7 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 ---
 
-### Task 9.6: Re‑run JSON Parser and Document Remaining Issues
+### Intermediate: Re‑run JSON Parser and Document Remaining Issues
 **Goal**: After fixing the above, attempt to compile the JSON parser again and document any remaining issues.
 
 **Steps**:
@@ -164,7 +164,7 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 After these tasks, the compiler should be able to handle the JSON parser and similar real‑world code, paving the way for self‑compilation.
 
-Task 9.6: Fix Recursive Type Instability for Slices
+### Task 9.6: Fix Recursive Type Instability for Slices
 
 Goal: Ensure that types containing slices of themselves (e.g., JsonValue with []JsonValue) resolve correctly without incomplete‑type errors.
 
@@ -191,7 +191,8 @@ const a = @import("a.zig");
 pub const B = struct { value: i32, next: ?*A };
 
 Compile a.zig and ensure no “incomplete type” errors occur. Also verify that the generated C code contains the correct struct definitions.
-Task 9.7: Implicit Coercion from Slices to Many‑Item Pointers
+
+### Task 9.7: Implicit Coercion from Slices to Many‑Item Pointers
 
 Goal: Allow a slice []T to be implicitly converted to a many‑item pointer [*]T when used as an argument to an extern function expecting a raw pointer.
 
@@ -218,7 +219,8 @@ pub fn main() void {
 }
 
 Compile and run (if possible) to confirm no type errors and correct output.
-Task 9.8: Parser Support for while Continue Expressions
+
+### Task 9.8: Parser Support for while Continue Expressions
 
 Goal: Implement the Zig syntax while (cond) : (iter) stmt, where iter is an expression evaluated after each loop iteration.
 
@@ -256,7 +258,8 @@ pub fn sum_up_to(n: u32) u32 {
 }
 
 Ensure it parses, type‑checks, and generates correct C code that when run returns the correct sum.
-Task 9.9: Stabilize Tagged Unions and Switch Captures
+
+### Task 9.9: Stabilize Tagged Unions and Switch Captures
 
 Goal: Fix remaining issues with tagged unions (union(enum)) and switch captures (|payload|) that cause type‑checking failures in complex nested initializations.
 
