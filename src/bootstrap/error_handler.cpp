@@ -71,6 +71,7 @@ const char* ErrorHandler::getMessage(ErrorCode code) {
         /* Syntax Errors */
         case ERR_SYNTAX_ERROR:                  return "syntax error";
         case ERR_NON_C89_FEATURE:               return "non-C89 feature";
+        case ERR_UNSUPPORTED_FEATURE:           return "unsupported language feature";
 
         /* Type Errors */
         case ERR_TYPE_MISMATCH:                 return "type mismatch";

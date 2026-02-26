@@ -20,6 +20,7 @@ enum ErrorCode {
     // Syntax Errors (1000-1999)
     ERR_SYNTAX_ERROR = 1000,
     ERR_NON_C89_FEATURE = 1001,
+    ERR_UNSUPPORTED_FEATURE = 1002,
 
     // Type Errors (2000-2999)
     ERR_TYPE_MISMATCH = 2000,

@@ -13,7 +13,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
@@ -23,7 +23,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
@@ -35,7 +35,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0) {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
 }
 
@@ -661,6 +661,7 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
 
 void C89Emitter::emitStatement(const ASTNode* node) {
     if (!node) return;
+    current_loc_ = node->loc;
 
     switch (node->type) {
         case NODE_IF_EXPR:
@@ -953,10 +954,13 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
 }
 
 void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var) {
-    if (!node || node->type != NODE_IF_EXPR) return;
+    if (!node) return;
+    current_loc_ = node->loc;
+    if (node->type != NODE_IF_EXPR) return;
+
     const ASTIfExprNode* if_expr = node->as.if_expr;
     if (!if_expr || !if_expr->condition || !if_expr->then_expr || !if_expr->else_expr) {
-        writeString("/* error: if expression components are NULL */");
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: if expression components are NULL");
         return;
     }
 
@@ -1128,17 +1132,20 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
 }
 
 void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var) {
-    if (!node || node->type != NODE_TRY_EXPR) return;
+    if (!node) return;
+    current_loc_ = node->loc;
+    if (node->type != NODE_TRY_EXPR) return;
+
     const ASTTryExprNode& try_node = node->as.try_expr;
 
     if (!try_node.expression) {
-        writeString("/* error: try expression is NULL */");
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: try expression is NULL");
         return;
     }
 
     Type* inner_type = try_node.expression->resolved_type;
     if (!inner_type) {
-        writeString("/* error: try operand type not resolved */");
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: try operand type not resolved");
         return;
     }
     const char* mangled_inner = getMangledTypeName(inner_type);
@@ -1217,11 +1224,14 @@ void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var) {
 }
 
 void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
-    if (!node || node->type != NODE_CATCH_EXPR) return;
+    if (!node) return;
+    current_loc_ = node->loc;
+    if (node->type != NODE_CATCH_EXPR) return;
+
     const ASTCatchExprNode* catch_node = node->as.catch_expr;
 
     if (!catch_node || !catch_node->payload || !catch_node->else_expr) {
-        writeString("/* error: catch components are NULL */");
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: catch components are NULL");
         return;
     }
 
@@ -1299,10 +1309,13 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var) {
 }
 
 void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
-    if (!node || node->type != NODE_SWITCH_EXPR) return;
+    if (!node) return;
+    current_loc_ = node->loc;
+    if (node->type != NODE_SWITCH_EXPR) return;
+
     const ASTSwitchExprNode* switch_node = node->as.switch_expr;
     if (!switch_node || !switch_node->expression || !switch_node->prongs) {
-        writeString("/* error: switch expression components are NULL */");
+        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: switch expression components are NULL");
         return;
     }
 
@@ -1354,8 +1367,8 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var) {
                             writeString(":\n");
                         }
                     } else {
-                        writeIndent();
-                        writeString("/* error: non-constant range in switch */\n");
+                        error_handler_.report(ERR_UNSUPPORTED_FEATURE, item->loc, "Non-constant range in switch is not yet supported");
+                        return;
                     }
                 } else {
                     writeIndent();
@@ -1887,6 +1900,7 @@ void C89Emitter::close() {
 
 void C89Emitter::emitExpression(const ASTNode* node) {
     if (!node) return;
+    current_loc_ = node->loc;
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
             emitIntegerLiteral(&node->as.integer_literal);
@@ -2144,16 +2158,16 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         }
         case NODE_SWITCH_EXPR:
-            writeString("/* error: switch expression used in unsupported context (not lifted) */");
+            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Switch expression used in unsupported context (not lifted)");
             break;
         case NODE_IF_EXPR:
-            writeString("/* error: if expression used in unsupported context (not lifted) */");
+            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "If expression used in unsupported context (not lifted)");
             break;
         case NODE_TRY_EXPR:
-            writeString("/* error: try expression used in unsupported context (not lifted) */");
+            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Try expression used in unsupported context (not lifted)");
             break;
         case NODE_CATCH_EXPR:
-            writeString("/* error: catch expression used in unsupported context (not lifted) */");
+            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Catch expression used in unsupported context (not lifted)");
             break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
@@ -2165,11 +2179,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             emitContinue(&node->as.continue_stmt);
             break;
         default:
-            writeString("/* [Unimplemented Expression Type ");
-            char num[16];
-            plat_i64_to_string(node->type, num, sizeof(num));
-            writeString(num);
-            writeString("] */");
+            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Unimplemented expression type in code generation");
             break;
     }
 }
