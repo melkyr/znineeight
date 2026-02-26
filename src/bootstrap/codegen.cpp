@@ -440,6 +440,15 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
             case NODE_IF_EXPR:     emitIfExpr(rvalue, NULL); break;
             case NODE_SWITCH_EXPR: emitSwitchExpr(rvalue, NULL); break;
             case NODE_ORELSE_EXPR: emitOrelseExpr(rvalue, NULL); break;
+            case NODE_STRUCT_INITIALIZER:
+                /* Special case: discarding a struct initializer means evaluating its components for side effects */
+                if (rvalue->as.struct_initializer->fields) {
+                    DynamicArray<ASTNamedInitializer*>* fields = rvalue->as.struct_initializer->fields;
+                    for (size_t i = 0; i < fields->length(); ++i) {
+                        emitAssignmentWithLifting(NULL, NULL, (*fields)[i]->value, NULL);
+                    }
+                }
+                break;
             default:
                 writeIndent();
                 writeString("(void)(");
@@ -650,7 +659,7 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
     writeString("}");
 }
 
-void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id) {
+void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id, Type* target_type) {
     if (!node) return;
 
     writeString("{\n");
@@ -684,21 +693,7 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
                     stmt->type != NODE_BREAK_STMT && stmt->type != NODE_CONTINUE_STMT &&
                     stmt->type != NODE_UNREACHABLE) {
 
-                    if (stmt->type == NODE_IF_EXPR) {
-                        emitIfExpr(stmt, target_var);
-                    } else if (stmt->type == NODE_SWITCH_EXPR) {
-                        emitSwitchExpr(stmt, target_var);
-                    } else if (stmt->type == NODE_TRY_EXPR) {
-                        emitTryExpr(stmt, target_var);
-                    } else if (stmt->type == NODE_CATCH_EXPR) {
-                        emitCatchExpr(stmt, target_var);
-                    } else {
-                        writeIndent();
-                        writeString(target_var);
-                        writeString(" = ");
-                        emitExpression(stmt);
-                        writeString(";\n");
-                    }
+                    emitAssignmentWithLifting(target_var, NULL, stmt, target_type);
                 } else {
                     emitStatement(stmt);
                 }
@@ -953,7 +948,7 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var, Type* t
 
             if (target_var && (!if_expr->then_expr->resolved_type || if_expr->then_expr->resolved_type->kind != TYPE_NORETURN)) {
                 if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var);
+                emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var, -1, target_type);
                     writeString("\n");
                 } else {
                     emitAssignmentWithLifting(target_var, NULL, if_expr->then_expr, target_type);
@@ -973,7 +968,7 @@ void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var, Type* t
             IndentScope else_indent(*this);
             if (target_var && (!if_expr->else_expr->resolved_type || if_expr->else_expr->resolved_type->kind != TYPE_NORETURN)) {
                 if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var);
+                emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var, -1, target_type);
                     writeString("\n");
                 } else {
                     emitAssignmentWithLifting(target_var, NULL, if_expr->else_expr, target_type);
@@ -1227,7 +1222,7 @@ void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var, Type
 
     if (target_var) {
         if (catch_node->else_expr->type == NODE_BLOCK_STMT) {
-            emitBlockWithAssignment(&catch_node->else_expr->as.block_stmt, target_var);
+            emitBlockWithAssignment(&catch_node->else_expr->as.block_stmt, target_var, -1, target_type);
             writeString("\n");
         } else {
             emitAssignmentWithLifting(target_var, NULL, catch_node->else_expr, target_type);
@@ -1365,7 +1360,7 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Typ
                 if (target_var && (!prong->body->resolved_type || prong->body->resolved_type->kind != TYPE_NORETURN)) {
                     if (prong->body->type == NODE_BLOCK_STMT) {
                         writeIndent();
-                        emitBlockWithAssignment(&prong->body->as.block_stmt, target_var);
+                        emitBlockWithAssignment(&prong->body->as.block_stmt, target_var, -1, target_type);
                         writeString("\n");
                     } else {
                         emitAssignmentWithLifting(target_var, NULL, prong->body, target_type);
@@ -1646,7 +1641,7 @@ void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var, Typ
             IndentScope else_indent(*this);
             if (target_var) {
                 if (orelse->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&orelse->else_expr->as.block_stmt, target_var);
+                    emitBlockWithAssignment(&orelse->else_expr->as.block_stmt, target_var, -1, target_type);
                     writeString("\n");
                 } else {
                     emitAssignmentWithLifting(target_var, NULL, orelse->else_expr, target_type);

@@ -8,10 +8,20 @@ In Zig, constructs like `if`, `switch`, `try`, `catch`, and `orelse` are express
 
 ## 2. Core Mechanism
 
-### 2.1 The `target_var` Strategy
-Lifting functions in `C89Emitter` (e.g., `emitTryExpr`, `emitIfExpr`) take a `const char* target_var` parameter.
-- If `target_var` is **non-NULL**, the lifting logic generates an assignment to that variable (e.g., `target = result;`).
-- If `target_var` is **NULL**, the expression is evaluated solely for its side effects (common in expression statements).
+### 2.1 The `emitAssignmentWithLifting` Hub
+Lifting logic is centralized in `C89Emitter::emitAssignmentWithLifting`. This function serves as a unified dispatcher for any operation that behaves like an assignment (variable declaration, return statement, or explicit assignment) where the right-hand side (RHS) might require control-flow lifting or type coercion.
+
+Key responsibilities:
+- **Lifting Dispatch**: If the RHS is an `if`, `switch`, `try`, `catch`, or `orelse` expression, it delegates to the corresponding `emit*Expr` function, passing the target variable and target type.
+- **Type Coercion**: If the target type is an `ErrorUnion` or `Optional` but the RHS is a compatible payload type, it automatically invokes wrapping logic (`emitErrorUnionWrapping` or `emitOptionalWrapping`).
+- **Initializer Decomposition**: If the RHS is a struct or array initializer, it decomposes it into individual C field assignments.
+- **Discard Handling**: If the target is the blank identifier `_` or NULL, it evaluates the RHS for side effects, using `(void)` casts or side-effect-only lifting.
+
+### 2.2 The `target_var` Strategy
+Lifting functions (e.g., `emitTryExpr`, `emitIfExpr`) take a `const char* target_var` and an optional `Type* target_type`.
+- If `target_var` is **non-NULL**, the logic generates an assignment to that variable.
+- If `target_var` is **NULL**, the expression is evaluated solely for its side effects.
+- `target_type` ensures that nested results are correctly coerced into the top-level target type (e.g., a payload inside a branch being wrapped into an error union return).
 
 ### 2.2 Scoped Blocks
 Most lifted expressions are wrapped in a C block `{ ... }`. This allows the emitter to:
@@ -25,39 +35,39 @@ For complex contexts like `return try foo()`, the emitter generates a temporary 
 
 ### 3.1 `if` Expressions
 Lifted into a C `if-else` statement.
-- **Assignment**: Each branch assigns its final expression to `target_var`.
+- **Nesting**: Each branch body is emitted via `emitAssignmentWithLifting`. This provides **full recursive support** for nested `if`, `switch`, `try`, `catch`, and `orelse` within both `then` and `else` branches.
 - **Divergence**: If a branch ends in `return`, `break`, or `continue`, the assignment is skipped for that branch as the code path diverges.
 - **Optional Capture**: If the condition is an optional type, a temporary `opt_tmp` is used to prevent double-evaluation of the condition.
 
 ### 3.2 `switch` Expressions
 Lifted into a C `switch` statement.
-- **Prongs**: Each case prong ends with an assignment to `target_var` followed by a `break;`.
-- **Recursive Support**: `switch` prongs explicitly support nested `if` and `switch` expressions by calling their lifting functions recursively.
+- **Nesting**: Each prong body is emitted via `emitAssignmentWithLifting`, enabling uniform nesting of all lifted constructs.
+- **Divergence**: Like `if` branches, divergent prongs skip the assignment to `target_var`.
 
 ### 3.3 `try` Expressions
 Lifted into an `if` check for the `is_error` flag.
 - **Propagation**: If an error is detected, the emitter executes active `defer` statements and returns the error.
-- **Success**: The payload is assigned to `target_var`.
-- **Limitation**: The operand of `try` (the expression being tried) is currently emitted via `emitExpression`, which does NOT support nesting other lifted constructs.
+- **Success**: The payload is assigned to `target_var`, potentially involving wrapping if `target_type` is itself an error union or optional.
+- **Limitation**: The operand of `try` (the expression being tried) must currently be a simple expression, though it can be a function call.
 
 ### 3.4 `catch` and `orelse` Expressions
 Lifted into an `if-else` check.
-- **Success/Value**: The payload/value is assigned to `target_var`.
-- **Fallback**: The `else` branch (fallback) supports recursive lifting of `if` and `switch`, but generally lacks support for nested `try`, `catch`, or `orelse`.
+- **Success/Value**: The payload/value is assigned to `target_var`, with support for type coercion.
+- **Fallback/Nesting**: The fallback branch is emitted via `emitAssignmentWithLifting`, providing **full recursive support** for all other lifted constructs.
 
 ## 4. Nesting Support Matrix
 
-The following table describes which constructs can be nested inside others *without* using a block `{ ... }`.
+The following table describes which constructs can be nested inside others. As of Task 9.5.5, the implementation provides uniform support for nesting all lifted constructs within branches, prongs, and fallbacks.
 
 | Outer \ Inner | `if` | `switch` | `try` | `catch` | `orelse` |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **`if` branch** | ✗ [1] | ✗ [1] | ✗ [1] | ✗ [1] | ✗ [1] |
-| **`switch` prong** | ✓ | ✓ | ✗ | ✗ | ✗ |
-| **`catch` fallback** | ✓ | ✓ | ✗ | ✗ | ✗ |
-| **`orelse` fallback** | ✓ | ✓ | ✗ | ✗ | ✗ |
+| **`if` branch** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **`switch` prong** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **`catch` fallback** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **`orelse` fallback** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **`try` operand** | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-**[1] Note**: While direct nesting is unsupported for `if` branches, wrapping the inner expression in a block (e.g., `if (a) { if (b) 1 else 2 } else 3`) IS supported via `emitBlockWithAssignment`.
+**Note**: Recursive nesting is achieved by having each construct call back into `emitAssignmentWithLifting` for its result-yielding paths. This ensures that even deeply nested constructs are correctly flattened into C statement blocks.
 
 ## 5. Current Implementation Limitations
 
@@ -69,8 +79,8 @@ Expressions used as conditions for `if` or `while`, or as iterables for `for`, d
 - **Unsupported**: `while (try foo()) { ... }`
 - **Unsupported**: `for (try getList()) |item| { ... }`
 
-### 5.3 Omission of `orelse`
-In the current version of `emitBlockWithAssignment`, the `orelse` expression is missing from the list of constructs that can be lifted as the final value of a block.
+### 5.3 Fixed: Omission of `orelse`
+The `orelse` expression is now fully integrated into the unified assignment logic and is correctly supported as the final value of a block in `emitBlockWithAssignment`.
 
 ## 6. Technical Constraints
 

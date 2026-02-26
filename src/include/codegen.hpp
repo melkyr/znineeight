@@ -189,8 +189,9 @@ public:
      * @param node The block statement node.
      * @param target_var The name of the variable to assign the result to.
      * @param label_id The label_id of the loop this block belongs to (if any).
+     * @param target_type Explicit target type for coercion.
      */
-    void emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id = -1);
+    void emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id = -1, Type* target_type = NULL);
 
     /**
      * @brief Centralized assignment emission with support for expression lifting and wrapping.
