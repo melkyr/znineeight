@@ -200,7 +200,7 @@ void write(const char* data, size_t len) {
 }
 ```
 
-**Task 9.5.2: Standardize Error Reporting**
+**Task 9.5.2: Standardize Error Reporting [DONE]**
 Currently, some errors write `/* error: ... */` into the C file. This makes the C compilable but logically wrong.
 **Action:** Force all codegen errors to stop emission for that node.
 

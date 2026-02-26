@@ -456,6 +456,7 @@ private:
     const char* module_name_;
     char last_char_;
     int for_loop_counter_;
+    SourceLocation current_loc_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);
