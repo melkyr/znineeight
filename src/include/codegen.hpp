@@ -193,6 +193,15 @@ public:
     void emitBlockWithAssignment(const ASTBlockStmtNode* node, const char* target_var, int label_id = -1);
 
     /**
+     * @brief Centralized assignment emission with support for expression lifting and wrapping.
+     * @param target_var C name of the target variable (optional if lvalue_node is provided).
+     * @param lvalue_node AST node of the lvalue (optional if target_var is provided).
+     * @param rvalue AST node of the rvalue.
+     * @param target_type Explicit target type (defaults to lvalue_node->resolved_type).
+     */
+    void emitAssignmentWithLifting(const char* target_var, const ASTNode* lvalue_node, const ASTNode* rvalue, Type* target_type = NULL);
+
+    /**
      * @brief Emits a single statement.
      * @param node The statement node.
      */
@@ -208,8 +217,9 @@ public:
      * @brief Emits an if expression lifted to a statement.
      * @param node The if expression node.
      * @param target_var The name of the variable to assign the result to (can be NULL).
+     * @param target_type Explicit target type for coercion.
      */
-    void emitIfExpr(const ASTNode* node, const char* target_var);
+    void emitIfExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
 
     /**
      * @brief Emits a while statement.
@@ -221,23 +231,24 @@ public:
      * @brief Emits a switch expression lifted to a statement.
      * @param node The switch expression node.
      * @param target_var The name of the variable to assign the result to (can be NULL).
+     * @param target_type Explicit target type for coercion.
      */
-    void emitSwitchExpr(const ASTNode* node, const char* target_var);
+    void emitSwitchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
 
     /**
      * @brief Emits a try expression lifted to a statement.
      */
-    void emitTryExpr(const ASTNode* node, const char* target_var);
+    void emitTryExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
 
     /**
      * @brief Emits a catch expression lifted to a statement.
      */
-    void emitCatchExpr(const ASTNode* node, const char* target_var);
+    void emitCatchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
 
     /**
      * @brief Emits an orelse expression lifted to a statement.
      */
-    void emitOrelseExpr(const ASTNode* node, const char* target_var);
+    void emitOrelseExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
 
     /**
      * @brief Emits a for loop statement.
@@ -411,27 +422,44 @@ public:
     void emitDefersForScopeExit(int target_label_id = -1);
 
 private:
+
+    /**
+     * @brief Emits logic to wrap a value into an error union.
+     */
+    void emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
+    void emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type);
+
+    /**
+     * @brief Emits logic to wrap a value into an optional.
+     */
+    void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
+    void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type);
+
     class IndentScope {
     public:
         IndentScope(C89Emitter& emitter) : emitter_(emitter) { emitter_.indent(); }
         ~IndentScope() { emitter_.dedent(); }
     private:
         C89Emitter& emitter_;
-
-        // Prevent copying
         IndentScope(const IndentScope&);
         IndentScope& operator=(const IndentScope&);
     };
 
-    /**
-     * @brief Emits logic to wrap a value into an error union.
-     */
-    void emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
-
-    /**
-     * @brief Emits logic to wrap a value into an optional.
-     */
-    void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
+    class DeferScopeGuard {
+    public:
+        DeferScopeGuard(C89Emitter& emitter, int label_id) : emitter_(emitter) {
+            DeferScope* scope = (DeferScope*)emitter_.arena_.alloc(sizeof(DeferScope));
+            new (scope) DeferScope(emitter_.arena_, label_id);
+            emitter_.defer_stack_.append(scope);
+        }
+        ~DeferScopeGuard() {
+            emitter_.defer_stack_.pop_back();
+        }
+    private:
+        C89Emitter& emitter_;
+        DeferScopeGuard(const DeferScopeGuard&);
+        DeferScopeGuard& operator=(const DeferScopeGuard&);
+    };
 
     struct GlobalNameEntry {
         const char* zig_name;

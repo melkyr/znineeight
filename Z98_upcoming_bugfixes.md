@@ -249,7 +249,7 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
 }
 ```
 
-**Task 9.5.4: Defer Scope Guard**
+**Task 9.5.4: Defer Scope Guard [DONE]**
 Manage the `defer_stack_` lifecycle similarly to prevent leaks or mismatches.
 
 ```cpp
@@ -298,7 +298,7 @@ void C89Emitter::emitBlock(...) {
 #### Phase 3: Legibility and Maintainability Refactors
 *Goal: Reduce cognitive load in large functions.*
 
-**Task 9.5.5: Extract Assignment Logic**
+**Task 9.5.5: Extract Assignment Logic [DONE]**
 `emitStatement` and `emitLocalVarDecl` both have massive `if/else` chains for handling `TRY`, `CATCH`, `IF` assignments. Unify this.
 
 ```cpp

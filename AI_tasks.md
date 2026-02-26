@@ -1525,6 +1525,16 @@ Key changes:
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the new two-tier error model.
     - **Remaining**: Fix minor regressions in Batch 45/47 and implement the multi-error integration test.
 
+231. [COMPLETE] **Task 9.5.4: Defer Scope Guard**
+    - Implemented `DeferScopeGuard` RAII helper in `codegen.cpp` to manage the lifecycle of the `defer_stack_`.
+    - Updated `emitBlock` and `emitBlockWithAssignment` to use `DeferScopeGuard`, ensuring the stack is correctly popped even on early exits.
+
+232. [COMPLETE] **Task 9.5.5: Extract Assignment Logic**
+    - Implemented `emitAssignmentWithLifting` in `C89Emitter` as a centralized helper for assignment-like operations.
+    - Unified expression lifting (`if`, `switch`, `try`, `catch`, `orelse`), type coercion (Optional/Error Union wrapping), and struct/array initializer decomposition.
+    - Refactored `emitLocalVarDecl`, `emitStatement`, and `emitReturn` to use the new unified helper, significantly reducing code duplication.
+    - Added support for result discarding (`_`) in unified assignment logic.
+
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
 ### Overview
