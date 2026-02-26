@@ -419,6 +419,389 @@ Type* TypeInterner::getPointerType(Type* base_type, ...) {
     *   **Current:** Comments explain *what* (e.g., `// Emit defers`).
     *   **Suggestion:** Explain *why* for complex logic (e.g., `// Defers must emit in reverse order to match Zig semantics`).
 
+Yes, this is the correct file to evaluate. `type_checker.cpp` is actually **more critical** than `type_system.cpp` for stability because it:
+
+1. **Has more recursion** (visits every AST node)
+2. **Manages more state** (function context, loop depth, label stacks, defer tracking)
+3. **Has more error paths** (every node type can fail type checking)
+
+Here's my analysis and refactoring plan specifically for `type_checker.cpp`:
+
+---
+
+## Part 4: Critical Issues in `type_checker.cpp`
+
+| Issue | Location | Risk Level | Win98 Impact |
+| :--- | :--- | :--- | :--- |
+| **No Recursion Guard** | `visit()` function | **HIGH** | Stack overflow on deep AST |
+| **Manual State Restore** | `visitFnBody`, `visitDeferStmt` | **HIGH** | State corruption on early return |
+| **Duplicate Logic** | `visitBreakStmt` / `visitContinueStmt` | **MEDIUM** | Code bloat, maintenance burden |
+| **Silent NULL Returns** | Many `visit*` functions | **MEDIUM** | Cascading errors, hard to debug |
+| **Large Switch Statement** | `visit()` (~50 cases) | **LOW** | Hard to maintain, but no runtime cost |
+
+---
+
+## Part 5: Refactoring Plan for Type Checker
+
+### Task 9.5.9 Add Recursion Depth Guard 
+
+**Problem**: `visit()` calls itself recursively without limits. On Win98 (1MB stack), deeply nested expressions could crash.
+
+**Pseudocode**:
+```cpp
+// Add to TypeChecker members in type_checker.hpp
+int visit_depth_;
+static const int MAX_VISIT_DEPTH = 200; // Conservative for 1MB stack
+
+// In TypeChecker constructor
+: visit_depth_(0) { ... }
+
+// In visit() function
+Type* TypeChecker::visit(ASTNode* node) {
+    visit_depth_++;
+    if (visit_depth_ > MAX_VISIT_DEPTH) {
+        unit.getErrorHandler().report(ERR_STACK_OVERFLOW, node->loc, 
+            "Type checking recursion depth exceeded (max 200)");
+        visit_depth_--;
+        return get_g_type_undefined();
+    }
+    
+    Type* resolved_type = NULL;
+    switch (node->type) {
+        // ... existing cases ...
+    }
+    
+    visit_depth_--;
+    return resolved_type;
+}
+```
+
+**Memory Cost**: +4 bytes per `TypeChecker` instance (stack member).
+**Safety Benefit**: Prevents hard crash on Win98.
+
+---
+
+### Task 9.5.10 RAII State Guards (Week 2)
+
+**Problem**: Functions like `visitFnBody` manually save/restore state. Early returns corrupt state.
+
+**Current Code** (Line ~1450):
+```cpp
+Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
+    Type* prev_fn_return_type = current_fn_return_type;
+    const char* prev_fn_name = current_fn_name;
+    current_fn_name = node->name;
+    current_fn_return_type = fn_symbol->symbol_type->as.function.return_type;
+    
+    // ... many lines ...
+    
+    current_fn_return_type = prev_fn_return_type;  // Might not execute!
+    current_fn_name = prev_fn_name;                // Might not execute!
+}
+```
+
+**Pseudocode for RAII Guard**:
+```cpp
+// Add this class inside type_checker.cpp (stack-only, ~12 bytes)
+struct FunctionContextGuard {
+    TypeChecker* checker;
+    Type* prev_return_type;
+    const char* prev_fn_name;
+    int prev_label_id;
+    DynamicArray<const char*> prev_labels;  // Reference, not copy
+    
+    __forceinline FunctionContextGuard(TypeChecker* c, const char* fn_name, Type* ret_type)
+        : checker(c), prev_return_type(c->current_fn_return_type), 
+          prev_fn_name(c->current_fn_name), prev_label_id(c->next_label_id_) {
+        c->current_fn_name = fn_name;
+        c->current_fn_return_type = ret_type;
+        c->next_label_id_ = 0;
+        c->function_labels_.clear();
+    }
+    
+    __forceinline ~FunctionContextGuard() {
+        checker->current_fn_return_type = prev_return_type;
+        checker->current_fn_name = prev_fn_name;
+        checker->next_label_id_ = prev_label_id;
+        // function_labels_ is restored by caller if needed
+    }
+};
+
+// Usage in visitFnBody
+Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
+    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    if (!fn_symbol || !fn_symbol->symbol_type) {
+        if (!visitFnSignature(node)) return NULL;
+        fn_symbol = unit.getSymbolTable().lookup(node->name);
+    }
+    
+    // RAII: State automatically restored on return
+    FunctionContextGuard guard(this, node->name, 
+        fn_symbol->symbol_type->as.function.return_type);
+    
+    unit.getSymbolTable().enterScope();
+    // ... rest of logic ...
+    unit.getSymbolTable().exitScope();
+    
+    return NULL;
+}
+```
+
+**Memory Cost**: ~12 bytes per function call (stack only).
+**Safety Benefit**: State always restored, even on early return.
+
+---
+
+### Task 9.5.11 Extract Duplicate Label Logic (Week 3)
+
+**Problem**: `visitBreakStmt` and `visitContinueStmt` duplicate ~80% of their logic.
+
+**Current Code** (Line ~1280-1320):
+```cpp
+Type* TypeChecker::visitBreakStmt(ASTNode* node) {
+    ASTBreakStmtNode& break_node = node->as.break_stmt;
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_BREAK_INSIDE_DEFER, ...);
+    } else if (current_loop_depth == 0) {
+        unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, ...);
+    }
+    if (break_node.label) {
+        bool found = false;
+        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
+            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, break_node.label) == 0) {
+                break_node.target_label_id = label_stack_[i].id;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            unit.getErrorHandler().report(ERR_UNKNOWN_LABEL, ...);
+        }
+    } else {
+        if (label_stack_.length() > 0) {
+            break_node.target_label_id = label_stack_.back().id;
+        }
+    }
+    return get_g_type_noreturn();
+}
+
+// visitContinueStmt is nearly identical...
+```
+
+**Pseudocode for Extraction**:
+```cpp
+// Private helper function
+static bool ResolveLabel(DynamicArray<LoopLabel>& label_stack, 
+                         const char* label, int* target_id, 
+                         SourceLocation loc, ErrorHandler& error_handler,
+                         bool is_break) {
+    if (label) {
+        for (int i = (int)label_stack.length() - 1; i >= 0; --i) {
+            if (label_stack[i].name && plat_strcmp(label_stack[i].name, label) == 0) {
+                *target_id = label_stack[i].id;
+                return true;
+            }
+        }
+        error_handler.report(is_break ? ERR_UNKNOWN_LABEL : ERR_UNKNOWN_LABEL, 
+            loc, "Unknown label");
+        return false;
+    } else {
+        if (label_stack.length() > 0) {
+            *target_id = label_stack.back().id;
+            return true;
+        }
+        error_handler.report(is_break ? ERR_BREAK_OUTSIDE_LOOP : ERR_CONTINUE_OUTSIDE_LOOP,
+            loc, is_break ? "break outside loop" : "continue outside loop");
+        return false;
+    }
+}
+
+// Simplified visitBreakStmt
+Type* TypeChecker::visitBreakStmt(ASTNode* node) {
+    ASTBreakStmtNode& break_node = node->as.break_stmt;
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_BREAK_INSIDE_DEFER, node->loc, ...);
+    } else if (current_loop_depth == 0) {
+        unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, ...);
+    }
+    
+    ResolveLabel(label_stack_, break_node.label, &break_node.target_label_id,
+        node->loc, unit.getErrorHandler(), true);
+    
+    return get_g_type_noreturn();
+}
+
+// Simplified visitContinueStmt
+Type* TypeChecker::visitContinueStmt(ASTNode* node) {
+    ASTContinueStmtNode& cont_node = node->as.continue_stmt;
+    if (in_defer) {
+        unit.getErrorHandler().report(ERR_CONTINUE_INSIDE_DEFER, node->loc, ...);
+    } else if (current_loop_depth == 0) {
+        unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, ...);
+    }
+    
+    ResolveLabel(label_stack_, cont_node.label, &cont_node.target_label_id,
+        node->loc, unit.getErrorHandler(), false);
+    
+    return get_g_type_noreturn();
+}
+```
+
+**Code Savings**: ~40 lines removed.
+**Maintainability**: Label resolution logic in one place.
+
+---
+
+### Task 9.5.12 Loop Context RAII Guard (Week 4)
+
+**Problem**: `visitWhileStmt`, `visitForStmt` manually manage `current_loop_depth` and `label_stack_`.
+
+**Pseudocode**:
+```cpp
+// RAII Guard for loop context
+struct LoopContextGuard {
+    TypeChecker* checker;
+    int prev_depth;
+    
+    __forceinline LoopContextGuard(TypeChecker* c, const char* label, int label_id)
+        : checker(c), prev_depth(c->current_loop_depth) {
+        c->current_loop_depth++;
+        if (label) {
+            // Check duplicate
+            for (size_t i = 0; i < c->function_labels_.length(); ++i) {
+                if (plat_strcmp(c->function_labels_[i], label) == 0) {
+                    c->unit.getErrorHandler().report(ERR_DUPLICATE_LABEL, ...);
+                }
+            }
+            c->function_labels_.append(label);
+        }
+        LoopLabel ll = { label, label_id };
+        c->label_stack_.append(ll);
+    }
+    
+    __forceinline ~LoopContextGuard() {
+        checker->current_loop_depth = prev_depth;
+        checker->label_stack_.pop_back();
+        if (checker->function_labels_.length() > 0) {
+            checker->function_labels_.pop_back();
+        }
+    }
+};
+
+// Usage in visitForStmt
+Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
+    Type* iterable_type = visit(node->iterable_expr);
+    
+    node->label_id = next_label_id_++;
+    
+    // RAII: Loop context automatically managed
+    LoopContextGuard guard(this, node->label, node->label_id);
+    
+    // ... symbol table setup ...
+    
+    visit(node->body);
+    
+    return NULL;
+}
+```
+
+**Memory Cost**: ~8 bytes per loop (stack only).
+**Safety Benefit**: Loop depth always restored, even on errors.
+
+---
+
+### Task 9.5.13 Defer Context Guard (Week 5)
+
+**Problem**: `visitDeferStmt` and `visitErrdeferStmt` manually toggle `in_defer`.
+
+**Pseudocode**:
+```cpp
+// RAII Guard for defer context
+struct DeferContextGuard {
+    TypeChecker* checker;
+    bool prev_in_defer;
+    
+    __forceinline DeferContextGuard(TypeChecker* c)
+        : checker(c), prev_in_defer(c->in_defer) {
+        c->in_defer = true;
+    }
+    
+    __forceinline ~DeferContextGuard() {
+        checker->in_defer = prev_in_defer;
+    }
+};
+
+// Usage in visitDeferStmt
+Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
+    DeferContextGuard guard(this);
+    visit(node->statement);
+    return NULL;
+}
+
+// Usage in visitErrdeferStmt
+Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
+    DeferContextGuard guard(this);
+    visit(node->statement);
+    return NULL;
+}
+```
+
+**Memory Cost**: ~5 bytes per defer (stack only).
+**Safety Benefit**: `in_defer` always restored.
+
+---
+### Task 9.5.14 Error Reporting Consistency (Week 6)
+
+**Problem**: Some functions return `NULL` without reporting errors, causing cascading failures.
+
+**Current Pattern** (inconsistent):
+```cpp
+// Some functions report errors
+if (!operand_type) {
+    unit.getErrorHandler().report(...);
+    return NULL;
+}
+
+// Others don't
+if (!base_type) return NULL;  // No error reported!
+```
+
+**Pseudocode for Standardization**:
+```cpp
+// Add this helper to TypeChecker
+__forceinline Type* ReportAndReturnNull(SourceLocation loc, ErrorType err, const char* msg) {
+    unit.getErrorHandler().report(err, loc, msg);
+    return get_g_type_undefined();  // Return undefined instead of NULL
+}
+
+// Usage in visitMemberAccess
+Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
+    Type* base_type = visit(node->base);
+    if (!base_type) {
+        // Error already reported by visit()
+        return get_g_type_undefined();
+    }
+    // ... rest of logic ...
+}
+```
+
+**Benefit**: Easier to trace error chains in test output.
+
+---
+
+### Task 9.5.14 Memory & Stack Analysis
+
+| Component | Size | Per-Call Cost | Max Depth | Total Stack |
+| :--- | :--- | :--- | :--- | :--- |
+| `visit_depth_` | 4 bytes | 0 | 1 | 4 bytes |
+| `FunctionContextGuard` | 12 bytes | 12 bytes | 50 (functions) | 600 bytes |
+| `LoopContextGuard` | 8 bytes | 8 bytes | 20 (nested loops) | 160 bytes |
+| `DeferContextGuard` | 5 bytes | 5 bytes | 20 (nested defers) | 100 bytes |
+| **Total** | | | | **~1KB max** |
+
+**Well within 1MB Win98 stack limit.**
+
+
 
 ### Task 9.6: Fix Recursive Type Instability for Slices
 
