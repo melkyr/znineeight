@@ -22,8 +22,7 @@ class C89Emitter {
 public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
-     * @param arena The ArenaAllocator for CVariableAllocator.
-     * @param error_handler The error handler for reporting errors during codegen.
+     * @param unit The compilation unit.
      */
     C89Emitter(CompilationUnit& unit);
 
@@ -299,54 +298,6 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
-     * @brief Emits a special compiler-assisted lowering for std.debug.print.
-     * @param node The function call node.
-     */
-    void emitPrintCall(const ASTFunctionCallNode* node);
-
-    /**
-     * @brief Emits an @intCast intrinsic call.
-     * @param node The numeric cast node.
-     */
-    void emitIntCast(const ASTNumericCastNode* node);
-
-    /**
-     * @brief Emits a @floatCast intrinsic call.
-     * @param node The numeric cast node.
-     */
-    void emitFloatCast(const ASTNumericCastNode* node);
-
-    /**
-     * @brief Emits an integer literal expression.
-     * @param node The integer literal node.
-     */
-    void emitIntegerLiteral(const ASTIntegerLiteralNode* node);
-
-    /**
-     * @brief Emits a float literal expression.
-     * @param node The float literal node.
-     */
-    void emitFloatLiteral(const ASTFloatLiteralNode* node);
-
-    /**
-     * @brief Emits a string literal expression.
-     * @param node The string literal node.
-     */
-    void emitStringLiteral(const ASTStringLiteralNode* node);
-
-    /**
-     * @brief Emits a character literal expression.
-     * @param node The character literal node.
-     */
-    void emitCharLiteral(const ASTCharLiteralNode* node);
-
-    /**
-     * @brief Emits an array/slice slicing expression.
-     * @param node The slice node.
-     */
-    void emitArraySlice(const ASTNode* node);
-
-    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
@@ -358,7 +309,6 @@ public:
      */
     const char* getC89GlobalName(const char* zig_name);
 
-public:
     /**
      * @brief Emits a byte with proper C89 escaping.
      * @param c The byte to emit.
@@ -422,7 +372,82 @@ public:
      */
     void emitDefersForScopeExit(int target_label_id = -1);
 
+    /**
+     * @brief Emits an integer literal expression.
+     */
+    void emitIntegerLiteral(const ASTIntegerLiteralNode* node);
+
+    /**
+     * @brief Emits a float literal expression.
+     */
+    void emitFloatLiteral(const ASTFloatLiteralNode* node);
+
 private:
+    /**
+     * @brief Emits a literal expression (integer, float, string, char, bool, null, error).
+     */
+    void emitLiteral(const ASTNode* node);
+
+    /**
+     * @brief Emits a unary operator expression.
+     */
+    void emitUnaryOp(const ASTUnaryOpNode& node);
+
+    /**
+     * @brief Emits a binary operator expression.
+     */
+    void emitBinaryOp(const ASTBinaryOpNode& node);
+
+    /**
+     * @brief Emits a cast expression (@intCast, @floatCast, @ptrCast).
+     */
+    void emitCast(const ASTNode* node);
+
+    /**
+     * @brief Emits an access expression (array access, member access, slicing).
+     */
+    void emitAccess(const ASTNode* node);
+
+    /**
+     * @brief Reports an error for unlifted control flow expressions.
+     */
+    void emitControlFlow(const ASTNode* node);
+
+    /**
+     * @brief Emits an @intCast intrinsic call.
+     * @param node The numeric cast node.
+     */
+    void emitIntCast(const ASTNumericCastNode* node);
+
+    /**
+     * @brief Emits a @floatCast intrinsic call.
+     * @param node The numeric cast node.
+     */
+    void emitFloatCast(const ASTNumericCastNode* node);
+
+    /**
+     * @brief Emits a string literal expression.
+     * @param node The string literal node.
+     */
+    void emitStringLiteral(const ASTStringLiteralNode* node);
+
+    /**
+     * @brief Emits a character literal expression.
+     * @param node The character literal node.
+     */
+    void emitCharLiteral(const ASTCharLiteralNode* node);
+
+    /**
+     * @brief Emits an array/slice slicing expression.
+     * @param node The slice node.
+     */
+    void emitArraySlice(const ASTNode* node);
+
+    /**
+     * @brief Emits a special compiler-assisted lowering for std.debug.print.
+     * @param node The function call node.
+     */
+    void emitPrintCall(const ASTFunctionCallNode* node);
 
     /**
      * @brief Emits logic to wrap a value into an error union.

@@ -66,6 +66,9 @@ static Type* allocateType(ArenaAllocator& arena) {
 }
 
 Type* createModuleType(ArenaAllocator& arena, const char* name) {
+    if (!name) {
+        plat_print_debug("createModuleType: name is NULL\n");
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_MODULE;
     new_type->size = 0;
@@ -76,6 +79,9 @@ Type* createModuleType(ArenaAllocator& arena, const char* name) {
 }
 
 Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
+    if (!elements) {
+        plat_print_debug("createTupleType: elements array is NULL\n");
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_TUPLE;
     new_type->size = 0; // Not used for runtime storage in bootstrap
@@ -110,7 +116,10 @@ Type* resolvePrimitiveTypeName(const char* name) {
 
 
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
-    if (!base_type) return get_g_type_undefined();
+    if (!base_type) {
+        plat_print_debug("createPointerType: base type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (interner) {
         return interner->getPointerType(base_type, is_const, is_many);
     }
@@ -126,6 +135,10 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, b
 }
 
 Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+    if (!return_type) {
+        plat_print_debug("createFunctionType: return type is NULL\n");
+        return get_g_type_undefined();
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_FUNCTION;
     new_type->size = 0; // Functions don't have a size in the same way
@@ -136,6 +149,10 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
 }
 
 Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+    if (!return_type) {
+        plat_print_debug("createFunctionPointerType: return type is NULL\n");
+        return get_g_type_undefined();
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_FUNCTION_POINTER;
     new_type->size = 4;
@@ -146,7 +163,10 @@ Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* para
 }
 
 Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeInterner* interner) {
-    if (!element_type) return get_g_type_undefined();
+    if (!element_type) {
+        plat_print_debug("createArrayType: element type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (interner) {
         return interner->getArrayType(element_type, size);
     }
@@ -166,7 +186,10 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
 }
 
 Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, TypeInterner* interner) {
-    if (!element_type) return get_g_type_undefined();
+    if (!element_type) {
+        plat_print_debug("createSliceType: element type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (interner) {
         return interner->getSliceType(element_type, is_const);
     }
@@ -181,6 +204,11 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 }
 
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
+    if (!fields) {
+        plat_print_debug("createStructType: fields array is NULL\n");
+        // We can allow NULL fields for incomplete structs, but usually they are empty DynamicArrays.
+        // If it's truly NULL, it might be an error.
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
@@ -191,6 +219,9 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
 }
 
 Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
+    if (!fields) {
+        plat_print_debug("createUnionType: fields array is NULL\n");
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_UNION;
     new_type->as.struct_details.name = name;
@@ -249,7 +280,10 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
 }
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
-    if (!payload) return get_g_type_undefined();
+    if (!payload) {
+        plat_print_debug("createErrorUnionType: payload is NULL\n");
+        return get_g_type_undefined();
+    }
     if (interner) {
         return interner->getErrorUnionType(payload, error_set, is_inferred);
     }
@@ -306,7 +340,10 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
 }
 
 Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* interner) {
-    if (!payload) return get_g_type_undefined();
+    if (!payload) {
+        plat_print_debug("createOptionalType: payload is NULL\n");
+        return get_g_type_undefined();
+    }
     if (interner) {
         return interner->getOptionalType(payload);
     }
@@ -403,6 +440,13 @@ void calculateStructLayout(Type* struct_type) {
 }
 
 Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
+    if (!backing_type) {
+        plat_print_debug("createEnumType: backing type is NULL\n");
+        return get_g_type_undefined();
+    }
+    if (!name) {
+        plat_print_debug("createEnumType: name is NULL\n");
+    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
@@ -458,6 +502,10 @@ static bool containsPlaceholder(Type* type) {
 }
 
 Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many) {
+    if (!base_type) {
+        plat_print_debug("TypeInterner::getPointerType: base type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (containsPlaceholder(base_type)) {
         return createPointerType(arena_, base_type, is_const, is_many, NULL);
     }
@@ -482,6 +530,10 @@ Type* TypeInterner::getPointerType(Type* base_type, bool is_const, bool is_many)
 }
 
 Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_inferred) {
+    if (!payload) {
+        plat_print_debug("TypeInterner::getErrorUnionType: payload is NULL\n");
+        return get_g_type_undefined();
+    }
     if (containsPlaceholder(payload) || (!is_inferred && containsPlaceholder(error_set))) {
         return createErrorUnionType(arena_, payload, error_set, is_inferred, NULL);
     }
@@ -506,6 +558,9 @@ Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_in
 }
 
 Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
+    if (!is_anonymous && !name) {
+        plat_print_debug("TypeInterner::getErrorSetType: named error set has NULL name\n");
+    }
     // For error sets, interning is primarily based on name for named sets.
     // Anonymous sets are trickier. For bootstrap, we'll intern by name.
     if (!is_anonymous && name) {
@@ -533,6 +588,10 @@ Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>*
 }
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
+    if (!element_type) {
+        plat_print_debug("TypeInterner::getArrayType: element type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (containsPlaceholder(element_type)) {
         return createArrayType(arena_, element_type, size, NULL);
     }
@@ -556,6 +615,10 @@ Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
 }
 
 Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
+    if (!element_type) {
+        plat_print_debug("TypeInterner::getSliceType: element type is NULL\n");
+        return get_g_type_undefined();
+    }
     if (containsPlaceholder(element_type)) {
         return createSliceType(arena_, element_type, is_const, NULL);
     }
@@ -579,6 +642,10 @@ Type* TypeInterner::getSliceType(Type* element_type, bool is_const) {
 }
 
 Type* TypeInterner::getOptionalType(Type* payload) {
+    if (!payload) {
+        plat_print_debug("TypeInterner::getOptionalType: payload is NULL\n");
+        return get_g_type_undefined();
+    }
     if (containsPlaceholder(payload)) {
         return createOptionalType(arena_, payload, NULL);
     }

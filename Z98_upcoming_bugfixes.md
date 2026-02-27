@@ -329,7 +329,7 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
 emitAssignmentWithLifting(lvalue_symbol, rvalue);
 ```
 
-**Task 9.5.6: Break Down `emitExpression` Switch**
+**Task 9.5.6: Break Down `emitExpression` Switch [DONE]**
 The `emitExpression` switch is too large. Group related handlers into private methods.
 
 ```cpp
@@ -353,7 +353,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 #### Phase 4: Type System Safety
 *Goal: Prevent crashes in `type_system.cpp` due to null pointers.*
 
-**Task 9.5.7: Guard Type Creators**
+**Task 9.5.7: Guard Type Creators [DONE]**
 Functions like `createPointerType` assume `base_type` is valid.
 
 ```cpp
@@ -369,7 +369,7 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, .
 }
 ```
 
-**Task 9.5.8: Interner Null Checks**
+**Task 9.5.8: Interner Null Checks [DONE]**
 Ensure the `TypeInterner` doesn't hash null pointers.
 
 ```cpp

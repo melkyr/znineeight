@@ -133,7 +133,13 @@ public:
 };
 ```
 
-### 3.4 Error Handling System (`error_handler.hpp`)
+### 3.6 Code Stability & Defensive Programming
+To ensure robustness on sensitive 90s hardware and during complex bootstrap phases, the compiler employs several defensive programming techniques:
+- **NULL Safety Guards**: All type creation functions and interning methods (e.g., `createPointerType`, `getOptionalType`) strictly validate their inputs. If a required parameter is `NULL`, they emit a debug message via `plat_print_debug` and return a safe sentinel (`TYPE_UNDEFINED`).
+- **Modular Refactoring**: Large dispatch functions like `emitExpression` are broken down into focused, private helper methods (e.g., `emitLiteral`, `emitCast`). This reduces cognitive load and prevents state corruption in complex switch statements.
+- **Fail-Hard Buffering**: Any buffer overflow in the codegen system triggers an immediate `plat_abort()` with a descriptive error, preventing silent output truncation.
+
+### 3.7 Error Handling System (`error_handler.hpp`)
 **Philosophy:** The RetroZig compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
 
 ```cpp
