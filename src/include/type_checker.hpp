@@ -140,6 +140,7 @@ private:
 
     DynamicArray<LoopLabel> label_stack_;
     DynamicArray<const char*> function_labels_;
+    size_t current_fn_labels_start_;
     int next_label_id_;
 };
 
