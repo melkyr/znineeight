@@ -12,21 +12,24 @@ struct TypeChecker::FunctionContextGuard {
     Type* old_ret_type;
     int old_label_id;
     size_t old_labels_size;
+    size_t old_fn_labels_start;
 
     FunctionContextGuard(TypeChecker& tc_arg, const char* name, Type* ret_type)
         : tc(tc_arg), old_fn_name(tc_arg.current_fn_name_), old_ret_type(tc_arg.current_fn_return_type_),
-          old_label_id(tc_arg.next_label_id_), old_labels_size(tc_arg.function_labels_.length())
+          old_label_id(tc_arg.next_label_id_), old_labels_size(tc_arg.function_labels_.length()),
+          old_fn_labels_start(tc_arg.current_fn_labels_start_)
     {
         tc.current_fn_name_ = name;
         tc.current_fn_return_type_ = ret_type;
         tc.next_label_id_ = 0;
-        tc.function_labels_.clear();
+        tc.current_fn_labels_start_ = tc.function_labels_.length();
     }
 
     ~FunctionContextGuard() {
         tc.current_fn_name_ = old_fn_name;
         tc.current_fn_return_type_ = old_ret_type;
         tc.next_label_id_ = old_label_id;
+        tc.current_fn_labels_start_ = old_fn_labels_start;
         while (tc.function_labels_.length() > old_labels_size) {
             tc.function_labels_.pop_back();
         }
@@ -49,7 +52,7 @@ struct TypeChecker::LoopContextGuard {
         tc.current_loop_depth_++;
         if (label) {
             /* Check duplicate. */
-            for (size_t i = 0; i < tc.function_labels_.length(); ++i) {
+            for (size_t i = tc.current_fn_labels_start_; i < tc.function_labels_.length(); ++i) {
                 if (plat_strcmp(tc.function_labels_[i], label) == 0) {
                     tc.unit_.getErrorHandler().report(ERR_DUPLICATE_LABEL, loc, "Duplicate label");
                 }
@@ -97,7 +100,8 @@ struct TypeChecker::DeferContextGuard {
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
     : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0), in_defer_(false),
-      label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()), next_label_id_(0) {
+      label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()),
+      current_fn_labels_start_(0), next_label_id_(0) {
 }
 
 void TypeChecker::registerPlaceholders(ASTNode* root) {
