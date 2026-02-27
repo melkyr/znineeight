@@ -11,8 +11,8 @@
 
 TypeChecker::TypeChecker(CompilationUnit& unit)
     : unit(unit), current_fn_return_type(NULL), current_fn_name(NULL), current_struct_name_(NULL),
-      current_loop_depth(0), type_resolution_depth_(0), in_defer(false), label_stack_(unit.getArena()),
-      function_labels_(unit.getArena()), next_label_id_(0) {
+      current_loop_depth(0), type_resolution_depth_(0), visit_depth_(0), in_defer_(false),
+      label_stack_(unit.getArena()), function_labels_(unit.getArena()), next_label_id_(0) {
 }
 
 void TypeChecker::registerPlaceholders(ASTNode* root) {
@@ -77,6 +77,13 @@ void TypeChecker::check(ASTNode* root) {
 Type* TypeChecker::visit(ASTNode* node) {
     if (!node) {
         return NULL;
+    }
+
+    visit_depth_++;
+    if (visit_depth_ > MAX_VISIT_DEPTH) {
+        unit.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, "Type checking recursion depth exceeded (max 200)");
+        visit_depth_--;
+        return get_g_type_undefined();
     }
 
     Type* resolved_type = NULL;
@@ -147,19 +154,28 @@ Type* TypeChecker::visit(ASTNode* node) {
     if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
         node->resolved_type = resolved_type;
     }
+    visit_depth_--;
     return resolved_type;
 }
 
 Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
-    // In a unit test, the operand's type might already be resolved.
-    Type* operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
+    Type* operand_type;
+    bool is_lvalue;
+    char type_str[64];
+    char msg_buffer[256];
+    char* current;
+    size_t remaining;
+    Type* base_type;
+
+    /* In a unit test, the operand's type might already be resolved. */
+    operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
     if (!operand_type) {
-        return NULL; // Error already reported
+        return NULL; /* Error already reported. */
     }
 
     switch (node->op) {
         case TOKEN_STAR:
-        case TOKEN_DOT_ASTERISK: { // Dereference operator (*) or (.*)
+        case TOKEN_DOT_ASTERISK: { /* Dereference operator (*) or (.*) */
             // Check for null literal dereference first, as it's a special case.
             if (node->operand->type == NODE_NULL_LITERAL ||
                 (node->operand->type == NODE_INTEGER_LITERAL && node->operand->as.integer_literal.value == 0)) {
@@ -189,7 +205,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
 
-            Type* base_type = operand_type->as.pointer.base;
+            base_type = operand_type->as.pointer.base;
             if (base_type->kind == TYPE_VOID) {
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot dereference a void pointer");
                 return NULL;
@@ -197,9 +213,8 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
 
             return base_type;
         }
-        case TOKEN_AMPERSAND: { // Address-of operator (&)
-            // The operand of '&' must be an l-value.
-            bool is_lvalue;
+        case TOKEN_AMPERSAND: { /* Address-of operator (&) */
+            /* The operand of '&' must be an l-value. */
             switch (node->operand->type) {
                 case NODE_IDENTIFIER:
                 case NODE_ARRAY_ACCESS:
@@ -253,21 +268,29 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
 }
 
 Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
-    Type* left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
-    Type* right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
+    Type* left_type;
+    Type* right_type;
+    Type* l_ptr;
+    Type* r_ptr;
+    Type left_lit, right_lit;
+    bool used_left_lit;
+    bool used_right_lit;
+    Type* result;
+
+    left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
+    right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
     if (!left_type || !right_type) {
-        return NULL; // Error already reported
+        return NULL; /* Error already reported. */
     }
 
-    // Special handling for literals to support promotion in binary operations.
-    // We only use TYPE_INTEGER_LITERAL for mixed cases (literal + non-literal)
-    // because literal + literal is already handled correctly by visit() returning i32/i64.
-    Type* l_ptr = left_type;
-    Type* r_ptr = right_type;
-    Type left_lit, right_lit;
-    bool used_left_lit = false;
-    bool used_right_lit = false;
+    /* Special handling for literals to support promotion in binary operations.
+       We only use TYPE_INTEGER_LITERAL for mixed cases (literal + non-literal)
+       because literal + literal is already handled correctly by visit() returning i32/i64. */
+    l_ptr = left_type;
+    r_ptr = right_type;
+    used_left_lit = false;
+    used_right_lit = false;
 
     if (node->left->type == NODE_INTEGER_LITERAL && node->right->type != NODE_INTEGER_LITERAL) {
         left_lit.kind = TYPE_INTEGER_LITERAL;
@@ -281,36 +304,52 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
         used_right_lit = true;
     }
 
-    Type* result = checkBinaryOperation(l_ptr, r_ptr, node->op, parent->loc);
+    result = checkBinaryOperation(l_ptr, r_ptr, node->op, parent->loc);
 
-    // Ensure we don't return a pointer to our stack-allocated literal types.
+    /* Ensure we don't return a pointer to our stack-allocated literal types. */
     if (used_left_lit && result == &left_lit) return left_type;
     if (used_right_lit && result == &right_lit) return right_type;
 
     return result;
 }
 
+/**
+ * @brief Checks the semantic validity of a binary operation and determines its result type.
+ *
+ * This function enforces strict Z98 type rules:
+ * 1. Identical types are required for most operations.
+ * 2. Integer literals are promoted to the other operand's type if they fit.
+ * 3. Pointer arithmetic is restricted to many-item pointers ([*]T).
+ *
+ * @param left_type Type of the left operand.
+ * @param right_type Type of the right operand.
+ * @param op The operator token.
+ * @param loc Source location for error reporting.
+ * @return The resulting Type*, or NULL if the operation is invalid.
+ */
 Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
-    // Try literal promotion first for all operators that support it
+    /* Try literal promotion first for all operators that support it.
+       Z98 allows numeric literals to be implicitly coerced to a concrete type
+       as long as the value fits. */
     Type* promoted_type = checkArithmeticWithLiteralPromotion(left_type, right_type, op);
     if (promoted_type) {
         return promoted_type;
     }
 
-    // Reject arithmetic/relational on function pointers
+    /* Reject arithmetic/relational on function pointers, except for equality. */
     if (left_type->kind == TYPE_FUNCTION_POINTER || right_type->kind == TYPE_FUNCTION_POINTER) {
-        if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
-            // Allow equality comparison between function pointers of compatible signatures
-            // areTypesCompatible handles signature matching for FUNCTION_POINTER.
-            if (!areTypesCompatible(left_type, right_type) && !areTypesCompatible(right_type, left_type)) {
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare function pointers with incompatible signatures");
-                return NULL;
-            }
-            return get_g_type_bool();
-        } else {
+        if (op != TOKEN_EQUAL_EQUAL && op != TOKEN_BANG_EQUAL) {
             unit.getErrorHandler().report(ERR_INVALID_OP_FUNCTION_POINTER, loc, ErrorHandler::getMessage(ERR_INVALID_OP_FUNCTION_POINTER), "Only equality comparisons (==, !=) are allowed.");
             return NULL;
         }
+
+        /* Allow equality comparison between function pointers of compatible signatures.
+           areTypesCompatible handles signature matching for FUNCTION_POINTER. */
+        if (!areTypesCompatible(left_type, right_type) && !areTypesCompatible(right_type, left_type)) {
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare function pointers with incompatible signatures");
+            return NULL;
+        }
+        return get_g_type_bool();
     }
 
     switch (op) {
@@ -331,45 +370,49 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 }
             }
 
-            // First, check for void pointer arithmetic (must be rejected)
+            /* Void pointer arithmetic is strictly prohibited in Z98 to match C89 rules. */
             if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
-                if ((left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID) ||
-                    (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID)) {
+                bool left_void_ptr = (left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID);
+                bool right_void_ptr = (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID);
+                if (left_void_ptr || right_void_ptr) {
                     unit.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, loc, ErrorHandler::getMessage(ERR_INVALID_VOID_POINTER_ARITHMETIC));
                     return NULL;
                 }
             }
 
+            /* Delegate pointer arithmetic to a specialized helper.
+               This handles ptr + int, int + ptr, and ptr - int. */
             Type* pointer_arithmetic_result = checkPointerArithmetic(left_type, right_type, op, loc);
             if (pointer_arithmetic_result) {
                 return pointer_arithmetic_result;
             }
             if (unit.getErrorHandler().hasErrors()) return NULL;
 
-            // Handle regular numeric arithmetic with strict C89 rules
+            /* Handle regular numeric arithmetic with strict C89 rules.
+               Z98 requires explicit casts for any mixed-type numeric operations. */
             if (isNumericType(left_type) && isNumericType(right_type)) {
-                // C89 strict rule: operands must be exactly the same type
+        /* C89 strict rule: operands must be exactly the same type. */
                 if (left_type == right_type) {
-                    return left_type; // Result type is same as operands
-                } else {
-                    // Different numeric types - not allowed in C89
-                    char left_type_str[64];
-                    char right_type_str[64];
-                    typeToString(left_type, left_type_str, sizeof(left_type_str));
-                    typeToString(right_type, right_type_str, sizeof(right_type_str));
-                    char msg_buffer[256];
-                    char* current = msg_buffer;
-                    size_t remaining = sizeof(msg_buffer);
-                    safe_append(current, remaining, "arithmetic operation '");
-                    safe_append(current, remaining, getTokenSpelling(op));
-                    safe_append(current, remaining, "' requires operands of the same type. Got '");
-                    safe_append(current, remaining, left_type_str);
-                    safe_append(current, remaining, "' and '");
-                    safe_append(current, remaining, right_type_str);
-                    safe_append(current, remaining, "'.");
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
-                    return NULL;
+            return left_type; /* Result type is same as operands. */
                 }
+
+        /* Different numeric types - not allowed in C89. */
+        char left_type_str[64];
+        char right_type_str[64];
+        typeToString(left_type, left_type_str, sizeof(left_type_str));
+        typeToString(right_type, right_type_str, sizeof(right_type_str));
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "arithmetic operation '");
+        safe_append(current, remaining, getTokenSpelling(op));
+        safe_append(current, remaining, "' requires operands of the same type. Got '");
+        safe_append(current, remaining, left_type_str);
+        safe_append(current, remaining, "' and '");
+        safe_append(current, remaining, right_type_str);
+        safe_append(current, remaining, "'.");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
+        return NULL;
             }
 
             // Neither pointer nor compatible numeric arithmetic
@@ -391,107 +434,100 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             return NULL;
         }
 
-// --- Comparison Operators ---
-        case TOKEN_EQUAL_EQUAL:
-        case TOKEN_BANG_EQUAL:
-        case TOKEN_LESS:
-        case TOKEN_LESS_EQUAL:
-        case TOKEN_GREATER:
-        case TOKEN_GREATER_EQUAL:
-        {
-            Type* promoted = checkComparisonWithLiteralPromotion(left_type, right_type);
-            if (promoted) {
-                return promoted;
+    /* --- Comparison Operators --- */
+    case TOKEN_EQUAL_EQUAL:
+    case TOKEN_BANG_EQUAL:
+    case TOKEN_LESS:
+    case TOKEN_LESS_EQUAL:
+    case TOKEN_GREATER:
+    case TOKEN_GREATER_EQUAL:
+    {
+        Type* promoted = checkComparisonWithLiteralPromotion(left_type, right_type);
+        if (promoted) return promoted;
+
+        /* Numeric comparisons. */
+        if (isNumericType(left_type) && isNumericType(right_type)) {
+            if (left_type == right_type) {
+                return get_g_type_bool();
             }
 
-            // Check for compatible types for comparison
-            if (isNumericType(left_type) && isNumericType(right_type)) {
-                if (left_type == right_type) {
-                    return get_g_type_bool(); // Result is always bool
-                } else if (isIntegerType(left_type) && isIntegerType(right_type)) {
-                    // Allow comparison between different integer types if one is an ErrorSet or literal
-                    if (left_type->kind == TYPE_INTEGER_LITERAL || right_type->kind == TYPE_INTEGER_LITERAL) {
-                        return get_g_type_bool();
-                    }
-                    // ErrorSets only allow equality comparisons
-                    if ((left_type->kind == TYPE_ERROR_SET || right_type->kind == TYPE_ERROR_SET) &&
-                        (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL)) {
-                        return get_g_type_bool();
-                    }
-                    // Fall through to error for mismatched standard integers (e.g. u8 == i32)
+            /* Special cases for integers: literals and ErrorSets. */
+            if (isIntegerType(left_type) && isIntegerType(right_type)) {
+                if (left_type->kind == TYPE_INTEGER_LITERAL || right_type->kind == TYPE_INTEGER_LITERAL) {
+                    return get_g_type_bool();
                 }
+                /* ErrorSets only allow equality comparisons. */
+                if ((left_type->kind == TYPE_ERROR_SET || right_type->kind == TYPE_ERROR_SET) &&
+                    (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL)) {
+                    return get_g_type_bool();
+                }
+            }
 
-                if (false) { // dummy for diff
-                } else {
-                    char left_type_str[64];
-                    char right_type_str[64];
-                    typeToString(left_type, left_type_str, sizeof(left_type_str));
-                    typeToString(right_type, right_type_str, sizeof(right_type_str));
-                    char msg_buffer[256];
-                    char* current = msg_buffer;
-                    size_t remaining = sizeof(msg_buffer);
-                    safe_append(current, remaining, "comparison operation '");
-                    safe_append(current, remaining, getTokenSpelling(op));
-                    safe_append(current, remaining, "' requires operands of the same type. Got '");
-                    safe_append(current, remaining, left_type_str);
-                    safe_append(current, remaining, "' and '");
-                    safe_append(current, remaining, right_type_str);
-                    safe_append(current, remaining, "'.");
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
-                    return NULL;
+            char left_type_str[64], right_type_str[64];
+            typeToString(left_type, left_type_str, sizeof(left_type_str));
+            typeToString(right_type, right_type_str, sizeof(right_type_str));
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "comparison operation '");
+            safe_append(current, remaining, getTokenSpelling(op));
+            safe_append(current, remaining, "' requires operands of the same type. Got '");
+            safe_append(current, remaining, left_type_str);
+            safe_append(current, remaining, "' and '");
+            safe_append(current, remaining, right_type_str);
+            safe_append(current, remaining, "'.");
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
+            return NULL;
+        }
+
+        /* Pointer comparisons. */
+        if ((left_type->kind == TYPE_POINTER || left_type->kind == TYPE_NULL) &&
+            (right_type->kind == TYPE_POINTER || right_type->kind == TYPE_NULL)) {
+
+            /* Equality operators: any compatible pointer types or void*. */
+            if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
+                if (left_type->kind == TYPE_NULL || right_type->kind == TYPE_NULL) {
+                    return get_g_type_bool();
                 }
-            }
-                // Pointer comparisons (equality only for ordering operators)
-            else if ((left_type->kind == TYPE_POINTER || left_type->kind == TYPE_NULL) &&
-                     (right_type->kind == TYPE_POINTER || right_type->kind == TYPE_NULL)) {
-                // Equality operators can work with any compatible pointer types
-                if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
-                    if (left_type->kind == TYPE_NULL || right_type->kind == TYPE_NULL) {
-                        return get_g_type_bool(); // Result is always bool
-                    }
-                    if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base) ||
-                        (left_type->as.pointer.base->kind == TYPE_VOID) ||
-                        (right_type->as.pointer.base->kind == TYPE_VOID)) {
-                        return get_g_type_bool(); // Result is always bool
-                    } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types");
-                        return NULL;
-                    }
+                if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base) ||
+                    (left_type->as.pointer.base->kind == TYPE_VOID) ||
+                    (right_type->as.pointer.base->kind == TYPE_VOID)) {
+                    return get_g_type_bool();
                 }
-                    // Ordering operators only work with compatible pointers (not void*)
-                else {
-                    if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
-                        return get_g_type_bool(); // Result is always bool
-                    } else {
-                        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types for ordering");
-                        return NULL;
-                    }
-                }
-            }
-                // Boolean comparisons
-            else if (left_type->kind == TYPE_BOOL && right_type->kind == TYPE_BOOL) {
-                return get_g_type_bool(); // Result is always bool
-            }
-                // If types are not compatible for comparison
-            else {
-                char left_type_str[64];
-                char right_type_str[64];
-                typeToString(left_type, left_type_str, sizeof(left_type_str));
-                typeToString(right_type, right_type_str, sizeof(right_type_str));
-                char msg_buffer[256];
-                char* current = msg_buffer;
-                size_t remaining = sizeof(msg_buffer);
-                safe_append(current, remaining, "invalid operands for comparison operator '");
-                safe_append(current, remaining, getTokenSpelling(op));
-                safe_append(current, remaining, "': '");
-                safe_append(current, remaining, left_type_str);
-                safe_append(current, remaining, "' and '");
-                safe_append(current, remaining, right_type_str);
-                safe_append(current, remaining, "'");
-                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types");
                 return NULL;
             }
+
+            /* Ordering operators: compatible pointers (not void*). */
+            if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
+                return get_g_type_bool();
+            }
+            unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types for ordering");
+            return NULL;
         }
+
+        /* Boolean comparisons. */
+        if (left_type->kind == TYPE_BOOL && right_type->kind == TYPE_BOOL) {
+            return get_g_type_bool();
+        }
+
+        /* Incompatible types for comparison. */
+        char left_type_str[64], right_type_str[64];
+        typeToString(left_type, left_type_str, sizeof(left_type_str));
+        typeToString(right_type, right_type_str, sizeof(right_type_str));
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "invalid operands for comparison operator '");
+        safe_append(current, remaining, getTokenSpelling(op));
+        safe_append(current, remaining, "': '");
+        safe_append(current, remaining, left_type_str);
+        safe_append(current, remaining, "' and '");
+        safe_append(current, remaining, right_type_str);
+        safe_append(current, remaining, "'");
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), msg_buffer);
+        return NULL;
+    }
 
 // --- Bitwise Operators ---
         case TOKEN_AMPERSAND:
@@ -607,30 +643,42 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
 }
 
 Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node) {
-    // Special handling for std.debug.print (Task 225.2)
-    const char* callee_str = exprToString(node->callee);
+    const char* callee_str;
+    Type* callee_type;
+    IndirectType ind_type;
+    size_t expected_args;
+    size_t actual_args;
+    bool is_generic_call;
+    CallSiteEntry entry;
+    ResolutionResult res;
+    int entry_id;
+    size_t i;
+
+    /* Special handling for std.debug.print (Task 225.2). */
+    callee_str = exprToString(node->callee);
     if (plat_strcmp(callee_str, "std.debug.print") == 0 ||
         plat_strcmp(callee_str, "debug.print") == 0) {
+
         if (node->args->length() != 2) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "std.debug.print expects 2 arguments");
         } else {
-            visit((*node->args)[0]); // format string
-            Type* tuple_type = visit((*node->args)[1]); // tuple literal
+            visit((*node->args)[0]); /* format string */
+            Type* tuple_type = visit((*node->args)[1]); /* tuple literal */
             if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
                  unit.getErrorHandler().report(ERR_TYPE_MISMATCH, (*node->args)[1]->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "std.debug.print second argument must be a tuple literal");
             }
         }
-        // Even if we lower it, we still want to resolve the callee to avoid undefined identifier errors
-        // if the user provided a mock.
+        /* Even if we lower it, we still want to resolve the callee to avoid undefined identifier errors
+           if the user provided a mock. */
     }
 
-    Type* callee_type = visit(node->callee);
+    callee_type = visit(node->callee);
 
-    // Detect and catalogue generic instantiation if this is a generic call
+    /* Detect and catalogue generic instantiation if this is a generic call. */
     catalogGenericInstantiation(node);
 
-    // --- Task 166: Indirect Call Detection ---
-    IndirectType ind_type = detectIndirectType(node->callee);
+    /* --- Task 166: Indirect Call Detection --- */
+    ind_type = detectIndirectType(node->callee);
     if (ind_type != NOT_INDIRECT) {
         IndirectCallInfo info;
         info.location = node->callee->loc;
@@ -647,8 +695,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
     // --- End Task 166 ---
 
-    // --- NEW LOGIC FOR TASK 119 ---
-    // Check if the callee is a direct identifier call to a banned function.
+    /* Check if the callee is a direct identifier call to a banned function. */
     if (node->callee->type == NODE_IDENTIFIER) {
         const char* callee_name = node->callee->as.identifier.name;
         static const char* banned_functions[] = {
@@ -668,93 +715,85 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             }
         }
     }
-    // --- END NEW LOGIC FOR TASK 119 ---
 
     if (!callee_type) {
-        // Error already reported (e.g., undefined function)
+        /* Error already reported (e.g., undefined function). */
         int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
         unit.getCallSiteLookupTable().markUnresolved(entry_id, "Callee type could not be resolved", CALL_DIRECT);
         return NULL;
     }
 
-    // Handle built-ins early (Task 168/186)
-    if (node->callee->type == NODE_IDENTIFIER) {
+    /* Handle built-ins early (Task 168/186). */
+    if (node->callee->type == NODE_IDENTIFIER && node->callee->as.identifier.name[0] == '@') {
         const char* name = node->callee->as.identifier.name;
-        if (name[0] == '@') {
-            if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
-                if (node->args->length() != 1) {
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 1 argument");
-                    return get_g_type_usize();
-                }
 
-                ASTNode* arg_node = (*node->args)[0];
-                Type* arg_type = visit(arg_node);
-                if (!arg_type) return NULL;
-
-                // If the identifier was a type name, visitIdentifier returned TYPE_TYPE
-                // and stored the actual type in node->resolved_type.
-                // If it was a pointer type or other type expression, visit returned the type itself.
-                if (arg_type->kind == TYPE_TYPE) {
-                    arg_type = arg_node->resolved_type;
-                }
-
-                if (!isTypeComplete(arg_type)) {
-                    unit.getErrorHandler().report(ERR_SIZE_OF_INCOMPLETE_TYPE, node->callee->loc, ErrorHandler::getMessage(ERR_SIZE_OF_INCOMPLETE_TYPE));
-                    return NULL;
-                }
-
-                u64 value = (plat_strcmp(name, "@sizeOf") == 0) ? arg_type->size : arg_type->alignment;
-
-                // Perform in-place modification to integer literal (Task 186)
-                // 'parent' is the actual ASTNode for the NODE_FUNCTION_CALL
-                parent->type = NODE_INTEGER_LITERAL;
-                parent->as.integer_literal.value = value;
-                parent->as.integer_literal.is_unsigned = true;
-                parent->as.integer_literal.is_long = false;
-                parent->as.integer_literal.resolved_type = get_g_type_usize();
-                parent->as.integer_literal.original_name = NULL;
-                parent->resolved_type = get_g_type_usize();
-
-                return parent->resolved_type;
+        if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
+            if (node->args->length() != 1) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 1 argument");
+                return get_g_type_usize();
             }
 
-            if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
-                if (node->args->length() != 2) {
-                    unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 2 arguments");
-                    return get_g_type_void();
-                }
-                Type* target_type = visit((*node->args)[0]);
-                if (!target_type) {
-                    return NULL;
-                }
-                // If the identifier was a type name, visitIdentifier returned TYPE_TYPE
-                // and stored the actual type in node->resolved_type.
-                // If it was a pointer type or other type expression, visit returned the type itself.
-                if (target_type->kind == TYPE_TYPE) {
-                    target_type = (*node->args)[0]->resolved_type;
-                }
+            ASTNode* arg_node = (*node->args)[0];
+            Type* arg_type = visit(arg_node);
+            if (!arg_type) return NULL;
 
-                visit((*node->args)[1]); // Visit the value being cast
-
-                return target_type;
+            /* If the identifier was a type name, visitIdentifier returned TYPE_TYPE
+               and stored the actual type in node->resolved_type. */
+            if (arg_type->kind == TYPE_TYPE) {
+                arg_type = arg_node->resolved_type;
             }
 
+            if (!isTypeComplete(arg_type)) {
+                unit.getErrorHandler().report(ERR_SIZE_OF_INCOMPLETE_TYPE, node->callee->loc, ErrorHandler::getMessage(ERR_SIZE_OF_INCOMPLETE_TYPE));
+                return NULL;
+            }
 
-            // Register in call site table as builtin
-            int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
-            unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
+            u64 value = (plat_strcmp(name, "@sizeOf") == 0) ? arg_type->size : arg_type->alignment;
 
-            // Report error but don't abort, let validation continue
-            char msg_buffer[256];
-            char* current = msg_buffer;
-            size_t remaining = sizeof(msg_buffer);
-            safe_append(current, remaining, "Built-in '");
-            safe_append(current, remaining, name);
-            safe_append(current, remaining, "' not supported in bootstrap");
-            unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit.getArena(), msg_buffer);
+            /* Perform in-place modification to integer literal (Task 186).
+               'parent' is the actual ASTNode for the NODE_FUNCTION_CALL. */
+            parent->type = NODE_INTEGER_LITERAL;
+            parent->as.integer_literal.value = value;
+            parent->as.integer_literal.is_unsigned = true;
+            parent->as.integer_literal.is_long = false;
+            parent->as.integer_literal.resolved_type = get_g_type_usize();
+            parent->as.integer_literal.original_name = NULL;
+            parent->resolved_type = get_g_type_usize();
 
-            return get_g_type_void();
+            return parent->resolved_type;
         }
+
+        if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+            if (node->args->length() != 2) {
+                unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 2 arguments");
+                return get_g_type_void();
+            }
+            Type* target_type = visit((*node->args)[0]);
+            if (!target_type) return NULL;
+
+            if (target_type->kind == TYPE_TYPE) {
+                target_type = (*node->args)[0]->resolved_type;
+            }
+
+            visit((*node->args)[1]); /* Visit the value being cast */
+            return target_type;
+        }
+
+
+        /* Register in call site table as builtin. */
+        int entry_id = unit.getCallSiteLookupTable().addEntry(parent, current_fn_name ? current_fn_name : "global");
+        unit.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
+
+        /* Report error but don't abort, let validation continue. */
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "Built-in '");
+        safe_append(current, remaining, name);
+        safe_append(current, remaining, "' not supported in bootstrap");
+        unit.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit.getArena(), msg_buffer);
+
+        return get_g_type_void();
     }
 
     if (callee_type->kind != TYPE_FUNCTION && callee_type->kind != TYPE_FUNCTION_POINTER) {
@@ -766,11 +805,11 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         return get_g_type_void();
     }
 
-    size_t expected_args = (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.params->length() : callee_type->as.function_pointer.param_types->length();
-    size_t actual_args = node->args->length();
+    expected_args = (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.params->length() : callee_type->as.function_pointer.param_types->length();
+    actual_args = node->args->length();
 
     if (actual_args != expected_args) {
-        bool is_generic_call = false;
+        is_generic_call = false;
         if (node->callee->type == NODE_IDENTIFIER) {
             Symbol* sym = unit.getSymbolTable().lookup(node->callee->as.identifier.name);
             if (sym && sym->is_generic) {
@@ -793,11 +832,12 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    for (size_t i = 0; i < actual_args; ++i) {
+    for (i = 0; i < actual_args; ++i) {
         ASTNode* arg_node = (*node->args)[i];
         Type* arg_type = visit(arg_node);
+        Type* param_type;
         if (i >= expected_args) continue;
-        Type* param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
+        param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         if (!arg_type) {
             // Error in argument expression, already reported.
@@ -852,8 +892,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    // --- Task 165: Call Site Resolution Refactored ---
-    CallSiteEntry entry;
+    /* --- Task 165: Call Site Resolution Refactored --- */
     entry.call_node = parent;
     entry.context = current_fn_name ? current_fn_name : "global";
     entry.mangled_name = NULL;
@@ -861,8 +900,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     entry.resolved = false;
     entry.error_if_unresolved = NULL;
 
-    ResolutionResult res = resolveCallSite(node, entry);
-    int entry_id = unit.getCallSiteLookupTable().addEntry(parent, entry.context);
+    res = resolveCallSite(node, entry);
+    entry_id = unit.getCallSiteLookupTable().addEntry(parent, entry.context);
 
     switch (res) {
         case RESOLVED:
@@ -893,39 +932,44 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 }
 
 Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
-    // Step 0: Ensure the l-value is a valid l-value.
-    // This check is implicitly handled by isLValueConst and the type checks below.
-    // Identifiers, array accesses, and pointer dereferences are the main valid l-values.
+    Type* lvalue_type;
+    Type* rvalue_type;
+    Type* promoted;
+    ASTNode* slice_node;
 
-    // First, resolve the type of the left-hand side.
-    Type* lvalue_type = visit(node->lvalue);
+    /* Step 0: Ensure the l-value is a valid l-value.
+       This check is implicitly handled by isLValueConst and the type checks below.
+       Identifiers, array accesses, and pointer dereferences are the main valid l-values. */
+
+    /* First, resolve the type of the left-hand side. */
+    lvalue_type = visit(node->lvalue);
     if (!lvalue_type) {
         return NULL; // Error already reported (e.g., undeclared variable)
     }
 
-    // Step 1: Check if the l-value is const.
+    /* Step 1: Check if the l-value is const. */
     if (isLValueConst(node->lvalue)) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot assign to a constant value (l-value is const).");
         return NULL;
     }
 
-    // Step 2: Resolve the type of the right-hand side.
-    Type* rvalue_type = visit(node->rvalue);
+    /* Step 2: Resolve the type of the right-hand side. */
+    rvalue_type = visit(node->rvalue);
     if (!rvalue_type) {
         return NULL; // Error already reported.
     }
 
-    // Special handling for integer literal promotion in assignment
-    Type* promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
+    /* Special handling for integer literal promotion in assignment. */
+    promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
     if (promoted) {
         rvalue_type = promoted;
     }
 
-    // Implicit Array to Slice coercion
+    /* Implicit Array to Slice coercion. */
     if (lvalue_type->kind == TYPE_SLICE && rvalue_type->kind == TYPE_ARRAY) {
         if (areTypesEqual(lvalue_type->as.slice.element_type, rvalue_type->as.array.element_type)) {
-            // Wrap in synthetic slice node
-            ASTNode* slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
+            /* Wrap in synthetic slice node. */
+            slice_node = (ASTNode*)unit.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));
             slice_node->type = NODE_ARRAY_SLICE;
             slice_node->loc = node->rvalue->loc;
@@ -940,39 +984,46 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         }
     }
 
-    // Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules.
+    /* Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules. */
     if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
         // IsTypeAssignableTo already reports a detailed error.
         return NULL;
     }
 
-    // The type of an assignment expression is the type of the l-value.
+    /* The type of an assignment expression is the type of the l-value. */
     return lvalue_type;
 }
 
 Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
-    // First, resolve the type of the left-hand side.
-    Type* lvalue_type = visit(node->lvalue);
+    Type* lvalue_type;
+    Type* rvalue_type;
+    Type* r_ptr;
+    Type right_lit;
+    bool used_right_lit;
+    TokenType binary_op;
+    Type* result_type;
+
+    /* First, resolve the type of the left-hand side. */
+    lvalue_type = visit(node->lvalue);
     if (!lvalue_type) {
         return NULL; // Error already reported.
     }
 
-    // Step 1: Check if the l-value is const.
+    /* Step 1: Check if the l-value is const. */
     if (isLValueConst(node->lvalue)) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot assign to a constant value (l-value is const).");
         return NULL;
     }
 
-    // Step 2: Resolve the type of the right-hand side.
-    Type* rvalue_type = visit(node->rvalue);
+    /* Step 2: Resolve the type of the right-hand side. */
+    rvalue_type = visit(node->rvalue);
     if (!rvalue_type) {
         return NULL; // Error already reported.
     }
 
-    // Special handling for literals to support promotion in compound assignments.
-    Type* r_ptr = rvalue_type;
-    Type right_lit;
-    bool used_right_lit = false;
+    /* Special handling for literals to support promotion in compound assignments. */
+    r_ptr = rvalue_type;
+    used_right_lit = false;
 
     if (node->rvalue->type == NODE_INTEGER_LITERAL) {
         right_lit.kind = TYPE_INTEGER_LITERAL;
@@ -981,8 +1032,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
         used_right_lit = true;
     }
 
-    // Step 3: Map the compound operator to a binary operator.
-    TokenType binary_op;
+    /* Step 3: Map the compound operator to a binary operator. */
     switch (node->op) {
         case TOKEN_PLUS_EQUAL:      binary_op = TOKEN_PLUS; break;
         case TOKEN_MINUS_EQUAL:     binary_op = TOKEN_MINUS; break;
@@ -999,23 +1049,23 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
             return NULL;
     }
 
-    // Step 4: Check if the underlying binary operation is valid.
-    Type* result_type = checkBinaryOperation(lvalue_type, r_ptr, binary_op, node->lvalue->loc);
+    /* Step 4: Check if the underlying binary operation is valid. */
+    result_type = checkBinaryOperation(lvalue_type, r_ptr, binary_op, node->lvalue->loc);
     if (!result_type) {
         // Error already reported by checkBinaryOperation. We can just return.
         return NULL;
     }
 
-    // Ensure we don't return a pointer to our stack-allocated literal type.
+    /* Ensure we don't return a pointer to our stack-allocated literal type. */
     if (used_right_lit && result_type == &right_lit) result_type = rvalue_type;
 
-    // Step 5: Ensure the result of the operation can be assigned back to the l-value.
+    /* Step 5: Ensure the result of the operation can be assigned back to the l-value. */
     if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
         // IsTypeAssignableTo already reports a detailed error.
         return NULL;
     }
 
-    // The type of a compound assignment expression is the type of the l-value.
+    /* The type of a compound assignment expression is the type of the l-value. */
     return lvalue_type;
 }
 
@@ -1125,12 +1175,29 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
-    Type* original_base_type = visit(node->array);
-    if (!original_base_type) return NULL;
-    Type* base_type = original_base_type;
+    Type* original_base_type;
+    Type* base_type;
+    bool reached_via_const_ptr;
+    Type* element_type;
+    bool is_const;
+    Type* start_type;
+    Type* end_type;
+    i64 start_val;
+    bool start_const;
+    i64 end_val;
+    bool end_const;
+    ASTNode* start_expr;
+    ASTNode* access;
+    ASTNode* ptr_field;
+    ASTNode* base_size;
+    ASTNode* len_field;
 
-    bool reached_via_const_ptr = false;
-    // Auto-dereference for pointer to array
+    original_base_type = visit(node->array);
+    if (!original_base_type) return NULL;
+    base_type = original_base_type;
+
+    reached_via_const_ptr = false;
+    /* Auto-dereference for pointer to array. */
     if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_ARRAY) {
         reached_via_const_ptr = base_type->as.pointer.is_const;
         base_type = base_type->as.pointer.base;
@@ -1142,8 +1209,8 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         return NULL;
     }
 
-    Type* element_type = NULL;
-    bool is_const = false;
+    element_type = NULL;
+    is_const = false;
     if (base_type->kind == TYPE_ARRAY) {
         element_type = base_type->as.array.element_type;
         if (original_base_type->kind == TYPE_POINTER) {
@@ -1159,15 +1226,15 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         is_const = base_type->as.pointer.is_const;
     }
 
-    // Resolve start and end
+    /* Resolve start and end. */
     if (node->start) {
-        Type* start_type = visit(node->start);
+        start_type = visit(node->start);
         if (start_type && !isIntegerType(start_type) && start_type->kind != TYPE_INTEGER_LITERAL) {
              unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "Slice start index must be an integer");
         }
     }
     if (node->end) {
-        Type* end_type = visit(node->end);
+        end_type = visit(node->end);
         if (end_type && !isIntegerType(end_type) && end_type->kind != TYPE_INTEGER_LITERAL) {
              unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->end->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit.getArena(), "Slice end index must be an integer");
         }
@@ -1180,12 +1247,12 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         }
     }
 
-    // Bounds checking for arrays
+    /* Bounds checking for arrays. */
     if (base_type->kind == TYPE_ARRAY) {
-        i64 start_val = 0;
-        bool start_const = node->start ? evaluateConstantExpression(node->start, &start_val) : true;
-        i64 end_val = (i64)base_type->as.array.size;
-        bool end_const = node->end ? evaluateConstantExpression(node->end, &end_val) : true;
+        start_val = 0;
+        start_const = node->start ? evaluateConstantExpression(node->start, &start_val) : true;
+        end_val = (i64)base_type->as.array.size;
+        end_const = node->end ? evaluateConstantExpression(node->end, &end_val) : true;
 
         if (start_const && end_const) {
             if (start_val < 0 || end_val < start_val || (u64)end_val > base_type->as.array.size) {
@@ -1194,35 +1261,35 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         }
     }
 
-    // Codegen Preparation
-    ASTNode* start_expr = node->start ? node->start : createIntegerLiteral(0, get_g_type_usize(), node->array->loc);
+    /* Codegen Preparation. */
+    start_expr = node->start ? node->start : createIntegerLiteral(0, get_g_type_usize(), node->array->loc);
 
-    // base_ptr
+    /* base_ptr. */
     if (base_type->kind == TYPE_ARRAY) {
-        // &base[start]
-        ASTNode* access = createArrayAccess(node->array, start_expr, element_type, node->array->loc);
+        /* &base[start] */
+        access = createArrayAccess(node->array, start_expr, element_type, node->array->loc);
         node->base_ptr = createUnaryOp(access, TOKEN_AMPERSAND, createPointerType(unit.getArena(), element_type, is_const, false, &unit.getTypeInterner()), node->array->loc);
     } else if (base_type->kind == TYPE_SLICE) {
-        // base.ptr + start
-        ASTNode* ptr_field = createMemberAccess(node->array, "ptr", createPointerType(unit.getArena(), element_type, is_const, true, &unit.getTypeInterner()), node->array->loc);
+        /* base.ptr + start */
+        ptr_field = createMemberAccess(node->array, "ptr", createPointerType(unit.getArena(), element_type, is_const, true, &unit.getTypeInterner()), node->array->loc);
         node->base_ptr = createBinaryOp(ptr_field, start_expr, TOKEN_PLUS, ptr_field->resolved_type, node->array->loc);
     } else { // Many-item pointer
         // base + start
         node->base_ptr = createBinaryOp(node->array, start_expr, TOKEN_PLUS, node->array->resolved_type, node->array->loc);
     }
 
-    // len
+    /* len. */
     if (node->end) {
-        // end - start
+        /* end - start */
         node->len = createBinaryOp(node->end, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
     } else {
         if (base_type->kind == TYPE_ARRAY) {
-            // base_size - start
-            ASTNode* base_size = createIntegerLiteral(base_type->as.array.size, get_g_type_usize(), node->array->loc);
+            /* base_size - start */
+            base_size = createIntegerLiteral(base_type->as.array.size, get_g_type_usize(), node->array->loc);
             node->len = createBinaryOp(base_size, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
         } else if (base_type->kind == TYPE_SLICE) {
-            // base.len - start
-            ASTNode* len_field = createMemberAccess(node->array, "len", get_g_type_usize(), node->array->loc);
+            /* base.len - start */
+            len_field = createMemberAccess(node->array, "len", get_g_type_usize(), node->array->loc);
             node->len = createBinaryOp(len_field, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
         }
     }
@@ -1506,7 +1573,7 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
 
 Type* TypeChecker::visitBreakStmt(ASTNode* node) {
     ASTBreakStmtNode& break_node = node->as.break_stmt;
-    if (in_defer) {
+    if (in_defer_) {
         unit.getErrorHandler().report(ERR_BREAK_INSIDE_DEFER, node->loc, ErrorHandler::getMessage(ERR_BREAK_INSIDE_DEFER));
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_BREAK_OUTSIDE_LOOP));
@@ -1535,7 +1602,7 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
 
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
     ASTContinueStmtNode& cont_node = node->as.continue_stmt;
-    if (in_defer) {
+    if (in_defer_) {
         unit.getErrorHandler().report(ERR_CONTINUE_INSIDE_DEFER, node->loc, ErrorHandler::getMessage(ERR_CONTINUE_INSIDE_DEFER));
     } else if (current_loop_depth == 0) {
         unit.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_CONTINUE_OUTSIDE_LOOP));
@@ -1563,7 +1630,7 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
 }
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
-    if (in_defer) {
+    if (in_defer_) {
         unit.getErrorHandler().report(ERR_RETURN_INSIDE_DEFER, node->expression ? node->expression->loc : parent->loc, ErrorHandler::getMessage(ERR_RETURN_INSIDE_DEFER));
     }
 
@@ -1625,10 +1692,10 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
     // Semantic validation: Ensure break/continue/return are not inside defer
-    bool old_in_defer = in_defer;
-    in_defer = true;
+    bool old_in_defer = in_defer_;
+    in_defer_ = true;
     visit(node->statement);
-    in_defer = old_in_defer;
+    in_defer_ = old_in_defer;
     return NULL;
 }
 
@@ -1751,7 +1818,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
 
     type_resolution_depth_++;
-    if (type_resolution_depth_ > 100) {
+    if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
         fatalError("Recursion limit reached during type resolution");
     }
 
@@ -1805,26 +1872,34 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 }
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
-    Type* cond_type = visit(node->expression);
+    Type* cond_type;
+    bool is_tagged_union;
+    Type* tag_type;
+    bool has_else;
+    Type* common_type;
+    bool has_non_noreturn;
+    size_t i;
+
+    cond_type = visit(node->expression);
     if (!cond_type) return NULL;
 
     if (cond_type->kind == TYPE_PLACEHOLDER) {
         cond_type = resolvePlaceholder(cond_type);
     }
 
-    bool is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
-    Type* tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
+    is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
 
     if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Switch condition must be tagged union, integer, enum, or boolean type");
         return NULL;
     }
 
-    bool has_else = false;
-    Type* common_type = NULL;
-    bool has_non_noreturn = false;
+    has_else = false;
+    common_type = NULL;
+    has_non_noreturn = false;
 
-    for (size_t i = 0; i < node->prongs->length(); ++i) {
+    for (i = 0; i < node->prongs->length(); ++i) {
         ASTSwitchProngNode* prong = (*node->prongs)[i];
 
         if (prong->is_else) {
@@ -1835,17 +1910,19 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 Type* item_type = NULL;
 
                 if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
-                    // Resolve .Tag against union's tag type
+                    /* Resolve .Tag against union's tag type. */
                     if (!tag_type || tag_type->kind != TYPE_ENUM) {
                         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Union tag type must be an enum");
                         continue;
                     }
+
                     const char* tag_name = item_expr->as.member_access->field_name;
                     DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
                     if (!members) {
                         unit.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Union tag enum has no members");
                         continue;
                     }
+
                     bool found = false;
                     size_t member_idx = 0;
                     for (size_t k = 0; k < members->length(); ++k) {
@@ -1855,12 +1932,13 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                             break;
                         }
                     }
+
                     if (!found) {
                         unit.getErrorHandler().report(ERR_UNDEFINED_ENUM_MEMBER, item_expr->loc, ErrorHandler::getMessage(ERR_UNDEFINED_ENUM_MEMBER), "Tag not found in union");
                         continue;
                     }
 
-                    // Constant fold to integer literal of the tag
+                    /* Constant fold to integer literal of the tag. */
                     item_expr->type = NODE_INTEGER_LITERAL;
                     item_expr->as.integer_literal.value = (u64)(*members)[member_idx].value;
                     item_expr->as.integer_literal.resolved_type = tag_type;
@@ -1905,21 +1983,20 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             } else if (prong->items->length() != 1) {
                 unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture in switch prong only allowed with a single case");
             } else {
-
             ASTNode* item_expr = (*prong->items)[0];
             const char* field_name = item_expr->as.integer_literal.original_name;
             Type* field_type = findStructField(cond_type, field_name);
 
             unit.getSymbolTable().enterScope();
-                Symbol sym = SymbolBuilder(unit.getArena())
-                    .withName(prong->capture_name)
-                    .ofType(SYMBOL_VARIABLE)
-                    .withType(field_type ? field_type : get_g_type_void())
-                    .atLocation(node->expression->loc)
-                    .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
-                    .build();
-                unit.getSymbolTable().insert(sym);
-                prong->capture_sym = unit.getSymbolTable().lookupInCurrentScope(prong->capture_name);
+            Symbol sym = SymbolBuilder(unit.getArena())
+                .withName(prong->capture_name)
+                .ofType(SYMBOL_VARIABLE)
+                .withType(field_type ? field_type : get_g_type_void())
+                .atLocation(node->expression->loc)
+                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+                .build();
+            unit.getSymbolTable().insert(sym);
+            prong->capture_sym = unit.getSymbolTable().lookupInCurrentScope(prong->capture_name);
             }
         }
 
@@ -1957,14 +2034,32 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     return common_type;
 }
 
+/**
+ * @brief Performs type checking for variable and constant declarations.
+ *
+ * This is one of the most complex visitors in the TypeChecker as it handles:
+ * - Recursive type resolution via placeholders.
+ * - Type inference from initializers.
+ * - Integer literal promotion.
+ * - Implicit array-to-slice coercion.
+ */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
-    // Avoid double resolution but ensure flags are set
-    Symbol* existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
-    Type* placeholder = NULL;
+    Symbol* existing_sym;
+    Type* placeholder;
+    const char* prev_struct_name;
+    Type* declared_type;
+    i64 const_val;
+    Type* initializer_type;
+    bool is_local;
+    const char* mangled;
+
+    /* Avoid double resolution but ensure flags are set. */
+    existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
+    placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             if (existing_sym->symbol_type->as.placeholder.is_resolving) {
-                return existing_sym->symbol_type; // Recursive call encountered placeholder
+                return existing_sym->symbol_type; /* Recursive call encountered placeholder */
             }
             placeholder = existing_sym->symbol_type;
         } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
@@ -1972,8 +2067,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    // Capture struct/union name if it's a const declaration
-    const char* prev_struct_name = current_struct_name_;
+    /* Capture struct/union name if it's a const declaration. */
+    prev_struct_name = current_struct_name_;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
         current_struct_name_ = node->name;
@@ -2010,12 +2105,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.is_resolving = true;
     }
 
-    Type* declared_type = node->type ? visit(node->type) : NULL;
+    declared_type = node->type ? visit(node->type) : NULL;
 
-    // Reject anonymous structs/enums in variable declarations
+    /* Reject anonymous structs/enums in variable declarations. */
     if (declared_type && !node->is_const) {
-        if ((declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION || declared_type->kind == TYPE_ENUM) &&
-            !declared_type->as.struct_details.name) {
+        bool is_aggregate = (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION || declared_type->kind == TYPE_ENUM);
+        if (is_aggregate && !declared_type->as.struct_details.name) {
             unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "anonymous structs/enums not allowed in variable declarations");
             return NULL;
         }
@@ -2023,21 +2118,16 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
         unit.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_VARIABLE_CANNOT_BE_VOID));
-        return NULL; // Stop processing this declaration
+        return NULL; /* Stop processing this declaration */
     }
 
-    if (declared_type && declared_type->kind == TYPE_NORETURN) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "variables cannot be declared as 'noreturn'");
+    if (declared_type && (declared_type->kind == TYPE_NORETURN || declared_type->kind == TYPE_MODULE)) {
+        const char* msg = (declared_type->kind == TYPE_NORETURN) ? "variables cannot be declared as 'noreturn'" : "module is not a type";
+        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), msg);
         return NULL;
     }
 
-    if (declared_type && declared_type->kind == TYPE_MODULE) {
-        unit.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "module is not a type");
-        return NULL;
-    }
-
-    // Special handling for integer literal initializers to support C89-style assignments.
-    i64 const_val;
+    /* Special handling for integer literal initializers to support C89-style assignments. */
     if (node->initializer && evaluateConstantExpression(node->initializer, &const_val)) {
         // Create a temporary literal type to pass to the checker.
         Type literal_type;
@@ -2084,8 +2174,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             declared_type = visit(node->initializer);
         }
     } else {
-        // For all other cases, use the standard assignment validation.
-        Type* initializer_type = NULL;
+        /* For all other cases, use the standard assignment validation. */
+        initializer_type = NULL;
 
         // Special case for anonymous struct/array initializers
         if (node->initializer && node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
@@ -2107,7 +2197,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             initializer_type = visit(node->initializer);
         }
 
-        // If we created a placeholder, mutate it in-place now
+        /* If we created a placeholder, mutate it in-place now. */
         if (placeholder && initializer_type) {
             placeholder->kind = initializer_type->kind;
             placeholder->size = initializer_type->size;
@@ -2115,11 +2205,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             if (initializer_type->c_name) {
                 placeholder->c_name = initializer_type->c_name;
             }
-            // Capture these before overwriting the union
+            /* Capture the union fields before overwriting. */
             placeholder->as = initializer_type->as;
             initializer_type = placeholder;
-            // No longer a placeholder, don't touch as.placeholder.is_resolving
-            // as it will corrupt the new type's data (e.g. tag_type).
+            /* In Z98, once a placeholder is resolved, it becomes the real type.
+               We don't clear is_resolving here because the 'as' union overlap
+               means it would corrupt the new type's data (e.g., tag_type). */
         }
 
         if (declared_type) {
@@ -2155,7 +2246,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     current_struct_name_ = prev_struct_name;
 
-    // Update the symbol in the current scope with flags
+    /* Update the symbol in the current scope with flags. */
     existing_sym = unit.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
         existing_sym->symbol_type = declared_type;
@@ -2166,15 +2257,15 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             existing_sym->mangled_name = unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
         }
 
-        // If we are inside a function body, current_fn_return_type will be non-NULL
-        bool is_local = (current_fn_return_type != NULL);
+        /* If we are inside a function body, current_fn_return_type will be non-NULL. */
+        is_local = (current_fn_return_type != NULL);
         existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
         node->symbol = existing_sym;
     } else {
-        // If not found (e.g. injected in tests), create and insert
+        /* If not found (e.g. injected in tests), create and insert. */
         if (declared_type) {
-            bool is_local = (current_fn_return_type != NULL);
-            const char* mangled = (node->is_extern) ? node->name :
+            is_local = (current_fn_return_type != NULL);
+            mangled = (node->is_extern) ? node->name :
                                  unit.getNameMangler().mangleFunction(node->name, NULL, 0, unit.getCurrentModule());
 
             Symbol var_symbol = SymbolBuilder(unit.getArena())
@@ -2196,19 +2287,27 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 }
 
 Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
-    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    Symbol* fn_symbol;
+    void* mem;
+    DynamicArray<Type*>* param_types;
+    bool all_params_valid;
+    size_t i;
+    Type* return_type;
+    Type* function_type;
+
+    fn_symbol = unit.getSymbolTable().lookup(node->name);
     if (fn_symbol && fn_symbol->symbol_type) {
-        return fn_symbol->symbol_type; // Already resolved
+        return fn_symbol->symbol_type; /* Already resolved. */
     }
 
     unit.getSymbolTable().enterScope();
 
-    // Resolve parameter types and register them immediately
-    void* mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
-    DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit.getArena());
-    bool all_params_valid = true;
+    /* Resolve parameter types and register them immediately. */
+    mem = unit.getArena().alloc(sizeof(DynamicArray<Type*>));
+    param_types = new (mem) DynamicArray<Type*>(unit.getArena());
+    all_params_valid = true;
 
-    for (size_t i = 0; i < node->params->length(); ++i) {
+    for (i = 0; i < node->params->length(); ++i) {
         ASTParamDeclNode* param_node = (*node->params)[i];
         Type* param_type = visit(param_node->type);
         if (param_type) {
@@ -2229,8 +2328,8 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         }
     }
 
-    // Resolve return type (now that parameters are in scope)
-    Type* return_type = visit(node->return_type);
+    /* Resolve return type (now that parameters are in scope). */
+    return_type = visit(node->return_type);
 
     unit.getSymbolTable().exitScope();
 
@@ -2245,8 +2344,8 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         return NULL;
     }
 
-    // Create the function type and update the symbol
-    Type* function_type = createFunctionType(unit.getArena(), param_types, return_type);
+    /* Create the function type and update the symbol. */
+    function_type = createFunctionType(unit.getArena(), param_types, return_type);
     if (fn_symbol) {
         fn_symbol->symbol_type = function_type;
         if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
@@ -2260,27 +2359,34 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 }
 
 Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
-    Symbol* fn_symbol = unit.getSymbolTable().lookup(node->name);
+    Symbol* fn_symbol;
+    Type* prev_fn_return_type;
+    const char* prev_fn_name;
+    int saved_next_label_id;
+    DynamicArray<Type*>* param_types;
+    size_t i;
+
+    fn_symbol = unit.getSymbolTable().lookup(node->name);
     if (!fn_symbol || !fn_symbol->symbol_type) {
-        // Try to resolve signature if not already done
+        /* Try to resolve signature if not already done. */
         if (!visitFnSignature(node)) return NULL;
         fn_symbol = unit.getSymbolTable().lookup(node->name);
     }
 
-    Type* prev_fn_return_type = current_fn_return_type;
-    const char* prev_fn_name = current_fn_name;
+    prev_fn_return_type = current_fn_return_type;
+    prev_fn_name = current_fn_name;
     current_fn_name = node->name;
     current_fn_return_type = fn_symbol->symbol_type->as.function.return_type;
 
-    int saved_next_label_id = next_label_id_;
+    saved_next_label_id = next_label_id_;
     next_label_id_ = 0;
     function_labels_.clear();
 
     unit.getSymbolTable().enterScope();
 
-    // Re-register parameters in the body scope
-    DynamicArray<Type*>* param_types = fn_symbol->symbol_type->as.function.params;
-    for (size_t i = 0; i < node->params->length(); ++i) {
+    /* Re-register parameters in the body scope. */
+    param_types = fn_symbol->symbol_type->as.function.params;
+    for (i = 0; i < node->params->length(); ++i) {
          ASTParamDeclNode* param_node = (*node->params)[i];
          Type* param_type = (*param_types)[i];
          Symbol param_symbol = SymbolBuilder(unit.getArena())
@@ -2320,17 +2426,24 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
 }
 
 Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
-    const char* struct_name = current_struct_name_;
-    current_struct_name_ = NULL; // Reset for nested structs
+    const char* struct_name;
+    size_t i;
+    size_t j;
+    void* mem;
+    DynamicArray<StructField>* fields;
+    Type* struct_type;
+
+    struct_name = current_struct_name_;
+    current_struct_name_ = NULL; /* Reset for nested structs. */
 
     if (!struct_name) {
         unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous structs are not supported in bootstrap compiler");
     }
 
-    // 1. Check for duplicate field names
-    for (size_t i = 0; i < node->fields->length(); ++i) {
+    /* 1. Check for duplicate field names. */
+    for (i = 0; i < node->fields->length(); ++i) {
         const char* name = (*node->fields)[i]->as.struct_field->name;
-        for (size_t j = i + 1; j < node->fields->length(); ++j) {
+        for (j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
                 unit.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit.getArena(), "duplicate field name in struct");
                 return NULL;
@@ -2338,11 +2451,11 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         }
     }
 
-    // 2. Resolve field types and build the type structure
-    void* mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
-    DynamicArray<StructField>* fields = new (mem) DynamicArray<StructField>(unit.getArena());
+    /* 2. Resolve field types and build the type structure. */
+    mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
+    fields = new (mem) DynamicArray<StructField>(unit.getArena());
 
-    for (size_t i = 0; i < node->fields->length(); ++i) {
+    for (i = 0; i < node->fields->length(); ++i) {
         ASTNode* field_node = (*node->fields)[i];
         ASTStructFieldNode* field_data = field_node->as.struct_field;
         Type* field_type = visit(field_data->type);
@@ -2373,8 +2486,8 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         fields->append(sf);
     }
 
-    // 3. Create struct type and calculate layout
-    Type* struct_type = createStructType(unit.getArena(), fields, struct_name);
+    /* 3. Create struct type and calculate layout. */
+    struct_type = createStructType(unit.getArena(), fields, struct_name);
     if (struct_name) {
         struct_type->c_name = unit.getNameMangler().mangleTypeName(struct_name, unit.getCurrentModule());
     }
@@ -2384,14 +2497,26 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 }
 
 Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
-    const char* union_name = current_struct_name_;
-    current_struct_name_ = NULL; // Reset
+    const char* union_name;
+    Type* tag_type;
+    void* mem;
+    DynamicArray<StructField>* fields;
+    size_t i;
+    size_t j;
+    void* members_mem;
+    DynamicArray<EnumMember>* members;
+    char* enum_name;
+    size_t len;
+    Type* union_type;
+
+    union_name = current_struct_name_;
+    current_struct_name_ = NULL; /* Reset. */
 
     if (!union_name) {
         unit.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous unions are not supported in bootstrap compiler");
     }
 
-    Type* tag_type = NULL;
+    tag_type = NULL;
     if (node->is_tagged) {
         if (node->tag_type_expr && node->tag_type_expr->type == NODE_IDENTIFIER &&
             plat_strcmp(node->tag_type_expr->as.identifier.name, "enum") == 0) {
@@ -2413,11 +2538,11 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
     }
 
-    // Process fields
-    void* mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
-    DynamicArray<StructField>* fields = new (mem) DynamicArray<StructField>(unit.getArena());
+    /* Process fields. */
+    mem = unit.getArena().alloc(sizeof(DynamicArray<StructField>));
+    fields = new (mem) DynamicArray<StructField>(unit.getArena());
 
-    for (size_t i = 0; i < node->fields->length(); ++i) {
+    for (i = 0; i < node->fields->length(); ++i) {
         ASTNode* field_node_wrapper = (*node->fields)[i];
         ASTStructFieldNode* field_node = field_node_wrapper->as.struct_field;
 
@@ -2439,8 +2564,8 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
              field_type = NULL;
         }
 
-        // Check for duplicate names
-        for (size_t j = 0; j < fields->length(); ++j) {
+        /* Check for duplicate names. */
+        for (j = 0; j < fields->length(); ++j) {
             if (identifiers_equal(field_node->name, (*fields)[j].name)) {
                 unit.getErrorHandler().report(ERR_REDEFINITION, field_node_wrapper->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit.getArena(), "duplicate field name in union");
             }
@@ -2458,19 +2583,19 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     }
 
     if (node->is_tagged && !tag_type) {
-        // Create implicit enum for union(enum)
-        void* members_mem = unit.getArena().alloc(sizeof(DynamicArray<EnumMember>));
-        DynamicArray<EnumMember>* members = new (members_mem) DynamicArray<EnumMember>(unit.getArena());
-        for (size_t i = 0; i < fields->length(); ++i) {
+        /* Create implicit enum for union(enum). */
+        members_mem = unit.getArena().alloc(sizeof(DynamicArray<EnumMember>));
+        members = new (members_mem) DynamicArray<EnumMember>(unit.getArena());
+        for (i = 0; i < fields->length(); ++i) {
             EnumMember m;
             m.name = (*fields)[i].name;
             m.value = (i64)i;
             m.loc = parent->loc;
             members->append(m);
         }
-        char* enum_name = NULL;
+        enum_name = NULL;
         if (union_name) {
-            size_t len = plat_strlen(union_name) + 5;
+            len = plat_strlen(union_name) + 5;
             enum_name = (char*)unit.getArena().alloc(len);
             plat_strcpy(enum_name, union_name);
             plat_strcat(enum_name, "_Tag");
@@ -2481,7 +2606,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         }
     }
 
-    Type* union_type = createUnionType(unit.getArena(), fields, union_name, node->is_tagged, tag_type);
+    union_type = createUnionType(unit.getArena(), fields, union_name, node->is_tagged, tag_type);
     if (union_name) {
         union_type->c_name = unit.getNameMangler().mangleTypeName(union_name, unit.getCurrentModule());
     }
@@ -2489,14 +2614,23 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 }
 
 Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
-    Type* base_type = visit(node->base);
+    Type* base_type;
+    Module* target_mod;
+    DynamicArray<const char*>* tags;
+    bool found;
+    size_t i;
+    DynamicArray<EnumMember>* members;
+    size_t member_idx;
+    Type* field_type;
+
+    base_type = visit(node->base);
     if (!base_type) return NULL;
 
     if (base_type->kind == TYPE_PLACEHOLDER) {
         base_type = resolvePlaceholder(base_type);
     }
 
-    // Auto-dereference for single level pointer
+    /* Auto-dereference for single level pointer. */
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
     }
@@ -2509,22 +2643,17 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         // Fall through for error reporting if not "len"
     }
 
+    /* Module member access. */
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
-        // Module member access
-        Module* target_mod = NULL;
-        if (base_type->kind == TYPE_MODULE) {
-            target_mod = (Module*)base_type->as.module.module_ptr;
-        }
+        target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
 
         if (target_mod && target_mod->symbols) {
             Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {
                 node->symbol = sym;
-                // If it's a constant type alias, we might need to resolve it
+                /* If it's a constant type alias, we might need to resolve it.
+                   Switch context temporarily to target module. */
                 if (!sym->symbol_type && sym->details) {
-                    // This is tricky: we are in Module A, but we need to resolve a symbol in Module B.
-                    // We should switch context temporarily?
-                    // For now, assume it's already resolved or resolve it in target module context.
                     const char* saved_module = unit.getCurrentModule();
                     unit.setCurrentModule(target_mod->name);
                     TypeChecker target_checker(unit);
@@ -2544,7 +2673,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 }
             }
         } else if (base_type->kind == TYPE_MODULE) {
-             // Fallback for legacy lookup if module_ptr is not set (e.g. in some tests)
+             /* Fallback for legacy lookup if module_ptr is not set (e.g. in some tests). */
              Symbol* sym = unit.getSymbolTable().lookupWithModule(base_type->as.module.name, node->field_name);
              if (sym) {
                  node->symbol = sym;
@@ -2554,7 +2683,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
         char msg[256];
         plat_strcpy(msg, "module '");
-        plat_strcat(msg, base_type->as.module.name);
+        plat_strcat(msg, (base_type->kind == TYPE_MODULE) ? base_type->as.module.name : "anytype");
         plat_strcat(msg, "' has no member named '");
         plat_strcat(msg, node->field_name);
         plat_strcat(msg, "'");
@@ -2564,11 +2693,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     }
 
     if (base_type->kind == TYPE_ERROR_SET) {
-        // Error set tag access: ErrorSetName.TagName
-        DynamicArray<const char*>* tags = base_type->as.error_set.tags;
-        bool found = false;
+        /* Error set tag access: ErrorSetName.TagName */
+        tags = base_type->as.error_set.tags;
+        found = false;
         if (tags) {
-            for (size_t i = 0; i < tags->length(); ++i) {
+            for (i = 0; i < tags->length(); ++i) {
                 if (identifiers_equal((*tags)[i], node->field_name)) {
                     found = true;
                     break;
@@ -2578,15 +2707,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (found) {
             return base_type;
         }
-        // Fall through to error
+        /* Fall through to error. */
     }
 
     if (base_type->kind == TYPE_ENUM) {
-        // Enum member access
-        DynamicArray<EnumMember>* members = base_type->as.enum_details.members;
-        bool found = false;
-        size_t member_idx = 0;
-        for (size_t i = 0; i < members->length(); ++i) {
+        /* Enum member access. */
+        members = base_type->as.enum_details.members;
+        found = false;
+        member_idx = 0;
+        for (i = 0; i < members->length(); ++i) {
             if (identifiers_equal((*members)[i].name, node->field_name)) {
                 found = true;
                 member_idx = i;
@@ -2623,7 +2752,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return NULL;
     }
 
-    Type* field_type = findStructField(base_type, node->field_name);
+    field_type = findStructField(base_type, node->field_name);
     if (!field_type) {
         char msg_buffer[256];
         char* current = msg_buffer;
@@ -2952,7 +3081,12 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 
 Type* TypeChecker::visitTryExpr(ASTNode* node) {
     ASTTryExprNode& try_node = node->as.try_expr;
-    Type* inner_type = visit(try_node.expression);
+    Type* inner_type;
+    Type* payload;
+    Type* operand_err_set;
+    Type* fn_err_set;
+
+    inner_type = visit(try_node.expression);
     if (!inner_type) return NULL;
 
     if (inner_type->kind != TYPE_ERROR_UNION) {
@@ -2960,10 +3094,10 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
         return inner_type;
     }
 
-    Type* payload = inner_type->as.error_union.payload;
-    Type* operand_err_set = inner_type->as.error_union.error_set;
+    payload = inner_type->as.error_union.payload;
+    operand_err_set = inner_type->as.error_union.error_set;
 
-    // Check enclosing function return type
+    /* Check enclosing function return type. */
     if (!current_fn_return_type) {
         unit.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, ErrorHandler::getMessage(ERR_TRY_IN_NON_ERROR_FUNCTION), "can only be used inside a function");
         return payload;
@@ -2971,16 +3105,17 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 
     if (current_fn_return_type->kind != TYPE_ERROR_UNION) {
         unit.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, ErrorHandler::getMessage(ERR_TRY_IN_NON_ERROR_FUNCTION), "enclosing function does not return an error union");
-    } else {
-        Type* fn_err_set = current_fn_return_type->as.error_union.error_set;
+        return payload;
+    }
 
-        // Check error set compatibility.
-        // For bootstrap, we'll use pointer equality for interned sets.
-        if (operand_err_set != fn_err_set) {
-            // If both are inferred, they might be different pointers but compatible in our simplified model.
-            if (!(inner_type->as.error_union.is_inferred && current_fn_return_type->as.error_union.is_inferred)) {
-                 unit.getErrorHandler().report(ERR_TRY_INCOMPATIBLE_ERROR_SETS, node->loc, ErrorHandler::getMessage(ERR_TRY_INCOMPATIBLE_ERROR_SETS));
-            }
+    fn_err_set = current_fn_return_type->as.error_union.error_set;
+
+    /* Check error set compatibility.
+       For bootstrap, we'll use pointer equality for interned sets. */
+    if (operand_err_set != fn_err_set) {
+        /* If both are inferred, they might be different pointers but compatible in our simplified model. */
+        if (!(inner_type->as.error_union.is_inferred && current_fn_return_type->as.error_union.is_inferred)) {
+                unit.getErrorHandler().report(ERR_TRY_INCOMPATIBLE_ERROR_SETS, node->loc, ErrorHandler::getMessage(ERR_TRY_INCOMPATIBLE_ERROR_SETS));
         }
     }
 
@@ -3086,8 +3221,15 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
 }
 
 Type* TypeChecker::visitCatchExpr(ASTNode* node) {
-    ASTCatchExprNode* catch_node = node->as.catch_expr;
-    Type* operand_type = visit(catch_node->payload);
+    ASTCatchExprNode* catch_node;
+    Type* operand_type;
+    Type* payload_type;
+    Type* error_set;
+    Symbol sym;
+    Type* fallback_type;
+
+    catch_node = node->as.catch_expr;
+    operand_type = visit(catch_node->payload);
     if (!operand_type) return NULL;
 
     if (operand_type->kind != TYPE_ERROR_UNION) {
@@ -3096,8 +3238,8 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
          return operand_type;
     }
 
-    Type* payload_type = operand_type->as.error_union.payload;
-    Type* error_set = operand_type->as.error_union.error_set;
+    payload_type = operand_type->as.error_union.payload;
+    error_set = operand_type->as.error_union.error_set;
 
     if (catch_node->error_name) {
         unit.getSymbolTable().enterScope();
@@ -3110,7 +3252,7 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
         unit.getSymbolTable().insert(sym);
     }
 
-    Type* fallback_type = visit(catch_node->else_expr);
+    fallback_type = visit(catch_node->else_expr);
 
     if (catch_node->error_name) {
         unit.getSymbolTable().exitScope();
@@ -3126,8 +3268,13 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
 }
 
 Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
-    Type* left_type = visit(node->payload);
-    Type* right_type = visit(node->else_expr);
+    Type* left_type;
+    Type* right_type;
+    Type* payload_type;
+    char expected_buf[128], actual_buf[128];
+
+    left_type = visit(node->payload);
+    right_type = visit(node->else_expr);
 
     if (!left_type) return NULL;
 
@@ -3136,7 +3283,7 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
         return NULL;
     }
 
-    Type* payload_type = left_type->as.optional.payload;
+    payload_type = left_type->as.optional.payload;
 
     if (right_type) {
         if (right_type->kind == TYPE_NORETURN) {
@@ -3162,10 +3309,10 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
-    bool old_in_defer = in_defer;
-    in_defer = true;
+    bool old_in_defer = in_defer_;
+    in_defer_ = true;
     visit(node->statement);
-    in_defer = old_in_defer;
+    in_defer_ = old_in_defer;
     return NULL;
 }
 
@@ -3230,20 +3377,15 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
 }
 
 /**
- * @brief Checks if two types are compatible for assignment or function arguments.
+ * @brief Checks if a value of type 'actual' can be coerced or implicitly converted to 'expected'.
  *
- * This function determines if a value of type `actual` can be safely used where
- * a value of type `expected` is required. The rules are:
- * 1.  Identical types are always compatible.
- * 2.  Numeric types are compatible if the `actual` type can be widened to the
- *     `expected` type without data loss (e.g., `i16` to `i32`, `f32` to `f64`).
- * 3.  Pointer types are compatible if they point to the same base type and
- *     the `expected` type is at least as const-qualified as the `actual` type.
- *     This allows `*T` to be used as `*const T`, but not vice-versa.
- *
- * @param expected The type that is required (e.g., the variable's type).
- * @param actual The type of the value being assigned or passed.
- * @return `true` if the types are compatible, `false` otherwise.
+ * This implementation handles several critical Z98 type relationships:
+ * 1. Identical types: always compatible.
+ * 2. Numeric Widening: (e.g., u8 -> u32, f32 -> f64).
+ * 3. Optional Covariance: (e.g., T -> ?T, null -> ?T).
+ * 4. Error Union Wrapping: (e.g., T -> !T, error -> !T).
+ * 5. Pointer Const-Correctness: (e.g., *T -> *const T, *T -> *void).
+ * 6. Array-to-Slice Coercion: (e.g., [N]T -> []T).
  */
 bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected == actual) {
@@ -3469,6 +3611,15 @@ bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
     return baseA == baseB;
 }
 
+/**
+ * @brief Handles type checking for pointer-related binary operations.
+ *
+ * Zig-flavored rules enforced here:
+ * - Many-item pointers ([*]T) and slices ([]T) support arithmetic.
+ * - Single-item pointers (*T) DO NOT support arithmetic (prevents accidental buffer overflows).
+ * - Addition/Subtraction requires an unsigned integer offset.
+ * - Subtraction between compatible pointers yields an isize.
+ */
 Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
