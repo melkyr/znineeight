@@ -40,26 +40,12 @@ struct TypeChecker::LoopContextGuard {
     TypeChecker& tc;
     int prev_depth;
     size_t prev_label_stack_size;
-    size_t prev_fn_labels_size;
-    bool added_fn_label;
 
     LoopContextGuard(TypeChecker& tc_arg, const char* label, int label_id, SourceLocation loc)
         : tc(tc_arg), prev_depth(tc_arg.current_loop_depth_),
-          prev_label_stack_size(tc_arg.label_stack_.length()),
-          prev_fn_labels_size(tc_arg.function_labels_.length()),
-          added_fn_label(false)
+          prev_label_stack_size(tc_arg.label_stack_.length())
     {
         tc.current_loop_depth_++;
-        if (label) {
-            /* Check duplicate. */
-            for (size_t i = tc.current_fn_labels_start_; i < tc.function_labels_.length(); ++i) {
-                if (plat_strcmp(tc.function_labels_[i], label) == 0) {
-                    tc.unit_.getErrorHandler().report(ERR_DUPLICATE_LABEL, loc, "Duplicate label");
-                }
-            }
-            tc.function_labels_.append(label);
-            added_fn_label = true;
-        }
         TypeChecker::LoopLabel ll;
         ll.name = label;
         ll.id = label_id;
@@ -70,11 +56,6 @@ struct TypeChecker::LoopContextGuard {
         tc.current_loop_depth_ = prev_depth;
         while (tc.label_stack_.length() > prev_label_stack_size) {
             tc.label_stack_.pop_back();
-        }
-        if (added_fn_label) {
-            while (tc.function_labels_.length() > prev_fn_labels_size) {
-                tc.function_labels_.pop_back();
-            }
         }
     }
 };
@@ -91,6 +72,45 @@ struct TypeChecker::DeferContextGuard {
 
     ~DeferContextGuard() {
         tc.in_defer_ = prev_in_defer;
+    }
+};
+
+struct TypeChecker::StructNameGuard {
+    TypeChecker& tc;
+    const char* old_name;
+
+    StructNameGuard(TypeChecker& tc_arg, const char* new_name)
+        : tc(tc_arg), old_name(tc_arg.current_struct_name_)
+    {
+        tc.current_struct_name_ = new_name;
+    }
+
+    ~StructNameGuard() {
+        tc.current_struct_name_ = old_name;
+    }
+};
+
+struct TypeChecker::VisitDepthGuard {
+    TypeChecker& tc;
+
+    VisitDepthGuard(TypeChecker& tc_arg) : tc(tc_arg) {
+        tc.visit_depth_++;
+    }
+
+    ~VisitDepthGuard() {
+        tc.visit_depth_--;
+    }
+};
+
+struct TypeChecker::ResolutionDepthGuard {
+    TypeChecker& tc;
+
+    ResolutionDepthGuard(TypeChecker& tc_arg) : tc(tc_arg) {
+        tc.type_resolution_depth_++;
+    }
+
+    ~ResolutionDepthGuard() {
+        tc.type_resolution_depth_--;
     }
 };
 
@@ -163,15 +183,44 @@ void TypeChecker::check(ASTNode* root) {
     }
 }
 
+bool TypeChecker::resolveLabel(const char* label, int& out_target_id) {
+    if (label) {
+        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
+            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, label) == 0) {
+                out_target_id = label_stack_[i].id;
+                return true;
+            }
+        }
+    } else {
+        if (label_stack_.length() > 0) {
+            out_target_id = label_stack_.back().id;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TypeChecker::checkDuplicateLabel(const char* label, SourceLocation loc) {
+    if (!label) return false;
+
+    for (size_t i = current_fn_labels_start_; i < function_labels_.length(); ++i) {
+        if (plat_strcmp(function_labels_[i], label) == 0) {
+            unit_.getErrorHandler().report(ERR_DUPLICATE_LABEL, loc, "Duplicate label");
+            return true;
+        }
+    }
+    function_labels_.append(label);
+    return false;
+}
+
 Type* TypeChecker::visit(ASTNode* node) {
     if (!node) {
         return NULL;
     }
 
-    visit_depth_++;
+    VisitDepthGuard depth_guard(*this);
     if (visit_depth_ > MAX_VISIT_DEPTH) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, "Type checking recursion depth exceeded (max 200)");
-        visit_depth_--;
         return get_g_type_undefined();
     }
 
@@ -243,7 +292,6 @@ Type* TypeChecker::visit(ASTNode* node) {
     if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
         node->resolved_type = resolved_type;
     }
-    visit_depth_--;
     return resolved_type;
 }
 
@@ -1509,6 +1557,17 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     return last_type;
 }
 
+struct TypeChecker::DeferFlagGuard {
+    TypeChecker& tc;
+    bool old_val;
+    DeferFlagGuard(TypeChecker& tc_arg) : tc(tc_arg), old_val(tc_arg.in_defer_) {
+        tc.in_defer_ = true;
+    }
+    ~DeferFlagGuard() {
+        tc.in_defer_ = old_val;
+    }
+};
+
 Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
     return NULL;
 }
@@ -1640,6 +1699,8 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
 
     node->label_id = next_label_id_++;
 
+    checkDuplicateLabel(node->label, node->condition->loc);
+
     /* RAII: Loop context automatically managed. */
     LoopContextGuard guard(*this, node->label, node->label_id, node->condition->loc);
 
@@ -1656,21 +1717,9 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
         unit_.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_BREAK_OUTSIDE_LOOP));
     }
 
-    if (break_node.label) {
-        bool found = false;
-        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
-            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, break_node.label) == 0) {
-                break_node.target_label_id = label_stack_[i].id;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
+    if (!resolveLabel(break_node.label, break_node.target_label_id)) {
+        if (break_node.label) {
             unit_.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, ErrorHandler::getMessage(ERR_UNKNOWN_LABEL));
-        }
-    } else {
-        if (label_stack_.length() > 0) {
-            break_node.target_label_id = label_stack_.back().id;
         }
     }
 
@@ -1685,21 +1734,9 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
         unit_.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_CONTINUE_OUTSIDE_LOOP));
     }
 
-    if (cont_node.label) {
-        bool found = false;
-        for (int i = (int)label_stack_.length() - 1; i >= 0; --i) {
-            if (label_stack_[i].name && plat_strcmp(label_stack_[i].name, cont_node.label) == 0) {
-                cont_node.target_label_id = label_stack_[i].id;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
+    if (!resolveLabel(cont_node.label, cont_node.target_label_id)) {
+        if (cont_node.label) {
             unit_.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, ErrorHandler::getMessage(ERR_UNKNOWN_LABEL));
-        }
-    } else {
-        if (label_stack_.length() > 0) {
-            cont_node.target_label_id = label_stack_.back().id;
         }
     }
 
@@ -1770,6 +1807,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
     /* RAII: Defer context automatically managed. */
     DeferContextGuard guard(*this);
+    DeferFlagGuard flag_guard(*this);
     visit(node->statement);
     return NULL;
 }
@@ -1810,6 +1848,8 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     iterable_type = visit(node->iterable_expr);
 
     node->label_id = next_label_id_++;
+
+    checkDuplicateLabel(node->label, node->iterable_expr->loc);
 
     /* RAII: Loop context automatically managed. */
     LoopContextGuard guard(*this, node->label, node->label_id, node->iterable_expr->loc);
@@ -1885,7 +1925,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
 
-    type_resolution_depth_++;
+    ResolutionDepthGuard depth_guard(*this);
     if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
         fatalError("Recursion limit reached during type resolution");
     }
@@ -1935,7 +1975,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     }
 
     unit_.setCurrentModule(old_mod);
-    type_resolution_depth_--;
     return placeholder;
 }
 
@@ -2112,18 +2151,9 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
  * - Implicit array-to-slice coercion.
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
-    Symbol* existing_sym;
-    Type* placeholder;
-    const char* prev_struct_name;
-    Type* declared_type;
-    i64 const_val;
-    Type* initializer_type;
-    bool is_local;
-    const char* mangled;
-
     /* Avoid double resolution but ensure flags are set. */
-    existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
-    placeholder = NULL;
+    Symbol* existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+    Type* placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             if (existing_sym->symbol_type->as.placeholder.is_resolving) {
@@ -2136,11 +2166,21 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     /* Capture struct/union name if it's a const declaration. */
-    prev_struct_name = current_struct_name_;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
-        current_struct_name_ = node->name;
+        StructNameGuard name_guard(*this, node->name);
+        return visitVarDeclImpl(parent, node, existing_sym, placeholder);
     }
+
+    return visitVarDeclImpl(parent, node, existing_sym, placeholder);
+}
+
+Type* TypeChecker::visitVarDeclImpl(ASTNode* parent, ASTVarDeclNode* node, Symbol* existing_sym, Type* placeholder) {
+    Type* declared_type;
+    i64 const_val;
+    Type* initializer_type;
+    bool is_local;
+    const char* mangled;
 
     if (!placeholder && current_struct_name_) {
         // Create and register placeholder
@@ -2312,8 +2352,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    current_struct_name_ = prev_struct_name;
-
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
@@ -2483,15 +2521,13 @@ Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
 }
 
 Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
-    const char* struct_name;
+    const char* struct_name = current_struct_name_;
+    StructNameGuard name_guard(*this, NULL);
     size_t i;
     size_t j;
     void* mem;
     DynamicArray<StructField>* fields;
     Type* struct_type;
-
-    struct_name = current_struct_name_;
-    current_struct_name_ = NULL; /* Reset for nested structs. */
 
     if (!struct_name) {
         unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous structs are not supported in bootstrap compiler");
@@ -2554,7 +2590,8 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 }
 
 Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
-    const char* union_name;
+    const char* union_name = current_struct_name_;
+    StructNameGuard name_guard(*this, NULL);
     Type* tag_type;
     void* mem;
     DynamicArray<StructField>* fields;
@@ -2565,9 +2602,6 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     char* enum_name;
     size_t len;
     Type* union_type;
-
-    union_name = current_struct_name_;
-    current_struct_name_ = NULL; /* Reset. */
 
     if (!union_name) {
         unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous unions are not supported in bootstrap compiler");
@@ -2944,6 +2978,7 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
+    StructNameGuard name_guard(*this, NULL);
     // 1. Determine the backing type.
     Type* backing_type = NULL;
     if (node->backing_type) {
@@ -3368,6 +3403,7 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
     /* RAII: Defer context automatically managed. */
     DeferContextGuard guard(*this);
+    DeferFlagGuard flag_guard(*this);
     visit(node->statement);
     return NULL;
 }
