@@ -116,11 +116,11 @@ private:
     static const int MAX_VISIT_DEPTH = 200;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
-    CompilationUnit& unit;
-    Type* current_fn_return_type;
-    const char* current_fn_name;
+    CompilationUnit& unit_;
+    Type* current_fn_return_type_;
+    const char* current_fn_name_;
     const char* current_struct_name_;
-    int current_loop_depth;
+    int current_loop_depth_;
     int type_resolution_depth_;
     int visit_depth_;
     bool in_defer_; ///< True if currently checking a deferred statement.
@@ -129,6 +129,15 @@ private:
         const char* name;
         int id;
     };
+
+    struct FunctionContextGuard;
+    struct LoopContextGuard;
+    struct DeferContextGuard;
+
+    friend struct FunctionContextGuard;
+    friend struct LoopContextGuard;
+    friend struct DeferContextGuard;
+
     DynamicArray<LoopLabel> label_stack_;
     DynamicArray<const char*> function_labels_;
     int next_label_id_;
