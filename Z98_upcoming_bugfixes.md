@@ -140,6 +140,24 @@ This avoids the need for qualified type names. So the immediate fix may be to ad
 
 ---
 
+### Task 9.5.10: RAII State Guards [DONE]
+**Goal**: Use RAII (Resource Acquisition Is Initialization) to manage TypeChecker state and ensure robust restoration on early returns.
+
+**Implementation**:
+- Introduced `VisitDepthGuard` and `ResolutionDepthGuard` to protect against stack overflows.
+- Added `StructNameGuard` to handle `current_struct_name_` scoping for aggregate types.
+- Added `DeferFlagGuard` and `DeferContextGuard` to manage `in_defer_` state.
+- Implemented `FunctionContextGuard` and `LoopContextGuard` to manage function and loop scopes, including label stacks.
+
+### Task 9.5.11: Extract Duplicate Label Logic [DONE]
+**Goal**: Unify label resolution and duplicate detection logic in the TypeChecker.
+
+**Implementation**:
+- Extracted logic into `resolveLabel` and `checkDuplicateLabel` private methods.
+- Refactored `visitWhileStmt`, `visitForStmt`, `visitBreakStmt`, and `visitContinueStmt` to use these helpers, reducing code duplication.
+
+---
+
 ### Intermediate: Re‑run JSON Parser and Document Remaining Issues
 **Goal**: After fixing the above, attempt to compile the JSON parser again and document any remaining issues.
 
