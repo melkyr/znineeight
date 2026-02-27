@@ -419,14 +419,6 @@ Type* TypeInterner::getPointerType(Type* base_type, ...) {
     *   **Current:** Comments explain *what* (e.g., `// Emit defers`).
     *   **Suggestion:** Explain *why* for complex logic (e.g., `// Defers must emit in reverse order to match Zig semantics`).
 
-Yes, this is the correct file to evaluate. `type_checker.cpp` is actually **more critical** than `type_system.cpp` for stability because it:
-
-1. **Has more recursion** (visits every AST node)
-2. **Manages more state** (function context, loop depth, label stacks, defer tracking)
-3. **Has more error paths** (every node type can fail type checking)
-
-Here's my analysis and refactoring plan specifically for `type_checker.cpp`:
-
 ---
 
 ## Part 4: Critical Issues in `type_checker.cpp`
