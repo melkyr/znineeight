@@ -113,13 +113,17 @@ private:
     ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
     ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
 
+    static const int MAX_VISIT_DEPTH = 200;
+    static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
+
     CompilationUnit& unit;
     Type* current_fn_return_type;
     const char* current_fn_name;
     const char* current_struct_name_;
     int current_loop_depth;
     int type_resolution_depth_;
-    bool in_defer; ///< True if currently checking a deferred statement.
+    int visit_depth_;
+    bool in_defer_; ///< True if currently checking a deferred statement.
 
     struct LoopLabel {
         const char* name;
