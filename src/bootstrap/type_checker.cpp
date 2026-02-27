@@ -2151,9 +2151,18 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
  * - Implicit array-to-slice coercion.
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
+    Symbol* existing_sym;
+    Type* placeholder;
+    Type* declared_type;
+    i64 const_val;
+    Type* initializer_type;
+    bool is_local;
+    const char* mangled;
+    const char* name_to_set;
+
     /* Avoid double resolution but ensure flags are set. */
-    Symbol* existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
-    Type* placeholder = NULL;
+    existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+    placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             if (existing_sym->symbol_type->as.placeholder.is_resolving) {
@@ -2166,21 +2175,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     /* Capture struct/union name if it's a const declaration. */
+    name_to_set = current_struct_name_;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
-        StructNameGuard name_guard(*this, node->name);
-        return visitVarDeclImpl(parent, node, existing_sym, placeholder);
+        name_to_set = node->name;
     }
-
-    return visitVarDeclImpl(parent, node, existing_sym, placeholder);
-}
-
-Type* TypeChecker::visitVarDeclImpl(ASTNode* parent, ASTVarDeclNode* node, Symbol* existing_sym, Type* placeholder) {
-    Type* declared_type;
-    i64 const_val;
-    Type* initializer_type;
-    bool is_local;
-    const char* mangled;
+    StructNameGuard name_guard(*this, name_to_set);
 
     if (!placeholder && current_struct_name_) {
         // Create and register placeholder
@@ -2978,7 +2978,9 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
+    const char* enum_name = current_struct_name_;
     StructNameGuard name_guard(*this, NULL);
+
     // 1. Determine the backing type.
     Type* backing_type = NULL;
     if (node->backing_type) {
@@ -3069,9 +3071,6 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             if ((*members)[i].value > max_val) max_val = (*members)[i].value;
         }
     }
-
-    const char* enum_name = current_struct_name_;
-    current_struct_name_ = NULL; // Reset for nested enums
 
     if (has_error) return NULL;
 

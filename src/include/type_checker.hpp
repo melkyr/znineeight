@@ -106,7 +106,6 @@ private:
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     Type* resolvePlaceholder(Type* placeholder);
-    Type* visitVarDeclImpl(ASTNode* parent, ASTVarDeclNode* node, Symbol* existing_sym, Type* placeholder);
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
 
