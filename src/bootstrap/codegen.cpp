@@ -1858,27 +1858,43 @@ void C89Emitter::emitExpression(const ASTNode* node) {
     current_loc_ = node->loc;
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
-            emitIntegerLiteral(&node->as.integer_literal);
-            break;
         case NODE_FLOAT_LITERAL:
-            emitFloatLiteral(&node->as.float_literal);
-            break;
         case NODE_STRING_LITERAL:
-            emitStringLiteral(&node->as.string_literal);
-            break;
         case NODE_CHAR_LITERAL:
-            emitCharLiteral(&node->as.char_literal);
-            break;
         case NODE_BOOL_LITERAL:
-            writeString(node->as.bool_literal.value ? "1" : "0");
-            break;
         case NODE_NULL_LITERAL:
-            writeString("((void*)0)");
-            break;
         case NODE_ERROR_LITERAL:
-            writeString("ERROR_");
-            writeString(node->as.error_literal.tag_name);
+            emitLiteral(node);
             break;
+
+        case NODE_UNARY_OP:
+            emitUnaryOp(node->as.unary_op);
+            break;
+
+        case NODE_BINARY_OP:
+            emitBinaryOp(*node->as.binary_op);
+            break;
+
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+            emitCast(node);
+            break;
+
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+        case NODE_ARRAY_SLICE:
+            emitAccess(node);
+            break;
+
+        case NODE_SWITCH_EXPR:
+        case NODE_IF_EXPR:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR:
+            emitControlFlow(node);
+            break;
+
         case NODE_TUPLE_LITERAL: {
             writeString("{");
             DynamicArray<ASTNode*>* elements = node->as.tuple_literal->elements;
@@ -1919,122 +1935,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString(" /* .. */ ");
             emitExpression(node->as.range.end);
             break;
-        case NODE_UNARY_OP:
-            writeString(getTokenSpelling(node->as.unary_op.op));
-            emitExpression(node->as.unary_op.operand);
-            break;
-        case NODE_BINARY_OP:
-            emitExpression(node->as.binary_op->left);
-            writeString(" ");
-            writeString(getTokenSpelling(node->as.binary_op->op));
-            writeString(" ");
-            emitExpression(node->as.binary_op->right);
-            break;
-        case NODE_MEMBER_ACCESS: {
-            const ASTNode* base = node->as.member_access->base;
-            if (base->resolved_type) {
-                Type* actual_type = base->resolved_type;
-
-                if (actual_type->kind == TYPE_ERROR_SET) {
-                    // Error set tag access: ERROR_TagName
-                    writeString("ERROR_");
-                    writeString(node->as.member_access->field_name);
-                    break;
-                }
-
-                if (actual_type->kind == TYPE_ENUM) {
-                    // Enum member access: EnumName_MemberName
-                    if (actual_type->c_name) {
-                        writeString(actual_type->c_name);
-                    } else if (actual_type->as.enum_details.name) {
-                        writeString(getC89GlobalName(actual_type->as.enum_details.name));
-                    } else {
-                        writeString("/* anonymous enum */");
-                    }
-                    writeString("_");
-                    writeString(node->as.member_access->field_name);
-                    break;
-                }
-
-                if (actual_type->kind == TYPE_MODULE || actual_type->kind == TYPE_ANYTYPE) {
-                    // Module member access
-                    if (node->as.member_access->symbol && node->as.member_access->symbol->mangled_name) {
-                        writeString(node->as.member_access->symbol->mangled_name);
-                    } else {
-                        const char* mod_name = (actual_type->kind == TYPE_MODULE) ?
-                                              actual_type->as.module.name :
-                                              (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
-                        if (mod_name) {
-                            writeString("z_");
-                            writeString(mod_name);
-                            writeString("_");
-                            writeString(node->as.member_access->field_name);
-                        } else {
-                            writeString(node->as.member_access->field_name);
-                        }
-                    }
-                    break;
-                }
-            }
-
-            bool need_parens = requiresParentheses(base);
-            if (need_parens) writeString("(");
-            emitExpression(base);
-            if (need_parens) writeString(")");
-
-            // Auto-dereference for pointer to struct:
-            // if base is a pointer, use ->, else use .
-            if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
-                writeString("->");
-            } else {
-                writeString(".");
-            }
-            writeString(node->as.member_access->field_name);
-            break;
-        }
-        case NODE_ARRAY_SLICE:
-            emitArraySlice(node);
-            break;
-        case NODE_ARRAY_ACCESS: {
-            const ASTNode* array_node = node->as.array_access->array;
-            Type* array_type = array_node->resolved_type;
-            bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
-                                    array_type->as.pointer.base->kind == TYPE_ARRAY);
-
-            if (is_ptr_to_array) {
-                writeString("(*");
-            }
-
-            bool need_parens = requiresParentheses(array_node);
-            if (need_parens) writeString("(");
-            emitExpression(array_node);
-            if (need_parens) writeString(")");
-
-            if (is_ptr_to_array) {
-                writeString(")");
-            }
-
-            writeString("[");
-            emitExpression(node->as.array_access->index);
-            writeString("]");
-            break;
-        }
-        case NODE_PTR_CAST:
-            writeString("(");
-            emitType(node->as.ptr_cast->target_type->resolved_type);
-            writeString(")");
-            emitExpression(node->as.ptr_cast->expr);
-            break;
-        case NODE_INT_CAST:
-            emitIntCast(node->as.numeric_cast);
-            break;
         case NODE_IMPORT_STMT:
             writeString("/* import \"");
             writeString(node->as.import_stmt->module_name);
             writeString("\" */");
-            break;
-        case NODE_FLOAT_CAST:
-            emitFloatCast(node->as.numeric_cast);
             break;
         case NODE_FUNCTION_CALL: {
             const ASTFunctionCallNode* call = node->as.function_call;
@@ -2112,18 +2016,6 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("}");
             break;
         }
-        case NODE_SWITCH_EXPR:
-            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Switch expression used in unsupported context (not lifted)");
-            break;
-        case NODE_IF_EXPR:
-            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "If expression used in unsupported context (not lifted)");
-            break;
-        case NODE_TRY_EXPR:
-            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Try expression used in unsupported context (not lifted)");
-            break;
-        case NODE_CATCH_EXPR:
-            error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Catch expression used in unsupported context (not lifted)");
-            break;
         case NODE_RETURN_STMT:
             emitReturn(&node->as.return_stmt);
             break;
@@ -2137,6 +2029,168 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Unimplemented expression type in code generation");
             break;
     }
+}
+
+void C89Emitter::emitLiteral(const ASTNode* node) {
+    switch (node->type) {
+        case NODE_INTEGER_LITERAL:
+            emitIntegerLiteral(&node->as.integer_literal);
+            break;
+        case NODE_FLOAT_LITERAL:
+            emitFloatLiteral(&node->as.float_literal);
+            break;
+        case NODE_STRING_LITERAL:
+            emitStringLiteral(&node->as.string_literal);
+            break;
+        case NODE_CHAR_LITERAL:
+            emitCharLiteral(&node->as.char_literal);
+            break;
+        case NODE_BOOL_LITERAL:
+            writeString(node->as.bool_literal.value ? "1" : "0");
+            break;
+        case NODE_NULL_LITERAL:
+            writeString("((void*)0)");
+            break;
+        case NODE_ERROR_LITERAL:
+            writeString("ERROR_");
+            writeString(node->as.error_literal.tag_name);
+            break;
+        default: break;
+    }
+}
+
+void C89Emitter::emitUnaryOp(const ASTUnaryOpNode& node) {
+    writeString(getTokenSpelling(node.op));
+    emitExpression(node.operand);
+}
+
+void C89Emitter::emitBinaryOp(const ASTBinaryOpNode& node) {
+    emitExpression(node.left);
+    writeString(" ");
+    writeString(getTokenSpelling(node.op));
+    writeString(" ");
+    emitExpression(node.right);
+}
+
+void C89Emitter::emitCast(const ASTNode* node) {
+    switch (node->type) {
+        case NODE_PTR_CAST:
+            writeString("(");
+            emitType(node->as.ptr_cast->target_type->resolved_type);
+            writeString(")");
+            emitExpression(node->as.ptr_cast->expr);
+            break;
+        case NODE_INT_CAST:
+            emitIntCast(node->as.numeric_cast);
+            break;
+        case NODE_FLOAT_CAST:
+            emitFloatCast(node->as.numeric_cast);
+            break;
+        default: break;
+    }
+}
+
+void C89Emitter::emitAccess(const ASTNode* node) {
+    switch (node->type) {
+        case NODE_ARRAY_ACCESS: {
+            const ASTNode* array_node = node->as.array_access->array;
+            Type* array_type = array_node->resolved_type;
+            bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
+                                    array_type->as.pointer.base->kind == TYPE_ARRAY);
+
+            if (is_ptr_to_array) {
+                writeString("(*");
+            }
+
+            bool need_parens = requiresParentheses(array_node);
+            if (need_parens) writeString("(");
+            emitExpression(array_node);
+            if (need_parens) writeString(")");
+
+            if (is_ptr_to_array) {
+                writeString(")");
+            }
+
+            writeString("[");
+            emitExpression(node->as.array_access->index);
+            writeString("]");
+            break;
+        }
+        case NODE_MEMBER_ACCESS: {
+            const ASTNode* base = node->as.member_access->base;
+            if (base->resolved_type) {
+                Type* actual_type = base->resolved_type;
+
+                if (actual_type->kind == TYPE_ERROR_SET) {
+                    writeString("ERROR_");
+                    writeString(node->as.member_access->field_name);
+                    return;
+                }
+
+                if (actual_type->kind == TYPE_ENUM) {
+                    if (actual_type->c_name) {
+                        writeString(actual_type->c_name);
+                    } else if (actual_type->as.enum_details.name) {
+                        writeString(getC89GlobalName(actual_type->as.enum_details.name));
+                    } else {
+                        writeString("/* anonymous enum */");
+                    }
+                    writeString("_");
+                    writeString(node->as.member_access->field_name);
+                    return;
+                }
+
+                if (actual_type->kind == TYPE_MODULE || actual_type->kind == TYPE_ANYTYPE) {
+                    if (node->as.member_access->symbol && node->as.member_access->symbol->mangled_name) {
+                        writeString(node->as.member_access->symbol->mangled_name);
+                    } else {
+                        const char* mod_name = (actual_type->kind == TYPE_MODULE) ?
+                                              actual_type->as.module.name :
+                                              (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
+                        if (mod_name) {
+                            writeString("z_");
+                            writeString(mod_name);
+                            writeString("_");
+                            writeString(node->as.member_access->field_name);
+                        } else {
+                            writeString(node->as.member_access->field_name);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            bool need_parens = requiresParentheses(base);
+            if (need_parens) writeString("(");
+            emitExpression(base);
+            if (need_parens) writeString(")");
+
+            if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
+                writeString("->");
+            } else {
+                writeString(".");
+            }
+            writeString(node->as.member_access->field_name);
+            break;
+        }
+        case NODE_ARRAY_SLICE:
+            emitArraySlice(node);
+            break;
+        default: break;
+    }
+}
+
+void C89Emitter::emitControlFlow(const ASTNode* node) {
+    const char* kind = "unknown control flow";
+    switch (node->type) {
+        case NODE_SWITCH_EXPR: kind = "Switch expression"; break;
+        case NODE_IF_EXPR:     kind = "If expression"; break;
+        case NODE_TRY_EXPR:    kind = "Try expression"; break;
+        case NODE_CATCH_EXPR:  kind = "Catch expression"; break;
+        case NODE_ORELSE_EXPR: kind = "Orelse expression"; break;
+        default: break;
+    }
+    error_handler_.report(ERR_UNSUPPORTED_FEATURE, node->loc, ErrorHandler::getMessage(ERR_UNSUPPORTED_FEATURE), kind);
 }
 
 void C89Emitter::emitArraySlice(const ASTNode* node) {

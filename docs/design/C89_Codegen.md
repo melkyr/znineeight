@@ -23,6 +23,12 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **C89-Compliant Comments**: Provides an `emitComment()` helper that ensures all comments use the `/* ... */` style, as `//` comments are not supported in standard C89.
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
 - **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
+- **Modular Dispatch**: Large emission functions are decomposed into focused helpers to improve legibility and maintainability. For example, `emitExpression` dispatches to:
+    - `emitLiteral`: Handles all numeric, string, char, bool, and null literals.
+    - `emitUnaryOp` / `emitBinaryOp`: Handles operator logic.
+    - `emitCast`: Centralizes `@intCast`, `@floatCast`, and `@ptrCast` logic.
+    - `emitAccess`: Manages array, member, and slice access.
+    - `emitControlFlow`: Reports errors for control-flow expressions that have not been correctly lifted into statements.
 
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.

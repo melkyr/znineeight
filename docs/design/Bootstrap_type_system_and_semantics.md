@@ -1475,8 +1475,9 @@ In the bootstrap compiler, this is implemented by:
 3.  In the `then` block, declaring the capture variable and assigning the `value` field to it.
 
 ### 23.4 Task 9.3 Stabilization and Hardening
-As part of Task 9.3, the optional type implementation was hardened to support complex real-world code like the JSON parser:
-- **NULL Safety**: Type creation factories (`createOptionalType`, `createArrayType`, etc.) now strictly check for NULL payloads/elements, returning `TYPE_UNDEFINED` instead of crashing. This prevents segfaults during the resolution of undefined types.
+As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened to support complex real-world code like the JSON parser:
+- **NULL Safety**: All type creation factories (`createPointerType`, `createArrayType`, `createSliceType`, `createErrorUnionType`, `createOptionalType`, `createFunctionType`, `createStructType`, `createUnionType`, `createEnumType`, `createModuleType`) now strictly check for NULL required parameters (like payloads or base types). Upon encountering a NULL, they emit a debug message via `plat_print_debug` and return `TYPE_UNDEFINED` instead of crashing. This prevents segfaults during the resolution of undefined types and provides breadcrumbs for compiler debugging.
+- **Interner Null Checks**: All `TypeInterner` methods (e.g., `getPointerType`, `getOptionalType`) also perform NULL validation, ensuring that invalid types are not hashed or stored, and safely falling back to the error-handling behavior of the underlying creation functions.
 - **Placeholder Awareness**: Optional types now correctly handle payloads that are currently being resolved (placeholders). Size and alignment are deferred (set to 0) until the payload type is complete.
 - **Dynamic Layout**: Size and alignment of `?T` are dynamically computed based on `T`'s resolved layout.
     - `sizeof(?T) = align_up(sizeof(T), alignof(int)) + sizeof(int)`, then padded to `max(alignof(T), alignof(int))`.

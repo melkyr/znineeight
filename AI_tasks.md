@@ -1535,6 +1535,18 @@ Key changes:
     - Refactored `emitLocalVarDecl`, `emitStatement`, and `emitReturn` to use the new unified helper, significantly reducing code duplication.
     - Added support for result discarding (`_`) in unified assignment logic.
 
+233. [COMPLETE] Task 9.5.6: Break Down `emitExpression` Switch
+    - Refactored `C89Emitter::emitExpression` by breaking it down into focused helper methods: `emitLiteral`, `emitUnaryOp`, `emitBinaryOp`, `emitCast`, `emitAccess`, and `emitControlFlow`.
+    - Improved code modularity and legibility in the C89 code generator.
+
+234. [COMPLETE] Task 9.5.7: Guard Type Creators
+    - Added NULL safety guards and `plat_print_debug` messages to all public type creation functions in `src/bootstrap/type_system.cpp`.
+    - Functions now return `get_g_type_undefined()` upon encountering invalid NULL inputs, preventing crashes during type resolution.
+
+235. [COMPLETE] Task 9.5.8: Interner Null Checks
+    - Implemented NULL validation in all `TypeInterner` methods.
+    - Ensured that invalid types are not hashed or stored, providing robust defensive programming in the type interning system.
+
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
 ### Overview
