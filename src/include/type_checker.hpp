@@ -106,6 +106,9 @@ private:
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     Type* resolvePlaceholder(Type* placeholder);
+    Type* visitVarDeclImpl(ASTNode* parent, ASTVarDeclNode* node, Symbol* existing_sym, Type* placeholder);
+    bool resolveLabel(const char* label, int& out_target_id);
+    bool checkDuplicateLabel(const char* label, SourceLocation loc);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
@@ -133,10 +136,18 @@ private:
     struct FunctionContextGuard;
     struct LoopContextGuard;
     struct DeferContextGuard;
+    struct StructNameGuard;
+    struct VisitDepthGuard;
+    struct ResolutionDepthGuard;
+    struct DeferFlagGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
     friend struct DeferContextGuard;
+    friend struct StructNameGuard;
+    friend struct VisitDepthGuard;
+    friend struct ResolutionDepthGuard;
+    friend struct DeferFlagGuard;
 
     DynamicArray<LoopLabel> label_stack_;
     DynamicArray<const char*> function_labels_;
