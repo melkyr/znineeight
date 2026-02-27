@@ -10,6 +10,7 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Type checking:** Verifying that operations are performed on compatible types.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
 -   **Scope management:** Handling global and function-level scopes.
+-   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
 
@@ -811,6 +812,12 @@ The `TypeChecker` is a new component responsible for traversing the AST and veri
 ### Traversal Strategy
 
 The `TypeChecker` uses the visitor pattern to traverse the AST. It has a `visit` method for each `NodeType`, which allows for modular and extensible type-checking logic. The traversal is a recursive process that walks the tree, checking each node and its children.
+
+#### Recursion Depth Guard (Task 9.5.9)
+To prevent stack overflows on memory-constrained 1990s hardware (e.g., Windows 98 with a 1MB default stack), the `TypeChecker` implements a recursion depth guard in the `visit` method.
+- **Maximum Depth**: Defined by `MAX_VISIT_DEPTH` (200). This limit is chosen to be conservative enough to prevent stack exhaustion while allowing for reasonably complex ASTs.
+- **Enforcement**: A `visit_depth_` counter is incremented upon entry to `visit` and decremented upon exit.
+- **Error Handling**: If the limit is exceeded, the compiler reports a fatal internal error (`ERR_INTERNAL_ERROR`) and returns `get_g_type_undefined()` to prevent further recursive calls.
 
 ### Integration in the Pipeline
 
