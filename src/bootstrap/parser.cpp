@@ -3,6 +3,8 @@
 #include "error_set_catalogue.hpp"
 #include "generic_catalogue.hpp"
 #include "ast.hpp"
+#include "module.hpp"
+#include "symbol_table.hpp"
 #include "type_system.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
@@ -76,18 +78,10 @@ void Parser::error(const char* msg) {
     }
 
     /* Keep old debug output for now */
-    plat_print_debug("Parser Error: ");
-    plat_print_debug(msg);
-    plat_print_debug(" at token ");
     char buf[64];
     plat_i64_to_string(t.type, buf, sizeof(buf));
-    plat_print_debug(buf);
     if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_STRING_LITERAL) {
-        plat_print_debug(" (");
-        plat_print_debug(t.value.identifier);
-        plat_print_debug(")");
     }
-    plat_print_debug("\n");
 
     /* Note: In the future, we might add a recovery mechanism here.
        For now, we abort to prevent unstable execution (infinite loops, etc.)
@@ -1403,6 +1397,11 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
     // Resolve the type and create the symbol for the symbol table.
     Type* symbol_type = resolveAndVerifyType(type_node);
 
+    if (type_node && !symbol_type) {
+        char tbuf[16];
+        plat_i64_to_string(type_node->type, tbuf, sizeof(tbuf));
+    }
+
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .withModule(module_name_)
@@ -1680,6 +1679,54 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
             return NULL; // Propagate the failure
         }
         return createPointerType(*arena_, base_type, type_node->as.pointer_type.is_const, type_node->as.pointer_type.is_many, type_interner_);
+    } else if (type_node->type == NODE_ARRAY_TYPE) {
+        Type* element_type = resolveAndVerifyType(type_node->as.array_type.element_type);
+        if (element_type == NULL) return NULL;
+        if (type_node->as.array_type.size == NULL) {
+            return createSliceType(*arena_, element_type, type_node->as.array_type.is_const, type_interner_);
+        }
+    } else if (type_node->type == NODE_OPTIONAL_TYPE) {
+        Type* payload_type = resolveAndVerifyType(type_node->as.optional_type->payload_type);
+        if (payload_type == NULL) return NULL;
+        return createOptionalType(*arena_, payload_type, type_interner_);
+    } else if (type_node->type == NODE_ERROR_UNION_TYPE) {
+        Type* payload_type = resolveAndVerifyType(type_node->as.error_union_type->payload_type);
+        if (payload_type == NULL) return NULL;
+        /* error_set is harder to resolve here, let TypeChecker handle it if it's non-null.
+           If it's NULL (inferred), we can create it. */
+        if (type_node->as.error_union_type->error_set == NULL) {
+            return createErrorUnionType(*arena_, get_g_type_anyerror(), payload_type, type_interner_);
+        }
+    } else if (type_node->type == NODE_FUNCTION_TYPE) {
+        DynamicArray<Type*>* param_types = (DynamicArray<Type*>*)arena_->alloc(sizeof(DynamicArray<Type*>));
+        new (param_types) DynamicArray<Type*>(*arena_);
+        if (type_node->as.function_type->params) {
+            for (size_t i = 0; i < type_node->as.function_type->params->length(); ++i) {
+                Type* pt = resolveAndVerifyType((*type_node->as.function_type->params)[i]);
+                if (!pt) return NULL;
+                param_types->append(pt);
+            }
+        }
+        Type* return_type = resolveAndVerifyType(type_node->as.function_type->return_type);
+        if (!return_type) return NULL;
+        return createFunctionPointerType(*arena_, param_types, return_type, type_interner_);
+    } else if (type_node->type == NODE_MEMBER_ACCESS) {
+        Type* base = resolveAndVerifyType(type_node->as.member_access->base);
+        if (base && base->kind == TYPE_MODULE) {
+             Module* m = (Module*)base->as.module.module_ptr;
+             if (m && m->symbols) {
+                 Symbol* sym = m->symbols->lookup(type_node->as.member_access->field_name);
+                 if (sym) {
+                     Type* t = sym->symbol_type;
+                     if (t && t->kind == TYPE_TYPE) {
+                         if (sym->details && ((ASTVarDeclNode*)sym->details)->initializer && ((ASTVarDeclNode*)sym->details)->initializer->resolved_type) {
+                             t = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
+                         }
+                     }
+                     return t;
+                 }
+             }
+        }
     }
     // Let the TypeChecker handle unsupported types.
     return NULL;
