@@ -126,11 +126,11 @@ TypeChecker::TypeChecker(CompilationUnit& unit_arg)
 
 Type* TypeChecker::reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg) {
     unit_.getErrorHandler().report(code, loc, ErrorHandler::getMessage(code), unit_.getArena(), msg);
-    return get_g_type_undefined();
+    return NULL;
 }
 
 bool TypeChecker::is_type_undefined(Type* t) {
-    return t == get_g_type_undefined();
+    return !t || (t->kind == TYPE_UNDEFINED);
 }
 
 void TypeChecker::registerPlaceholders(ASTNode* root) {
@@ -230,8 +230,24 @@ Type* TypeChecker::visit(ASTNode* node) {
         return NULL;
     }
 
-    if (node->resolved_type && is_type_undefined(node->resolved_type)) {
-        return get_g_type_undefined();
+    if (node->resolved_type) {
+        if (node->resolved_type->kind == TYPE_PLACEHOLDER) {
+             Type* resolved = resolvePlaceholder(node->resolved_type);
+             if (resolved && !is_type_undefined(resolved)) {
+                 node->resolved_type = resolved;
+                 return resolved;
+             }
+        } else if (!is_type_undefined(node->resolved_type)) {
+             return node->resolved_type;
+        }
+    }
+
+    // Temporary print to find where it crashes
+    char type_buf[16];
+    plat_i64_to_string(node->type, type_buf, sizeof(type_buf));
+
+    /* DEBUG */
+    if (node->type == NODE_BLOCK_STMT) {
     }
 
     VisitDepthGuard depth_guard(*this);
@@ -788,7 +804,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     Type* param_type;
     Type* promoted;
     ASTNode* slice_node;
-    ASTNode* target_arg_node;
     Type* target_type;
     Symbol* sym;
 
@@ -939,7 +954,17 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "called object is not a function");
     }
 
-    expected_args = (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.params->length() : callee_type->as.function_pointer.param_types->length();
+    if (callee_type->kind == TYPE_FUNCTION) {
+        if (!callee_type->as.function.params) {
+             return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function type missing parameters");
+        }
+        expected_args = callee_type->as.function.params->length();
+    } else {
+        if (!callee_type->as.function_pointer.param_types) {
+             return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function pointer type missing parameters");
+        }
+        expected_args = callee_type->as.function_pointer.param_types->length();
+    }
     actual_args = node->args->length();
 
     if (actual_args != expected_args) {
@@ -967,10 +992,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
 
     for (i = 0; i < actual_args; ++i) {
-        ASTNode* arg_node = (*node->args)[i];
+        arg_node = (*node->args)[i];
         if (!arg_node) return get_g_type_undefined();
-        Type* arg_type = visit(arg_node);
-        Type* param_type;
+        arg_type = visit(arg_node);
 
         if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
 
@@ -978,7 +1002,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         // Special handling for integer literal promotion in function calls
-        Type* promoted = tryPromoteLiteral(arg_node, param_type);
+        promoted = tryPromoteLiteral(arg_node, param_type);
         if (promoted) {
             arg_type = promoted;
         }
@@ -987,7 +1011,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (param_type->kind == TYPE_SLICE && arg_type->kind == TYPE_ARRAY) {
             if (areTypesEqual(param_type->as.slice.element_type, arg_type->as.array.element_type)) {
                 // Wrap in synthetic slice node
-                ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                 plat_memset(slice_node, 0, sizeof(ASTNode));
                 slice_node->type = NODE_ARRAY_SLICE;
                 slice_node->loc = arg_node->loc;
@@ -1954,6 +1978,10 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
 Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
 
+    if (placeholder->is_resolving) {
+        return placeholder;
+    }
+
     ResolutionDepthGuard depth_guard(*this);
     if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
         fatalError("Recursion limit reached during type resolution");
@@ -1964,9 +1992,19 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->as.placeholder.module) {
         unit_.setCurrentModule(placeholder->as.placeholder.module->name);
     }
+    const char* saved_struct_name = current_struct_name_;
+    current_struct_name_ = placeholder->as.placeholder.name;
 
-    if (!placeholder->as.placeholder.decl_node) return get_g_type_undefined();
+    placeholder->is_resolving = true;
+
+    if (!placeholder->as.placeholder.decl_node) {
+        placeholder->is_resolving = false;
+        return get_g_type_undefined();
+    }
     Type* resolved = visit(placeholder->as.placeholder.decl_node);
+    placeholder->is_resolving = false;
+    current_struct_name_ = saved_struct_name;
+
     if (!resolved || is_type_undefined(resolved)) return get_g_type_undefined();
 
     // Unwrap TYPE_TYPE if necessary
@@ -2203,7 +2241,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-            if (existing_sym->symbol_type->as.placeholder.is_resolving) {
+            if (existing_sym->symbol_type->is_resolving) {
                 return existing_sym->symbol_type; /* Recursive call encountered placeholder */
             }
             placeholder = existing_sym->symbol_type;
@@ -2226,7 +2264,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         plat_memset(placeholder, 0, sizeof(Type));
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
-        placeholder->as.placeholder.is_resolving = false;
+        placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 
         Symbol sym = SymbolBuilder(unit_.getArena())
@@ -2248,7 +2286,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     if (placeholder) {
-        placeholder->as.placeholder.is_resolving = true;
+        placeholder->is_resolving = true;
     }
 
     if (node->type) {
@@ -2351,7 +2389,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             }
         } else {
             initializer_type = visit(node->initializer);
-            if (!initializer_type || is_type_undefined(initializer_type)) return get_g_type_undefined();
+            if (!initializer_type) return get_g_type_undefined();
+            if (is_type_undefined(initializer_type)) {
+                /* If it's the literal 'undefined', it's not an error. */
+                if (node->initializer->type != NODE_UNDEFINED_LITERAL) {
+                    return get_g_type_undefined();
+                }
+            }
         }
 
         /* If we created a placeholder, mutate it in-place now. */
@@ -2406,17 +2450,25 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
-        existing_sym->symbol_type = declared_type;
+        if (declared_type) {
+             char kbuf[16];
+             plat_i64_to_string(declared_type->kind, kbuf, sizeof(kbuf));
+             existing_sym->symbol_type = declared_type;
+        } else {
+        }
         existing_sym->details = node;
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
             existing_sym->mangled_name = existing_sym->name;
-        } else {
+        } else if (!existing_sym->mangled_name) {
             existing_sym->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
         }
 
         /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
         is_local = (current_fn_return_type_ != NULL);
-        existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        existing_sym->flags |= is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        if (node->is_const) {
+            existing_sym->flags |= SYMBOL_FLAG_CONST;
+        }
         node->symbol = existing_sym;
     } else {
         /* If not found (e.g. injected in tests), create and insert. */
@@ -2440,7 +2492,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    if (!declared_type) return get_g_type_undefined();
+    if (placeholder && placeholder->kind == TYPE_PLACEHOLDER) {
+        placeholder->is_resolving = false;
+    }
+
+    if (!declared_type) return NULL;
     return declared_type;
 }
 
@@ -3017,6 +3073,19 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
                  if (struct_type->kind == TYPE_PLACEHOLDER) {
                      struct_type = resolvePlaceholder(struct_type);
                  }
+            } else if (node->type_expr->type == NODE_IDENTIFIER) {
+                 Symbol* sym = unit_.getSymbolTable().lookup(node->type_expr->as.identifier.name);
+                 if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) {
+                      if (sym->details) {
+                           ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                           if (decl->initializer && decl->initializer->resolved_type) {
+                                struct_type = decl->initializer->resolved_type;
+                                if (struct_type->kind == TYPE_PLACEHOLDER) {
+                                    struct_type = resolvePlaceholder(struct_type);
+                                }
+                           }
+                      }
+                 }
             }
         }
 
@@ -3418,7 +3487,6 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
     safe_append(current, remaining, col_str);
     safe_append(current, remaining, "\n");
 
-    plat_print_debug(buffer);
 }
 
 Type* TypeChecker::visitCatchExpr(ASTNode* node) {
@@ -4010,7 +4078,6 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     safe_append(current, remaining, message);
     safe_append(current, remaining, "\n");
 
-    plat_print_debug(buffer);
 
     plat_abort();
 }
@@ -4877,9 +4944,6 @@ Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
 }
 
 void TypeChecker::fatalError(const char* message) {
-    plat_print_debug("Fatal type error: ");
-    plat_print_debug(message);
-    plat_print_debug("\n");
     plat_abort();
 }
 
