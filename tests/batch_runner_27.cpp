@@ -6,6 +6,7 @@
 #include "integration/arena_tests.cpp"
 #include "integration/arithmetic_tests.cpp"
 #include "integration/array_tests.cpp"
+#include "integration/batch50_tests.cpp"
 #include "integration/builtin_offsetof_tests.cpp"
 #include "integration/builtin_size_tests.cpp"
 #include "integration/cast_tests.cpp"
