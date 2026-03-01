@@ -10,10 +10,12 @@
         static Type t; \
         static bool initialized = false; \
         if (!initialized) { \
+            plat_memset(&t, 0, sizeof(Type)); \
             t.kind = type_kind; \
             t.size = sz; \
             t.alignment = align_val; \
             t.c_name = NULL; \
+            t.is_resolving = false; \
             initialized = true; \
         } \
         return &t; \
@@ -44,10 +46,12 @@ Type* get_g_type_anyerror() {
     static Type t;
     static bool initialized = false;
     if (!initialized) {
+        plat_memset(&t, 0, sizeof(Type));
         t.kind = TYPE_ERROR_SET;
         t.size = 4;
         t.alignment = 4;
         t.c_name = NULL;
+        t.is_resolving = false;
         t.as.error_set.name = "anyerror";
         t.as.error_set.tags = NULL;
         t.as.error_set.is_anonymous = false;
@@ -148,7 +152,7 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
     return new_type;
 }
 
-Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type, TypeInterner* /*interner*/) {
     if (!return_type) {
         plat_print_debug("createFunctionPointerType: return type is NULL\n");
         return get_g_type_undefined();
@@ -204,11 +208,6 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 }
 
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
-    if (!fields) {
-        plat_print_debug("createStructType: fields array is NULL\n");
-        // We can allow NULL fields for incomplete structs, but usually they are empty DynamicArrays.
-        // If it's truly NULL, it might be an error.
-    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
@@ -669,6 +668,7 @@ Type* TypeInterner::getOptionalType(Type* payload) {
 
 bool isTypeComplete(Type* type) {
     if (!type) return false;
+    if (type->is_resolving) return false;
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:
