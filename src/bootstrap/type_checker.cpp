@@ -258,6 +258,7 @@ Type* TypeChecker::visit(ASTNode* node) {
     }
 
     Type* resolved_type = NULL;
+    Type* previous_resolved = node->resolved_type;
     switch (node->type) {
         case NODE_ASSIGNMENT:       resolved_type = visitAssignment(node->as.assignment); break;
         case NODE_COMPOUND_ASSIGNMENT: resolved_type = visitCompoundAssignment(node->as.compound_assignment); break;
@@ -321,9 +322,14 @@ Type* TypeChecker::visit(ASTNode* node) {
             break;
     }
 
-    if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
-        node->resolved_type = resolved_type;
+    if (resolved_type && !is_type_undefined(resolved_type)) {
+        if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
+            node->resolved_type = resolved_type;
+        }
+    } else {
+        node->resolved_type = previous_resolved;
     }
+
     return resolved_type;
 }
 
@@ -2009,24 +2015,21 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     // Unwrap TYPE_TYPE if necessary
     if (resolved && resolved->kind == TYPE_TYPE) {
-        // How to unwrap TYPE_TYPE?
-        // Based on visitTypeName, it's usually in sym->details->initializer->resolved_type
-        // But here we just visited it.
-        // Actually visitStructDecl/visitEnumDecl/visitUnionDecl return the TYPE_STRUCT/etc wrapped in TYPE_TYPE?
-        // No, I think they return the TYPE_STRUCT/etc itself in some versions.
-        // Let's check visitStructDecl.
+        if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
+            ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
+            if (vd->initializer && vd->initializer->resolved_type && vd->initializer->resolved_type != get_g_type_type()) {
+                resolved = vd->initializer->resolved_type;
+            }
+        }
     }
 
     // Mutate placeholder in place
     if (resolved && resolved != placeholder) {
         // If resolved is TYPE_TYPE, we want the underlying type
         if (resolved->kind == TYPE_TYPE) {
-             // We need a way to get the type from TYPE_TYPE.
-             // Looking at visitTypeName:
-             // resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
              if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
                  ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
-                 if (vd->initializer && vd->initializer->resolved_type) {
+                 if (vd->initializer && vd->initializer->resolved_type && vd->initializer->resolved_type != get_g_type_type()) {
                      resolved = vd->initializer->resolved_type;
                  }
              }
@@ -2264,6 +2267,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         plat_memset(placeholder, 0, sizeof(Type));
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
+        placeholder->as.placeholder.decl_node = parent; // parent of VarDecl is typically the module root or a block
+        placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 
@@ -2837,6 +2842,43 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = resolvePlaceholder(base_type);
     }
 
+    /* If the base is a type constant (TYPE_TYPE), unwrap it. */
+    if (base_type->kind == TYPE_TYPE) {
+        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
+            base_type = node->base->resolved_type;
+        } else if (node->base->type == NODE_IDENTIFIER) {
+            Symbol* sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
+            if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE && sym->details) {
+                ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                if (decl->initializer && decl->initializer->resolved_type) {
+                    base_type = decl->initializer->resolved_type;
+                }
+            }
+        } else if (node->base->type == NODE_MEMBER_ACCESS) {
+            /* Handled recursively via node->base->resolved_type above */
+            base_type = node->base->resolved_type;
+        }
+
+        if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+            base_type = resolvePlaceholder(base_type);
+        }
+
+        /* If after resolution it is still TYPE_TYPE (e.g. from an @import),
+           we might need to look deeper into the symbol details. */
+        if (base_type && base_type->kind == TYPE_TYPE && node->base->type == NODE_MEMBER_ACCESS) {
+             Symbol* sym = node->base->as.member_access->symbol;
+             if (sym && sym->details) {
+                 ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                 if (decl->initializer && decl->initializer->resolved_type) {
+                     base_type = decl->initializer->resolved_type;
+                     if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+                         base_type = resolvePlaceholder(base_type);
+                     }
+                 }
+             }
+        }
+    }
+
     /* Auto-dereference for single level pointer. */
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
@@ -2873,10 +2915,22 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 }
 
                 if (sym->symbol_type) {
-                    if (sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-                        return resolvePlaceholder(sym->symbol_type);
+                    Type* result_type = sym->symbol_type;
+                    if (result_type->kind == TYPE_PLACEHOLDER) {
+                        result_type = resolvePlaceholder(result_type);
                     }
-                    return sym->symbol_type;
+
+                    /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
+                    if (result_type->kind == TYPE_TYPE && sym->details) {
+                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                        if (decl->initializer && decl->initializer->resolved_type) {
+                            result_type = decl->initializer->resolved_type;
+                            if (result_type->kind == TYPE_PLACEHOLDER) {
+                                result_type = resolvePlaceholder(result_type);
+                            }
+                        }
+                    }
+                    return result_type;
                 }
             }
         } else if (base_type->kind == TYPE_MODULE) {
