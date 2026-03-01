@@ -78,6 +78,7 @@ struct Type {
     size_t size;
     size_t alignment;
     const char* c_name; // Mangled C89 name for structs, unions, enums
+    bool is_resolving;
 
     union {
         struct {
@@ -143,7 +144,6 @@ struct Type {
             const char* name;
             struct ASTNode* decl_node;
             struct Module* module;
-            bool is_resolving;
         } placeholder;
     } as;
 };
@@ -214,7 +214,7 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
  * @param return_type A pointer to the return type.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type);
+Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type, TypeInterner* interner = NULL);
 
 /**
  * @brief Creates a new array Type object from the arena.
@@ -363,5 +363,6 @@ Type* get_g_type_undefined();
 Type* get_g_type_type();
 Type* get_g_type_noreturn();
 Type* get_g_type_anytype();
+Type* get_g_type_anyerror();
 
 #endif // TYPE_SYSTEM_HPP
