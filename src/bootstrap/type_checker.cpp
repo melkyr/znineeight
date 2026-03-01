@@ -233,7 +233,9 @@ Type* TypeChecker::visit(ASTNode* node) {
     if (node->resolved_type) {
         if (node->resolved_type->kind == TYPE_PLACEHOLDER) {
              Type* resolved = resolvePlaceholder(node->resolved_type);
-             if (resolved && !is_type_undefined(resolved)) {
+             /* Only return early if we got a concrete (non-placeholder) type.
+                If still a placeholder, continue to visit() to allow resolution. */
+             if (resolved && !is_type_undefined(resolved) && resolved->kind != TYPE_PLACEHOLDER) {
                  node->resolved_type = resolved;
                  return resolved;
              }
@@ -833,6 +835,44 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
     if (!node->callee) return get_g_type_undefined();
     callee_type = visit(node->callee);
+
+    /* --- Task 165: Call Site Resolution - Early cataloging --- */
+    /* Always catalog the call site, even if type checking fails later. */
+    entry.call_node = parent;
+    entry.context = current_fn_name_ ? current_fn_name_ : "global";
+    entry.mangled_name = NULL;
+    entry.call_type = CALL_DIRECT;
+    entry.resolved = false;
+    entry.error_if_unresolved = NULL;
+
+    res = resolveCallSite(node, entry);
+    entry_id = unit_.getCallSiteLookupTable().addEntry(parent, entry.context);
+
+    switch (res) {
+        case RESOLVED:
+            unit_.getCallSiteLookupTable().resolveEntry(entry_id, entry.mangled_name, entry.call_type);
+            break;
+        case UNRESOLVED_SYMBOL:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", entry.call_type);
+            break;
+        case UNRESOLVED_GENERIC:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", entry.call_type);
+            break;
+        case INDIRECT_REJECTED:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call (not supported in bootstrap)", entry.call_type);
+            break;
+        case C89_INCOMPATIBLE:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
+            break;
+        case BUILTIN_REJECTED:
+            /* Handled early in visitFunctionCall */
+            break;
+        case FORWARD_REFERENCE:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
+            break;
+    }
+    /* --- End Task 165 --- */
+
     if (!callee_type || is_type_undefined(callee_type)) return get_g_type_undefined();
 
     /* Detect and catalogue generic instantiation if this is a generic call. */
@@ -1055,41 +1095,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    /* --- Task 165: Call Site Resolution Refactored --- */
-    entry.call_node = parent;
-    entry.context = current_fn_name_ ? current_fn_name_ : "global";
-    entry.mangled_name = NULL;
-    entry.call_type = CALL_DIRECT;
-    entry.resolved = false;
-    entry.error_if_unresolved = NULL;
-
-    res = resolveCallSite(node, entry);
-    entry_id = unit_.getCallSiteLookupTable().addEntry(parent, entry.context);
-
-    switch (res) {
-        case RESOLVED:
-            unit_.getCallSiteLookupTable().resolveEntry(entry_id, entry.mangled_name, entry.call_type);
-            break;
-        case UNRESOLVED_SYMBOL:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", entry.call_type);
-            break;
-        case UNRESOLVED_GENERIC:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", entry.call_type);
-            break;
-        case INDIRECT_REJECTED:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call (not supported in bootstrap)", entry.call_type);
-            break;
-        case C89_INCOMPATIBLE:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
-            break;
-        case BUILTIN_REJECTED:
-            // Handled early in visitFunctionCall
-            break;
-        case FORWARD_REFERENCE:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
-            break;
-    }
-    // --- End Task 165 ---
 
     return (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.return_type : callee_type->as.function_pointer.return_type;
 }
@@ -2244,9 +2249,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-            if (existing_sym->symbol_type->is_resolving) {
-                return existing_sym->symbol_type; /* Recursive call encountered placeholder */
-            }
             placeholder = existing_sym->symbol_type;
         } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
             return existing_sym->symbol_type;
@@ -2296,6 +2298,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     if (node->type) {
         declared_type = visit(node->type);
+        if (declared_type && declared_type->kind == TYPE_PLACEHOLDER) {
+            declared_type = resolvePlaceholder(declared_type);
+        }
         if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
     } else {
         declared_type = NULL;
@@ -2497,11 +2502,22 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    if (placeholder && placeholder->kind == TYPE_PLACEHOLDER) {
+    if (placeholder) {
         placeholder->is_resolving = false;
     }
 
     if (!declared_type) return NULL;
+
+    /* Critical: Set the initializer's resolved_type so visitMemberAccess can unwrap it.
+       Only apply to aggregate type declarations (struct, union, enum). */
+    if (node->initializer && declared_type && !is_type_undefined(declared_type)) {
+        if (node->initializer->type == NODE_STRUCT_DECL ||
+            node->initializer->type == NODE_UNION_DECL ||
+            node->initializer->type == NODE_ENUM_DECL) {
+            node->initializer->resolved_type = declared_type;
+        }
+    }
+
     return declared_type;
 }
 
@@ -2836,6 +2852,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
+    if (base_type) {
+        char buf[128];
+        typeToString(base_type, buf, sizeof(buf));
+        plat_print_debug("DEBUG visitMemberAccess base: ");
+        plat_print_debug(buf);
+        plat_print_debug(", field: ");
+        plat_print_debug(node->field_name);
+        plat_print_debug("\n");
+    }
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
     if (base_type->kind == TYPE_PLACEHOLDER) {
@@ -2899,19 +2924,39 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (target_mod && target_mod->symbols) {
             Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {
+                if (sym->symbol_type) {
+                    char buf[128];
+                    typeToString(sym->symbol_type, buf, sizeof(buf));
+                    plat_print_debug("DEBUG: Found module symbol type=");
+                    plat_print_debug(buf);
+                    plat_print_debug("\n");
+                }
                 node->symbol = sym;
-                /* If it's a constant type alias, we might need to resolve it.
-                   Switch context temporarily to target module. */
+                /* Ensure symbol is fully resolved. */
                 if (!sym->symbol_type && sym->details) {
-                    const char* saved_module = unit_.getCurrentModule();
-                    unit_.setCurrentModule(target_mod->name);
-                    TypeChecker target_checker(unit_);
-                    if (sym->kind == SYMBOL_FUNCTION) {
+                    if (sym->kind == SYMBOL_VARIABLE) {
+                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                        /* Visit the initializer to set its resolved_type. 
+                           We visit the initializer directly to avoid creating placeholders with NULL decl_node. */
+                        if (decl->initializer && !decl->initializer->resolved_type) {
+                            const char* saved_module = unit_.getCurrentModule();
+                            unit_.setCurrentModule(target_mod->name);
+                            TypeChecker target_checker(unit_);
+                            target_checker.visit(decl->initializer);
+                            unit_.setCurrentModule(saved_module);
+                        }
+                        /* If the initializer was resolved, set the symbol type. */
+                        if (decl->initializer && decl->initializer->resolved_type) {
+                            sym->symbol_type = (decl->initializer->resolved_type->kind == TYPE_TYPE) ?
+                                                get_g_type_type() : decl->initializer->resolved_type;
+                        }
+                    } else if (sym->kind == SYMBOL_FUNCTION) {
+                        const char* saved_module = unit_.getCurrentModule();
+                        unit_.setCurrentModule(target_mod->name);
+                        TypeChecker target_checker(unit_);
                         target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
-                    } else if (sym->kind == SYMBOL_VARIABLE) {
-                        target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                        unit_.setCurrentModule(saved_module);
                     }
-                    unit_.setCurrentModule(saved_module);
                 }
 
                 if (sym->symbol_type) {
@@ -2923,11 +2968,27 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                     /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
                     if (result_type->kind == TYPE_TYPE && sym->details) {
                         ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+
+                        /* Try initializer's resolved_type first (set by Fix #1). */
                         if (decl->initializer && decl->initializer->resolved_type) {
                             result_type = decl->initializer->resolved_type;
-                            if (result_type->kind == TYPE_PLACEHOLDER) {
-                                result_type = resolvePlaceholder(result_type);
-                            }
+                        }
+                        /* Fallback: visit the initializer to get the actual type. */
+                        else if (decl->initializer) {
+                             const char* saved_module = unit_.getCurrentModule();
+                             unit_.setCurrentModule(target_mod->name);
+                             TypeChecker target_checker(unit_);
+                             Type* t = target_checker.visit(decl->initializer);
+                             if (t && t->kind == TYPE_TYPE && decl->initializer->resolved_type) {
+                                 result_type = decl->initializer->resolved_type;
+                             } else if (t) {
+                                 result_type = t;
+                             }
+                             unit_.setCurrentModule(saved_module);
+                        }
+
+                        if (result_type && result_type->kind == TYPE_PLACEHOLDER) {
+                            result_type = resolvePlaceholder(result_type);
                         }
                     }
                     return result_type;
