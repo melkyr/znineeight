@@ -703,16 +703,8 @@ bool isTypeComplete(Type* type) {
             return false;
         case TYPE_STRUCT:
         case TYPE_UNION:
-            // calculateStructLayout sets size > 0 for non-empty structs
-            // Zig allows 0-sized structs, but they are "complete" once layout is calculated.
-            // For bootstrap, we'll consider it complete if it has a valid fields pointer
-            // and we've at least attempted layout.
-            // A simple proxy for "layout calculated" in this compiler is size > 0
-            // OR it being a explicitly defined empty struct.
-            // Given calculateStructLayout is called after fields are processed,
-            // let's use a heuristic: if it's a struct/union, it must have fields (even if empty)
-            // and calculateStructLayout must have been called.
-            // Since calculateStructLayout sets alignment >= 1, we can check that.
+            /* Heuristic for completion: layout must have been calculated (alignment >= 1)
+               and fields must be processed. We allow alignment >= 1 even for empty structs. */
             return type->alignment >= 1 && type->as.struct_details.fields != NULL;
         default:
             return false;
@@ -799,7 +791,12 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             break;
         }
         case TYPE_ENUM:
-            safe_append(current, remaining, "enum");
+            safe_append(current, remaining, "enum ");
+            if (type->as.enum_details.name) {
+                safe_append(current, remaining, type->as.enum_details.name);
+            } else {
+                safe_append(current, remaining, "{...}");
+            }
             break;
         case TYPE_STRUCT:
             safe_append(current, remaining, "struct ");
