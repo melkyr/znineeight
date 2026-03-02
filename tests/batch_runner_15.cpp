@@ -1,4 +1,4 @@
-// Generated batch runner for tests/main_batch15.cpp
+// Generated batch runner for tests/main_batch34.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
 #include "test_utils.cpp"
 #include "c89_validation/gcc_validator.cpp"
@@ -6,6 +6,7 @@
 #include "integration/arena_tests.cpp"
 #include "integration/arithmetic_tests.cpp"
 #include "integration/array_tests.cpp"
+#include "integration/batch50_tests.cpp"
 #include "integration/builtin_offsetof_tests.cpp"
 #include "integration/builtin_size_tests.cpp"
 #include "integration/cast_tests.cpp"
@@ -55,4 +56,4 @@
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"
-#include "main_batch15.cpp"
+#include "main_batch34.cpp"
