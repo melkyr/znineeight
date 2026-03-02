@@ -562,6 +562,28 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
 ---
 
+### Examples run after task
+
+All examples have been verified to compile and run correctly using the `zig0` bootstrap compiler and `gcc`.
+
+| Example | Status | Output Verified | Notes |
+| :--- | :--- | :--- | :--- |
+| `hello` | PASSED | "Hello, world!" | Multi-module, runtime integration |
+| `prime` | PASSED | "2357" | Arithmetic, loops |
+| `fibonacci` | PASSED | "55" | Recursion |
+| `heapsort` | PASSED | "135671112131520" | Arrays, loops (FP warnings*) |
+| `quicksort` | PASSED | Sorted arrays | Function pointers, many-item pointers (FP warnings*) |
+| `sort_strings` | PASSED | Sorted strings | Multi-level pointers (FP warnings*) |
+| `func_ptr_return` | PASSED | "10 + 5 = 15..." | Functions returning function pointers |
+| `days_in_month` | PASSED | Days per month | Switch/if expressions, ranges |
+
+*\*FP warnings: "Potential null pointer dereference" warnings are currently emitted due to the `NullPointerAnalyzer` being pessimistic about parameters and not fully tracking branch-exiting control flow (like `return` guards). These are documented as false positives.*
+
+#### Fix: Extern Symbol Mangling Consistency
+Resolved an issue where `extern` functions and runtime intrinsics (like `__bootstrap_print`) were inconsistently mangled. `C89Emitter::getC89GlobalName` now correctly preserves the original name for all symbols marked with `SYMBOL_FLAG_EXTERN`, ensuring that declarations and call sites match.
+
+---
+
 ### Task 9.5.11 Extract Duplicate Label Logic (Week 3)
 
 **Problem**: `visitBreakStmt` and `visitContinueStmt` duplicate ~80% of their logic.

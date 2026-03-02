@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Running all RetroZig Examples ==="
 
-EXAMPLES="hello prime fibonacci heapsort quicksort sort_strings func_ptr_return"
+EXAMPLES="hello prime fibonacci heapsort quicksort sort_strings func_ptr_return days_in_month"
 
 for ex in $EXAMPLES; do
     echo ""

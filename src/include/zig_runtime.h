@@ -72,8 +72,8 @@ static void __bootstrap_panic(const char* msg, const char* file, int line) {
 /**
  * @brief Print helper for std.debug.print
  */
-static void __bootstrap_print(const char* s) {
-    fputs(s, stderr);
+static void __bootstrap_print(const u8* s) {
+    fputs((const char*)s, stderr);
 }
 
 /**
