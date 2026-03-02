@@ -813,33 +813,19 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
 
 
-### Task 9.6: Fix Recursive Type Instability for Slices
+### Task 9.6: Fix Recursive Type Instability for Slices [DONE]
 
 Goal: Ensure that types containing slices of themselves (e.g., JsonValue with []JsonValue) resolve correctly without incomplete‑type errors.
 
 Root Cause: The placeholder system currently handles pointers well, but slices are represented as structs that contain a pointer and a length. When a slice’s element type is the type being defined, the placeholder resolution may not properly update the slice’s element type, leading to “incomplete type” errors when accessing fields later.
 
 Implementation:
-
-    In createSliceType, if the element type is a placeholder, store a reference to that placeholder and mark the slice as “pending.”
-
-    After the placeholder is resolved to a real type, update all dependent slice types in‑place (similar to how pointers are handled). This may require keeping a list of dependent slices on the placeholder.
-
-    Alternatively, ensure that slice types are always created with the placeholder and that any later use forces resolution of the placeholder before the slice’s size/alignment is needed. Currently, slice size is fixed (two words) regardless of element type, so the slice itself can be considered complete even if the element type is a placeholder. The problem arises when trying to access fields of the element type. So we need to ensure that when we access an element of the slice, the element type is resolved.
+- Hardened `TypeChecker::visitArrayAccess`, `visitArraySlice`, and `visitForStmt` to aggressively resolve placeholders before accessing properties of element or iterable types.
+- Fixed a regression in `for` loop iterator codegen where an incorrect `const` qualifier was being emitted for array iterators.
 
 Verification:
-Write a test that defines a mutually recursive slice type across two modules:
-zig
-
-// a.zig
-const b = @import("b.zig");
-pub const A = struct { data: []B };
-
-// b.zig
-const a = @import("a.zig");
-pub const B = struct { value: i32, next: ?*A };
-
-Compile a.zig and ensure no “incomplete type” errors occur. Also verify that the generated C code contains the correct struct definitions.
+- Added `tests/integration/recursive_slice_tests.cpp` (integrated into Batch 50) covering cross-module mutual recursion and self-referencing tagged unions involving slices.
+- Verified that all Batch 50 and Batch 41 (for loops) tests pass.
 
 ### Task 9.7: Implicit Coercion from Slices to Many‑Item Pointers
 
