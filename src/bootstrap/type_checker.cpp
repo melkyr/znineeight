@@ -845,6 +845,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     entry.resolved = false;
     entry.error_if_unresolved = NULL;
 
+    /* Detect and catalogue generic instantiation if this is a generic call. */
+    catalogGenericInstantiation(node);
+
     res = resolveCallSite(node, entry);
     entry_id = unit_.getCallSiteLookupTable().addEntry(parent, entry.context);
 
@@ -874,9 +877,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     /* --- End Task 165 --- */
 
     if (!callee_type || is_type_undefined(callee_type)) return get_g_type_undefined();
-
-    /* Detect and catalogue generic instantiation if this is a generic call. */
-    catalogGenericInstantiation(node);
 
     /* --- Task 166: Indirect Call Detection --- */
     ind_type = detectIndirectType(node->callee);
@@ -2663,10 +2663,6 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     void* mem;
     DynamicArray<StructField>* fields;
     Type* struct_type;
-
-    if (!struct_name) {
-        return reportAndReturnUndefined(parent->loc, ERR_NON_C89_FEATURE, "anonymous structs are not supported in bootstrap compiler");
-    }
     if (!node->fields) return get_g_type_undefined();
 
     /* 1. Check for duplicate field names. */
@@ -2735,10 +2731,6 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     char* enum_name;
     size_t len;
     Type* union_type;
-
-    if (!union_name) {
-        return reportAndReturnUndefined(parent->loc, ERR_NON_C89_FEATURE, "anonymous unions are not supported in bootstrap compiler");
-    }
     if (!node->fields) return get_g_type_undefined();
 
     tag_type = NULL;
