@@ -1293,14 +1293,28 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     }
 
     Type* base = array_type;
+    if (base->kind == TYPE_PLACEHOLDER) {
+        base = resolvePlaceholder(base);
+    }
+
     // Auto-dereference for pointer to array
-    if (base->kind == TYPE_POINTER && !base->as.pointer.is_many && base->as.pointer.base->kind == TYPE_ARRAY) {
-        base = base->as.pointer.base;
+    if (base->kind == TYPE_POINTER && !base->as.pointer.is_many) {
+        Type* target = base->as.pointer.base;
+        if (target->kind == TYPE_PLACEHOLDER) {
+            target = resolvePlaceholder(target);
+        }
+        if (target->kind == TYPE_ARRAY) {
+            base = target;
+        }
     }
 
     if (base->kind == TYPE_POINTER && base->as.pointer.is_many) {
         // Many-item pointer indexing: returns the base type
-        return base->as.pointer.base;
+        Type* res = base->as.pointer.base;
+        if (res && res->kind == TYPE_PLACEHOLDER) {
+            res = resolvePlaceholder(res);
+        }
+        return res;
     }
 
     if (base->kind == TYPE_FUNCTION_POINTER) {
@@ -1332,7 +1346,11 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         }
     }
 
-    return (base->kind == TYPE_ARRAY) ? base->as.array.element_type : base->as.slice.element_type;
+    Type* result = (base->kind == TYPE_ARRAY) ? base->as.array.element_type : base->as.slice.element_type;
+    if (result && result->kind == TYPE_PLACEHOLDER) {
+        result = resolvePlaceholder(result);
+    }
+    return result;
 }
 
 Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
@@ -1356,13 +1374,24 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     if (!node->array) return get_g_type_undefined();
     original_base_type = visit(node->array);
     if (!original_base_type || is_type_undefined(original_base_type)) return get_g_type_undefined();
+
+    if (original_base_type->kind == TYPE_PLACEHOLDER) {
+        original_base_type = resolvePlaceholder(original_base_type);
+    }
+
     base_type = original_base_type;
 
     reached_via_const_ptr = false;
     /* Auto-dereference for pointer to array. */
-    if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_ARRAY) {
-        reached_via_const_ptr = base_type->as.pointer.is_const;
-        base_type = base_type->as.pointer.base;
+    if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many) {
+        Type* target = base_type->as.pointer.base;
+        if (target->kind == TYPE_PLACEHOLDER) {
+            target = resolvePlaceholder(target);
+        }
+        if (target->kind == TYPE_ARRAY) {
+            reached_via_const_ptr = base_type->as.pointer.is_const;
+            base_type = target;
+        }
     }
 
     if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
@@ -1385,6 +1414,10 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     } else { // Many-item pointer
         element_type = base_type->as.pointer.base;
         is_const = base_type->as.pointer.is_const;
+    }
+
+    if (element_type && element_type->kind == TYPE_PLACEHOLDER) {
+        element_type = resolvePlaceholder(element_type);
     }
 
     /* Resolve start and end. */
@@ -1910,6 +1943,10 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     iterable_type = visit(node->iterable_expr);
     if (!iterable_type || is_type_undefined(iterable_type)) return get_g_type_undefined();
 
+    if (iterable_type->kind == TYPE_PLACEHOLDER) {
+        iterable_type = resolvePlaceholder(iterable_type);
+    }
+
     node->label_id = next_label_id_++;
 
     checkDuplicateLabel(node->label, node->iterable_expr->loc);
@@ -1924,9 +1961,13 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         if (iterable_type->kind == TYPE_ARRAY) {
             item_type = iterable_type->as.array.element_type;
             is_valid_iterable = true;
-        } else if (iterable_type->kind == TYPE_POINTER && iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
-            item_type = iterable_type->as.pointer.base->as.array.element_type;
-            is_valid_iterable = true;
+        } else if (iterable_type->kind == TYPE_POINTER) {
+            Type* target = iterable_type->as.pointer.base;
+            if (target->kind == TYPE_PLACEHOLDER) target = resolvePlaceholder(target);
+            if (target->kind == TYPE_ARRAY) {
+                item_type = target->as.array.element_type;
+                is_valid_iterable = true;
+            }
         } else if (iterable_type->kind == TYPE_SLICE) {
             item_type = iterable_type->as.slice.element_type;
             is_valid_iterable = true;
@@ -1934,6 +1975,10 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             item_type = get_g_type_usize();
             is_valid_iterable = true;
         }
+    }
+
+    if (item_type && item_type->kind == TYPE_PLACEHOLDER) {
+        item_type = resolvePlaceholder(item_type);
     }
 
     if (!is_valid_iterable) {

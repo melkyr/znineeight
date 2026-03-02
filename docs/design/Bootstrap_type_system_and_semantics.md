@@ -1490,3 +1490,15 @@ As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened 
     - `sizeof(?T) = align_up(sizeof(T), alignof(int)) + sizeof(int)`, then padded to `max(alignof(T), alignof(int))`.
     - This ensures that types with large alignment (like `f64`) are correctly represented in the `Optional_T` C struct.
 - **Interning Logic**: The `TypeInterner` now correctly identifies types containing placeholders and bypasses interning for them, ensuring that they remain unique until they are fully resolved and can be safely deduplicated.
+
+## 24. Recursive Slices and For-Loop Stabilization (Task 9.6)
+
+### 24.1 Recursive Slice Handling
+To ensure that types containing slices of themselves (e.g., `JsonValue` with `[]JsonValue`) resolve correctly during mutual resolution, the `TypeChecker` has been hardened to aggressively resolve placeholders.
+
+- **On-Demand Element Resolution**: In `visitArrayAccess` and `visitArraySlice`, the element type of the base (array, slice, or pointer) is explicitly checked for `TYPE_PLACEHOLDER` and resolved via `resolvePlaceholder` before any size-dependent or field-dependent operations are performed.
+- **Mutual Resolution Stability**: By forcing resolution during access, the compiler ensures that the in-place mutation of placeholders is reflected in all dependent slice types, even across module boundaries.
+
+### 24.2 For-Loop Iterator Stabilization
+A regression in the code generation for `for` loops was resolved by ensuring that the internal iterator pointer is emitted with the correct mutability.
+- **Internal Pointer Mutability**: In `C89Emitter::emitFor`, when an array is iterated, it is treated as a pointer. This pointer is now emitted as a mutable pointer (`is_const = false`) to ensure compatibility with various iteration patterns and C89 compiler expectations.
