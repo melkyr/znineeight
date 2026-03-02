@@ -562,6 +562,25 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
 ---
 
+### Examples run after task
+
+All examples have been verified to compile and run correctly using the `zig0` bootstrap compiler and `gcc`.
+
+| Example | Status | Notes |
+| :--- | :--- | :--- |
+| `hello` | PASSED | Multi-module, runtime integration |
+| `prime` | PASSED | Arithmetic, loops |
+| `fibonacci` | PASSED | Recursion |
+| `heapsort` | PASSED | Arrays, loops (FP warnings*) |
+| `quicksort` | PASSED | Function pointers, many-item pointers (FP warnings*) |
+| `sort_strings` | PASSED | Multi-level pointers (FP warnings*) |
+| `func_ptr_return` | PASSED | Functions returning function pointers |
+| `days_in_month` | PASSED | Switch expressions, if expressions, inclusive ranges |
+
+*\*FP warnings: "Potential null pointer dereference" warnings are currently emitted due to the `NullPointerAnalyzer` being pessimistic about parameters and not fully tracking branch-exiting control flow (like `return` guards). These are documented as false positives.*
+
+---
+
 ### Task 9.5.11 Extract Duplicate Label Logic (Week 3)
 
 **Problem**: `visitBreakStmt` and `visitContinueStmt` duplicate ~80% of their logic.
