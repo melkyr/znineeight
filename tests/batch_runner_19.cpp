@@ -42,6 +42,7 @@
 #include "integration/param_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
+#include "integration/recursive_slice_tests.cpp"
 #include "integration/recursive_type_tests.cpp"
 #include "integration/rejection_tests.cpp"
 #include "integration/slice_tests.cpp"

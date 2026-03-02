@@ -1439,7 +1439,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         Type* iter_type = node->iterable_expr->resolved_type;
         if (iter_type->kind == TYPE_ARRAY) {
              // Emit as pointer
-             emitType(createPointerType(arena_, iter_type->as.array.element_type, true), iter_name);
+             emitType(createPointerType(arena_, iter_type->as.array.element_type, false), iter_name);
         } else {
              emitType(iter_type, iter_name);
         }

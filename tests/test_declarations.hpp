@@ -1122,4 +1122,8 @@ bool test_OptionalStabilization_RecursiveOptional();
 bool test_OptionalStabilization_AlignedLayout();
 TEST_FUNC(MultiError_Reporting);
 
+// Batch 50: Recursive Slices
+TEST_FUNC(RecursiveSlice_MultiModule);
+TEST_FUNC(RecursiveSlice_SelfReference);
+
 #endif // TEST_DECLARATIONS_HPP
