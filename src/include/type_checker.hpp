@@ -77,6 +77,9 @@ public:
     Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
 
+    Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
+    bool is_type_undefined(Type* t);
+
     // Public for TDD
     bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc);
     Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);

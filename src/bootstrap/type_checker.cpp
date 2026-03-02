@@ -124,6 +124,15 @@ TypeChecker::TypeChecker(CompilationUnit& unit_arg)
       current_fn_labels_start_(0), next_label_id_(0) {
 }
 
+Type* TypeChecker::reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg) {
+    unit_.getErrorHandler().report(code, loc, ErrorHandler::getMessage(code), unit_.getArena(), msg);
+    return NULL;
+}
+
+bool TypeChecker::is_type_undefined(Type* t) {
+    return !t || (t->kind == TYPE_UNDEFINED);
+}
+
 void TypeChecker::registerPlaceholders(ASTNode* root) {
     if (!root || root->type != NODE_BLOCK_STMT) return;
 
@@ -176,7 +185,10 @@ void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
         // Main pass: visit children directly to avoid root block scope level issue
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
-            visit((*root->as.block_stmt.statements)[i]);
+            ASTNode* stmt = (*root->as.block_stmt.statements)[i];
+            if (stmt) {
+                visit(stmt);
+            }
         }
     } else {
         visit(root);
@@ -218,13 +230,37 @@ Type* TypeChecker::visit(ASTNode* node) {
         return NULL;
     }
 
+    if (node->resolved_type) {
+        if (node->resolved_type->kind == TYPE_PLACEHOLDER) {
+             Type* resolved = resolvePlaceholder(node->resolved_type);
+             /* Only return early if we got a concrete (non-placeholder) type.
+                If still a placeholder, continue to visit() to allow resolution. */
+             if (resolved && !is_type_undefined(resolved) && resolved->kind != TYPE_PLACEHOLDER) {
+                 node->resolved_type = resolved;
+                 return resolved;
+             }
+        } else if (!is_type_undefined(node->resolved_type)) {
+             return node->resolved_type;
+        }
+    }
+
+    // Temporary print to find where it crashes
+    char type_buf[16];
+    plat_i64_to_string(node->type, type_buf, sizeof(type_buf));
+
+    /* DEBUG */
+    if (node->type == NODE_BLOCK_STMT) {
+    }
+
     VisitDepthGuard depth_guard(*this);
+    // Recursion depth guard: max 200 calls. With ~1KB per call, this uses <200KB stack,
+    // well under the 1MB Windows 98 limit.
     if (visit_depth_ > MAX_VISIT_DEPTH) {
-        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, node->loc, "Type checking recursion depth exceeded (max 200)");
-        return get_g_type_undefined();
+        return reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR, "Exceeded maximum recursion depth");
     }
 
     Type* resolved_type = NULL;
+    Type* previous_resolved = node->resolved_type;
     switch (node->type) {
         case NODE_ASSIGNMENT:       resolved_type = visitAssignment(node->as.assignment); break;
         case NODE_COMPOUND_ASSIGNMENT: resolved_type = visitCompoundAssignment(node->as.compound_assignment); break;
@@ -284,31 +320,30 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_COMPTIME_BLOCK:   resolved_type = visitComptimeBlock(&node->as.comptime_block); break;
         case NODE_IMPORT_STMT:      resolved_type = visitImportStmt(node->as.import_stmt); break;
         default:
-            // TODO: Add error handling for unhandled node types.
-            resolved_type = NULL;
+            resolved_type = reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR, "Unhandled node type in TypeChecker");
             break;
     }
 
-    if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
-        node->resolved_type = resolved_type;
+    if (resolved_type && !is_type_undefined(resolved_type)) {
+        if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
+            node->resolved_type = resolved_type;
+        }
+    } else {
+        node->resolved_type = previous_resolved;
     }
+
     return resolved_type;
 }
 
 Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     Type* operand_type;
     bool is_lvalue;
-    char type_str[64];
-    char msg_buffer[256];
-    char* current;
-    size_t remaining;
     Type* base_type;
 
+    if (!node->operand) return get_g_type_undefined();
     /* In a unit_ test, the operand's type might already be resolved. */
     operand_type = node->operand->resolved_type ? node->operand->resolved_type : visit(node->operand);
-    if (!operand_type) {
-        return NULL; /* Error already reported. */
-    }
+    if (!operand_type || is_type_undefined(operand_type)) return get_g_type_undefined();
 
     switch (node->op) {
         case TOKEN_STAR:
@@ -325,7 +360,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             // Now, perform standard pointer checks.
             if (operand_type->kind == TYPE_FUNCTION_POINTER) {
                 unit_.getErrorHandler().report(ERR_DEREF_FUNCTION_POINTER, node->operand->loc, ErrorHandler::getMessage(ERR_DEREF_FUNCTION_POINTER), "Functions are called directly.");
-                return NULL;
+                return get_g_type_undefined();
             }
 
             if (operand_type->kind != TYPE_POINTER) {
@@ -337,15 +372,13 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
                 safe_append(current, remaining, "Cannot dereference a non-pointer type '");
                 safe_append(current, remaining, type_str);
                 safe_append(current, remaining, "'");
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-                return NULL;
+                return reportAndReturnUndefined(node->operand->loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
 
 
             base_type = operand_type->as.pointer.base;
             if (base_type->kind == TYPE_VOID) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->operand->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot dereference a void pointer");
-                return NULL;
+                return reportAndReturnUndefined(node->operand->loc, ERR_TYPE_MISMATCH, "Cannot dereference a void pointer");
             }
 
             return base_type;
@@ -370,7 +403,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
             unit_.getErrorHandler().report(ERR_LVALUE_EXPECTED, node->operand->loc, ErrorHandler::getMessage(ERR_LVALUE_EXPECTED), "Address-of operator '&' requires an l-value.");
-            return NULL;
+            return get_g_type_undefined();
         }
         case TOKEN_MINUS:
         case TOKEN_PLUS:
@@ -378,29 +411,26 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             if (isNumericType(operand_type)) {
                 return operand_type;
             }
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Unary operator cannot be applied to non-numeric types.");
-            return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Unary operator cannot be applied to non-numeric types.");
 
         case TOKEN_BANG:
             // Logical NOT is valid for bools, integers, and pointers.
             if (operand_type->kind == TYPE_BOOL || isIntegerType(operand_type) || operand_type->kind == TYPE_POINTER) {
                 return get_g_type_bool();
             }
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Logical NOT operator '!' can only be applied to bools, integers, or pointers.");
-            return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Logical NOT operator '!' can only be applied to bools, integers, or pointers.");
 
         case TOKEN_TILDE:
             // Bitwise NOT is only valid for integer types in C89.
             if (isIntegerType(operand_type)) {
                 return operand_type; // Bitwise NOT doesn't change the type.
             }
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Bitwise NOT operator '~' can only be applied to integer types.");
-            return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Bitwise NOT operator '~' can only be applied to integer types.");
 
         default:
             // Should not happen if parser is correct.
             unit_.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, ErrorHandler::getMessage(ERR_INVALID_OPERATION), "Unsupported unary operator.");
-            return NULL;
+            return get_g_type_undefined();
     }
 }
 
@@ -414,12 +444,12 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
     bool used_right_lit;
     Type* result;
 
+    if (!node->left || !node->right) return get_g_type_undefined();
     left_type = node->left->resolved_type ? node->left->resolved_type : visit(node->left);
     right_type = node->right->resolved_type ? node->right->resolved_type : visit(node->right);
 
-    if (!left_type || !right_type) {
-        return NULL; /* Error already reported. */
-    }
+    if (!left_type || !right_type) return get_g_type_undefined();
+    if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
 
     /* Special handling for literals to support promotion in binary operations.
        We only use TYPE_INTEGER_LITERAL for mixed cases (literal + non-literal)
@@ -465,6 +495,8 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
  * @return The resulting Type*, or NULL if the operation is invalid.
  */
 Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+    if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
+
     /* Try literal promotion first for all operators that support it.
        Z98 allows numeric literals to be implicitly coerced to a concrete type
        as long as the value fits. */
@@ -476,15 +508,13 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
     /* Reject arithmetic/relational on function pointers, except for equality. */
     if (left_type->kind == TYPE_FUNCTION_POINTER || right_type->kind == TYPE_FUNCTION_POINTER) {
         if (op != TOKEN_EQUAL_EQUAL && op != TOKEN_BANG_EQUAL) {
-            unit_.getErrorHandler().report(ERR_INVALID_OP_FUNCTION_POINTER, loc, ErrorHandler::getMessage(ERR_INVALID_OP_FUNCTION_POINTER), "Only equality comparisons (==, !=) are allowed.");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_INVALID_OP_FUNCTION_POINTER, "Only equality comparisons (==, !=) are allowed.");
         }
 
         /* Allow equality comparison between function pointers of compatible signatures.
            areTypesCompatible handles signature matching for FUNCTION_POINTER. */
         if (!areTypesCompatible(left_type, right_type) && !areTypesCompatible(right_type, left_type)) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare function pointers with incompatible signatures");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "cannot compare function pointers with incompatible signatures");
         }
         return get_g_type_bool();
     }
@@ -502,8 +532,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             // Modulo is only defined for integer types
             if (op == TOKEN_PERCENT && isNumericType(left_type) && isNumericType(right_type)) {
                 if (!isIntegerType(left_type) || !isIntegerType(right_type)) {
-                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "modulo operator '%' is only defined for integer types");
-                    return NULL;
+                    return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "modulo operator '%' is only defined for integer types");
                 }
             }
 
@@ -512,8 +541,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 bool left_void_ptr = (left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID);
                 bool right_void_ptr = (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID);
                 if (left_void_ptr || right_void_ptr) {
-                    unit_.getErrorHandler().report(ERR_INVALID_VOID_POINTER_ARITHMETIC, loc, ErrorHandler::getMessage(ERR_INVALID_VOID_POINTER_ARITHMETIC));
-                    return NULL;
+                    return reportAndReturnUndefined(loc, ERR_INVALID_VOID_POINTER_ARITHMETIC, NULL);
                 }
             }
 
@@ -523,7 +551,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             if (pointer_arithmetic_result) {
                 return pointer_arithmetic_result;
             }
-            if (unit_.getErrorHandler().hasErrors()) return NULL;
+            if (unit_.getErrorHandler().hasErrors()) return get_g_type_undefined();
 
             /* Handle regular numeric arithmetic with strict C89 rules.
                Z98 requires explicit casts for any mixed-type numeric operations. */
@@ -548,8 +576,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         safe_append(current, remaining, "' and '");
         safe_append(current, remaining, right_type_str);
         safe_append(current, remaining, "'.");
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
 
             // Neither pointer nor compatible numeric arithmetic
@@ -567,8 +594,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             safe_append(current, remaining, "' and '");
             safe_append(current, remaining, right_type_str);
             safe_append(current, remaining, "'");
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
         }
 
     /* --- Comparison Operators --- */
@@ -613,8 +639,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             safe_append(current, remaining, "' and '");
             safe_append(current, remaining, right_type_str);
             safe_append(current, remaining, "'.");
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
         }
 
         /* Pointer comparisons. */
@@ -631,16 +656,14 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                     (right_type->as.pointer.base->kind == TYPE_VOID)) {
                     return get_g_type_bool();
                 }
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types");
-                return NULL;
+            return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "cannot compare pointers to incompatible types");
             }
 
             /* Ordering operators: compatible pointers (not void*). */
             if (areTypesCompatible(left_type->as.pointer.base, right_type->as.pointer.base)) {
                 return get_g_type_bool();
             }
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "cannot compare pointers to incompatible types for ordering");
-            return NULL;
+        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "cannot compare pointers to incompatible types for ordering");
         }
 
         /* Boolean comparisons. */
@@ -662,8 +685,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         safe_append(current, remaining, "' and '");
         safe_append(current, remaining, right_type_str);
         safe_append(current, remaining, "'");
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
 // --- Bitwise Operators ---
@@ -694,8 +716,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                         safe_append(current, remaining, "' and '");
                         safe_append(current, remaining, right_type_str);
                         safe_append(current, remaining, "'.");
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-                        return NULL;
+                        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
                     }
                 } else { // &, |, ^
                     // C89 rules: Operands must be the same type for these operators too
@@ -716,8 +737,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                         safe_append(current, remaining, "' and '");
                         safe_append(current, remaining, right_type_str);
                         safe_append(current, remaining, "'.");
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-                        return NULL;
+                        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
                     }
                 }
             } else {
@@ -735,8 +755,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 safe_append(current, remaining, "' and '");
                 safe_append(current, remaining, right_type_str);
                 safe_append(current, remaining, "'. Operands must be integer types.");
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-                return NULL;
+                return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
         }
 
@@ -762,8 +781,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                 safe_append(current, remaining, "' and '");
                 safe_append(current, remaining, right_type_str);
                 safe_append(current, remaining, "'. Operands must be bool types.");
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-                return NULL;
+                return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
         }
 
@@ -773,8 +791,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             size_t remaining = sizeof(msg_buffer);
             safe_append(current, remaining, "Unsupported binary operator in type checker: ");
             safe_append(current, remaining, getTokenSpelling(op));
-            unit_.getErrorHandler().report(ERR_INVALID_OPERATION, loc, ErrorHandler::getMessage(ERR_INVALID_OPERATION), unit_.getArena(), msg_buffer);
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_INVALID_OPERATION, msg_buffer);
         }
     }
 }
@@ -790,13 +807,20 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     ResolutionResult res;
     int entry_id;
     size_t i;
+    ASTNode* arg_node;
+    Type* arg_type;
+    Type* param_type;
+    Type* promoted;
+    ASTNode* slice_node;
+    Type* target_type;
+    Symbol* sym;
 
     /* Special handling for std.debug.print (Task 225.2). */
     callee_str = exprToString(node->callee);
     if (plat_strcmp(callee_str, "std.debug.print") == 0 ||
         plat_strcmp(callee_str, "debug.print") == 0) {
 
-        if (node->args->length() != 2) {
+        if (!node->args || node->args->length() != 2) {
             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "std.debug.print expects 2 arguments");
         } else {
             visit((*node->args)[0]); /* format string */
@@ -809,10 +833,50 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
            if the user provided a mock. */
     }
 
+    if (!node->callee) return get_g_type_undefined();
     callee_type = visit(node->callee);
+
+    /* --- Task 165: Call Site Resolution - Early cataloging --- */
+    /* Always catalog the call site, even if type checking fails later. */
+    entry.call_node = parent;
+    entry.context = current_fn_name_ ? current_fn_name_ : "global";
+    entry.mangled_name = NULL;
+    entry.call_type = CALL_DIRECT;
+    entry.resolved = false;
+    entry.error_if_unresolved = NULL;
 
     /* Detect and catalogue generic instantiation if this is a generic call. */
     catalogGenericInstantiation(node);
+
+    res = resolveCallSite(node, entry);
+    entry_id = unit_.getCallSiteLookupTable().addEntry(parent, entry.context);
+
+    switch (res) {
+        case RESOLVED:
+            unit_.getCallSiteLookupTable().resolveEntry(entry_id, entry.mangled_name, entry.call_type);
+            break;
+        case UNRESOLVED_SYMBOL:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", entry.call_type);
+            break;
+        case UNRESOLVED_GENERIC:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", entry.call_type);
+            break;
+        case INDIRECT_REJECTED:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call (not supported in bootstrap)", entry.call_type);
+            break;
+        case C89_INCOMPATIBLE:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
+            break;
+        case BUILTIN_REJECTED:
+            /* Handled early in visitFunctionCall */
+            break;
+        case FORWARD_REFERENCE:
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
+            break;
+    }
+    /* --- End Task 165 --- */
+
+    if (!callee_type || is_type_undefined(callee_type)) return get_g_type_undefined();
 
     /* --- Task 166: Indirect Call Detection --- */
     ind_type = detectIndirectType(node->callee);
@@ -853,12 +917,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    if (!callee_type) {
-        /* Error already reported (e.g., undefined function). */
-        int entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
-        unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Callee type could not be resolved", CALL_DIRECT);
-        return NULL;
-    }
+    if (is_type_undefined(callee_type)) return get_g_type_undefined();
 
     /* Handle built-ins early (Task 168/186). */
     if (node->callee->type == NODE_IDENTIFIER && node->callee->as.identifier.name[0] == '@') {
@@ -866,23 +925,22 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
 
         if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
             if (node->args->length() != 1) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 1 argument");
-                return get_g_type_usize();
+                return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 1 argument");
             }
 
-            ASTNode* arg_node = (*node->args)[0];
-            Type* arg_type = visit(arg_node);
-            if (!arg_type) return NULL;
+            arg_node = (*node->args)[0];
+            arg_type = visit(arg_node);
+            if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
 
             /* If the identifier was a type name, visitIdentifier returned TYPE_TYPE
                and stored the actual type in node->resolved_type. */
             if (arg_type->kind == TYPE_TYPE) {
                 arg_type = arg_node->resolved_type;
+                if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
             }
 
             if (!isTypeComplete(arg_type)) {
-                unit_.getErrorHandler().report(ERR_SIZE_OF_INCOMPLETE_TYPE, node->callee->loc, ErrorHandler::getMessage(ERR_SIZE_OF_INCOMPLETE_TYPE));
-                return NULL;
+                return reportAndReturnUndefined(node->callee->loc, ERR_SIZE_OF_INCOMPLETE_TYPE, NULL);
             }
 
             u64 value = (plat_strcmp(name, "@sizeOf") == 0) ? arg_type->size : arg_type->alignment;
@@ -901,18 +959,21 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
 
         if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
-            if (node->args->length() != 2) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "built-in expects 2 arguments");
-                return get_g_type_void();
+            if (!node->args || node->args->length() != 2) {
+                return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 2 arguments");
             }
-            Type* target_type = visit((*node->args)[0]);
-            if (!target_type) return NULL;
+            if (!(*node->args)[0]) return get_g_type_undefined();
+            target_type = visit((*node->args)[0]);
+            if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
 
             if (target_type->kind == TYPE_TYPE) {
                 target_type = (*node->args)[0]->resolved_type;
+                if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
             }
 
-            visit((*node->args)[1]); /* Visit the value being cast */
+            if (!(*node->args)[1]) return get_g_type_undefined();
+            Type* cast_source_type = visit((*node->args)[1]); /* Visit the value being cast */
+            if (!cast_source_type || is_type_undefined(cast_source_type)) return get_g_type_undefined();
             return target_type;
         }
 
@@ -928,27 +989,34 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         safe_append(current, remaining, "Built-in '");
         safe_append(current, remaining, name);
         safe_append(current, remaining, "' not supported in bootstrap");
-        unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, node->callee->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), unit_.getArena(), msg_buffer);
-
-        return get_g_type_void();
+        return reportAndReturnUndefined(node->callee->loc, ERR_NON_C89_FEATURE, msg_buffer);
     }
 
     if (callee_type->kind != TYPE_FUNCTION && callee_type->kind != TYPE_FUNCTION_POINTER) {
         // This also handles the function pointer case, as a variable holding a
         // function would have a symbol kind of VARIABLE, not FUNCTION.
-        int entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
+        entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
         unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Called object is not a function", CALL_INDIRECT);
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "called object is not a function");
-        return get_g_type_void();
+        return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "called object is not a function");
     }
 
-    expected_args = (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.params->length() : callee_type->as.function_pointer.param_types->length();
+    if (callee_type->kind == TYPE_FUNCTION) {
+        if (!callee_type->as.function.params) {
+             return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function type missing parameters");
+        }
+        expected_args = callee_type->as.function.params->length();
+    } else {
+        if (!callee_type->as.function_pointer.param_types) {
+             return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function pointer type missing parameters");
+        }
+        expected_args = callee_type->as.function_pointer.param_types->length();
+    }
     actual_args = node->args->length();
 
     if (actual_args != expected_args) {
         is_generic_call = false;
         if (node->callee->type == NODE_IDENTIFIER) {
-            Symbol* sym = unit_.getSymbolTable().lookup(node->callee->as.identifier.name);
+            sym = unit_.getSymbolTable().lookup(node->callee->as.identifier.name);
             if (sym && sym->is_generic) {
                 is_generic_call = true;
             }
@@ -965,24 +1033,22 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             safe_append(current, remaining, expected_buf);
             safe_append(current, remaining, ", got ");
             safe_append(current, remaining, actual_buf);
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+            reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, msg_buffer);
         }
     }
 
     for (i = 0; i < actual_args; ++i) {
-        ASTNode* arg_node = (*node->args)[i];
-        Type* arg_type = visit(arg_node);
-        Type* param_type;
+        arg_node = (*node->args)[i];
+        if (!arg_node) return get_g_type_undefined();
+        arg_type = visit(arg_node);
+
+        if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+
         if (i >= expected_args) continue;
         param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
-        if (!arg_type) {
-            // Error in argument expression, already reported.
-            continue;
-        }
-
         // Special handling for integer literal promotion in function calls
-        Type* promoted = tryPromoteLiteral(arg_node, param_type);
+        promoted = tryPromoteLiteral(arg_node, param_type);
         if (promoted) {
             arg_type = promoted;
         }
@@ -991,7 +1057,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (param_type->kind == TYPE_SLICE && arg_type->kind == TYPE_ARRAY) {
             if (areTypesEqual(param_type->as.slice.element_type, arg_type->as.array.element_type)) {
                 // Wrap in synthetic slice node
-                ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                 plat_memset(slice_node, 0, sizeof(ASTNode));
                 slice_node->type = NODE_ARRAY_SLICE;
                 slice_node->loc = arg_node->loc;
@@ -1029,41 +1095,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
     }
 
-    /* --- Task 165: Call Site Resolution Refactored --- */
-    entry.call_node = parent;
-    entry.context = current_fn_name_ ? current_fn_name_ : "global";
-    entry.mangled_name = NULL;
-    entry.call_type = CALL_DIRECT;
-    entry.resolved = false;
-    entry.error_if_unresolved = NULL;
-
-    res = resolveCallSite(node, entry);
-    entry_id = unit_.getCallSiteLookupTable().addEntry(parent, entry.context);
-
-    switch (res) {
-        case RESOLVED:
-            unit_.getCallSiteLookupTable().resolveEntry(entry_id, entry.mangled_name, entry.call_type);
-            break;
-        case UNRESOLVED_SYMBOL:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Symbol not found", entry.call_type);
-            break;
-        case UNRESOLVED_GENERIC:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Generic instantiation not found", entry.call_type);
-            break;
-        case INDIRECT_REJECTED:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Indirect call (not supported in bootstrap)", entry.call_type);
-            break;
-        case C89_INCOMPATIBLE:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Function signature is not C89-compatible", entry.call_type);
-            break;
-        case BUILTIN_REJECTED:
-            // Handled early in visitFunctionCall
-            break;
-        case FORWARD_REFERENCE:
-            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Forward reference could not be resolved", entry.call_type);
-            break;
-    }
-    // --- End Task 165 ---
 
     return (callee_type->kind == TYPE_FUNCTION) ? callee_type->as.function.return_type : callee_type->as.function_pointer.return_type;
 }
@@ -1079,22 +1110,19 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
        Identifiers, array accesses, and pointer dereferences are the main valid l-values. */
 
     /* First, resolve the type of the left-hand side. */
+    if (!node->lvalue) return get_g_type_undefined();
     lvalue_type = visit(node->lvalue);
-    if (!lvalue_type) {
-        return NULL; // Error already reported (e.g., undeclared variable)
-    }
+    if (!lvalue_type || is_type_undefined(lvalue_type)) return get_g_type_undefined();
 
     /* Step 1: Check if the l-value is const. */
     if (isLValueConst(node->lvalue)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot assign to a constant value (l-value is const).");
-        return NULL;
+        return reportAndReturnUndefined(node->lvalue->loc, ERR_TYPE_MISMATCH, "Cannot assign to a constant value (l-value is const).");
     }
 
     /* Step 2: Resolve the type of the right-hand side. */
+    if (!node->rvalue) return get_g_type_undefined();
     rvalue_type = visit(node->rvalue);
-    if (!rvalue_type) {
-        return NULL; // Error already reported.
-    }
+    if (!rvalue_type || is_type_undefined(rvalue_type)) return get_g_type_undefined();
 
     /* Special handling for integer literal promotion in assignment. */
     promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
@@ -1124,7 +1152,7 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     /* Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules. */
     if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
         // IsTypeAssignableTo already reports a detailed error.
-        return NULL;
+        return get_g_type_undefined();
     }
 
     /* The type of an assignment expression is the type of the l-value. */
@@ -1141,22 +1169,19 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     Type* result_type;
 
     /* First, resolve the type of the left-hand side. */
+    if (!node->lvalue) return get_g_type_undefined();
     lvalue_type = visit(node->lvalue);
-    if (!lvalue_type) {
-        return NULL; // Error already reported.
-    }
+    if (!lvalue_type || is_type_undefined(lvalue_type)) return get_g_type_undefined();
 
     /* Step 1: Check if the l-value is const. */
     if (isLValueConst(node->lvalue)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->lvalue->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot assign to a constant value (l-value is const).");
-        return NULL;
+        return reportAndReturnUndefined(node->lvalue->loc, ERR_TYPE_MISMATCH, "Cannot assign to a constant value (l-value is const).");
     }
 
     /* Step 2: Resolve the type of the right-hand side. */
+    if (!node->rvalue) return get_g_type_undefined();
     rvalue_type = visit(node->rvalue);
-    if (!rvalue_type) {
-        return NULL; // Error already reported.
-    }
+    if (!rvalue_type || is_type_undefined(rvalue_type)) return get_g_type_undefined();
 
     /* Special handling for literals to support promotion in compound assignments. */
     r_ptr = rvalue_type;
@@ -1182,15 +1207,14 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
         case TOKEN_LARROW2_EQUAL:   binary_op = TOKEN_LARROW2; break;
         case TOKEN_RARROW2_EQUAL:   binary_op = TOKEN_RARROW2; break;
         default:
-            unit_.getErrorHandler().report(ERR_INVALID_OPERATION, node->lvalue->loc, ErrorHandler::getMessage(ERR_INVALID_OPERATION), "Unsupported compound assignment operator.");
-            return NULL;
+            return reportAndReturnUndefined(node->lvalue->loc, ERR_INVALID_OPERATION, "Unsupported compound assignment operator.");
     }
 
     /* Step 4: Check if the underlying binary operation is valid. */
     result_type = checkBinaryOperation(lvalue_type, r_ptr, binary_op, node->lvalue->loc);
-    if (!result_type) {
+    if (!result_type || is_type_undefined(result_type)) {
         // Error already reported by checkBinaryOperation. We can just return.
-        return NULL;
+        return get_g_type_undefined();
     }
 
     /* Ensure we don't return a pointer to our stack-allocated literal type. */
@@ -1199,7 +1223,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     /* Step 5: Ensure the result of the operation can be assigned back to the l-value. */
     if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
         // IsTypeAssignableTo already reports a detailed error.
-        return NULL;
+        return get_g_type_undefined();
     }
 
     /* The type of a compound assignment expression is the type of the l-value. */
@@ -1217,11 +1241,11 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
  * @param loc The source location for error reporting.
  * @return The resulting type of the operation, or NULL if incompatible.
  */
-Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType /*op*/, SourceLocation /*loc*/) {
+Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType /*op*/, SourceLocation loc) {
     if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
         return left; // Simplified promotion
     }
-    return NULL;
+    return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Incompatible types for binary operation");
 }
 
 /**
@@ -1252,17 +1276,20 @@ Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
 }
 
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
-    Type* array_type = visit(node->array);
-    Type* index_type = visit(node->index);
+    Type* array_type;
+    Type* index_type;
 
-    if (!array_type || !index_type) {
-        return NULL; // Error already reported
-    }
+    if (!node->array) return get_g_type_undefined();
+    array_type = visit(node->array);
+    if (!array_type || is_type_undefined(array_type)) return get_g_type_undefined();
+
+    if (!node->index) return get_g_type_undefined();
+    index_type = visit(node->index);
+    if (!index_type || is_type_undefined(index_type)) return get_g_type_undefined();
 
     // Check that index is an integer type
     if (!isIntegerType(index_type) && index_type->kind != TYPE_INTEGER_LITERAL) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->index->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Array index must be an integer");
-        return NULL;
+        return reportAndReturnUndefined(node->index->loc, ERR_TYPE_MISMATCH, "Array index must be an integer");
     }
 
     Type* base = array_type;
@@ -1277,13 +1304,11 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     }
 
     if (base->kind == TYPE_FUNCTION_POINTER) {
-        unit_.getErrorHandler().report(ERR_INDEX_FUNCTION_POINTER, node->array->loc, ErrorHandler::getMessage(ERR_INDEX_FUNCTION_POINTER));
-        return NULL;
+        return reportAndReturnUndefined(node->array->loc, ERR_INDEX_FUNCTION_POINTER, NULL);
     }
 
     if (base->kind != TYPE_ARRAY && base->kind != TYPE_SLICE) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Cannot index into a non-array type. Many-item pointers ([*]T) and slices ([]T) support indexing, but single-item pointers (*T) do not.");
-        return NULL;
+        return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Cannot index into a non-array type. Many-item pointers ([*]T) and slices ([]T) support indexing, but single-item pointers (*T) do not.");
     }
 
     // Attempt to evaluate the index as a compile-time constant for bounds checking.
@@ -1303,8 +1328,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
             plat_u64_to_string(array_size, num_buf, sizeof(num_buf));
             safe_append(current, remaining, num_buf);
 
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->index->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
-            return NULL;
+            return reportAndReturnUndefined(node->index->loc, ERR_TYPE_MISMATCH, msg);
         }
     }
 
@@ -1329,8 +1353,9 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     ASTNode* base_size;
     ASTNode* len_field;
 
+    if (!node->array) return get_g_type_undefined();
     original_base_type = visit(node->array);
-    if (!original_base_type) return NULL;
+    if (!original_base_type || is_type_undefined(original_base_type)) return get_g_type_undefined();
     base_type = original_base_type;
 
     reached_via_const_ptr = false;
@@ -1342,8 +1367,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 
     if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
         !(base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Cannot slice a non-array/slice/many-item pointer type.");
-        return NULL;
+        return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Cannot slice a non-array/slice/many-item pointer type.");
     }
 
     element_type = NULL;
@@ -1366,21 +1390,23 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     /* Resolve start and end. */
     if (node->start) {
         start_type = visit(node->start);
-        if (start_type && !isIntegerType(start_type) && start_type->kind != TYPE_INTEGER_LITERAL) {
-             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Slice start index must be an integer");
+        if (!start_type || is_type_undefined(start_type)) return get_g_type_undefined();
+        if (!isIntegerType(start_type) && start_type->kind != TYPE_INTEGER_LITERAL) {
+             return reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Slice start index must be an integer");
         }
     }
     if (node->end) {
         end_type = visit(node->end);
-        if (end_type && !isIntegerType(end_type) && end_type->kind != TYPE_INTEGER_LITERAL) {
-             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->end->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Slice end index must be an integer");
+        if (!end_type || is_type_undefined(end_type)) return get_g_type_undefined();
+        if (!isIntegerType(end_type) && end_type->kind != TYPE_INTEGER_LITERAL) {
+             return reportAndReturnUndefined(node->end->loc, ERR_TYPE_MISMATCH, "Slice end index must be an integer");
         }
     }
 
     // Enforce explicit indices for many-item pointers
     if (base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many) {
         if (!node->start || !node->end) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Slicing a many-item pointer requires explicit start and end indices.");
+            return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Slicing a many-item pointer requires explicit start and end indices.");
         }
     }
 
@@ -1393,7 +1419,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 
         if (start_const && end_const) {
             if (start_val < 0 || end_val < start_val || (u64)end_val > base_type->as.array.size) {
-                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->array->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Slice indices out of bounds for array");
+                 return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Slice indices out of bounds for array");
             }
         }
     }
@@ -1503,58 +1529,71 @@ Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
     const char* name = node->as.identifier.name;
+    Type* prim;
+    Symbol* sym;
+    Type* res;
 
-    // Handle special '_' identifier for discarding values
+    /* Handle special '_' identifier for discarding values */
     if (plat_strcmp(name, "_") == 0) {
         node->resolved_type = get_g_type_anytype();
         return node->resolved_type;
     }
 
-    // Handle primitive types as values (e.g. @sizeOf(i32))
-    Type* prim = resolvePrimitiveTypeName(name);
+    /* Handle primitive types as values (e.g. @sizeOf(i32)) */
+    prim = resolvePrimitiveTypeName(name);
     if (prim) {
-        node->resolved_type = prim; // Store the actual type for built-ins to use
+        node->resolved_type = prim; /* Store the actual type for built-ins to use */
         return get_g_type_type();
     }
 
-    // Built-ins starting with @ are handled specially in visitFunctionCall
+    /* Built-ins starting with @ are handled specially in visitFunctionCall */
     if (name[0] == '@') {
-        return get_g_type_void(); // Placeholder type for built-ins
+        return get_g_type_void(); /* Placeholder type for built-ins */
     }
 
-    Symbol* sym = unit_.getSymbolTable().lookup(name);
+    sym = unit_.getSymbolTable().lookup(name);
     if (!sym) {
-        unit_.getErrorHandler().report(ERR_UNDEFINED_VARIABLE, node->loc, ErrorHandler::getMessage(ERR_UNDEFINED_VARIABLE));
-        return NULL;
+        return reportAndReturnUndefined(node->loc, ERR_UNDEFINED_VARIABLE, NULL);
     }
 
     node->as.identifier.symbol = sym;
 
-    // Resolve on demand if needed
+    /* Resolve on demand if needed */
     if (!sym->symbol_type && sym->details) {
+        res = NULL;
         if (sym->kind == SYMBOL_FUNCTION) {
-            visitFnSignature((ASTFnDeclNode*)sym->details);
+            res = visitFnSignature((ASTFnDeclNode*)sym->details);
         } else if (sym->kind == SYMBOL_VARIABLE) {
-            visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+            res = visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
         }
+        if (!res || is_type_undefined(res)) return get_g_type_undefined();
     }
 
+    if (!sym->symbol_type) return get_g_type_undefined();
     return sym->symbol_type;
 }
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
+    Type* last_type;
+    bool any_error = false;
+    size_t i;
+
     unit_.getSymbolTable().enterScope();
-    Type* last_type = get_g_type_void();
-    for (size_t i = 0; i < node->statements->length(); ++i) {
-        last_type = visit((*node->statements)[i]);
-        if (last_type && last_type->kind == TYPE_NORETURN) {
-            // Unreachable code after divergence
-            // We could report a warning here, but for now we just continue and return noreturn
-            // to indicate the block diverges.
+    last_type = get_g_type_void();
+    if (node->statements) {
+        for (i = 0; i < node->statements->length(); ++i) {
+            ASTNode* stmt = (*node->statements)[i];
+            if (!stmt) continue;
+            Type* res = visit(stmt);
+            if (res && is_type_undefined(res)) {
+                any_error = true;
+            } else if (res) {
+                last_type = res;
+            }
         }
     }
     unit_.getSymbolTable().exitScope();
-    return last_type;
+    return any_error ? get_g_type_undefined() : last_type;
 }
 
 struct TypeChecker::DeferFlagGuard {
@@ -1569,33 +1608,32 @@ struct TypeChecker::DeferFlagGuard {
 };
 
 Type* TypeChecker::visitEmptyStmt(ASTEmptyStmtNode* /*node*/) {
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
-    Type* condition_type = visit(node->condition);
-    bool is_optional = (condition_type && condition_type->kind == TYPE_OPTIONAL);
+    Type* condition_type;
+    Type* then_res;
+    Type* else_res;
 
-    if (condition_type) {
-        if (condition_type->kind == TYPE_VOID) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH),
-                                           unit_.getArena(), "if statement condition cannot be void");
-        } else if (condition_type->kind != TYPE_BOOL &&
-                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-                   condition_type->kind != TYPE_POINTER &&
-                   condition_type->kind != TYPE_OPTIONAL) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH),
-                                           unit_.getArena(), "if statement condition must be a bool, integer, pointer, or optional");
-        }
+    if (!node->condition) return get_g_type_undefined();
+    condition_type = visit(node->condition);
+    if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
+
+    bool is_optional = (condition_type->kind == TYPE_OPTIONAL);
+
+    if (condition_type->kind == TYPE_VOID) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if statement condition cannot be void");
+    } else if (condition_type->kind != TYPE_BOOL &&
+               !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+               condition_type->kind != TYPE_POINTER &&
+               condition_type->kind != TYPE_OPTIONAL) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if statement condition must be a bool, integer, pointer, or optional");
     }
 
     if (node->capture_name) {
         if (!is_optional) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH),
-                                           unit_.getArena(), "Capture in 'if' requires an optional type condition");
+            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture in 'if' requires an optional type condition");
         }
 
         unit_.getSymbolTable().enterScope();
@@ -1611,40 +1649,44 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
         Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(node->capture_name);
         node->capture_sym = sym;
 
-        visit(node->then_block);
+        if (!node->then_block) return get_g_type_undefined();
+        then_res = visit(node->then_block);
         unit_.getSymbolTable().exitScope();
+        if (!then_res || is_type_undefined(then_res)) return get_g_type_undefined();
     } else {
-        visit(node->then_block);
+        if (!node->then_block) return get_g_type_undefined();
+        then_res = visit(node->then_block);
+        if (!then_res || is_type_undefined(then_res)) return get_g_type_undefined();
     }
 
     if (node->else_block) {
-        visit(node->else_block);
+        else_res = visit(node->else_block);
+        if (!else_res || is_type_undefined(else_res)) return get_g_type_undefined();
     }
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
-    Type* condition_type = visit(node->condition);
-    bool is_optional = (condition_type && condition_type->kind == TYPE_OPTIONAL);
+    Type* condition_type;
+    if (!node->condition) return get_g_type_undefined();
+    condition_type = visit(node->condition);
+    if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
 
-    if (condition_type) {
-        if (condition_type->kind == TYPE_VOID) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "if expression condition cannot be void");
-        } else if (condition_type->kind != TYPE_BOOL &&
-                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-                   condition_type->kind != TYPE_POINTER &&
-                   condition_type->kind != TYPE_OPTIONAL) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "if expression condition must be a bool, integer, pointer, or optional");
-        }
+    bool is_optional = (condition_type->kind == TYPE_OPTIONAL);
+
+    if (condition_type->kind == TYPE_VOID) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if expression condition cannot be void");
+    } else if (condition_type->kind != TYPE_BOOL &&
+               !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+               condition_type->kind != TYPE_POINTER &&
+               condition_type->kind != TYPE_OPTIONAL) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if expression condition must be a bool, integer, pointer, or optional");
     }
 
     Type* then_type = NULL;
     if (node->capture_name) {
         if (!is_optional) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture in 'if' requires an optional type condition");
+            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture in 'if' requires an optional type condition");
         }
 
         unit_.getSymbolTable().enterScope();
@@ -1660,14 +1702,18 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(node->capture_name);
         node->capture_sym = sym;
 
+        if (!node->then_expr) return get_g_type_undefined();
         then_type = visit(node->then_expr);
         unit_.getSymbolTable().exitScope();
     } else {
+        if (!node->then_expr) return get_g_type_undefined();
         then_type = visit(node->then_expr);
     }
-    Type* else_type = visit(node->else_expr);
+    if (!then_type || is_type_undefined(then_type)) return get_g_type_undefined();
 
-    if (!then_type || !else_type) return NULL;
+    if (!node->else_expr) return get_g_type_undefined();
+    Type* else_type = visit(node->else_expr);
+    if (!else_type || is_type_undefined(else_type)) return get_g_type_undefined();
 
     if (then_type->kind == TYPE_NORETURN) return else_type;
     if (else_type->kind == TYPE_NORETURN) return then_type;
@@ -1677,24 +1723,23 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
     if (areTypesCompatible(then_type, else_type)) return then_type;
     if (areTypesCompatible(else_type, then_type)) return else_type;
 
-    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->else_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "incompatible types in if expression branches");
-    return then_type;
+    return reportAndReturnUndefined(node->else_expr->loc, ERR_TYPE_MISMATCH, "incompatible types in if expression branches");
 }
 
 Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
-    Type* condition_type = visit(node->condition);
-    if (condition_type) {
-        if (condition_type->kind == TYPE_VOID) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH),
-                                           unit_.getArena(), "while statement condition cannot be void");
-        } else if (condition_type->kind != TYPE_BOOL &&
-                   !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-                   condition_type->kind != TYPE_POINTER) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->condition->loc,
-                                           ErrorHandler::getMessage(ERR_TYPE_MISMATCH),
-                                           unit_.getArena(), "while statement condition must be a bool, integer, or pointer");
-        }
+    Type* condition_type;
+    Type* body_res;
+
+    if (!node->condition) return get_g_type_undefined();
+    condition_type = visit(node->condition);
+    if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
+
+    if (condition_type->kind == TYPE_VOID) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition cannot be void");
+    } else if (condition_type->kind != TYPE_BOOL &&
+               !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
+               condition_type->kind != TYPE_POINTER) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition must be a bool, integer, or pointer");
     }
 
     node->label_id = next_label_id_++;
@@ -1704,22 +1749,24 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     /* RAII: Loop context automatically managed. */
     LoopContextGuard guard(*this, node->label, node->label_id, node->condition->loc);
 
-    visit(node->body);
+    if (!node->body) return get_g_type_undefined();
+    body_res = visit(node->body);
+    if (!body_res || is_type_undefined(body_res)) return get_g_type_undefined();
 
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitBreakStmt(ASTNode* node) {
     ASTBreakStmtNode& break_node = node->as.break_stmt;
     if (in_defer_) {
-        unit_.getErrorHandler().report(ERR_BREAK_INSIDE_DEFER, node->loc, ErrorHandler::getMessage(ERR_BREAK_INSIDE_DEFER));
+        return reportAndReturnUndefined(node->loc, ERR_BREAK_INSIDE_DEFER, NULL);
     } else if (current_loop_depth_ == 0) {
-        unit_.getErrorHandler().report(ERR_BREAK_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_BREAK_OUTSIDE_LOOP));
+        return reportAndReturnUndefined(node->loc, ERR_BREAK_OUTSIDE_LOOP, NULL);
     }
 
     if (!resolveLabel(break_node.label, break_node.target_label_id)) {
         if (break_node.label) {
-            unit_.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, ErrorHandler::getMessage(ERR_UNKNOWN_LABEL));
+            return reportAndReturnUndefined(node->loc, ERR_UNKNOWN_LABEL, NULL);
         }
     }
 
@@ -1729,14 +1776,14 @@ Type* TypeChecker::visitBreakStmt(ASTNode* node) {
 Type* TypeChecker::visitContinueStmt(ASTNode* node) {
     ASTContinueStmtNode& cont_node = node->as.continue_stmt;
     if (in_defer_) {
-        unit_.getErrorHandler().report(ERR_CONTINUE_INSIDE_DEFER, node->loc, ErrorHandler::getMessage(ERR_CONTINUE_INSIDE_DEFER));
+        return reportAndReturnUndefined(node->loc, ERR_CONTINUE_INSIDE_DEFER, NULL);
     } else if (current_loop_depth_ == 0) {
-        unit_.getErrorHandler().report(ERR_CONTINUE_OUTSIDE_LOOP, node->loc, ErrorHandler::getMessage(ERR_CONTINUE_OUTSIDE_LOOP));
+        return reportAndReturnUndefined(node->loc, ERR_CONTINUE_OUTSIDE_LOOP, NULL);
     }
 
     if (!resolveLabel(cont_node.label, cont_node.target_label_id)) {
         if (cont_node.label) {
-            unit_.getErrorHandler().report(ERR_UNKNOWN_LABEL, node->loc, ErrorHandler::getMessage(ERR_UNKNOWN_LABEL));
+            return reportAndReturnUndefined(node->loc, ERR_UNKNOWN_LABEL, NULL);
         }
     }
 
@@ -1745,34 +1792,40 @@ Type* TypeChecker::visitContinueStmt(ASTNode* node) {
 
 Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
     if (in_defer_) {
-        unit_.getErrorHandler().report(ERR_RETURN_INSIDE_DEFER, node->expression ? node->expression->loc : parent->loc, ErrorHandler::getMessage(ERR_RETURN_INSIDE_DEFER));
+        return reportAndReturnUndefined(node->expression ? node->expression->loc : parent->loc, ERR_RETURN_INSIDE_DEFER, NULL);
     }
 
-    Type* return_type = node->expression ? visit(node->expression) : get_g_type_void();
+    Type* return_type = NULL;
+    if (node->expression) {
+        return_type = visit(node->expression);
+        if (!return_type || is_type_undefined(return_type)) return get_g_type_undefined();
+    } else {
+        return_type = get_g_type_void();
+    }
 
     if (!current_fn_return_type_) {
         // This can happen if we are parsing a return outside of a function,
         // which should be caught by the parser, but we check here for safety.
-        return NULL;
+        return get_g_type_undefined();
     }
 
     // Case 1: Function is void
     if (current_fn_return_type_->kind == TYPE_VOID) {
         if (node->expression) {
-            // Error: void function returning a value
-            unit_.getErrorHandler().report(ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION, node->expression->loc, ErrorHandler::getMessage(ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION));
+            /* Error: void function returning a value */
+            return reportAndReturnUndefined(node->expression->loc, ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION, NULL);
         }
     }
-    // Case 2: Function is non-void
+    /* Case 2: Function is non-void */
     else {
         if (!node->expression) {
-            // Allow 'return;' if return type is an error union with void payload
+            /* Allow 'return;' if return type is an error union with void payload */
             if (current_fn_return_type_->kind == TYPE_ERROR_UNION &&
                 current_fn_return_type_->as.error_union.payload->kind == TYPE_VOID) {
-                // This is OK.
+                /* This is OK. */
             } else {
-                // Error: non-void function must return a value
-                unit_.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, parent->loc, ErrorHandler::getMessage(ERR_MISSING_RETURN_VALUE));
+                /* Error: non-void function must return a value */
+                return reportAndReturnUndefined(parent->loc, ERR_MISSING_RETURN_VALUE, NULL);
             }
         } else {
             // Implicit Array to Slice coercion
@@ -1796,7 +1849,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 
             if (return_type && !areTypesCompatible(current_fn_return_type_, return_type)) {
                 // Error: return type mismatch
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "return type mismatch");
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "return type mismatch");
             }
         }
     }
@@ -1805,26 +1858,33 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 }
 
 Type* TypeChecker::visitDeferStmt(ASTDeferStmtNode* node) {
+    Type* res;
     /* RAII: Defer context automatically managed. */
     DeferContextGuard guard(*this);
     DeferFlagGuard flag_guard(*this);
-    visit(node->statement);
-    return NULL;
+    if (!node->statement) return get_g_type_undefined();
+    res = visit(node->statement);
+    if (res && is_type_undefined(res)) return get_g_type_undefined();
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitRange(ASTRangeNode* node) {
-    Type* start_type = visit(node->start);
-    Type* end_type = visit(node->end);
+    Type* start_type;
+    Type* end_type;
 
-    if (!start_type || !end_type) return NULL;
+    if (!node->start) return get_g_type_undefined();
+    start_type = visit(node->start);
+    if (!start_type || is_type_undefined(start_type)) return get_g_type_undefined();
+
+    if (!node->end) return get_g_type_undefined();
+    end_type = visit(node->end);
+    if (!end_type || is_type_undefined(end_type)) return get_g_type_undefined();
 
     if (!isIntegerType(start_type)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Range start must be an integer");
-        return NULL;
+        return reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Range start must be an integer");
     }
     if (!isIntegerType(end_type)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->end->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Range end must be an integer");
-        return NULL;
+        return reportAndReturnUndefined(node->end->loc, ERR_TYPE_MISMATCH, "Range end must be an integer");
     }
 
     // For inclusive ranges in switch, we check start <= end if they are constants
@@ -1832,7 +1892,7 @@ Type* TypeChecker::visitRange(ASTRangeNode* node) {
     if (evaluateConstantExpression(node->start, &start_val) &&
         evaluateConstantExpression(node->end, &end_val)) {
         if (start_val > end_val) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->start->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Range start must be less than or equal to end");
+            reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Range start must be less than or equal to end");
         }
     }
 
@@ -1844,8 +1904,11 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
     Type* item_type;
     bool is_valid_iterable;
     Symbol sym;
+    Type* body_res;
 
+    if (!node->iterable_expr) return get_g_type_undefined();
     iterable_type = visit(node->iterable_expr);
+    if (!iterable_type || is_type_undefined(iterable_type)) return get_g_type_undefined();
 
     node->label_id = next_label_id_++;
 
@@ -1873,7 +1936,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         }
     }
 
-    if (!is_valid_iterable && iterable_type) {
+    if (!is_valid_iterable) {
         char type_str[64];
         typeToString(iterable_type, type_str, sizeof(type_str));
         char msg_buffer[256];
@@ -1882,7 +1945,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         safe_append(current, remaining, "for loop over non-iterable type '");
         safe_append(current, remaining, type_str);
         safe_append(current, remaining, "'");
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->iterable_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+        return reportAndReturnUndefined(node->iterable_expr->loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
     unit_.getSymbolTable().enterScope();
@@ -1915,15 +1978,20 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
         node->index_sym = NULL;
     }
 
-    visit(node->body);
-
+    if (!node->body) return get_g_type_undefined();
+    body_res = visit(node->body);
     unit_.getSymbolTable().exitScope();
+    if (!body_res || is_type_undefined(body_res)) return get_g_type_undefined();
 
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
+
+    if (placeholder->is_resolving) {
+        return placeholder;
+    }
 
     ResolutionDepthGuard depth_guard(*this);
     if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
@@ -1935,29 +2003,38 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->as.placeholder.module) {
         unit_.setCurrentModule(placeholder->as.placeholder.module->name);
     }
+    const char* saved_struct_name = current_struct_name_;
+    current_struct_name_ = placeholder->as.placeholder.name;
 
+    placeholder->is_resolving = true;
+
+    if (!placeholder->as.placeholder.decl_node) {
+        placeholder->is_resolving = false;
+        return get_g_type_undefined();
+    }
     Type* resolved = visit(placeholder->as.placeholder.decl_node);
+    placeholder->is_resolving = false;
+    current_struct_name_ = saved_struct_name;
+
+    if (!resolved || is_type_undefined(resolved)) return get_g_type_undefined();
 
     // Unwrap TYPE_TYPE if necessary
     if (resolved && resolved->kind == TYPE_TYPE) {
-        // How to unwrap TYPE_TYPE?
-        // Based on visitTypeName, it's usually in sym->details->initializer->resolved_type
-        // But here we just visited it.
-        // Actually visitStructDecl/visitEnumDecl/visitUnionDecl return the TYPE_STRUCT/etc wrapped in TYPE_TYPE?
-        // No, I think they return the TYPE_STRUCT/etc itself in some versions.
-        // Let's check visitStructDecl.
+        if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
+            ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
+            if (vd->initializer && vd->initializer->resolved_type && vd->initializer->resolved_type != get_g_type_type()) {
+                resolved = vd->initializer->resolved_type;
+            }
+        }
     }
 
     // Mutate placeholder in place
     if (resolved && resolved != placeholder) {
         // If resolved is TYPE_TYPE, we want the underlying type
         if (resolved->kind == TYPE_TYPE) {
-             // We need a way to get the type from TYPE_TYPE.
-             // Looking at visitTypeName:
-             // resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
              if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
                  ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
-                 if (vd->initializer && vd->initializer->resolved_type) {
+                 if (vd->initializer && vd->initializer->resolved_type && vd->initializer->resolved_type != get_g_type_type()) {
                      resolved = vd->initializer->resolved_type;
                  }
              }
@@ -1987,8 +2064,9 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     bool has_non_noreturn;
     size_t i;
 
+    if (!node->expression) return get_g_type_undefined();
     cond_type = visit(node->expression);
-    if (!cond_type) return NULL;
+    if (!cond_type || is_type_undefined(cond_type)) return get_g_type_undefined();
 
     if (cond_type->kind == TYPE_PLACEHOLDER) {
         cond_type = resolvePlaceholder(cond_type);
@@ -1998,8 +2076,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
 
     if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Switch condition must be tagged union, integer, enum, or boolean type");
-        return NULL;
+        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
     }
 
     has_else = false;
@@ -2019,14 +2096,14 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
                     /* Resolve .Tag against union's tag type. */
                     if (!tag_type || tag_type->kind != TYPE_ENUM) {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Union tag type must be an enum");
-                        continue;
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag type must be an enum");
+                        return get_g_type_undefined();
                     }
 
                     const char* tag_name = item_expr->as.member_access->field_name;
                     DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
                     if (!members) {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Union tag enum has no members");
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag enum has no members");
                         continue;
                     }
 
@@ -2041,8 +2118,8 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                     }
 
                     if (!found) {
-                        unit_.getErrorHandler().report(ERR_UNDEFINED_ENUM_MEMBER, item_expr->loc, ErrorHandler::getMessage(ERR_UNDEFINED_ENUM_MEMBER), "Tag not found in union");
-                        continue;
+                        reportAndReturnUndefined(item_expr->loc, ERR_UNDEFINED_ENUM_MEMBER, "Tag not found in union");
+                        return get_g_type_undefined();
                     }
 
                     /* Constant fold to integer literal of the tag. */
@@ -2054,6 +2131,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                     item_type = tag_type;
                 } else {
                     item_type = visit(item_expr);
+                    if (item_type && is_type_undefined(item_type)) return get_g_type_undefined();
                 }
 
                 if (item_type) {
@@ -2076,7 +2154,8 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                     }
 
                     if (!compatible) {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Switch case type mismatch");
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch case type mismatch");
+                        return get_g_type_undefined();
                     }
                 }
             }
@@ -2084,11 +2163,11 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 
         if (prong->capture_name) {
             if (!is_tagged_union) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture only supported for tagged union switch");
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
             } else if (prong->is_else) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture not supported for else prong");
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
             } else if (prong->items->length() != 1) {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture in switch prong only allowed with a single case");
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
             } else {
             ASTNode* item_expr = (*prong->items)[0];
             const char* field_name = item_expr->as.integer_literal.original_name;
@@ -2107,7 +2186,12 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             }
         }
 
+        if (!prong->body) return get_g_type_undefined();
         Type* prong_type = visit(prong->body);
+        if (!prong_type || is_type_undefined(prong_type)) {
+            if (prong->capture_name) unit_.getSymbolTable().exitScope();
+            return get_g_type_undefined();
+        }
 
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
@@ -2117,21 +2201,21 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 common_type = prong_type;
                 has_non_noreturn = true;
             } else if (!areTypesEqual(common_type, prong_type)) {
-                // If they are not strictly equal, check if one can be coerced to the other.
-                // For simplicity, we currently expect them to match common_type.
+                /* If they are not strictly equal, check if one can be coerced to the other.
+                   For simplicity, we currently expect them to match common_type. */
                 if (areTypesCompatible(common_type, prong_type)) {
-                    // common_type is OK
+                    /* common_type is OK */
                 } else if (areTypesCompatible(prong_type, common_type)) {
                     common_type = prong_type;
                 } else {
-                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Switch prong type does not match previous prongs");
+                    reportAndReturnUndefined(prong->body->loc, ERR_TYPE_MISMATCH, "Switch prong type does not match previous prongs");
                 }
             }
         }
     }
 
     if (!has_else) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->expression->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Switch expression must have an 'else' prong");
+        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch expression must have an 'else' prong");
     }
 
     if (!has_non_noreturn) {
@@ -2165,9 +2249,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     placeholder = NULL;
     if (existing_sym && existing_sym->symbol_type) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-            if (existing_sym->symbol_type->as.placeholder.is_resolving) {
-                return existing_sym->symbol_type; /* Recursive call encountered placeholder */
-            }
             placeholder = existing_sym->symbol_type;
         } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
             return existing_sym->symbol_type;
@@ -2188,7 +2269,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         plat_memset(placeholder, 0, sizeof(Type));
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
-        placeholder->as.placeholder.is_resolving = false;
+        placeholder->as.placeholder.decl_node = parent; // parent of VarDecl is typically the module root or a block
+        placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+        placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 
         Symbol sym = SymbolBuilder(unit_.getArena())
@@ -2210,29 +2293,34 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     if (placeholder) {
-        placeholder->as.placeholder.is_resolving = true;
+        placeholder->is_resolving = true;
     }
 
-    declared_type = node->type ? visit(node->type) : NULL;
+    if (node->type) {
+        declared_type = visit(node->type);
+        if (declared_type && declared_type->kind == TYPE_PLACEHOLDER) {
+            declared_type = resolvePlaceholder(declared_type);
+        }
+        if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
+    } else {
+        declared_type = NULL;
+    }
 
     /* Reject anonymous structs/enums in variable declarations. */
     if (declared_type && !node->is_const) {
         bool is_aggregate = (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION || declared_type->kind == TYPE_ENUM);
         if (is_aggregate && !declared_type->as.struct_details.name) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "anonymous structs/enums not allowed in variable declarations");
-            return NULL;
+            return reportAndReturnUndefined(node->type->loc, ERR_TYPE_MISMATCH, "anonymous structs/enums not allowed in variable declarations");
         }
     }
 
     if (declared_type && declared_type->kind == TYPE_VOID) {
-        unit_.getErrorHandler().report(ERR_VARIABLE_CANNOT_BE_VOID, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_VARIABLE_CANNOT_BE_VOID));
-        return NULL; /* Stop processing this declaration */
+        return reportAndReturnUndefined(node->type ? node->type->loc : parent->loc, ERR_VARIABLE_CANNOT_BE_VOID, NULL);
     }
 
     if (declared_type && (declared_type->kind == TYPE_NORETURN || declared_type->kind == TYPE_MODULE)) {
         const char* msg = (declared_type->kind == TYPE_NORETURN) ? "variables cannot be declared as 'noreturn'" : "module is not a type";
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type ? node->type->loc : parent->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), msg);
-        return NULL;
+        return reportAndReturnUndefined(node->type ? node->type->loc : parent->loc, ERR_TYPE_MISMATCH, msg);
     }
 
     /* Special handling for integer literal initializers to support C89-style assignments. */
@@ -2250,14 +2338,19 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                     char* current = msg_buffer;
                     size_t remaining = sizeof(msg_buffer);
                     safe_append(current, remaining, "integer literal overflows declared type");
-                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+                    return reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, msg_buffer);
                 }
-            } else if (!IsTypeAssignableTo(visit(node->initializer), declared_type, node->initializer->loc)) {
-                 // Error already reported
+            } else {
+                Type* init_t = visit(node->initializer);
+                if (!init_t || is_type_undefined(init_t)) return get_g_type_undefined();
+                if (!IsTypeAssignableTo(init_t, declared_type, node->initializer->loc)) {
+                    return get_g_type_undefined();
+                }
             }
         } else {
             // Infer type from integer literal
             declared_type = visit(node->initializer);
+            if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
         }
     } else if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
         // Fallback for NODE_INTEGER_LITERAL if evaluateConstantExpression somehow failed (should not happen for literals)
@@ -2275,23 +2368,26 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 char* current = msg_buffer;
                 size_t remaining = sizeof(msg_buffer);
                 safe_append(current, remaining, "integer literal overflows declared type");
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+                return reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
         } else {
             // Infer type from integer literal
             declared_type = visit(node->initializer);
+            if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
         }
-    } else {
+    } else if (node->initializer) {
         /* For all other cases, use the standard assignment validation. */
         initializer_type = NULL;
 
         // Special case for anonymous struct/array initializers
-        if (node->initializer && node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
+        if (node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
             if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY)) {
                 node->initializer->resolved_type = declared_type;
                 if (declared_type->kind == TYPE_STRUCT) {
                     if (checkStructInitializerFields(node->initializer->as.struct_initializer, declared_type, node->initializer->loc)) {
                         initializer_type = declared_type;
+                    } else {
+                        initializer_type = get_g_type_undefined();
                     }
                 } else {
                     // Array initialization via .{ ._0 = ... }
@@ -2299,14 +2395,21 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                     initializer_type = declared_type;
                 }
             } else {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->initializer->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "anonymous struct initializer requires a declared struct or array type");
+                initializer_type = reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, "anonymous struct initializer requires a declared struct or array type");
             }
         } else {
             initializer_type = visit(node->initializer);
+            if (!initializer_type) return get_g_type_undefined();
+            if (is_type_undefined(initializer_type)) {
+                /* If it's the literal 'undefined', it's not an error. */
+                if (node->initializer->type != NODE_UNDEFINED_LITERAL) {
+                    return get_g_type_undefined();
+                }
+            }
         }
 
         /* If we created a placeholder, mutate it in-place now. */
-        if (placeholder && initializer_type) {
+        if (placeholder && initializer_type && !is_type_undefined(initializer_type)) {
             placeholder->kind = initializer_type->kind;
             placeholder->size = initializer_type->size;
             placeholder->alignment = initializer_type->alignment;
@@ -2322,8 +2425,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
 
         if (declared_type) {
-            if (initializer_type && !IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
-                // IsTypeAssignableTo already reports a detailed error.
+            if (initializer_type && !is_type_undefined(initializer_type)) {
+                if (!IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
+                    return get_g_type_undefined();
+                }
             }
         } else {
             // Infer type from initializer
@@ -2355,21 +2460,29 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
-        existing_sym->symbol_type = declared_type;
+        if (declared_type) {
+             char kbuf[16];
+             plat_i64_to_string(declared_type->kind, kbuf, sizeof(kbuf));
+             existing_sym->symbol_type = declared_type;
+        } else {
+        }
         existing_sym->details = node;
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
             existing_sym->mangled_name = existing_sym->name;
-        } else {
+        } else if (!existing_sym->mangled_name) {
             existing_sym->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
         }
 
         /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
         is_local = (current_fn_return_type_ != NULL);
-        existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        existing_sym->flags |= is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        if (node->is_const) {
+            existing_sym->flags |= SYMBOL_FLAG_CONST;
+        }
         node->symbol = existing_sym;
     } else {
         /* If not found (e.g. injected in tests), create and insert. */
-        if (declared_type) {
+        if (declared_type && !is_type_undefined(declared_type)) {
             is_local = (current_fn_return_type_ != NULL);
             mangled = (node->is_extern) ? node->name :
                                  unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
@@ -2386,6 +2499,22 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .build();
             unit_.getSymbolTable().insert(var_symbol);
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+        }
+    }
+
+    if (placeholder) {
+        placeholder->is_resolving = false;
+    }
+
+    if (!declared_type) return NULL;
+
+    /* Critical: Set the initializer's resolved_type so visitMemberAccess can unwrap it.
+       Only apply to aggregate type declarations (struct, union, enum). */
+    if (node->initializer && declared_type && !is_type_undefined(declared_type)) {
+        if (node->initializer->type == NODE_STRUCT_DECL ||
+            node->initializer->type == NODE_UNION_DECL ||
+            node->initializer->type == NODE_ENUM_DECL) {
+            node->initializer->resolved_type = declared_type;
         }
     }
 
@@ -2416,7 +2545,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
     for (i = 0; i < node->params->length(); ++i) {
         ASTParamDeclNode* param_node = (*node->params)[i];
         Type* param_type = visit(param_node->type);
-        if (param_type) {
+        if (param_type && !is_type_undefined(param_type)) {
             param_types->append(param_type);
 
             // Register parameter in scope immediately so subsequent parameters can use it (e.g. comptime T: type)
@@ -2436,18 +2565,17 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 
     /* Resolve return type (now that parameters are in scope). */
     return_type = visit(node->return_type);
+    if (return_type && is_type_undefined(return_type)) all_params_valid = false;
 
     unit_.getSymbolTable().exitScope();
 
     // If any parameter type or the return type was invalid, don't create the function type
     if (!all_params_valid || !return_type) {
-        return NULL;
+        return get_g_type_undefined();
     }
 
     if (return_type->kind == TYPE_ARRAY) {
-        unit_.getErrorHandler().report(ERR_FUNCTION_CANNOT_RETURN_ARRAY, node->return_type->loc,
-            ErrorHandler::getMessage(ERR_FUNCTION_CANNOT_RETURN_ARRAY), "return a pointer or wrap it in a struct instead");
-        return NULL;
+        return reportAndReturnUndefined(node->return_type->loc, ERR_FUNCTION_CANNOT_RETURN_ARRAY, NULL);
     }
 
     /* Create the function type and update the symbol. */
@@ -2468,11 +2596,14 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
     Symbol* fn_symbol;
     DynamicArray<Type*>* param_types;
     size_t i;
+    Type* body_res;
+    Type* sig_res;
 
     fn_symbol = unit_.getSymbolTable().lookup(node->name);
     if (!fn_symbol || !fn_symbol->symbol_type) {
         /* Try to resolve signature if not already done. */
-        if (!visitFnSignature(node)) return NULL;
+        sig_res = visitFnSignature(node);
+        if (!sig_res || is_type_undefined(sig_res)) return get_g_type_undefined();
         fn_symbol = unit_.getSymbolTable().lookup(node->name);
     }
 
@@ -2484,40 +2615,44 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
         /* Re-register parameters in the body scope. */
         param_types = fn_symbol->symbol_type->as.function.params;
-        for (i = 0; i < node->params->length(); ++i) {
-             ASTParamDeclNode* param_node = (*node->params)[i];
-             Type* param_type = (*param_types)[i];
-             Symbol param_symbol = SymbolBuilder(unit_.getArena())
-                    .withName(param_node->name)
-                    .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
-                    .withType(param_type)
-                    .atLocation(param_node->type->loc)
-                    .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
-                    .build();
-                unit_.getSymbolTable().insert(param_symbol);
-                param_node->symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node->name);
+        if (node->params) {
+            for (i = 0; i < node->params->length(); ++i) {
+                 ASTParamDeclNode* param_node = (*node->params)[i];
+                 Type* param_type = (*param_types)[i];
+                 Symbol param_symbol = SymbolBuilder(unit_.getArena())
+                        .withName(param_node->name)
+                        .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
+                        .withType(param_type)
+                        .atLocation(param_node->type->loc)
+                        .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
+                        .build();
+                    unit_.getSymbolTable().insert(param_symbol);
+                    param_node->symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node->name);
+            }
         }
 
-        visit(node->body);
+        body_res = visit(node->body);
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
             if (!all_paths_return(node->body)) {
-                unit_.getErrorHandler().report(ERR_MISSING_RETURN_VALUE, node->return_type->loc, ErrorHandler::getMessage(ERR_MISSING_RETURN_VALUE), "not all control paths return a value");
+                reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
             }
         }
 
         unit_.getSymbolTable().exitScope();
     }
 
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitFnDecl(ASTFnDeclNode* node) {
-    if (!visitFnSignature(node)) return NULL;
+    Type* sig = visitFnSignature(node);
+    if (!sig || is_type_undefined(sig)) return get_g_type_undefined();
+
     if (node->body) {
         return visitFnBody(node);
     }
-    return NULL;
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
@@ -2528,18 +2663,14 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     void* mem;
     DynamicArray<StructField>* fields;
     Type* struct_type;
-
-    if (!struct_name) {
-        unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous structs are not supported in bootstrap compiler");
-    }
+    if (!node->fields) return get_g_type_undefined();
 
     /* 1. Check for duplicate field names. */
     for (i = 0; i < node->fields->length(); ++i) {
         const char* name = (*node->fields)[i]->as.struct_field->name;
         for (j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(name, (*node->fields)[j]->as.struct_field->name)) {
-                unit_.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), "duplicate field name in struct");
-                return NULL;
+                return reportAndReturnUndefined((*node->fields)[j]->loc, ERR_REDEFINITION, "duplicate field name in struct");
             }
         }
     }
@@ -2551,11 +2682,10 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     for (i = 0; i < node->fields->length(); ++i) {
         ASTNode* field_node = (*node->fields)[i];
         ASTStructFieldNode* field_data = field_node->as.struct_field;
+        if (!field_data->type) return get_g_type_undefined();
         Type* field_type = visit(field_data->type);
 
-        if (!field_type) {
-             return NULL; // Error already reported
-        }
+        if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
         if (!isTypeComplete(field_type)) {
              char type_str[64];
@@ -2566,8 +2696,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
              plat_strcat(msg, "' has incomplete type '");
              plat_strcat(msg, type_str);
              plat_strcat(msg, "'");
-             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, field_data->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
-             return NULL;
+             return reportAndReturnUndefined(field_data->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
         StructField sf;
@@ -2602,10 +2731,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     char* enum_name;
     size_t len;
     Type* union_type;
-
-    if (!union_name) {
-        unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, parent->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "anonymous unions are not supported in bootstrap compiler");
-    }
+    if (!node->fields) return get_g_type_undefined();
 
     tag_type = NULL;
     if (node->is_tagged) {
@@ -2614,7 +2740,8 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             // union(enum) - implicit enum
         } else if (node->tag_type_expr) {
             tag_type = visit(node->tag_type_expr);
-            if (tag_type && tag_type->kind == TYPE_PLACEHOLDER) {
+            if (!tag_type || is_type_undefined(tag_type)) return get_g_type_undefined();
+            if (tag_type->kind == TYPE_PLACEHOLDER) {
                 tag_type = resolvePlaceholder(tag_type);
             }
             if (tag_type && tag_type->kind == TYPE_TYPE) {
@@ -2637,9 +2764,11 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         ASTNode* field_node_wrapper = (*node->fields)[i];
         ASTStructFieldNode* field_node = field_node_wrapper->as.struct_field;
 
+        if (!field_node->type) return get_g_type_undefined();
         Type* field_type = visit(field_node->type);
+        if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
         if (field_type && !is_c89_compatible(field_type)) {
-            unit_.getErrorHandler().report(ERR_NON_C89_FEATURE, field_node->type->loc, ErrorHandler::getMessage(ERR_NON_C89_FEATURE), "Union field type is not C89-compatible");
+            return reportAndReturnUndefined(field_node->type->loc, ERR_NON_C89_FEATURE, "Union field type is not C89-compatible");
         }
 
         if (field_type && !isTypeComplete(field_type)) {
@@ -2651,14 +2780,13 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
              plat_strcat(msg, "' has incomplete type '");
              plat_strcat(msg, type_str);
              plat_strcat(msg, "'");
-             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, field_node->type->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
-             field_type = NULL;
+             return reportAndReturnUndefined(field_node->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
         /* Check for duplicate names. */
         for (j = 0; j < fields->length(); ++j) {
             if (identifiers_equal(field_node->name, (*fields)[j].name)) {
-                unit_.getErrorHandler().report(ERR_REDEFINITION, field_node_wrapper->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), "duplicate field name in union");
+                return reportAndReturnUndefined(field_node_wrapper->loc, ERR_REDEFINITION, "duplicate field name in union");
             }
         }
 
@@ -2714,11 +2842,58 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     size_t member_idx;
     Type* field_type;
 
+    if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
-    if (!base_type) return NULL;
+    if (base_type) {
+        char buf[128];
+        typeToString(base_type, buf, sizeof(buf));
+        plat_print_debug("DEBUG visitMemberAccess base: ");
+        plat_print_debug(buf);
+        plat_print_debug(", field: ");
+        plat_print_debug(node->field_name);
+        plat_print_debug("\n");
+    }
+    if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
     if (base_type->kind == TYPE_PLACEHOLDER) {
         base_type = resolvePlaceholder(base_type);
+    }
+
+    /* If the base is a type constant (TYPE_TYPE), unwrap it. */
+    if (base_type->kind == TYPE_TYPE) {
+        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
+            base_type = node->base->resolved_type;
+        } else if (node->base->type == NODE_IDENTIFIER) {
+            Symbol* sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
+            if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE && sym->details) {
+                ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                if (decl->initializer && decl->initializer->resolved_type) {
+                    base_type = decl->initializer->resolved_type;
+                }
+            }
+        } else if (node->base->type == NODE_MEMBER_ACCESS) {
+            /* Handled recursively via node->base->resolved_type above */
+            base_type = node->base->resolved_type;
+        }
+
+        if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+            base_type = resolvePlaceholder(base_type);
+        }
+
+        /* If after resolution it is still TYPE_TYPE (e.g. from an @import),
+           we might need to look deeper into the symbol details. */
+        if (base_type && base_type->kind == TYPE_TYPE && node->base->type == NODE_MEMBER_ACCESS) {
+             Symbol* sym = node->base->as.member_access->symbol;
+             if (sym && sym->details) {
+                 ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                 if (decl->initializer && decl->initializer->resolved_type) {
+                     base_type = decl->initializer->resolved_type;
+                     if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+                         base_type = resolvePlaceholder(base_type);
+                     }
+                 }
+             }
+        }
     }
 
     /* Auto-dereference for single level pointer. */
@@ -2741,26 +2916,74 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (target_mod && target_mod->symbols) {
             Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {
+                if (sym->symbol_type) {
+                    char buf[128];
+                    typeToString(sym->symbol_type, buf, sizeof(buf));
+                    plat_print_debug("DEBUG: Found module symbol type=");
+                    plat_print_debug(buf);
+                    plat_print_debug("\n");
+                }
                 node->symbol = sym;
-                /* If it's a constant type alias, we might need to resolve it.
-                   Switch context temporarily to target module. */
+                /* Ensure symbol is fully resolved. */
                 if (!sym->symbol_type && sym->details) {
-                    const char* saved_module = unit_.getCurrentModule();
-                    unit_.setCurrentModule(target_mod->name);
-                    TypeChecker target_checker(unit_);
-                    if (sym->kind == SYMBOL_FUNCTION) {
+                    if (sym->kind == SYMBOL_VARIABLE) {
+                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                        /* Visit the initializer to set its resolved_type. 
+                           We visit the initializer directly to avoid creating placeholders with NULL decl_node. */
+                        if (decl->initializer && !decl->initializer->resolved_type) {
+                            const char* saved_module = unit_.getCurrentModule();
+                            unit_.setCurrentModule(target_mod->name);
+                            TypeChecker target_checker(unit_);
+                            target_checker.visit(decl->initializer);
+                            unit_.setCurrentModule(saved_module);
+                        }
+                        /* If the initializer was resolved, set the symbol type. */
+                        if (decl->initializer && decl->initializer->resolved_type) {
+                            sym->symbol_type = (decl->initializer->resolved_type->kind == TYPE_TYPE) ?
+                                                get_g_type_type() : decl->initializer->resolved_type;
+                        }
+                    } else if (sym->kind == SYMBOL_FUNCTION) {
+                        const char* saved_module = unit_.getCurrentModule();
+                        unit_.setCurrentModule(target_mod->name);
+                        TypeChecker target_checker(unit_);
                         target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
-                    } else if (sym->kind == SYMBOL_VARIABLE) {
-                        target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                        unit_.setCurrentModule(saved_module);
                     }
-                    unit_.setCurrentModule(saved_module);
                 }
 
                 if (sym->symbol_type) {
-                    if (sym->symbol_type->kind == TYPE_PLACEHOLDER) {
-                        return resolvePlaceholder(sym->symbol_type);
+                    Type* result_type = sym->symbol_type;
+                    if (result_type->kind == TYPE_PLACEHOLDER) {
+                        result_type = resolvePlaceholder(result_type);
                     }
-                    return sym->symbol_type;
+
+                    /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
+                    if (result_type->kind == TYPE_TYPE && sym->details) {
+                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+
+                        /* Try initializer's resolved_type first (set by Fix #1). */
+                        if (decl->initializer && decl->initializer->resolved_type) {
+                            result_type = decl->initializer->resolved_type;
+                        }
+                        /* Fallback: visit the initializer to get the actual type. */
+                        else if (decl->initializer) {
+                             const char* saved_module = unit_.getCurrentModule();
+                             unit_.setCurrentModule(target_mod->name);
+                             TypeChecker target_checker(unit_);
+                             Type* t = target_checker.visit(decl->initializer);
+                             if (t && t->kind == TYPE_TYPE && decl->initializer->resolved_type) {
+                                 result_type = decl->initializer->resolved_type;
+                             } else if (t) {
+                                 result_type = t;
+                             }
+                             unit_.setCurrentModule(saved_module);
+                        }
+
+                        if (result_type && result_type->kind == TYPE_PLACEHOLDER) {
+                            result_type = resolvePlaceholder(result_type);
+                        }
+                    }
+                    return result_type;
                 }
             }
         } else if (base_type->kind == TYPE_MODULE) {
@@ -2778,9 +3001,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         plat_strcat(msg, "' has no member named '");
         plat_strcat(msg, node->field_name);
         plat_strcat(msg, "'");
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
-
-        return get_g_type_anytype();
+        return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, msg);
     }
 
     if (base_type->kind == TYPE_ERROR_SET) {
@@ -2821,8 +3042,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
             safe_append(current, remaining, "enum has no member named '");
             safe_append(current, remaining, node->field_name);
             safe_append(current, remaining, "'");
-            unit_.getErrorHandler().report(ERR_UNDEFINED_ENUM_MEMBER, parent->loc, ErrorHandler::getMessage(ERR_UNDEFINED_ENUM_MEMBER), unit_.getArena(), msg_buffer);
-            return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_UNDEFINED_ENUM_MEMBER, msg_buffer);
         }
 
         // --- ENUM CONSTANT FOLDING ---
@@ -2839,8 +3059,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     }
 
     if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "member access '.' only allowed on structs, unions, enums or pointers to structs/unions");
-        return NULL;
+        return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "member access '.' only allowed on structs, unions, enums or pointers to structs/unions");
     }
 
     field_type = findStructField(base_type, node->field_name);
@@ -2851,8 +3070,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         safe_append(current, remaining, "struct has no field named '");
         safe_append(current, remaining, node->field_name);
         safe_append(current, remaining, "'");
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->base->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
-        return NULL;
+        return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
     return field_type;
@@ -2880,7 +3098,7 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
              safe_append(current, remaining, "missing field '");
              safe_append(current, remaining, expected_name);
              safe_append(current, remaining, "' in struct initializer");
-             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+             reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
              return false;
         }
     }
@@ -2895,21 +3113,22 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             safe_append(current, remaining, "no field named '");
             safe_append(current, remaining, init->field_name);
             safe_append(current, remaining, "' in struct");
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, init->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
+            reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg_buffer);
             return false;
         }
 
         // Check for duplicates in initializer
         for (size_t j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(init->field_name, (*node->fields)[j]->field_name)) {
-                unit_.getErrorHandler().report(ERR_REDEFINITION, (*node->fields)[j]->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), "duplicate field initializer");
+                reportAndReturnUndefined((*node->fields)[j]->loc, ERR_REDEFINITION, "duplicate field initializer");
                 return false;
             }
         }
 
         // 2. Type check initializer values
         Type* val_type = visit(init->value);
-        if (!IsTypeAssignableTo(val_type, field_type, init->loc)) {
+        if (val_type && is_type_undefined(val_type)) return false;
+        if (val_type && !IsTypeAssignableTo(val_type, field_type, init->loc)) {
              // IsTypeAssignableTo already reports the error
         }
     }
@@ -2917,41 +3136,68 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
 }
 
 Type* TypeChecker::visitTupleLiteral(ASTTupleLiteralNode* node) {
-    void* mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
-    if (!mem) fatalError("Out of memory");
-    DynamicArray<Type*>* element_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+    void* mem;
+    DynamicArray<Type*>* element_types;
+    size_t i;
+    Type* t;
 
-    for (size_t i = 0; i < node->elements->length(); ++i) {
-        Type* t = visit((*node->elements)[i]);
-        if (t) element_types->append(t);
-        else element_types->append(get_g_type_void());
+    mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+    if (!mem) fatalError("Out of memory");
+    element_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+
+    if (node->elements) {
+        for (i = 0; i < node->elements->length(); ++i) {
+            ASTNode* elem = (*node->elements)[i];
+            if (!elem) {
+                element_types->append(get_g_type_void());
+                continue;
+            }
+            t = visit(elem);
+            if (!t || is_type_undefined(t)) return get_g_type_undefined();
+            element_types->append(t);
+        }
     }
 
     return createTupleType(unit_.getArena(), element_types);
 }
 
 Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
+    Type* struct_type;
+
     if (node->type_expr) {
-        Type* struct_type = visit(node->type_expr);
-        if (!struct_type) return NULL;
+        struct_type = visit(node->type_expr);
+        if (!struct_type || is_type_undefined(struct_type)) return get_g_type_undefined();
 
         if (struct_type->kind == TYPE_PLACEHOLDER) {
             struct_type = resolvePlaceholder(struct_type);
         }
 
         if (struct_type->kind == TYPE_TYPE) {
-            // Unwrap if it's a TYPE_TYPE from visitTypeName or similar
+            /* Unwrap if it's a TYPE_TYPE from visitTypeName or similar */
             if (node->type_expr->resolved_type && node->type_expr->resolved_type != get_g_type_type()) {
                  struct_type = node->type_expr->resolved_type;
+                 if (!struct_type || is_type_undefined(struct_type)) return get_g_type_undefined();
                  if (struct_type->kind == TYPE_PLACEHOLDER) {
                      struct_type = resolvePlaceholder(struct_type);
+                 }
+            } else if (node->type_expr->type == NODE_IDENTIFIER) {
+                 Symbol* sym = unit_.getSymbolTable().lookup(node->type_expr->as.identifier.name);
+                 if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE) {
+                      if (sym->details) {
+                           ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                           if (decl->initializer && decl->initializer->resolved_type) {
+                                struct_type = decl->initializer->resolved_type;
+                                if (struct_type->kind == TYPE_PLACEHOLDER) {
+                                    struct_type = resolvePlaceholder(struct_type);
+                                }
+                           }
+                      }
                  }
             }
         }
 
         if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->type_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "expected struct or array type for initialization");
-            return NULL;
+            return reportAndReturnUndefined(node->type_expr->loc, ERR_TYPE_MISMATCH, "expected struct or array type for initialization");
         }
 
         if (struct_type->kind == TYPE_STRUCT) {
@@ -2963,18 +3209,21 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             Type* element_type = struct_type->as.array.element_type;
             for (size_t i = 0; i < node->fields->length(); ++i) {
                 ASTNamedInitializer* init = (*node->fields)[i];
+                if (!init->value) return get_g_type_undefined();
                 Type* val_type = visit(init->value);
-                if (val_type && !IsTypeAssignableTo(val_type, element_type, init->loc)) {
+                if (!val_type || is_type_undefined(val_type)) return get_g_type_undefined();
+                if (!IsTypeAssignableTo(val_type, element_type, init->loc)) {
                     // Error already reported
                 }
             }
             return struct_type;
         }
-        return NULL;
+        return get_g_type_undefined();
     }
 
-    // For anonymous structs, we return NULL and wait for context (e.g. visitVarDecl)
-    return NULL;
+    // For anonymous structs, we return undefined if called without context.
+    // Callers like visitVarDecl handle anonymous initializers specially.
+    return get_g_type_undefined();
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
@@ -2985,6 +3234,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     Type* backing_type = NULL;
     if (node->backing_type) {
         backing_type = visit(node->backing_type);
+        if (!backing_type || is_type_undefined(backing_type)) return get_g_type_undefined();
     } else {
         // Default backing type is i32, to be compatible with C enums.
         backing_type = resolvePrimitiveTypeName("i32");
@@ -2993,14 +3243,18 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     if (!backing_type) {
         // This can happen if the backing type is an undeclared identifier.
         // The error would have been reported during visit(node->backing_type).
-        return NULL;
+        return get_g_type_undefined();
     }
 
     // 2. Validate that the backing type is an integer.
     if (!isIntegerType(backing_type)) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->backing_type ? node->backing_type->loc : node->fields->length() > 0 ? (*node->fields)[0]->loc : SourceLocation(),
-                   ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Enum backing type must be an integer.");
-        return NULL;
+        SourceLocation loc;
+        if (node->backing_type) {
+            loc = node->backing_type->loc;
+        } else if (node->fields && node->fields->length() > 0) {
+            loc = (*node->fields)[0]->loc;
+        }
+        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Enum backing type must be an integer.");
     }
 
     // 3. Process enum members.
@@ -3012,6 +3266,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 
     bool has_error = false;
     i64 current_value = 0;
+    if (!node->fields) return get_g_type_undefined();
     for (size_t i = 0; i < node->fields->length(); ++i) {
         ASTNode* member_node_wrapper = (*node->fields)[i];
         ASTVarDeclNode* member_node = member_node_wrapper->as.var_decl;
@@ -3027,11 +3282,11 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
                 if (operand->type == NODE_INTEGER_LITERAL) {
                     member_value = -((i64)operand->as.integer_literal.value);
                 } else {
-                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, init->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Enum member initializer must be a constant integer.");
+                    reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, "Enum member initializer must be a constant integer.");
                     has_error = true;
                 }
             } else {
-                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, init->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Enum member initializer must be a constant integer.");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, "Enum member initializer must be a constant integer.");
                 has_error = true;
             }
             current_value = member_value;
@@ -3040,15 +3295,13 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         }
 
         if (!checkIntegerLiteralFit(member_value, backing_type)) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, member_node_wrapper->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Enum member value overflows its backing type.");
-            has_error = true;
+            return reportAndReturnUndefined(member_node_wrapper->loc, ERR_TYPE_MISMATCH, "Enum member value overflows its backing type.");
         }
 
         // Check for unique member names
         for (size_t j = 0; j < i; ++j) {
             if (identifiers_equal((*members)[j].name, member_node->name)) {
-                unit_.getErrorHandler().report(ERR_REDEFINITION, member_node_wrapper->loc, ErrorHandler::getMessage(ERR_REDEFINITION), "Duplicate enum member name");
-                has_error = true;
+                return reportAndReturnUndefined(member_node_wrapper->loc, ERR_REDEFINITION, "Duplicate enum member name");
             }
         }
 
@@ -3072,7 +3325,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         }
     }
 
-    if (has_error) return NULL;
+    if (has_error) return get_g_type_undefined();
 
     // 4. Create and return the new enum type.
     Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
@@ -3083,25 +3336,32 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 }
 
 Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
-    Type* resolved_type = resolvePrimitiveTypeName(node->name);
+    Type* resolved_type;
+    Symbol* sym;
+    char msg_buffer[256];
+    char* current;
+    size_t remaining;
+
+    resolved_type = resolvePrimitiveTypeName(node->name);
     if (!resolved_type) {
-        // Look up in symbol table for type aliases (e.g., const Point = struct { ... })
-        Symbol* sym = unit_.getSymbolTable().lookup(node->name);
+        /* Look up in symbol table for type aliases (e.g., const Point = struct { ... }) */
+        sym = unit_.getSymbolTable().lookup(node->name);
         if (sym) {
-            // Resolve on demand if needed
+            /* Resolve on demand if needed */
             if (!sym->symbol_type && sym->kind == SYMBOL_VARIABLE && sym->details) {
-                visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                Type* res = visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                if (!res || is_type_undefined(res)) return get_g_type_undefined();
             }
 
-            // A constant can hold a type in Zig.
+            /* A constant can hold a type in Zig. */
             if (sym->symbol_type) {
                 if (sym->symbol_type->kind == TYPE_TYPE) {
-                    // Resolve the actual type held by this constant
+                    /* Resolve the actual type held by this constant */
                     if (sym->details && ((ASTVarDeclNode*)sym->details)->initializer) {
                         resolved_type = ((ASTVarDeclNode*)sym->details)->initializer->resolved_type;
                     } else if (sym->flags & SYMBOL_FLAG_PARAM) {
-                        // It's a type parameter (comptime T: type).
-                        // In the generic definition, we treat it as 'anytype'.
+                        /* It's a type parameter (comptime T: type).
+                           In the generic definition, we treat it as 'anytype'. */
                         resolved_type = get_g_type_anytype();
                     }
                 } else if (sym->symbol_type->kind == TYPE_STRUCT ||
@@ -3124,49 +3384,53 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         }
     }
 
-    if (!resolved_type) {
-        char msg_buffer[256];
-        char* current = msg_buffer;
-        size_t remaining = sizeof(msg_buffer);
-        safe_append(current, remaining, "use of undeclared type '");
-        safe_append(current, remaining, node->name);
-        safe_append(current, remaining, "'");
-        unit_.getErrorHandler().report(ERR_UNDECLARED_TYPE, parent->loc, ErrorHandler::getMessage(ERR_UNDECLARED_TYPE), unit_.getArena(), msg_buffer);
+    if (!resolved_type || is_type_undefined(resolved_type)) {
+        if (!resolved_type) {
+            current = msg_buffer;
+            remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "use of undeclared type '");
+            safe_append(current, remaining, node->name);
+            safe_append(current, remaining, "'");
+            return reportAndReturnUndefined(parent->loc, ERR_UNDECLARED_TYPE, msg_buffer);
+        }
+        return get_g_type_undefined();
     }
+
     return resolved_type;
 }
 
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
-    Type* base_type = visit(node->base);
-    if (!base_type) {
-        // Error already reported by the base type visit
-        return NULL;
-    }
+    Type* base_type;
+    if (!node->base) return get_g_type_undefined();
+    base_type = visit(node->base);
+    if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
     return createPointerType(unit_.getArena(), base_type, node->is_const, node->is_many, &unit_.getTypeInterner());
 }
 
 Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
-    // 1. Handle slices
+    Type* element_type;
+    u64 array_size;
+
+    /* 1. Handle slices */
     if (!node->size) {
-        Type* element_type = visit(node->element_type);
-        if (!element_type) return NULL;
+        if (!node->element_type) return get_g_type_undefined();
+        element_type = visit(node->element_type);
+        if (!element_type || is_type_undefined(element_type)) return get_g_type_undefined();
         return createSliceType(unit_.getArena(), element_type, node->is_const, &unit_.getTypeInterner());
     }
 
-    // 2. Ensure size is a constant integer literal
+    /* 2. Ensure size is a constant integer literal */
     if (node->size->type != NODE_INTEGER_LITERAL) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->size->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Array size must be a constant integer literal");
-        return NULL;
+        return reportAndReturnUndefined(node->size->loc, ERR_TYPE_MISMATCH, "Array size must be a constant integer literal");
     }
 
-    // 3. Resolve element type
-    Type* element_type = visit(node->element_type);
-    if (!element_type) {
-        return NULL; // Error already reported
-    }
+    /* 3. Resolve element type */
+    if (!node->element_type) return get_g_type_undefined();
+    element_type = visit(node->element_type);
+    if (!element_type || is_type_undefined(element_type)) return get_g_type_undefined();
 
-    // 4. Create and return the new array type
-    u64 array_size = node->size->as.integer_literal.value;
+    /* 4. Create and return the new array type */
+    array_size = node->size->as.integer_literal.value;
     return createArrayType(unit_.getArena(), element_type, array_size, &unit_.getTypeInterner());
 }
 
@@ -3177,12 +3441,12 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
     Type* operand_err_set;
     Type* fn_err_set;
 
+    if (!try_node.expression) return get_g_type_undefined();
     inner_type = visit(try_node.expression);
-    if (!inner_type) return NULL;
+    if (!inner_type || is_type_undefined(inner_type)) return get_g_type_undefined();
 
     if (inner_type->kind != TYPE_ERROR_UNION) {
-        unit_.getErrorHandler().report(ERR_TRY_ON_NON_ERROR_UNION, node->loc, ErrorHandler::getMessage(ERR_TRY_ON_NON_ERROR_UNION));
-        return inner_type;
+        return reportAndReturnUndefined(node->loc, ERR_TRY_ON_NON_ERROR_UNION, ErrorHandler::getMessage(ERR_TRY_ON_NON_ERROR_UNION));
     }
 
     payload = inner_type->as.error_union.payload;
@@ -3190,13 +3454,11 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 
     /* Check enclosing function return type. */
     if (!current_fn_return_type_) {
-        unit_.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, ErrorHandler::getMessage(ERR_TRY_IN_NON_ERROR_FUNCTION), "can only be used inside a function");
-        return payload;
+        return reportAndReturnUndefined(node->loc, ERR_TRY_IN_NON_ERROR_FUNCTION, "try can only be used inside a function");
     }
 
     if (current_fn_return_type_->kind != TYPE_ERROR_UNION) {
-        unit_.getErrorHandler().report(ERR_TRY_IN_NON_ERROR_FUNCTION, node->loc, ErrorHandler::getMessage(ERR_TRY_IN_NON_ERROR_FUNCTION), "enclosing function does not return an error union");
-        return payload;
+        return reportAndReturnUndefined(node->loc, ERR_TRY_IN_NON_ERROR_FUNCTION, "enclosing function does not return an error union");
     }
 
     fn_err_set = current_fn_return_type_->as.error_union.error_set;
@@ -3206,7 +3468,7 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
     if (operand_err_set != fn_err_set) {
         /* If both are inferred, they might be different pointers but compatible in our simplified model. */
         if (!(inner_type->as.error_union.is_inferred && current_fn_return_type_->as.error_union.is_inferred)) {
-                unit_.getErrorHandler().report(ERR_TRY_INCOMPATIBLE_ERROR_SETS, node->loc, ErrorHandler::getMessage(ERR_TRY_INCOMPATIBLE_ERROR_SETS));
+                return reportAndReturnUndefined(node->loc, ERR_TRY_INCOMPATIBLE_ERROR_SETS, ErrorHandler::getMessage(ERR_TRY_INCOMPATIBLE_ERROR_SETS));
         }
     }
 
@@ -3214,14 +3476,23 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 }
 
 Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
+    if (!node->payload_type) return get_g_type_undefined();
     Type* payload = visit(node->payload_type);
-    Type* error_set = node->error_set ? visit(node->error_set) : NULL;
+    if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
+
+    Type* error_set = NULL;
+    if (node->error_set) {
+        error_set = visit(node->error_set);
+        if (!error_set || is_type_undefined(error_set)) return get_g_type_undefined();
+    }
 
     return createErrorUnionType(unit_.getArena(), payload, error_set, node->error_set == NULL, &unit_.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
-    ASTErrorSetDefinitionNode* decl = node->as.error_set_decl;
+    ASTErrorSetDefinitionNode* decl;
+    if (!node) return get_g_type_undefined();
+    decl = node->as.error_set_decl;
     if (decl->tags) {
         for (size_t i = 0; i < decl->tags->length(); ++i) {
             const char* tag = (*decl->tags)[i];
@@ -3234,8 +3505,10 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
                     safe_append(cur, rem, "Duplicate error tag '");
                     safe_append(cur, rem, tag);
                     safe_append(cur, rem, "' in error set definition");
-                    unit_.getErrorHandler().report(ERR_REDEFINITION, node->loc, ErrorHandler::getMessage(ERR_REDEFINITION), unit_.getArena(), msg);
-                    break;
+                    // Important: report and return sentinel to prevent further errors
+                    // but we must use a hint if the test expects it.
+                    // Actually, the test expects ERR_REDEFINITION and a hint.
+                    return reportAndReturnUndefined(node->loc, ERR_REDEFINITION, msg);
                 }
             }
             unit_.getGlobalErrorRegistry().getOrAddTag(tag);
@@ -3245,17 +3518,28 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
 }
 
 Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
-    Type* left = visit(node->left);
-    Type* right = visit(node->right);
+    Type* left;
+    Type* right;
+    void* tags_mem;
+    DynamicArray<const char*>* merged_tags;
+    size_t i;
+    size_t j;
 
-    if (!left || left->kind != TYPE_ERROR_SET || !right || right->kind != TYPE_ERROR_SET) {
-        return createErrorSetType(unit_.getArena(), NULL, NULL, true, &unit_.getTypeInterner());
+    if (!node->left || !node->right) return get_g_type_undefined();
+    left = visit(node->left);
+    if (!left || is_type_undefined(left)) return get_g_type_undefined();
+
+    right = visit(node->right);
+    if (!right || is_type_undefined(right)) return get_g_type_undefined();
+
+    if (left->kind != TYPE_ERROR_SET || right->kind != TYPE_ERROR_SET) {
+        return reportAndReturnUndefined(node->left->loc, ERR_TYPE_MISMATCH, "Expected error set for merge");
     }
 
     // Merge tags
-    void* tags_mem = unit_.getArena().alloc(sizeof(DynamicArray<const char*>));
+    tags_mem = unit_.getArena().alloc(sizeof(DynamicArray<const char*>));
     if (!tags_mem) plat_abort();
-    DynamicArray<const char*>* merged_tags = new (tags_mem) DynamicArray<const char*>(unit_.getArena());
+    merged_tags = new (tags_mem) DynamicArray<const char*>(unit_.getArena());
 
     if (left->as.error_set.tags) {
         for (size_t i = 0; i < left->as.error_set.tags->length(); ++i) {
@@ -3284,7 +3568,9 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
     logFeatureLocation("optional_type", node->loc);
+    if (!node->payload_type) return get_g_type_undefined();
     Type* payload = visit(node->payload_type);
+    if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
     return createOptionalType(unit_.getArena(), payload, &unit_.getTypeInterner());
 }
 
@@ -3308,7 +3594,6 @@ void TypeChecker::logFeatureLocation(const char* feature, SourceLocation loc) {
     safe_append(current, remaining, col_str);
     safe_append(current, remaining, "\n");
 
-    plat_print_debug(buffer);
 }
 
 Type* TypeChecker::visitCatchExpr(ASTNode* node) {
@@ -3316,17 +3601,17 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
     Type* operand_type;
     Type* payload_type;
     Type* error_set;
-    Symbol sym;
     Type* fallback_type;
 
     catch_node = node->as.catch_expr;
+    if (!catch_node->payload) return get_g_type_undefined();
     operand_type = visit(catch_node->payload);
-    if (!operand_type) return NULL;
+    if (!operand_type || is_type_undefined(operand_type)) return get_g_type_undefined();
 
     if (operand_type->kind != TYPE_ERROR_UNION) {
-         unit_.getErrorHandler().report(ERR_CATCH_ON_NON_ERROR_UNION, node->loc, ErrorHandler::getMessage(ERR_CATCH_ON_NON_ERROR_UNION));
+         reportAndReturnUndefined(node->loc, ERR_CATCH_ON_NON_ERROR_UNION, ErrorHandler::getMessage(ERR_CATCH_ON_NON_ERROR_UNION));
          visit(catch_node->else_expr);
-         return operand_type;
+         return get_g_type_undefined();
     }
 
     payload_type = operand_type->as.error_union.payload;
@@ -3343,15 +3628,18 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
         unit_.getSymbolTable().insert(sym);
     }
 
+    if (!catch_node->else_expr) return get_g_type_undefined();
     fallback_type = visit(catch_node->else_expr);
 
     if (catch_node->error_name) {
         unit_.getSymbolTable().exitScope();
     }
 
-    if (fallback_type && !areTypesEqual(payload_type, fallback_type)) {
+    if (!fallback_type || is_type_undefined(fallback_type)) return get_g_type_undefined();
+
+    if (!areTypesEqual(payload_type, fallback_type)) {
         if (fallback_type->kind != TYPE_NORETURN) {
-            unit_.getErrorHandler().report(ERR_CATCH_TYPE_MISMATCH, node->loc, ErrorHandler::getMessage(ERR_CATCH_TYPE_MISMATCH), "catch fallback expression type must match payload type");
+            return reportAndReturnUndefined(node->loc, ERR_CATCH_TYPE_MISMATCH, "catch fallback expression type must match payload type");
         }
     }
 
@@ -3364,14 +3652,16 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
     Type* payload_type;
     char expected_buf[128], actual_buf[128];
 
+    if (!node->payload) return get_g_type_undefined();
     left_type = visit(node->payload);
-    right_type = visit(node->else_expr);
+    if (!left_type || is_type_undefined(left_type)) return get_g_type_undefined();
 
-    if (!left_type) return NULL;
+    if (!node->else_expr) return get_g_type_undefined();
+    right_type = visit(node->else_expr);
+    if (!right_type || is_type_undefined(right_type)) return get_g_type_undefined();
 
     if (left_type->kind != TYPE_OPTIONAL) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->payload->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "Left side of orelse must be an optional type");
-        return NULL;
+        return reportAndReturnUndefined(node->payload->loc, ERR_TYPE_MISMATCH, "Left side of orelse must be an optional type");
     }
 
     payload_type = left_type->as.optional.payload;
@@ -3392,7 +3682,7 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
             plat_strcat(msg, "' for orelse fallback, found '");
             plat_strcat(msg, actual_buf);
             plat_strcat(msg, "'");
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->else_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg);
+            return reportAndReturnUndefined(node->else_expr->loc, ERR_TYPE_MISMATCH, msg);
         }
     }
 
@@ -3400,20 +3690,30 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
 }
 
 Type* TypeChecker::visitErrdeferStmt(ASTErrDeferStmtNode* node) {
+    Type* res;
     /* RAII: Defer context automatically managed. */
     DeferContextGuard guard(*this);
     DeferFlagGuard flag_guard(*this);
-    visit(node->statement);
-    return NULL;
+    if (!node->statement) return get_g_type_void();
+    res = visit(node->statement);
+    if (res && is_type_undefined(res)) return get_g_type_undefined();
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitComptimeBlock(ASTComptimeBlockNode* node) {
-    visit(node->expression);
-    return NULL;
+    Type* res;
+    if (!node->expression) return get_g_type_void();
+    res = visit(node->expression);
+    if (res && is_type_undefined(res)) return get_g_type_undefined();
+    return get_g_type_void();
 }
 
 Type* TypeChecker::visitExpressionStmt(ASTExpressionStmtNode* node) {
-    return visit(node->expression);
+    Type* res;
+    if (!node->expression) return get_g_type_void();
+    res = visit(node->expression);
+    if (res && is_type_undefined(res)) return get_g_type_undefined();
+    return res;
 }
 
 bool TypeChecker::isLValueConst(ASTNode* node) {
@@ -3437,24 +3737,29 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
         case NODE_UNARY_OP:
             // Check for dereferencing a const pointer, e.g. *const u8
             if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                if (!node->as.unary_op.operand) return false;
                 Type* ptr_type = node->as.unary_op.operand->resolved_type ? node->as.unary_op.operand->resolved_type : visit(node->as.unary_op.operand);
-                return (ptr_type && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
+                return (ptr_type && !is_type_undefined(ptr_type) && ptr_type->kind == TYPE_POINTER && ptr_type->as.pointer.is_const);
             }
             return false;
         case NODE_ARRAY_ACCESS: {
+            if (!node->as.array_access->array) return false;
             Type* array_type = node->as.array_access->array->resolved_type ? node->as.array_access->array->resolved_type : visit(node->as.array_access->array);
-            if (array_type && array_type->kind == TYPE_POINTER) {
-                return array_type->as.pointer.is_const;
-            }
-            if (array_type && array_type->kind == TYPE_SLICE) {
-                return array_type->as.slice.is_const;
+            if (array_type && !is_type_undefined(array_type)) {
+                if (array_type->kind == TYPE_POINTER) {
+                    return array_type->as.pointer.is_const;
+                }
+                if (array_type->kind == TYPE_SLICE) {
+                    return array_type->as.slice.is_const;
+                }
             }
             // An array access is const if the array itself is const.
             return isLValueConst(node->as.array_access->array);
         }
         case NODE_MEMBER_ACCESS: {
+            if (!node->as.member_access->base) return false;
             Type* base_type = node->as.member_access->base->resolved_type ? node->as.member_access->base->resolved_type : visit(node->as.member_access->base);
-            if (base_type && base_type->kind == TYPE_POINTER) {
+            if (base_type && !is_type_undefined(base_type) && base_type->kind == TYPE_POINTER) {
                 return base_type->as.pointer.is_const;
             }
             // A member access is const if the struct itself is const.
@@ -3715,34 +4020,29 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
 
-    if (!left_is_ptr && !right_is_ptr) return NULL; // Not pointer arithmetic
+    if (!left_is_ptr && !right_is_ptr) return NULL; // Not pointer arithmetic, NULL is OK here as it's a query
 
     // Case 1: ptr - ptr
     if (left_is_ptr && right_is_ptr) {
         if (op != TOKEN_MINUS) {
-            unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR), "Cannot use this operator on two pointers");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Cannot use this operator on two pointers");
         }
 
         // Both must be complete pointers (not void*, not multi-level)
         if (!isCompletePointerType(left_type)) {
-            unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_VOID), "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
         }
         if (!isCompletePointerType(right_type)) {
-            unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_VOID), "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
         }
 
         // Zig only allows pointer subtraction on many-item pointers (and slices)
         if (!left_type->as.pointer.is_many || !right_type->as.pointer.is_many) {
-            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Pointer subtraction is only allowed on many-item pointers ([*]T)");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Pointer subtraction is only allowed on many-item pointers ([*]T)");
         }
 
         if (!areSamePointerTypeIgnoringConst(left_type, right_type)) {
-            unit_.getErrorHandler().report(ERR_POINTER_SUBTRACTION_INCOMPATIBLE, loc, ErrorHandler::getMessage(ERR_POINTER_SUBTRACTION_INCOMPATIBLE), "Cannot subtract pointers to different types");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_POINTER_SUBTRACTION_INCOMPATIBLE, "Cannot subtract pointers to different types");
         }
 
         return get_g_type_isize();
@@ -3754,8 +4054,7 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
 
     if (!isIntegerType(int_type)) {
         // Pointer and something non-integer (and not another pointer).
-        unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR), "Pointers can only be added to/subtracted from integers");
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Pointers can only be added to/subtracted from integers");
     }
 
     // Check operator
@@ -3763,31 +4062,26 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
         // OK: ptr + int, int + ptr
     } else if (op == TOKEN_MINUS) {
         if (!left_is_ptr) {
-            unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR), "Cannot subtract pointer from integer");
-            return NULL;
+            return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Cannot subtract pointer from integer");
         }
         // OK: ptr - int
     } else {
-        unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_INVALID_OPERATOR), "Invalid operator for pointer arithmetic");
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Invalid operator for pointer arithmetic");
     }
 
     // Check if pointer is complete
     if (!isCompletePointerType(ptr_type)) {
-        unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_VOID, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_VOID), "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
     }
 
     // Zig only allows pointer arithmetic on many-item pointers
     if (!ptr_type->as.pointer.is_many) {
-        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Pointer arithmetic is only allowed on many-item pointers ([*]T)");
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Pointer arithmetic is only allowed on many-item pointers ([*]T)");
     }
 
     // Check if integer is unsigned (including non-negative literals)
     if (!isUnsignedIntegerType(int_type)) {
-        unit_.getErrorHandler().report(ERR_POINTER_ARITHMETIC_NON_UNSIGNED, loc, ErrorHandler::getMessage(ERR_POINTER_ARITHMETIC_NON_UNSIGNED), "Pointer arithmetic requires an unsigned integer offset");
-        return NULL;
+        return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_NON_UNSIGNED, "Pointer arithmetic requires an unsigned integer offset");
     }
 
     return ptr_type;
@@ -3802,7 +4096,7 @@ Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* ri
             return get_g_type_bool();
         }
     }
-    return NULL;
+    return NULL; // NULL means "no promotion possible"
 }
 
 Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op) {
@@ -3822,7 +4116,7 @@ Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* ri
             return left_type;
         }
     }
-    return NULL;
+    return NULL; // NULL means "no promotion possible"
 }
 
 bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
@@ -3891,7 +4185,6 @@ void TypeChecker::fatalError(SourceLocation loc, const char* message) {
     safe_append(current, remaining, message);
     safe_append(current, remaining, "\n");
 
-    plat_print_debug(buffer);
 
     plat_abort();
 }
@@ -4504,49 +4797,64 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
 }
 
 Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
-    if (!node) return NULL;
+    Type* target_type;
+    Type* expr_type;
 
-    Type* target_type = visit(node->target_type);
-    if (!target_type) return NULL;
+    if (!node) return get_g_type_undefined();
 
-    // If it's a TYPE_TYPE (from visitTypeName), we need the actual type it represents.
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = visit(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+
+    /* If it's a TYPE_TYPE (from visitTypeName), we need the actual type it represents. */
     if (target_type->kind == TYPE_TYPE) {
         target_type = node->target_type->resolved_type;
+        if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
     }
 
-    Type* expr_type = visit(node->expr);
-    if (!expr_type) return NULL;
+    if (!node->expr) return get_g_type_undefined();
+    expr_type = visit(node->expr);
+    if (!expr_type || is_type_undefined(expr_type)) return get_g_type_undefined();
 
     if (target_type && target_type->kind != TYPE_POINTER && target_type->kind != TYPE_FUNCTION_POINTER) {
-        unit_.getErrorHandler().report(ERR_CAST_TARGET_NOT_POINTER, node->target_type->loc, ErrorHandler::getMessage(ERR_CAST_TARGET_NOT_POINTER));
+        reportAndReturnUndefined(node->target_type->loc, ERR_CAST_TARGET_NOT_POINTER, NULL);
+        target_type = get_g_type_undefined();
     }
 
     if (expr_type && expr_type->kind != TYPE_POINTER && expr_type->kind != TYPE_FUNCTION_POINTER && expr_type->kind != TYPE_FUNCTION) {
-        unit_.getErrorHandler().report(ERR_CAST_SOURCE_NOT_POINTER, node->expr->loc, ErrorHandler::getMessage(ERR_CAST_SOURCE_NOT_POINTER));
+        reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_POINTER, NULL);
+        target_type = get_g_type_undefined();
     }
 
     return target_type;
 }
 
 Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
-    Type* target_type = visit(node->target_type);
-    if (!target_type) return NULL;
-    if (target_type->kind == TYPE_TYPE) target_type = node->target_type->resolved_type;
+    Type* target_type;
+    Type* source_type;
+
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = visit(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+
+    if (target_type->kind == TYPE_TYPE) {
+        target_type = node->target_type->resolved_type;
+        if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+    }
 
     if (!isIntegerType(target_type)) {
-        unit_.getErrorHandler().report(ERR_CAST_TARGET_NOT_INTEGER, node->target_type->loc, ErrorHandler::getMessage(ERR_CAST_TARGET_NOT_INTEGER));
-        return NULL;
+        return reportAndReturnUndefined(node->target_type->loc, ERR_CAST_TARGET_NOT_INTEGER, NULL);
     }
 
-    Type* source_type = visit(node->expr);
-    if (!source_type) return NULL;
+    if (!node->expr) return get_g_type_undefined();
+    source_type = visit(node->expr);
+    if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
 
     if (!isIntegerType(source_type)) {
-        unit_.getErrorHandler().report(ERR_CAST_SOURCE_NOT_INTEGER, node->expr->loc, ErrorHandler::getMessage(ERR_CAST_SOURCE_NOT_INTEGER));
-        return NULL;
+        return reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_INTEGER, NULL);
     }
 
-    // Constant folding
+    /* Constant folding */
     if (node->expr->type == NODE_INTEGER_LITERAL) {
         i64 val = (i64)node->expr->as.integer_literal.value;
         if (!checkIntegerLiteralFit(val, target_type)) {
@@ -4565,8 +4873,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
             safe_append(curr, rem, type_str);
             safe_append(curr, rem, "' overflows");
 
-            unit_.getErrorHandler().report(ERR_INT_CAST_OVERFLOW, node->expr->loc, ErrorHandler::getMessage(ERR_INT_CAST_OVERFLOW), unit_.getArena(), msg);
-            return NULL;
+            return reportAndReturnUndefined(node->expr->loc, ERR_INT_CAST_OVERFLOW, msg);
         }
 
         // In-place replace @intCast node with integer literal
@@ -4585,11 +4892,15 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
 }
 
 Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
-    Type* arg_type = visit(node->type_expr);
-    if (!arg_type) return NULL;
+    Type* arg_type;
+
+    if (!node->type_expr) return get_g_type_undefined();
+    arg_type = visit(node->type_expr);
+    if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
 
     if (arg_type->kind == TYPE_TYPE) {
         arg_type = node->type_expr->resolved_type;
+        if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
     }
 
     if (arg_type->kind != TYPE_STRUCT && arg_type->kind != TYPE_UNION) {
@@ -4601,8 +4912,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
         safe_append(cur, rem, "@offsetOf called on non-aggregate type '");
         safe_append(cur, rem, type_name);
         safe_append(cur, rem, "'");
-        unit_.getErrorHandler().report(ERR_OFFSETOF_NON_AGGREGATE, parent->loc, ErrorHandler::getMessage(ERR_OFFSETOF_NON_AGGREGATE), unit_.getArena(), buf);
-        return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_OFFSETOF_NON_AGGREGATE, buf);
     }
 
     if (!isTypeComplete(arg_type)) {
@@ -4614,8 +4924,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
         safe_append(cur, rem, "@offsetOf cannot be used on incomplete type '");
         safe_append(cur, rem, type_name);
         safe_append(cur, rem, "'");
-        unit_.getErrorHandler().report(ERR_OFFSETOF_INCOMPLETE_TYPE, parent->loc, ErrorHandler::getMessage(ERR_OFFSETOF_INCOMPLETE_TYPE), unit_.getArena(), buf);
-        return NULL;
+            return reportAndReturnUndefined(parent->loc, ERR_OFFSETOF_INCOMPLETE_TYPE, buf);
     }
 
     size_t offset = 0;
@@ -4644,8 +4953,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
         safe_append(cur, rem, (arg_type->kind == TYPE_STRUCT ? "struct '" : "union '"));
         safe_append(cur, rem, type_name);
         safe_append(cur, rem, "'");
-        unit_.getErrorHandler().report(ERR_OFFSETOF_FIELD_NOT_FOUND, parent->loc, ErrorHandler::getMessage(ERR_OFFSETOF_FIELD_NOT_FOUND), unit_.getArena(), buf);
-        return NULL;
+        return reportAndReturnUndefined(parent->loc, ERR_OFFSETOF_FIELD_NOT_FOUND, buf);
     }
 
     // Constant fold to integer literal
@@ -4661,21 +4969,27 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
 }
 
 Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
-    Type* target_type = visit(node->target_type);
-    if (!target_type) return NULL;
-    if (target_type->kind == TYPE_TYPE) target_type = node->target_type->resolved_type;
+    Type* target_type;
+    Type* source_type;
 
-    if (target_type->kind != TYPE_F32 && target_type->kind != TYPE_F64) {
-        unit_.getErrorHandler().report(ERR_CAST_TARGET_NOT_FLOAT, node->target_type->loc, ErrorHandler::getMessage(ERR_CAST_TARGET_NOT_FLOAT), "target type of @floatCast must be a floating-point type");
-        return NULL;
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = visit(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+    if (target_type->kind == TYPE_TYPE) {
+        target_type = node->target_type->resolved_type;
+        if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
     }
 
-    Type* source_type = visit(node->expr);
-    if (!source_type) return NULL;
+    if (target_type->kind != TYPE_F32 && target_type->kind != TYPE_F64) {
+        return reportAndReturnUndefined(node->target_type->loc, ERR_CAST_TARGET_NOT_FLOAT, "target type of @floatCast must be a floating-point type");
+    }
+
+    if (!node->expr) return get_g_type_undefined();
+    source_type = visit(node->expr);
+    if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
 
     if (source_type->kind != TYPE_F32 && source_type->kind != TYPE_F64) {
-        unit_.getErrorHandler().report(ERR_CAST_SOURCE_NOT_FLOAT, node->expr->loc, ErrorHandler::getMessage(ERR_CAST_SOURCE_NOT_FLOAT), "source expression of @floatCast must be a floating-point type");
-        return NULL;
+        return reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_FLOAT, "source expression of @floatCast must be a floating-point type");
     }
 
     // Constant folding
@@ -4686,8 +5000,7 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
         if (target_type->kind == TYPE_F32) {
             // FLT_MAX is approx 3.4e38
             if (val > 3.40282347e+38 || val < -3.40282347e+38) {
-                unit_.getErrorHandler().report(ERR_FLOAT_CAST_OVERFLOW, node->expr->loc, ErrorHandler::getMessage(ERR_FLOAT_CAST_OVERFLOW), "float cast overflow");
-                return NULL;
+                return reportAndReturnUndefined(node->expr->loc, ERR_FLOAT_CAST_OVERFLOW, "float cast overflow");
             }
         }
 
@@ -4710,28 +5023,34 @@ Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
 }
 
 Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
-    void* mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
-    if (!mem) fatalError("Out of memory");
-    DynamicArray<Type*>* param_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+    void* mem;
+    DynamicArray<Type*>* param_types;
+    size_t i;
+    Type* param_type;
+    Type* return_type;
 
-    for (size_t i = 0; i < node->params->length(); ++i) {
-        Type* param_type = visit((*node->params)[i]);
-        if (param_type) {
+    mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+    if (!mem) fatalError("Out of memory");
+    param_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+
+    if (node->params) {
+        for (i = 0; i < node->params->length(); ++i) {
+            ASTNode* param_node = (*node->params)[i];
+            if (!param_node) return get_g_type_undefined();
+            param_type = visit(param_node);
+            if (!param_type || is_type_undefined(param_type)) return get_g_type_undefined();
             param_types->append(param_type);
         }
     }
 
-    Type* return_type = visit(node->return_type);
-    if (!return_type) return NULL;
-
+    if (!node->return_type) return get_g_type_undefined();
+    return_type = visit(node->return_type);
+    if (!return_type || is_type_undefined(return_type)) return get_g_type_undefined();
 
     return createFunctionPointerType(unit_.getArena(), param_types, return_type);
 }
 
 void TypeChecker::fatalError(const char* message) {
-    plat_print_debug("Fatal type error: ");
-    plat_print_debug(message);
-    plat_print_debug("\n");
     plat_abort();
 }
 

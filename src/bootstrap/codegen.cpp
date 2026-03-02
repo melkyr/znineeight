@@ -138,6 +138,9 @@ void C89Emitter::emitTypePrefix(Type* type) {
     switch (type->kind) {
         case TYPE_POINTER:
             emitTypePrefix(type->as.pointer.base);
+            if (type->as.pointer.is_const) {
+                writeString(" const");
+            }
             if (type->as.pointer.base->kind != TYPE_POINTER &&
                 (type->as.pointer.base->kind == TYPE_ARRAY ||
                  type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
@@ -2660,18 +2663,39 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     char* cur = buf;
     size_t rem = sizeof(buf);
 
-    if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
-        plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
-        safe_append(cur, rem, "z_");
-        safe_append(cur, rem, module_name_);
-        safe_append(cur, rem, "_");
-    } else if (isCKeyword(zig_name)) {
-        safe_append(cur, rem, "z_");
+    bool is_extern = false;
+    SymbolTable& table = unit_.getSymbolTable(module_name_);
+    Symbol* sym = table.lookup(zig_name);
+    if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+        is_extern = true;
     }
-    safe_append(cur, rem, zig_name);
 
-    // Sanitize (handles remaining invalid characters and starting digits)
-    sanitizeForC89(buf);
+    /* Check if it's a known runtime intrinsic that should never be mangled */
+    if (plat_strcmp(zig_name, "__bootstrap_print") == 0 ||
+        plat_strcmp(zig_name, "__bootstrap_print_int") == 0 ||
+        plat_strcmp(zig_name, "__bootstrap_panic") == 0) {
+        is_extern = true;
+    }
+
+    if (is_extern) {
+        /* No mangling for externs, just copy directly.
+           NOTE: We don't even sanitize because the user is responsible for
+           providing a valid C name for extern symbols. */
+        safe_append(cur, rem, zig_name);
+    } else {
+        if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
+            plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
+            safe_append(cur, rem, "z_");
+            safe_append(cur, rem, module_name_);
+            safe_append(cur, rem, "_");
+        } else if (isCKeyword(zig_name)) {
+            safe_append(cur, rem, "z_");
+        }
+        safe_append(cur, rem, zig_name);
+
+        /* Sanitize (handles remaining invalid characters and starting digits) */
+        sanitizeForC89(buf);
+    }
 
     // Truncate to 31 characters for C89/MSVC 6.0
     if (plat_strlen(buf) > 31) {

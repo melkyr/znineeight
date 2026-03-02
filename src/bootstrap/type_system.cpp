@@ -10,10 +10,12 @@
         static Type t; \
         static bool initialized = false; \
         if (!initialized) { \
+            plat_memset(&t, 0, sizeof(Type)); \
             t.kind = type_kind; \
             t.size = sz; \
             t.alignment = align_val; \
             t.c_name = NULL; \
+            t.is_resolving = false; \
             initialized = true; \
         } \
         return &t; \
@@ -44,10 +46,12 @@ Type* get_g_type_anyerror() {
     static Type t;
     static bool initialized = false;
     if (!initialized) {
+        plat_memset(&t, 0, sizeof(Type));
         t.kind = TYPE_ERROR_SET;
         t.size = 4;
         t.alignment = 4;
         t.c_name = NULL;
+        t.is_resolving = false;
         t.as.error_set.name = "anyerror";
         t.as.error_set.tags = NULL;
         t.as.error_set.is_anonymous = false;
@@ -148,7 +152,7 @@ Type* createFunctionType(ArenaAllocator& arena, DynamicArray<Type*>* params, Typ
     return new_type;
 }
 
-Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type) {
+Type* createFunctionPointerType(ArenaAllocator& arena, DynamicArray<Type*>* params, Type* return_type, TypeInterner* /*interner*/) {
     if (!return_type) {
         plat_print_debug("createFunctionPointerType: return type is NULL\n");
         return get_g_type_undefined();
@@ -204,11 +208,6 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 }
 
 Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
-    if (!fields) {
-        plat_print_debug("createStructType: fields array is NULL\n");
-        // We can allow NULL fields for incomplete structs, but usually they are empty DynamicArrays.
-        // If it's truly NULL, it might be an error.
-    }
     Type* new_type = allocateType(arena);
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
@@ -669,6 +668,7 @@ Type* TypeInterner::getOptionalType(Type* payload) {
 
 bool isTypeComplete(Type* type) {
     if (!type) return false;
+    if (type->is_resolving) return false;
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:
@@ -703,16 +703,8 @@ bool isTypeComplete(Type* type) {
             return false;
         case TYPE_STRUCT:
         case TYPE_UNION:
-            // calculateStructLayout sets size > 0 for non-empty structs
-            // Zig allows 0-sized structs, but they are "complete" once layout is calculated.
-            // For bootstrap, we'll consider it complete if it has a valid fields pointer
-            // and we've at least attempted layout.
-            // A simple proxy for "layout calculated" in this compiler is size > 0
-            // OR it being a explicitly defined empty struct.
-            // Given calculateStructLayout is called after fields are processed,
-            // let's use a heuristic: if it's a struct/union, it must have fields (even if empty)
-            // and calculateStructLayout must have been called.
-            // Since calculateStructLayout sets alignment >= 1, we can check that.
+            /* Heuristic for completion: layout must have been calculated (alignment >= 1)
+               and fields must be processed. We allow alignment >= 1 even for empty structs. */
             return type->alignment >= 1 && type->as.struct_details.fields != NULL;
         default:
             return false;
@@ -799,7 +791,12 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             break;
         }
         case TYPE_ENUM:
-            safe_append(current, remaining, "enum");
+            safe_append(current, remaining, "enum ");
+            if (type->as.enum_details.name) {
+                safe_append(current, remaining, type->as.enum_details.name);
+            } else {
+                safe_append(current, remaining, "{...}");
+            }
             break;
         case TYPE_STRUCT:
             safe_append(current, remaining, "struct ");
