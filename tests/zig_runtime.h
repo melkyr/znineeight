@@ -51,8 +51,8 @@ static void __bootstrap_panic(const char* msg) {
 }
 
 /* Print helper for std.debug.print */
-static void __bootstrap_print(const char* s) {
-    fputs(s, stderr);
+static void __bootstrap_print(const unsigned char* s) {
+    fputs((const char*)s, stderr);
 }
 
 /* Runtime checked numeric conversions */

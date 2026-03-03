@@ -117,7 +117,7 @@ TEST_FUNC(Codegen_Global_Pointer) {
 }
 
 TEST_FUNC(Codegen_Global_ConstPointer) {
-    return run_global_codegen_test("pub var x: *const i32;", "int* x;");
+    return run_global_codegen_test("pub var x: *const i32;", "int const* x;");
 }
 
 TEST_FUNC(Codegen_Global_KeywordCollision) {
