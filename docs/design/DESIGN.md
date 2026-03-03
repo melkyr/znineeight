@@ -444,7 +444,8 @@ To support self-referential and mutually recursive types (e.g., linked list node
 1. When starting to resolve a type definition (struct, union, or enum), a transient `TYPE_PLACEHOLDER` is inserted into the symbol table under that name.
 2. **Name Mangling**: During placeholder registration, the `c_name` is immediately computed using the defining module's name (`z_mod_Name`). This ensures consistent mangling even when the type is accessed from other modules.
 3. If the type resolution encounters the same name (directly or indirectly), it returns the placeholder. This allows pointers and slices to reference the type before its layout is fully known.
-4. Once the layout is determined, the placeholder is mutated in-place into the final type (`TYPE_STRUCT`, etc.), ensuring all existing references are automatically updated.
+4. **Lazy Field Resolution**: When resolving fields for aggregate types, the type checker explicitly calls `resolvePlaceholder` on any encountered placeholder types before performing completeness and compatibility checks.
+5. Once the layout is determined, the placeholder is mutated in-place into the final type (`TYPE_STRUCT`, etc.), ensuring all existing references are automatically updated.
 5. **Sticky Mangled Names**: The mutation process preserves the `c_name` of the placeholder, ensuring that the defining-module prefix is used everywhere.
 6. Direct recursion (a struct containing itself without a pointer/slice) is detected and rejected as an "infinite size" error.
 

@@ -1126,4 +1126,10 @@ TEST_FUNC(MultiError_Reporting);
 TEST_FUNC(RecursiveSlice_MultiModule);
 TEST_FUNC(RecursiveSlice_SelfReference);
 
+// Task 9.9: Tagged Union Captures
+TEST_FUNC(UnionCapture_ForwardDeclaredStruct);
+TEST_FUNC(UnionCapture_NestedUnion);
+TEST_FUNC(UnionCapture_PointerToIncomplete);
+TEST_FUNC(UnionCapture_InvalidIntegerCase);
+
 #endif // TEST_DECLARATIONS_HPP
