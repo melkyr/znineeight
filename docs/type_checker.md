@@ -12,3 +12,19 @@ The compiler implements implicit coercion from slices (`[]T`) and arrays (`[N]T`
 ### Codebase Locations
 - `src/bootstrap/type_checker.cpp`: Implementation of compatibility rules and AST transformations.
 - `src/include/type_checker.hpp`: Definition of the `injectPtrAccessIfNeeded` helper function.
+
+## Recursive Type Resolution
+The compiler supports mutually recursive and self-referencing types using a placeholder mechanism.
+
+### Placeholder Mechanism
+- **Initialization**: When resolving a type declaration (struct, union, or enum), a `TYPE_PLACEHOLDER` is inserted into the symbol table.
+- **Lazy Resolution**: During field resolution, if a type is still a placeholder, it is resolved via `resolvePlaceholder`. This ensures that forward-declared types are correctly handled.
+- **Completeness Checks**: Fields in aggregate types are resolved before checking for completeness via `isTypeComplete`.
+
+## Tagged Union and Switch Captures
+The type checker robustly handles Zig's tagged union captures in switch statements.
+
+### Implementation Details
+- **Capture Typing**: In `visitSwitchExpr`, the type of the capture variable (`|payload|`) is derived from the corresponding field of the tagged union.
+- **Placeholder Handling**: If a union field type is a placeholder, it is resolved before creating the capture symbol.
+- **Defensive Validation**: Ensures that switch prongs with captures are only used with a single tag case item, preventing ambiguity.
