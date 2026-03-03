@@ -79,9 +79,6 @@ enum NodeType {
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
     NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
     NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
-    NODE_ENUM_TO_INT,     ///< An @enumToInt expression.
-    NODE_PTR_TO_INT,      ///< A @ptrToInt expression.
-    NODE_INT_TO_ENUM,     ///< An @intToEnum expression.
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -197,8 +194,7 @@ struct ASTNode {
 
         // Casts and Built-ins
         ASTPtrCastNode* ptr_cast; // Out-of-line
-        ASTIntCastNode* int_cast; // Out-of-line
-        ASTFloatCastNode* float_cast; // Out-of-line
+        ASTNumericCastNode* numeric_cast; // Out-of-line (shared for @intCast, @floatCast)
         ASTOffsetOfNode* offset_of; // Out-of-line
 
         // Compile-Time Operations

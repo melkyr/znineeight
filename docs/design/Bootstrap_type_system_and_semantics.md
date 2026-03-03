@@ -466,7 +466,7 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
     -   **`@enumToInt(val)`**: Returns the underlying integer value of an enum. Evaluated at compile-time for constants, or emitted as a cast to the backing type at runtime.
     -   **`@ptrToInt(val)`**: Returns the memory address of a pointer as a `usize`. Mapped to a C-style cast to `unsigned int`.
     -   **`@intToEnum(T, val)`**: Converts an integer to an enum of type `T`. Constant folded if `val` is a literal.
-    -   **`@import("module")`**: Supported for multi-file programs.
+    -   **`@import("module")`**: Supported for discovering and loading Zig modules.
 
 #### Call Resolution Completeness (Task 168)
 
