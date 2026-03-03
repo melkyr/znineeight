@@ -87,6 +87,7 @@ public:
     void fatalError(const char* msg);
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
     void logFeatureLocation(const char* feature, SourceLocation loc);
+    void injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type);
 private:
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);

@@ -427,6 +427,14 @@ struct Type {
   | f32 | f64 | ✓ | - |
   | T | *T | ✓ | - |
   | *T | *const T | ✓ | - |
+  | []T | [*]T / [*]const T | ✓ | - |
+  | [N]T | [*]T / [*]const T | ✓ | - |
+
+#### 4.4.1 Type Coercions
+To improve interoperability with C89 code, the compiler supports the following implicit coercions in specific contexts (assignments, function arguments, and return statements):
+- **Slice to Many-Item Pointer**: A slice `[]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by automatically accessing the `.ptr` field of the slice.
+- **Array to Many-Item Pointer**: A fixed-size array `[N]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by taking the address of the first element (`&arr[0]`).
+- **Const Correctness**: Coercions must respect const-correctness. For example, `[]T` can coerce to `[*]const T`, but `[]const T` cannot coerce to `[*]T`.
 
 ### 4.5 Layer 5: Symbol Table (`symbol_table.hpp`)
 **Concept:** A hierarchical table for managing identifiers (variables, functions, types) across different scopes. It is designed to be extensible to support the growing complexity of the language.
