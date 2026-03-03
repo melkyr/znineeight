@@ -45,6 +45,7 @@
 #include "integration/recursive_type_tests.cpp"
 #include "integration/rejection_tests.cpp"
 #include "integration/slice_tests.cpp"
+#include "integration/slice_to_pointer_tests.cpp"
 #include "integration/struct_tests.cpp"
 #include "integration/switch_noreturn_tests.cpp"
 #include "integration/switch_tests.cpp"

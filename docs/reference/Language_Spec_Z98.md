@@ -176,7 +176,7 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals and slices do **not** implicitly decay to many-item pointers; use `.ptr` and `@ptrCast` explicitly.
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
@@ -185,3 +185,26 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}`).
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
+
+## Type Coercions
+
+### Implicit Coercion to Many-Item Pointers
+In specific contexts where a pointer is expected, the compiler provides implicit coercion for slices and arrays.
+
+**Allowed Contexts:**
+- Assignments to variables of type [*]T or [*]const T.
+- Passing arguments to functions where the parameter type is [*]T or [*]const T.
+- Returning values from functions where the return type is [*]T or [*]const T.
+
+**Coercion Rules:**
+- **Slice to Pointer**: A slice []T is coerced to [*]T by accessing its .ptr field.
+- **Array to Pointer**: A fixed-size array [N]T is coerced to [*]T by taking the address of its first element (&arr[0]).
+
+**Const Correctness:**
+Coercions are only allowed if they do not discard const qualifiers.
+- []T -> [*]const T (Allowed)
+- []const T -> [*]T (Forbidden)
+- [N]T -> [*]const T (Allowed)
+
+**Restriction:**
+These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.
