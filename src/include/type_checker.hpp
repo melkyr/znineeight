@@ -110,6 +110,7 @@ private:
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     Type* resolvePlaceholder(Type* placeholder);
+    Type* resolveAllPlaceholders(Type* type);
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
 

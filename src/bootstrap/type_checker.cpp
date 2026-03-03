@@ -146,7 +146,9 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
             if (vd->is_const && vd->initializer &&
                 (vd->initializer->type == NODE_STRUCT_DECL ||
                  vd->initializer->type == NODE_UNION_DECL ||
-                 vd->initializer->type == NODE_ENUM_DECL)) {
+                 vd->initializer->type == NODE_ENUM_DECL ||
+                 vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
+                 vd->initializer->type == NODE_ERROR_SET_MERGE)) {
 
                 // Check if already has a type or placeholder
                 Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
@@ -243,11 +245,6 @@ Type* TypeChecker::visit(ASTNode* node) {
              return node->resolved_type;
         }
     }
-
-    // Temporary print to find where it crashes
-    char type_buf[16];
-    plat_i64_to_string(node->type, type_buf, sizeof(type_buf));
-
 
     VisitDepthGuard depth_guard(*this);
     // Recursion depth guard: max 200 calls. With ~1KB per call, this uses <200KB stack,
@@ -1604,6 +1601,10 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     }
 
     if (!sym->symbol_type) return get_g_type_undefined();
+
+    /* Ensure deep resolution of the symbol's type. */
+    sym->symbol_type = resolveAllPlaceholders(sym->symbol_type);
+
     return sym->symbol_type;
 }
 
@@ -2107,6 +2108,84 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     unit_.setCurrentModule(old_mod);
     return placeholder;
+}
+
+Type* TypeChecker::resolveAllPlaceholders(Type* type) {
+    if (!type) return NULL;
+
+    if (type->kind == TYPE_PLACEHOLDER) {
+        return resolvePlaceholder(type);
+    }
+
+    /* Recursively resolve components to ensure a "deep" resolution. */
+    if (type->kind == TYPE_VOID || type->kind == TYPE_BOOL || (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) || type->kind == TYPE_TYPE || type->kind == TYPE_ANYTYPE || type->kind == TYPE_NULL || type->kind == TYPE_UNDEFINED || type->kind == TYPE_NORETURN) {
+        return type;
+    }
+
+    ResolutionDepthGuard depth_guard(*this);
+    if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
+        return type;
+    }
+
+    if (type->is_resolving) return type;
+    type->is_resolving = true;
+
+    switch (type->kind) {
+        case TYPE_POINTER:
+            type->as.pointer.base = resolveAllPlaceholders(type->as.pointer.base);
+            break;
+        case TYPE_ARRAY:
+            type->as.array.element_type = resolveAllPlaceholders(type->as.array.element_type);
+            break;
+        case TYPE_SLICE:
+            type->as.slice.element_type = resolveAllPlaceholders(type->as.slice.element_type);
+            break;
+        case TYPE_OPTIONAL:
+            type->as.optional.payload = resolveAllPlaceholders(type->as.optional.payload);
+            break;
+        case TYPE_ERROR_UNION:
+            type->as.error_union.payload = resolveAllPlaceholders(type->as.error_union.payload);
+            if (type->as.error_union.error_set) {
+                type->as.error_union.error_set = resolveAllPlaceholders(type->as.error_union.error_set);
+            }
+            break;
+        case TYPE_FUNCTION:
+            if (type->as.function.params) {
+                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
+                    (*type->as.function.params)[i] = resolveAllPlaceholders((*type->as.function.params)[i]);
+                }
+            }
+            type->as.function.return_type = resolveAllPlaceholders(type->as.function.return_type);
+            break;
+        case TYPE_FUNCTION_POINTER:
+            if (type->as.function_pointer.param_types) {
+                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                    (*type->as.function_pointer.param_types)[i] = resolveAllPlaceholders((*type->as.function_pointer.param_types)[i]);
+                }
+            }
+            type->as.function_pointer.return_type = resolveAllPlaceholders(type->as.function_pointer.return_type);
+            break;
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            if (type->as.struct_details.fields) {
+                 for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
+                     (*type->as.struct_details.fields)[i].type = resolveAllPlaceholders((*type->as.struct_details.fields)[i].type);
+                 }
+            }
+            break;
+        case TYPE_TUPLE:
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    (*type->as.tuple.elements)[i] = resolveAllPlaceholders((*type->as.tuple.elements)[i]);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+    type->is_resolving = false;
+
+    return type;
 }
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
@@ -3039,6 +3118,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                             result_type = resolvePlaceholder(result_type);
                         }
                     }
+
+                    /* Ensure all placeholders are resolved before returning to the importer. */
+                    if (result_type) {
+                        const char* saved_module = unit_.getCurrentModule();
+                        unit_.setCurrentModule(target_mod->name);
+                        result_type = resolveAllPlaceholders(result_type);
+                        unit_.setCurrentModule(saved_module);
+                    }
+
                     return result_type;
                 }
             }
