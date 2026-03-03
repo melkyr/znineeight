@@ -14,8 +14,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
+    plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
@@ -24,9 +27,12 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      loop_id_stack_(unit.getArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
+    plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 
@@ -36,8 +42,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
       emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_() {
+      module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
+    plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 C89Emitter::~C89Emitter() {
@@ -88,6 +97,9 @@ void C89Emitter::emitPrologue() {
 void C89Emitter::beginFunction() {
     var_alloc_.reset();
     for_loop_counter_ = 0;
+    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
+    plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
+    loop_id_stack_.clear();
 }
 
 void C89Emitter::emitType(Type* type, const char* name) {
@@ -1406,6 +1418,15 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Typ
 void C89Emitter::emitFor(const ASTForStmtNode* node) {
     if (!node) return;
 
+    if (node->label_id < 0 || node->label_id >= 1024) {
+        error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "loop label_id out of range");
+        plat_abort();
+    }
+
+    loop_id_stack_.append(node->label_id);
+    loop_has_continue_expr_[node->label_id] = true;
+    loop_uses_labels_[node->label_id] = true;
+
     for_loop_counter_++;
     int current_for_id = for_loop_counter_;
 
@@ -1482,21 +1503,18 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString(";\n");
 
     char label_base[256];
-    bool has_label = (node->label != NULL);
-    if (has_label) {
-        char* lcur = label_base;
-        size_t lrem = sizeof(label_base);
-        safe_append(lcur, lrem, "__zig_label_");
-        safe_append(lcur, lrem, node->label);
-        safe_append(lcur, lrem, "_");
-        char lid_buf[16];
-        plat_i64_to_string(node->label_id, lid_buf, sizeof(lid_buf));
-        safe_append(lcur, lrem, lid_buf);
+    char* lcur = label_base;
+    size_t lrem = sizeof(label_base);
+    safe_append(lcur, lrem, "__zig_label_");
+    safe_append(lcur, lrem, node->label ? node->label : "unnamed");
+    safe_append(lcur, lrem, "_");
+    char lid_buf[16];
+    plat_i64_to_string(node->label_id, lid_buf, sizeof(lid_buf));
+    safe_append(lcur, lrem, lid_buf);
 
-        writeIndent();
-        writeString(label_base);
-        writeString("_start: ;\n");
-    }
+    writeIndent();
+    writeString(label_base);
+    writeString("_start: ;\n");
 
         writeIndent();
         writeString("while (");
@@ -1572,31 +1590,33 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
     writeString("\n");
 
-            // Increment
+            // Continue label and Increment
+            writeIndent();
+            writeString(label_base);
+            writeString("_continue: ;\n");
+
             writeIndent();
             writeString(idx_name);
             writeString("++;\n");
 
-            if (has_label) {
-                writeIndent();
-                writeString("goto ");
-                writeString(label_base);
-                writeString("_start;\n");
-            }
+            writeIndent();
+            writeString("goto ");
+            writeString(label_base);
+            writeString("_start;\n");
         }
 
         writeIndent();
         writeString("}\n");
 
-        if (has_label) {
-            writeIndent();
-            writeString(label_base);
-            writeString("_end: ;\n");
-        }
+        writeIndent();
+        writeString(label_base);
+        writeString("_end: ;\n");
     }
 
     writeIndent();
     writeString("}\n");
+
+    loop_id_stack_.pop_back();
 }
 
 void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var, Type* target_type) {
@@ -1669,12 +1689,23 @@ void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var, Typ
 void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     if (!node) return;
 
-    if (node->label) {
+    if (node->label_id < 0 || node->label_id >= 1024) {
+        error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "loop label_id out of range");
+        plat_abort();
+    }
+
+    loop_id_stack_.append(node->label_id);
+    if (node->iter_expr) {
+        loop_has_continue_expr_[node->label_id] = true;
+    }
+
+    if (node->label || node->iter_expr) {
+        loop_uses_labels_[node->label_id] = true;
         char label_base[256];
         char* cur = label_base;
         size_t rem = sizeof(label_base);
         safe_append(cur, rem, "__zig_label_");
-        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, node->label ? node->label : "unnamed");
         safe_append(cur, rem, "_");
         char id_buf[16];
         plat_i64_to_string(node->label_id, id_buf, sizeof(id_buf));
@@ -1686,7 +1717,11 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
         writeIndent();
         writeString("if (!(");
-        emitExpression(node->condition);
+        if (node->condition) {
+            emitExpression(node->condition);
+        } else {
+            writeString("1");
+        }
         writeString(")) goto ");
         writeString(label_base);
         writeString("_end;\n");
@@ -1700,6 +1735,13 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         writeString("\n");
 
         writeIndent();
+        writeString(label_base);
+        writeString("_continue: ;\n");
+        if (node->iter_expr) {
+            emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+        }
+
+        writeIndent();
         writeString("goto ");
         writeString(label_base);
         writeString("_start;\n");
@@ -1710,7 +1752,11 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     } else {
         writeIndent();
         writeString("while (");
-        emitExpression(node->condition);
+        if (node->condition) {
+            emitExpression(node->condition);
+        } else {
+            writeString("1");
+        }
         writeString(") ");
 
         if (node->body->type == NODE_BLOCK_STMT) {
@@ -1720,6 +1766,8 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         }
         writeString("\n");
     }
+
+    loop_id_stack_.pop_back();
 }
 
 
@@ -3077,15 +3125,25 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
         writeIndent();
     }
 
-    if (node->label) {
+    int target_id = node->target_label_id;
+    if (target_id == -1 && loop_id_stack_.length() > 0) {
+        target_id = loop_id_stack_.back();
+    }
+
+    bool uses_labels = false;
+    if (target_id >= 0 && target_id < 1024) {
+        uses_labels = loop_uses_labels_[target_id];
+    }
+
+    if (node->label || uses_labels) {
         char label_buf[256];
         char* cur = label_buf;
         size_t rem = sizeof(label_buf);
         safe_append(cur, rem, "goto __zig_label_");
-        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, node->label ? node->label : "unnamed");
         safe_append(cur, rem, "_");
         char id_buf[16];
-        plat_i64_to_string(node->target_label_id, id_buf, sizeof(id_buf));
+        plat_i64_to_string(target_id, id_buf, sizeof(id_buf));
         safe_append(cur, rem, id_buf);
         safe_append(cur, rem, "_end;\n");
         writeString(label_buf);
@@ -3102,17 +3160,33 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
         writeIndent();
     }
 
-    if (node->label) {
+    int target_id = node->target_label_id;
+    if (target_id == -1 && loop_id_stack_.length() > 0) {
+        target_id = loop_id_stack_.back();
+    }
+
+    bool has_continue_expr = false;
+    bool uses_labels = false;
+    if (target_id >= 0 && target_id < 1024) {
+        has_continue_expr = loop_has_continue_expr_[target_id];
+        uses_labels = loop_uses_labels_[target_id];
+    }
+
+    if (node->label || uses_labels) {
         char label_buf[256];
         char* cur = label_buf;
         size_t rem = sizeof(label_buf);
         safe_append(cur, rem, "goto __zig_label_");
-        safe_append(cur, rem, node->label);
+        safe_append(cur, rem, node->label ? node->label : "unnamed");
         safe_append(cur, rem, "_");
         char id_buf[16];
-        plat_i64_to_string(node->target_label_id, id_buf, sizeof(id_buf));
+        plat_i64_to_string(target_id, id_buf, sizeof(id_buf));
         safe_append(cur, rem, id_buf);
-        safe_append(cur, rem, "_start;\n");
+        if (has_continue_expr) {
+            safe_append(cur, rem, "_continue;\n");
+        } else {
+            safe_append(cur, rem, "_start;\n");
+        }
         writeString(label_buf);
     } else {
         writeString("continue;\n");

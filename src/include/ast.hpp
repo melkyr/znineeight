@@ -426,6 +426,7 @@ struct ASTIfExprNode {
 struct ASTWhileStmtNode {
     ASTNode* condition;
     ASTNode* body;
+    ASTNode* iter_expr;
     const char* label;
     int label_id;
 };
