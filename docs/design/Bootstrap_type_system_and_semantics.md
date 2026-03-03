@@ -457,13 +457,16 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
 5.  **Call Site Resolution (Task 165):** The `TypeChecker` resolves the call to a specific function or generic instantiation and records it in the `CallSiteLookupTable` with its mangled name.
 
 6.  **Built-in Support (Task 186):** While most Zig built-ins are rejected in the bootstrap phase, a core set of intrinsics is supported to enable low-level operations and metadata access:
-    -   **`@sizeOf(T)`**: Returns a `usize` constant representing the size of type `T` in bytes.
-    -   **`@alignOf(T)`**: Returns a `usize` constant representing the alignment of type `T` in bytes.
+    -   **`@sizeOf(T)`**: Returns a `usize` constant representing the size of type `T` in bytes. Automatically resolves placeholders.
+    -   **`@alignOf(T)`**: Returns a `usize` constant representing the alignment of type `T` in bytes. Automatically resolves placeholders.
     -   **`@ptrCast(T, val)`**: Reinterprets the pointer `val` as a pointer of type `T`. Mapped to a C-style cast. Both `T` and the type of `val` must be pointer types.
     -   **`@intCast(T, val)`**: Converts an integer `val` to type `T`. Mapped to a C-style cast.
     -   **`@floatCast(T, val)`**: Converts a float `val` to type `T`. Mapped to a C-style cast.
-    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct or union `T`. Evaluated at compile-time and replaced with a literal. (Note: Error on incomplete types is implemented but untestable in Milestone 4).
-    -   **`@import("module")`**: Still strictly REJECTED as the bootstrap compiler is single-file only.
+    -   **`@offsetOf(T, "field")`**: Returns a `usize` constant representing the byte offset of `field` within struct or union `T`. Evaluated at compile-time and replaced with a literal. Automatically resolves placeholders.
+    -   **`@enumToInt(val)`**: Returns the underlying integer value of an enum. Evaluated at compile-time for constants, or emitted as a cast to the backing type at runtime.
+    -   **`@ptrToInt(val)`**: Returns the memory address of a pointer as a `usize`. Mapped to a C-style cast to `unsigned int`.
+    -   **`@intToEnum(T, val)`**: Converts an integer to an enum of type `T`. Constant folded if `val` is a literal.
+    -   **`@import("module")`**: Supported for discovering and loading Zig modules.
 
 #### Call Resolution Completeness (Task 168)
 
