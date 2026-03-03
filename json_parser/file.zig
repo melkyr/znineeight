@@ -22,7 +22,11 @@ pub const FileError = error{
 };
 
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
-    const f = fopen(@ptrCast([*]const u8, path.ptr), "rb") orelse return error.OpenFailed;
+    // Rely on implicit coercion for []const u8 -> [*]const u8
+    // If it fails, we document it.
+    const f_opt = fopen(path, "rb");
+    const f = f_opt orelse return error.OpenFailed;
+
     defer { _ = fclose(f); }
 
     if (fseek(f, 0, SEEK_END) != 0) { return error.SeekFailed; }
