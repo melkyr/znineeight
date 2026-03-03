@@ -2224,14 +2224,21 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
             } else {
             ASTNode* item_expr = (*prong->items)[0];
-            const char* field_name = item_expr->as.integer_literal.original_name;
+            const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
+            if (!field_name) {
+                return reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
+            }
             Type* field_type = findStructField(cond_type, field_name);
+
+            if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+                field_type = resolvePlaceholder(field_type);
+            }
 
             unit_.getSymbolTable().enterScope();
             Symbol sym = SymbolBuilder(unit_.getArena())
                 .withName(prong->capture_name)
                 .ofType(SYMBOL_VARIABLE)
-                .withType(field_type ? field_type : get_g_type_void())
+                .withType((field_type && !is_type_undefined(field_type)) ? field_type : get_g_type_void())
                 .atLocation(node->expression->loc)
                 .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
                 .build();
@@ -2741,6 +2748,10 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         if (!field_data->type) return get_g_type_undefined();
         Type* field_type = visit(field_data->type);
 
+        if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+            field_type = resolvePlaceholder(field_type);
+        }
+
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
         if (!isTypeComplete(field_type)) {
@@ -2822,6 +2833,11 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 
         if (!field_node->type) return get_g_type_undefined();
         Type* field_type = visit(field_node->type);
+
+        if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+            field_type = resolvePlaceholder(field_type);
+        }
+
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
         if (field_type && !is_c89_compatible(field_type)) {
             return reportAndReturnUndefined(field_node->type->loc, ERR_NON_C89_FEATURE, "Union field type is not C89-compatible");
