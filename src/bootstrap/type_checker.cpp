@@ -1093,6 +1093,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             safe_append(current, remaining, "'");
             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, arg_node->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
         }
+
+        injectPtrAccessIfNeeded((*node->args)[i], param_type);
     }
 
 
@@ -1154,6 +1156,8 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         // IsTypeAssignableTo already reports a detailed error.
         return get_g_type_undefined();
     }
+
+    injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
 
     /* The type of an assignment expression is the type of the l-value. */
     return lvalue_type;
@@ -1884,6 +1888,10 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
                 // Error: return type mismatch
                 return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "return type mismatch");
             }
+
+            if (node->expression && return_type) {
+                injectPtrAccessIfNeeded(node->expression, current_fn_return_type_);
+            }
         }
     }
 
@@ -2391,6 +2399,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 if (!IsTypeAssignableTo(init_t, declared_type, node->initializer->loc)) {
                     return get_g_type_undefined();
                 }
+                injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
             // Infer type from integer literal
@@ -2474,6 +2483,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 if (!IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
                     return get_g_type_undefined();
                 }
+                injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
             // Infer type from initializer
@@ -3947,6 +3957,29 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
     }
 
+    // Slice -> many-item pointer coercion
+    if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many &&
+        actual->kind == TYPE_SLICE) {
+        if (areTypesCompatible(expected->as.pointer.base, actual->as.slice.element_type)) {
+            // Const correctness: []T -> [*]const T allowed, but []const T -> [*]T not allowed
+            if (!expected->as.pointer.is_const && actual->as.slice.is_const)
+                return false;
+            return true;
+        }
+    }
+
+    // Array -> many-item pointer coercion
+    if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many &&
+        actual->kind == TYPE_ARRAY) {
+        if (areTypesCompatible(expected->as.pointer.base, actual->as.array.element_type)) {
+            // Array elements are always 'const' conceptually if the array is const,
+            // but for bootstrap we mostly care about T -> [*]const T vs [*]T.
+            // For now, let's treat array to many-item pointer as always allowed
+            // unless we have specific const tracking for arrays.
+            return true;
+        }
+    }
+
     // Pointer compatibility
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         Type* actual_base = actual->as.pointer.base;
@@ -3967,6 +4000,15 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
                 // *void -> *const T (OK)
                 return expected->as.pointer.is_const || !actual->as.pointer.is_const;
             }
+        }
+
+        // Implicit single-item to many-item pointer conversion
+        if (!actual->as.pointer.is_many && expected->as.pointer.is_many) {
+             // Allowed if base types match and const-correctness is maintained
+             if (areTypesEqual(actual_base, expected_base)) {
+                 return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+             }
+             return false;
         }
 
         // Must have the same pointer kind (single-item vs many-item)
@@ -4367,6 +4409,33 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
+    // Slice -> many-item pointer coercion
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+        source_type->kind == TYPE_SLICE) {
+        if (IsTypeAssignableTo(source_type->as.slice.element_type, target_type->as.pointer.base, loc)) {
+            // Const correctness
+            if (!target_type->as.pointer.is_const && source_type->as.slice.is_const)
+                return false;
+            return true;
+        }
+    }
+
+    // Array -> many-item pointer coercion
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+        source_type->kind == TYPE_ARRAY) {
+        if (IsTypeAssignableTo(source_type->as.array.element_type, target_type->as.pointer.base, loc)) {
+            return true;
+        }
+    }
+
+    // Pointer to Many-item pointer assignment
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+        source_type->kind == TYPE_POINTER && !source_type->as.pointer.is_many) {
+        if (areTypesEqual(target_type->as.pointer.base, source_type->as.pointer.base)) {
+            return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+        }
+    }
+
     // Function Pointer assignment
     if (target_type->kind == TYPE_FUNCTION_POINTER) {
         if (source_type->kind == TYPE_FUNCTION_POINTER || source_type->kind == TYPE_FUNCTION) {
@@ -4444,6 +4513,11 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
         // Base types must match
         if (areTypesEqual(src_base, tgt_base)) {
+            // Zig allows implicit conversion from single-item pointer to many-item pointer.
+            if (!source_type->as.pointer.is_many && target_type->as.pointer.is_many) {
+                if (const_compatible) return true;
+            }
+
             if (source_type->as.pointer.is_many != target_type->as.pointer.is_many) {
                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Cannot implicitly convert between single-item pointer (*T) and many-item pointer ([*]T)");
                 return false;
@@ -5110,6 +5184,32 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
     node->as.integer_literal.resolved_type = type;
     node->resolved_type = type;
     return node;
+}
+
+void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
+    if (!expr || !expr->resolved_type || !target_type) return;
+
+    // Coercion 1: Slice -> Many-Item Pointer
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+        expr->resolved_type->kind == TYPE_SLICE) {
+
+        // areTypesCompatible already checked const-correctness and element compatibility
+        // in IsTypeAssignableTo. We just need to inject the .ptr access.
+        expr = createMemberAccess(expr, "ptr", target_type, expr->loc);
+    }
+    // Coercion 2: Array -> Many-Item Pointer
+    else if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+             expr->resolved_type->kind == TYPE_ARRAY) {
+
+        // In Zig, an array can be implicitly coerced to a many-item pointer.
+        // In our AST, we can represent this by taking the address of the first element.
+        // Or more simply, since we already have NODE_ARRAY_SLICE for array-to-slice,
+        // we can go Array -> Slice -> Pointer if we want, but let's do it directly.
+        // For array, it's basically &arr[0].
+        ASTNode* index0 = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
+        ASTNode* access = createArrayAccess(expr, index0, expr->resolved_type->as.array.element_type, expr->loc);
+        expr = createUnaryOp(access, TOKEN_AMPERSAND, target_type, expr->loc);
+    }
 }
 
 ASTNode* TypeChecker::createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc) {
