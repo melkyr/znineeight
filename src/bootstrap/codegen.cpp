@@ -1993,6 +1993,28 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         case NODE_FUNCTION_CALL: {
             const ASTFunctionCallNode* call = node->as.function_call;
+            const char* builtin_name = NULL;
+            if (call->callee->type == NODE_IDENTIFIER && call->callee->as.identifier.name[0] == '@') {
+                builtin_name = call->callee->as.identifier.name;
+            }
+
+            if (builtin_name) {
+                if (plat_strcmp(builtin_name, "@enumToInt") == 0 ||
+                    plat_strcmp(builtin_name, "@ptrToInt") == 0) {
+                    writeString("(");
+                    emitType(node->resolved_type);
+                    writeString(")");
+                    emitExpression((*call->args)[0]);
+                    break;
+                } else if (plat_strcmp(builtin_name, "@intToEnum") == 0) {
+                    writeString("(");
+                    emitType(node->resolved_type);
+                    writeString(")");
+                    emitExpression((*call->args)[1]);
+                    break;
+                }
+            }
+
             bool need_parens = requiresParentheses(call->callee);
             if (need_parens) writeString("(");
             emitExpression(call->callee);

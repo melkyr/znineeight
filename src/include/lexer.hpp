@@ -163,6 +163,9 @@ enum TokenType {
     TOKEN_AT_INTCAST,       ///< '@intCast'
     TOKEN_AT_FLOATCAST,     ///< '@floatCast'
     TOKEN_AT_OFFSETOF,      ///< '@offsetOf'
+    TOKEN_AT_ENUM_TO_INT,   ///< '@enumToInt'
+    TOKEN_AT_PTR_TO_INT,    ///< '@ptrToInt'
+    TOKEN_AT_INT_TO_ENUM,   ///< '@intToEnum'
 
     // Delimiters
     TOKEN_LPAREN,           ///< '(' - Left parenthesis.

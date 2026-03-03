@@ -933,6 +933,13 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
             }
 
+            if (arg_type->kind == TYPE_PLACEHOLDER) {
+                arg_type = resolvePlaceholder(arg_type);
+                if (!arg_type || arg_type->kind == TYPE_PLACEHOLDER) {
+                    return reportAndReturnUndefined(node->callee->loc, ERR_SIZE_OF_INCOMPLETE_TYPE, "could not resolve placeholder type");
+                }
+            }
+
             if (!isTypeComplete(arg_type)) {
                 return reportAndReturnUndefined(node->callee->loc, ERR_SIZE_OF_INCOMPLETE_TYPE, NULL);
             }
@@ -950,6 +957,86 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             parent->resolved_type = get_g_type_usize();
 
             return parent->resolved_type;
+        }
+
+        if (plat_strcmp(name, "@enumToInt") == 0) {
+            if (node->args->length() != 1) {
+                return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 1 argument");
+            }
+            arg_node = (*node->args)[0];
+            arg_type = visit(arg_node);
+            if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+
+            if (arg_type->kind != TYPE_ENUM) {
+                return reportAndReturnUndefined(arg_node->loc, ERR_TYPE_MISMATCH, "argument to @enumToInt must be an enum");
+            }
+
+            Type* backing = arg_type->as.enum_details.backing_type;
+            if (!backing) backing = get_g_type_i32();
+
+            /* Constant fold if argument is already a folded enum member. */
+            if (arg_node->type == NODE_INTEGER_LITERAL) {
+                parent->type = NODE_INTEGER_LITERAL;
+                parent->as.integer_literal = arg_node->as.integer_literal;
+                parent->as.integer_literal.resolved_type = backing;
+                parent->resolved_type = backing;
+                return backing;
+            }
+
+            parent->resolved_type = backing;
+            return backing;
+        }
+
+        if (plat_strcmp(name, "@ptrToInt") == 0) {
+            if (node->args->length() != 1) {
+                return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 1 argument");
+            }
+            arg_node = (*node->args)[0];
+            arg_type = visit(arg_node);
+            if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+
+            if (arg_type->kind != TYPE_POINTER && arg_type->kind != TYPE_FUNCTION_POINTER) {
+                return reportAndReturnUndefined(arg_node->loc, ERR_TYPE_MISMATCH, "argument to @ptrToInt must be a pointer");
+            }
+
+            parent->resolved_type = get_g_type_usize();
+            return parent->resolved_type;
+        }
+
+        if (plat_strcmp(name, "@intToEnum") == 0) {
+            if (node->args->length() != 2) {
+                return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 2 arguments");
+            }
+            target_type = visit((*node->args)[0]);
+            if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+            if (target_type->kind == TYPE_TYPE) {
+                target_type = (*node->args)[0]->resolved_type;
+                if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+            }
+
+            if (target_type->kind != TYPE_ENUM) {
+                return reportAndReturnUndefined((*node->args)[0]->loc, ERR_TYPE_MISMATCH, "first argument to @intToEnum must be an enum type");
+            }
+
+            arg_node = (*node->args)[1];
+            arg_type = visit(arg_node);
+            if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+
+            if (!isIntegerType(arg_type)) {
+                return reportAndReturnUndefined(arg_node->loc, ERR_TYPE_MISMATCH, "second argument to @intToEnum must be an integer");
+            }
+
+            /* Constant fold if second arg is integer literal. */
+            if (arg_node->type == NODE_INTEGER_LITERAL) {
+                parent->type = NODE_INTEGER_LITERAL;
+                parent->as.integer_literal = arg_node->as.integer_literal;
+                parent->as.integer_literal.resolved_type = target_type;
+                parent->resolved_type = target_type;
+                return target_type;
+            }
+
+            parent->resolved_type = target_type;
+            return target_type;
         }
 
         if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
@@ -972,18 +1059,23 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
 
 
-        /* Register in call site table as builtin. */
-        int entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
-        unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
+        /* Only report error if not one of the supported built-ins */
+        if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@offsetOf") == 0) {
+            /* These are supported but don't return early above yet */
+        } else {
+            /* Register in call site table as builtin. */
+            int entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
+            unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Built-in function not supported", CALL_DIRECT);
 
-        /* Report error but don't abort, let validation continue. */
-        char msg_buffer[256];
-        char* current = msg_buffer;
-        size_t remaining = sizeof(msg_buffer);
-        safe_append(current, remaining, "Built-in '");
-        safe_append(current, remaining, name);
-        safe_append(current, remaining, "' not supported in bootstrap");
-        return reportAndReturnUndefined(node->callee->loc, ERR_NON_C89_FEATURE, msg_buffer);
+            /* Report error but don't abort, let validation continue. */
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "Built-in '");
+            safe_append(current, remaining, name);
+            safe_append(current, remaining, "' not supported in bootstrap");
+            return reportAndReturnUndefined(node->callee->loc, ERR_NON_C89_FEATURE, msg_buffer);
+        }
     }
 
     if (callee_type->kind != TYPE_FUNCTION && callee_type->kind != TYPE_FUNCTION_POINTER) {

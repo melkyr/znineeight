@@ -337,10 +337,13 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter) {
     if (!node) return;
 
     if (node->resolved_type) {
-        if (node->resolved_type->kind == TYPE_SLICE) {
-            emitter.ensureSliceType(node->resolved_type);
-        } else if (node->resolved_type->kind == TYPE_ERROR_UNION) {
-            emitter.ensureErrorUnionType(node->resolved_type);
+        Type* t = node->resolved_type;
+        if (t->kind == TYPE_SLICE) {
+            emitter.ensureSliceType(t);
+        } else if (t->kind == TYPE_ERROR_UNION) {
+            emitter.ensureErrorUnionType(t);
+        } else if (t->kind == TYPE_OPTIONAL) {
+            emitter.ensureOptionalType(t);
         }
     }
 
@@ -348,6 +351,20 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter) {
     if (node->type == NODE_VAR_DECL) {
         if (node->as.var_decl->type) scanForSpecialTypes(node->as.var_decl->type, emitter);
         if (node->as.var_decl->initializer) scanForSpecialTypes(node->as.var_decl->initializer, emitter);
+    } else if (node->type == NODE_STRUCT_DECL) {
+        if (node->as.struct_decl->fields) {
+            for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                scanForSpecialTypes((*node->as.struct_decl->fields)[i], emitter);
+            }
+        }
+    } else if (node->type == NODE_UNION_DECL) {
+        if (node->as.union_decl->fields) {
+            for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                scanForSpecialTypes((*node->as.union_decl->fields)[i], emitter);
+            }
+        }
+    } else if (node->type == NODE_STRUCT_FIELD) {
+        if (node->as.struct_field->type) scanForSpecialTypes(node->as.struct_field->type, emitter);
     } else if (node->type == NODE_FN_DECL) {
         ASTFnDeclNode* fn = node->as.fn_decl;
         if (fn->params) {

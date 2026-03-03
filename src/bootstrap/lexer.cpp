@@ -707,6 +707,12 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_AT_FLOATCAST;
             } else if (len == 8 && plat_strncmp(start, "offsetOf", 8) == 0) {
                 token.type = TOKEN_AT_OFFSETOF;
+            } else if (len == 9 && plat_strncmp(start, "enumToInt", 9) == 0) {
+                token.type = TOKEN_AT_ENUM_TO_INT;
+            } else if (len == 8 && plat_strncmp(start, "ptrToInt", 8) == 0) {
+                token.type = TOKEN_AT_PTR_TO_INT;
+            } else if (len == 9 && plat_strncmp(start, "intToEnum", 9) == 0) {
+                token.type = TOKEN_AT_INT_TO_ENUM;
             } else {
                 token.type = TOKEN_ERROR;
             }
