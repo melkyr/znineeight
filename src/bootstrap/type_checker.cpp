@@ -248,9 +248,6 @@ Type* TypeChecker::visit(ASTNode* node) {
     char type_buf[16];
     plat_i64_to_string(node->type, type_buf, sizeof(type_buf));
 
-    /* DEBUG */
-    if (node->type == NODE_BLOCK_STMT) {
-    }
 
     VisitDepthGuard depth_guard(*this);
     // Recursion depth guard: max 200 calls. With ~1KB per call, this uses <200KB stack,
@@ -1790,6 +1787,10 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     body_res = visit(node->body);
     if (!body_res || is_type_undefined(body_res)) return get_g_type_undefined();
 
+    if (node->iter_expr) {
+        visit(node->iter_expr);
+    }
+
     return get_g_type_void();
 }
 
@@ -2899,15 +2900,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
-    if (base_type) {
-        char buf[128];
-        typeToString(base_type, buf, sizeof(buf));
-        plat_print_debug("DEBUG visitMemberAccess base: ");
-        plat_print_debug(buf);
-        plat_print_debug(", field: ");
-        plat_print_debug(node->field_name);
-        plat_print_debug("\n");
-    }
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
     if (base_type->kind == TYPE_PLACEHOLDER) {
@@ -2971,13 +2963,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (target_mod && target_mod->symbols) {
             Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {
-                if (sym->symbol_type) {
-                    char buf[128];
-                    typeToString(sym->symbol_type, buf, sizeof(buf));
-                    plat_print_debug("DEBUG: Found module symbol type=");
-                    plat_print_debug(buf);
-                    plat_print_debug("\n");
-                }
                 node->symbol = sym;
                 /* Ensure symbol is fully resolved. */
                 if (!sym->symbol_type && sym->details) {
