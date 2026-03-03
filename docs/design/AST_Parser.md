@@ -79,6 +79,9 @@ enum NodeType {
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
     NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
     NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
+    NODE_ENUM_TO_INT,     ///< An @enumToInt expression.
+    NODE_PTR_TO_INT,      ///< A @ptrToInt expression.
+    NODE_INT_TO_ENUM,     ///< An @intToEnum expression.
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -1981,7 +1984,28 @@ Task 174 introduced comprehensive integration testing for function calls, verify
 
 For more details, see the integration test suite in `tests/integration/function_call_tests.cpp`.
 
-## 34. Slice Expressions (Task 222)
+## 35. Built-in Functions (Task Refactor)
+
+The bootstrap compiler supports several Zig built-in functions, implemented either via constant folding in the `TypeChecker` or by emitting C-style casts in the `C89Emitter`.
+
+### Supported Built-ins
+
+| Built-in | Arguments | Return Type | Implementation |
+|----------|-----------|-------------|----------------|
+| `@sizeOf(T)` | Type `T` | `usize` | Constant folded to integer literal. |
+| `@alignOf(T)` | Type `T` | `usize` | Constant folded to integer literal. |
+| `@offsetOf(T, "f")` | Type `T`, String | `usize` | Constant folded to integer literal. |
+| `@ptrCast(T, e)` | Type `T`, Expr `e` | Type `T` | Emitted as `(T)e`. |
+| `@intCast(T, e)` | Type `T`, Expr `e` | Type `T` | Runtime checked or `(T)e`. |
+| `@floatCast(T, e)` | Type `T`, Expr `e` | Type `T` | Runtime checked or `(T)e`. |
+| `@enumToInt(e)` | Expr `e` (enum) | Backing Type | Constant folded or `(Backing)e`. |
+| `@ptrToInt(e)` | Expr `e` (ptr) | `usize` | Emitted as `(usize)e`. |
+| `@intToEnum(T, e)` | Type `T` (enum), Expr `e` | Type `T` | Constant folded or `(T)e`. |
+
+### Recursive Type Resolution in Built-ins
+For built-ins that take a type argument (`@sizeOf`, `@alignOf`, `@offsetOf`), the `TypeChecker` ensures that if the type is a `TYPE_PLACEHOLDER`, it is resolved via `resolvePlaceholder` before accessing its layout properties. This ensures correctness for mutually recursive structures.
+
+## 36. Slice Expressions (Task 222)
 
 Slices (`[]T`) are supported as a language extension in the bootstrap compiler.
 
