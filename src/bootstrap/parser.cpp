@@ -601,7 +601,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
                 expect(TOKEN_PIPE, "Expected closing '|' after error capture payload");
             }
 
-            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
+            ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
             ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
              if (!catch_node) {
@@ -615,7 +615,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             new_node->as.catch_expr = catch_node;
             left = new_node;
         } else if (op_token.type == TOKEN_ORELSE) {
-            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
+            ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
             ASTOrelseExprNode* orelse_node = (ASTOrelseExprNode*)arena_->alloc(sizeof(ASTOrelseExprNode));
             if (!orelse_node) {

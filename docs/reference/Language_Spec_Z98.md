@@ -123,7 +123,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
 - `errdefer statement`: Recognized but NOT supported in the C89 backend. Strictly rejected by the validator. Schedules code to execute only when the scope exits with an error.
-- `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block.
+- `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
   - **Example**:
     ```zig
     const val: i32 = optional_int orelse 0;
@@ -158,6 +158,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - The `|err|` capture is optional.
   - The `fallback` can be any expression, including a block `{ ... }`.
   - The result type of the `catch` expression is the payload type of `expr`. The `fallback` must yield a value of the same type or diverge (`return`, `break`, etc.).
+  - `catch` is **right-associative**, so `a catch b catch c` is equivalent to `a catch (b catch c)`.
   - Example:
     ```zig
     const res = mightFail() catch |err| {
