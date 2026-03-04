@@ -34,6 +34,7 @@ enum TypeKind {
     // Platform-dependent Integer Types
     TYPE_ISIZE, // Maps to i32 on a 32-bit target
     TYPE_USIZE, // Maps to u32 on a 32-bit target
+    TYPE_C_CHAR, // Maps to C's 'char' type
     // Floating-Point Types
     TYPE_F32,
     TYPE_F64,
@@ -682,6 +683,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_F64`        | `"double"`             | Size: 8, Align: 8              |
 | `TYPE_ISIZE`      | `"int"`                | Size: 4, Align: 4              |
 | `TYPE_USIZE`      | `"unsigned int"`       | Size: 4, Align: 4              |
+| `TYPE_C_CHAR`     | `"char"`               | Size: 1, Align: 1              |
 | `TYPE_ENUM`       | `"typedef T"`          | Dependent on backing type.      |
 | `TYPE_ERROR_UNION` | `struct`              | Size/Align: calculated dynamically. |
 | `TYPE_ERROR_SET`   | `int`                 | Size: 4, Align: 4. |

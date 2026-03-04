@@ -150,6 +150,7 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
+- **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
 - **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
   - **Lifting Contexts**: Currently supported in direct assignments to identifiers, variable initializers, return statements, and as expression statements.
   - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
@@ -288,6 +289,9 @@ To simplify code generation and avoid complex C declaration syntax (e.g., `int* 
 
 This is safe because the Zig compiler frontend already enforces const-correctness during semantic analysis. The generated C code serves only as an intermediate representation where these qualifiers are not required for correctness.
 
+#### Extern *void Handling
+Zig's `*void` (pointer to a zero-sized type) is consistently emitted as `void *` in C, especially in `extern` signatures. This ensures that declarations like `extern fn alloc(size: usize) *void` map correctly to `extern void* alloc(unsigned int size)`.
+
 ### 4.10 Error Handling Support
 Error handling in the bootstrap compiler is implemented using a C89-compatible structure and a global error registry.
 
@@ -322,6 +326,9 @@ typedef struct {
 } ErrorUnion_void;
 ```
 Size and alignment are calculated to match a 32-bit target: `ErrorUnion_void` is 8 bytes with 4-byte alignment. `ErrorUnion_T` size depends on `T`.
+
+#### void in Unions and Structs
+In accordance with C89 rules, fields of type `void` are omitted from emitted C `struct` and `union` definitions. If a union would be empty after omitting all `void` fields, a `char __dummy;` field is injected to maintain valid C syntax. Tagged union initializers only assign the tag if the payload for the active arm is `void`.
 
 #### Error Set Types
 Error sets map to the C `int` type.
