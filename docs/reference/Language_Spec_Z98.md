@@ -43,8 +43,10 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
-- **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
-- **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+- **Properties**: Slices have built-in `.len` (returns `usize`) and `.ptr` (returns `[*]T`) properties.
+- **Coercion**:
+  - Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+  - String literals (type `*const u8`) can be implicitly coerced to constant slices `[]const u8`.
 
 ### 1.5 Error Handling Types
 - **Error Sets**: `const MyErrors = error { Foo, Bar };`
@@ -139,12 +141,17 @@ Memory is reclaimed by resetting or destroying the arena.
 ### 3.3 Error Handling Expressions
 - `try expr`: Unwraps an error union. If `expr` is an error, it is returned from the current function. Otherwise, the payload is yielded.
   - The enclosing function must return a compatible error union.
+  - **Implicit Return**: If a function returns an error union with a `void` payload (e.g., `!void`), reaching the end of the function body is equivalent to an implicit `return;` (success).
   - Example:
     ```zig
     fn mightFail() !i32 { return error.Bad; }
     fn callIt() !i32 {
         const val = try mightFail();
         return val + 1;
+    }
+
+    fn implicitSuccess() !void {
+        // No explicit return; needed here
     }
     ```
 - `expr catch |err| fallback`: Handles an error from an error union.
@@ -176,7 +183,7 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
@@ -199,6 +206,7 @@ In specific contexts where a pointer is expected, the compiler provides implicit
 **Coercion Rules:**
 - **Slice to Pointer**: A slice []T is coerced to [*]T by accessing its .ptr field.
 - **Array to Pointer**: A fixed-size array [N]T is coerced to [*]T by taking the address of its first element (&arr[0]).
+- **String to Pointer**: A string literal is already a pointer and can be used directly as a many-item pointer [*]const u8.
 
 **Const Correctness:**
 Coercions are only allowed if they do not discard const qualifiers.

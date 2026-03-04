@@ -273,7 +273,11 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_INTEGER_LITERAL:  resolved_type = visitIntegerLiteral(node, &node->as.integer_literal); break;
         case NODE_FLOAT_LITERAL:    resolved_type = visitFloatLiteral(node, &node->as.float_literal); break;
         case NODE_CHAR_LITERAL:     resolved_type = visitCharLiteral(node, &node->as.char_literal); break;
-        case NODE_STRING_LITERAL:   resolved_type = visitStringLiteral(node, &node->as.string_literal); break;
+        case NODE_STRING_LITERAL: {
+            resolved_type = visitStringLiteral(node, &node->as.string_literal);
+            node->resolved_type = resolved_type;
+            break;
+        }
         case NODE_ERROR_LITERAL:    resolved_type = visitErrorLiteral(&node->as.error_literal); break;
         case NODE_IDENTIFIER:       resolved_type = visitIdentifier(node); break;
         case NODE_BLOCK_STMT:       resolved_type = visitBlockStmt(&node->as.block_stmt); break;
@@ -1181,6 +1185,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         }
 
         injectPtrAccessIfNeeded((*node->args)[i], param_type);
+        injectStringSliceIfNeeded((*node->args)[i], param_type);
     }
 
 
@@ -1244,6 +1249,7 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     }
 
     injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
+    injectStringSliceIfNeeded(node->rvalue, lvalue_type);
 
     /* The type of an assignment expression is the type of the l-value. */
     return lvalue_type;
@@ -1485,7 +1491,8 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     }
 
     if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
-        !(base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many)) {
+        !(base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many) &&
+        !(base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_U8 && node->array->type == NODE_STRING_LITERAL)) {
         return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Cannot slice a non-array/slice/many-item pointer type.");
     }
 
@@ -1501,6 +1508,9 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     } else if (base_type->kind == TYPE_SLICE) {
         element_type = base_type->as.slice.element_type;
         is_const = base_type->as.slice.is_const;
+    } else if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_U8 && node->array->type == NODE_STRING_LITERAL) {
+        element_type = base_type->as.pointer.base;
+        is_const = true;
     } else { // Many-item pointer
         element_type = base_type->as.pointer.base;
         is_const = base_type->as.pointer.is_const;
@@ -1533,6 +1543,26 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         }
     }
 
+    /* Support direct slicing of string literals for coercion. */
+    if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_U8 && node->array->type == NODE_STRING_LITERAL) {
+        start_val = 0;
+        start_const = node->start ? evaluateConstantExpression(node->start, &start_val) : true;
+        const char* val = node->array->as.string_literal.value;
+        end_val = val ? (i64)plat_strlen(val) : 0;
+        end_const = node->end ? evaluateConstantExpression(node->end, &end_val) : true;
+
+        if (start_const && end_const) {
+            size_t actual_len = val ? plat_strlen(val) : 0;
+            if (start_val < 0 || end_val < start_val || (u64)end_val > actual_len) {
+                 char msg_buffer[256];
+                 char* current = msg_buffer;
+                 size_t remaining = sizeof(msg_buffer);
+                 safe_append(current, remaining, "Slice indices out of bounds for string literal");
+                 return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, msg_buffer);
+            }
+        }
+    }
+
     /* Bounds checking for arrays. */
     if (base_type->kind == TYPE_ARRAY) {
         start_val = 0;
@@ -1555,6 +1585,9 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         /* &base[start] */
         access = createArrayAccess(node->array, start_expr, element_type, node->array->loc);
         node->base_ptr = createUnaryOp(access, TOKEN_AMPERSAND, createPointerType(unit_.getArena(), element_type, is_const, false, &unit_.getTypeInterner()), node->array->loc);
+    } else if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_U8 && node->array->type == NODE_STRING_LITERAL) {
+        /* String literal: base + start */
+        node->base_ptr = createBinaryOp(node->array, start_expr, TOKEN_PLUS, base_type, node->array->loc);
     } else if (base_type->kind == TYPE_SLICE) {
         /* base.ptr + start */
         ptr_field = createMemberAccess(node->array, "ptr", createPointerType(unit_.getArena(), element_type, is_const, true, &unit_.getTypeInterner()), node->array->loc);
@@ -1572,6 +1605,12 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         if (base_type->kind == TYPE_ARRAY) {
             /* base_size - start */
             base_size = createIntegerLiteral(base_type->as.array.size, get_g_type_usize(), node->array->loc);
+            node->len = createBinaryOp(base_size, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
+        } else if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many && base_type->as.pointer.base->kind == TYPE_U8 && node->array->type == NODE_STRING_LITERAL) {
+            /* actual_len - start */
+            const char* val = node->array->as.string_literal.value;
+            size_t actual_len = val ? plat_strlen(val) : 0;
+            base_size = createIntegerLiteral(actual_len, get_g_type_usize(), node->array->loc);
             node->len = createBinaryOp(base_size, start_expr, TOKEN_MINUS, get_g_type_usize(), node->array->loc);
         } else if (base_type->kind == TYPE_SLICE) {
             /* base.len - start */
@@ -1637,10 +1676,12 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
+Type* TypeChecker::visitStringLiteral(ASTNode* parent, ASTStringLiteralNode* /*node*/) {
     Type* char_type = resolvePrimitiveTypeName("u8");
     // String literals are pointers to constant characters.
-    return createPointerType(unit_.getArena(), char_type, true, false, &unit_.getTypeInterner());
+    Type* type = createPointerType(unit_.getArena(), char_type, true, false, &unit_.getTypeInterner());
+    if (parent) parent->resolved_type = type;
+    return type;
 }
 
 Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
@@ -1985,6 +2026,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 
             if (node->expression && return_type) {
                 injectPtrAccessIfNeeded(node->expression, current_fn_return_type_);
+                injectStringSliceIfNeeded(node->expression, current_fn_return_type_);
             }
         }
     }
@@ -2579,6 +2621,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                     return get_g_type_undefined();
                 }
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
+                injectStringSliceIfNeeded(node->initializer, declared_type);
             }
         } else {
             // Infer type from integer literal
@@ -2663,6 +2706,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                     return get_g_type_undefined();
                 }
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
+                injectStringSliceIfNeeded(node->initializer, declared_type);
             }
         } else {
             // Infer type from initializer
@@ -2869,7 +2913,13 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
             if (!all_paths_return(node->body)) {
-                reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
+                /* Allow implicit return for Error!void */
+                if (current_fn_return_type_->kind == TYPE_ERROR_UNION &&
+                    current_fn_return_type_->as.error_union.payload->kind == TYPE_VOID) {
+                    /* OK */
+                } else {
+                    reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
+                }
             }
         }
 
@@ -3139,8 +3189,24 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     if (base_type->kind == TYPE_SLICE) {
         if (plat_strcmp(node->field_name, "len") == 0) {
             return get_g_type_usize();
+        } else if (plat_strcmp(node->field_name, "ptr") == 0) {
+            // Return pointer to element type, preserving constness
+            return createPointerType(
+                unit_.getArena(),
+                base_type->as.slice.element_type,
+                base_type->as.slice.is_const,  // Preserve const
+                true,  // is_many = true for slice.ptr semantics
+                &unit_.getTypeInterner()
+            );
         }
-        // Fall through for error reporting if not "len"
+        // Only fall through if field is neither "len" nor "ptr"
+        char msg_buffer[256];
+        char* current = msg_buffer;
+        size_t remaining = sizeof(msg_buffer);
+        safe_append(current, remaining, "slice has no member named '");
+        safe_append(current, remaining, node->field_name);
+        safe_append(current, remaining, "' (only 'len' and 'ptr' are supported)");
+        return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
     /* Module member access. */
@@ -4063,6 +4129,12 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
     }
 
+    // String literal -> Slice coercion
+    if (expected->kind == TYPE_SLICE && expected->as.slice.is_const && expected->as.slice.element_type->kind == TYPE_U8 &&
+        actual->kind == TYPE_POINTER && actual->as.pointer.is_const && actual->as.pointer.base->kind == TYPE_U8) {
+        return true;
+    }
+
     // Optional types coercions
     if (expected->kind == TYPE_OPTIONAL) {
         // T -> ?T (implicit wrapping)
@@ -4580,6 +4652,12 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     // Array to Slice coercion
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
         return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
+    }
+
+    // String literal -> Slice coercion
+    if (target_type->kind == TYPE_SLICE && target_type->as.slice.is_const && target_type->as.slice.element_type->kind == TYPE_U8 &&
+        source_type->kind == TYPE_POINTER && source_type->as.pointer.is_const && source_type->as.pointer.base->kind == TYPE_U8) {
+        return true;
     }
 
     // Slice to Slice assignment/coercion
@@ -5365,6 +5443,33 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
     node->as.integer_literal.resolved_type = type;
     node->resolved_type = type;
     return node;
+}
+
+void TypeChecker::injectStringSliceIfNeeded(ASTNode*& expr, Type* target_type) {
+    if (!expr || !expr->resolved_type || !target_type) return;
+
+    if (target_type->kind == TYPE_SLICE && target_type->as.slice.is_const && target_type->as.slice.element_type->kind == TYPE_U8 &&
+        expr->resolved_type->kind == TYPE_POINTER && expr->resolved_type->as.pointer.is_const && expr->resolved_type->as.pointer.base->kind == TYPE_U8 &&
+        expr->type == NODE_STRING_LITERAL) {
+
+        const char* val = expr->as.string_literal.value;
+        size_t len = val ? plat_strlen(val) : 0;
+
+        ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+        plat_memset(slice_node, 0, sizeof(ASTNode));
+        slice_node->type = NODE_ARRAY_SLICE;
+        slice_node->loc = expr->loc;
+        slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
+        plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+        slice_node->as.array_slice->array = expr;
+        slice_node->as.array_slice->start = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
+        slice_node->as.array_slice->end = createIntegerLiteral(len, get_g_type_usize(), expr->loc);
+
+        visitArraySlice(slice_node->as.array_slice);
+        // Explicitly set the resolved type to []const u8
+        slice_node->resolved_type = target_type;
+        expr = slice_node;
+    }
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {

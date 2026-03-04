@@ -1132,4 +1132,14 @@ TEST_FUNC(UnionCapture_NestedUnion);
 TEST_FUNC(UnionCapture_PointerToIncomplete);
 TEST_FUNC(UnionCapture_InvalidIntegerCase);
 
+// Task 9.8: String Literal Coercion & Implicit Return
+TEST_FUNC(StringLiteralCoercion_Assignment);
+TEST_FUNC(StringLiteralCoercion_Argument);
+TEST_FUNC(StringLiteralCoercion_Return);
+TEST_FUNC(StringLiteralCoercion_NonConstRejection);
+TEST_FUNC(ImplicitReturn_ErrorVoid);
+TEST_FUNC(ImplicitReturn_VoidSuccess);
+TEST_FUNC(ImplicitReturn_MissingValueRejection);
+TEST_FUNC(NullPointerAnalyzer_SliceSafe);
+
 #endif // TEST_DECLARATIONS_HPP

@@ -168,9 +168,26 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
             }
             break;
         case NODE_ARRAY_ACCESS:
-            checkDereference(node->as.array_access->array);
+            // Slices are guaranteed non-null if length > 0, but for now we just
+            // suppress the warning for slice indexing to avoid false positives.
+            if (node->as.array_access->array->resolved_type &&
+                node->as.array_access->array->resolved_type->kind == TYPE_SLICE) {
+                // Skip checkDereference for slices
+            } else {
+                checkDereference(node->as.array_access->array);
+            }
             visit(node->as.array_access->array);
             visit(node->as.array_access->index);
+            break;
+        case NODE_MEMBER_ACCESS:
+            // Accessing slice.ptr or slice.len is always safe
+            if (node->as.member_access->base->resolved_type &&
+                node->as.member_access->base->resolved_type->kind == TYPE_SLICE) {
+                // Skip checkDereference
+            } else {
+                checkDereference(node->as.member_access->base);
+            }
+            visit(node->as.member_access->base);
             break;
         default:
             break;

@@ -429,6 +429,7 @@ struct Type {
   | *T | *const T | ✓ | - |
   | []T | [*]T / [*]const T | ✓ | - |
   | [N]T | [*]T / [*]const T | ✓ | - |
+  | string_literal | []const u8 | ✓ | - |
 
 #### 4.4.1 Type Coercions
 To improve interoperability with C89 code, the compiler supports the following implicit coercions in specific contexts (assignments, function arguments, and return statements):

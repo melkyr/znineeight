@@ -197,7 +197,7 @@ For each unique slice type encountered, the compiler generates a `typedef` and a
 - **Indexing**: `s[i]` is emitted as `s.ptr[i]`.
 - **Length**: `s.len` is emitted as `s.len`.
 - **Slicing**: `base[start..end]` is emitted as a call to the generated helper: `__make_slice_T(computed_ptr, computed_len)`.
-- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call.
+- **Implicit Coercion**: Both array-to-slice and string-to-slice coercions are automatically handled by the `TypeChecker` by inserting a synthetic slicing node. The emitter then translates this into a call to the appropriate slice construction helper.
 
 #### Helper Functions
 For each unique slice type, a construction helper is generated:

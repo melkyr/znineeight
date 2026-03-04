@@ -894,6 +894,18 @@ pub fn sum_up_to(n: u32) u32 {
 
 Ensure it parses, type‑checks, and generates correct C code that when run returns the correct sum.
 
+### Task 9.10: String Literal Coercion & Implicit Return [DONE]
+
+Goal: Implement implicit coercion from string literals to slices (`[]const u8`) and allow functions returning `Error!void` to finish without an explicit `return;`.
+
+Rationale: Enhances language ergonomics and matches Zig's behavior for strings and success-by-default error handling.
+
+Implementation:
+- Modified `TypeChecker::areTypesCompatible` and `IsTypeAssignableTo` to permit `*const u8` to `[]const u8` coercion.
+- Added `TypeChecker::injectStringSliceIfNeeded` to wrap string literals in synthetic `NODE_ARRAY_SLICE` nodes.
+- Updated `visitFnBody` to permit implicit returns for `Error!void` functions.
+- Hardened `NullPointerAnalyzer` to recognize slice indexing and property access as inherently safe from null dereferences.
+
 ### Task 9.9: Stabilize Tagged Unions and Switch Captures
 
 Goal: Fix remaining issues with tagged unions (union(enum)) and switch captures (|payload|) that cause type‑checking failures in complex nested initializations.
