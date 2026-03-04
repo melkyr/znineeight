@@ -115,6 +115,7 @@ int main(int argc, char* argv[]) {
         // Group 3H
         test_Parser_AbortOnAllocationFailure,
         test_Parser_TokenStreamLifetimeIsIndependentOfParserObject,
+        test_Parser_MalformedStream_MissingEOF,
         test_ParserIntegration_VarDeclWithBinaryExpr,
         test_ParserIntegration_IfWithComplexCondition,
         test_ParserIntegration_WhileWithFunctionCall,

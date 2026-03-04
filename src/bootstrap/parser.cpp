@@ -41,16 +41,25 @@ Token Parser::advance() {
 }
 
 const Token& Parser::peek() const {
-    // This can be called when current_index_ points to the EOF token.
-    // The is_at_end() check uses this, and the expression parser needs to be able to
-    // peek at the EOF token to know when to stop.
-    assert(current_index_ < token_count_ && "Cannot peek past the end of the token buffer");
+    // Safety check: ensure we don't read past the end of the token buffer.
+    if (current_index_ >= token_count_) {
+        return eof_token_;
+    }
     return tokens_[current_index_];
 }
 
 bool Parser::is_at_end() const {
-    // Check if we are at the very last token, which should be EOF.
-    // The loop in `create_parser_for_test` includes the EOF token in the count.
+    // Safety check: ensure we don't read past the end of the token buffer.
+    // If we've run past the count, the stream is corrupted (missing TOKEN_EOF).
+    if (current_index_ >= token_count_) {
+        // Report an internal error for missing EOF token
+        if (error_handler_) {
+            error_handler_->report(ERR_INTERNAL_ERROR, SourceLocation(), "Token stream corrupted: missing EOF token");
+        }
+        return true;
+    }
+
+    // Normal check: reached the EOF token.
     return tokens_[current_index_].type == TOKEN_EOF;
 }
 
@@ -144,7 +153,8 @@ ASTNode* Parser::parseComptimeBlock() {
 }
 
 const Token& Parser::peekNext() const {
-    if (current_index_ + 1 >= token_count_) {
+    // Check if both the current and the next index are within bounds.
+    if (current_index_ >= token_count_ || current_index_ + 1 >= token_count_) {
         return eof_token_;
     }
     return tokens_[current_index_ + 1];

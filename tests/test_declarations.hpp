@@ -220,6 +220,7 @@ TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
 // Forward declarations for Group 3H: Integration, Bugs, and Edge Cases
 TEST_FUNC(Parser_AbortOnAllocationFailure);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(Parser_MalformedStream_MissingEOF);
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
 TEST_FUNC(ParserIntegration_IfWithComplexCondition);
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall);
