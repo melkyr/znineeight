@@ -57,7 +57,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         safe_append(cur, rem, ".c");
     }
 
-    C89Emitter emitter(unit_);
+    C89Emitter emitter(unit_, false);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
     if (!emitter.open(path)) {
@@ -134,7 +134,7 @@ bool CBackend::generateMasterMain(const char* output_dir) {
     safe_append(cur, rem, "/");
     safe_append(cur, rem, entry_filename_);
 
-    C89Emitter emitter(unit_);
+    C89Emitter emitter(unit_, false);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open master main file for writing");
         return false;
@@ -165,7 +165,7 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     char* cur = path;
     size_t rem = sizeof(path);
     safe_append(cur, rem, output_dir);
-    safe_append(cur, rem, "/build.bat");
+    safe_append(cur, rem, "/build_target.bat");
 
     PlatFile f = plat_open_file(path, true);
     if (f == PLAT_INVALID_FILE) return false;
@@ -192,14 +192,14 @@ bool CBackend::generateMakefile(const char* output_dir) {
     char* cur = path;
     size_t rem = sizeof(path);
     safe_append(cur, rem, output_dir);
-    safe_append(cur, rem, "/Makefile");
+    safe_append(cur, rem, "/build_target.sh");
 
     PlatFile f = plat_open_file(path, true);
     if (f == PLAT_INVALID_FILE) return false;
 
     const char* part1 =
-        "all:\n"
-        "\tgcc -std=c89 -pedantic -Wall -O2 -I. -o app ";
+        "#!/bin/sh\n"
+        "gcc -std=c89 -pedantic -Wall -O2 -I. -o app ";
     const char* part2 = "\n";
 
     plat_write_file(f, part1, plat_strlen(part1));
@@ -220,7 +220,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     safe_append(cur, rem, module->name);
     safe_append(cur, rem, ".h");
 
-    C89Emitter emitter(unit_);
+    C89Emitter emitter(unit_, true);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
     if (!emitter.open(path)) {

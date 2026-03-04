@@ -86,7 +86,7 @@ pub const JsonValue = struct {
 
 ### 8. Codegen: Slice Indexing
 **Issue**: In some contexts, slice indexing `slice[i]` was emitted as `slice[i]` in C, which is invalid since `slice` is a struct. It should always be `slice.ptr[i]`.
-**Status**: Unstable. Some paths in `emitArrayAccess` seem to miss the slice check.
+**Status**: FIXED. `emitAccess` now correctly detects `TYPE_SLICE` and appends `.ptr`.
 
 ### 9. Header Generation: Missing Typedefs
 **Issue**: Module headers (e.g., `file.h`) refer to types like `Slice_u8` or `ErrorUnion_Slice_u8` that are only defined in `main.h`. This makes modules hard to compile independently.
@@ -97,7 +97,7 @@ pub const JsonValue = struct {
 ErrorUnion_Slice_u8 z_file_readFile(void*, Slice_u8); // Error: unknown type name 'ErrorUnion_Slice_u8'
 ```
 
-**Status**: Persistent. Requires a more robust type-dependency analysis in the CBackend.
+**Status**: FIXED. Every header file is now self-contained by emitting all used special types (slices, error unions, optionals) within the header itself.
 
 ### 10. C89 Compatibility: Extern `*void`
 **Issue**: `extern fn foo(p: *void)` was emitted as `extern void z_foo(void p)`, which is invalid C. This happens because the bootstrap compiler sometimes treats `*void` (pointer to zero-sized type) inconsistently in `extern` signatures.
