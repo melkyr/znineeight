@@ -1,6 +1,6 @@
 // file.zig
 pub const File = *void;
-extern fn fopen(filename: [*]const u8, mode: [*]const u8) ?File;
+extern fn fopen(filename: [*]const c_char, mode: [*]const c_char) ?File;
 extern fn fread(buffer: [*]u8, size: usize, count: usize, file: File) usize;
 extern fn fclose(file: File) i32;
 extern fn fseek(file: File, offset: i64, whence: i32) i32;
@@ -22,7 +22,7 @@ pub const FileError = error{
 };
 
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
-    const f = fopen(@ptrCast([*]const u8, path.ptr), "rb") orelse return error.OpenFailed;
+    const f = fopen(@ptrCast([*]const c_char, path.ptr), "rb") orelse return error.OpenFailed;
     defer { _ = fclose(f); }
 
     if (fseek(f, 0, SEEK_END) != 0) { return error.SeekFailed; }

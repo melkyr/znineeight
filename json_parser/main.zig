@@ -7,7 +7,7 @@ extern var zig_default_arena: *void; // provided by runtime
 
 pub fn main() void {
     const arena = &zig_default_arena;
-    const path = @ptrCast([]const u8, "test.json");
+    const path: []const u8 = "test.json";
 
     // stress test the compilation pipeline
     const content = file.readFile(arena, path) catch |err| {
