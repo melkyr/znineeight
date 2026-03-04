@@ -272,8 +272,8 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_C_CHAR: writeString("char"); break;
         case TYPE_F32: writeString("float"); break;
         case TYPE_F64: writeString("double"); break;
-        case TYPE_ISIZE: writeString("isize"); break;
-        case TYPE_USIZE: writeString("usize"); break;
+        case TYPE_ISIZE: writeString("int"); break;
+        case TYPE_USIZE: writeString("unsigned int"); break;
         case TYPE_SLICE:
             ensureSliceType(type);
             writeString(getMangledTypeName(type));

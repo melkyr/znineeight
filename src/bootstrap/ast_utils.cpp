@@ -76,6 +76,7 @@ bool allPathsExit(const ASTNode* node) {
         case NODE_RETURN_STMT:
         case NODE_BREAK_STMT:
         case NODE_CONTINUE_STMT:
+        case NODE_UNREACHABLE:
             return true;
         case NODE_BLOCK_STMT: {
             const ASTBlockStmtNode& block = node->as.block_stmt;
