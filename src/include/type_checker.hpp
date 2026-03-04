@@ -81,7 +81,7 @@ public:
     bool is_type_undefined(Type* t);
 
     // Public for TDD
-    bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc);
+    bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc, ASTNode* source_node = NULL);
     Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
     Type* findStructField(Type* struct_type, const char* field_name);
     void fatalError(const char* msg);
@@ -109,6 +109,8 @@ private:
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
+    bool needsStringLiteralCoercion(ASTNode* src, Type* target);
+    void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
     bool resolveLabel(const char* label, int& out_target_id);

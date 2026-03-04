@@ -827,33 +827,20 @@ Verification:
 - Added `tests/integration/recursive_slice_tests.cpp` (integrated into Batch 50) covering cross-module mutual recursion and self-referencing tagged unions involving slices.
 - Verified that all Batch 50 and Batch 41 (for loops) tests pass.
 
-### Task 9.7: Implicit Coercion from Slices to Many‑Item Pointers
+### Task 9.7: Implicit Coercions (Strings, Slices, Arrays) [DONE]
 
-Goal: Allow a slice []T to be implicitly converted to a many‑item pointer [*]T when used as an argument to an extern function expecting a raw pointer.
+**Goal**: Allow string literals, slices, and arrays to be implicitly converted to slices or many-item pointers in appropriate contexts.
 
-Rationale: Currently, passing a string literal or slice to a C function like fopen requires explicit .ptr and @ptrCast. This is verbose and error‑prone. Adding implicit coercion makes the code more natural.
+**Rationale**: Passing a string literal or slice to functions expecting slices or raw pointers previously required verbose manual conversion.
 
-Implementation:
+**Implementation**:
+- **String to Slice**: String literals now implicitly coerce to `[]const u8` in assignments, function calls, and returns. The AST is transformed into a synthetic `NODE_ARRAY_SLICE`.
+- **Slice/Array to Many-item Pointer**: Implemented implicit decay from `[]T` and `[N]T` to `[*]T` by injecting `.ptr` access or element addresses during type checking.
+- **Slice Member Access**: Added support for `.ptr` and `.len` properties on slices in the `TypeChecker`.
 
-    In areTypesCompatible, add a rule: if the destination type is a many‑item pointer ([*]T) and the source type is a slice ([]T) with the same element type, they are compatible. This allows the type checker to accept the conversion.
-
-    In code generation, when emitting a slice as a many‑item pointer, just use the slice’s .ptr field. No extra code is needed because the representation already stores the pointer.
-
-    Ensure that this coercion only works in contexts where a raw pointer is expected (e.g., function arguments, assignments to [*]T variables). It should not be allowed in other contexts (e.g., arithmetic) because that would change semantics.
-
-Verification:
-Write a test that calls an external C function expecting a [*]const u8 (like puts) with a string literal and a slice:
-zig
-
-extern fn puts(s: [*]const u8) i32;
-const msg = "hello";
-pub fn main() void {
-    _ = puts(msg);          // should work implicitly
-    const slice = msg[0..3];
-    _ = puts(slice);        // should also work implicitly
-}
-
-Compile and run (if possible) to confirm no type errors and correct output.
+**Verification**:
+- Verified with `tests/integration/test_string_coercion.zig`.
+- Confirmed correct C89 code generation for string literals and slice property access.
 
 ### Task 9.8: Parser Support for while Continue Expressions
 
@@ -929,3 +916,19 @@ fn describe(val: Value) []const u8 {
 }
 
 Also test nested tagged unions (e.g., a union containing another union) and ensure captures work correctly. Compile and run (if possible) to verify correct values.
+
+---
+
+### Task 9.10: Implicit Return for `Error!void` [DONE]
+
+**Goal**: Allow functions returning `anyerror!void` to omit an explicit `return;` statement if execution falls off the end of the function.
+
+**Rationale**: Matching Zig semantics where `!void` functions implicitly return success on fall-through, reducing boilerplate.
+
+**Implementation**:
+- **TypeChecker**: Modified `visitFnBody` to waive the "missing return value" error for `Error!void` return types.
+- **C89Emitter**: Modified `emitBlock` to detect fall-through in top-level function blocks and emit an implicit `return {0};` (success variant).
+
+**Verification**:
+- Verified with `tests/integration/test_implicit_return.zig`.
+- Confirmed generated C code returns the correct success struct.

@@ -115,7 +115,7 @@ struct TypeChecker::ResolutionDepthGuard {
 };
 
 
-// Helper to get the string representation of a binary operator token.
+/* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
     : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
@@ -150,7 +150,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                  vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
                  vd->initializer->type == NODE_ERROR_SET_MERGE)) {
 
-                // Check if already has a type or placeholder
+                /* Check if already has a type or placeholder */
                 Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
                 if (sym && sym->symbol_type) {
                     continue;
@@ -185,7 +185,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 
 void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
-        // Main pass: visit children directly to avoid root block scope level issue
+        /* Main pass: visit children directly to avoid root block scope level issue */
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* stmt = (*root->as.block_stmt.statements)[i];
             if (stmt) {
@@ -247,8 +247,8 @@ Type* TypeChecker::visit(ASTNode* node) {
     }
 
     VisitDepthGuard depth_guard(*this);
-    // Recursion depth guard: max 200 calls. With ~1KB per call, this uses <200KB stack,
-    // well under the 1MB Windows 98 limit.
+    /* Recursion depth guard: max 200 calls. With ~1KB per call, this uses <200KB stack, */
+    /* well under the 1MB Windows 98 limit. */
     if (visit_depth_ > MAX_VISIT_DEPTH) {
         return reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR, "Exceeded maximum recursion depth");
     }
@@ -342,16 +342,16 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
     switch (node->op) {
         case TOKEN_STAR:
         case TOKEN_DOT_ASTERISK: { /* Dereference operator (*) or (.*) */
-            // Check for null literal dereference first, as it's a special case.
+            /* Check for null literal dereference first, as it's a special case. */
             if (node->operand->type == NODE_NULL_LITERAL ||
                 (node->operand->type == NODE_INTEGER_LITERAL && node->operand->as.integer_literal.value == 0)) {
                 unit_.getErrorHandler().reportWarning(WARN_NULL_DEREFERENCE, node->operand->loc, "Dereferencing null pointer may cause undefined behavior");
-                // The type of '*null' is technically undefined, but for the compiler to proceed,
-                // we can treat it as yielding a void type. This prevents cascading errors.
+                /* The type of '*null' is technically undefined, but for the compiler to proceed, */
+                /* we can treat it as yielding a void type. This prevents cascading errors. */
                 return get_g_type_void();
             }
 
-            // Now, perform standard pointer checks.
+            /* Now, perform standard pointer checks. */
             if (operand_type->kind == TYPE_FUNCTION_POINTER) {
                 unit_.getErrorHandler().report(ERR_DEREF_FUNCTION_POINTER, node->operand->loc, ErrorHandler::getMessage(ERR_DEREF_FUNCTION_POINTER), "Functions are called directly.");
                 return get_g_type_undefined();
@@ -401,28 +401,28 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
         }
         case TOKEN_MINUS:
         case TOKEN_PLUS:
-            // C89 Unary '-' and '+' are only valid for numeric types.
+            /* C89 Unary '-' and '+' are only valid for numeric types. */
             if (isNumericType(operand_type)) {
                 return operand_type;
             }
             return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Unary operator cannot be applied to non-numeric types.");
 
         case TOKEN_BANG:
-            // Logical NOT is valid for bools, integers, and pointers.
+            /* Logical NOT is valid for bools, integers, and pointers. */
             if (operand_type->kind == TYPE_BOOL || isIntegerType(operand_type) || operand_type->kind == TYPE_POINTER) {
                 return get_g_type_bool();
             }
             return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Logical NOT operator '!' can only be applied to bools, integers, or pointers.");
 
         case TOKEN_TILDE:
-            // Bitwise NOT is only valid for integer types in C89.
+            /* Bitwise NOT is only valid for integer types in C89. */
             if (isIntegerType(operand_type)) {
-                return operand_type; // Bitwise NOT doesn't change the type.
+                return operand_type; /* Bitwise NOT doesn't change the type. */
             }
             return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "Bitwise NOT operator '~' can only be applied to integer types.");
 
         default:
-            // Should not happen if parser is correct.
+            /* Should not happen if parser is correct. */
             unit_.getErrorHandler().report(ERR_INVALID_OPERATION, parent->loc, ErrorHandler::getMessage(ERR_INVALID_OPERATION), "Unsupported unary operator.");
             return get_g_type_undefined();
     }
@@ -514,7 +514,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
     }
 
     switch (op) {
-// --- Arithmetic Operators ---
+/* --- Arithmetic Operators --- */
         case TOKEN_PLUS:
         case TOKEN_PLUSPERCENT:
         case TOKEN_MINUS:
@@ -523,7 +523,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         case TOKEN_STARPERCENT:
         case TOKEN_SLASH:
         case TOKEN_PERCENT: {
-            // Modulo is only defined for integer types
+            /* Modulo is only defined for integer types */
             if (op == TOKEN_PERCENT && isNumericType(left_type) && isNumericType(right_type)) {
                 if (!isIntegerType(left_type) || !isIntegerType(right_type)) {
                     return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "modulo operator '%' is only defined for integer types");
@@ -573,7 +573,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
 
-            // Neither pointer nor compatible numeric arithmetic
+            /* Neither pointer nor compatible numeric arithmetic */
             char left_type_str[64];
             char right_type_str[64];
             typeToString(left_type, left_type_str, sizeof(left_type_str));
@@ -682,19 +682,19 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
         return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
-// --- Bitwise Operators ---
+/* --- Bitwise Operators --- */
         case TOKEN_AMPERSAND:
         case TOKEN_PIPE:
         case TOKEN_CARET:
         case TOKEN_LARROW2:
         case TOKEN_RARROW2:
         {
-            // Both operands must be integer types for bitwise operations
+            /* Both operands must be integer types for bitwise operations */
             if (isIntegerType(left_type) && isIntegerType(right_type)) {
-                // For <<, >>: Result type is the type of the left operand (the one being shifted)
+                /* For <<, >>: Result type is the type of the left operand (the one being shifted) */
                 if (op == TOKEN_LARROW2 || op == TOKEN_RARROW2) {
                     if (left_type == right_type) {
-                        return left_type; // Result is the type of the value being shifted
+                        return left_type; /* Result is the type of the value being shifted */
                     } else {
                         char left_type_str[64];
                         char right_type_str[64];
@@ -712,10 +712,10 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
                         safe_append(current, remaining, "'.");
                         return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
                     }
-                } else { // &, |, ^
-                    // C89 rules: Operands must be the same type for these operators too
+                } else { /* &, |, ^ */
+                    /* C89 rules: Operands must be the same type for these operators too */
                     if (left_type == right_type) {
-                        return left_type; // Result is the same type
+                        return left_type; /* Result is the same type */
                     } else {
                         char left_type_str[64];
                         char right_type_str[64];
@@ -753,13 +753,13 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Token
             }
         }
 
-// --- Logical Operators ---
+/* --- Logical Operators --- */
         case TOKEN_AND:
         case TOKEN_OR:
         {
-            // Both operands must be bool type for logical operations
+            /* Both operands must be bool type for logical operations */
             if (left_type->kind == TYPE_BOOL && right_type->kind == TYPE_BOOL) {
-                return get_g_type_bool(); // Result is always bool
+                return get_g_type_bool(); /* Result is always bool */
             } else {
                 char left_type_str[64];
                 char right_type_str[64];
@@ -882,13 +882,13 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         info.context = current_fn_name_ ? current_fn_name_ : "global";
         info.expr_string = exprToString(node->callee);
 
-        // Function pointers are C89 compatible (if they don't use unsupported features)
-        // But for now we mark them as potentially C89 for the diagnostic note.
+        /* Function pointers are C89 compatible (if they don't use unsupported features) */
+        /* But for now we mark them as potentially C89 for the diagnostic note. */
         info.could_be_c89 = true;
 
         unit_.getIndirectCallCatalogue().addIndirectCall(info);
     }
-    // --- End Task 166 ---
+    /* --- End Task 166 --- */
 
     /* Check if the callee is a direct identifier call to a banned function. */
     if (node->callee->type == NODE_IDENTIFIER) {
@@ -1079,8 +1079,8 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     }
 
     if (callee_type->kind != TYPE_FUNCTION && callee_type->kind != TYPE_FUNCTION_POINTER) {
-        // This also handles the function pointer case, as a variable holding a
-        // function would have a symbol kind of VARIABLE, not FUNCTION.
+        /* This also handles the function pointer case, as a variable holding a */
+        /* function would have a symbol kind of VARIABLE, not FUNCTION. */
         entry_id = unit_.getCallSiteLookupTable().addEntry(parent, current_fn_name_ ? current_fn_name_ : "global");
         unit_.getCallSiteLookupTable().markUnresolved(entry_id, "Called object is not a function", CALL_INDIRECT);
         return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "called object is not a function");
@@ -1133,16 +1133,16 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
         if (i >= expected_args) continue;
         param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
-        // Special handling for integer literal promotion in function calls
+        /* Special handling for integer literal promotion in function calls */
         promoted = tryPromoteLiteral(arg_node, param_type);
         if (promoted) {
             arg_type = promoted;
         }
 
-        // Implicit Array to Slice coercion
+        /* Implicit Array to Slice coercion */
         if (param_type->kind == TYPE_SLICE && arg_type->kind == TYPE_ARRAY) {
             if (areTypesEqual(param_type->as.slice.element_type, arg_type->as.array.element_type)) {
-                // Wrap in synthetic slice node
+                /* Wrap in synthetic slice node */
                 slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                 plat_memset(slice_node, 0, sizeof(ASTNode));
                 slice_node->type = NODE_ARRAY_SLICE;
@@ -1151,12 +1151,17 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
                 plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
                 slice_node->as.array_slice->array = arg_node;
 
-                // Recursively call visitArraySlice to populate base_ptr and len
+                /* Recursively call visitArraySlice to populate base_ptr and len */
                 visitArraySlice(slice_node->as.array_slice);
                 slice_node->resolved_type = param_type;
                 (*node->args)[i] = slice_node;
                 arg_type = param_type;
             }
+        }
+
+        if (needsStringLiteralCoercion(arg_node, param_type)) {
+            coerceStringLiteralToSlice(&(*node->args)[i], param_type, arg_node->loc);
+            arg_type = param_type;
         }
 
         if (!areTypesCompatible(param_type, arg_type)) {
@@ -1238,9 +1243,14 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     }
 
     /* Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules. */
-    if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc)) {
-        // IsTypeAssignableTo already reports a detailed error.
+    if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc, node->rvalue)) {
+        /* IsTypeAssignableTo already reports a detailed error. */
         return get_g_type_undefined();
+    }
+
+    if (needsStringLiteralCoercion(node->rvalue, lvalue_type)) {
+        coerceStringLiteralToSlice(&node->rvalue, lvalue_type, node->rvalue->loc);
+        rvalue_type = lvalue_type;
     }
 
     injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
@@ -1303,7 +1313,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     /* Step 4: Check if the underlying binary operation is valid. */
     result_type = checkBinaryOperation(lvalue_type, r_ptr, binary_op, node->lvalue->loc);
     if (!result_type || is_type_undefined(result_type)) {
-        // Error already reported by checkBinaryOperation. We can just return.
+        /* Error already reported by checkBinaryOperation. We can just return. */
         return get_g_type_undefined();
     }
 
@@ -1311,10 +1321,17 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     if (used_right_lit && result_type == &right_lit) result_type = rvalue_type;
 
     /* Step 5: Ensure the result of the operation can be assigned back to the l-value. */
-    if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc)) {
-        // IsTypeAssignableTo already reports a detailed error.
+    if (!IsTypeAssignableTo(result_type, lvalue_type, node->lvalue->loc, node->rvalue)) {
+        /* IsTypeAssignableTo already reports a detailed error. */
         return get_g_type_undefined();
     }
+
+    if (needsStringLiteralCoercion(node->rvalue, lvalue_type)) {
+        coerceStringLiteralToSlice(&node->rvalue, lvalue_type, node->rvalue->loc);
+        result_type = lvalue_type;
+    }
+
+    injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
 
     /* The type of a compound assignment expression is the type of the l-value. */
     return lvalue_type;
@@ -1333,7 +1350,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
  */
 Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType /*op*/, SourceLocation loc) {
     if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
-        return left; // Simplified promotion
+        return left; /* Simplified promotion */
     }
     return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Incompatible types for binary operation");
 }
@@ -1365,6 +1382,43 @@ Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
     return NULL;
 }
 
+bool TypeChecker::needsStringLiteralCoercion(ASTNode* src, Type* target) {
+    if (!src || !target) return false;
+    if (src->type != NODE_STRING_LITERAL) return false;
+    if (target->kind != TYPE_SLICE) return false;
+    if (target->as.slice.element_type->kind != TYPE_U8) return false;
+    if (target->as.slice.is_const != true) return false;
+    return true;
+}
+
+void TypeChecker::coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc) {
+    ASTNode* literal;
+    size_t len;
+    ASTNode* slice_node;
+    ASTArraySliceNode* slice_data;
+
+    literal = *expr_ptr;
+    len = plat_strlen(literal->as.string_literal.value);
+
+    slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+    plat_memset(slice_node, 0, sizeof(ASTNode));
+    slice_node->type = NODE_ARRAY_SLICE;
+    slice_node->loc = loc;
+
+    slice_data = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
+    plat_memset(slice_data, 0, sizeof(ASTArraySliceNode));
+    slice_data->array = literal;
+
+    /* Manually populate for string literal to avoid visitArraySlice rejecting the single-item pointer. */
+    slice_data->base_ptr = literal;
+    slice_data->len = createIntegerLiteral(len, get_g_type_usize(), loc);
+
+    slice_node->as.array_slice = slice_data;
+    slice_node->resolved_type = target_type;
+
+    *expr_ptr = slice_node;
+}
+
 Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     Type* array_type;
     Type* index_type;
@@ -1377,7 +1431,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     index_type = visit(node->index);
     if (!index_type || is_type_undefined(index_type)) return get_g_type_undefined();
 
-    // Check that index is an integer type
+    /* Check that index is an integer type */
     if (!isIntegerType(index_type) && index_type->kind != TYPE_INTEGER_LITERAL) {
         return reportAndReturnUndefined(node->index->loc, ERR_TYPE_MISMATCH, "Array index must be an integer");
     }
@@ -1387,7 +1441,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         base = resolvePlaceholder(base);
     }
 
-    // Auto-dereference for pointer to array
+    /* Auto-dereference for pointer to array */
     if (base->kind == TYPE_POINTER && !base->as.pointer.is_many) {
         Type* target = base->as.pointer.base;
         if (target->kind == TYPE_PLACEHOLDER) {
@@ -1399,7 +1453,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     }
 
     if (base->kind == TYPE_POINTER && base->as.pointer.is_many) {
-        // Many-item pointer indexing: returns the base type
+        /* Many-item pointer indexing: returns the base type */
         Type* res = base->as.pointer.base;
         if (res && res->kind == TYPE_PLACEHOLDER) {
             res = resolvePlaceholder(res);
@@ -1415,7 +1469,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
         return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Cannot index into a non-array type. Many-item pointers ([*]T) and slices ([]T) support indexing, but single-item pointers (*T) do not.");
     }
 
-    // Attempt to evaluate the index as a compile-time constant for bounds checking.
+    /* Attempt to evaluate the index as a compile-time constant for bounds checking. */
     i64 index_value;
     if (base->kind == TYPE_ARRAY && evaluateConstantExpression(node->index, &index_value)) {
         u64 array_size = base->as.array.size;
@@ -1501,7 +1555,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     } else if (base_type->kind == TYPE_SLICE) {
         element_type = base_type->as.slice.element_type;
         is_const = base_type->as.slice.is_const;
-    } else { // Many-item pointer
+    } else { /* Many-item pointer */
         element_type = base_type->as.pointer.base;
         is_const = base_type->as.pointer.is_const;
     }
@@ -1526,7 +1580,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         }
     }
 
-    // Enforce explicit indices for many-item pointers
+    /* Enforce explicit indices for many-item pointers */
     if (base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many) {
         if (!node->start || !node->end) {
             return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Slicing a many-item pointer requires explicit start and end indices.");
@@ -1559,8 +1613,8 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
         /* base.ptr + start */
         ptr_field = createMemberAccess(node->array, "ptr", createPointerType(unit_.getArena(), element_type, is_const, true, &unit_.getTypeInterner()), node->array->loc);
         node->base_ptr = createBinaryOp(ptr_field, start_expr, TOKEN_PLUS, ptr_field->resolved_type, node->array->loc);
-    } else { // Many-item pointer
-        // base + start
+    } else { /* Many-item pointer */
+        /* base + start */
         node->base_ptr = createBinaryOp(node->array, start_expr, TOKEN_PLUS, node->array->resolved_type, node->array->loc);
     }
 
@@ -1602,8 +1656,8 @@ Type* TypeChecker::visitUndefinedLiteral(ASTNode* node) {
 }
 
 Type* TypeChecker::visitIntegerLiteral(ASTNode* /*parent*/, ASTIntegerLiteralNode* node) {
-    // This logic is intentionally C-like. Integer literals are inferred as i32
-    // by default, unless the value is too large or has a long suffix.
+    /* This logic is intentionally C-like. Integer literals are inferred as i32 */
+    /* by default, unless the value is too large or has a long suffix. */
     Type* result = NULL;
     if (node->is_unsigned) {
         if (node->is_long || node->value > 0xFFFFFFFFU) {
@@ -1639,14 +1693,14 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
 
 Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    // String literals are pointers to constant characters.
+    /* String literals are pointers to constant characters. */
     return createPointerType(unit_.getArena(), char_type, true, false, &unit_.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
     unit_.getGlobalErrorRegistry().getOrAddTag(node->tag_name);
-    // Return an anonymous error set type representing the global set.
-    // This allows it to be coerced to any error union.
+    /* Return an anonymous error set type representing the global set. */
+    /* This allows it to be coerced to any error union. */
     return createErrorSetType(unit_.getArena(), NULL, NULL, true);
 }
 
@@ -1935,12 +1989,12 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
     }
 
     if (!current_fn_return_type_) {
-        // This can happen if we are parsing a return outside of a function,
-        // which should be caught by the parser, but we check here for safety.
+        /* This can happen if we are parsing a return outside of a function, */
+        /* which should be caught by the parser, but we check here for safety. */
         return get_g_type_undefined();
     }
 
-    // Case 1: Function is void
+    /* Case 1: Function is void */
     if (current_fn_return_type_->kind == TYPE_VOID) {
         if (node->expression) {
             /* Error: void function returning a value */
@@ -1959,10 +2013,10 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
                 return reportAndReturnUndefined(parent->loc, ERR_MISSING_RETURN_VALUE, NULL);
             }
         } else {
-            // Implicit Array to Slice coercion
+            /* Implicit Array to Slice coercion */
             if (current_fn_return_type_->kind == TYPE_SLICE && return_type && return_type->kind == TYPE_ARRAY) {
                 if (areTypesEqual(current_fn_return_type_->as.slice.element_type, return_type->as.array.element_type)) {
-                    // Wrap in synthetic slice node
+                    /* Wrap in synthetic slice node */
                     ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                     plat_memset(slice_node, 0, sizeof(ASTNode));
                     slice_node->type = NODE_ARRAY_SLICE;
@@ -1978,8 +2032,13 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
                 }
             }
 
+            if (needsStringLiteralCoercion(node->expression, current_fn_return_type_)) {
+                coerceStringLiteralToSlice(&node->expression, current_fn_return_type_, node->expression->loc);
+                return_type = current_fn_return_type_;
+            }
+
             if (return_type && !areTypesCompatible(current_fn_return_type_, return_type)) {
-                // Error: return type mismatch
+                /* Error: return type mismatch */
                 return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "return type mismatch");
             }
 
@@ -2022,7 +2081,7 @@ Type* TypeChecker::visitRange(ASTRangeNode* node) {
         return reportAndReturnUndefined(node->end->loc, ERR_TYPE_MISMATCH, "Range end must be an integer");
     }
 
-    // For inclusive ranges in switch, we check start <= end if they are constants
+    /* For inclusive ranges in switch, we check start <= end if they are constants */
     i64 start_val, end_val;
     if (evaluateConstantExpression(node->start, &start_val) &&
         evaluateConstantExpression(node->end, &end_val)) {
@@ -2145,7 +2204,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         fatalError("Recursion limit reached during type resolution");
     }
 
-    // Switch to the placeholder's module context
+    /* Switch to the placeholder's module context */
     const char* old_mod = unit_.getCurrentModule();
     if (placeholder->as.placeholder.module) {
         unit_.setCurrentModule(placeholder->as.placeholder.module->name);
@@ -2165,7 +2224,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     if (!resolved || is_type_undefined(resolved)) return get_g_type_undefined();
 
-    // Unwrap TYPE_TYPE if necessary
+    /* Unwrap TYPE_TYPE if necessary */
     if (resolved && resolved->kind == TYPE_TYPE) {
         if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
             ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
@@ -2175,9 +2234,9 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         }
     }
 
-    // Mutate placeholder in place
+    /* Mutate placeholder in place */
     if (resolved && resolved != placeholder) {
-        // If resolved is TYPE_TYPE, we want the underlying type
+        /* If resolved is TYPE_TYPE, we want the underlying type */
         if (resolved->kind == TYPE_TYPE) {
              if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
                  ASTVarDeclNode* vd = placeholder->as.placeholder.decl_node->as.var_decl;
@@ -2360,17 +2419,17 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 }
 
                 if (item_type) {
-                    // Check compatibility between condition and case item
+                    /* Check compatibility between condition and case item */
                     bool compatible = false;
                     if (is_tagged_union) {
                         compatible = areTypesEqual(tag_type, item_type);
                     } else if (areTypesCompatible(cond_type, item_type)) {
                         compatible = true;
                     } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
-                        // C89 allows integers for enum cases
+                        /* C89 allows integers for enum cases */
                         compatible = true;
                     } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
-                        // Allow enum members for integer switch
+                        /* Allow enum members for integer switch */
                         compatible = true;
                     } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
                         compatible = true;
@@ -2496,12 +2555,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     StructNameGuard name_guard(*this, name_to_set);
 
     if (!placeholder && current_struct_name_) {
-        // Create and register placeholder
+        /* Create and register placeholder */
         placeholder = (Type*)unit_.getArena().alloc(sizeof(Type));
         plat_memset(placeholder, 0, sizeof(Type));
         placeholder->kind = TYPE_PLACEHOLDER;
         placeholder->as.placeholder.name = node->name;
-        placeholder->as.placeholder.decl_node = parent; // parent of VarDecl is typically the module root or a block
+        placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
         placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
@@ -2509,11 +2568,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         Symbol sym = SymbolBuilder(unit_.getArena())
             .withName(node->name)
             .withModule(unit_.getCurrentModule())
-            .ofType(SYMBOL_VARIABLE) // Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type
+            .ofType(SYMBOL_VARIABLE) /* Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type */
             .withType(placeholder)
             .atLocation(node->name_loc)
             .definedBy(node)
-            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST) // Assuming global for now
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST) /* Assuming global for now */
             .build();
 
         if (!existing_sym) {
@@ -2557,7 +2616,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     /* Special handling for integer literal initializers to support C89-style assignments. */
     if (node->initializer && evaluateConstantExpression(node->initializer, &const_val)) {
-        // Create a temporary literal type to pass to the checker.
+        /* Create a temporary literal type to pass to the checker. */
         Type literal_type;
         literal_type.kind = TYPE_INTEGER_LITERAL;
         literal_type.as.integer_literal.value = const_val;
@@ -2565,7 +2624,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         if (declared_type) {
             if (isNumericType(declared_type)) {
                 if (!canLiteralFitInType(&literal_type, declared_type)) {
-                    // Report a more specific error for overflow.
+                    /* Report a more specific error for overflow. */
                     char msg_buffer[256];
                     char* current = msg_buffer;
                     size_t remaining = sizeof(msg_buffer);
@@ -2575,28 +2634,33 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             } else {
                 Type* init_t = visit(node->initializer);
                 if (!init_t || is_type_undefined(init_t)) return get_g_type_undefined();
-                if (!IsTypeAssignableTo(init_t, declared_type, node->initializer->loc)) {
+                if (!IsTypeAssignableTo(init_t, declared_type, node->initializer->loc, node->initializer)) {
                     return get_g_type_undefined();
+                }
+
+                if (needsStringLiteralCoercion(node->initializer, declared_type)) {
+                    coerceStringLiteralToSlice(&node->initializer, declared_type, node->initializer->loc);
+                    init_t = declared_type;
                 }
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
-            // Infer type from integer literal
+            /* Infer type from integer literal */
             declared_type = visit(node->initializer);
             if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
         }
     } else if (node->initializer && node->initializer->type == NODE_INTEGER_LITERAL) {
-        // Fallback for NODE_INTEGER_LITERAL if evaluateConstantExpression somehow failed (should not happen for literals)
+        /* Fallback for NODE_INTEGER_LITERAL if evaluateConstantExpression somehow failed (should not happen for literals) */
         ASTIntegerLiteralNode* literal_node = &node->initializer->as.integer_literal;
 
-        // Create a temporary literal type to pass to the checker.
+        /* Create a temporary literal type to pass to the checker. */
         Type literal_type;
         literal_type.kind = TYPE_INTEGER_LITERAL;
         literal_type.as.integer_literal.value = (i64)literal_node->value;
 
         if (declared_type) {
             if (!canLiteralFitInType(&literal_type, declared_type)) {
-                // Report a more specific error for overflow.
+                /* Report a more specific error for overflow. */
                 char msg_buffer[256];
                 char* current = msg_buffer;
                 size_t remaining = sizeof(msg_buffer);
@@ -2604,7 +2668,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 return reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
         } else {
-            // Infer type from integer literal
+            /* Infer type from integer literal */
             declared_type = visit(node->initializer);
             if (!declared_type || is_type_undefined(declared_type)) return get_g_type_undefined();
         }
@@ -2612,7 +2676,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         /* For all other cases, use the standard assignment validation. */
         initializer_type = NULL;
 
-        // Special case for anonymous struct/array initializers
+        /* Special case for anonymous struct/array initializers */
         if (node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
             if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY)) {
                 node->initializer->resolved_type = declared_type;
@@ -2623,8 +2687,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                         initializer_type = get_g_type_undefined();
                     }
                 } else {
-                    // Array initialization via .{ ._0 = ... }
-                    // For now, we assume it's valid for simplicity in bootstrap
+                    /* Array initialization via .{ ._0 = ... } */
+                    /* For now, we assume it's valid for simplicity in bootstrap */
                     initializer_type = declared_type;
                 }
             } else {
@@ -2638,6 +2702,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 if (node->initializer->type != NODE_UNDEFINED_LITERAL) {
                     return get_g_type_undefined();
                 }
+            }
+
+            if (declared_type && needsStringLiteralCoercion(node->initializer, declared_type)) {
+                coerceStringLiteralToSlice(&node->initializer, declared_type, node->initializer->loc);
+                initializer_type = declared_type;
             }
         }
 
@@ -2665,17 +2734,17 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
-            // Infer type from initializer
+            /* Infer type from initializer */
             declared_type = initializer_type;
         }
     }
 
-    // Implicit Array to Slice coercion for variable declaration
+    /* Implicit Array to Slice coercion for variable declaration */
     if (declared_type && declared_type->kind == TYPE_SLICE && node->initializer) {
         Type* init_type = node->initializer->resolved_type;
         if (init_type && init_type->kind == TYPE_ARRAY) {
             if (areTypesEqual(declared_type->as.slice.element_type, init_type->as.array.element_type)) {
-                // Wrap in synthetic slice node
+                /* Wrap in synthetic slice node */
                 ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                 plat_memset(slice_node, 0, sizeof(ASTNode));
                 slice_node->type = NODE_ARRAY_SLICE;
@@ -2782,7 +2851,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         if (param_type && !is_type_undefined(param_type)) {
             param_types->append(param_type);
 
-            // Register parameter in scope immediately so subsequent parameters can use it (e.g. comptime T: type)
+            /* Register parameter in scope immediately so subsequent parameters can use it (e.g. comptime T: type) */
             Symbol param_symbol = SymbolBuilder(unit_.getArena())
                 .withName(param_node->name)
                 .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
@@ -2803,7 +2872,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 
     unit_.getSymbolTable().exitScope();
 
-    // If any parameter type or the return type was invalid, don't create the function type
+    /* If any parameter type or the return type was invalid, don't create the function type */
     if (!all_params_valid || !return_type) {
         return get_g_type_undefined();
     }
@@ -2868,7 +2937,11 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         body_res = visit(node->body);
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
-            if (!all_paths_return(node->body)) {
+            /* Allow implicit return for Error!void (Task: Fix #2) */
+            bool is_error_void = (current_fn_return_type_->kind == TYPE_ERROR_UNION &&
+                                 current_fn_return_type_->as.error_union.payload->kind == TYPE_VOID);
+
+            if (!is_error_void && !all_paths_return(node->body)) {
                 reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
             }
         }
@@ -2975,7 +3048,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     if (node->is_tagged) {
         if (node->tag_type_expr && node->tag_type_expr->type == NODE_IDENTIFIER &&
             plat_strcmp(node->tag_type_expr->as.identifier.name, "enum") == 0) {
-            // union(enum) - implicit enum
+            /* union(enum) - implicit enum */
         } else if (node->tag_type_expr) {
             tag_type = visit(node->tag_type_expr);
             if (!tag_type || is_type_undefined(tag_type)) return get_g_type_undefined();
@@ -2983,7 +3056,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
                 tag_type = resolvePlaceholder(tag_type);
             }
             if (tag_type && tag_type->kind == TYPE_TYPE) {
-                // If visit returned TYPE_TYPE, we need the actual type
+                /* If visit returned TYPE_TYPE, we need the actual type */
                 if (node->tag_type_expr->resolved_type) {
                     tag_type = node->tag_type_expr->resolved_type;
                     if (tag_type->kind == TYPE_PLACEHOLDER) {
@@ -3135,12 +3208,14 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = base_type->as.pointer.base;
     }
 
-    // Slice built-in properties
+    /* Slice built-in properties */
     if (base_type->kind == TYPE_SLICE) {
         if (plat_strcmp(node->field_name, "len") == 0) {
             return get_g_type_usize();
+        } else if (plat_strcmp(node->field_name, "ptr") == 0) {
+            return createPointerType(unit_.getArena(), base_type->as.slice.element_type, base_type->as.slice.is_const, true, &unit_.getTypeInterner());
         }
-        // Fall through for error reporting if not "len"
+        /* Fall through for error reporting if not "len" or "ptr" */
     }
 
     /* Module member access. */
@@ -3281,8 +3356,8 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
             return reportAndReturnUndefined(parent->loc, ERR_UNDEFINED_ENUM_MEMBER, msg_buffer);
         }
 
-        // --- ENUM CONSTANT FOLDING ---
-        // Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL
+        /* --- ENUM CONSTANT FOLDING --- */
+        /* Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL */
         parent->type = NODE_INTEGER_LITERAL;
         parent->as.integer_literal.value = (*members)[member_idx].value;
         parent->as.integer_literal.is_unsigned = false;
@@ -3291,7 +3366,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         parent->as.integer_literal.original_name = (*members)[member_idx].name;
         parent->resolved_type = base_type;
 
-        return base_type; // Result type is the enum type itself
+        return base_type; /* Result type is the enum type itself */
     }
 
     if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION) {
@@ -3317,7 +3392,7 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
 
-    // 1. Check for missing fields
+    /* 1. Check for missing fields */
     for (size_t i = 0; i < fields->length(); ++i) {
         const char* expected_name = (*fields)[i].name;
         bool found = false;
@@ -3353,7 +3428,7 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             return false;
         }
 
-        // Check for duplicates in initializer
+        /* Check for duplicates in initializer */
         for (size_t j = i + 1; j < node->fields->length(); ++j) {
             if (identifiers_equal(init->field_name, (*node->fields)[j]->field_name)) {
                 reportAndReturnUndefined((*node->fields)[j]->loc, ERR_REDEFINITION, "duplicate field initializer");
@@ -3361,11 +3436,11 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             }
         }
 
-        // 2. Type check initializer values
+        /* 2. Type check initializer values */
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
         if (val_type && !IsTypeAssignableTo(val_type, field_type, init->loc)) {
-             // IsTypeAssignableTo already reports the error
+             /* IsTypeAssignableTo already reports the error */
         }
     }
     return true;
@@ -3441,7 +3516,7 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
                 return struct_type;
             }
         } else {
-            // For arrays, we just verify each element matches the element type
+            /* For arrays, we just verify each element matches the element type */
             Type* element_type = struct_type->as.array.element_type;
             for (size_t i = 0; i < node->fields->length(); ++i) {
                 ASTNamedInitializer* init = (*node->fields)[i];
@@ -3449,7 +3524,7 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
                 Type* val_type = visit(init->value);
                 if (!val_type || is_type_undefined(val_type)) return get_g_type_undefined();
                 if (!IsTypeAssignableTo(val_type, element_type, init->loc)) {
-                    // Error already reported
+                    /* Error already reported */
                 }
             }
             return struct_type;
@@ -3457,8 +3532,8 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
         return get_g_type_undefined();
     }
 
-    // For anonymous structs, we return undefined if called without context.
-    // Callers like visitVarDecl handle anonymous initializers specially.
+    /* For anonymous structs, we return undefined if called without context. */
+    /* Callers like visitVarDecl handle anonymous initializers specially. */
     return get_g_type_undefined();
 }
 
@@ -3466,23 +3541,23 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     const char* enum_name = current_struct_name_;
     StructNameGuard name_guard(*this, NULL);
 
-    // 1. Determine the backing type.
+    /* 1. Determine the backing type. */
     Type* backing_type = NULL;
     if (node->backing_type) {
         backing_type = visit(node->backing_type);
         if (!backing_type || is_type_undefined(backing_type)) return get_g_type_undefined();
     } else {
-        // Default backing type is i32, to be compatible with C enums.
+        /* Default backing type is i32, to be compatible with C enums. */
         backing_type = resolvePrimitiveTypeName("i32");
     }
 
     if (!backing_type) {
-        // This can happen if the backing type is an undeclared identifier.
-        // The error would have been reported during visit(node->backing_type).
+        /* This can happen if the backing type is an undeclared identifier. */
+        /* The error would have been reported during visit(node->backing_type). */
         return get_g_type_undefined();
     }
 
-    // 2. Validate that the backing type is an integer.
+    /* 2. Validate that the backing type is an integer. */
     if (!isIntegerType(backing_type)) {
         SourceLocation loc;
         if (node->backing_type) {
@@ -3493,7 +3568,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
         return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Enum backing type must be an integer.");
     }
 
-    // 3. Process enum members.
+    /* 3. Process enum members. */
     void* mem = unit_.getArena().alloc(sizeof(DynamicArray<EnumMember>));
     if (!mem) {
         fatalError("Out of memory");
@@ -3534,7 +3609,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             return reportAndReturnUndefined(member_node_wrapper->loc, ERR_TYPE_MISMATCH, "Enum member value overflows its backing type.");
         }
 
-        // Check for unique member names
+        /* Check for unique member names */
         for (size_t j = 0; j < i; ++j) {
             if (identifiers_equal((*members)[j].name, member_node->name)) {
                 return reportAndReturnUndefined(member_node_wrapper->loc, ERR_REDEFINITION, "Duplicate enum member name");
@@ -3563,7 +3638,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 
     if (has_error) return get_g_type_undefined();
 
-    // 4. Create and return the new enum type.
+    /* 4. Create and return the new enum type. */
     Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
     if (enum_name) {
         enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
@@ -3732,7 +3807,7 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
     if (decl->tags) {
         for (size_t i = 0; i < decl->tags->length(); ++i) {
             const char* tag = (*decl->tags)[i];
-            // Check for duplicates within this set
+            /* Check for duplicates within this set */
             for (size_t j = 0; j < i; ++j) {
                 if (plat_strcmp((*decl->tags)[j], tag) == 0) {
                     char msg[256];
@@ -3741,9 +3816,9 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
                     safe_append(cur, rem, "Duplicate error tag '");
                     safe_append(cur, rem, tag);
                     safe_append(cur, rem, "' in error set definition");
-                    // Important: report and return sentinel to prevent further errors
-                    // but we must use a hint if the test expects it.
-                    // Actually, the test expects ERR_REDEFINITION and a hint.
+                    /* Important: report and return sentinel to prevent further errors */
+                    /* but we must use a hint if the test expects it. */
+                    /* Actually, the test expects ERR_REDEFINITION and a hint. */
                     return reportAndReturnUndefined(node->loc, ERR_REDEFINITION, msg);
                 }
             }
@@ -3772,7 +3847,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
         return reportAndReturnUndefined(node->left->loc, ERR_TYPE_MISMATCH, "Expected error set for merge");
     }
 
-    // Merge tags
+    /* Merge tags */
     tags_mem = unit_.getArena().alloc(sizeof(DynamicArray<const char*>));
     if (!tags_mem) plat_abort();
     merged_tags = new (tags_mem) DynamicArray<const char*>(unit_.getArena());
@@ -3971,7 +4046,7 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
             return false;
         }
         case NODE_UNARY_OP:
-            // Check for dereferencing a const pointer, e.g. *const u8
+            /* Check for dereferencing a const pointer, e.g. *const u8 */
             if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
                 if (!node->as.unary_op.operand) return false;
                 Type* ptr_type = node->as.unary_op.operand->resolved_type ? node->as.unary_op.operand->resolved_type : visit(node->as.unary_op.operand);
@@ -3989,7 +4064,7 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
                     return array_type->as.slice.is_const;
                 }
             }
-            // An array access is const if the array itself is const.
+            /* An array access is const if the array itself is const. */
             return isLValueConst(node->as.array_access->array);
         }
         case NODE_MEMBER_ACCESS: {
@@ -3998,7 +4073,7 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
             if (base_type && !is_type_undefined(base_type) && base_type->kind == TYPE_POINTER) {
                 return base_type->as.pointer.is_const;
             }
-            // A member access is const if the struct itself is const.
+            /* A member access is const if the struct itself is const. */
             return isLValueConst(node->as.member_access->base);
         }
         case NODE_PAREN_EXPR:
@@ -4028,105 +4103,105 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return false;
     }
 
-    // undefined is compatible with anything
+    /* undefined is compatible with anything */
     if (actual->kind == TYPE_UNDEFINED) {
         return true;
     }
 
-    // noreturn is compatible with anything (coerces to anything)
+    /* noreturn is compatible with anything (coerces to anything) */
     if (actual->kind == TYPE_NORETURN) {
         return true;
     }
 
-    // anytype is compatible with anything
+    /* anytype is compatible with anything */
     if (expected->kind == TYPE_ANYTYPE || actual->kind == TYPE_ANYTYPE) {
         return true;
     }
 
-    // type is compatible with any type (as a value)
+    /* type is compatible with any type (as a value) */
     if (expected->kind == TYPE_TYPE) {
         return true;
     }
 
-    // Handle null assignment to any pointer, function pointer, or optional
+    /* Handle null assignment to any pointer, function pointer, or optional */
     if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER || expected->kind == TYPE_OPTIONAL)) {
         return true;
     }
 
-    // Enum to Integer conversion (C89 compatible)
+    /* Enum to Integer conversion (C89 compatible) */
     if (actual->kind == TYPE_ENUM && isIntegerType(expected)) {
         return true;
     }
 
-    // Array to Slice coercion
+    /* Array to Slice coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
         return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
     }
 
-    // Optional types coercions
+    /* Optional types coercions */
     if (expected->kind == TYPE_OPTIONAL) {
-        // T -> ?T (implicit wrapping)
+        /* T -> ?T (implicit wrapping) */
         if (areTypesCompatible(expected->as.optional.payload, actual)) {
             return true;
         }
     }
 
-    // Error Handling coercions
+    /* Error Handling coercions */
     if (expected->kind == TYPE_ERROR_UNION) {
-        // T -> !T (success wrapping)
+        /* T -> !T (success wrapping) */
         if (areTypesCompatible(expected->as.error_union.payload, actual)) {
             return true;
         }
-        // error.Tag -> !T (error wrapping)
+        /* error.Tag -> !T (error wrapping) */
         if (actual->kind == TYPE_ERROR_SET) {
             return true;
         }
     }
 
-    // Slice to Slice assignment/coercion
+    /* Slice to Slice assignment/coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_SLICE) {
         if (areTypesEqual(expected->as.slice.element_type, actual->as.slice.element_type)) {
-            // Const correctness: []T can be used as []const T, but not vice-versa
+            /* Const correctness: []T can be used as []const T, but not vice-versa */
             return expected->as.slice.is_const || !actual->as.slice.is_const;
         }
     }
 
-    // Widening for signed integers
+    /* Widening for signed integers */
     bool actual_is_signed = (actual->kind >= TYPE_I8 && actual->kind <= TYPE_I64) || actual->kind == TYPE_ISIZE;
     bool expected_is_signed = (expected->kind >= TYPE_I8 && expected->kind <= TYPE_I64) || expected->kind == TYPE_ISIZE;
     if (actual_is_signed && expected_is_signed) {
-        // bit-width based widening
+        /* bit-width based widening */
         return actual->size <= expected->size;
     }
 
-    // Widening for unsigned integers
+    /* Widening for unsigned integers */
     bool actual_is_unsigned = (actual->kind >= TYPE_U8 && actual->kind <= TYPE_U64) || actual->kind == TYPE_USIZE;
     bool expected_is_unsigned = (expected->kind >= TYPE_U8 && expected->kind <= TYPE_U64) || expected->kind == TYPE_USIZE;
     if (actual_is_unsigned && expected_is_unsigned) {
-        // bit-width based widening
+        /* bit-width based widening */
         return actual->size <= expected->size;
     }
 
-    // Widening for floats
+    /* Widening for floats */
     if (actual->kind == TYPE_F32 && expected->kind == TYPE_F64) {
         return true;
     }
 
-    // Error Union compatibility (Zig-like for analysis purposes)
+    /* Error Union compatibility (Zig-like for analysis purposes) */
     if (expected->kind == TYPE_ERROR_UNION) {
-        // T is compatible with !T (implicit wrap)
+        /* T is compatible with !T (implicit wrap) */
         if (areTypesCompatible(expected->as.error_union.payload, actual)) {
             return true;
         }
     }
     if (actual->kind == TYPE_ERROR_UNION) {
-        // !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass)
+        /* !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass) */
         if (areTypesCompatible(expected, actual->as.error_union.payload)) {
             return true;
         }
     }
 
-    // Function Pointer compatibility
+    /* Function Pointer compatibility */
     if (expected->kind == TYPE_FUNCTION_POINTER) {
         if (actual->kind == TYPE_FUNCTION_POINTER) {
             return signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
@@ -4138,73 +4213,73 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
     }
 
-    // Slice -> many-item pointer coercion
+    /* Slice -> many-item pointer coercion */
     if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many &&
         actual->kind == TYPE_SLICE) {
         if (areTypesCompatible(expected->as.pointer.base, actual->as.slice.element_type)) {
-            // Const correctness: []T -> [*]const T allowed, but []const T -> [*]T not allowed
+            /* Const correctness: []T -> [*]const T allowed, but []const T -> [*]T not allowed */
             if (!expected->as.pointer.is_const && actual->as.slice.is_const)
                 return false;
             return true;
         }
     }
 
-    // Array -> many-item pointer coercion
+    /* Array -> many-item pointer coercion */
     if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many &&
         actual->kind == TYPE_ARRAY) {
         if (areTypesCompatible(expected->as.pointer.base, actual->as.array.element_type)) {
-            // Array elements are always 'const' conceptually if the array is const,
-            // but for bootstrap we mostly care about T -> [*]const T vs [*]T.
-            // For now, let's treat array to many-item pointer as always allowed
-            // unless we have specific const tracking for arrays.
+            /* Array elements are always 'const' conceptually if the array is const, */
+            /* but for bootstrap we mostly care about T -> [*]const T vs [*]T. */
+            /* For now, let's treat array to many-item pointer as always allowed */
+            /* unless we have specific const tracking for arrays. */
             return true;
         }
     }
 
-    // Pointer compatibility
+    /* Pointer compatibility */
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         Type* actual_base = actual->as.pointer.base;
         Type* expected_base = expected->as.pointer.base;
 
-        // Allow T* -> void* (implicit)
+        /* Allow T* -> void* (implicit) */
         if (expected_base->kind == TYPE_VOID && actual_base->kind != TYPE_VOID) {
-             // Const correctness: cannot discard const during conversion
+             /* Const correctness: cannot discard const during conversion */
              return expected->as.pointer.is_const || !actual->as.pointer.is_const;
         }
 
-        // C89 exception: *void -> *T (implicit conversion)
+        /* C89 exception: *void -> *T (implicit conversion) */
         if (actual_base->kind == TYPE_VOID && expected_base->kind != TYPE_VOID) {
-            // Only allow if target base type is C89-compatible
+            /* Only allow if target base type is C89-compatible */
             if (is_c89_compatible(expected_base)) {
-                // Const correctness: cannot discard const during conversion
-                // *const void -> *T (Error)
-                // *void -> *const T (OK)
+                /* Const correctness: cannot discard const during conversion */
+                /* *const void -> *T (Error) */
+                /* *void -> *const T (OK) */
                 return expected->as.pointer.is_const || !actual->as.pointer.is_const;
             }
         }
 
-        // Implicit single-item to many-item pointer conversion
+        /* Implicit single-item to many-item pointer conversion */
         if (!actual->as.pointer.is_many && expected->as.pointer.is_many) {
-             // Allowed if base types match and const-correctness is maintained
+             /* Allowed if base types match and const-correctness is maintained */
              if (areTypesEqual(actual_base, expected_base)) {
                  return expected->as.pointer.is_const || !actual->as.pointer.is_const;
              }
              return false;
         }
 
-        // Must have the same pointer kind (single-item vs many-item)
+        /* Must have the same pointer kind (single-item vs many-item) */
         if (actual->as.pointer.is_many != expected->as.pointer.is_many) {
             return false;
         }
 
-        // Must have the same base type
+        /* Must have the same base type */
         if (!areTypesEqual(actual_base, expected_base)) {
             return false;
         }
-        // A mutable pointer can be assigned to a const pointer,
-        // but not the other way around.
-        // *T -> *const T (OK)
-        // *const T -> *T (Error)
+        /* A mutable pointer can be assigned to a const pointer, */
+        /* but not the other way around. */
+        /* *T -> *const T (OK) */
+        /* *const T -> *T (Error) */
         return expected->as.pointer.is_const || !actual->as.pointer.is_const;
     }
 
@@ -4234,11 +4309,11 @@ bool TypeChecker::isUnsignedIntegerType(Type* type) {
     if (!type) {
         return false;
     }
-    // unsigned integers: u8..u64 and usize
+    /* unsigned integers: u8..u64 and usize */
     if (type->kind >= TYPE_U8 && type->kind <= TYPE_U64) return true;
     if (type->kind == TYPE_USIZE) return true;
 
-    // Non-negative integer literals can be coerced to unsigned
+    /* Non-negative integer literals can be coerced to unsigned */
     if (type->kind == TYPE_INTEGER_LITERAL && type->as.integer_literal.value >= 0) {
         return true;
     }
@@ -4251,11 +4326,11 @@ bool TypeChecker::isCompletePointerType(Type* type) {
     Type* base = type->as.pointer.base;
     if (!base) return false;
 
-    // void is incomplete
+    /* void is incomplete */
     if (base->kind == TYPE_VOID) return false;
 
 
-    // Structs/Unions must have size calculated
+    /* Structs/Unions must have size calculated */
     if (base->kind == TYPE_STRUCT || base->kind == TYPE_UNION) {
         return base->size != 0;
     }
@@ -4269,9 +4344,9 @@ bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
     Type* baseA = a->as.pointer.base;
     Type* baseB = b->as.pointer.base;
 
-    // In our bootstrap compiler, primitive types are singletons (get_g_type_*)
-    // So pointer equality works for them.
-    // For structs/unions/enums, they are also unique per declaration.
+    /* In our bootstrap compiler, primitive types are singletons (get_g_type_*) */
+    /* So pointer equality works for them. */
+    /* For structs/unions/enums, they are also unique per declaration. */
     return baseA == baseB;
 }
 
@@ -4288,15 +4363,15 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
 
-    if (!left_is_ptr && !right_is_ptr) return NULL; // Not pointer arithmetic, NULL is OK here as it's a query
+    if (!left_is_ptr && !right_is_ptr) return NULL; /* Not pointer arithmetic, NULL is OK here as it's a query */
 
-    // Case 1: ptr - ptr
+    /* Case 1: ptr - ptr */
     if (left_is_ptr && right_is_ptr) {
         if (op != TOKEN_MINUS) {
             return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Cannot use this operator on two pointers");
         }
 
-        // Both must be complete pointers (not void*, not multi-level)
+        /* Both must be complete pointers (not void*, not multi-level) */
         if (!isCompletePointerType(left_type)) {
             return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
         }
@@ -4304,7 +4379,7 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
             return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
         }
 
-        // Zig only allows pointer subtraction on many-item pointers (and slices)
+        /* Zig only allows pointer subtraction on many-item pointers (and slices) */
         if (!left_type->as.pointer.is_many || !right_type->as.pointer.is_many) {
             return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Pointer subtraction is only allowed on many-item pointers ([*]T)");
         }
@@ -4316,38 +4391,38 @@ Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Tok
         return get_g_type_isize();
     }
 
-    // Case 2: ptr +/- int or int + ptr
+    /* Case 2: ptr +/- int or int + ptr */
     Type* ptr_type = left_is_ptr ? left_type : right_type;
     Type* int_type = left_is_ptr ? right_type : left_type;
 
     if (!isIntegerType(int_type)) {
-        // Pointer and something non-integer (and not another pointer).
+        /* Pointer and something non-integer (and not another pointer). */
         return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Pointers can only be added to/subtracted from integers");
     }
 
-    // Check operator
+    /* Check operator */
     if (op == TOKEN_PLUS) {
-        // OK: ptr + int, int + ptr
+        /* OK: ptr + int, int + ptr */
     } else if (op == TOKEN_MINUS) {
         if (!left_is_ptr) {
             return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Cannot subtract pointer from integer");
         }
-        // OK: ptr - int
+        /* OK: ptr - int */
     } else {
         return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_INVALID_OPERATOR, "Invalid operator for pointer arithmetic");
     }
 
-    // Check if pointer is complete
+    /* Check if pointer is complete */
     if (!isCompletePointerType(ptr_type)) {
         return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_VOID, "Arithmetic on void pointer, incomplete type, or multi-level pointer is not allowed");
     }
 
-    // Zig only allows pointer arithmetic on many-item pointers
+    /* Zig only allows pointer arithmetic on many-item pointers */
     if (!ptr_type->as.pointer.is_many) {
         return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "Pointer arithmetic is only allowed on many-item pointers ([*]T)");
     }
 
-    // Check if integer is unsigned (including non-negative literals)
+    /* Check if integer is unsigned (including non-negative literals) */
     if (!isUnsignedIntegerType(int_type)) {
         return reportAndReturnUndefined(loc, ERR_POINTER_ARITHMETIC_NON_UNSIGNED, "Pointer arithmetic requires an unsigned integer offset");
     }
@@ -4364,7 +4439,7 @@ Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* ri
             return get_g_type_bool();
         }
     }
-    return NULL; // NULL means "no promotion possible"
+    return NULL; /* NULL means "no promotion possible" */
 }
 
 Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op) {
@@ -4384,7 +4459,7 @@ Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* ri
             return left_type;
         }
     }
-    return NULL; // NULL means "no promotion possible"
+    return NULL; /* NULL means "no promotion possible" */
 }
 
 bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
@@ -4398,12 +4473,12 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
         case TYPE_U16: return (value >= 0 && value <= 65535);
         case TYPE_I32: return (value >= -2147483647 - 1 && value <= 2147483647);
         case TYPE_U32: return (value >= 0 && (u64)value <= 0xFFFFFFFFU);
-        case TYPE_I64: return true; // Any i64 fits in i64
+        case TYPE_I64: return true; /* Any i64 fits in i64 */
         case TYPE_U64: return value >= 0;
-        // For isize/usize, we assume 32-bit for the bootstrap compiler.
+        /* For isize/usize, we assume 32-bit for the bootstrap compiler. */
         case TYPE_ISIZE: return (value >= (i64)-2147483647 - 1 && value <= 2147483647);
         case TYPE_USIZE: return value >= 0 && (u64)value <= 0xFFFFFFFFU;
-        // C89 allows implicit conversion from integer literals to floats.
+        /* C89 allows implicit conversion from integer literals to floats. */
         case TYPE_F32: return true;
         case TYPE_F64: return true;
         default:       return false;
@@ -4412,7 +4487,7 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
 
 bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
     if (!isIntegerType(int_type)) {
-        return false; // Should not happen with enums
+        return false; /* Should not happen with enums */
     }
 
     switch (int_type->kind) {
@@ -4422,13 +4497,13 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
         case TYPE_U16:  return value >= 0 && value <= 65535;
         case TYPE_I32:  return value >= (i64)-2147483647 - 1 && value <= 2147483647;
         case TYPE_U32:  return value >= 0 && (u64)value <= 0xFFFFFFFFU;
-        // For 64-bit types, i64 can hold all values, so we only check unsigned.
+        /* For 64-bit types, i64 can hold all values, so we only check unsigned. */
         case TYPE_I64:  return true;
         case TYPE_U64:  return value >= 0;
-        // For isize/usize, we assume 32-bit for the bootstrap compiler.
+        /* For isize/usize, we assume 32-bit for the bootstrap compiler. */
         case TYPE_ISIZE: return value >= (i64)-2147483647 - 1 && value <= 2147483647;
         case TYPE_USIZE: return value >= 0 && (u64)value <= 0xFFFFFFFFU;
-        default: return false; // Not an integer type
+        default: return false; /* Not an integer type */
     }
 }
 
@@ -4482,13 +4557,13 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             return false;
         }
         case NODE_WHILE_STMT: {
-            // If the condition is the boolean literal 'true', and the body always returns,
-            // then the while statement always returns.
-            // Note: This doesn't account for 'break' statements inside the loop.
-            // But since we just added 'break', we should be careful.
-            // For bootstrap, we'll keep it simple: only 'while (true)' with no breaks.
-            // Actually, even simpler: just return false for now to avoid complexity,
-            // and fix the test case.
+            /* If the condition is the boolean literal 'true', and the body always returns, */
+            /* then the while statement always returns. */
+            /* Note: This doesn't account for 'break' statements inside the loop. */
+            /* But since we just added 'break', we should be careful. */
+            /* For bootstrap, we'll keep it simple: only 'while (true)' with no breaks. */
+            /* Actually, even simpler: just return false for now to avoid complexity, */
+            /* and fix the test case. */
             return false;
         }
         case NODE_EXPRESSION_STMT:
@@ -4518,7 +4593,7 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
     } else if (decl_node->type == NODE_UNION_DECL) {
         fields = decl_node->as.union_decl->fields;
     } else {
-        return; // Should not happen if called correctly
+        return; /* Should not happen if called correctly */
     }
 
     if (!fields) {
@@ -4528,88 +4603,92 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
     for (size_t i = 0; i < fields->length(); ++i) {
         ASTNode* field_node = (*fields)[i];
         if (field_node->type != NODE_STRUCT_FIELD) {
-            continue; // Should not happen, but defensive check
+            continue; /* Should not happen, but defensive check */
         }
 
         ASTStructFieldNode* field = field_node->as.struct_field;
-        // Resolve the field's type by visiting its type node.
+        /* Resolve the field's type by visiting its type node. */
         visit(field->type);
     }
 }
 
-bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc) {
+bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc, ASTNode* source_node) {
+    if (source_node && needsStringLiteralCoercion(source_node, target_type)) {
+        return true;
+    }
+
     if (source_type->kind == TYPE_UNDEFINED) return true;
     if (source_type->kind == TYPE_NORETURN) return true;
 
-    // Null literal handling
+    /* Null literal handling */
     if (source_type->kind == TYPE_NULL) {
         return (target_type->kind == TYPE_POINTER || target_type->kind == TYPE_FUNCTION_POINTER || target_type->kind == TYPE_OPTIONAL);
     }
 
-    // Exact match always works
+    /* Exact match always works */
     if (source_type == target_type) return true;
 
-    // anytype target (like special discard '_') accepts anything
+    /* anytype target (like special discard '_') accepts anything */
     if (target_type->kind == TYPE_ANYTYPE) return true;
 
-    // Optional types assignment
+    /* Optional types assignment */
     if (target_type->kind == TYPE_OPTIONAL) {
-        // T -> ?T (implicit wrapping)
+        /* T -> ?T (implicit wrapping) */
         if (IsTypeAssignableTo(source_type, target_type->as.optional.payload, loc)) {
             return true;
         }
     }
 
-    // Error Union assignment
+    /* Error Union assignment */
     if (target_type->kind == TYPE_ERROR_UNION) {
-        // T -> !T (success wrapping)
+        /* T -> !T (success wrapping) */
         if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
             return true;
         }
-        // error.Tag -> !T (error wrapping)
+        /* error.Tag -> !T (error wrapping) */
         if (source_type->kind == TYPE_ERROR_SET) {
             return true;
         }
     }
 
-    // Enum to Integer conversion (C89 compatible)
+    /* Enum to Integer conversion (C89 compatible) */
     if (source_type->kind == TYPE_ENUM && isIntegerType(target_type)) {
         return true;
     }
 
-    // Array to Slice coercion
+    /* Array to Slice coercion */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
         return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
     }
 
-    // Slice to Slice assignment/coercion
+    /* Slice to Slice assignment/coercion */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
         if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
-            // Const correctness: []T can be used as []const T, but not vice-versa
+            /* Const correctness: []T can be used as []const T, but not vice-versa */
             return target_type->as.slice.is_const || !source_type->as.slice.is_const;
         }
     }
 
-    // Slice -> many-item pointer coercion
+    /* Task 9.7: Slice -> many-item pointer coercion */
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         source_type->kind == TYPE_SLICE) {
-        if (IsTypeAssignableTo(source_type->as.slice.element_type, target_type->as.pointer.base, loc)) {
-            // Const correctness
+        if (areTypesCompatible(target_type->as.pointer.base, source_type->as.slice.element_type)) {
+            /* Const correctness */
             if (!target_type->as.pointer.is_const && source_type->as.slice.is_const)
                 return false;
             return true;
         }
     }
 
-    // Array -> many-item pointer coercion
+    /* Task 9.7: Array -> many-item pointer coercion */
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         source_type->kind == TYPE_ARRAY) {
-        if (IsTypeAssignableTo(source_type->as.array.element_type, target_type->as.pointer.base, loc)) {
+        if (areTypesCompatible(target_type->as.pointer.base, source_type->as.array.element_type)) {
             return true;
         }
     }
 
-    // Pointer to Many-item pointer assignment
+    /* Pointer to Many-item pointer assignment */
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         source_type->kind == TYPE_POINTER && !source_type->as.pointer.is_many) {
         if (areTypesEqual(target_type->as.pointer.base, source_type->as.pointer.base)) {
@@ -4617,7 +4696,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
-    // Function Pointer assignment
+    /* Function Pointer assignment */
     if (target_type->kind == TYPE_FUNCTION_POINTER) {
         if (source_type->kind == TYPE_FUNCTION_POINTER || source_type->kind == TYPE_FUNCTION) {
             bool match = false;
@@ -4649,7 +4728,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
-    // Numeric types require exact match in C89
+    /* Numeric types require exact match in C89 */
     if (isNumericType(source_type) && isNumericType(target_type)) {
         char src_str[64], tgt_str[64];
         typeToString(source_type, src_str, sizeof(src_str));
@@ -4666,20 +4745,20 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         return false;
     }
 
-    // Pointer assignment rules
+    /* Pointer assignment rules */
     if (source_type->kind == TYPE_POINTER && target_type->kind == TYPE_POINTER) {
         Type* src_base = source_type->as.pointer.base;
         Type* tgt_base = target_type->as.pointer.base;
 
-        // Allow T* -> void* (implicit)
+        /* Allow T* -> void* (implicit) */
         if (tgt_base->kind == TYPE_VOID && src_base->kind != TYPE_VOID) {
             return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
         }
 
-        // C89 exception: *void -> *T (implicit conversion)
+        /* C89 exception: *void -> *T (implicit conversion) */
         if (src_base->kind == TYPE_VOID && tgt_base->kind != TYPE_VOID) {
             if (is_c89_compatible(tgt_base)) {
-                // Const correctness: cannot discard const during conversion
+                /* Const correctness: cannot discard const during conversion */
                 if (target_type->as.pointer.is_const || !source_type->as.pointer.is_const) {
                     return true;
                 } else {
@@ -4689,12 +4768,12 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
             }
         }
 
-        // Const correctness check
+        /* Const correctness check */
         bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
 
-        // Base types must match
+        /* Base types must match */
         if (areTypesEqual(src_base, tgt_base)) {
-            // Zig allows implicit conversion from single-item pointer to many-item pointer.
+            /* Zig allows implicit conversion from single-item pointer to many-item pointer. */
             if (!source_type->as.pointer.is_many && target_type->as.pointer.is_many) {
                 if (const_compatible) return true;
             }
@@ -4709,7 +4788,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
-    // All other cases fail
+    /* All other cases fail */
     char src_str[64], tgt_str[64];
     typeToString(source_type, src_str, sizeof(src_str));
     typeToString(target_type, tgt_str, sizeof(tgt_str));
@@ -4758,7 +4837,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     }
 
     if (is_explicit || is_implicit) {
-        // Collect parameter info
+        /* Collect parameter info */
         void* params_mem = unit_.getArena().alloc(sizeof(DynamicArray<GenericParamInfo>));
         if (!params_mem) fatalError("Out of memory");
         DynamicArray<GenericParamInfo>* params = new (params_mem) DynamicArray<GenericParamInfo>(unit_.getArena());
@@ -4778,14 +4857,14 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
                 info.type_value = (arg_type && arg_type->kind == TYPE_TYPE) ? arg->resolved_type : arg_type;
                 info.param_name = NULL;
             } else {
-                // If it's not a type expression, it might be a value that infers a type
+                /* If it's not a type expression, it might be a value that infers a type */
                 i64 int_val;
                 if (evaluateConstantExpression(arg, &int_val)) {
                     info.kind = GENERIC_PARAM_COMPTIME_INT;
                     info.int_value = int_val;
                     info.param_name = NULL;
                 } else {
-                    // Implicit inference from argument type
+                    /* Implicit inference from argument type */
                     info.kind = GENERIC_PARAM_TYPE;
                     info.type_value = arg_type;
                     info.param_name = NULL;
@@ -4794,7 +4873,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             params->append(info);
         }
 
-        // Compute hash for deduplication
+        /* Compute hash for deduplication */
         u32 hash = 2166136261u;
         for (size_t i = 0; i < params->length(); ++i) {
             GenericParamInfo& info = (*params)[i];
@@ -4836,15 +4915,15 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
     if (call->callee->type == NODE_IDENTIFIER) {
         const char* callee_name = call->callee->as.identifier.name;
 
-        // Guard 2: Built-in functions
+        /* Guard 2: Built-in functions */
         if (callee_name[0] == '@') {
             return BUILTIN_REJECTED;
         }
 
-        // Guard 3: Symbol must exist
+        /* Guard 3: Symbol must exist */
         sym = unit_.getSymbolTable().lookup(callee_name);
     } else if (call->callee->type == NODE_MEMBER_ACCESS) {
-        // Module member access: utils.add()
+        /* Module member access: utils.add() */
         Type* base_type = visit(call->callee->as.member_access->base);
         if (base_type && base_type->kind == TYPE_MODULE) {
             Module* target_mod = (Module*)base_type->as.module.module_ptr;
@@ -4854,10 +4933,10 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         }
     }
 
-    // Guard 1: Handle indirect calls or unresolved symbols
+    /* Guard 1: Handle indirect calls or unresolved symbols */
     if (!sym) {
         entry.call_type = CALL_INDIRECT;
-        // If it's a function pointer (even if accessed via member/array/etc), we allow it.
+        /* If it's a function pointer (even if accessed via member/array/etc), we allow it. */
         if (callee_resolved_type && (callee_resolved_type->kind == TYPE_FUNCTION_POINTER || callee_resolved_type->kind == TYPE_FUNCTION)) {
             if (is_c89_compatible(callee_resolved_type)) {
                 return RESOLVED;
@@ -4865,13 +4944,13 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
             return C89_INCOMPATIBLE;
         }
 
-        // If it was a simple identifier that wasn't found, it's truly unresolved.
+        /* If it was a simple identifier that wasn't found, it's truly unresolved. */
         if (call->callee->type == NODE_IDENTIFIER) {
             return UNRESOLVED_SYMBOL;
         }
 
-        // For member access, if it's not a module member, it should have been a struct field.
-        // If it reached here without a symbol and without a function type, it's invalid.
+        /* For member access, if it's not a module member, it should have been a struct field. */
+        /* If it reached here without a symbol and without a function type, it's invalid. */
         if (call->callee->type == NODE_MEMBER_ACCESS) {
              return UNRESOLVED_SYMBOL;
         }
@@ -4879,7 +4958,7 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         return INDIRECT_REJECTED;
     }
 
-    // Guard 4: Forward Reference / Not resolved yet
+    /* Guard 4: Forward Reference / Not resolved yet */
     if (!sym->symbol_type && sym->details) {
         if (sym->kind == SYMBOL_FUNCTION) {
             visitFnSignature((ASTFnDeclNode*)sym->details);
@@ -4892,7 +4971,7 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         return FORWARD_REFERENCE;
     }
 
-    // Guard 5: Handle generics
+    /* Guard 5: Handle generics */
     if (sym->is_generic) {
         entry.call_type = CALL_GENERIC;
         const GenericInstantiation* inst = unit_.getGenericCatalogue().findInstantiation(sym->name, call->callee->loc);
@@ -4904,15 +4983,15 @@ ResolutionResult TypeChecker::resolveCallSite(ASTFunctionCallNode* call, CallSit
         }
     }
 
-    // Guard 6: Check C89 compatibility
+    /* Guard 6: Check C89 compatibility */
     if (sym->symbol_type && !is_c89_compatible(sym->symbol_type)) {
         return C89_INCOMPATIBLE;
     }
 
-    // Main path: Direct or Recursive call resolution
+    /* Main path: Direct or Recursive call resolution */
     entry.mangled_name = sym->mangled_name;
 
-    // Check if recursive
+    /* Check if recursive */
     if (current_fn_name_ && plat_strcmp(sym->name, current_fn_name_) == 0) {
         entry.call_type = CALL_RECURSIVE;
     } else {
@@ -5057,7 +5136,7 @@ const char* TypeChecker::exprToString(ASTNode* expr) {
             return expr->as.identifier.name ? expr->as.identifier.name : "";
         case NODE_MEMBER_ACCESS: {
             if (!expr->as.member_access) return "";
-            // Very simplified for now: base.field
+            /* Very simplified for now: base.field */
             const char* base = exprToString(expr->as.member_access->base);
             const char* field = expr->as.member_access->field_name ? expr->as.member_access->field_name : "";
             size_t len = plat_strlen(base) + 1 + plat_strlen(field) + 1;
@@ -5176,7 +5255,7 @@ Type* TypeChecker::visitIntCast(ASTNode* parent, ASTNumericCastNode* node) {
             return reportAndReturnUndefined(node->expr->loc, ERR_INT_CAST_OVERFLOW, msg);
         }
 
-        // In-place replace @intCast node with integer literal
+        /* In-place replace @intCast node with integer literal */
         parent->type = NODE_INTEGER_LITERAL;
         parent->as.integer_literal.value = (u64)val;
         parent->as.integer_literal.is_unsigned = isUnsignedIntegerType(target_type);
@@ -5256,7 +5335,7 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
         return reportAndReturnUndefined(parent->loc, ERR_OFFSETOF_FIELD_NOT_FOUND, buf);
     }
 
-    // Constant fold to integer literal
+    /* Constant fold to integer literal */
     parent->type = NODE_INTEGER_LITERAL;
     parent->as.integer_literal.value = offset;
     parent->as.integer_literal.is_unsigned = true;
@@ -5292,19 +5371,19 @@ Type* TypeChecker::visitFloatCast(ASTNode* parent, ASTNumericCastNode* node) {
         return reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_FLOAT, "source expression of @floatCast must be a floating-point type");
     }
 
-    // Constant folding
+    /* Constant folding */
     if (node->expr->type == NODE_FLOAT_LITERAL) {
         double val = node->expr->as.float_literal.value;
 
-        // Simple range check for f64 -> f32
+        /* Simple range check for f64 -> f32 */
         if (target_type->kind == TYPE_F32) {
-            // FLT_MAX is approx 3.4e38
+            /* FLT_MAX is approx 3.4e38 */
             if (val > 3.40282347e+38 || val < -3.40282347e+38) {
                 return reportAndReturnUndefined(node->expr->loc, ERR_FLOAT_CAST_OVERFLOW, "float cast overflow");
             }
         }
 
-        // In-place replace @floatCast node with float literal
+        /* In-place replace @floatCast node with float literal */
         parent->type = NODE_FLOAT_LITERAL;
         parent->as.float_literal.value = val;
         parent->as.float_literal.resolved_type = target_type;
@@ -5370,23 +5449,23 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
     if (!expr || !expr->resolved_type || !target_type) return;
 
-    // Coercion 1: Slice -> Many-Item Pointer
+    /* Coercion 1: Slice -> Many-Item Pointer */
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         expr->resolved_type->kind == TYPE_SLICE) {
 
-        // areTypesCompatible already checked const-correctness and element compatibility
-        // in IsTypeAssignableTo. We just need to inject the .ptr access.
+        /* areTypesCompatible already checked const-correctness and element compatibility */
+        /* in IsTypeAssignableTo. We just need to inject the .ptr access. */
         expr = createMemberAccess(expr, "ptr", target_type, expr->loc);
     }
-    // Coercion 2: Array -> Many-Item Pointer
+    /* Coercion 2: Array -> Many-Item Pointer */
     else if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
              expr->resolved_type->kind == TYPE_ARRAY) {
 
-        // In Zig, an array can be implicitly coerced to a many-item pointer.
-        // In our AST, we can represent this by taking the address of the first element.
-        // Or more simply, since we already have NODE_ARRAY_SLICE for array-to-slice,
-        // we can go Array -> Slice -> Pointer if we want, but let's do it directly.
-        // For array, it's basically &arr[0].
+        /* In Zig, an array can be implicitly coerced to a many-item pointer. */
+        /* In our AST, we can represent this by taking the address of the first element. */
+        /* Or more simply, since we already have NODE_ARRAY_SLICE for array-to-slice, */
+        /* we can go Array -> Slice -> Pointer if we want, but let's do it directly. */
+        /* For array, it's basically &arr[0]. */
         ASTNode* index0 = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
         ASTNode* access = createArrayAccess(expr, index0, expr->resolved_type->as.array.element_type, expr->loc);
         expr = createUnaryOp(access, TOKEN_AMPERSAND, target_type, expr->loc);

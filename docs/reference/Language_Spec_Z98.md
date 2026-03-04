@@ -43,8 +43,12 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
-- **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
-- **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+- **Properties**: Slices have built-in `.ptr` and `.len` properties.
+  - `slice.ptr` returns a many-item pointer (`[*]T` or `[*]const T`).
+  - `slice.len` returns a `usize`.
+- **Coercion**:
+  - Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+  - String literals (e.g., `"hello"`) can be implicitly coerced to constant byte slices (`[]const u8`).
 
 ### 1.5 Error Handling Types
 - **Error Sets**: `const MyErrors = error { Foo, Bar };`
@@ -176,7 +180,7 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
@@ -197,8 +201,9 @@ In specific contexts where a pointer is expected, the compiler provides implicit
 - Returning values from functions where the return type is [*]T or [*]const T.
 
 **Coercion Rules:**
-- **Slice to Pointer**: A slice []T is coerced to [*]T by accessing its .ptr field.
-- **Array to Pointer**: A fixed-size array [N]T is coerced to [*]T by taking the address of its first element (&arr[0]).
+- **Slice to Pointer**: A slice `[]T` is coerced to `[*]T` by accessing its `.ptr` field.
+- **Array to Pointer**: A fixed-size array `[N]T` is coerced to `[*]T` by taking the address of its first element (`&arr[0]`).
+- **String Literal to Pointer**: A string literal is already a single-item pointer to constant bytes (`*const [N]u8`), and can be coerced to a many-item pointer (`[*]const u8`).
 
 **Const Correctness:**
 Coercions are only allowed if they do not discard const qualifiers.
