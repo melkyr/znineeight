@@ -133,13 +133,14 @@ TEST_FUNC(Parser_TryExpr_Chained);
 TEST_FUNC(Parser_CatchExpression_Simple);
 TEST_FUNC(Parser_CatchExpression_WithPayload);
 TEST_FUNC(Parser_CatchExpression_MixedAssociativity);
-TEST_FUNC(Parser_Orelse_IsLeftAssociative);
-TEST_FUNC(Parser_Catch_IsLeftAssociative);
+TEST_FUNC(Parser_Orelse_IsRightAssociative);
+TEST_FUNC(Parser_Catch_IsRightAssociative);
+TEST_FUNC(Parser_CatchOrelse_IsRightAssociative);
 TEST_FUNC(Parser_CatchExpr_Simple);
-TEST_FUNC(Parser_CatchExpr_LeftAssociativity);
+TEST_FUNC(Parser_CatchExpr_RightAssociativity);
 TEST_FUNC(Parser_CatchExpr_MixedAssociativity);
 TEST_FUNC(Parser_OrelseExpr_Simple);
-TEST_FUNC(Parser_OrelseExpr_LeftAssociativity);
+TEST_FUNC(Parser_OrelseExpr_RightAssociativity);
 TEST_FUNC(Parser_OrelseExpr_Precedence);
 
 // Forward declarations for Group 3C: Struct & Union Declarations
@@ -219,6 +220,7 @@ TEST_FUNC(Parser_ComptimeBlock_Error_MissingClosingBrace);
 // Forward declarations for Group 3H: Integration, Bugs, and Edge Cases
 TEST_FUNC(Parser_AbortOnAllocationFailure);
 TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject);
+TEST_FUNC(Parser_MalformedStream_MissingEOF);
 TEST_FUNC(ParserIntegration_VarDeclWithBinaryExpr);
 TEST_FUNC(ParserIntegration_IfWithComplexCondition);
 TEST_FUNC(ParserIntegration_WhileWithFunctionCall);

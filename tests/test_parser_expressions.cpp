@@ -45,7 +45,7 @@ TEST_FUNC(Parser_CatchExpr_Simple) {
     return true;
 }
 
-TEST_FUNC(Parser_CatchExpr_LeftAssociativity) {
+TEST_FUNC(Parser_CatchExpr_RightAssociativity) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
@@ -57,21 +57,21 @@ TEST_FUNC(Parser_CatchExpr_LeftAssociativity) {
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_CATCH_EXPR);
 
-    // Root should be the second 'catch'
+    // Root should be the first 'catch': a catch (b catch c)
     ASTCatchExprNode* root = expr->as.catch_expr;
-    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+    ASSERT_EQ(root->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->payload->as.identifier.name, "a");
     ASSERT_TRUE(root->error_name == NULL);
 
-    // Payload should be 'a catch b'
-    ASTNode* payload = root->payload;
-    ASSERT_EQ(payload->type, NODE_CATCH_EXPR);
-    ASTCatchExprNode* payload_op = payload->as.catch_expr;
-    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
-    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
-    ASSERT_TRUE(payload_op->error_name == NULL);
+    // else_expr should be 'b catch c'
+    ASTNode* else_expr = root->else_expr;
+    ASSERT_EQ(else_expr->type, NODE_CATCH_EXPR);
+    ASTCatchExprNode* else_op = else_expr->as.catch_expr;
+    ASSERT_EQ(else_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->payload->as.identifier.name, "b");
+    ASSERT_EQ(else_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->else_expr->as.identifier.name, "c");
+    ASSERT_TRUE(else_op->error_name == NULL);
 
     return true;
 }
@@ -80,32 +80,32 @@ TEST_FUNC(Parser_CatchExpr_MixedAssociativity) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
+    // a orelse b catch c -> a orelse (b catch c)
     ParserTestContext ctx("a orelse b catch c", arena, interner);
     Parser* parser = ctx.getParser();
 
     ASTNode* expr = parser->parseExpression();
 
     ASSERT_TRUE(expr != NULL);
-    ASSERT_EQ(expr->type, NODE_CATCH_EXPR);
+    ASSERT_EQ(expr->type, NODE_ORELSE_EXPR);
 
-    ASTCatchExprNode* root = expr->as.catch_expr;
-    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
-    ASSERT_TRUE(root->error_name == NULL);
+    ASTOrelseExprNode* root = expr->as.orelse_expr;
+    ASSERT_EQ(root->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->payload->as.identifier.name, "a");
 
-    // Payload should be 'a orelse b'
-    ASTNode* payload = root->payload;
-    ASSERT_EQ(payload->type, NODE_ORELSE_EXPR);
-    ASTOrelseExprNode* payload_op = payload->as.orelse_expr;
-    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
-    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
+    // else_expr should be 'b catch c'
+    ASTNode* else_expr = root->else_expr;
+    ASSERT_EQ(else_expr->type, NODE_CATCH_EXPR);
+    ASTCatchExprNode* else_op = else_expr->as.catch_expr;
+    ASSERT_EQ(else_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->payload->as.identifier.name, "b");
+    ASSERT_EQ(else_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->else_expr->as.identifier.name, "c");
 
     return true;
 }
 
-TEST_FUNC(Parser_OrelseExpr_LeftAssociativity) {
+TEST_FUNC(Parser_OrelseExpr_RightAssociativity) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
@@ -117,19 +117,19 @@ TEST_FUNC(Parser_OrelseExpr_LeftAssociativity) {
     ASSERT_TRUE(expr != NULL);
     ASSERT_EQ(expr->type, NODE_ORELSE_EXPR);
 
-    // Root should be the second 'orelse'
+    // Root should be the first 'orelse': a orelse (b orelse c)
     ASTOrelseExprNode* root = expr->as.orelse_expr;
-    ASSERT_EQ(root->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(root->else_expr->as.identifier.name, "c");
+    ASSERT_EQ(root->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(root->payload->as.identifier.name, "a");
 
-    // Payload should be 'a orelse b'
-    ASTNode* payload = root->payload;
-    ASSERT_EQ(payload->type, NODE_ORELSE_EXPR);
-    ASTOrelseExprNode* payload_op = payload->as.orelse_expr;
-    ASSERT_EQ(payload_op->payload->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->payload->as.identifier.name, "a");
-    ASSERT_EQ(payload_op->else_expr->type, NODE_IDENTIFIER);
-    ASSERT_STREQ(payload_op->else_expr->as.identifier.name, "b");
+    // else_expr should be 'b orelse c'
+    ASTNode* else_expr = root->else_expr;
+    ASSERT_EQ(else_expr->type, NODE_ORELSE_EXPR);
+    ASTOrelseExprNode* else_op = else_expr->as.orelse_expr;
+    ASSERT_EQ(else_op->payload->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->payload->as.identifier.name, "b");
+    ASSERT_EQ(else_op->else_expr->type, NODE_IDENTIFIER);
+    ASSERT_STREQ(else_op->else_expr->as.identifier.name, "c");
 
     return true;
 }
