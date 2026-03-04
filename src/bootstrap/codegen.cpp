@@ -474,30 +474,8 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         return;
     }
 
-    /* Coercions */
-    if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
-        emitErrorUnionWrapping(effective_target, lvalue_node, target_type, rvalue);
-        return;
-    }
-    if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
-        emitOptionalWrapping(effective_target, lvalue_node, target_type, rvalue);
-        return;
-    }
-
-    /* Lifting */
-    if (rvalue->type == NODE_STRUCT_INITIALIZER) {
-        if (effective_target) {
-            emitInitializerAssignments(effective_target, rvalue);
-        } else {
-            writeIndent();
-            if (lvalue_node) {
-                emitExpression(lvalue_node);
-                writeString(" = ");
-            }
-            emitExpression(rvalue);
-            writeString(";\n");
-        }
-    } else if (rvalue->type == NODE_SWITCH_EXPR || rvalue->type == NODE_IF_EXPR ||
+    /* Lifting (must come before coercions because they handle their own recursive wrapping) */
+    if (rvalue->type == NODE_SWITCH_EXPR || rvalue->type == NODE_IF_EXPR ||
                rvalue->type == NODE_TRY_EXPR || rvalue->type == NODE_CATCH_EXPR ||
                rvalue->type == NODE_ORELSE_EXPR) {
 
@@ -513,6 +491,32 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         } else {
             /* Complex lvalue for lifted expression - currently not supported for assignment
                We'll fall back to normal emission which will report an error */
+            writeIndent();
+            if (lvalue_node) {
+                emitExpression(lvalue_node);
+                writeString(" = ");
+            }
+            emitExpression(rvalue);
+            writeString(";\n");
+        }
+        return;
+    }
+
+    /* Coercions */
+    if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
+        emitErrorUnionWrapping(effective_target, lvalue_node, target_type, rvalue);
+        return;
+    }
+    if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
+        emitOptionalWrapping(effective_target, lvalue_node, target_type, rvalue);
+        return;
+    }
+
+    /* Initializer Lifting */
+    if (rvalue->type == NODE_STRUCT_INITIALIZER) {
+        if (effective_target) {
+            emitInitializerAssignments(effective_target, rvalue);
+        } else {
             writeIndent();
             if (lvalue_node) {
                 emitExpression(lvalue_node);

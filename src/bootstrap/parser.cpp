@@ -75,6 +75,7 @@ void Parser::error(const char* msg) {
     /* Report error via ErrorHandler */
     if (error_handler_) {
         error_handler_->report(ERR_SYNTAX_ERROR, t.location, ErrorHandler::getMessage(ERR_SYNTAX_ERROR), msg);
+        error_handler_->printErrors();
     }
 
     /* Keep old debug output for now */

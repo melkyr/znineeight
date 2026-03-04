@@ -79,8 +79,12 @@ fn createJsonValue(p: *Parser, tag: JsonValueTag) *JsonValue {
 }
 
 fn parseNull(p: *Parser) ParseError!JsonValue {
+    const input = p.input;
+    const pos = p.pos;
+    const input_slice = input[pos..];
+    const null_slice: []const u8 = "null";
     if (p.input.len - p.pos < 4 or
-        !slice_eql(p.input[p.pos..][0..4], @ptrCast([]const u8, "null")))
+        !slice_eql(input_slice[0..4], null_slice))
     {
         return error.InvalidSyntax;
     }
