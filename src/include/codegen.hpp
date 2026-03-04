@@ -369,6 +369,10 @@ public:
      */
     void emitBufferedTypeDefinitions();
 
+    void emitBufferedSlices();
+    void emitBufferedErrorUnions();
+    void emitBufferedOptionals();
+
     /**
      * @brief Emits deferred statements for a scope exit.
      * @param target_label_id The label_id of the target loop (for break/continue). -1 for return.
@@ -524,6 +528,8 @@ private:
     size_t type_def_cap_;
     bool in_type_def_mode_;
     const char* module_name_;
+    const char* current_fn_name_;
+    bool is_main_function_;
     char last_char_;
     int for_loop_counter_;
     SourceLocation current_loc_;

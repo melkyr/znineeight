@@ -71,7 +71,14 @@ private:
     /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
      */
-    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter);
+    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds = 7);
+
+    enum SpecialTypeScanKind {
+        SCAN_SLICES = 1,
+        SCAN_ERROR_UNIONS = 2,
+        SCAN_OPTIONALS = 4,
+        SCAN_ALL = 7
+    };
 
     CompilationUnit& unit_;
     const char* entry_filename_;

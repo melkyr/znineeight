@@ -90,6 +90,30 @@ bool allPathsExit(const ASTNode* node) {
             if (!if_stmt->else_block) return false;
             return allPathsExit(if_stmt->then_block) && allPathsExit(if_stmt->else_block);
         }
+        case NODE_IF_EXPR: {
+            const ASTIfExprNode* if_expr = node->as.if_expr;
+            if (!if_expr->else_expr) return false;
+            return allPathsExit(if_expr->then_expr) && allPathsExit(if_expr->else_expr);
+        }
+        case NODE_SWITCH_EXPR: {
+            const ASTSwitchExprNode* sw = node->as.switch_expr;
+            if (!sw->prongs || sw->prongs->length() == 0) return false;
+            bool has_else = false;
+            for (size_t i = 0; i < sw->prongs->length(); ++i) {
+                if ((*sw->prongs)[i]->is_else) has_else = true;
+                if (!allPathsExit((*sw->prongs)[i]->body)) return false;
+            }
+            return has_else; /* Exhaustive switch with all paths exiting */
+        }
+        case NODE_TRY_EXPR:
+            /* try expression exits only on error path, but it doesn't always exit.
+               However, if used as a statement 'try ...', it might be considered divergent?
+               No, it only returns on error. */
+            return false;
+        case NODE_CATCH_EXPR:
+            return allPathsExit(node->as.catch_expr->payload) && allPathsExit(node->as.catch_expr->else_expr);
+        case NODE_ORELSE_EXPR:
+            return allPathsExit(node->as.orelse_expr->payload) && allPathsExit(node->as.orelse_expr->else_expr);
         case NODE_EXPRESSION_STMT:
             return allPathsExit(node->as.expression_stmt.expression);
         case NODE_PAREN_EXPR:
