@@ -16,7 +16,7 @@ This document details the findings from the "baptism of fire" where the Z98 comp
 | Tagged Unions | ⚠️ Unstable | `union(enum)` is recognized but complex nested initializations often fail type checking. |
 | Switch Captures | ⚠️ Unstable | `|payload|` syntax is supported but type inference within the capture is fragile. |
 | Recursive Types | ❌ Limited | Self-referential types via slices (`[]JsonValue`) sometimes fail resolution. Explicit pointers are safer. |
-| While Continue Expr | ❌ Missing | `while (cond) : (iter)` syntax is not supported by the parser. |
+| While Continue Expr | ✅ Fixed | `while (cond) : (iter) { ... }` is now supported as of Task 9.8. |
 | Implicit Coercion | ✅ Fixed | Strings and slices now implicitly coerce to `[]const u8` and `[*]const u8`. |
 
 ## Detailed Discoveries and Workarounds
@@ -32,19 +32,26 @@ if (cond) return error.Bad;
 if (cond) { return error.Bad; }
 ```
 
-### 3. Parser: Missing `while` Continue Expressions
-**Issue**: The standard Zig `while (cond) : (iter) { ... }` syntax is not yet implemented.
-**Workaround**: Move the iteration expression to the end of the loop body.
-```zig
-// Failed
-while (i < len) : (i += 1) { ... }
+### 2. Parser: Slicing Expression Limitations
+**Issue**: Slicing expressions involving member access (e.g., `p.input[p.pos..]`) can trigger "Expected a primary expression" when used as function arguments or in initializers. This is due to precedence issues in the Pratt parser where the `..` operator does not correctly bind to the preceding member access or index expression.
 
-// Worked
-while (i < len) {
-    ...
-    i += 1;
-}
+**Failing Example**:
+```zig
+// Trigger: syntax error: Expected a primary expression
+if (p.input.len - p.pos < 4 or
+    !slice_eql(p.input[p.pos..][0..4], "null")) { ... }
 ```
+
+**Workaround**: Assign the base or the slice to a temporary variable to clarify precedence.
+```zig
+const input = p.input;
+const pos = p.pos;
+const input_slice = input[pos..];
+if (input.len - pos < 4 or !slice_eql(input_slice[0..4], "null")) { ... }
+```
+
+### 3. Parser: Missing `while` Continue Expressions
+**Status**: FIXED in Task 9.8. `while (cond) : (iter) { ... }` is now supported.
 
 ### 4. Type Checker: Recursive Type Instability
 **Issue**: Defining `JsonValue` as a struct containing a slice of itself (`[]JsonValue`) caused "incomplete type" errors because slices are currently represented as structs, and the placeholder resolution for nested structs is not yet fully robust.
@@ -68,17 +75,70 @@ pub const JsonValue = struct {
 ### 5. Type Checker: Raw Pointer Decay (Resolved)
 **Issue**: Passing a string literal `"foo"` or a slice `[]u8` to an `extern` function expecting `[*]const u8` previously failed with a type mismatch.
 **Status**: Fixed. Slices and arrays now decay to many-item pointers, and string literals coerce to both slices and many-item pointers.
-```zig
-// Works now
-fopen("file.txt", "r");
+
+### 6. Codegen: Lifting vs Coercion Order (Resolved)
+**Issue**: `emitAssignmentWithLifting` was attempting to wrap success values (e.g., `T` -> `!T`) before checking if the rvalue was a control-flow expression (like `if` or `switch`). This resulted in empty payloads in the generated C code because the control-flow emission (which handles the assignment) was bypassed.
+**Status**: Fixed. Lifting logic now takes precedence over coercion wrapping.
+
+### 7. Codegen: Invalid Assignment of Divergent Blocks
+**Issue**: An `orelse return ...` in an assignment `var f = fopen(...) orelse return;` was translated to `f = { ... return ... };` which is invalid C89.
+**Status**: Known limitation. Assignments from control flow that can diverge (return/break) must be handled carefully. The "Unified Lifting" pass in Milestone 8 is the intended fix.
+
+### 8. Codegen: Slice Indexing
+**Issue**: In some contexts, slice indexing `slice[i]` was emitted as `slice[i]` in C, which is invalid since `slice` is a struct. It should always be `slice.ptr[i]`.
+**Status**: Unstable. Some paths in `emitArrayAccess` seem to miss the slice check.
+
+### 9. Header Generation: Missing Typedefs
+**Issue**: Module headers (e.g., `file.h`) refer to types like `Slice_u8` or `ErrorUnion_Slice_u8` that are only defined in `main.h`. This makes modules hard to compile independently.
+
+**Failing Example in `file.h`**:
+```c
+/* file.h */
+ErrorUnion_Slice_u8 z_file_readFile(void*, Slice_u8); // Error: unknown type name 'ErrorUnion_Slice_u8'
 ```
 
-### 6. "Primary Expression" Parser Error
-**Issue**: Deeply nested expressions involving `try`, `return`, and function calls occasionally confuse the Pratt parser, leading to an "Expected a primary expression" error.
-**Status**: This is a known limitation of the current ad-hoc lifting strategy in the C89 backend.
+**Status**: Persistent. Requires a more robust type-dependency analysis in the CBackend.
+
+### 10. C89 Compatibility: Extern `*void`
+**Issue**: `extern fn foo(p: *void)` was emitted as `extern void z_foo(void p)`, which is invalid C. This happens because the bootstrap compiler sometimes treats `*void` (pointer to zero-sized type) inconsistently in `extern` signatures.
+
+**Failing Example**:
+```zig
+extern fn arena_alloc(arena: *void, size: usize) *void;
+```
+Generated C:
+```c
+extern void arena_alloc(void arena, unsigned int size); // Error: parameter has void type
+```
+
+### 11. C89 Compatibility: Standard Library Signature Mismatches
+**Issue**: Our `extern` declarations for standard C functions use `unsigned char const*` for Zig strings, while standard C headers (like `<stdio.h>`) use `char const*`.
+
+**Failing Example**:
+```zig
+extern fn fopen(filename: [*]const u8, mode: [*]const u8) ?File;
+```
+Generated C:
+```c
+extern Optional_Ptr_void fopen(unsigned char const* filename, unsigned char const* mode);
+/* Conflicting types with /usr/include/stdio.h */
+```
+
+### 12. C89 Compatibility: `void` in Unions
+**Issue**: Tagged unions are translated to a C `struct` with an internal `union`. If a Zig union arm has type `void` (e.g., `.Null => void`), it is emitted as `void Null;` inside the C union, which is invalid.
+
+**Failing Example in `json.h`**:
+```c
+union z_json_JsonData {
+    void Null; // Error: variable or field 'Null' declared void
+    int BoolValue;
+    ...
+};
+```
 
 ## Recommendations for Future Improvements
 
 1.  **Unified Lifting (Milestone 8)**: This is the single most important next step. Moving control-flow expressions (if, switch, try) into temporary variables in a dedicated AST pass will solve most of the "Primary Expression" and code generation stability issues.
-2.  **Parser Synchronization**: Implement a "sync" mechanism (e.g., skip to next semicolon) on errors so multiple errors can be reported without aborting.
-3.  **Placeholder Hardening**: Ensure that `TYPE_SLICE` and `TYPE_OPTIONAL` can safely contain `TYPE_PLACEHOLDER` during the recursive resolution pass.
+2.  **Header Stabilization**: Ensure all required typedefs (slices, error unions, optionals) are emitted in every header that uses them, or move them to a common `types.h`.
+3.  **Parser Synchronization**: Implement a "sync" mechanism (e.g., skip to next semicolon) on errors so multiple errors can be reported without aborting.
+4.  **Placeholder Hardening**: Ensure that `TYPE_SLICE` and `TYPE_OPTIONAL` can safely contain `TYPE_PLACEHOLDER` during the recursive resolution pass.
