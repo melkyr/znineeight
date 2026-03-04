@@ -110,7 +110,7 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Optional Capture**: Supported similar to `if` statements.
   - **Nesting Limitation**: Standalone `if` expressions in branches do not support further lifting unless wrapped in a block `{ ... }`.
 - **While Loops**:
-  - **Unlabeled**: Mapped to C `while (cond) { ... }`.
+  - **Unlabeled**: Mapped to C `while (cond) { ... }`. Supports `while (cond) : (iter)` by emitting `iter` at the end of the loop body.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
     ```c
     __zig_label_L_0_start: ;
@@ -149,6 +149,7 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
+  - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
   - **Lifting Contexts**: Currently supported in direct assignments to identifiers, variable initializers, return statements, and as expression statements.
   - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
@@ -197,7 +198,7 @@ For each unique slice type encountered, the compiler generates a `typedef` and a
 - **Indexing**: `s[i]` is emitted as `s.ptr[i]`.
 - **Length**: `s.len` is emitted as `s.len`.
 - **Slicing**: `base[start..end]` is emitted as a call to the generated helper: `__make_slice_T(computed_ptr, computed_len)`.
-- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call.
+- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call. String literals are also implicitly coerced to `[]const u8` slices.
 
 #### Helper Functions
 For each unique slice type, a construction helper is generated:

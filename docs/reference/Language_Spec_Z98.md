@@ -35,7 +35,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
-- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`.
+- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`. Slices are guaranteed to be non-null when indexed if their length is greater than zero (enforced by the compiler's static analysis).
 - **Ranges**:
   - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
   - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
@@ -54,6 +54,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Error Sets**: `const MyErrors = error { Foo, Bar };`
 - **Error Unions**: `!T` or `MyErrors!T`. Represented as a C struct containing a union for the payload and the error code.
 - **Error Literals**: `error.TagName`. Unqualified error values.
+- **Implicit Return**: Functions returning `!void` or `ErrorSet!void` implicitly return success (`{0}`) if execution falls off the end of the function body.
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `!T` (success).
   - An error literal can be implicitly coerced to any error union `!T`.
@@ -101,7 +102,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Optional Capture**: `if (optional_val) |val| { ... }`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
-- `while (cond) { ... }`: Simple loop. Braces are **strictly required** for the loop body. The `while (cond) : (iter)` syntax is currently **NOT supported**.
+- `while (cond) : (iter) { ... }`: While loop with a continue expression. `iter` is evaluated after the loop body on each iteration, before the condition is re-evaluated. Braces are **strictly required** for the loop body.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
