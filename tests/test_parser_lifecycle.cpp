@@ -26,6 +26,49 @@ TEST_FUNC(Parser_TokenStreamLifetimeIsIndependentOfParserObject) {
     return true;
 }
 
+TEST_FUNC(Parser_MalformedStream_MissingEOF) {
+    ArenaAllocator arena(262144);
+    StringInterner interner(arena);
+
+    // Manually construct a token array without EOF
+    Token tokens[2];
+    tokens[0].type = TOKEN_IDENTIFIER;
+    tokens[0].value.identifier = interner.intern("x");
+    tokens[0].location = SourceLocation();
+    tokens[1].type = TOKEN_SEMICOLON;
+    tokens[1].location = SourceLocation();
+
+    SymbolTable symbol_table(arena);
+    // Actually, it's easier to use the existing infrastructure if possible,
+    // but the TokenSupplier always adds EOF.
+    // Let's use the Parser constructor directly.
+
+    SourceManager source_manager(arena);
+    ErrorHandler eh(source_manager, arena);
+    ErrorSetCatalogue catalogue(arena);
+    GenericCatalogue generic_catalogue(arena);
+    TypeInterner type_interner(arena);
+
+    Parser parser(tokens, 2, &arena, &symbol_table, &eh, &catalogue, &generic_catalogue, &type_interner, &interner, "test");
+
+    // Advance to the end
+    ASSERT_FALSE(parser.is_at_end());
+    parser.advance(); // consume 'x'
+    ASSERT_FALSE(parser.is_at_end());
+    parser.advance(); // consume ';'
+
+    // Now we are at current_index_ == 2, which is == token_count_.
+    // Before the fix, this would read tokens[2] and likely crash or return garbage.
+    // Now it should return true and report an internal error.
+    ASSERT_TRUE(parser.is_at_end());
+    ASSERT_TRUE(eh.hasErrors());
+
+    // Verify peek() also returns EOF safely
+    ASSERT_EQ(parser.peek().type, TOKEN_EOF);
+
+    return true;
+}
+
 // TEST_FUNC(Parser_CopyIsSafeAndDoesNotDoubleFree) {
 //     // This test is now obsolete. The Parser class has been made non-copyable
 //     // by making its copy constructor and assignment operator private. This was
