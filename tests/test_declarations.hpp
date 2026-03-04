@@ -133,13 +133,14 @@ TEST_FUNC(Parser_TryExpr_Chained);
 TEST_FUNC(Parser_CatchExpression_Simple);
 TEST_FUNC(Parser_CatchExpression_WithPayload);
 TEST_FUNC(Parser_CatchExpression_MixedAssociativity);
-TEST_FUNC(Parser_Orelse_IsLeftAssociative);
-TEST_FUNC(Parser_Catch_IsLeftAssociative);
+TEST_FUNC(Parser_Orelse_IsRightAssociative);
+TEST_FUNC(Parser_Catch_IsRightAssociative);
+TEST_FUNC(Parser_CatchOrelse_IsRightAssociative);
 TEST_FUNC(Parser_CatchExpr_Simple);
-TEST_FUNC(Parser_CatchExpr_LeftAssociativity);
+TEST_FUNC(Parser_CatchExpr_RightAssociativity);
 TEST_FUNC(Parser_CatchExpr_MixedAssociativity);
 TEST_FUNC(Parser_OrelseExpr_Simple);
-TEST_FUNC(Parser_OrelseExpr_LeftAssociativity);
+TEST_FUNC(Parser_OrelseExpr_RightAssociativity);
 TEST_FUNC(Parser_OrelseExpr_Precedence);
 
 // Forward declarations for Group 3C: Struct & Union Declarations
