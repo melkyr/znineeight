@@ -23,23 +23,26 @@ public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
      * @param unit The compilation unit.
+     * @param is_header True if this emitter is for a header file.
      */
-    C89Emitter(CompilationUnit& unit);
+    C89Emitter(CompilationUnit& unit, bool is_header = false);
 
     /**
      * @brief Constructs an emitter that writes to the specified file.
      * @param unit The compilation unit.
      * @param path The path to the output file.
+     * @param is_header True if this emitter is for a header file.
      */
-    C89Emitter(CompilationUnit& unit, const char* path);
+    C89Emitter(CompilationUnit& unit, const char* path, bool is_header = false);
 
 
     /**
      * @brief Constructs an emitter that writes to an already open file.
      * @param unit The compilation unit.
      * @param file The open file handle.
+     * @param is_header True if this emitter is for a header file.
      */
-    C89Emitter(CompilationUnit& unit, PlatFile file);
+    C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header = false);
 
     /**
      * @brief Destructor. Flushes and closes the file if it was opened by the constructor.
@@ -515,6 +518,7 @@ private:
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
+    bool is_header_;
     char* type_def_buffer_;
     size_t type_def_pos_;
     size_t type_def_cap_;

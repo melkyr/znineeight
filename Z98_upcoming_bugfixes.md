@@ -842,7 +842,7 @@ Verification:
 - Verified with `tests/integration/test_string_coercion.zig`.
 - Confirmed correct C89 code generation for string literals and slice property access.
 
-### Task 9.8: Parser Support for while Continue Expressions
+### Task 9.8: Parser Support for while Continue Expressions [DONE]
 
 Goal: Implement the Zig syntax while (cond) : (iter) stmt, where iter is an expression evaluated after each loop iteration.
 
@@ -881,7 +881,7 @@ pub fn sum_up_to(n: u32) u32 {
 
 Ensure it parses, type‑checks, and generates correct C code that when run returns the correct sum.
 
-### Task 9.9: Stabilize Tagged Unions and Switch Captures
+### Task 9.9: Stabilize Tagged Unions and Switch Captures [DONE]
 
 Goal: Fix remaining issues with tagged unions (union(enum)) and switch captures (|payload|) that cause type‑checking failures in complex nested initializations.
 
@@ -948,3 +948,17 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 **Verification**:
 - Verified with `tests/integration/test_implicit_return.zig`.
 - Confirmed generated C code returns the correct success struct.
+
+---
+
+### Task 9.12: Header Generation and Slice Indexing Fixes [DONE]
+**Goal**: Resolve "unknown type name" errors in multi-module builds and fix incorrect slice indexing in C89 codegen.
+
+**Implementation**:
+- **Self-Contained Headers**: Modified `C89Emitter` and `CBackend` to ensure that every header file defines all used special types (slices, error unions, optionals) by using a per-module cache for headers. Source files continue to use a global cache to prevent duplicate typedefs.
+- **Slice Indexing**: Fixed `emitAccess` in `codegen.cpp` to correctly append `.ptr` when indexing into a slice.
+- **Build Script Safety**: Renamed generated build scripts to `build_target.bat` and `build_target.sh` to avoid overwriting compiler source build scripts.
+
+**Verification**:
+- Verified that headers are self-contained and compile independently.
+- Confirmed correct `.ptr[i]` emission for slice indexing.

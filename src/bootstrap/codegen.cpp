@@ -8,11 +8,11 @@
 
 static const size_t TYPE_DEF_BUFFER_SIZE = 131072;
 
-C89Emitter::C89Emitter(CompilationUnit& unit)
+C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       loop_id_stack_(unit.getArena()) {
@@ -21,11 +21,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit)
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
-C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
+C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       loop_id_stack_(unit.getArena()) {
@@ -36,11 +36,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path)
 }
 
 
-C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file)
+C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(&unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       loop_id_stack_(unit.getArena()) {
@@ -159,9 +159,7 @@ void C89Emitter::emitTypePrefix(Type* type) {
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
                 writeString(" (*");
             } else {
-                if (last_char_ != '*' && last_char_ != ' ' && last_char_ != '(') {
-                    writeString(" ");
-                }
+                /* No space before asterisk for simple pointers to match existing tests and convention */
                 writeString("*");
             }
             break;
@@ -2254,6 +2252,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
             Type* array_type = array_node->resolved_type;
             bool is_ptr_to_array = (array_type && array_type->kind == TYPE_POINTER &&
                                     array_type->as.pointer.base->kind == TYPE_ARRAY);
+            bool is_slice = (array_type && array_type->kind == TYPE_SLICE);
 
             if (is_ptr_to_array) {
                 writeString("(*");
@@ -2266,6 +2265,10 @@ void C89Emitter::emitAccess(const ASTNode* node) {
 
             if (is_ptr_to_array) {
                 writeString(")");
+            }
+
+            if (is_slice) {
+                writeString(".ptr");
             }
 
             writeString("[");
@@ -2376,13 +2379,14 @@ void C89Emitter::ensureOptionalType(Type* type) {
 
     const char* mangled_name = getMangledTypeName(type);
 
-    /* Check cache */
+    /* Check per-module cache first */
     for (size_t i = 0; i < emitted_optionals_.length(); ++i) {
         if (plat_strcmp(emitted_optionals_[i], mangled_name) == 0) return;
     }
 
-    /* Check external cache (if any) */
-    if (external_cache_) {
+    /* Check external cache (global) only if not in header mode.
+       Headers must always emit their own guarded definitions to be self-contained. */
+    if (!is_header_ && external_cache_) {
         for (size_t j = 0; j < external_cache_->length(); ++j) {
             if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
         }
@@ -2390,13 +2394,28 @@ void C89Emitter::ensureOptionalType(Type* type) {
 
     emitted_optionals_.append(mangled_name);
     if (external_cache_) {
-        external_cache_->append(mangled_name);
+        bool already_in_external = false;
+        for (size_t k = 0; k < external_cache_->length(); ++k) {
+            if (plat_strcmp((*external_cache_)[k], mangled_name) == 0) {
+                already_in_external = true;
+                break;
+            }
+        }
+        if (!already_in_external) {
+            external_cache_->append(mangled_name);
+        }
     }
 
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
     Type* payload = type->as.optional.payload;
+
+    writeString("#ifndef ZIG_OPTIONAL_");
+    writeString(mangled_name);
+    writeString("\n#define ZIG_OPTIONAL_");
+    writeString(mangled_name);
+    writeString("\n");
 
     writeIndent();
     writeString("typedef struct {\n");
@@ -2413,7 +2432,7 @@ void C89Emitter::ensureOptionalType(Type* type) {
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
-    writeString(";\n\n");
+    writeString(";\n#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
 }
@@ -2423,13 +2442,14 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 
     const char* mangled_name = getMangledTypeName(type);
 
-    /* Check cache */
+    /* Check per-module cache first */
     for (size_t i = 0; i < emitted_error_unions_.length(); ++i) {
         if (plat_strcmp(emitted_error_unions_[i], mangled_name) == 0) return;
     }
 
-    /* Check external cache (if any) */
-    if (external_cache_) {
+    /* Check external cache (global) only if not in header mode.
+       Headers must always emit their own guarded definitions to be self-contained. */
+    if (!is_header_ && external_cache_) {
         for (size_t j = 0; j < external_cache_->length(); ++j) {
             if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
         }
@@ -2437,13 +2457,28 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 
     emitted_error_unions_.append(mangled_name);
     if (external_cache_) {
-        external_cache_->append(mangled_name);
+        bool already_in_external = false;
+        for (size_t k = 0; k < external_cache_->length(); ++k) {
+            if (plat_strcmp((*external_cache_)[k], mangled_name) == 0) {
+                already_in_external = true;
+                break;
+            }
+        }
+        if (!already_in_external) {
+            external_cache_->append(mangled_name);
+        }
     }
 
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
     Type* payload = type->as.error_union.payload;
+
+    writeString("#ifndef ZIG_ERRORUNION_");
+    writeString(mangled_name);
+    writeString("\n#define ZIG_ERRORUNION_");
+    writeString(mangled_name);
+    writeString("\n");
 
     writeIndent();
     writeString("typedef struct {\n");
@@ -2472,7 +2507,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     writeIndent();
     writeString("} ");
     writeString(mangled_name);
-    writeString(";\n\n");
+    writeString(";\n#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
 }
@@ -2482,22 +2517,32 @@ void C89Emitter::ensureSliceType(Type* type) {
 
     const char* mangled_name = getMangledTypeName(type);
 
-    /* Check internal cache */
+    /* Check per-module cache first */
     for (size_t i = 0; i < emitted_slices_.length(); ++i) {
         if (plat_strcmp(emitted_slices_[i], mangled_name) == 0) return;
     }
 
-    /* Check external cache (if any) */
-    if (external_cache_) {
+    /* Check external cache (global) only if not in header mode.
+       Headers must always emit their own guarded definitions to be self-contained. */
+    if (!is_header_ && external_cache_) {
         for (size_t j = 0; j < external_cache_->length(); ++j) {
             if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
         }
     }
 
-    /* Not emitted, so emit it now */
+    /* Not emitted in this context, so emit it now */
     emitted_slices_.append(mangled_name);
     if (external_cache_) {
-        external_cache_->append(mangled_name);
+        bool already_in_external = false;
+        for (size_t k = 0; k < external_cache_->length(); ++k) {
+            if (plat_strcmp((*external_cache_)[k], mangled_name) == 0) {
+                already_in_external = true;
+                break;
+            }
+        }
+        if (!already_in_external) {
+            external_cache_->append(mangled_name);
+        }
     }
 
     bool was_in_type_def = in_type_def_mode_;
@@ -2505,6 +2550,12 @@ void C89Emitter::ensureSliceType(Type* type) {
 
     Type* elem_type = type->as.slice.element_type;
     const char* slice_struct_name = mangled_name;
+
+    writeString("#ifndef ZIG_SLICE_");
+    writeString(mangled_name);
+    writeString("\n#define ZIG_SLICE_");
+    writeString(mangled_name);
+    writeString("\n");
 
     writeIndent();
     writeString("typedef struct { ");
@@ -2535,7 +2586,7 @@ void C89Emitter::ensureSliceType(Type* type) {
         writeString("return s;\n");
     }
     writeIndent();
-    writeString("}\n\n");
+    writeString("}\n#endif\n\n");
 
     in_type_def_mode_ = was_in_type_def;
 }
