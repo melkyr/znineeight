@@ -919,6 +919,22 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 
 ---
 
+### Task 9.11: C89 Compatibility Fixes [DONE]
+
+**Goal**: Fix several regressions in C89 compatibility discovered during real-world code testing.
+
+**Issues Addressed**:
+1. **Extern *void Handling**: Fixed issues where `extern fn foo(p: *void)` was being incorrectly mangled or emitted. Ensured `*void` emits as `void *` and extern symbols bypass module-prefixed mangling.
+2. **Standard Library Signature Mismatches**: Fully implemented `c_char` as a primitive type mapping to C's `char`, enabling correct interop with standard C headers that use `char const*`.
+3. **void in Unions**: Hardened union handling in `C89Emitter` to skip `void` fields in definitions and initializers, and inject `char __dummy;` for empty unions to maintain valid C89 syntax.
+
+**Verification**:
+- Added comprehensive reproduction tests in `tests/integration/c89_compatibility_repro_tests.cpp`.
+- Verified all Batch 53 tests pass.
+- Performed audit of runtime symbols to ensure consistent `extern` flagging.
+
+---
+
 ### Task 9.10: Implicit Return for `Error!void` [DONE]
 
 **Goal**: Allow functions returning `anyerror!void` to omit an explicit `return;` statement if execution falls off the end of the function.

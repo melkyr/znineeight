@@ -41,6 +41,7 @@ DEFINE_GET_TYPE_FUNC(g_type_undefined, TYPE_UNDEFINED, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_type, TYPE_TYPE, 0, 0)
 DEFINE_GET_TYPE_FUNC(g_type_noreturn, TYPE_NORETURN, 0, 1)
 DEFINE_GET_TYPE_FUNC(g_type_anytype, TYPE_ANYTYPE, 0, 0)
+DEFINE_GET_TYPE_FUNC(g_type_c_char, TYPE_C_CHAR, 1, 1)
 
 Type* get_g_type_anyerror() {
     static Type t;
@@ -113,6 +114,7 @@ Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "noreturn") == 0) return get_g_type_noreturn();
     if (plat_strcmp(name, "anytype") == 0) return get_g_type_anytype();
     if (plat_strcmp(name, "anyerror") == 0) return get_g_type_anyerror();
+    if (plat_strcmp(name, "c_char") == 0) return get_g_type_c_char();
     if (plat_strcmp(name, "test_incompatible") == 0) return get_g_type_anyerror(); // Reuse anyerror as they are both incompatible
 
     return NULL; // Not a known primitive type

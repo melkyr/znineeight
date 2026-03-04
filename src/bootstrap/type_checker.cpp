@@ -3031,7 +3031,12 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     /* 3. Create struct type and calculate layout. */
     struct_type = createStructType(unit_.getArena(), fields, struct_name);
     if (struct_name) {
-        struct_type->c_name = unit_.getNameMangler().mangleTypeName(struct_name, unit_.getCurrentModule());
+        Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
+        if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+            struct_type->c_name = struct_name;
+        } else {
+            struct_type->c_name = unit_.getNameMangler().mangleTypeName(struct_name, unit_.getCurrentModule());
+        }
     }
     calculateStructLayout(struct_type);
 
@@ -3152,7 +3157,12 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 
     union_type = createUnionType(unit_.getArena(), fields, union_name, node->is_tagged, tag_type);
     if (union_name) {
-        union_type->c_name = unit_.getNameMangler().mangleTypeName(union_name, unit_.getCurrentModule());
+        Symbol* sym = unit_.getSymbolTable().lookup(union_name);
+        if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+            union_type->c_name = union_name;
+        } else {
+            union_type->c_name = unit_.getNameMangler().mangleTypeName(union_name, unit_.getCurrentModule());
+        }
     }
     return union_type;
 }
@@ -3397,29 +3407,37 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || struct_type->kind != TYPE_STRUCT) return false;
+    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION)) return false;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
 
-    /* 1. Check for missing fields */
-    for (size_t i = 0; i < fields->length(); ++i) {
-        const char* expected_name = (*fields)[i].name;
-        bool found = false;
-        for (size_t j = 0; j < node->fields->length(); ++j) {
-            if (identifiers_equal(expected_name, (*node->fields)[j]->field_name)) {
-                found = true;
-                break;
+    /* 1. Check for missing fields (only for structs) */
+    if (struct_type->kind == TYPE_STRUCT) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            const char* expected_name = (*fields)[i].name;
+            bool found = false;
+            for (size_t j = 0; j < node->fields->length(); ++j) {
+                if (identifiers_equal(expected_name, (*node->fields)[j]->field_name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                 char msg_buffer[256];
+                 char* current = msg_buffer;
+                 size_t remaining = sizeof(msg_buffer);
+                 safe_append(current, remaining, "missing field '");
+                 safe_append(current, remaining, expected_name);
+                 safe_append(current, remaining, "' in struct initializer");
+                 reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
+                 return false;
             }
         }
-        if (!found) {
-             char msg_buffer[256];
-             char* current = msg_buffer;
-             size_t remaining = sizeof(msg_buffer);
-             safe_append(current, remaining, "missing field '");
-             safe_append(current, remaining, expected_name);
-             safe_append(current, remaining, "' in struct initializer");
-             reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
-             return false;
+    } else {
+        /* For unions, exactly one field must be initialized. */
+        if (node->fields->length() != 1) {
+            reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "union initializer must have exactly one field");
+            return false;
         }
     }
 
@@ -3650,7 +3668,12 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     /* 4. Create and return the new enum type. */
     Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
     if (enum_name) {
-        enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
+        Symbol* sym = unit_.getSymbolTable().lookup(enum_name);
+        if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+            enum_type->c_name = enum_name;
+        } else {
+            enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
+        }
     }
     return enum_type;
 }

@@ -159,6 +159,9 @@ void C89Emitter::emitTypePrefix(Type* type) {
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
                 writeString(" (*");
             } else {
+                if (last_char_ != '*' && last_char_ != ' ' && last_char_ != '(') {
+                    writeString(" ");
+                }
                 writeString("*");
             }
             break;
@@ -349,8 +352,12 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 
     Type* type = node->resolved_type;
     const char* c_name = NULL;
-    if (decl->symbol && decl->symbol->mangled_name) {
+    if (decl->symbol && (decl->symbol->flags & SYMBOL_FLAG_EXTERN)) {
+        c_name = decl->symbol->name;
+    } else if (decl->symbol && decl->symbol->mangled_name) {
         c_name = decl->symbol->mangled_name;
+    } else if (decl->is_extern) {
+        c_name = decl->name;
     } else {
         c_name = getC89GlobalName(decl->name);
     }
@@ -608,8 +615,12 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
         const char* mangled_name = NULL;
         Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
-        if (sym && sym->mangled_name) {
+        if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+            mangled_name = sym->name;
+        } else if (sym && sym->mangled_name) {
             mangled_name = sym->mangled_name;
+        } else if (node->is_extern) {
+            mangled_name = node->name;
         } else {
             mangled_name = getC89GlobalName(node->name);
         }
@@ -660,8 +671,12 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
         const char* mangled_name = NULL;
         Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
-        if (sym && sym->mangled_name) {
+        if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
+            mangled_name = sym->name;
+        } else if (sym && sym->mangled_name) {
             mangled_name = sym->mangled_name;
+        } else if (node->is_extern) {
+            mangled_name = node->name;
         } else {
             mangled_name = getC89GlobalName(node->name);
         }

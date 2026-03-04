@@ -452,7 +452,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym);
     }
@@ -473,7 +473,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym);
     }
@@ -492,7 +492,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym);
     }
@@ -511,7 +511,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym);
     }
@@ -523,7 +523,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withName(name)
             .withMangledName(name)
             .ofType(SYMBOL_VARIABLE)
-            .withFlags(SYMBOL_FLAG_GLOBAL)
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_EXTERN)
             .withType(arena_ptr_type)
             .build();
         table.insert(sym);
@@ -544,7 +544,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym);
     }
@@ -565,7 +565,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(free_name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type2)
-            .withFlags(SYMBOL_FLAG_EXTERN)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
             .build();
         table.insert(sym_free);
     }
