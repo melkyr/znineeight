@@ -9,6 +9,7 @@ The `CBackend` is the orchestration layer for code generation. It manages the cr
 ### Responsibilities:
 - **Module Iteration**: Iterates over all compiled modules in a `CompilationUnit`.
 - **File Management**: Creates `.c` and `.h` files for each module.
+- **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies. Struct, union, and enum definitions are emitted before dependent types like slices, error unions, and optionals to support recursive types.
 - **Orchestration**: Uses `C89Emitter` to write code to these files.
 - **Interface Generation**: Generates public header files (`.h`) containing declarations for symbols marked as `pub` in Zig.
 - **Implementation Generation**: Generates C source files (`.c`) containing all definitions, with non-`pub` symbols marked as `static`.
@@ -29,6 +30,9 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitCast`: Centralizes `@intCast`, `@floatCast`, and `@ptrCast` logic.
     - `emitAccess`: Manages array, member, and slice access.
     - `emitControlFlow`: Reports errors for control-flow expressions that have not been correctly lifted into statements.
+
+#### Base Type Mapping
+- **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.

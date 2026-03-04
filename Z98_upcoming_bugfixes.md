@@ -962,3 +962,14 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 **Verification**:
 - Verified that headers are self-contained and compile independently.
 - Confirmed correct `.ptr[i]` emission for slice indexing.
+
+### Task 9.13: Recursive Type Conflict and C Library Interop [DONE]
+**Goal**: Resolve "incomplete type" errors in recursive error unions and fix type conflicts with standard C signatures.
+
+**Implementation**:
+- **Ordered Emission**: Modified `CBackend` to emit struct, union, and enum definitions before dependent special types (slices, error unions, optionals). This ensures that recursive types where an error union contains a struct payload are correctly defined.
+- **C Char Interop**: Introduced implicit coercion between `u8` and `c_char` in the type system. Updated `json_parser/file.zig` to use `c_char` for `fopen` signatures, ensuring compatibility with C's `char*`.
+
+**Verification**:
+- Verified that reordered emission produces valid C code for recursive types.
+- Confirmed that `json_parser/file.zig` correctly type-checks with the new `c_char` interop rules.

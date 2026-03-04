@@ -4165,9 +4165,20 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return true;
     }
 
+    /* c_char and u8 compatibility (for C standard library interop) */
+    if ((actual->kind == TYPE_U8 && expected->kind == TYPE_C_CHAR) ||
+        (actual->kind == TYPE_C_CHAR && expected->kind == TYPE_U8)) {
+        return true;
+    }
+
     /* Array to Slice coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
-        return areTypesEqual(expected->as.slice.element_type, actual->as.array.element_type);
+        Type* e_elem = expected->as.slice.element_type;
+        Type* a_elem = actual->as.array.element_type;
+        if (areTypesEqual(e_elem, a_elem)) return true;
+        if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
+            (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
+        return false;
     }
 
     /* Optional types coercions */
@@ -4192,7 +4203,12 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     /* Slice to Slice assignment/coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_SLICE) {
-        if (areTypesEqual(expected->as.slice.element_type, actual->as.slice.element_type)) {
+        Type* e_elem = expected->as.slice.element_type;
+        Type* a_elem = actual->as.slice.element_type;
+        bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
+                               ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
+                                (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
+        if (elems_compatible) {
             /* Const correctness: []T can be used as []const T, but not vice-versa */
             return expected->as.slice.is_const || !actual->as.slice.is_const;
         }
@@ -4293,7 +4309,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         /* Implicit single-item to many-item pointer conversion */
         if (!actual->as.pointer.is_many && expected->as.pointer.is_many) {
              /* Allowed if base types match and const-correctness is maintained */
-             if (areTypesEqual(actual_base, expected_base)) {
+             bool bases_compatible = areTypesEqual(actual_base, expected_base) ||
+                                    ((actual_base->kind == TYPE_U8 && expected_base->kind == TYPE_C_CHAR) ||
+                                     (actual_base->kind == TYPE_C_CHAR && expected_base->kind == TYPE_U8));
+             if (bases_compatible) {
                  return expected->as.pointer.is_const || !actual->as.pointer.is_const;
              }
              return false;
@@ -4306,7 +4325,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
         /* Must have the same base type */
         if (!areTypesEqual(actual_base, expected_base)) {
-            return false;
+            if (!((actual_base->kind == TYPE_U8 && expected_base->kind == TYPE_C_CHAR) ||
+                  (actual_base->kind == TYPE_C_CHAR && expected_base->kind == TYPE_U8))) {
+                return false;
+            }
         }
         /* A mutable pointer can be assigned to a const pointer, */
         /* but not the other way around. */

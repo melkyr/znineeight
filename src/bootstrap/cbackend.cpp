@@ -80,23 +80,6 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     }
     emitter.writeString("\n");
 
-    // Discovery Pass: Find all slice and error union types in this module
-    if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
-        DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            scanForSpecialTypes((*stmts)[i], emitter, SCAN_SLICES);
-        }
-        emitter.emitBufferedSlices();
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            scanForSpecialTypes((*stmts)[i], emitter, SCAN_ERROR_UNIONS);
-        }
-        emitter.emitBufferedErrorUnions();
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS);
-        }
-        emitter.emitBufferedOptionals();
-    }
-
     /* Pass -1: Forward declarations of private aggregate types */
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
@@ -137,6 +120,21 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         }
     }
     emitter.emitBufferedTypeDefinitions();
+
+    // Pass 1.5: Special types (slices, error unions, optionals)
+    // These are emitted AFTER structs because they might depend on them (recursive types).
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_SLICES);
+    }
+    emitter.emitBufferedSlices();
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_ERROR_UNIONS);
+    }
+    emitter.emitBufferedErrorUnions();
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS);
+    }
+    emitter.emitBufferedOptionals();
 
     // Pass 2: Global Variables
     for (size_t i = 0; i < stmts->length(); ++i) {
@@ -321,7 +319,17 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-        // Discovery Pass: Find all slice and error union types used in public declarations
+        // Pass 1: Public Type Definitions (Regular types like structs)
+        for (size_t i = 0; i < stmts->length(); ++i) {
+            if ((*stmts)[i]->type == NODE_VAR_DECL) {
+                if ((*stmts)[i]->as.var_decl->is_pub) {
+                    emitter.emitTypeDefinition((*stmts)[i]);
+                }
+            }
+        }
+
+        // Pass 1.5: Special types (slices, error unions, optionals)
+        // These are emitted AFTER structs because they might depend on them.
         for (size_t i = 0; i < stmts->length(); ++i) {
             ASTNode* node = (*stmts)[i];
             if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
@@ -349,15 +357,6 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             }
         }
         emitter.emitBufferedOptionals();
-
-        // Pass 1: Public Type Definitions (Regular types like structs)
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            if ((*stmts)[i]->type == NODE_VAR_DECL) {
-                if ((*stmts)[i]->as.var_decl->is_pub) {
-                    emitter.emitTypeDefinition((*stmts)[i]);
-                }
-            }
-        }
 
         // Pass 2: Public global variable declarations
         for (size_t i = 0; i < stmts->length(); ++i) {

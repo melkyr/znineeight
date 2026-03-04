@@ -211,6 +211,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `[*]T`                  | `*T`                   | ✗           | Cannot implicitly convert between many and single-item pointers.   |
 | `[]T`                   | `[]const T`            | ✓           | Safe to add `const`.                                               |
 | `[]const T`             | `[]T`                  | ✗           | Unsafe to remove `const`.                                          |
+| `u8`                    | `c_char`               | ✓           | Implicit conversion allowed for C interop.                         |
+| `c_char`                | `u8`                   | ✓           | Implicit conversion allowed for C interop.                         |
 | `T`                     | `?T`                   | ✓           | Implicit wrapping into optional.                                   |
 | `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
 
@@ -701,6 +703,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `isize`/`usize` | ✓ | `int`/`unsigned int` | Supported for pointer arithmetic and sizes. Mapping to 32-bit `int` in Milestone 4. |
 | `f32`/`f64` | ✓ | `float`/`double` | Direct mapping. |
 | `bool` | ✓ | `int` (0/1) | C89 has no native `_Bool`. |
+| `c_char` | ✓ | `char` | Maps to C's `char` type (distinct from `u8`). |
 | `void` | ✓ | `void` | Used for function returns and `*void`. |
 | `*T` | ✓ | `T*` | Single-item pointer. (No indexing/arithmetic). |
 | `[*]T` | ✓ | `T*` | Many-item pointer. (Supports indexing/arithmetic). |
