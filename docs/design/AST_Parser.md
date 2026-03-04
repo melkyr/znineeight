@@ -562,7 +562,7 @@ The parser uses a **Pratt parsing** algorithm to handle binary expressions, whic
 - It then enters a loop, peeking at the next token. If the token is a binary operator with a precedence greater than or equal to `min_precedence`, it consumes the operator and recursively calls `parseBinaryExpr` to parse the right-hand side, but with a *higher* minimum precedence.
 - This recursive process naturally builds the AST in the correct order. For example, in `2 + 3 * 4`, the parser will first parse `2`, see the `+`, then recursively call itself to parse the rest of the expression with a higher precedence, which will correctly group `3 * 4` as the right-hand side of the `+` operation.
 - **Left-associativity** (for operators of the same precedence, like `10 - 4 - 2`) is handled by the `+ 1` adjustment to the precedence in the recursive call, which ensures that the loop continues for the first operator and groups `(10 - 4)` first.
-- **Associativity:** Left-associativity for all operators is handled naturally by the precedence climbing algorithm. For operators of the same precedence (e.g., `a - b + c`), the loop in `parsePrecedenceExpr` continues, correctly grouping `(a - b)` first. Right-associativity is not used for any binary operators in this language.
+- **Associativity:** Left-associativity for most operators is handled naturally by the precedence climbing algorithm. For operators of the same precedence (e.g., `a - b + c`), the loop in `parsePrecedenceExpr` continues, correctly grouping `(a - b)` first. Right-associativity is used specifically for the error handling operators `orelse` and `catch` to support natural chaining (e.g., `a catch b catch c` parses as `a catch (b catch c)`).
 
 #### Parsing Logic (`parseSwitchExpression`)
 The `parseSwitchExpression` function handles the `switch` expression. It adheres to the grammar:
@@ -589,7 +589,7 @@ The `parseSwitchExpression` function handles the `switch` expression. It adheres
 | 4          | `==`, `!=`, `<`, `>`, `<=`, `>=` | Left          |
 | 3          | `and`                          | Left          |
 | 2          | `or`                           | Left          |
-| 1          | `orelse`, `catch`              | Left          |
+| 1          | `orelse`, `catch`              | Right         |
 
 ### Parser Robustness: Recursion Depth Limit
 To prevent stack overflows when parsing deeply nested or complex expressions, the parser implements a recursion depth limit.
@@ -1324,7 +1324,7 @@ Note that these may be transformed by the later lifting pass during code generat
 The `catch` expression is parsed as a binary operator within `parsePrecedenceExpr` with a precedence of 1.
 - When `TOKEN_CATCH` is encountered, it is consumed.
 - The parser optionally handles the `|err|` capture syntax using `|` tokens and an identifier.
-- The fallback expression is parsed recursively with the same precedence level to support chaining (left-associative).
+- The fallback expression is parsed recursively with the same precedence level to support chaining (right-associative).
 
 ## Parser Skeleton Design (Task 44a)
 
@@ -1374,7 +1374,7 @@ Represents a `catch` expression, providing a fallback value in case of an error.
 The `catch` expression is parsed as a binary operator within `parsePrecedenceExpr` with a precedence of 1.
 - When `TOKEN_CATCH` is encountered, it is consumed.
 - The parser optionally handles the `|err|` capture syntax.
-- The fallback expression is parsed recursively.
+- The fallback expression is parsed recursively using the same precedence level to ensure right-associativity.
 
 ### `ASTOrelseExprNode`
 Represents an `orelse` expression, providing a fallback value in case of an error or optional type.
@@ -1394,7 +1394,7 @@ Represents an `orelse` expression, providing a fallback value in case of an erro
     ```
 
 #### Parsing Logic (`parsePrecedenceExpr` for `orelse`)
-The `orelse` expression is handled similarly to `catch` within `parsePrecedenceExpr` (precedence 1). It takes the current left-hand side as the payload and parses the subsequent expression as the fallback.
+The `orelse` expression is handled similarly to `catch` within `parsePrecedenceExpr` (precedence 1). It takes the current left-hand side as the payload and parses the subsequent expression as the fallback using the same precedence level to ensure right-associativity.
 
 ### `ASTErrDeferStmtNode`
 Represents an `errdefer` statement, which is executed only if the function returns an error.
