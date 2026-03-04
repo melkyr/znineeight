@@ -17,7 +17,7 @@ This document details the findings from the "baptism of fire" where the Z98 comp
 | Switch Captures | ⚠️ Unstable | `|payload|` syntax is supported but type inference within the capture is fragile. |
 | Recursive Types | ❌ Limited | Self-referential types via slices (`[]JsonValue`) sometimes fail resolution. Explicit pointers are safer. |
 | While Continue Expr | ❌ Missing | `while (cond) : (iter)` syntax is not supported by the parser. |
-| Implicit Coercion | ❌ Missing | Strings and slices do not implicitly decay to `[*]const u8` (many-item pointers). |
+| Implicit Coercion | ✅ Fixed | Strings and slices now implicitly coerce to `[]const u8` and `[*]const u8`. |
 
 ## Detailed Discoveries and Workarounds
 
@@ -65,15 +65,12 @@ pub const JsonValue = struct {
 };
 ```
 
-### 5. Type Checker: Raw Pointer Decay
-**Issue**: Passing a string literal `"foo"` or a slice `[]u8` to an `extern` function expecting `[*]const u8` fails with a type mismatch.
-**Workaround**: Use `.ptr` and explicit `@ptrCast`.
+### 5. Type Checker: Raw Pointer Decay (Resolved)
+**Issue**: Passing a string literal `"foo"` or a slice `[]u8` to an `extern` function expecting `[*]const u8` previously failed with a type mismatch.
+**Status**: Fixed. Slices and arrays now decay to many-item pointers, and string literals coerce to both slices and many-item pointers.
 ```zig
-// Failed
+// Works now
 fopen("file.txt", "r");
-
-// Worked
-fopen(@ptrCast([*]const u8, "file.txt".ptr), @ptrCast([*]const u8, "r".ptr));
 ```
 
 ### 6. "Primary Expression" Parser Error
@@ -85,4 +82,3 @@ fopen(@ptrCast([*]const u8, "file.txt".ptr), @ptrCast([*]const u8, "r".ptr));
 1.  **Unified Lifting (Milestone 8)**: This is the single most important next step. Moving control-flow expressions (if, switch, try) into temporary variables in a dedicated AST pass will solve most of the "Primary Expression" and code generation stability issues.
 2.  **Parser Synchronization**: Implement a "sync" mechanism (e.g., skip to next semicolon) on errors so multiple errors can be reported without aborting.
 3.  **Placeholder Hardening**: Ensure that `TYPE_SLICE` and `TYPE_OPTIONAL` can safely contain `TYPE_PLACEHOLDER` during the recursive resolution pass.
-4.  **Implicit Decay**: Implement implicit coercion from arrays/slices to many-item pointers (`[*]T`) to reduce the need for verbose `@ptrCast` and `.ptr` usage.

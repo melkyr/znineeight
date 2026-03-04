@@ -535,7 +535,7 @@ To clarify the current capabilities of the type checker and guide future develop
             -   Larger values or with `l` suffix: `i64`
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
     -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
-    -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters).
+    -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters). It can be implicitly coerced to a slice (`[]const u8`) or a many-item pointer (`[*]const u8`).
     -   **Memory Overhead:** The validation of literal types is a stateless process within the `TypeChecker`. It is based on the value and syntax of the literal itself and does not require the creation of any new, persistent data structures or heap allocations, thus adhering to the project's strict memory constraints.
 
 ### Literal Type Mapping Table (Task 170)
@@ -644,6 +644,7 @@ To ensure C89 compatibility, the `TypeChecker` enforces several strict rules reg
     -   A function declared with a `void` return type can have an empty `return;` statement or no `return` statement at all (an implicit return).
     -   Attempting to return a value from a `void` function (e.g., `return 123;`) will result in an `ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION` error.
     -   A non-`void` function must have a `return` statement with a value of a compatible type. A `return;` statement without a value, or an implicit return by falling off the end of the function, will result in an `ERR_MISSING_RETURN_VALUE` error.
+    -   **Exception (Implicit Success)**: Functions returning an error union with a void payload (e.g., `!void`) are permitted to omit an explicit `return;` statement if all control paths fall off the end of the function body. In this case, the compiler generates an implicit successful return.
 
 -   **Pointer Arithmetic:** Pointer arithmetic is not permitted on pointers of type `*void`. Attempting to perform addition or subtraction on a `void*` will result in an `ERR_INVALID_VOID_POINTER_ARITHMETIC` error.
 
@@ -709,7 +710,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
 | `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (unlimited params). |
-| `string_literal` | ✓ | `const char*` | Maps to `*const u8` (pointer to constant `u8`). |
+| `string_literal` | ✓ | `const char*` | Maps to `*const u8`, coerces to `[]const u8` or `[*]const u8`. |
 | `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
 | `error { ... }` | ✓ | `int` | **Supported.** Error sets map to integer error codes. |
 
