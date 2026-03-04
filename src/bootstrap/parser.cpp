@@ -75,12 +75,7 @@ void Parser::error(const char* msg) {
     /* Report error via ErrorHandler */
     if (error_handler_) {
         error_handler_->report(ERR_SYNTAX_ERROR, t.location, ErrorHandler::getMessage(ERR_SYNTAX_ERROR), msg);
-    }
-
-    /* Keep old debug output for now */
-    char buf[64];
-    plat_i64_to_string(t.type, buf, sizeof(buf));
-    if (t.type == TOKEN_IDENTIFIER || t.type == TOKEN_STRING_LITERAL) {
+        error_handler_->printErrors();
     }
 
     /* Note: In the future, we might add a recovery mechanism here.
