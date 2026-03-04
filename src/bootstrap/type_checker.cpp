@@ -1180,6 +1180,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, arg_node->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), msg_buffer);
         }
 
+        injectStringSliceIfNeeded((*node->args)[i], param_type);
         injectPtrAccessIfNeeded((*node->args)[i], param_type);
     }
 
@@ -1243,6 +1244,7 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         return get_g_type_undefined();
     }
 
+    injectStringSliceIfNeeded(node->rvalue, lvalue_type);
     injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
 
     /* The type of an assignment expression is the type of the l-value. */
@@ -1984,6 +1986,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
             }
 
             if (node->expression && return_type) {
+                injectStringSliceIfNeeded(node->expression, current_fn_return_type_);
                 injectPtrAccessIfNeeded(node->expression, current_fn_return_type_);
             }
         }
@@ -2578,6 +2581,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 if (!IsTypeAssignableTo(init_t, declared_type, node->initializer->loc)) {
                     return get_g_type_undefined();
                 }
+                injectStringSliceIfNeeded(node->initializer, declared_type);
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
@@ -2662,6 +2666,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 if (!IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
                     return get_g_type_undefined();
                 }
+                injectStringSliceIfNeeded(node->initializer, declared_type);
                 injectPtrAccessIfNeeded(node->initializer, declared_type);
             }
         } else {
@@ -2868,8 +2873,12 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         body_res = visit(node->body);
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
+            bool is_error_union_void = (current_fn_return_type_->kind == TYPE_ERROR_UNION &&
+                                        current_fn_return_type_->as.error_union.payload->kind == TYPE_VOID);
             if (!all_paths_return(node->body)) {
-                reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
+                if (!is_error_union_void) {
+                    reportAndReturnUndefined(node->return_type->loc, ERR_MISSING_RETURN_VALUE, "not all control paths return a value");
+                }
             }
         }
 
@@ -3139,8 +3148,10 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     if (base_type->kind == TYPE_SLICE) {
         if (plat_strcmp(node->field_name, "len") == 0) {
             return get_g_type_usize();
+        } else if (plat_strcmp(node->field_name, "ptr") == 0) {
+            return createPointerType(unit_.getArena(), base_type->as.slice.element_type, base_type->as.slice.is_const, true, &unit_.getTypeInterner());
         }
-        // Fall through for error reporting if not "len"
+        // Fall through for error reporting if not "len" or "ptr"
     }
 
     /* Module member access. */
@@ -4590,6 +4601,14 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
+    // String Literal to Slice coercion
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
+        source_type->as.pointer.is_const && source_type->as.pointer.base->kind == TYPE_U8) {
+        if (target_type->as.slice.element_type->kind == TYPE_U8 && target_type->as.slice.is_const) {
+            return true;
+        }
+    }
+
     // Slice -> many-item pointer coercion
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         source_type->kind == TYPE_SLICE) {
@@ -5365,6 +5384,40 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
     node->as.integer_literal.resolved_type = type;
     node->resolved_type = type;
     return node;
+}
+
+ASTNode* TypeChecker::createArraySlice(ASTNode* array, ASTNode* start, ASTNode* end, Type* type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = NODE_ARRAY_SLICE;
+    node->loc = loc;
+    node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
+    plat_memset(node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+    node->as.array_slice->array = array;
+    node->as.array_slice->start = start;
+    node->as.array_slice->end = end;
+    node->resolved_type = type;
+
+    /* Populate codegen fields */
+    visitArraySlice(node->as.array_slice);
+
+    return node;
+}
+
+void TypeChecker::injectStringSliceIfNeeded(ASTNode*& expr, Type* target_type) {
+    if (!expr || !expr->resolved_type || !target_type) return;
+
+    if (target_type->kind == TYPE_SLICE && expr->type == NODE_STRING_LITERAL) {
+        Type* source_type = expr->resolved_type;
+        if (source_type->kind == TYPE_POINTER && source_type->as.pointer.is_const && source_type->as.pointer.base->kind == TYPE_U8) {
+            if (target_type->as.slice.element_type->kind == TYPE_U8 && target_type->as.slice.is_const) {
+                u64 len = (u64)plat_strlen(expr->as.string_literal.value);
+                ASTNode* start = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
+                ASTNode* end = createIntegerLiteral(len, get_g_type_usize(), expr->loc);
+                expr = createArraySlice(expr, start, end, target_type, expr->loc);
+            }
+        }
+    }
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {

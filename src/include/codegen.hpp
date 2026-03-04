@@ -180,8 +180,9 @@ public:
      * @brief Emits a block of statements.
      * @param node The block statement node.
      * @param label_id The label_id of the loop this block belongs to (if any).
+     * @param is_fn_body True if this is the top-level block of a function.
      */
-    void emitBlock(const ASTBlockStmtNode* node, int label_id = -1);
+    void emitBlock(const ASTBlockStmtNode* node, int label_id = -1, bool is_fn_body = false);
 
     /**
      * @brief Emits a block of statements, assigning the last expression to target_var.

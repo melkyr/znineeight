@@ -621,14 +621,14 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     if (node->body) {
         writeString(" ");
-        emitBlock(&node->body->as.block_stmt);
+        emitBlock(&node->body->as.block_stmt, -1, true);
         writeString("\n\n");
     } else {
         writeString(";\n\n");
     }
 }
 
-void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
+void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id, bool is_fn_body) {
     if (!node) return;
 
     writeString("{\n");
@@ -667,6 +667,24 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         if (!exits) {
             for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
                 emitStatement(scope->defers[i]->statement);
+            }
+
+            /* Implicit return for Error!void functions */
+            if (is_fn_body && !allPathsExit((const ASTNode*)node)) {
+                if (current_fn_ret_type_->kind == TYPE_ERROR_UNION && current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
+                    writeIndent();
+                    writeString("{\n");
+                    {
+                        IndentScope scope_indent_inner(*this);
+                        writeIndent();
+                        emitType(current_fn_ret_type_, "__return_val");
+                        writeString(" = {0};\n");
+                        writeIndent();
+                        writeString("return __return_val;\n");
+                    }
+                    writeIndent();
+                    writeString("}\n");
+                }
             }
         }
     }

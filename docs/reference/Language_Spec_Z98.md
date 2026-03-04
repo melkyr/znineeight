@@ -44,7 +44,9 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - For many-item pointers, both `start` and `end` **must** be explicitly provided.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
 - **Properties**: Slices have a built-in `.len` property (e.g., `slice.len`) which returns a `usize`.
-- **Coercion**: Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+- **Coercion**:
+  - Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
+  - String literals can be implicitly coerced to constant slices `[]const u8`.
 
 ### 1.5 Error Handling Types
 - **Error Sets**: `const MyErrors = error { Foo, Bar };`
@@ -97,7 +99,8 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Optional Capture**: `if (optional_val) |val| { ... }`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
-- `while (cond) { ... }`: Simple loop. Braces are **strictly required** for the loop body. The `while (cond) : (iter)` syntax is currently **NOT supported**.
+- `while (cond) { ... }`: Simple loop. Braces are **strictly required** for the loop body.
+- `while (cond) : (iter) { ... }`: Loop with a continue expression. `iter` is evaluated after each iteration of the body.
 - `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.

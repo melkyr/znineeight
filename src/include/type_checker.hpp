@@ -118,7 +118,10 @@ private:
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
     ASTNode* createMemberAccess(ASTNode* base, const char* member, Type* type, SourceLocation loc);
     ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
+    ASTNode* createArraySlice(ASTNode* array, ASTNode* start, ASTNode* end, Type* type, SourceLocation loc);
     ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
+
+    void injectStringSliceIfNeeded(ASTNode*& expr, Type* target_type);
 
     static const int MAX_VISIT_DEPTH = 200;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;

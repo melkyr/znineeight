@@ -16,10 +16,15 @@ This document details the findings from the "baptism of fire" where the Z98 comp
 | Tagged Unions | ⚠️ Unstable | `union(enum)` is recognized but complex nested initializations often fail type checking. |
 | Switch Captures | ⚠️ Unstable | `|payload|` syntax is supported but type inference within the capture is fragile. |
 | Recursive Types | ❌ Limited | Self-referential types via slices (`[]JsonValue`) sometimes fail resolution. Explicit pointers are safer. |
-| While Continue Expr | ❌ Missing | `while (cond) : (iter)` syntax is not supported by the parser. |
-| Implicit Coercion | ❌ Missing | Strings and slices do not implicitly decay to `[*]const u8` (many-item pointers). |
+| While Continue Expr | ✅ Works | `while (cond) : (iter)` syntax is supported. |
+| Implicit Coercion | ✅ Works | Strings and slices implicitly coerce to `[]const u8` or `[*]const u8`. |
 
 ## Detailed Discoveries and Workarounds
+
+### 0. Null Pointer Analyzer: False Positives
+**Issue**: The `NullPointerAnalyzer` may report "Potential null pointer dereference" when indexing into a slice, even if the slice's length guarantees it is non-null.
+**Workaround**: Currently, these warnings can be ignored if the code is known to be correct, or the pointer can be explicitly checked for null before indexing.
+**Status**: Documented as a known limitation for Phase 9.
 
 ### 1. Parser: Mandatory Braces
 **Issue**: The parser frequently requires braces for `if` and `while` statement bodies, even when they contain only a single statement.
