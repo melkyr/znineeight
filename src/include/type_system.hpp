@@ -21,6 +21,7 @@ enum TypeKind {
     // Platform-dependent Integer Types
     TYPE_ISIZE, // Maps to i32 on 32-bit target
     TYPE_USIZE, // Maps to u32 on 32-bit target
+    TYPE_C_CHAR,
     // Floating-Point Types
     TYPE_F32,
     TYPE_F64,
@@ -363,6 +364,7 @@ Type* get_g_type_undefined();
 Type* get_g_type_type();
 Type* get_g_type_noreturn();
 Type* get_g_type_anytype();
+Type* get_g_type_c_char();
 Type* get_g_type_anyerror();
 
 #endif // TYPE_SYSTEM_HPP

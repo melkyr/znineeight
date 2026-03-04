@@ -41,16 +41,25 @@ Token Parser::advance() {
 }
 
 const Token& Parser::peek() const {
-    // This can be called when current_index_ points to the EOF token.
-    // The is_at_end() check uses this, and the expression parser needs to be able to
-    // peek at the EOF token to know when to stop.
-    assert(current_index_ < token_count_ && "Cannot peek past the end of the token buffer");
+    // Safety check: ensure we don't read past the end of the token buffer.
+    if (current_index_ >= token_count_) {
+        return eof_token_;
+    }
     return tokens_[current_index_];
 }
 
 bool Parser::is_at_end() const {
-    // Check if we are at the very last token, which should be EOF.
-    // The loop in `create_parser_for_test` includes the EOF token in the count.
+    // Safety check: ensure we don't read past the end of the token buffer.
+    // If we've run past the count, the stream is corrupted (missing TOKEN_EOF).
+    if (current_index_ >= token_count_) {
+        // Report an internal error for missing EOF token
+        if (error_handler_) {
+            error_handler_->report(ERR_INTERNAL_ERROR, SourceLocation(), "Token stream corrupted: missing EOF token");
+        }
+        return true;
+    }
+
+    // Normal check: reached the EOF token.
     return tokens_[current_index_].type == TOKEN_EOF;
 }
 
@@ -144,7 +153,8 @@ ASTNode* Parser::parseComptimeBlock() {
 }
 
 const Token& Parser::peekNext() const {
-    if (current_index_ + 1 >= token_count_) {
+    // Check if both the current and the next index are within bounds.
+    if (current_index_ >= token_count_ || current_index_ + 1 >= token_count_) {
         return eof_token_;
     }
     return tokens_[current_index_ + 1];
@@ -601,7 +611,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
                 expect(TOKEN_PIPE, "Expected closing '|' after error capture payload");
             }
 
-            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
+            ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
             ASTCatchExprNode* catch_node = (ASTCatchExprNode*)arena_->alloc(sizeof(ASTCatchExprNode));
              if (!catch_node) {
@@ -615,7 +625,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             new_node->as.catch_expr = catch_node;
             left = new_node;
         } else if (op_token.type == TOKEN_ORELSE) {
-            ASTNode* else_expr = parsePrecedenceExpr(precedence + 1);
+            ASTNode* else_expr = parsePrecedenceExpr(precedence); // Right-associative
 
             ASTOrelseExprNode* orelse_node = (ASTOrelseExprNode*)arena_->alloc(sizeof(ASTOrelseExprNode));
             if (!orelse_node) {
@@ -2069,7 +2079,8 @@ ASTNode* Parser::parseType() {
     } else if (peek().type == TOKEN_UNION || peek().type == TOKEN_STRUCT || peek().type == TOKEN_ENUM) {
         left = parsePrimaryExpr();
     } else if (peek().type == TOKEN_IDENTIFIER || peek().type == TOKEN_NORETURN ||
-               peek().type == TOKEN_TYPE || peek().type == TOKEN_ANYTYPE) {
+               peek().type == TOKEN_TYPE || peek().type == TOKEN_ANYTYPE ||
+               peek().type == TOKEN_C_CHAR) {
         Token type_name_token = advance();
         left = createNodeAt(NODE_TYPE_NAME, type_name_token.location);
         if (type_name_token.type == TOKEN_NORETURN) {
@@ -2078,6 +2089,8 @@ ASTNode* Parser::parseType() {
             left->as.type_name.name = "type";
         } else if (type_name_token.type == TOKEN_ANYTYPE) {
             left->as.type_name.name = "anytype";
+        } else if (type_name_token.type == TOKEN_C_CHAR) {
+            left->as.type_name.name = "c_char";
         } else {
             left->as.type_name.name = type_name_token.value.identifier;
         }

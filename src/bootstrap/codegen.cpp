@@ -257,6 +257,7 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_U32: writeString("unsigned int"); break;
         case TYPE_I64: writeString("__int64"); break;
         case TYPE_U64: writeString("unsigned __int64"); break;
+        case TYPE_C_CHAR: writeString("char"); break;
         case TYPE_F32: writeString("float"); break;
         case TYPE_F64: writeString("double"); break;
         case TYPE_ISIZE: writeString("int"); break;
@@ -347,7 +348,12 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     }
 
     Type* type = node->resolved_type;
-    const char* c_name = getC89GlobalName(decl->name);
+    const char* c_name = NULL;
+    if (decl->symbol && decl->symbol->mangled_name) {
+        c_name = decl->symbol->mangled_name;
+    } else {
+        c_name = getC89GlobalName(decl->name);
+    }
 
     emitDeclarator(type, c_name);
 
@@ -366,10 +372,36 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
         DynamicArray<StructField>* fields = type->as.struct_details.fields;
+        bool is_union = (type->kind == TYPE_UNION);
+        bool is_tagged = is_union && type->as.struct_details.is_tagged;
+
+        if (is_tagged) {
+            /* Emit tag assignment */
+            const char* field_name = (*init->fields)[0]->field_name;
+            writeIndent();
+            writeString(base_name);
+            writeString(".tag = ");
+            if (type->as.struct_details.tag_type && type->as.struct_details.tag_type->c_name) {
+                writeString(type->as.struct_details.tag_type->c_name);
+            } else if (type->as.struct_details.tag_type && type->as.struct_details.tag_type->as.enum_details.name) {
+                writeString(getC89GlobalName(type->as.struct_details.tag_type->as.enum_details.name));
+            } else {
+                writeString("/* enum */");
+            }
+            writeString("_");
+            writeString(field_name);
+            writeString(";\n");
+        }
+
         for (size_t i = 0; i < fields->length(); ++i) {
             const char* field_name = (*fields)[i].name;
+            Type* field_type = (*fields)[i].type;
+
+            /* Skip void fields in C */
+            if (field_type->kind == TYPE_VOID) continue;
+
             /* Find in initializer */
             ASTNode* val = NULL;
             for (size_t j = 0; j < init->fields->length(); ++j) {
@@ -380,19 +412,21 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             }
 
             if (val) {
+                char nested_name[256];
+                char* cur = nested_name;
+                size_t rem = sizeof(nested_name);
+                safe_append(cur, rem, base_name);
+                if (is_tagged) {
+                    safe_append(cur, rem, ".data");
+                }
+                safe_append(cur, rem, ".");
+                safe_append(cur, rem, field_name);
+
                 if (val->type == NODE_STRUCT_INITIALIZER) {
-                    char nested_name[256];
-                    char* cur = nested_name;
-                    size_t rem = sizeof(nested_name);
-                    safe_append(cur, rem, base_name);
-                    safe_append(cur, rem, ".");
-                    safe_append(cur, rem, field_name);
                     emitInitializerAssignments(nested_name, val);
                 } else {
                     writeIndent();
-                    writeString(base_name);
-                    writeString(".");
-                    writeString(field_name);
+                    writeString(nested_name);
                     writeString(" = ");
                     emitExpression(val);
                     writeString(";\n");
@@ -572,7 +606,13 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         }
 
         Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
-        const char* mangled_name = getC89GlobalName(node->name);
+        const char* mangled_name = NULL;
+        Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+        if (sym && sym->mangled_name) {
+            mangled_name = sym->mangled_name;
+        } else {
+            mangled_name = getC89GlobalName(node->name);
+        }
 
         /* For prototype, we don't necessarily want to allocate parameter names in var_alloc_, */
         /* so we don't pass 'node' as params_node if we want to avoid side effects. */
@@ -618,7 +658,13 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             writeString("static ");
         }
 
-        const char* mangled_name = getC89GlobalName(node->name);
+        const char* mangled_name = NULL;
+        Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+        if (sym && sym->mangled_name) {
+            mangled_name = sym->mangled_name;
+        } else {
+            mangled_name = getC89GlobalName(node->name);
+        }
 
         emitDeclarator(ret_type, mangled_name, node);
     }
@@ -2514,6 +2560,8 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 IndentScope struct_indent(*this);
                 DynamicArray<StructField>* fields = type->as.struct_details.fields;
                 for (size_t i = 0; i < fields->length(); ++i) {
+                    /* Skip void fields in C */
+                    if ((*fields)[i].type->kind == TYPE_VOID) continue;
                     writeIndent();
                     emitType((*fields)[i].type, (*fields)[i].name);
                     writeString(";\n");
@@ -2542,10 +2590,18 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                     {
                         IndentScope union_indent(*this);
                         DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                        int emitted_fields = 0;
                         for (size_t i = 0; i < fields->length(); ++i) {
+                            /* Skip void fields in C */
+                            if ((*fields)[i].type->kind == TYPE_VOID) continue;
                             writeIndent();
                             emitType((*fields)[i].type, (*fields)[i].name);
                             writeString(";\n");
+                            emitted_fields++;
+                        }
+                        if (emitted_fields == 0) {
+                            writeIndent();
+                            writeString("char __dummy;\n");
                         }
                     }
                     writeIndent();
@@ -2560,10 +2616,18 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 {
                     IndentScope union_indent(*this);
                     DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                    int emitted_fields = 0;
                     for (size_t i = 0; i < fields->length(); ++i) {
+                        /* Skip void fields in C */
+                        if ((*fields)[i].type->kind == TYPE_VOID) continue;
                         writeIndent();
                         emitType((*fields)[i].type, (*fields)[i].name);
                         writeString(";\n");
+                        emitted_fields++;
+                    }
+                    if (emitted_fields == 0) {
+                        writeIndent();
+                        writeString("char __dummy;\n");
                     }
                 }
                 writeIndent();
@@ -2909,6 +2973,7 @@ const char* C89Emitter::getZigTypeName(Type* type) const {
         case TYPE_F64:  return "f64";
         case TYPE_ISIZE: return "isize";
         case TYPE_USIZE: return "usize";
+        case TYPE_C_CHAR: return "c_char";
         default: return "unknown";
     }
 }
@@ -2935,6 +3000,7 @@ const char* C89Emitter::getMangledTypeName(Type* type) {
         case TYPE_F64:  safe_append(cur, rem, "f64"); break;
         case TYPE_ISIZE: safe_append(cur, rem, "isize"); break;
         case TYPE_USIZE: safe_append(cur, rem, "usize"); break;
+        case TYPE_C_CHAR: safe_append(cur, rem, "c_char"); break;
         case TYPE_POINTER:
             safe_append(cur, rem, "Ptr_");
             safe_append(cur, rem, getMangledTypeName(type->as.pointer.base));

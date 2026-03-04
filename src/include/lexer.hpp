@@ -111,6 +111,7 @@ enum TokenType {
     TOKEN_AND,              ///< 'and' keyword.
     TOKEN_ANYFRAME,         ///< 'anyframe' keyword.
     TOKEN_ANYTYPE,          ///< 'anytype' keyword.
+    TOKEN_C_CHAR,           ///< 'c_char' keyword.
     TOKEN_TYPE,             ///< 'type' keyword.
     TOKEN_CALLCONV,         ///< 'callconv' keyword.
     TOKEN_NOALIAS,          ///< 'noalias' keyword.
