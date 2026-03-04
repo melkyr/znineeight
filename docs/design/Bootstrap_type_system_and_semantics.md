@@ -412,7 +412,7 @@ Function calls are subject to the following strict limitations:
         Applying `&` to an r-value (e.g., a literal `&42`, or the result of an arithmetic operation `&(a + b)`) will result in an `ERR_LVALUE_EXPECTED`. The resulting type of `&x` where `x` has type `T` is `*T`.
     -   **Dereference (`*` or `.*`):** This operator can be applied to any pointer type (`*T`, `[*]T`, `**T`, etc.). For many-item pointers, it yields the first element (equivalent to `ptr[0]`). The resulting type of `*p` where `p` points to `T` is `T`.
         -   *Note on `const`*: While the type system correctly resolves the type of a dereferenced pointer to a constant type to the non-const base type, the enforcement of immutability (i.e., preventing assignments like `*p = 10` when `p` is `*const T`) is handled during the semantic analysis of assignment expressions.
-    -   **Indexing (`base[i]`):** This operator can only be applied to many-item pointers (`[*]T`), arrays (`[N]T`), and slices (`[]T`). Indexing is **strictly rejected** on single-item pointers (`*T`).
+    -   **Indexing (`base[i]`):** This operator can only be applied to many-item pointers (`[*]T`), arrays (`[N]T`), and slices (`[]T`). Indexing is **strictly rejected** on single-item pointers (`*T`). Slices are recognized by the `NullPointerAnalyzer` as being safe to index, avoiding false "potential null pointer dereference" warnings.
     -   **Pointer Arithmetic (Task 184/220/221):** To ensure C89 compatibility and Zig-flavored safety, the type checker enforces the following rules:
         -   **Supported Operations:**
             -   `ptr + unsigned_int` -> `ptr`: Offsetting a pointer forward (allowed only on `[*]T` and `[]T`).
@@ -644,7 +644,7 @@ To ensure C89 compatibility, the `TypeChecker` enforces several strict rules reg
     -   A function declared with a `void` return type can have an empty `return;` statement or no `return` statement at all (an implicit return).
     -   Attempting to return a value from a `void` function (e.g., `return 123;`) will result in an `ERR_INVALID_RETURN_VALUE_IN_VOID_FUNCTION` error.
     -   A non-`void` function must have a `return` statement with a value of a compatible type. A `return;` statement without a value, or an implicit return by falling off the end of the function, will result in an `ERR_MISSING_RETURN_VALUE` error.
-    -   **Exception (Implicit Success)**: Functions returning an error union with a void payload (e.g., `!void`) are permitted to omit an explicit `return;` statement if all control paths fall off the end of the function body. In this case, the compiler generates an implicit successful return.
+    -   **Exception (Implicit Success)**: Functions returning an error union with a void payload (e.g., `!void` or `ErrorSet!void`) are permitted to omit an explicit `return;` statement if all control paths fall off the end of the function body. In this case, the compiler generates an implicit successful return (`{0}`).
 
 -   **Pointer Arithmetic:** Pointer arithmetic is not permitted on pointers of type `*void`. Attempting to perform addition or subtraction on a `void*` will result in an `ERR_INVALID_VOID_POINTER_ARITHMETIC` error.
 
@@ -710,7 +710,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
 | `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (unlimited params). |
-| `string_literal` | ✓ | `const char*` | Maps to `*const u8`, coerces to `[]const u8` or `[*]const u8`. |
+| `string_literal` | ✓ | `const char*` | Maps to `*const u8`, coerces to `[]const u8` (synthetic slice) or `[*]const u8`. |
 | `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
 | `error { ... }` | ✓ | `int` | **Supported.** Error sets map to integer error codes. |
 

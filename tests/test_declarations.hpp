@@ -427,6 +427,7 @@ TEST_FUNC(NullPointerAnalyzer_WhileGuard);
 TEST_FUNC(NullPointerAnalyzer_WhileConservativeReset);
 TEST_FUNC(NullPointerAnalyzer_Shadowing);
 TEST_FUNC(NullPointerAnalyzer_NoLeakage);
+TEST_FUNC(NullPointerAnalyzer_SliceIndexingSafe);
 
 // Forward declarations for Integration Tests
 TEST_FUNC(Integration_FullPipeline);
@@ -1131,5 +1132,10 @@ TEST_FUNC(UnionCapture_ForwardDeclaredStruct);
 TEST_FUNC(UnionCapture_NestedUnion);
 TEST_FUNC(UnionCapture_PointerToIncomplete);
 TEST_FUNC(UnionCapture_InvalidIntegerCase);
+
+// Task 9.8 (Fix #1 & #2)
+TEST_FUNC(Task9_8_StringLiteralCoercion);
+TEST_FUNC(Task9_8_ImplicitReturnErrorVoid);
+TEST_FUNC(Task9_8_WhileContinueExpr);
 
 #endif // TEST_DECLARATIONS_HPP

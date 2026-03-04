@@ -1,18 +1,16 @@
-void foo(void) {
+unsigned int sum_up_to(unsigned int n) {
+    unsigned int i;
+    unsigned int total;
+    i = 0;
+    total = 0;
+    __zig_label_unnamed_0_start: ;
+    if (!(i < n)) goto __zig_label_unnamed_0_end;
     {
-        size_t __for_idx_1 = 0;
-        size_t __for_len_1 = 10;
-        __zig_label_outer_0_start: ;
-        while (__for_idx_1 < __for_len_1) {
-            unsigned int item = __for_idx_1;
-{
-                /* defers for break */
-                goto __zig_label_outer_0_end;
-            }
-            __zig_label_outer_0_continue: ;
-            __for_idx_1++;
-            goto __zig_label_outer_0_start;
-        }
-        __zig_label_outer_0_end: ;
+        total += i;
     }
+    __zig_label_unnamed_0_continue: ;
+    (void)(i += 1);
+    goto __zig_label_unnamed_0_start;
+    __zig_label_unnamed_0_end: ;
+    return total;
 }
