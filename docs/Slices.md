@@ -61,13 +61,22 @@ During the type checking phase, the `ASTArraySliceNode` is populated with synthe
 - **`len`**: An expression representing the number of elements in the slice.
     - `end - start` (or derived from base length if omitted).
 
-## 5. C89 Emission Strategy (Planned)
+## 5. C89 Emission Strategy (Implemented)
 
-Phase 4 and 5 will implement the following emission rules:
+The `C89Emitter` implements the following emission rules for slices:
 
-- **Type Definitions**: The `CBackend` will generate a `typedef` for each unique slice type encountered in the compilation unit.
+- **Type Definitions**: The `C89Emitter` generates a `struct` for each unique slice type encountered, mangled as `Slice_<element_type>`.
 - **Helper Functions**: Static inline helper functions (e.g., `__make_slice_i32(ptr, len)`) will be generated to construct slice structures from pointer and length components.
 - **Operations**:
-    - **Indexing**: `slice[i]` -> `slice.ptr[i]`
-    - **Length**: `slice.len` -> `slice.len`
-    - **Slicing**: Emitted as a call to the corresponding `__make_slice` helper.
+    - **Indexing**: `slice[i]` -> `slice.ptr[i]`. Slices are recognized as safe by the `NullPointerAnalyzer`.
+    - **Length**: `slice.len` -> `slice.len`.
+    - **Pointer Access**: `slice.ptr` -> `slice.ptr`.
+    - **Slicing**: Emitted as a compound initializer for the slice struct.
+
+## 6. Type Coercions
+
+### String Literal to Slice
+String literals (e.g., `"hello"`) are implicitly coerced to `[]const u8`. The TypeChecker wraps the string literal in a synthetic `NODE_ARRAY_SLICE` with `base_ptr` pointing to the string and `len` set to the literal's length.
+
+### Slice to Many-item Pointer
+A slice `[]T` can be implicitly coerced to a many-item pointer `[*]T` (or `[*]const T`) in assignments, function calls, and returns, provided const-correctness is maintained. The compiler automatically injects a `.ptr` access during this coercion.

@@ -167,11 +167,18 @@ void NullPointerAnalyzer::visit(ASTNode* node) {
                 }
             }
             break;
-        case NODE_ARRAY_ACCESS:
-            checkDereference(node->as.array_access->array);
+        case NODE_ARRAY_ACCESS: {
+            Type* array_type = node->as.array_access->array->resolved_type;
+            if (array_type && array_type->kind == TYPE_SLICE) {
+                /* Slices are structs { ptr, len }. The ptr is guaranteed non-null if len > 0,
+                   and indexing is conceptually safe for the pointer analyzer. */
+            } else {
+                checkDereference(node->as.array_access->array);
+            }
             visit(node->as.array_access->array);
             visit(node->as.array_access->index);
             break;
+        }
         default:
             break;
     }

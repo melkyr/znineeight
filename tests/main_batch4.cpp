@@ -53,7 +53,8 @@ int main(int argc, char* argv[]) {
         test_NullPointerAnalyzer_WhileGuard,
         test_NullPointerAnalyzer_WhileConservativeReset,
         test_NullPointerAnalyzer_Shadowing,
-        test_NullPointerAnalyzer_NoLeakage
+        test_NullPointerAnalyzer_NoLeakage,
+        test_NullPointerAnalyzer_SliceIndexingSafe
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -396,6 +396,34 @@ TEST_FUNC(NullPointerAnalyzer_ArrayAccessDeref) {
     return true;
 }
 
+TEST_FUNC(NullPointerAnalyzer_SliceIndexingSafe) {
+    ArenaAllocator arena(262144);
+    ArenaLifetimeGuard guard(arena);
+    StringInterner interner(arena);
+
+    const char* source =
+        "fn foo(s: []const u8) u8 {\n"
+        "    return s[0];\n"
+        "}\n";
+
+    ParserTestContext ctx(source, arena, interner);
+    Parser* parser = ctx.getParser();
+    ASTNode* ast = parser->parse();
+    ASSERT_TRUE(ast != NULL);
+
+    TypeChecker type_checker(ctx.getCompilationUnit());
+    type_checker.check(ast);
+    ASSERT_TRUE(!ctx.getCompilationUnit().getErrorHandler().hasErrors());
+
+    NullPointerAnalyzer analyzer(ctx.getCompilationUnit());
+    analyzer.analyze(ast);
+
+    // This should NOT trigger a warning
+    ASSERT_TRUE(!ctx.getCompilationUnit().getErrorHandler().hasWarnings());
+
+    return true;
+}
+
 TEST_FUNC(NullPointerAnalyzer_PersistentStateTracking) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);

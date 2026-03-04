@@ -137,6 +137,14 @@ public:
             return findFunctionCall(node->as.paren_expr.expr, name);
         } else if (node->type == NODE_VAR_DECL) {
             return findFunctionCall(node->as.var_decl->initializer, name);
+        } else if (node->type == NODE_ASSIGNMENT) {
+            const ASTNode* found = findFunctionCall(node->as.assignment->lvalue, name);
+            if (found) return found;
+            return findFunctionCall(node->as.assignment->rvalue, name);
+        } else if (node->type == NODE_COMPOUND_ASSIGNMENT) {
+            const ASTNode* found = findFunctionCall(node->as.compound_assignment->lvalue, name);
+            if (found) return found;
+            return findFunctionCall(node->as.compound_assignment->rvalue, name);
         }
 
         return NULL;
