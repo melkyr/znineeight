@@ -1517,13 +1517,12 @@ Key changes:
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the Name Mangling Contract and resolution details.
     - **Verification**: Expanded `cross_module_tests.cpp` and `recursive_type_tests.cpp` with comprehensive edge cases.
 
-230. [IN PROGRESS] **Task 9.5: Incremental Error Handling Overhaul**
+230. [COMPLETE] Task 9.5: Incremental Error Handling Overhaul (DONE)
     - **Phase 0 (Harness & PAL)**: Implemented `plat_write_str` and `Z98_ASSERT` for robust debugging. Synchronized the test harness with `ErrorHandler::hasErrors()` to maintain compatibility with legacy tests.
     - **Phase 1 (Parser)**: Transitioned parser errors to record diagnostics before aborting.
     - **Phase 2 & 3 (Type Checker Recovery)**: Converted all semantic `fatalError` calls to recoverable `report()` calls. Visitors now return sentinel values (`NULL`/`false`) to allow multi-error reporting.
     - **Phase 4 (Centralization)**: Centralized all error messages in `ErrorHandler::getMessage(code)`. Updated all compiler passes to use consistent messaging and moved metadata to the `hint` field.
     - **Documentation**: Updated `DESIGN.md` and `Bootstrap_type_system_and_semantics.md` with the new two-tier error model.
-    - **Remaining**: Fix minor regressions in Batch 45/47 and implement the multi-error integration test.
 
 231. [COMPLETE] **Task 9.5.4: Defer Scope Guard**
     - Implemented `DeferScopeGuard` RAII helper in `codegen.cpp` to manage the lifecycle of the `defer_stack_`.
@@ -1546,6 +1545,10 @@ Key changes:
 235. [COMPLETE] Task 9.5.8: Interner Null Checks
     - Implemented NULL validation in all `TypeInterner` methods.
     - Ensured that invalid types are not hashed or stored, providing robust defensive programming in the type interning system.
+
+236. [COMPLETE] Task 9.13: Recursive Type Conflict and C Library Interop
+    - **Ordered Emission**: Modified `CBackend` to emit struct, union, and enum definitions before dependent special types (slices, error unions, optionals). This ensures that recursive types where an error union contains a struct payload are correctly defined.
+    - **C Char Interop**: Introduced implicit coercion between `u8` and `c_char` in the type system. Updated `json_parser/file.zig` to use `c_char` for `fopen` signatures, ensuring compatibility with C's `char*`.
 
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
