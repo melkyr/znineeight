@@ -409,7 +409,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     const char* primitives[] = {
         "void", "bool", "i8", "i16", "i32", "i64",
         "u8", "u16", "u32", "u64", "isize", "usize",
-        "f32", "f64"
+        "c_char", "f32", "f64"
     };
     for (size_t i = 0; i < sizeof(primitives) / sizeof(primitives[0]); ++i) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
@@ -452,6 +452,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN)
             .build();
         table.insert(sym);
     }
@@ -472,6 +473,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN)
             .build();
         table.insert(sym);
     }
@@ -490,6 +492,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN)
             .build();
         table.insert(sym);
     }
@@ -508,6 +511,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN)
             .build();
         table.insert(sym);
     }
@@ -540,27 +544,31 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN)
             .build();
         table.insert(sym);
     }
 
     // Deprecated: arena_free(ptr: *void) -> void
     // Map it to a no-op or just leave it for now.
-    void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
-    if (params_mem2 == NULL) fatalError("Out of memory allocating params for arena_free");
-    DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
-    params2->append(createPointerType(arena_, get_g_type_void(), false, false, &type_interner_));
-    Type* ret_type2 = get_g_type_void();
-    Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
+    {
+        void* params_mem2 = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem2 == NULL) fatalError("Out of memory allocating params for arena_free");
+        DynamicArray<Type*>* params2 = new (params_mem2) DynamicArray<Type*>(arena_);
+        params2->append(createPointerType(arena_, get_g_type_void(), false, false, &type_interner_));
+        Type* ret_type2 = get_g_type_void();
+        Type* fn_type2 = createFunctionType(arena_, params2, ret_type2);
 
-    const char* free_name = interner_.intern("arena_free");
-    Symbol sym_free = SymbolBuilder(arena_)
-        .withName(free_name)
-        .withMangledName(free_name)
-        .ofType(SYMBOL_FUNCTION)
-        .withType(fn_type2)
-        .build();
-    table.insert(sym_free);
+        const char* free_name = interner_.intern("arena_free");
+        Symbol sym_free = SymbolBuilder(arena_)
+            .withName(free_name)
+            .withMangledName(free_name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type2)
+            .withFlags(SYMBOL_FLAG_EXTERN)
+            .build();
+        table.insert(sym_free);
+    }
 }
 
 void CompilationUnit::validateErrorHandlingRules() {

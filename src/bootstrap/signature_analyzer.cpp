@@ -140,6 +140,7 @@ bool SignatureAnalyzer::isReturnTypeValid(Type* type, SourceLocation loc) {
         case TYPE_BOOL:
         case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
+        case TYPE_C_CHAR:
         case TYPE_F32: case TYPE_F64:
         case TYPE_ENUM:
             return true;
@@ -187,6 +188,7 @@ bool SignatureAnalyzer::isParameterTypeValid(Type* type, SourceLocation loc, con
         case TYPE_BOOL:
         case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
+        case TYPE_C_CHAR:
         case TYPE_F32: case TYPE_F64:
         case TYPE_ENUM:
             return true;

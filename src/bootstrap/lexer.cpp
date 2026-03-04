@@ -120,6 +120,7 @@ const Keyword keywords[] = {
     {"anyframe", 8, TOKEN_ANYFRAME},
     {"anytype", 7, TOKEN_ANYTYPE},
     {"asm", 3, TOKEN_ASM},
+    {"c_char", 6, TOKEN_C_CHAR},
     {"break", 5, TOKEN_BREAK},
     {"callconv", 8, TOKEN_CALLCONV},
     {"catch", 5, TOKEN_CATCH},

@@ -2835,7 +2835,16 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
 
     fn_symbol = unit_.getSymbolTable().lookup(node->name);
     if (fn_symbol && fn_symbol->symbol_type) {
-        return fn_symbol->symbol_type; /* Already resolved. */
+        /* Even if resolved, ensure AST nodes have resolved_type for codegen. */
+        if (node->params) {
+            for (i = 0; i < node->params->length(); ++i) {
+                visit((*node->params)[i]->type);
+            }
+        }
+        if (node->return_type) {
+            visit(node->return_type);
+        }
+        return fn_symbol->symbol_type;
     }
 
     unit_.getSymbolTable().enterScope();
@@ -3507,11 +3516,11 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             }
         }
 
-        if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_ARRAY) {
-            return reportAndReturnUndefined(node->type_expr->loc, ERR_TYPE_MISMATCH, "expected struct or array type for initialization");
+        if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_ARRAY) {
+            return reportAndReturnUndefined(node->type_expr->loc, ERR_TYPE_MISMATCH, "expected struct, union or array type for initialization");
         }
 
-        if (struct_type->kind == TYPE_STRUCT) {
+        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION) {
             if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
                 return struct_type;
             }
@@ -4291,6 +4300,7 @@ bool TypeChecker::isNumericType(Type* type) {
         return false;
     }
     return (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) ||
+           type->kind == TYPE_C_CHAR ||
            type->kind == TYPE_INTEGER_LITERAL ||
            type->kind == TYPE_ERROR_SET;
 }
@@ -4300,6 +4310,7 @@ bool TypeChecker::isIntegerType(Type* type) {
         return false;
     }
     return (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
+           type->kind == TYPE_C_CHAR ||
            type->kind == TYPE_INTEGER_LITERAL ||
            type->kind == TYPE_BOOL ||
            type->kind == TYPE_ERROR_SET;
@@ -4469,6 +4480,7 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
     switch (target_type->kind) {
         case TYPE_I8:  return (value >= -128 && value <= 127);
         case TYPE_U8:  return (value >= 0 && value <= 255);
+        case TYPE_C_CHAR: return (value >= -128 && value <= 255); /* Fits in both signed/unsigned char */
         case TYPE_I16: return (value >= -32768 && value <= 32767);
         case TYPE_U16: return (value >= 0 && value <= 65535);
         case TYPE_I32: return (value >= -2147483647 - 1 && value <= 2147483647);
@@ -4493,6 +4505,7 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
     switch (int_type->kind) {
         case TYPE_I8:   return value >= -128 && value <= 127;
         case TYPE_U8:   return value >= 0 && value <= 255;
+        case TYPE_C_CHAR: return value >= -128 && value <= 255;
         case TYPE_I16:  return value >= -32768 && value <= 32767;
         case TYPE_U16:  return value >= 0 && value <= 65535;
         case TYPE_I32:  return value >= (i64)-2147483647 - 1 && value <= 2147483647;

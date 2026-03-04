@@ -31,6 +31,7 @@ static const TypeMapping c89_type_map[] = {
     { TYPE_F64, "double" },
     { TYPE_ISIZE, "int" },
     { TYPE_USIZE, "unsigned int" },
+    { TYPE_C_CHAR, "char" },
     { TYPE_NORETURN, "void" } // noreturn return type maps to void in C89
 };
 
