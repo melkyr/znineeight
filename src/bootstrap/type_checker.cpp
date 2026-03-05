@@ -162,6 +162,8 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+                placeholder->as.placeholder.dependents = NULL;
+                placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
 
                 if (sym) {
@@ -2247,6 +2249,8 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         }
 
         if (resolved->kind != TYPE_PLACEHOLDER) {
+            DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
+
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
@@ -2254,6 +2258,12 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
                 placeholder->c_name = resolved->c_name;
             }
             placeholder->as = resolved->as;
+
+            if (dependents) {
+                for (size_t i = 0; i < dependents->length(); ++i) {
+                    refreshLayout((*dependents)[i]);
+                }
+            }
         }
     }
 
@@ -2562,6 +2572,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.name = node->name;
         placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
         placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+        placeholder->as.placeholder.dependents = NULL;
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 
