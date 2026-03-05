@@ -1647,7 +1647,7 @@ struct MemoryTracker {
 
 ## Phase 1: Lifter Infrastructure (Week 2)
 
-### Task 230: ControlFlowLifter Skeleton with RAII State
+### Task 230: ControlFlowLifter Skeleton with RAII State (DONE)
 **Goal**: Create lifter class with `LiftContext`-style state management.
 
 ```cpp
