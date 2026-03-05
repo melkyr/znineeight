@@ -1146,4 +1146,9 @@ TEST_FUNC(MetadataPreparation_SpecialTypes);
 TEST_FUNC(MetadataPreparation_RecursivePlaceholder);
 TEST_FUNC(PlaceholderHardening_RecursiveComposites);
 
+// Batch 54: AST Cloning
+TEST_FUNC(ASTCloning_Basic);
+TEST_FUNC(ASTCloning_FunctionCall);
+TEST_FUNC(ASTCloning_Switch);
+
 #endif // TEST_DECLARATIONS_HPP
