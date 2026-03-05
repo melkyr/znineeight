@@ -3179,6 +3179,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 }
 
 Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node) {
+
     Type* base_type;
     Module* target_mod;
     DynamicArray<const char*>* tags;
@@ -4878,7 +4879,10 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 }
 void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     bool is_explicit = false;
-    for (size_t i = 0; i < node->args->length(); ++i) {
+    size_t i;
+    if (!node->args) return;
+    
+    for (i = 0; i < node->args->length(); ++i) {
         ASTNode* arg = (*node->args)[i];
         if (isTypeExpression(arg, unit_.getSymbolTable())) {
             is_explicit = true;
@@ -4891,17 +4895,24 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
     if (node->callee->type == NODE_IDENTIFIER) {
         callee_name = node->callee->as.identifier.name;
         Symbol* sym = node->callee->as.identifier.symbol;
-        if (!sym) {
+        if (!sym && callee_name) {
              sym = unit_.getSymbolTable().lookup(callee_name);
         }
         if (sym && sym->is_generic) {
             is_implicit = true;
         }
     } else if (node->callee->type == NODE_MEMBER_ACCESS) {
-        callee_name = node->callee->as.member_access->field_name;
-        Symbol* sym = node->callee->as.member_access->symbol;
-        if (sym && sym->is_generic) {
-            is_implicit = true;
+        ASTMemberAccessNode* ma = node->callee->as.member_access;
+        /* Robustness check: Ensure ma is not NULL and looks like a valid pointer */
+        if (ma && (size_t)ma > 0xFFFF) {
+            callee_name = ma->field_name;
+            /* Only treat as potential generic if it has a resolved symbol (module access) */
+            if (ma->symbol && (size_t)ma->symbol > 0xFFFF) {
+                Symbol* sym = ma->symbol;
+                if (sym->is_generic) {
+                    is_implicit = true;
+                }
+            }
         }
     }
 
