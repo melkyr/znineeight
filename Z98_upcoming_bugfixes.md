@@ -1001,3 +1001,18 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 **Verification**:
 - Created Batch 54 with comprehensive cloning tests.
 - Verified that modifications to cloned nodes do not affect original structures.
+
+---
+
+### Task 229.5: Memory Tracking Hooks [DONE]
+**Goal**: Instrument the memory arena to track peak usage and enforce a hard limit to prevent silent OOM on legacy hardware.
+
+**Implementation**:
+- Added `peak_allocated_` and `hard_limit_` members to `ArenaAllocator`.
+- Integrated peak tracking and limit enforcement into `alloc_aligned`.
+- Implemented `resetPeak()` and `getPeakAllocated()` for reporting.
+- Updated `CompilationUnit` to reset peak tracking and report peak usage if `MEASURE_MEMORY` is enabled.
+
+**Verification**:
+- Added `arena_alloc_hard_limit_abort` test to Batch 1.
+- Verified that exceeding the hard limit triggers a fatal error and process abortion.

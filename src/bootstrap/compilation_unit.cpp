@@ -160,6 +160,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     if (plat_file_exists(lib_path)) {
         default_lib_path_ = interner_.intern(lib_path);
     }
+
+    arena_.resetPeak();
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -926,6 +928,12 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
 
 #ifdef MEASURE_MEMORY
+    char peak_buf[64];
+    char n_peak[21];
+    plat_u64_to_string(arena_.getPeakAllocated(), n_peak, sizeof(n_peak));
+    plat_print_info("\nPeak Memory Usage: ");
+    plat_print_info(n_peak);
+    plat_print_info(" bytes\n");
     tracker.print_report();
     MemoryTracker::reset_counts();
 #endif

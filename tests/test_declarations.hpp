@@ -16,6 +16,7 @@ TEST_FUNC(multiple_allocations);
 TEST_FUNC(allocation_failure);
 TEST_FUNC(reset);
 TEST_FUNC(aligned_allocation);
+TEST_FUNC(arena_alloc_hard_limit_abort);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
