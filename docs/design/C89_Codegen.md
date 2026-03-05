@@ -9,6 +9,7 @@ The `CBackend` is the orchestration layer for code generation. It manages the cr
 ### Responsibilities:
 - **Module Iteration**: Iterates over all compiled modules in a `CompilationUnit`.
 - **File Management**: Creates `.c` and `.h` files for each module.
+- **Metadata-Driven Emission**: Leverages the `MetadataPreparationPass` to emit headers that are guaranteed to be self-contained and free of "unknown type name" errors.
 - **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies. Struct, union, and enum definitions are emitted before dependent types like slices, error unions, and optionals to support recursive types.
 - **Orchestration**: Uses `C89Emitter` to write code to these files.
 - **Interface Generation**: Generates public header files (`.h`) containing declarations for symbols marked as `pub` in Zig.
@@ -197,7 +198,7 @@ Slices (`[]T`) are emitted as C structs containing a pointer and a length.
 For each unique slice type encountered, the compiler generates a `typedef` and a static inline helper function for construction.
 - **Naming**: Slice structs are named using a mangling scheme: `Slice_` + mangled element type (e.g., `Slice_i32`, `Slice_Ptr_i32`).
 - **Visibility**: If a slice is used in a `pub` declaration, its `typedef` and helper are placed in the module's header (`.h`). Otherwise, they are in the implementation file (`.c`).
-- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. In source files (`.c`), a global cache is used to ensure each type is emitted only once per translation unit.
+- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. The `MetadataPreparationPass` pre-populates `module->header_types` to ensure all transitive dependencies are included. In source files (`.c`), a global cache is used to ensure each type is emitted only once per translation unit.
 - **Const Qualifiers**: `const` is dropped in the emitted C code, so `[]const T` and `[]T` use the same C struct.
 
 #### Operations

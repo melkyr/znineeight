@@ -1140,4 +1140,10 @@ TEST_FUNC(Task9_8_StringLiteralCoercion);
 TEST_FUNC(Task9_8_ImplicitReturnErrorVoid);
 TEST_FUNC(Task9_8_WhileContinueExpr);
 
+// Batch 53
+TEST_FUNC(MetadataPreparation_TransitiveHeaders);
+TEST_FUNC(MetadataPreparation_SpecialTypes);
+TEST_FUNC(MetadataPreparation_RecursivePlaceholder);
+TEST_FUNC(PlaceholderHardening_RecursiveComposites);
+
 #endif // TEST_DECLARATIONS_HPP

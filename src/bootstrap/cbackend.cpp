@@ -316,47 +316,35 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         emitter.writeString("\n");
     }
 
+    // Use pre-computed header types
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* type = module->header_types[i];
+        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ENUM) {
+            emitter.emitTypeDefinition(type);
+        }
+    }
+    emitter.emitBufferedTypeDefinitions();
+
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* type = module->header_types[i];
+        if (type->kind == TYPE_SLICE) emitter.ensureSliceType(type);
+    }
+    emitter.emitBufferedSlices();
+
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* type = module->header_types[i];
+        if (type->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(type);
+    }
+    emitter.emitBufferedErrorUnions();
+
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* type = module->header_types[i];
+        if (type->kind == TYPE_OPTIONAL) emitter.ensureOptionalType(type);
+    }
+    emitter.emitBufferedOptionals();
+
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
-
-        // Pass 1: Public Type Definitions (Regular types like structs)
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            if ((*stmts)[i]->type == NODE_VAR_DECL) {
-                if ((*stmts)[i]->as.var_decl->is_pub) {
-                    emitter.emitTypeDefinition((*stmts)[i]);
-                }
-            }
-        }
-
-        // Pass 1.5: Special types (slices, error unions, optionals)
-        // These are emitted AFTER structs because they might depend on them.
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_SLICES);
-            } else if (node->type == NODE_FN_DECL && node->as.fn_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_SLICES);
-            }
-        }
-        emitter.emitBufferedSlices();
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_ERROR_UNIONS);
-            } else if (node->type == NODE_FN_DECL && node->as.fn_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_ERROR_UNIONS);
-            }
-        }
-        emitter.emitBufferedErrorUnions();
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_OPTIONALS);
-            } else if (node->type == NODE_FN_DECL && node->as.fn_decl->is_pub) {
-                scanForSpecialTypes(node, emitter, SCAN_OPTIONALS);
-            }
-        }
-        emitter.emitBufferedOptionals();
 
         // Pass 2: Public global variable declarations
         for (size_t i = 0; i < stmts->length(); ++i) {

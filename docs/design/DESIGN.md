@@ -211,7 +211,8 @@ filename.zig:23:5: error: type mismatch
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
-    7.  **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
+    7.  Pass 5: Metadata Preparation (Task 9.15): A post-typechecking pass that transitively collects all reachable types for module headers, ensures consistent mangling (MSVC 6.0 compatible), and verifies complete type layouts.
+    8.  Code Generation: Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 #### 4.0.1 Non-C89 Feature Detection Strategy

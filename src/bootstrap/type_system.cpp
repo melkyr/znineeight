@@ -1051,6 +1051,13 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
 }
 
 void typeToString(Type* type, char* buffer, size_t buffer_size) {
+#ifdef DEBUG
+    if (type && type->kind == TYPE_PLACEHOLDER) {
+        plat_print_debug("Warning: typeToString called on TYPE_PLACEHOLDER: ");
+        plat_print_debug(type->as.placeholder.name);
+        plat_print_debug("\n");
+    }
+#endif
     if (!type || buffer_size == 0) {
         if (buffer_size > 0) buffer[0] = '\0';
         return;

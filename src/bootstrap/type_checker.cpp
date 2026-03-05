@@ -2238,6 +2238,9 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     /* Mutate placeholder in place */
     if (resolved && resolved != placeholder) {
+        /* Capture dependencies before mutation */
+        DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
+
         /* If resolved is TYPE_TYPE, we want the underlying type */
         if (resolved->kind == TYPE_TYPE) {
              if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
@@ -2249,8 +2252,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         }
 
         if (resolved->kind != TYPE_PLACEHOLDER) {
-            DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
-
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
@@ -2266,6 +2267,13 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             }
         }
     }
+#ifdef DEBUG
+    if (placeholder->kind == TYPE_PLACEHOLDER) {
+        plat_print_debug("Warning: resolvePlaceholder did not resolve ");
+        plat_print_debug(placeholder->as.placeholder.name);
+        plat_print_debug("\n");
+    }
+#endif
 
     unit_.setCurrentModule(old_mod);
     return placeholder;
@@ -3241,10 +3249,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     /* Slice built-in properties */
     if (base_type->kind == TYPE_SLICE) {
+        Type* elem = base_type->as.slice.element_type;
+        if (elem && elem->kind == TYPE_PLACEHOLDER) {
+            elem = resolvePlaceholder(elem);
+        }
+
         if (plat_strcmp(node->field_name, "len") == 0) {
             return get_g_type_usize();
         } else if (plat_strcmp(node->field_name, "ptr") == 0) {
-            return createPointerType(unit_.getArena(), base_type->as.slice.element_type, base_type->as.slice.is_const, true, &unit_.getTypeInterner());
+            return createPointerType(unit_.getArena(), elem, base_type->as.slice.is_const, true, &unit_.getTypeInterner());
         }
         /* Fall through for error reporting if not "len" or "ptr" */
     }
@@ -4195,16 +4208,24 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     /* Optional types coercions */
     if (expected->kind == TYPE_OPTIONAL) {
+        Type* payload = expected->as.optional.payload;
+        if (payload && payload->kind == TYPE_PLACEHOLDER) {
+            payload = resolvePlaceholder(payload);
+        }
         /* T -> ?T (implicit wrapping) */
-        if (areTypesCompatible(expected->as.optional.payload, actual)) {
+        if (areTypesCompatible(payload, actual)) {
             return true;
         }
     }
 
     /* Error Handling coercions */
     if (expected->kind == TYPE_ERROR_UNION) {
+        Type* payload = expected->as.error_union.payload;
+        if (payload && payload->kind == TYPE_PLACEHOLDER) {
+            payload = resolvePlaceholder(payload);
+        }
         /* T -> !T (success wrapping) */
-        if (areTypesCompatible(expected->as.error_union.payload, actual)) {
+        if (areTypesCompatible(payload, actual)) {
             return true;
         }
         /* error.Tag -> !T (error wrapping) */

@@ -10,6 +10,7 @@
 #include "lifetime_analyzer.hpp"
 #include "null_pointer_analyzer.hpp"
 #include "double_free_analyzer.hpp"
+#include "metadata_preparation_pass.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
@@ -819,6 +820,18 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     // Verify that all placeholders are resolved after type checking
     if (all_success && !verifyNoPlaceholders()) {
         all_success = false;
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+
+    // Phase 2.5: Metadata Preparation
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("Metadata Preparation");
+#endif
+    if (all_success) {
+        MetadataPreparationPass prep_pass(*this);
+        prep_pass.run();
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
