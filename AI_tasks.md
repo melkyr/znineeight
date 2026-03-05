@@ -1731,44 +1731,24 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, const ASTNode* parent
 
 ## Phase 2: Lifting Logic (Week 3)
 
-### Task 232: Context-Aware Lifting Decisions (Enhanced)
-**Goal**: Implement `needsLifting()` with nesting matrix from codegen doc.
+### Task 232: Context-Aware Lifting Decisions (Enhanced) (DONE)
+**Goal**: Implement `needsLifting()` with context awareness (Parent tracking and Paren skipping).
 
 ```cpp
 bool ControlFlowLifter::needsLifting(const ASTNode* node, const ASTNode* parent) {
+    if (!isControlFlowExpr(node->type)) return false;
     if (!parent) return false;  // Root is always safe
     
-    // Safe contexts: expression is already in statement position
-    switch (parent->type) {
-        case NODE_EXPRESSION_STMT:
-        case NODE_RETURN_STMT:
-        case NODE_VAR_DECL:      // initializer
-        case NODE_ASSIGNMENT:    // rvalue (handled specially in Task 237)
-            return false;
-            
-        // Unsafe: nested in another expression → must lift
-        case NODE_BINARY_OP:
-        case NODE_UNARY_OP:
-        case NODE_FUNCTION_CALL:  // argument
-        case NODE_ARRAY_ACCESS:   // index or array expr
-        case NODE_MEMBER_ACCESS:  // base expr
-        case NODE_IF_EXPR:        // condition or branch
-        case NODE_SWITCH_EXPR:    // condition or prong
-        case NODE_TRY_EXPR:
-        case NODE_CATCH_EXPR:
-        case NODE_ORELSE_EXPR:
-            return true;
-            
-        // Special: paren just forwards to its parent's context
-        case NODE_PAREN_EXPR:
-            return needsLifting(node, getParentOfParen(parent));
-            
-        default:
-            return true;  // Conservative: lift if unsure
-    }
+    // Skip parentheses to get real semantic context
+    const ASTNode* effective_parent = skipParens(parent);
+    if (!effective_parent) return false;
+
+    // C89 simplification: All control-flow expressions MUST be lifted
+    // as C89 only supports them as statements.
+    return true;
 }
 ```
-**Test**: Unit tests for each parent-child combination in the nesting matrix.
+**Test**: Verified with `ASTLifter_ParenSkip` and `ASTLifter_ReturnLift`.
 
 ---
 

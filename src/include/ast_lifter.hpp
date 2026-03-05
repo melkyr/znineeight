@@ -47,6 +47,13 @@ private:
     bool needsLifting(ASTNode* node, ASTNode* parent);
 
     /**
+     * @brief Skips parentheses to find the real semantic parent.
+     * @param parent The initial parent node.
+     * @return The first non-parenthesis ancestor.
+     */
+    const ASTNode* skipParens(const ASTNode* parent);
+
+    /**
      * @brief Performs the actual lifting of a control-flow expression.
      * @param node_slot A pointer to the pointer holding the node to be lifted.
      * @param parent The parent node.
@@ -76,6 +83,7 @@ private:
 
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
+    DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
 
     // RAII Helpers
     struct StmtGuard {
@@ -88,6 +96,12 @@ private:
         ControlFlowLifter& lifter_;
         BlockGuard(ControlFlowLifter& l, ASTBlockStmtNode* block);
         ~BlockGuard();
+    };
+
+    struct ParentGuard {
+        ControlFlowLifter& lifter_;
+        ParentGuard(ControlFlowLifter& l, ASTNode* node);
+        ~ParentGuard();
     };
 };
 

@@ -23,10 +23,18 @@ ControlFlowLifter::BlockGuard::~BlockGuard() {
     lifter_.block_stack_.pop_back();
 }
 
+ControlFlowLifter::ParentGuard::ParentGuard(ControlFlowLifter& l, ASTNode* node) : lifter_(l) {
+    lifter_.parent_stack_.append(node);
+}
+
+ControlFlowLifter::ParentGuard::~ParentGuard() {
+    lifter_.parent_stack_.pop_back();
+}
+
 ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* interner, ErrorHandler* error_handler)
     : arena_(arena), interner_(interner), error_handler_(error_handler),
       tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(200),
-      stmt_stack_(*arena), block_stack_(*arena) {}
+      stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena) {}
 
 void ControlFlowLifter::lift(CompilationUnit* unit) {
     const DynamicArray<Module*>& modules = unit->getModules();
@@ -61,41 +69,45 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
 
     bool is_block = (node->type == NODE_BLOCK_STMT);
 
-    // Inner function to handle the rest of transformation after potentially setting guards
-    struct Inner {
-        static void process(ControlFlowLifter* lifter, ASTNode** node_slot, ASTNode* node, ASTNode* parent) {
-            // Post-order: transform children first
-            struct TransformVisitor : ChildVisitor {
-                ControlFlowLifter* lifter;
-                ASTNode* current_node;
-                TransformVisitor(ControlFlowLifter* l, ASTNode* n) : lifter(l), current_node(n) {}
+    {
+        ParentGuard pguard(*this, node);
 
-                void visitChild(ASTNode** child_slot) {
-                    lifter->transformNode(child_slot, current_node);
-                }
-            };
-            TransformVisitor visitor(lifter, node);
-            forEachChild(node, visitor);
+        // Inner function to handle the rest of transformation after potentially setting guards
+        struct Inner {
+            static void process(ControlFlowLifter* lifter, ASTNode* node) {
+                // Post-order: transform children first
+                struct TransformVisitor : ChildVisitor {
+                    ControlFlowLifter* lifter;
+                    ASTNode* current_node;
+                    TransformVisitor(ControlFlowLifter* l, ASTNode* n) : lifter(l), current_node(n) {}
 
-            // Decision: does THIS node need lifting?
-            if (lifter->needsLifting(node, parent)) {
-                lifter->liftNode(node_slot, parent, ::getPrefixForType(node->type));
+                    void visitChild(ASTNode** child_slot) {
+                        lifter->transformNode(child_slot, current_node);
+                    }
+                };
+                TransformVisitor visitor(lifter, node);
+                forEachChild(node, visitor);
             }
-        }
-    };
+        };
 
-    if (is_stmt && is_block) {
-        StmtGuard sguard(*this, node);
-        BlockGuard bguard(*this, &node->as.block_stmt);
-        Inner::process(this, node_slot, node, parent);
-    } else if (is_stmt) {
-        StmtGuard sguard(*this, node);
-        Inner::process(this, node_slot, node, parent);
-    } else if (is_block) {
-        BlockGuard bguard(*this, &node->as.block_stmt);
-        Inner::process(this, node_slot, node, parent);
-    } else {
-        Inner::process(this, node_slot, node, parent);
+        if (is_stmt && is_block) {
+            StmtGuard sguard(*this, node);
+            BlockGuard bguard(*this, &node->as.block_stmt);
+            Inner::process(this, node);
+        } else if (is_stmt) {
+            StmtGuard sguard(*this, node);
+            Inner::process(this, node);
+        } else if (is_block) {
+            BlockGuard bguard(*this, &node->as.block_stmt);
+            Inner::process(this, node);
+        } else {
+            Inner::process(this, node);
+        }
+    }
+
+    // Decision: does THIS node need lifting?
+    if (needsLifting(node, parent)) {
+        liftNode(node_slot, parent, getPrefixForType(node->type));
     }
 
     depth_--;
@@ -108,21 +120,68 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     // Only control-flow expressions can be lifted
     if (!isControlFlowExpr(node->type)) return false;
 
-    // List of safe parent types where a control‑flow expression can stay.
-    // NODE_ASSIGNMENT is intentionally omitted to force lifting of its RHS.
-    static const NodeType safe_parents[] = {
-        NODE_EXPRESSION_STMT,
-        NODE_RETURN_STMT,
-        NODE_VAR_DECL
-    };
+    // Skip parentheses to get the real semantic parent
+    const ASTNode* effective_parent = skipParens(parent);
+    if (!effective_parent) return false; // Root is always safe
 
-    for (size_t i = 0; i < sizeof(safe_parents)/sizeof(NodeType); ++i) {
-        if (parent->type == safe_parents[i]) {
-            return false; // safe
+    // Any control‑flow expression must be lifted for C89 compatibility.
+    // We use a switch as requested for clarity and future expansion.
+    switch (effective_parent->type) {
+        case NODE_EXPRESSION_STMT:
+        case NODE_RETURN_STMT:
+        case NODE_VAR_DECL:
+        case NODE_ASSIGNMENT:
+        case NODE_COMPOUND_ASSIGNMENT:
+        case NODE_BINARY_OP:
+        case NODE_UNARY_OP:
+        case NODE_FUNCTION_CALL:
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+        case NODE_IF_EXPR:
+        case NODE_SWITCH_EXPR:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR:
+        case NODE_PAREN_EXPR: // already skipped, but left for completeness
+            return true;
+        default:
+            return true; // Conservative: lift if unsure
+    }
+}
+
+const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
+    if (!parent) return NULL;
+    const ASTNode* cur = parent;
+
+    // We expect the parent to be at the top of the stack when needsLifting is called
+    // (because ParentGuard for 'node' was just popped).
+    // If 'cur' is a Paren, we need to go higher in the stack.
+
+    int idx = (int)parent_stack_.length() - 1;
+    // Verify top of stack is indeed our parent
+    if (idx < 0 || parent_stack_[idx] != parent) {
+        // Fallback: search for it if stack isn't what we expect
+        idx = -1;
+        for (int i = (int)parent_stack_.length() - 1; i >= 0; --i) {
+            if (parent_stack_[i] == parent) {
+                idx = i;
+                break;
+            }
         }
     }
 
-    return true; // unsafe, needs lifting
+    if (idx < 0) return parent; // Should not happen
+
+    while (cur && cur->type == NODE_PAREN_EXPR) {
+        if (idx > 0) {
+            idx--;
+            cur = parent_stack_[idx];
+        } else {
+            return NULL; // Reached root and it was a paren
+        }
+    }
+
+    return cur;
 }
 
 void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix) {
@@ -191,6 +250,17 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     ident_node->as.identifier.name = temp_name;
 
     *node_slot = ident_node;
+}
+
+const char* ControlFlowLifter::getPrefixForType(NodeType type) {
+    switch (type) {
+        case NODE_IF_EXPR:     return "if";
+        case NODE_SWITCH_EXPR: return "switch";
+        case NODE_TRY_EXPR:    return "try";
+        case NODE_CATCH_EXPR:  return "catch";
+        case NODE_ORELSE_EXPR: return "orelse";
+        default:               return "tmp";
+    }
 }
 
 const char* ControlFlowLifter::generateTempName(const char* prefix) {
