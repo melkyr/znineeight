@@ -111,8 +111,10 @@ private:
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
+public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
+private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
 

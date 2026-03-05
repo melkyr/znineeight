@@ -12,6 +12,7 @@
 #include "lifetime_analyzer.cpp"
 #include "null_pointer_analyzer.cpp"
 #include "double_free_analyzer.cpp"
+#include "metadata_preparation_pass.cpp"
 #include "utils.cpp"
 #include "ast_utils.cpp"
 #include "error_registry.cpp"

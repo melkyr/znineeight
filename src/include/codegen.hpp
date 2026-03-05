@@ -284,6 +284,11 @@ public:
     void emitTypeDefinition(const ASTNode* node);
 
     /**
+     * @brief Emits a top-level type definition from a Type object.
+     */
+    void emitTypeDefinition(Type* type);
+
+    /**
      * @brief Returns true if the expression is a C89 constant initializer.
      * @param node The expression node.
      */

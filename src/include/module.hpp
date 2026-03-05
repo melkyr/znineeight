@@ -33,6 +33,7 @@ struct Module {
     SymbolTable* symbols; /* Per-module symbol table */
     DynamicArray<const char*> imports;
     DynamicArray<ASTNode*> import_nodes;
+    DynamicArray<Type*> header_types;
     bool is_analyzed;
 
     // Per-module catalogues
@@ -49,6 +50,7 @@ struct Module {
     Module(ArenaAllocator& arena)
         : imports(arena),
           import_nodes(arena),
+          header_types(arena),
           error_set_catalogue(arena),
           generic_catalogue(arena),
           error_function_catalogue(arena),

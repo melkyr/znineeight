@@ -36,6 +36,7 @@
 #include "integration/if_statement_tests.cpp"
 #include "integration/import_tests.cpp"
 #include "integration/literal_tests.cpp"
+#include "integration/metadata_preparation_tests.cpp"
 #include "integration/multi_error_tests.cpp"
 #include "integration/multi_level_pointer_tests.cpp"
 #include "integration/multi_module_tests.cpp"
