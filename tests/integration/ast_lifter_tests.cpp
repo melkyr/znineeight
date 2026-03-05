@@ -114,7 +114,8 @@ TEST_FUNC(ASTLifter_Nested) {
     ASTNode* body = fn_node->as.fn_decl->body;
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
-    ASSERT_EQ(stmts->length(), 3);
+    // There are 4 statements: the lifted 'if', the lifted 'try', the call, and an implicit return (added for !void).
+    ASSERT_EQ(stmts->length(), 4);
 
     ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
     ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
@@ -122,7 +123,7 @@ TEST_FUNC(ASTLifter_Nested) {
     ASSERT_EQ((*stmts)[1]->type, NODE_VAR_DECL);
     ASSERT_TRUE(strstr((*stmts)[1]->as.var_decl->name, "__tmp_try_") != NULL);
 
-    ASSERT_EQ((*stmts)[2]->type, NODE_EXPRESSION_STMT);
+    ASSERT_EQ((*stmts)[2]->type, NODE_VAR_DECL); // another lifted try
 
     return true;
 }
