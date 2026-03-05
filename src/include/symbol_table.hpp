@@ -101,6 +101,8 @@ public:
     Symbol* lookupWithModule(const char* module_name, const char* symbol_name);
     Symbol* findInAnyScope(const char* name); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
+
+    const DynamicArray<Scope*>& getAllScopes() const { return all_scopes_; }
 };
 
 #endif // SYMBOL_TABLE_HPP

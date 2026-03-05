@@ -145,6 +145,7 @@ struct Type {
             const char* name;
             struct ASTNode* decl_node;
             struct Module* module;
+            DynamicArray<Type*>* dependents;
         } placeholder;
     } as;
 };
@@ -288,6 +289,15 @@ Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<c
  * @param struct_type The struct type to calculate the layout for.
  */
 void calculateStructLayout(Type* struct_type);
+
+void updateArrayLayout(Type* t);
+void updateOptionalLayout(Type* t);
+void updateErrorUnionLayout(Type* t);
+
+/**
+ * @brief Recursively refreshes the layout of a type and its dependents.
+ */
+void refreshLayout(Type* t);
 
 /**
  * @brief Creates a new enum Type object from the arena.

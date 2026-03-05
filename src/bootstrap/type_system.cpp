@@ -121,6 +121,38 @@ Type* resolvePrimitiveTypeName(const char* name) {
 }
 
 
+bool isTypeComplete(Type* type);
+
+static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent) {
+    if (!base || !dependent) return;
+    if (base->kind == TYPE_PLACEHOLDER) {
+        if (!base->as.placeholder.dependents) {
+            void* mem = arena.alloc(sizeof(DynamicArray<Type*>));
+            base->as.placeholder.dependents = new (mem) DynamicArray<Type*>(arena);
+        }
+        // Check for duplicates to avoid growing the array unnecessarily
+        for (size_t i = 0; i < base->as.placeholder.dependents->length(); ++i) {
+            if ((*base->as.placeholder.dependents)[i] == dependent) return;
+        }
+        base->as.placeholder.dependents->append(dependent);
+    } else {
+        // Recursive registration for composite types that might contain placeholders
+        switch (base->kind) {
+            case TYPE_POINTER: registerDependent(arena, base->as.pointer.base, dependent); break;
+            case TYPE_ARRAY:   registerDependent(arena, base->as.array.element_type, dependent); break;
+            case TYPE_SLICE:   registerDependent(arena, base->as.slice.element_type, dependent); break;
+            case TYPE_OPTIONAL: registerDependent(arena, base->as.optional.payload, dependent); break;
+            case TYPE_ERROR_UNION:
+                registerDependent(arena, base->as.error_union.payload, dependent);
+                if (!base->as.error_union.is_inferred && base->as.error_union.error_set) {
+                    registerDependent(arena, base->as.error_union.error_set, dependent);
+                }
+                break;
+            default: break;
+        }
+    }
+}
+
 Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, bool is_many, TypeInterner* interner) {
     if (!base_type) {
         plat_print_debug("createPointerType: base type is NULL\n");
@@ -137,6 +169,8 @@ Type* createPointerType(ArenaAllocator& arena, Type* base_type, bool is_const, b
     new_type->as.pointer.base = base_type;
     new_type->as.pointer.is_const = is_const;
     new_type->as.pointer.is_many = is_many;
+
+    registerDependent(arena, base_type, new_type);
     return new_type;
 }
 
@@ -188,6 +222,8 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
     }
     new_type->as.array.element_type = element_type;
     new_type->as.array.size = size;
+
+    registerDependent(arena, element_type, new_type);
     return new_type;
 }
 
@@ -206,6 +242,8 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
     new_type->alignment = 4;
     new_type->as.slice.element_type = element_type;
     new_type->as.slice.is_const = is_const;
+
+    registerDependent(arena, element_type, new_type);
     return new_type;
 }
 
@@ -337,6 +375,11 @@ Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set
     new_type->as.error_union.payload = payload;
     new_type->as.error_union.error_set = error_set;
     new_type->as.error_union.is_inferred = is_inferred;
+
+    registerDependent(arena, payload, new_type);
+    if (!is_inferred && error_set) {
+        registerDependent(arena, error_set, new_type);
+    }
     return new_type;
 }
 
@@ -386,6 +429,8 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     }
 
     new_type->as.optional.payload = payload;
+
+    registerDependent(arena, payload, new_type);
     return new_type;
 }
 
@@ -404,7 +449,154 @@ Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<c
     return new_type;
 }
 
+void updateArrayLayout(Type* t) {
+    if (t->kind != TYPE_ARRAY) return;
+    Type* element_type = t->as.array.element_type;
+    if (isTypeComplete(element_type)) {
+        t->size = element_type->size * t->as.array.size;
+        t->alignment = element_type->alignment;
+    }
+}
+
+void updateOptionalLayout(Type* t) {
+    if (t->kind != TYPE_OPTIONAL) return;
+    Type* payload = t->as.optional.payload;
+    if (!isTypeComplete(payload)) return;
+
+    size_t int_size = 4;
+    size_t int_align = 4;
+
+    if (payload->kind == TYPE_VOID) {
+        t->alignment = int_align;
+        t->size = int_size;
+    } else {
+        size_t payload_align = payload->alignment;
+        size_t payload_size = payload->size;
+
+        size_t struct_align = payload_align;
+        if (int_align > struct_align) struct_align = int_align;
+
+        size_t current_offset = payload_size;
+
+        // Align for has_value (int)
+        if (int_align > 0 && current_offset % int_align != 0) {
+            current_offset += (int_align - (current_offset % int_align));
+        }
+        current_offset += int_size;
+
+        // Final struct padding to meet max alignment
+        if (struct_align > 0 && current_offset % struct_align != 0) {
+            current_offset += (struct_align - (current_offset % struct_align));
+        }
+
+        t->size = current_offset;
+        t->alignment = struct_align;
+    }
+}
+
+void updateErrorUnionLayout(Type* t) {
+    if (t->kind != TYPE_ERROR_UNION) return;
+    Type* payload = t->as.error_union.payload;
+    if (!isTypeComplete(payload)) return;
+
+    size_t int_size = 4;
+    size_t int_align = 4;
+
+    if (payload->kind == TYPE_VOID) {
+        t->alignment = int_align;
+        t->size = int_size * 2;
+    } else {
+        size_t union_align = payload->alignment;
+        if (int_align > union_align) union_align = int_align;
+
+        size_t union_size = payload->size;
+        if (int_size > union_size) union_size = int_size;
+
+        if (union_align > 0 && union_size % union_align != 0) {
+            union_size += (union_align - (union_size % union_align));
+        }
+
+        size_t current_offset = union_size;
+        size_t struct_align = union_align;
+        if (int_align > struct_align) struct_align = int_align;
+
+        if (int_align > 0 && current_offset % int_align != 0) {
+            current_offset += (int_align - (current_offset % int_align));
+        }
+        current_offset += int_size;
+
+        if (struct_align > 0 && current_offset % struct_align != 0) {
+            current_offset += (struct_align - (current_offset % struct_align));
+        }
+
+        t->size = current_offset;
+        t->alignment = struct_align;
+    }
+}
+
+void refreshLayout(Type* t) {
+    if (!t || t->is_resolving) return;
+    t->is_resolving = true;
+
+    switch (t->kind) {
+        case TYPE_POINTER:
+            refreshLayout(t->as.pointer.base);
+            break;
+        case TYPE_ARRAY:
+            refreshLayout(t->as.array.element_type);
+            updateArrayLayout(t);
+            break;
+        case TYPE_SLICE:
+            refreshLayout(t->as.slice.element_type);
+            break;
+        case TYPE_OPTIONAL:
+            refreshLayout(t->as.optional.payload);
+            updateOptionalLayout(t);
+            break;
+        case TYPE_ERROR_UNION:
+            refreshLayout(t->as.error_union.payload);
+            if (!t->as.error_union.is_inferred && t->as.error_union.error_set) {
+                refreshLayout(t->as.error_union.error_set);
+            }
+            updateErrorUnionLayout(t);
+            break;
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            if (t->as.struct_details.fields) {
+                for (size_t i = 0; i < t->as.struct_details.fields->length(); ++i) {
+                    refreshLayout((*t->as.struct_details.fields)[i].type);
+                }
+            }
+            calculateStructLayout(t);
+            break;
+        default:
+            break;
+    }
+
+    t->is_resolving = false;
+}
+
 void calculateStructLayout(Type* struct_type) {
+    if (struct_type->kind == TYPE_UNION) {
+        DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+        size_t max_size = 0;
+        size_t max_align = 1;
+        for (size_t i = 0; i < fields->length(); ++i) {
+            StructField& field = (*fields)[i];
+            field.offset = 0;
+            field.size = field.type->size;
+            field.alignment = field.type->alignment;
+            if (field.size > max_size) max_size = field.size;
+            if (field.alignment > max_align) max_align = field.alignment;
+        }
+        if (max_align > 0 && max_size % max_align != 0) {
+            max_size += (max_align - (max_size % max_align));
+        }
+        struct_type->size = max_size;
+        struct_type->alignment = max_align;
+        return;
+    }
+
     if (struct_type->kind != TYPE_STRUCT) return;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
@@ -668,9 +860,10 @@ Type* TypeInterner::getOptionalType(Type* payload) {
     return t;
 }
 
+bool isTypeComplete(Type* type);
+
 bool isTypeComplete(Type* type) {
     if (!type) return false;
-    if (type->is_resolving) return false;
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:
@@ -920,7 +1113,8 @@ bool areTypesEqual(Type* a, Type* b) {
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ENUM:
-            return false;
+        case TYPE_PLACEHOLDER:
+            return false; // Nominal types, handled by pointer check at top
 
         default:
             return true;

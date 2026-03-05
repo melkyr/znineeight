@@ -123,6 +123,11 @@ public:
     void validateErrorHandlingRules();
 
     /**
+     * @brief Verifies that no TYPE_PLACEHOLDER remains in any symbol table.
+     */
+    bool verifyNoPlaceholders();
+
+    /**
      * @brief Sets whether the unit is in test mode (enabling pattern generation).
      */
     void setTestMode(bool test_mode);
