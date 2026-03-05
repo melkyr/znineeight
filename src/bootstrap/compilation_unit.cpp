@@ -610,6 +610,39 @@ void CompilationUnit::validateErrorHandlingRules() {
     error_handler_.reportInfo(INFO_ERROR_HANDLING_VALIDATION, SourceLocation(), buffer, arena_);
 }
 
+bool CompilationUnit::verifyNoPlaceholders() {
+    bool found_placeholder = false;
+    for (size_t i = 0; i < modules_.length(); ++i) {
+        Module* m = modules_[i];
+        if (!m->symbols) continue;
+
+        const DynamicArray<Scope*>& scopes = m->symbols->getAllScopes();
+        for (size_t j = 0; j < scopes.length(); ++j) {
+            Scope* scope = scopes[j];
+            for (size_t k = 0; k < scope->bucket_count; ++k) {
+                Scope::SymbolEntry* entry = scope->buckets[k];
+                while (entry) {
+                    const Symbol& sym = entry->symbol;
+                    if (sym.symbol_type && sym.symbol_type->kind == TYPE_PLACEHOLDER) {
+                        char error_msg[512];
+                        char* cur = error_msg;
+                        size_t rem = sizeof(error_msg);
+                        safe_append(cur, rem, "Internal error: Unresolved placeholder found for '");
+                        safe_append(cur, rem, sym.name);
+                        safe_append(cur, rem, "' in module '");
+                        safe_append(cur, rem, m->name);
+                        safe_append(cur, rem, "'");
+                        error_handler_.report(ERR_INTERNAL_ERROR, sym.location, ErrorHandler::getMessage(ERR_INTERNAL_ERROR), error_msg);
+                        found_placeholder = true;
+                    }
+                    entry = entry->next;
+                }
+            }
+        }
+    }
+    return !found_placeholder;
+}
+
 void CompilationUnit::setTestMode(bool test_mode) {
     is_test_mode_ = test_mode;
 }
@@ -782,6 +815,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         checker.check(m->ast_root);
     }
     if (error_handler_.hasErrors()) all_success = false;
+
+    // Verify that all placeholders are resolved after type checking
+    if (all_success && !verifyNoPlaceholders()) {
+        all_success = false;
+    }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
