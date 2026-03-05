@@ -4,7 +4,9 @@
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
         test_ASTLifter_BasicIf,
-        test_ASTLifter_Nested
+        test_ASTLifter_Nested,
+        test_ASTLifter_ComplexAssignment,
+        test_ASTLifter_CompoundAssignment
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

@@ -1533,7 +1533,7 @@ struct ASTTryExprNode {
 In the C89 backend, control-flow constructs like `try`, `if`, and `switch` are statement blocks rather than expressions. To support Zig's expression-valued control-flow, the compiler uses a **Unified AST Lifting Pass** that runs after type checking.
 
 #### Core Principle: Lift Early, Emit Simply
-The `ControlFlowLifter` performs a post-order traversal of the AST. When it encounters a control-flow expression in an "unsafe" context (e.g., nested inside a binary operation or a function call argument), it:
+The `ControlFlowLifter` performs a post-order traversal of the AST using a **Parent-Slot Traversal Pattern**. This pattern passes `ASTNode**` pointers, allowing for clean in-place replacement of nodes without needing to track sibling indices. When it encounters a control-flow expression in an "unsafe" context (e.g., nested inside a binary operation or a function call argument), it:
 1.  **Generates a Temporary Variable**: Creates a unique, interned name like `__tmp_try_1`.
 2.  **Clones the Expression**: Deep-clones the control-flow node into a new `ASTVarDeclNode`.
 3.  **Inserts at Point of evaluation**: Inserts the new variable declaration immediately before the current statement in its enclosing block. This preserves the original order of side effects.

@@ -62,18 +62,16 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     bool is_block = (node->type == NODE_BLOCK_STMT);
 
     // Inner function to handle the rest of transformation after potentially setting guards
-    // Using a local helper struct or just a block of code.
-    // In C++98, we can't have member functions inside member functions, but we can have local classes.
     struct Inner {
         static void process(ControlFlowLifter* lifter, ASTNode** node_slot, ASTNode* node, ASTNode* parent) {
             // Post-order: transform children first
             struct TransformVisitor : ChildVisitor {
                 ControlFlowLifter* lifter;
-                ASTNode* parent;
-                TransformVisitor(ControlFlowLifter* l, ASTNode* p) : lifter(l), parent(p) {}
+                ASTNode* current_node;
+                TransformVisitor(ControlFlowLifter* l, ASTNode* n) : lifter(l), current_node(n) {}
 
                 void visitChild(ASTNode** child_slot) {
-                    lifter->transformNode(child_slot, parent);
+                    lifter->transformNode(child_slot, current_node);
                 }
             };
             TransformVisitor visitor(lifter, node);
@@ -81,7 +79,7 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
 
             // Decision: does THIS node need lifting?
             if (lifter->needsLifting(node, parent)) {
-                lifter->liftNode(node_slot, parent, lifter->getPrefixForType(node->type));
+                lifter->liftNode(node_slot, parent, ::getPrefixForType(node->type));
             }
         }
     };
@@ -108,48 +106,23 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     if (!parent) return false;
 
     // Only control-flow expressions can be lifted
-    bool is_cf = (node->type == NODE_IF_EXPR || node->type == NODE_SWITCH_EXPR ||
-                  node->type == NODE_TRY_EXPR || node->type == NODE_CATCH_EXPR ||
-                  node->type == NODE_ORELSE_EXPR);
-    if (!is_cf) return false;
+    if (!isControlFlowExpr(node->type)) return false;
 
-    // Decision based on parent context
-    switch (parent->type) {
-        case NODE_EXPRESSION_STMT:
-        case NODE_RETURN_STMT:
-        case NODE_VAR_DECL:
-            return false; // Safe: already in statement-like position
+    // List of safe parent types where a control‑flow expression can stay.
+    // NODE_ASSIGNMENT is intentionally omitted to force lifting of its RHS.
+    static const NodeType safe_parents[] = {
+        NODE_EXPRESSION_STMT,
+        NODE_RETURN_STMT,
+        NODE_VAR_DECL
+    };
 
-        case NODE_ASSIGNMENT: {
-            // Safe if simple assignment to identifier
-            if (parent->as.assignment->rvalue == node &&
-                parent->as.assignment->lvalue->type == NODE_IDENTIFIER) {
-                return false;
-            }
-            return true; // Complex lvalue or not the rvalue
+    for (size_t i = 0; i < sizeof(safe_parents)/sizeof(NodeType); ++i) {
+        if (parent->type == safe_parents[i]) {
+            return false; // safe
         }
-
-        case NODE_BINARY_OP:
-        case NODE_UNARY_OP:
-        case NODE_FUNCTION_CALL:
-        case NODE_ARRAY_ACCESS:
-        case NODE_ARRAY_SLICE:
-        case NODE_MEMBER_ACCESS:
-        case NODE_IF_EXPR:
-        case NODE_SWITCH_EXPR:
-        case NODE_TRY_EXPR:
-        case NODE_CATCH_EXPR:
-        case NODE_ORELSE_EXPR:
-            return true; // Unsafe: nested in expression
-
-        case NODE_PAREN_EXPR:
-            // This is tricky without a full parent pointer in ASTNode.
-            // For now, we'll be conservative and lift if it's parenthesized.
-            return true;
-
-        default:
-            return true; // Conservative: lift if unsure
     }
+
+    return true; // unsafe, needs lifting
 }
 
 void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix) {
@@ -231,15 +204,4 @@ const char* ControlFlowLifter::generateTempName(const char* prefix) {
     plat_strcat(buf, num_buf);
 
     return interner_->intern(buf);
-}
-
-const char* ControlFlowLifter::getPrefixForType(NodeType type) {
-    switch (type) {
-        case NODE_IF_EXPR:     return "if";
-        case NODE_SWITCH_EXPR: return "sw";
-        case NODE_TRY_EXPR:    return "try";
-        case NODE_CATCH_EXPR:  return "catch";
-        case NODE_ORELSE_EXPR: return "orelse";
-        default:               return "lift";
-    }
 }

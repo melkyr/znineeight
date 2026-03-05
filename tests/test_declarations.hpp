@@ -1155,5 +1155,7 @@ TEST_FUNC(ASTCloning_Switch);
 // Batch 55: AST Lifter
 TEST_FUNC(ASTLifter_BasicIf);
 TEST_FUNC(ASTLifter_Nested);
+TEST_FUNC(ASTLifter_ComplexAssignment);
+TEST_FUNC(ASTLifter_CompoundAssignment);
 
 #endif // TEST_DECLARATIONS_HPP
