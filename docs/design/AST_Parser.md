@@ -1529,10 +1529,17 @@ struct ASTTryExprNode {
 };
 ```
 
-### Transformation Note: Lifting
-In the C89 backend, `try` is not an expression but a statement block. During code generation, any `ASTTryExprNode` encountered in an expression context (like assignment or return) is "lifted" into a preceding C block. The result is stored in a temporary variable which is then used in the original expression.
+### Transformation Note: Unified Lifting (Task 230)
+In the C89 backend, control-flow constructs like `try`, `if`, and `switch` are statement blocks rather than expressions. To support Zig's expression-valued control-flow, the compiler uses a **Unified AST Lifting Pass** that runs after type checking.
 
-**Limitation**: The current `C89Emitter` only supports lifting for certain contexts (see `docs/current_lifting_strategies.md`). Deeply nested `try` expressions or `try` inside complex operators may not be lifted correctly and will result in a compiler error.
+#### Core Principle: Lift Early, Emit Simply
+The `ControlFlowLifter` performs a post-order traversal of the AST. When it encounters a control-flow expression in an "unsafe" context (e.g., nested inside a binary operation or a function call argument), it:
+1.  **Generates a Temporary Variable**: Creates a unique, interned name like `__tmp_try_1`.
+2.  **Clones the Expression**: Deep-clones the control-flow node into a new `ASTVarDeclNode`.
+3.  **Inserts at Point of evaluation**: Inserts the new variable declaration immediately before the current statement in its enclosing block. This preserves the original order of side effects.
+4.  **Replaces with Identifier**: Replaces the original nested expression with an `ASTIdentifierNode` referencing the temporary variable.
+
+By the time the AST reaches the code generator, all nested control-flow expressions have been eliminated, allowing the `C89Emitter` to remain focused on simple statement-to-statement translation.
 
 ### Detection Context
 Try expressions are detected in various contexts to provide detailed analysis:
