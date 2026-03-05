@@ -267,8 +267,20 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_U16: writeString("unsigned short"); break;
         case TYPE_I32: writeString("int"); break;
         case TYPE_U32: writeString("unsigned int"); break;
-        case TYPE_I64: writeString("i64"); break;
-        case TYPE_U64: writeString("u64"); break;
+        case TYPE_I64:
+            #ifdef _MSC_VER
+            writeString("__int64");
+            #else
+            writeString("i64");
+            #endif
+            break;
+        case TYPE_U64:
+            #ifdef _MSC_VER
+            writeString("unsigned __int64");
+            #else
+            writeString("u64");
+            #endif
+            break;
         case TYPE_C_CHAR: writeString("char"); break;
         case TYPE_F32: writeString("float"); break;
         case TYPE_F64: writeString("double"); break;
@@ -2890,10 +2902,18 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
                 writeString("U");
                 break;
             case TYPE_I64:
+                #ifdef _MSC_VER
+                writeString("i64");
+                #else
                 writeString("LL");
+                #endif
                 break;
             case TYPE_U64:
+                #ifdef _MSC_VER
+                writeString("ui64");
+                #else
                 writeString("ULL");
+                #endif
                 break;
             default:
                 /* i32, u8, i8, u16, i16, usize, isize get no suffix */

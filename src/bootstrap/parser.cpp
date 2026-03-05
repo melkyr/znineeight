@@ -278,6 +278,7 @@ ASTNode* Parser::parsePrimaryExpr() {
                 Token id_token = expect(TOKEN_IDENTIFIER, "Expected identifier after '.'");
                 ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
                 if (!member_node) error("Out of memory");
+                plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
                 member_node->base = NULL;
                 member_node->field_name = id_token.value.identifier;
                 member_node->symbol = NULL;
@@ -438,6 +439,7 @@ ASTNode* Parser::parsePostfixExpression() {
 
             ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
             if (!member_node) error("Out of memory");
+            plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
             member_node->base = expr;
             member_node->field_name = name_token.value.identifier;
 
@@ -2119,6 +2121,7 @@ ASTNode* Parser::parseType() {
 
             ASTMemberAccessNode* member_node = (ASTMemberAccessNode*)arena_->alloc(sizeof(ASTMemberAccessNode));
             if (!member_node) error("Out of memory");
+                plat_memset(member_node, 0, sizeof(ASTMemberAccessNode));
             member_node->base = left;
             member_node->field_name = field_token.value.identifier;
             member_node->symbol = NULL;
