@@ -2693,18 +2693,22 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
         if (!type) return;
 
         /* Only emit definition if this is a type declaration (e.g. const T = struct { ... }) */
-        /* In our current TypeChecker, these might not have TYPE_TYPE yet, but the initializer */
-        /* will have the actual composite type. */
         if (!decl->is_const || (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION && type->kind != TYPE_ENUM)) {
             return;
         }
-        if (type->kind == TYPE_STRUCT) {
-            if (!type->c_name) {
-                type->c_name = getC89GlobalName(decl->name);
-            }
-            writeIndent();
-            writeString("struct ");
-            writeString(type->c_name);
+
+        emitTypeDefinition(type);
+    }
+}
+
+void C89Emitter::emitTypeDefinition(Type* type) {
+    if (!type) return;
+
+    if (type->kind == TYPE_STRUCT) {
+        writeIndent();
+        writeString("struct ");
+        writeString(type->c_name ? type->c_name : "/* unknown */");
+        if (type->as.struct_details.fields) {
             writeString(" {\n");
             {
                 IndentScope struct_indent(*this);
@@ -2719,16 +2723,15 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
             }
             writeIndent();
             writeString("};\n\n");
-        } else if (type->kind == TYPE_UNION) {
-            if (!type->c_name) {
-                type->c_name = getC89GlobalName(decl->name);
-            }
-            writeIndent();
-            if (type->as.struct_details.is_tagged) {
-                /* If the tag type is an implicit enum with a name, we should ensure it's defined. */
-                /* For now, assume it's either primitive (int) or was already scanned. */
-                writeString("struct ");
-                writeString(type->c_name);
+        } else {
+            writeString("; /* opaque */\n\n");
+        }
+    } else if (type->kind == TYPE_UNION) {
+        writeIndent();
+        if (type->as.struct_details.is_tagged) {
+            writeString("struct ");
+            writeString(type->c_name ? type->c_name : "/* unknown */");
+            if (type->as.struct_details.fields) {
                 writeString(" {\n");
                 {
                     IndentScope struct_indent(*this);
@@ -2760,8 +2763,12 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 writeIndent();
                 writeString("};\n\n");
             } else {
-                writeString("union ");
-                writeString(type->c_name);
+                writeString("; /* opaque tagged union */\n\n");
+            }
+        } else {
+            writeString("union ");
+            writeString(type->c_name ? type->c_name : "/* unknown */");
+            if (type->as.struct_details.fields) {
                 writeString(" {\n");
                 {
                     IndentScope union_indent(*this);
@@ -2782,21 +2789,20 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                 }
                 writeIndent();
                 writeString("};\n\n");
+            } else {
+                writeString("; /* opaque union */\n\n");
             }
-        } else if (type->kind == TYPE_ENUM) {
-            /* C89 doesn't support specific backing types for enums, they are always int. */
-            /* But we can emit a typedef if needed. */
-            if (!type->c_name) {
-                type->c_name = getC89GlobalName(decl->name);
-            }
-            writeIndent();
-            writeString("enum ");
-            const char* enum_name = type->c_name;
-            writeString(enum_name);
-            writeString(" {\n");
-            {
-                IndentScope enum_indent(*this);
-                DynamicArray<EnumMember>* members = type->as.enum_details.members;
+        }
+    } else if (type->kind == TYPE_ENUM) {
+        writeIndent();
+        writeString("enum ");
+        const char* enum_name = type->c_name ? type->c_name : "/* unknown */";
+        writeString(enum_name);
+        writeString(" {\n");
+        {
+            IndentScope enum_indent(*this);
+            DynamicArray<EnumMember>* members = type->as.enum_details.members;
+            if (members) {
                 for (size_t i = 0; i < members->length(); ++i) {
                     writeIndent();
                     writeString(enum_name);
@@ -2812,15 +2818,21 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
                     writeString("\n");
                 }
             }
-            writeIndent();
-            writeString("};\n");
-            writeIndent();
-            writeString("typedef enum ");
-            writeString(enum_name);
-            writeString(" ");
-            writeString(enum_name);
-            writeString(";\n\n");
         }
+        writeIndent();
+        writeString("};\n");
+        writeIndent();
+        writeString("typedef enum ");
+        writeString(enum_name);
+        writeString(" ");
+        writeString(enum_name);
+        writeString(";\n\n");
+    } else if (type->kind == TYPE_SLICE) {
+        ensureSliceType(type);
+    } else if (type->kind == TYPE_ERROR_UNION) {
+        ensureErrorUnionType(type);
+    } else if (type->kind == TYPE_OPTIONAL) {
+        ensureOptionalType(type);
     }
 }
 
