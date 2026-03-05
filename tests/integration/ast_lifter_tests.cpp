@@ -126,3 +126,99 @@ TEST_FUNC(ASTLifter_Nested) {
 
     return true;
 }
+
+TEST_FUNC(ASTLifter_ComplexAssignment) {
+    const char* source =
+        "extern fn getIndex() usize;\n"
+        "fn test_lifter_3(arr: []i32) void {\n"
+        "    arr[getIndex()] = if (true) 1 else 2;\n"
+        "}\n";
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* ast = parser->parse();
+
+    Module* mod = unit.getModule("test");
+    mod->ast_root = ast;
+
+    TypeChecker checker(unit);
+    checker.check(ast);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
+
+    ControlFlowLifter lifter(&arena, &interner, &unit.getErrorHandler());
+    lifter.lift(&unit);
+
+    // arr[getIndex()] = if (true) 1 else 2;
+    // Should lift 'if' because it's the RHS of an assignment to a complex lvalue.
+    // 1. __tmp_if_1 = if (true) 1 else 2;
+    // 2. arr[getIndex()] = __tmp_if_1;
+
+    mod = unit.getModule("test");
+    ast = mod->ast_root;
+    ASTNode* fn_node = (*ast->as.block_stmt.statements)[1]; // 0 is getIndex, 1 is test_lifter_3
+    ASSERT_TRUE(fn_node != NULL);
+    ASSERT_EQ(fn_node->type, NODE_FN_DECL);
+    ASTNode* body = fn_node->as.fn_decl->body;
+    DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
+
+    ASSERT_EQ(stmts->length(), 2);
+    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+    ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
+
+    ASSERT_EQ((*stmts)[1]->type, NODE_EXPRESSION_STMT);
+    ASTNode* assign = (*stmts)[1]->as.expression_stmt.expression;
+    ASSERT_EQ(assign->type, NODE_ASSIGNMENT);
+    ASSERT_EQ(assign->as.assignment->rvalue->type, NODE_IDENTIFIER);
+    ASSERT_EQ(assign->as.assignment->rvalue->as.identifier.name, (*stmts)[0]->as.var_decl->name);
+
+    return true;
+}
+
+TEST_FUNC(ASTLifter_CompoundAssignment) {
+    const char* source =
+        "fn test_lifter_4(x: *i32) void {\n"
+        "    x.* += if (true) 1 else 2;\n"
+        "}\n";
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* ast = parser->parse();
+
+    Module* mod = unit.getModule("test");
+    mod->ast_root = ast;
+
+    TypeChecker checker(unit);
+    checker.check(ast);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
+
+    ControlFlowLifter lifter(&arena, &interner, &unit.getErrorHandler());
+    lifter.lift(&unit);
+
+    // x.* += if (true) 1 else 2;
+    // 1. __tmp_if_1 = if (true) 1 else 2;
+    // 2. x.* += __tmp_if_1;
+
+    mod = unit.getModule("test");
+    ast = mod->ast_root;
+    ASTNode* fn_node = (*ast->as.block_stmt.statements)[0];
+    ASSERT_TRUE(fn_node != NULL);
+    ASSERT_EQ(fn_node->type, NODE_FN_DECL);
+    ASTNode* body = fn_node->as.fn_decl->body;
+    DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
+
+    ASSERT_EQ(stmts->length(), 2);
+    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+
+    ASSERT_EQ((*stmts)[1]->type, NODE_EXPRESSION_STMT);
+    ASTNode* assign = (*stmts)[1]->as.expression_stmt.expression;
+    ASSERT_EQ(assign->type, NODE_COMPOUND_ASSIGNMENT);
+    ASSERT_EQ(assign->as.compound_assignment->rvalue->type, NODE_IDENTIFIER);
+
+    return true;
+}

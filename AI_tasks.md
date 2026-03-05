@@ -1699,7 +1699,7 @@ private:
 
 ---
 
-### Task 230.5: Parent-Slot Traversal Pattern [Critical]
+### Task 230.5: Parent-Slot Traversal Pattern [Critical] (DONE)
 **Goal**: Implement traversal that passes `ASTNode**` for clean in-place replacement.
 
 ```cpp

@@ -64,4 +64,27 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor);
  */
 ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
 
+/**
+ * @brief Checks if a node type is an expression-form control-flow construct.
+ */
+inline bool isControlFlowExpr(NodeType type) {
+    return type == NODE_IF_EXPR || type == NODE_SWITCH_EXPR ||
+           type == NODE_TRY_EXPR || type == NODE_CATCH_EXPR ||
+           type == NODE_ORELSE_EXPR;
+}
+
+/**
+ * @brief Returns a short prefix for temporary variables based on control-flow type.
+ */
+inline const char* getPrefixForType(NodeType type) {
+    switch (type) {
+        case NODE_IF_EXPR:     return "if";
+        case NODE_SWITCH_EXPR: return "switch";
+        case NODE_TRY_EXPR:    return "try";
+        case NODE_CATCH_EXPR:  return "catch";
+        case NODE_ORELSE_EXPR: return "orelse";
+        default:               return "tmp";
+    }
+}
+
 #endif // AST_UTILS_HPP
