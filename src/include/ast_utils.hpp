@@ -27,4 +27,28 @@ const char* getTokenSpelling(TokenType op);
  */
 bool allPathsExit(const ASTNode* node);
 
+/**
+ * @brief Visitor interface for AST child traversal.
+ *
+ * This interface is used by forEachChild to visit each child pointer
+ * within an AST node. The visitor receives a pointer to the slot
+ * (ASTNode**), allowing it to modify the child in-place if needed.
+ */
+struct ChildVisitor {
+    virtual ~ChildVisitor() {}
+    virtual void visitChild(ASTNode** child_slot) = 0;
+};
+
+/**
+ * @brief Iterates over all children of an AST node and calls the visitor for each child slot.
+ *
+ * This function provides a uniform way to traverse the AST tree structure.
+ * It visits every syntactic and semantic ASTNode pointer within the given node,
+ * including those nested in intermediate structures like DynamicArrays.
+ *
+ * @param node The node whose children should be visited.
+ * @param visitor The visitor to call for each child slot.
+ */
+void forEachChild(ASTNode* node, ChildVisitor& visitor);
+
 #endif // AST_UTILS_HPP

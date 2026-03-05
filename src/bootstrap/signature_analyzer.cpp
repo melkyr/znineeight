@@ -110,9 +110,10 @@ void SignatureAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
     // 2. Check each parameter type
     if (node->params) {
         for (size_t i = 0; i < node->params->length(); ++i) {
-            ASTParamDeclNode* param = (*node->params)[i];
-            if (param && param->type && param->type->resolved_type) {
-                if (!isParameterTypeValid(param->type->resolved_type, param->type->loc, current_fn_name_)) {
+            ASTNode* param_node = (*node->params)[i];
+            ASTParamDeclNode& param = param_node->as.param_decl;
+            if (param.type && param.type->resolved_type) {
+                if (!isParameterTypeValid(param.type->resolved_type, param.type->loc, current_fn_name_)) {
                     invalid_count_++;
                 }
             }

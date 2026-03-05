@@ -711,13 +711,13 @@ struct ASTVarDeclNode {
  * @struct ASTFnDeclNode
  * @brief Represents a function declaration. Allocated out-of-line.
  * @var ASTFnDeclNode::name The name of the function (interned string).
- * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+ * @var ASTFnDeclNode::params A dynamic array of pointers to ASTNode (of type NODE_PARAM_DECL).
  * @var ASTFnDeclNode::return_type A pointer to an ASTNode for the return type (can be NULL).
  * @var ASTFnDeclNode::body A pointer to the block statement that is the function's body.
  */
 struct ASTFnDeclNode {
     const char* name;
-    DynamicArray<ASTParamDeclNode*>* params;
+    DynamicArray<ASTNode*>* params;
     ASTNode* return_type; // Can be NULL
     ASTNode* body;
     bool is_pub;

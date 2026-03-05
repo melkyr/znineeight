@@ -296,6 +296,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
         case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
         case NODE_OFFSET_OF:        resolved_type = visitOffsetOf(node, node->as.offset_of); break;
+        case NODE_PARAM_DECL:       resolved_type = visit(node->as.param_decl.type); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
         case NODE_FN_DECL:          resolved_type = visitFnDecl(node->as.fn_decl); break;
         case NODE_STRUCT_DECL:      resolved_type = visitStructDecl(node, node->as.struct_decl); break;
@@ -2857,7 +2858,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         /* Even if resolved, ensure AST nodes have resolved_type for codegen. */
         if (node->params) {
             for (i = 0; i < node->params->length(); ++i) {
-                visit((*node->params)[i]->type);
+                visit((*node->params)[i]);
             }
         }
         if (node->return_type) {
@@ -2874,21 +2875,22 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
     all_params_valid = true;
 
     for (i = 0; i < node->params->length(); ++i) {
-        ASTParamDeclNode* param_node = (*node->params)[i];
-        Type* param_type = visit(param_node->type);
+        ASTNode* param_node_wrapper = (*node->params)[i];
+        ASTParamDeclNode& param_node = param_node_wrapper->as.param_decl;
+        Type* param_type = visit(param_node.type);
         if (param_type && !is_type_undefined(param_type)) {
             param_types->append(param_type);
 
             /* Register parameter in scope immediately so subsequent parameters can use it (e.g. comptime T: type) */
             Symbol param_symbol = SymbolBuilder(unit_.getArena())
-                .withName(param_node->name)
+                .withName(param_node.name)
                 .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
                 .withType(param_type)
-                .atLocation(param_node->type->loc)
+                .atLocation(param_node_wrapper->loc)
                 .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
                 .build();
             unit_.getSymbolTable().insert(param_symbol);
-            param_node->symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node->name);
+            param_node.symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node.name);
         } else {
             all_params_valid = false;
         }
@@ -2948,17 +2950,18 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         param_types = fn_symbol->symbol_type->as.function.params;
         if (node->params) {
             for (i = 0; i < node->params->length(); ++i) {
-                 ASTParamDeclNode* param_node = (*node->params)[i];
+                 ASTNode* param_node_wrapper = (*node->params)[i];
+                 ASTParamDeclNode& param_node = param_node_wrapper->as.param_decl;
                  Type* param_type = (*param_types)[i];
                  Symbol param_symbol = SymbolBuilder(unit_.getArena())
-                        .withName(param_node->name)
+                        .withName(param_node.name)
                         .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
                         .withType(param_type)
-                        .atLocation(param_node->type->loc)
+                        .atLocation(param_node_wrapper->loc)
                         .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_PARAM | SYMBOL_FLAG_CONST)
                         .build();
                     unit_.getSymbolTable().insert(param_symbol);
-                    param_node->symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node->name);
+                    param_node.symbol = unit_.getSymbolTable().lookupInCurrentScope(param_node.name);
             }
         }
 

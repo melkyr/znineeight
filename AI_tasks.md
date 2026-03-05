@@ -1556,7 +1556,7 @@ Key changes:
 
 ## Phase 0: Pre-Reqs & Refactors (Week 1)
 
-### Task 228.5: AST Child Access Helpers [NEW - Critical]
+### Task 228.5: AST Child Access Helpers (DONE)
 **Goal**: Create uniform helpers to iterate/clone children of any node type.
 
 ```cpp

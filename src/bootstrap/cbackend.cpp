@@ -426,7 +426,7 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds
         ASTFnDeclNode* fn = node->as.fn_decl;
         if (fn->params) {
             for (size_t i = 0; i < fn->params->length(); ++i) {
-                scanForSpecialTypes((*fn->params)[i]->type, emitter, kinds);
+                scanForSpecialTypes((*fn->params)[i], emitter, kinds);
             }
         }
         if (fn->return_type) scanForSpecialTypes(fn->return_type, emitter, kinds);

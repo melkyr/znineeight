@@ -27,6 +27,52 @@ The `TypeChecker` supports Zig-style type inference for `var` and `const` declar
 - **Internal Representation**: Inferred variables have their `type` pointer set to `NULL` in the `ASTVarDeclNode`.
 - **Location Tracking**: Since inferred variables lack an explicit type annotation, the `TypeChecker` uses the declaration node's location (typically the `var` or `const` keyword) as the source location for the symbol in the `SymbolTable`. This ensures robust error reporting and prevents NULL pointer dereferences during semantic analysis.
 
+### 2.3 AST Traversal Helpers
+
+To simplify AST manipulation and avoid duplicating complex `switch` logic across multiple passes (type checking, cloning, codegen), the compiler provides a uniform child traversal mechanism in `ast_utils.hpp`.
+
+#### `ChildVisitor` Interface
+
+This interface defines a single method, `visitChild`, which receives a pointer to an `ASTNode*` slot. This allows visitors to not only read but also modify or replace child nodes in-place.
+
+```cpp
+struct ChildVisitor {
+    virtual ~ChildVisitor() {}
+    virtual void visitChild(ASTNode** child_slot) = 0;
+};
+```
+
+#### `forEachChild` Function
+
+The `forEachChild` function iterates over every syntactic and semantic child of a given `ASTNode`. It handles all node types defined in `NodeType` that contain any `ASTNode*` or `DynamicArray<ASTNode*>` members.
+
+```cpp
+void forEachChild(ASTNode* node, ChildVisitor& visitor);
+```
+
+##### Key Features:
+- **Transparent Traversal**: Automatically reaches into intermediate structures like `DynamicArray`s in `ASTBlockStmtNode`, `ASTStructInitializerNode`, and `ASTSwitchExprNode`.
+- **Computed Node Access**: Includes children that are computed during later phases, such as `base_ptr` and `len` in `ASTArraySliceNode`.
+- **Mutable Slots**: By providing `ASTNode**`, it enables powerful tree transformation patterns like AST cloning and expression lifting.
+- **Excludes Metadata**: Skips non-AST pointers like `Type*` and `Symbol*`.
+
+##### Usage Example: Counting Nodes
+```cpp
+struct NodeCounter : ChildVisitor {
+    int count;
+    NodeCounter() : count(0) {}
+    void visitChild(ASTNode** child_slot) override {
+        if (*child_slot) {
+            count++;
+            forEachChild(*child_slot, *this);
+        }
+    }
+};
+
+NodeCounter counter;
+forEachChild(root, counter);
+```
+
 ### `NodeType` Enum
 
 This enum is the discriminator for the `union` inside the `ASTNode` struct.
@@ -1044,16 +1090,17 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
 *   **Structure:**
     ```cpp
     /**
+/**
      * @struct ASTFnDeclNode
      * @brief Represents a function declaration.
      * @var ASTFnDeclNode::name The name of the function.
-     * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+ * @var ASTFnDeclNode::params A dynamic array of pointers to ASTNode (of type NODE_PARAM_DECL).
      * @var ASTFnDeclNode::return_type A pointer to the return type expression (can be NULL).
      * @var ASTFnDeclNode::body A pointer to the function's body (a block statement).
      */
     struct ASTFnDeclNode {
         const char* name;
-        DynamicArray<ASTParamDeclNode*>* params;
+    DynamicArray<ASTNode*>* params;
         ASTNode* return_type; // Can be NULL
         ASTNode* body; // NULL for extern
         bool is_pub;

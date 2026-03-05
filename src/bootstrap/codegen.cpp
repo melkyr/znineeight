@@ -121,15 +121,16 @@ void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNod
             writeString("void");
         } else {
             for (size_t i = 0; i < params_node->params->length(); ++i) {
-                ASTParamDeclNode* param = (*params_node->params)[i];
-                if (param->is_anytype) {
+                ASTNode* param_node = (*params_node->params)[i];
+                ASTParamDeclNode& param = param_node->as.param_decl;
+                if (param.is_anytype) {
                     writeString("...");
                     break;
                 }
                 /* For definition (within FnDecl), use mangled local name. */
                 /* For prototype, use original name. */
-                const char* param_name = param->symbol ? var_alloc_.allocate(param->symbol) : param->name;
-                emitDeclarator(param->type->resolved_type, param_name);
+                const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                emitDeclarator(param.type->resolved_type, param_name);
                 if (i < params_node->params->length() - 1) {
                     writeString(", ");
                 }
@@ -670,8 +671,8 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
             writeString("void");
         } else {
             for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTParamDeclNode* param = (*node->params)[i];
-                emitDeclarator(param->type->resolved_type, NULL);
+                ASTNode* param_node = (*node->params)[i];
+                emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
                 if (i < node->params->length() - 1) {
                     writeString(", ");
                 }

@@ -456,9 +456,9 @@ public:
                 if (i > 0) ss << ", ";
                 Type* param_type = (*params)[i];
                 if (param_type->kind == TYPE_ARRAY) {
-                    ss << getC89TypeName(param_type->as.array.element_type) << " " << (*fn->params)[i]->name << "[" << (unsigned long)param_type->as.array.size << "]";
+                    ss << getC89TypeName(param_type->as.array.element_type) << " " << (*fn->params)[i]->as.param_decl.name << "[" << (unsigned long)param_type->as.array.size << "]";
                 } else {
-                    ss << getC89TypeName(param_type) << " " << (*fn->params)[i]->name;
+                    ss << getC89TypeName(param_type) << " " << (*fn->params)[i]->as.param_decl.name;
                 }
             }
         } else {

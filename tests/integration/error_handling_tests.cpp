@@ -238,7 +238,7 @@ TEST_FUNC(ErrorHandling_C89Execution) {
                          if (ret->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(ret);
                          if (stmt->as.fn_decl->params) {
                              for (size_t k = 0; k < stmt->as.fn_decl->params->length(); ++k) {
-                                 Type* pt = (*stmt->as.fn_decl->params)[k]->type->resolved_type;
+                                 Type* pt = (*stmt->as.fn_decl->params)[k]->as.param_decl.type->resolved_type;
                                  if (pt->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(pt);
                              }
                          }
