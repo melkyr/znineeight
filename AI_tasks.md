@@ -1620,7 +1620,7 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
 
 ---
 
-### Task 229.5: Memory Tracking Hooks [NEW - Critical for 16MB]
+### Task 229.5: Memory Tracking Hooks [NEW - Critical for 16MB] (DONE)
 **Goal**: Instrument arena to track peak usage during lifting.
 
 ```cpp
@@ -1641,7 +1641,7 @@ struct MemoryTracker {
     }
 };
 ```
-**Why**: Prevents silent OOM on circa-1998 hardware. Essential for bootstrap reliability.
+**Why**: Prevents silent OOM on circa-1998 hardware. Essential for bootstrap reliability. Verified with `arena_alloc_hard_limit_abort` test in Batch 1.
 
 ---
 

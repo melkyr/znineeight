@@ -30,7 +30,7 @@ The bootstrap compiler assumes a **32-bit little-endian** platform with the foll
 This matches the target Win32/x86 environment of the late 90s.
 
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
-* **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
+* **Memory Limit:** < 16MB peak usage **strictly enforced**. The `ArenaAllocator` will abort the compiler if peak usage exceeds this limit to ensure reliability on legacy hardware. No smart pointers or heavy templates.
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
 * **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output, process termination) MUST go through the PAL (`platform.hpp`).
 * **C++ Standard Library Usage Policy:**
@@ -60,7 +60,8 @@ class ArenaAllocator {
         size_t offset;
     };
     Chunk* head;            // Linked list of allocated chunks
-    size_t total_cap;       // Maximum allowed total capacity (e.g., 16MB)
+    size_t total_cap;       // Maximum allowed total capacity (requested size)
+    size_t hard_limit_;     // Strictly enforced 16MB cap
 public:
     void* alloc(size_t size); // Allocs in current chunk or creates new one
     void* alloc_aligned(size_t size, size_t align);
