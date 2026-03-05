@@ -1,560 +1,677 @@
-# Unified Lifting Mechanism Plan
+# Unified Control-Flow Lifting Strategy
+## Design Document — Milestone 8 (Z98 Bootstrap Compiler)
 
-This plan is designed for your **Windows 98 / 16MB RAM / MSVC 6.0** constraints. The goal is to unify lifting without increasing memory pressure or stack usage.
-
----
-
-## Part 1: Understanding the Current Problem
-
-### Current State
-You have **5 separate lifting functions** that duplicate ~80% of their logic:
-
-| Function | Lines | Duplicates |
-| :--- | :--- | :--- |
-| `emitTryExpr` | ~60 | Block, indent, defer, temp var, assignment |
-| `emitCatchExpr` | ~50 | Block, indent, defer, temp var, assignment |
-| `emitOrelseExpr` | ~50 | Block, indent, defer, temp var, assignment |
-| `emitIfExpr` | ~70 | Block, indent, defer, temp var, assignment |
-| `emitSwitchExpr` | ~100 | Block, indent, defer, temp var, assignment |
-
-**Total**: ~330 lines of duplicated lifting logic.
-
-### Core Issues
-1. **Manual State Management**: `indent()`, `dedent()`, `defer_stack_.append/pop` are error-prone.
-2. **Inconsistent Nesting**: `try` can't nest in `catch`, `if` can't nest in `try` operand.
-3. **Assignment Limitations**: Only `NODE_IDENTIFIER` lvalues trigger lifting.
-4. **Missing Coverage**: `emitBlockWithAssignment` omits `NODE_ORELSE_EXPR`.
+**Version**: 1.0  
+**Target**: Windows 98 / 16MB RAM / MSVC 6.0 / C++98  
+**Author**: Compiler Team  
+**Status**: Approved for Implementation
 
 ---
 
-## Part 2: The Unified Architecture
+## 1. Executive Summary
 
-### Concept: `LiftContext`
-Create a single structure that manages the lifting lifecycle. All lifting functions will delegate to a central `emitLiftedExpression` function.
+This document defines the **unified lifting strategy** for transforming expression-valued control-flow constructs (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents compatible with C89 code generation.
 
-```cpp
-// Pseudocode: LiftContext (stack-only, ~16 bytes)
-struct LiftContext {
-    C89Emitter* emitter;
-    const char* target_var;      // NULL if side-effects only
-    Type* result_type;           // Type of the expression being lifted
-    int label_id;                // For defer scope tracking
-    bool needs_temp;             // True if we need a temp variable
-    const char* temp_var;        // Name of temp var (e.g., "__try_res")
-    bool emits_block;            // True if we wrap in { }
-    
-    // Constructor: Setup state
-    __forceinline LiftContext(C89Emitter* e, const char* target, Type* type, int label)
-        : emitter(e), target_var(target), result_type(type), label_id(label),
-          needs_temp(false), temp_var(NULL), emits_block(true) {}
-    
-    // Destructor: Cleanup state (RAII)
-    __forceinline ~LiftContext() {
-        // Automatically dedent and pop defer stack if needed
-        if (emits_block) {
-            emitter->defer_stack_.pop_back();
-            emitter->dedent();
-            emitter->writeIndent();
-            emitter->writeString("}");
-        }
-    }
-    
-    // Begin the lifting block
-    __forceinline void begin() {
-        if (emits_block) {
-            emitter->writeIndent();
-            emitter->writeString("{\n");
-            emitter->indent();
-            
-            DeferScope* scope = (DeferScope*)emitter->arena_.alloc(sizeof(DeferScope));
-            new (scope) DeferScope(emitter->arena_, label_id);
-            emitter->defer_stack_.append(scope);
-        }
-    }
-    
-    // Create a temp variable if needed
-    const char* createTempVar(const char* prefix) {
-        if (!needs_temp && target_var) {
-            needs_temp = true;
-            temp_var = emitter->var_alloc_.generate(prefix);
-            emitter->writeIndent();
-            emitter->emitType(result_type, temp_var);
-            emitter->writeString(" = ");
-        }
-        return temp_var;
-    }
-    
-    // Assign to target if we have one
-    __forceinline void assignToTarget(const char* value_expr) {
-        if (target_var) {
-            emitter->writeIndent();
-            emitter->writeString(target_var);
-            emitter->writeString(" = ");
-            emitter->writeString(value_expr);
-            emitter->writeString(";\n");
-        }
-    }
-};
+### Core Principle
+> **Lift early, emit simply**: Transform the AST after type checking so the C89 emitter never sees nested control-flow expressions.
+
+### Why AST-Based (Not Codegen-Based)?
+| Criterion | AST Pass | Codegen Pass | Winner |
+|-----------|----------|--------------|--------|
+| Matches existing `TypeChecker::visit()` patterns | ✅ | ❌ | AST |
+| Simpler emitter logic | ✅ | ❌ | AST |
+| Easier to test/debug | ✅ | ❌ | AST |
+| Lower stack risk during emission | ✅ | ❌ | AST |
+| Memory predictability | ✅ | ⚠️ | AST |
+| RAII state management | ✅ (adapted) | ✅ | Tie |
+
+**Decision**: AST-based lifting with RAII state management adapted from the codegen document's `LiftContext`.
+
+---
+
+## 2. Architecture Overview
+
+### 2.1 Pipeline Position
+```
+Parsing → Name Resolution → Type Checking → [LIFTING PASS] → C89 Codegen → Output
+                              ↑
+                    AST transformed in-place
 ```
 
----
-
-## Part 3: Step-by-Step Refactoring Plan
-
-### Phase 1: Infrastructure (Week 1)
-**Goal**: Add the `LiftContext` helper without changing existing lifting functions.
-
-#### Task 1.1: Add `LiftContext` to `codegen.cpp`
+### 2.2 High-Level Flow
 ```cpp
-// Add this class inside codegen.cpp (private to compilation unit)
-struct LiftContext {
-    C89Emitter* emitter;
-    const char* target_var;
-    Type* result_type;
-    int label_id;
-    bool opened;
+void CompilationUnit::performFullPipeline() {
+    // ... earlier phases ...
     
-    __forceinline LiftContext(C89Emitter* e, const char* target, Type* type, int label)
-        : emitter(e), target_var(target), result_type(type), label_id(label), opened(false) {}
+    TypeChecker checker(*this);
+    checker.check(ast_root_);  // Types resolved, placeholders handled
     
-    __forceinline void open() {
-        if (opened) return;
-        opened = true;
-        emitter->writeIndent();
-        emitter->writeString("{\n");
-        emitter->indent();
-        
-        DeferScope* scope = (DeferScope*)emitter->arena_.alloc(sizeof(DeferScope));
-        new (scope) DeferScope(emitter->arena_, label_id);
-        emitter->defer_stack_.append(scope);
-    }
+    // NEW: Unified lifting pass
+    ControlFlowLifter lifter(getArena());
+    lifter.lift(this);  // Transforms AST in-place
     
-    __forceinline void close() {
-        if (!opened) return;
-        opened = false;
-        emitter->defer_stack_.pop_back();
-        emitter->dedent();
-        emitter->writeIndent();
-        emitter->writeString("}");
-    }
-    
-    __forceinline ~LiftContext() {
-        close();
-    }
-};
-```
-
-#### Task 1.2: Add Recursion Depth Guard
-```cpp
-// Add to C89Emitter members in codegen.hpp
-int lifting_depth_;
-static const int MAX_LIFTING_DEPTH = 50;
-
-// In C89Emitter constructor
-: lifting_depth_(0) { ... }
-
-// In emitLiftedExpression (new function)
-void C89Emitter::emitLiftedExpression(const ASTNode* node, const char* target_var, int label_id) {
-    lifting_depth_++;
-    if (lifting_depth_ > MAX_LIFTING_DEPTH) {
-        error_handler_.report(ERR_STACK_OVERFLOW, node->loc, "Lifting depth exceeded");
-        lifting_depth_--;
-        return;
-    }
-    
-    // ... actual lifting logic ...
-    
-    lifting_depth_--;
+    // Codegen now sees only lifted AST
+    C89Emitter emitter(*this);
+    emitter.emit();
 }
 ```
 
-**Memory Impact**: +4 bytes per `C89Emitter` instance (stack member).
+### 2.3 Key Components
+```
+ast_lifter.hpp/cpp          # Main lifting logic
+ast_utils.hpp/cpp           # Cloning, child traversal helpers
+type_checker.hpp (extended) # Optional: lifting flags on ASTNode
+codegen.cpp (simplified)    # Emitter assumes lifted AST
+```
 
 ---
 
-### Phase 2: Centralize Lifting Logic (Week 2)
-**Goal**: Create `emitLiftedExpression` that handles all construct types.
+## 3. Lifting Semantics
 
-#### Task 2.1: Create the Unified Dispatcher
+### 3.1 What Gets Lifted?
+| Node Type | Example | Lifted Form |
+|-----------|---------|-------------|
+| `NODE_IF_EXPR` | `x = if (a) 1 else 2;` | `__tmp_if_1 = if (...) {...}; x = __tmp_if_1;` |
+| `NODE_SWITCH_EXPR` | `f(switch (x) {...})` | `__tmp_sw_1 = switch (...) {...}; f(__tmp_sw_1);` |
+| `NODE_TRY_EXPR` | `s.field = try foo();` | `__tmp_try_1 = try foo(); s.field = __tmp_try_1;` |
+| `NODE_CATCH_EXPR` | `a + (b catch |e| 0)` | `__tmp_cat_1 = b catch...; a + __tmp_cat_1;` |
+| `NODE_ORELSE_EXPR` | `opt orelse default` | `__tmp_or_1 = opt orelse...; use __tmp_or_1;` |
+
+### 3.2 When Is Lifting Required?
+A control-flow expression **must be lifted** when it appears in an *unsafe context*:
+
 ```cpp
-// Pseudocode: emitLiftedExpression
-void C89Emitter::emitLiftedExpression(const ASTNode* node, const char* target_var, int label_id) {
-    if (!node) return;
+bool needsLifting(const ASTNode* node, const ASTNode* parent) {
+    if (!parent) return false;  // Root is always safe
     
-    LiftContext ctx(this, target_var, node->resolved_type, label_id);
-    ctx.open();
-    
-    switch (node->type) {
+    switch (parent->type) {
+        // SAFE: Expression is already in statement position
+        case NODE_EXPRESSION_STMT:
+        case NODE_RETURN_STMT:
+        case NODE_VAR_DECL:      // initializer
+        case NODE_ASSIGNMENT:    // rvalue (handled specially)
+            return false;
+            
+        // UNSAFE: Nested in another expression → must lift
+        case NODE_BINARY_OP:
+        case NODE_UNARY_OP:
+        case NODE_FUNCTION_CALL:  // argument
+        case NODE_ARRAY_ACCESS:   // index or array expr
+        case NODE_MEMBER_ACCESS:  // base expr
+        case NODE_IF_EXPR:        // condition or branch
+        case NODE_SWITCH_EXPR:    // condition or prong
         case NODE_TRY_EXPR:
-            emitLiftedTryExpr(node, &ctx);
-            break;
         case NODE_CATCH_EXPR:
-            emitLiftedCatchExpr(node, &ctx);
-            break;
         case NODE_ORELSE_EXPR:
-            emitLiftedOrelseExpr(node, &ctx);
-            break;
-        case NODE_IF_EXPR:
-            emitLiftedIfExpr(node, &ctx);
-            break;
-        case NODE_SWITCH_EXPR:
-            emitLiftedSwitchExpr(node, &ctx);
+            return true;
+            
+        // PAREN forwards to parent's context
+        case NODE_PAREN_EXPR:
+            return needsLifting(node, getParentOfParen(parent));
+            
+        default:
+            return true;  // Conservative: lift if unsure
+    }
+}
+```
+
+### 3.3 Complex Lvalue Handling
+For assignments like `s.x = try foo()`, lifting uses a temporary:
+
+```
+Original:  s.x = try foo();
+Lifted:    __tmp_assign_1 = try foo();
+           s.x = __tmp_assign_1;
+```
+
+This ensures the lvalue (`s.x`) is evaluated *after* the potentially-failing `try`.
+
+---
+
+## 4. Implementation Details (C++98 Compatible)
+
+### 4.1 AST Child Traversal Helpers
+**File**: `ast_utils.hpp`
+
+```cpp
+// Uniform visitor for cloning/traversal
+struct ChildVisitor {
+    virtual void visitChild(ASTNode** child_slot) = 0;
+};
+
+// Iterate all children of any node type
+void forEachChild(ASTNode* node, ChildVisitor& visitor) {
+    if (!node) return;
+    switch (node->type) {
+        case NODE_BINARY_OP:
+            visitor.visitChild(&node->as.binary_op->left);
+            visitor.visitChild(&node->as.binary_op->right);
             break;
         case NODE_BLOCK_STMT:
-            emitBlockWithAssignment(&node->as.block_stmt, target_var, label_id);
-            ctx.opened = false; // Block handles its own close
+            if (node->as.block_stmt.statements) {
+                for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+                    visitor.visitChild(&(*node->as.block_stmt.statements)[i]);
+                }
+            }
             break;
-        default:
-            // Simple expression, no lifting needed
+        // ... handle all node types with children ...
+        default: break; // No children
+    }
+}
+```
+
+### 4.2 Deep Clone with Semantic Sharing
+**File**: `ast_utils.cpp`
+
+```cpp
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
+    if (!node) return NULL;
+    
+    // Shallow copy structure (semantic pointers shared via memcpy)
+    ASTNode* copy = (ASTNode*)arena->alloc(sizeof(ASTNode));
+    plat_memcpy(copy, node, sizeof(ASTNode));
+    
+    // Recursively clone children via uniform helper
+    struct CloneVisitor : ChildVisitor {
+        ArenaAllocator* arena;
+        void visitChild(ASTNode** child_slot) override {
+            *child_slot = cloneASTNode(*child_slot, arena);
+        }
+    };
+    CloneVisitor visitor = {arena};
+    forEachChild(node, visitor);
+    
+    return copy;
+}
+```
+
+**Critical**: `resolved_type`, `symbol`, and `Type*` pointers are *shared*, not cloned.
+
+### 4.3 ControlFlowLifter Class
+**File**: `ast_lifter.hpp`
+
+```cpp
+class ControlFlowLifter {
+public:
+    // RAII state context (adapted from LiftContext pattern)
+    struct LiftContext {
+        const ASTNode* parent;   // For needsLifting() decision
+        ASTNode** slot;          // Pointer-to-pointer for replacement
+        const char* target_var;  // Temp var name if lifting
+        bool in_unsafe_context;  // Cached decision
+        
+        __forceinline LiftContext(const ASTNode* p, ASTNode** s, const char* t)
+            : parent(p), slot(s), target_var(t), in_unsafe_context(false) {}
+    };
+    
+private:
+    ArenaAllocator* arena_;
+    int tmp_counter_;
+    DynamicArray<const ASTNode*> stmt_stack_;     // Statement ancestors
+    DynamicArray<ASTBlockStmtNode*> block_stack_; // Enclosing blocks
+    
+public:
+    ControlFlowLifter(ArenaAllocator* arena);
+    void lift(CompilationUnit* unit);  // Entry point
+    
+private:
+    // Core traversal: post-order with slot-based replacement
+    void transformNode(ASTNode** node_slot, const ASTNode* parent);
+    
+    // Decision logic
+    bool needsLifting(const ASTNode* node, const ASTNode* parent);
+    
+    // Lifting primitives
+    void liftNode(ASTNode** node_slot, const ASTNode* parent, const char* prefix);
+    const char* generateTempName(const char* prefix);
+    
+    // RAII guards for context stacks
+    struct StmtGuard {
+        ControlFlowLifter& lifter;
+        StmtGuard(ControlFlowLifter& l, const ASTNode* stmt) : lifter(l) {
+            lifter.stmt_stack_.append(stmt);
+        }
+        ~StmtGuard() { lifter.stmt_stack_.pop_back(); }
+    };
+};
+```
+
+### 4.4 Slot-Based Traversal Pattern
+**File**: `ast_lifter.cpp`
+
+```cpp
+void ControlFlowLifter::transformNode(ASTNode** node_slot, const ASTNode* parent) {
+    ASTNode* node = *node_slot;
+    if (!node) return;
+    
+    // Post-order: transform children first
+    struct TransformVisitor : ChildVisitor {
+        ControlFlowLifter* lifter;
+        const ASTNode* parent;
+        void visitChild(ASTNode** child_slot) override {
+            lifter->transformNode(child_slot, parent);
+        }
+    };
+    TransformVisitor visitor = {this, parent};
+    forEachChild(node, visitor);
+    
+    // Now decide if THIS node needs lifting
+    if (isControlFlowExpr(node->type) && needsLifting(node, parent)) {
+        liftNode(node_slot, parent, getPrefixForType(node->type));
+    }
+}
+```
+
+**Why slots?**: `*node_slot = new_node` directly replaces the pointer in the parent—no fragile `child_idx` tracking.
+
+### 4.5 Unified liftNode Primitive
+```cpp
+void ControlFlowLifter::liftNode(ASTNode** node_slot, const ASTNode* parent, const char* prefix) {
+    ASTNode* node = *node_slot;
+    
+    // 1. Generate unique, interned temp name
+    const char* temp_name = generateTempName(prefix);
+    
+    // 2. Clone node (children already transformed)
+    ASTNode* init_expr = cloneASTNode(node, arena_);
+    
+    // 3. Create variable declaration
+    ASTVarDeclNode* var_decl = createVarDecl(
+        temp_name,
+        node->resolved_type,  // Share type pointer
+        init_expr,
+        true  // is_const: temps are immutable
+    );
+    var_decl->loc = node->loc;
+    
+    // 4. Insert at TOP of current block (scope correctness)
+    ASTBlockStmtNode* current_block = block_stack_.back();
+    if (current_block && current_block->statements) {
+        current_block->statements->insert(0, (ASTNode*)var_decl);
+    }
+    
+    // 5. Create identifier to replace original node
+    ASTNode* ident = createIdentifierNode(temp_name, node->loc);
+    ident->resolved_type = node->resolved_type;
+    
+    // 6. Replace via slot
+    *node_slot = ident;
+}
+
+const char* ControlFlowLifter::getPrefixForType(NodeType type) {
+    switch (type) {
+        case NODE_IF_EXPR:    return "__tmp_if";
+        case NODE_SWITCH_EXPR: return "__tmp_switch";
+        case NODE_TRY_EXPR:   return "__tmp_try";
+        case NODE_CATCH_EXPR: return "__tmp_catch";
+        case NODE_ORELSE_EXPR: return "__tmp_orelse";
+        default: return "__tmp";
+    }
+}
+```
+
+### 4.6 Complex Lvalue Support
+```cpp
+// Special handling in transformNode for NODE_ASSIGNMENT rvalue:
+if (parent && parent->type == NODE_ASSIGNMENT) {
+    ASTAssignmentNode* assign = parent->as.assignment;
+    if (node == assign->rvalue && needsLifting(node, parent)) {
+        if (assign->lvalue->type == NODE_IDENTIFIER) {
+            // Direct lift: temp becomes the identifier's target
+            liftNode(node_slot, parent, getPrefixForType(node->type));
+        } else {
+            // Complex lvalue: lift to temp, then assign temp to lvalue
+            const char* temp_name = generateTempName("__assign_tmp");
+            ASTNode* init_expr = cloneASTNode(node, arena_);
+            
+            // Create temp decl
+            ASTVarDeclNode* var_decl = createVarDecl(temp_name, node->resolved_type, init_expr, true);
+            block_stack_.back()->statements->insert(0, (ASTNode*)var_decl);
+            
+            // Create assignment: lvalue = temp
+            ASTNode* temp_ident = createIdentifierNode(temp_name, node->loc);
+            temp_ident->resolved_type = node->resolved_type;
+            
+            // Replace rvalue slot with temp identifier
+            *node_slot = temp_ident;
+        }
+    }
+}
+```
+
+---
+
+## 5. Memory & Performance Analysis
+
+### 5.1 Memory Budget (16MB Peak)
+| Component | Estimated Usage | Notes |
+|-----------|----------------|-------|
+| Arena overhead | ~2 MB | Alignment, bookkeeping |
+| Original AST | ~4 MB | Typical medium program |
+| Cloned nodes (lifting) | ~3 MB | Post-order: only lifted nodes cloned |
+| Temp var names | ~0.5 MB | Interned strings, reset per module |
+| Type system | ~3 MB | Shared `Type*` pointers, not cloned |
+| Symbol tables | ~2 MB | Shared across passes |
+| **Peak estimate** | **~14.5 MB** | Under 16MB limit with margin |
+
+### 5.2 Memory Tracking Hooks
+**File**: `platform.hpp` (extended)
+
+```cpp
+struct MemoryTracker {
+    size_t peak_bytes;
+    size_t current_bytes;
+    ArenaAllocator* arena;
+    
+    void* trackAlloc(size_t size) {
+        current_bytes += size;
+        if (current_bytes > peak_bytes) peak_bytes = current_bytes;
+        // CRITICAL: Abort if we exceed budget
+        if (peak_bytes > 16 * 1024 * 1024) {
+            plat_printf("FATAL: Memory limit exceeded (%u bytes)\n", peak_bytes);
+            plat_abort();
+        }
+        return arena->alloc(size);
+    }
+    
+    size_t getPeakBytes() const { return peak_bytes; }
+};
+```
+
+### 5.3 Stack Usage
+| Component | Size | Notes |
+|-----------|------|-------|
+| `LiftContext` | 16 bytes | 4 pointers on 32-bit target |
+| Recursion depth | ~200 frames | Guarded by `MAX_VISIT_DEPTH` |
+| RAII guards | 8-12 bytes each | Stack-only, no heap |
+| **Total per lift** | **~28 bytes** | Negligible for 1MB stack |
+
+---
+
+## 6. Codegen Contract
+
+### 6.1 Post-Lifting AST Guarantees
+After `ControlFlowLifter::lift()`:
+1. ✅ No `NODE_IF_EXPR`, `NODE_SWITCH_EXPR`, etc. appear nested in expressions
+2. ✅ All control-flow expressions are replaced by `NODE_IDENTIFIER` referencing a temp var
+3. ✅ Temp var declarations are inserted at the top of their enclosing block
+4. ✅ `resolved_type` pointers are preserved (shared, not cloned)
+5. ✅ Temp names are unique and interned (`__tmp_if_1`, `__tmp_try_2`, ...)
+
+### 6.2 Simplified Emitter Logic
+**File**: `codegen.cpp` (post-lifting)
+
+```cpp
+// OLD: Complex lifting logic in emitExpression
+case NODE_IF_EXPR:
+    if (in_expression_context) {
+        // Manual temp var, block emission, defer handling...
+    }
+    break;
+
+// NEW: Assume AST is already lifted
+case NODE_IF_EXPR:
+    // This should never happen post-lifting!
+    error_handler_.report(ERR_INTERNAL, node->loc, "Unlifted if expression reached codegen");
+    break;
+
+case NODE_IDENTIFIER:
+    // Simple: just emit the identifier
+    writeString(node->as.identifier.name);
+    break;
+```
+
+### 6.3 Target Variable Handling
+The emitter still accepts a `target_var` parameter for clarity:
+
+```cpp
+void C89Emitter::emitExpression(const ASTNode* node, const char* target_var) {
+    if (!node) return;
+    
+    switch (node->type) {
+        case NODE_IDENTIFIER:
             if (target_var) {
                 writeIndent();
                 writeString(target_var);
                 writeString(" = ");
-                emitExpression(node);
+                writeString(node->as.identifier.name);
                 writeString(";\n");
             } else {
-                emitExpression(node);
+                // Standalone identifier (side-effects only)
+                writeIndent();
+                writeString(node->as.identifier.name);
+                writeString(";\n");
             }
-            ctx.opened = false; // No block was opened
             break;
+        // ... other cases ...
     }
 }
 ```
 
-#### Task 2.2: Refactor `emitTryExpr` to Use Context
+---
+
+## 7. Testing Strategy
+
+### 7.1 Unit Tests (ast_lifter_test.cpp)
 ```cpp
-// Pseudocode: emitLiftedTryExpr
-void C89Emitter::emitLiftedTryExpr(const ASTNode* node, LiftContext* ctx) {
-    const ASTTryExprNode& try_node = node->as.try_expr;
-    Type* inner_type = try_node.expression->resolved_type;
+// Test 1: Basic cloning preserves semantics
+TEST(ClonePreservesTypes) {
+    ASTNode* original = parseExpr("if (a) 1 else 2");
+    original->resolved_type = get_g_type_i32();
     
-    // Create temp var for the try result
-    const char* temp_var = var_alloc_.generate("__try_res");
-    writeIndent();
-    emitType(inner_type, temp_var);
-    writeString(" = ");
-    emitExpression(try_node.expression);
-    writeString(";\n");
+    ASTNode* clone = cloneASTNode(original, &test_arena);
     
-    // Error check
-    writeIndent();
-    writeString("if (");
-    writeString(temp_var);
-    writeString(".is_error) {\n");
-    indent();
-    
-    // Emit defers and return
-    emitDefersForScopeExit(-1);
-    writeIndent();
-    if (current_fn_ret_type_->kind == TYPE_ERROR_UNION) {
-        writeString("return ");
-        writeString(temp_var);
-        writeString(";\n");
-    } else {
-        writeString("return;\n");
-    }
-    
-    dedent();
-    writeIndent();
-    writeString("}\n");
-    
-    // Assign payload to target
-    if (ctx->target_var) {
-        writeIndent();
-        writeString(ctx->target_var);
-        writeString(" = ");
-        if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(temp_var);
-            writeString(".data.payload");
-        } else {
-            writeString("0");
-        }
-        writeString(";\n");
-    }
-    
-    // ctx->close() called automatically by destructor
+    ASSERT(clone->resolved_type == original->resolved_type);  // Shared, not copied
+    ASSERT(clone != original);  // Different struct
+    ASSERT(clone->as.if_expr.then_expr != original->as.if_expr.then_expr);  // Cloned child
+}
+
+// Test 2: needsLifting decisions
+TEST(NeedsLiftingMatrix) {
+    ASSERT(!needsLifting(if_node, expression_stmt_parent));  // Safe
+    ASSERT(needsLifting(if_node, binary_op_parent));         // Unsafe
+    ASSERT(needsLifting(try_node, function_call_arg));       // Unsafe
+}
+
+// Test 3: Temp var scoping
+TEST(TempVarInsertedAtBlockTop) {
+    // foo(try bar()) → { __tmp_try_1 = try bar(); foo(__tmp_try_1); }
+    ASTNode* lifted = liftTestProgram("foo(try bar())");
+    ASTBlockStmtNode* block = findEnclosingBlock(lifted);
+    ASSERT(block->statements->at(0)->type == NODE_VAR_DECL);  // Temp first
 }
 ```
 
-**Memory Impact**: `LiftContext` is 20 bytes on stack (5 pointers/ints). Negligible.
-
----
-
-### Phase 3: Fix Nesting Support (Week 3)
-**Goal**: Ensure all lifting functions can call `emitLiftedExpression` recursively.
-
-#### Task 3.1: Update Nesting Matrix
-Current limitations (from design doc):
-
-| Outer \ Inner | `if` | `switch` | `try` | `catch` | `orelse` |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **`try` operand** | ✗ | ✗ | ✗ | ✗ | ✗ |
-| **`catch` fallback** | ✓ | ✓ | ✗ | ✗ | ✗ |
-
-**Fix**: All inner expressions should call `emitLiftedExpression` instead of `emitExpression`.
-
-```cpp
-// Pseudocode: emitLiftedCatchExpr
-void C89Emitter::emitLiftedCatchExpr(const ASTNode* node, LiftContext* ctx) {
-    const ASTCatchExprNode* catch_node = node->as.catch_expr;
-    Type* inner_type = catch_node->payload->resolved_type;
-    
-    const char* temp_var = var_alloc_.generate("__catch_res");
-    writeIndent();
-    emitType(inner_type, temp_var);
-    writeString(" = ");
-    emitExpression(catch_node->payload);  // Payload should NOT be lifted
-    writeString(";\n");
-    
-    writeIndent();
-    writeString("if (");
-    writeString(temp_var);
-    writeString(".is_error) {\n");
-    indent();
-    
-    // Error capture
-    if (catch_node->error_name) {
-        writeIndent();
-        writeString("int ");
-        writeString(catch_node->error_name);
-        writeString(" = ");
-        writeString(temp_var);
-        writeString(".err;\n");
-    }
-    
-    // Fallback: Use emitLiftedExpression for full nesting support
-    if (ctx->target_var) {
-        emitLiftedExpression(catch_node->else_expr, ctx->target_var, ctx->label_id);
-    } else {
-        emitLiftedExpression(catch_node->else_expr, NULL, ctx->label_id);
-    }
-    
-    dedent();
-    writeIndent();
-    writeString("} else {\n");
-    indent();
-    
-    if (ctx->target_var) {
-        writeIndent();
-        writeString(ctx->target_var);
-        writeString(" = ");
-        writeString(temp_var);
-        writeString(".data.payload;\n");
-    }
-    
-    dedent();
-    writeIndent();
-    writeString("}\n");
-}
-```
-
-#### Task 3.2: Fix `emitBlockWithAssignment`
-```cpp
-// Pseudocode: Update the last-statement handling
-if (i == node->statements->length() - 1 && target_var &&
-    stmt->type != NODE_EXPRESSION_STMT &&
-    stmt->type != NODE_IF_STMT && stmt->type != NODE_WHILE_STMT &&
-    stmt->type != NODE_FOR_STMT && stmt->type != NODE_RETURN_STMT &&
-    stmt->type != NODE_BREAK_STMT && stmt->type != NODE_CONTINUE_STMT &&
-    stmt->type != NODE_UNREACHABLE) {
-    
-    // OLD: Manual switch for each type
-    // NEW: Unified call
-    emitLiftedExpression(stmt, target_var, label_id);
-    
-} else {
-    emitStatement(stmt);
-}
-```
-
-**Benefit**: Now `NODE_ORELSE_EXPR` is automatically supported (was missing before).
-
----
-
-### Phase 4: Assignment Target Unification (Week 4)
-**Goal**: Support non-identifier lvalues (e.g., `s.x = try foo()`).
-
-#### Task 4.1: Create Temp for Complex Lvalues
-```cpp
-// Pseudocode: emitStatement NODE_ASSIGNMENT case
-case NODE_ASSIGNMENT: {
-    const ASTNode* lvalue = node->as.assignment->lvalue;
-    const ASTNode* rvalue = node->as.assignment->rvalue;
-    
-    // Check if rvalue needs lifting
-    bool needs_lifting = (rvalue->type == NODE_TRY_EXPR ||
-                          rvalue->type == NODE_CATCH_EXPR ||
-                          rvalue->type == NODE_ORELSE_EXPR ||
-                          rvalue->type == NODE_IF_EXPR ||
-                          rvalue->type == NODE_SWITCH_EXPR);
-    
-    if (needs_lifting) {
-        if (lvalue->type == NODE_IDENTIFIER && lvalue->as.identifier.symbol) {
-            // Simple case: direct lifting
-            const char* target = var_alloc_.allocate(lvalue->as.identifier.symbol);
-            emitLiftedExpression(rvalue, target, -1);
-        } else {
-            // Complex lvalue: use temp var
-            const char* temp = var_alloc_.generate("__assign_tmp");
-            emitLiftedExpression(rvalue, temp, -1);
-            
-            // Then assign temp to lvalue
-            writeIndent();
-            emitExpression(lvalue);
-            writeString(" = ");
-            writeString(temp);
-            writeString(";\n");
-        }
-    } else {
-        // No lifting needed
-        writeIndent();
-        emitExpression(node);
-        writeString(";\n");
-    }
-    break;
-}
-```
-
-**Memory Impact**: +1 temp variable per complex assignment (allocated in `var_alloc_`, freed per function).
-
----
-
-### Phase 5: Cleanup and Deduplication (Week 5)
-**Goal**: Remove old functions, update all call sites.
-
-#### Task 5.1: Update Call Sites
-| Old Function | New Call |
-| :--- | :--- |
-| `emitTryExpr(node, target)` | `emitLiftedExpression(node, target, label_id)` |
-| `emitCatchExpr(node, target)` | `emitLiftedExpression(node, target, label_id)` |
-| `emitOrelseExpr(node, target)` | `emitLiftedExpression(node, target, label_id)` |
-| `emitIfExpr(node, target)` | `emitLiftedExpression(node, target, label_id)` |
-| `emitSwitchExpr(node, target)` | `emitLiftedExpression(node, target, label_id)` |
-
-#### Task 5.2: Remove Old Functions
-```cpp
-// Delete these from codegen.cpp:
-// - emitTryExpr (keep emitLiftedTryExpr as private helper)
-// - emitCatchExpr (keep emitLiftedCatchExpr as private helper)
-// - emitOrelseExpr (keep emitLiftedOrelseExpr as private helper)
-// - emitIfExpr (keep emitLiftedIfExpr as private helper)
-// - emitSwitchExpr (keep emitLiftedSwitchExpr as private helper)
-```
-
-#### Task 5.3: Update `emitExpression`
-```cpp
-// In emitExpression switch, remove lifting cases:
-case NODE_SWITCH_EXPR:
-    // OLD: writeString("/* error: switch expression used in unsupported context */");
-    // NEW: This should never be called for lifting contexts
-    writeString("/* error: switch must be lifted */");
-    break;
-```
-
----
-
-## Part 4: Memory and Stack Analysis
-
-### Stack Usage Per Lift
-| Component | Size | Notes |
-| :--- | :--- | :--- |
-| `LiftContext` | 20 bytes | 5 ints/pointers on stack |
-| `DeferScope*` | 4 bytes | Pointer in context |
-| Recursion Guard | 4 bytes | `lifting_depth_` member |
-| **Total Per Lift** | **~28 bytes** | Negligible for 1MB stack |
-
-### Heap (Arena) Usage
-| Component | Size | Notes |
-| :--- | :--- | :--- |
-| `DeferScope` | ~32 bytes | Allocated per lifted block |
-| Temp Var Names | ~16 bytes | From `var_alloc_` (reset per fn) |
-| **Total Per Function** | **~500 bytes** | Well within 16MB limit |
-
-### Code Size Impact
-| Change | Before | After | Delta |
-| :--- | :--- | :--- | :--- |
-| Lifting Functions | ~330 lines | ~200 lines | **-130 lines** |
-| `LiftContext` Class | 0 | ~40 lines | +40 lines |
-| **Net** | | | **-90 lines** |
-
-**Result**: Smaller `.exe` size, which is better for instruction cache on old hardware.
-
----
-
-## Part 5: Testing Strategy
-
-### Phase 1 Tests (Infrastructure)
+### 7.2 Integration Tests (lifting_tests.zig)
 ```zig
-// Test 1: Basic lifting still works
+// Test 1: Basic lifting
 const x = try foo();
 const y = if (a) 1 else 2;
-const z = switch (b) { 1 => 10, else => 20 };
-```
 
-### Phase 2 Tests (Nesting)
-```zig
 // Test 2: Nested lifting
-const x = try (if (a) foo() else bar());
-const y = (try foo()) catch |err| (if (err) 1 else 2);
-```
+const z = try (if (b) bar() else baz());
+const w = (try foo()) catch |err| (if (err) 1 else 2);
 
-### Phase 3 Tests (Complex Lvalues)
-```zig
-// Test 3: Non-identifier lvalues
+// Test 3: Complex lvalues
 struct { x: i32 } s;
-s.x = try foo();
-array[0] = if (a) 1 else 2;
+s.x = try compute();
+array[try getIndex()] = if (cond) a else b;
+
+// Test 4: Return with lifting
+fn getValue() !i32 {
+    return try fetch();  // Lifted to temp, then return temp
+}
+
+// Test 5: Defer interaction
+fn withDefer() !void {
+    defer cleanup();
+    const x = try operation();  // Defer must run on error path
+}
 ```
 
-### Phase 4 Tests (Return with Lifting)
-```zig
-// Test 4: Return expressions
-return try foo();
-return if (a) 1 else 2;
+### 7.3 Memory Verification Test
+```cpp
+TEST(LiftingMemoryBudget) {
+    ArenaAllocator arena(16 * 1024 * 1024);  // 16MB limit
+    CompilationUnit unit(&arena, ...);
+    
+    parseTestProgram("deeply_nested_control_flow.zig", &unit);
+    size_t before_lift = arena.getUsedBytes();
+    
+    TypeChecker checker(unit);
+    checker.check(unit.getASTRoot());
+    size_t after_typecheck = arena.getUsedBytes();
+    
+    ControlFlowLifter lifter(&arena);
+    lifter.lift(&unit);
+    
+    size_t after_lift = arena.getUsedBytes();
+    size_t peak = arena.getPeakBytes();
+    
+    ASSERT(peak < 16 * 1024 * 1024, "Exceeded 16MB memory limit");
+    ASSERT((after_lift - after_typecheck) < (after_typecheck - before_lift) * 2,
+           "Lifting shouldn't more than double memory usage");
+}
 ```
 
 ---
 
-## Part 6: MSVC 6.0 Compatibility Notes
+## 8. MSVC 6.0 Compatibility
 
-### Compiler Flags
+### 8.1 Required Compiler Flags
 ```
 /O1          ; Optimize for size (critical for W98)
 /Oy          ; Omit frame pointer (saves stack)
 /GX-         ; Disable exceptions (no overhead)
 /GR-         ; Disable RTTI (no vtable bloat)
 /W4          ; High warning level
+/Za          ; Strict C++98 mode (disable MS extensions)
 ```
 
-### Code Patterns to Avoid
+### 8.2 Code Patterns to Enforce
 ```cpp
-// BAD: Virtual functions (vtable overhead)
-struct LiftContext { virtual ~LiftContext() {} };
+// ✅ GOOD: Plain struct, inline destructor
+struct LiftContext {
+    __forceinline ~LiftContext() { cleanup(); }
+};
 
-// GOOD: Plain struct with inline destructor
-struct LiftContext { __forceinline ~LiftContext() {} };
+// ❌ BAD: Virtual functions (vtable overhead)
+// struct LiftContext { virtual ~LiftContext() {} };
 
-// BAD: STL containers (heap fragmentation)
-std::vector<const char*> targets;
+// ✅ GOOD: Arena allocation, no new/delete
+ASTNode* node = (ASTNode*)arena->alloc(sizeof(ASTNode));
 
-// GOOD: DynamicArray with arena
-DynamicArray<const char*> targets(arena_);
+// ❌ BAD: STL containers
+// std::vector<ASTNode*> children;
 
-// BAD: Exception handling
-try { ... } catch (...) { ... }
+// ✅ GOOD: DynamicArray with arena
+DynamicArray<ASTNode*> children(arena);
 
-// GOOD: Error codes and early returns
+// ✅ GOOD: plat_* functions, not std::*
+plat_memcpy(dest, src, size);  // Not std::memcpy
+
+// ❌ BAD: Exception handling
+// try { ... } catch (...) { ... }
+
+// ✅ GOOD: Error codes and early returns
 if (!node) return;
 ```
 
-## Summary
+### 8.3 Build System Integration
+```cmake
+# CMakeLists.txt excerpt
+if (MSVC AND MSVC_VERSION LESS 1300)  # MSVC 6.0 = version 1200
+    add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
+    add_definitions(-D_HAS_AUTO_PTR_EXT=0)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Za /EHsc- /O1 /Oy")
+endif()
 
-This plan gives you:
-1. **Unified lifting logic** (90 lines less code)
-2. **Consistent nesting support** (all constructs can nest in all others)
-3. **Complex lvalue support** (struct members, array elements)
-4. **RAII safety** (no indent/defer desync)
-5. **Zero memory overhead** (stack-only `LiftContext`, 28 bytes per lift)
-6. **MSVC 6.0 compatible** (no exceptions, no RTTI, `__forceinline`)
+# Add compile test target for lifting
+add_executable(compile_test_lifter 
+    src/ast_lifter.cpp
+    src/ast_utils.cpp
+    test/lifting_basic.cpp
+)
+target_compile_options(compile_test_lifter PRIVATE /W4 /WX)
+```
 
-Start with **Phase 1** this week. Add the `LiftContext` struct but don't change any existing functions. Run your test suite to ensure the infrastructure doesn't break anything. Then proceed to Phase 2.
+---
+
+## 9. Implementation Timeline
+
+### Week 1: Foundation
+- [ ] Task 228.5: AST Child Access Helpers
+- [ ] Task 229: AST Cloning Utilities
+- [ ] Task 229.5: Memory Tracking Hooks
+
+### Week 2: Infrastructure
+- [ ] Task 230: ControlFlowLifter Skeleton
+- [ ] Task 230.5: Slot-Based Traversal Pattern
+
+### Week 3: Lifting Logic
+- [ ] Task 232: Context-Aware `needsLifting()`
+- [ ] Task 233: Unified `liftNode()` Primitive
+- [ ] Task 233.5: Complex Lvalue Support
+
+### Week 4: Integration
+- [ ] Task 237: Hook into Pipeline + Simplify Emitter
+- [ ] Task 237.5: Memory Verification Gate
+
+### Week 5: Polish
+- [ ] Task 238: Comprehensive Test Suite
+- [ ] Task 240: MSVC 6.0 Compatibility Gate
+- [ ] Documentation updates (`C89_Codegen.md`, `AST_Parser.md`)
+
+---
+
+## 10. Risk Mitigation
+
+| Risk | Mitigation |
+|------|-----------|
+| Memory blowup during cloning | Memory tracking hooks with hard 16MB abort |
+| Stack overflow from deep nesting | `MAX_VISIT_DEPTH` guard (200 frames) |
+| Semantic info corruption in clones | Share `resolved_type`/`symbol` pointers; only clone structure |
+| MSVC 6.0 compilation failures | Dedicated compile test target with strict flags |
+| Lifter breaks existing tests | Run full test suite after each task; add lifting-specific tests |
+
+---
+
+## 11. Appendix: Quick Reference
+
+### Temp Name Format
+```
+__tmp_if_<counter>      // if expressions
+__tmp_switch_<counter>  // switch expressions
+__tmp_try_<counter>     // try expressions
+__tmp_catch_<counter>   // catch expressions
+__tmp_orelse_<counter>  // orelse expressions
+__tmp_assign_<counter>  // complex lvalue assignments
+```
+
+### Key Functions
+```cpp
+// Clone AST node (shares semantic info)
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
+
+// Traverse children uniformly
+void forEachChild(ASTNode* node, ChildVisitor& visitor);
+
+// Decide if node needs lifting
+bool needsLifting(const ASTNode* node, const ASTNode* parent);
+
+// Lift a single node to temp var
+void liftNode(ASTNode** node_slot, const ASTNode* parent, const char* prefix);
+
+// Entry point: lift entire compilation unit
+void ControlFlowLifter::lift(CompilationUnit* unit);
+```
+
+### Debug Helpers (DEBUG builds only)
+```cpp
+#ifdef DEBUG
+void dumpAST(ASTNode* node, int indent = 0);  // Print AST structure
+void logLiftingDecision(const ASTNode* node, bool lifted);  // Trace lifting
+#endif
+```
+
+---
