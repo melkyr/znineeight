@@ -973,3 +973,16 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 **Verification**:
 - Verified that reordered emission produces valid C code for recursive types.
 - Confirmed that `json_parser/file.zig` correctly type-checks with the new `c_char` interop rules.
+
+### Task 9.14: Parser Improvements and MSVC 6.0 Hardening [DONE]
+**Goal**: Refactor the parser for better scope management and address MSVC 6.0 compatibility warnings.
+
+**Implementation**:
+- **RAII ScopeGuard**: Implemented a `ScopeGuard` in `Parser::parseBlockStatement` to ensure symbol table scopes are correctly popped even in the presence of early returns.
+- **Signed/Unsigned Fixes**: Fixed several comparison warnings by adding explicit `(int)` casts to container lengths in loops.
+- **MSVC 6.0 Hardening**: Added POD documentation to the `Symbol` struct and audited `DynamicArray` usage to ensure no pass-by-value instances that might choke older compilers.
+- **Documentation**: Updated `AST_Parser.md` and created `docs/development/msvc6_compatibility.md`.
+
+**Verification**:
+- Verified that all Batch tests pass (within established baseline).
+- Confirmed that `ScopeGuard` correctly manages `enterScope`/`exitScope` balance.

@@ -228,6 +228,7 @@ A `SymbolTable` is a critical component for semantic analysis, responsible for t
 #### Implementation Details
 
 -   **Hierarchical Scopes:** The `SymbolTable` class manages a stack of `Scope` objects, allowing it to correctly model nested scopes (e.g., function bodies, block statements). `enterScope()` pushes a new scope onto the stack, and `exitScope()` pops it.
+-   **RAII Scope Management**: In the parser, a `ScopeGuard` (defined in `parser.cpp`) is used to automate scope exit via RAII. This ensures that `exitScope()` is called when the guard goes out of scope, preventing scope stack corruption during early returns or (future) error recovery.
 -   **Hash Table:** Each `Scope` object contains a hash table to store its symbols. This provides an average time complexity of O(1) for symbol insertion and lookup operations, a significant improvement over the previous O(n) linear scan approach.
 -   **Collision Resolution:** Collisions in the hash table are resolved using separate chaining. Each bucket in the hash table is a linked list of `SymbolEntry` structs.
 -   **Hashing Algorithm:** The hash table uses the 32-bit FNV-1a algorithm to hash symbol names, which provides good distribution for identifiers.
