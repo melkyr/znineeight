@@ -26,6 +26,14 @@ enum SymbolFlag {
     SYMBOL_FLAG_CONST   = (1 << 5)   // Immutable symbol
 };
 
+/**
+ * @struct Symbol
+ * @brief Represents a named entity in the program (variable, function, type).
+ *
+ * NOTE: This struct is a POD (Plain Old Data) type with simple scalar members.
+ * It is safe to copy by value, even on MSVC 6.0, as it lacks a custom
+ * constructor or destructor.
+ */
 struct Symbol {
     const char* name;
     const char* module_name; // NULL for local or 'main' module

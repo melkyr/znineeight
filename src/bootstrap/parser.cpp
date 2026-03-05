@@ -10,6 +10,24 @@
 #include "utils.hpp"
 #include <new>       // For placement new
 
+namespace {
+    /**
+     * @struct ScopeGuard
+     * @brief RAII guard for managing symbol table scopes.
+     *
+     * Ensures that symbol_table_->exitScope() is called when the guard
+     * goes out of scope, even if an early return occurs.
+     */
+    struct ScopeGuard {
+        SymbolTable* st;
+        ScopeGuard(SymbolTable* t) : st(t) {}
+        ~ScopeGuard() { st->exitScope(); }
+    private:
+        ScopeGuard(const ScopeGuard&);
+        ScopeGuard& operator=(const ScopeGuard&);
+    };
+}
+
 /**
  * @brief Constructs a new Parser instance.
  */
@@ -486,7 +504,7 @@ ASTNode* Parser::parseUnaryExpr() {
 
     ASTNode* expr = parsePostfixExpression();
 
-    for (int i = operators.length() - 1; i >= 0; --i) {
+    for (int i = (int)operators.length() - 1; i >= 0; --i) {
         Token op_token = operators[i];
 
         ASTUnaryOpNode unary_op_node;
@@ -1712,7 +1730,8 @@ Type* Parser::resolveAndVerifyType(ASTNode* type_node) {
         DynamicArray<Type*>* param_types = (DynamicArray<Type*>*)arena_->alloc(sizeof(DynamicArray<Type*>));
         new (param_types) DynamicArray<Type*>(*arena_);
         if (type_node->as.function_type->params) {
-            for (size_t i = 0; i < type_node->as.function_type->params->length(); ++i) {
+            int param_count = (int)type_node->as.function_type->params->length();
+            for (int i = 0; i < param_count; ++i) {
                 Type* pt = resolveAndVerifyType((*type_node->as.function_type->params)[i]);
                 if (!pt) return NULL;
                 param_types->append(pt);
@@ -1813,6 +1832,7 @@ ASTNode* Parser::parseBlockStatement() {
     Token lbrace_token = expect(TOKEN_LBRACE, "Expected '{' to start a block");
 
     symbol_table_->enterScope();
+    ScopeGuard guard(symbol_table_);
 
     DynamicArray<ASTNode*>* statements = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!statements) {
@@ -1844,8 +1864,6 @@ ASTNode* Parser::parseBlockStatement() {
         }
     }
     expect(TOKEN_RBRACE, "Expected '}' to end a block");
-
-    symbol_table_->exitScope();
 
     ASTNode* block_node = createNode(NODE_BLOCK_STMT);
     block_node->loc = lbrace_token.location;

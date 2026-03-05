@@ -722,6 +722,9 @@ The `parseBlockStatement` function is responsible for parsing a block of stateme
 - A mix of the above.
 - A block with expression statements: `{ my_func(); 42; }`
 
+### Robust Scope Management: ScopeGuard
+To ensure that symbol table scopes are correctly popped even in the presence of early returns (essential for future error recovery support), `parseBlockStatement` uses a `ScopeGuard` RAII (Resource Acquisition Is Initialization) helper. This guard is instantiated immediately after entering a new scope and ensures `exitScope()` is called upon its destruction at the end of the block.
+
 ### `ASTEmptyStmtNode`
 Represents an empty statement, which is just a semicolon.
 *   **Zig Code:** `;`
