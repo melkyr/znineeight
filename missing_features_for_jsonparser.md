@@ -18,6 +18,10 @@ This document details the findings from the "baptism of fire" where the Z98 comp
 | Recursive Types | ❌ Limited | Self-referential types via slices (`[]JsonValue`) sometimes fail resolution. Explicit pointers are safer. |
 | While Continue Expr | ✅ Fixed | `while (cond) : (iter) { ... }` is now supported as of Task 9.8. |
 | Implicit Coercion | ✅ Fixed | Strings and slices now implicitly coerce to `[]const u8` and `[*]const u8`. |
+| Struct Methods | ❌ Not Supported | Methods inside structs are not supported in the bootstrap compiler. Use standalone functions. |
+| Optional/Error captures | ❌ Unstable | `if (opt) |v|` or `while (opt) |v|` captures are unstable. Use manual null checks. |
+| Enum Comparison | ⚠️ Restricted | Direct enum comparison `v.tag == .Tag` may fail. Use `@enumToInt(v.tag) == @enumToInt(Tag.Value)`. |
+| Float Built-ins | ❌ Restricted | `@intToFloat` and `@floatCast` usage in complex expressions may trigger syntax errors or segfaults. |
 
 ## Detailed Discoveries and Workarounds
 
@@ -136,9 +140,17 @@ union z_json_JsonData {
 };
 ```
 
-## Recommendations for Future Improvements
+### 13. Compiler: Recursive Type Resolution Segfault
+**Issue**: Highly complex recursive types or deeply nested structures can trigger a segmentation fault in the Stage 0 compiler during type checking or name mangling.
+**Hypothesis**: Structural equality checks (`areTypesEqual`) and placeholder resolution trigger infinite recursion or use-after-free when circular dependencies involve slices or union fields. Valgrind reports uninitialized memory usage in `emitGlobalVarDecl` and `emitFnDecl` when cross-module symbol metadata is incomplete.
 
-1.  **Unified Lifting (Milestone 8)**: This is the single most important next step. Moving control-flow expressions (if, switch, try) into temporary variables in a dedicated AST pass will solve most of the "Primary Expression" and code generation stability issues.
-2.  **Header Stabilization**: Ensure all required typedefs (slices, error unions, optionals) are emitted in every header that uses them, or move them to a common `types.h`.
-3.  **Parser Synchronization**: Implement a "sync" mechanism (e.g., skip to next semicolon) on errors so multiple errors can be reported without aborting.
-4.  **Placeholder Hardening**: Ensure that `TYPE_SLICE` and `TYPE_OPTIONAL` can safely contain `TYPE_PLACEHOLDER` during the recursive resolution pass.
+## Hypothesis and Recommendations
+
+### Hypothesis on Compiler Stability
+The Stage 0 compiler has reached its architectural limit for handling highly complex, mutually recursive, multi-module Zig code. The primary "wall" is the **Structural Equality** and **Placeholder Resolution** logic. When a type is used as an element of a slice, which is a field of a union, which is pointed to by a struct, the depth of resolution and the potential for circular dependencies in the interner/cache trigger unstable states.
+
+### Recommendations for Next Phases
+1.  **Unified Lifting (Milestone 8)**: Essential for stabilizing control-flow expressions in complex nesting.
+2.  **Type Interner Overhaul**: The current structural equality check (`areTypesEqual`) needs to be more robust against incomplete types and placeholders.
+3.  **Cross-Module Metadata Hardening**: Ensure all symbol metadata (mangled names, alignment, completeness) is guaranteed to be initialized before the codegen phase begins, possibly through a dedicated "Preparation Pass" after type checking.
+4.  **Simplified Parser Demo**: For the JSON parser demo, continue using a "downgraded" style that favors explicit pointers and manual tag management until the Stage 1 compiler is available to provide better self-hosting stability.

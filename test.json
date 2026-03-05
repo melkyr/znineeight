@@ -1,11 +1,17 @@
 {
-  "name": "RetroZig",
-  "version": 0.1,
-  "is_fun": true,
-  "tags": ["compiler", "C89", "Win95"],
-  "author": {
-    "name": "Jules",
-    "role": "Engineer"
-  },
-  "null_val": null
+    "null_val": null,
+    "true_val": true,
+    "false_val": false,
+    "number_val": 0x2A,
+    "string_val": "Hello, Z98 JSON Parser!\nNew line and\tTab.",
+    "array_val": [
+        null,
+        true,
+        0x10,
+        "internal string"
+    ],
+    "object_val": {
+        "key1": "value1",
+        "key2": 0xFF
+    }
 }
