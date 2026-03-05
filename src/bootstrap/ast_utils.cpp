@@ -345,6 +345,359 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor) {
     }
 }
 
+namespace {
+    struct CloningVisitor : ChildVisitor {
+        ArenaAllocator* arena;
+
+        CloningVisitor(ArenaAllocator* arena) : arena(arena) {}
+
+        void visitChild(ASTNode** child_slot) {
+            if (*child_slot) {
+                *child_slot = cloneASTNode(*child_slot, arena);
+            }
+        }
+    };
+}
+
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
+    if (!node) return NULL;
+
+    // 1. Shallow copy the node structure
+    ASTNode* copy = (ASTNode*)arena->alloc(sizeof(ASTNode));
+    plat_memcpy(copy, node, sizeof(ASTNode));
+
+    // 2. Handle DynamicArray deep-cloning
+    // We must manually clone any DynamicArray pointers before forEachChild
+    // because forEachChild will visit elements but not the array itself.
+    switch (node->type) {
+        case NODE_FUNCTION_CALL:
+            if (node->as.function_call && node->as.function_call->args) {
+                ASTFunctionCallNode* call_copy = (ASTFunctionCallNode*)arena->alloc(sizeof(ASTFunctionCallNode));
+                plat_memcpy(call_copy, node->as.function_call, sizeof(ASTFunctionCallNode));
+                copy->as.function_call = call_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                call_copy->args = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                call_copy->args->ensure_capacity(node->as.function_call->args->length());
+                for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
+                    call_copy->args->append((*node->as.function_call->args)[i]);
+                }
+            }
+            break;
+
+        case NODE_BLOCK_STMT:
+            if (node->as.block_stmt.statements) {
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                copy->as.block_stmt.statements = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                copy->as.block_stmt.statements->ensure_capacity(node->as.block_stmt.statements->length());
+                for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+                    copy->as.block_stmt.statements->append((*node->as.block_stmt.statements)[i]);
+                }
+            }
+            break;
+
+        case NODE_STRUCT_INITIALIZER:
+            if (node->as.struct_initializer && node->as.struct_initializer->fields) {
+                ASTStructInitializerNode* init_copy = (ASTStructInitializerNode*)arena->alloc(sizeof(ASTStructInitializerNode));
+                plat_memcpy(init_copy, node->as.struct_initializer, sizeof(ASTStructInitializerNode));
+                copy->as.struct_initializer = init_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                init_copy->fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*arena);
+                init_copy->fields->ensure_capacity(node->as.struct_initializer->fields->length());
+
+                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                    ASTNamedInitializer* field_orig = (*node->as.struct_initializer->fields)[i];
+                    ASTNamedInitializer* field_copy = (ASTNamedInitializer*)arena->alloc(sizeof(ASTNamedInitializer));
+                    plat_memcpy(field_copy, field_orig, sizeof(ASTNamedInitializer));
+                    // Value will be cloned via forEachChild
+                    init_copy->fields->append(field_copy);
+                }
+            }
+            break;
+
+        case NODE_TUPLE_LITERAL:
+            if (node->as.tuple_literal && node->as.tuple_literal->elements) {
+                ASTTupleLiteralNode* tuple_copy = (ASTTupleLiteralNode*)arena->alloc(sizeof(ASTTupleLiteralNode));
+                plat_memcpy(tuple_copy, node->as.tuple_literal, sizeof(ASTTupleLiteralNode));
+                copy->as.tuple_literal = tuple_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                tuple_copy->elements = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                tuple_copy->elements->ensure_capacity(node->as.tuple_literal->elements->length());
+                for (size_t i = 0; i < node->as.tuple_literal->elements->length(); ++i) {
+                    tuple_copy->elements->append((*node->as.tuple_literal->elements)[i]);
+                }
+            }
+            break;
+
+        case NODE_SWITCH_EXPR:
+            if (node->as.switch_expr) {
+                ASTSwitchExprNode* sw_copy = (ASTSwitchExprNode*)arena->alloc(sizeof(ASTSwitchExprNode));
+                plat_memcpy(sw_copy, node->as.switch_expr, sizeof(ASTSwitchExprNode));
+                copy->as.switch_expr = sw_copy;
+
+                if (node->as.switch_expr->prongs) {
+                    void* array_mem = arena->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+                    sw_copy->prongs = new (array_mem) DynamicArray<ASTSwitchProngNode*>(*arena);
+                    sw_copy->prongs->ensure_capacity(node->as.switch_expr->prongs->length());
+
+                    for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                        ASTSwitchProngNode* prong_orig = (*node->as.switch_expr->prongs)[i];
+                        ASTSwitchProngNode* prong_copy = (ASTSwitchProngNode*)arena->alloc(sizeof(ASTSwitchProngNode));
+                        plat_memcpy(prong_copy, prong_orig, sizeof(ASTSwitchProngNode));
+
+                        if (prong_orig->items) {
+                            void* items_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                            prong_copy->items = new (items_mem) DynamicArray<ASTNode*>(*arena);
+                            prong_copy->items->ensure_capacity(prong_orig->items->length());
+                            for (size_t j = 0; j < prong_orig->items->length(); ++j) {
+                                prong_copy->items->append((*prong_orig->items)[j]);
+                            }
+                        }
+                        sw_copy->prongs->append(prong_copy);
+                    }
+                }
+            }
+            break;
+
+        case NODE_FN_DECL:
+            if (node->as.fn_decl) {
+                ASTFnDeclNode* fn_copy = (ASTFnDeclNode*)arena->alloc(sizeof(ASTFnDeclNode));
+                plat_memcpy(fn_copy, node->as.fn_decl, sizeof(ASTFnDeclNode));
+                copy->as.fn_decl = fn_copy;
+
+                if (node->as.fn_decl->params) {
+                    void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                    fn_copy->params = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                    fn_copy->params->ensure_capacity(node->as.fn_decl->params->length());
+                    for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
+                        fn_copy->params->append((*node->as.fn_decl->params)[i]);
+                    }
+                }
+            }
+            break;
+
+        case NODE_STRUCT_DECL:
+            if (node->as.struct_decl && node->as.struct_decl->fields) {
+                ASTStructDeclNode* struct_copy = (ASTStructDeclNode*)arena->alloc(sizeof(ASTStructDeclNode));
+                plat_memcpy(struct_copy, node->as.struct_decl, sizeof(ASTStructDeclNode));
+                copy->as.struct_decl = struct_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                struct_copy->fields = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                struct_copy->fields->ensure_capacity(node->as.struct_decl->fields->length());
+                for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                    struct_copy->fields->append((*node->as.struct_decl->fields)[i]);
+                }
+            }
+            break;
+
+        case NODE_UNION_DECL:
+            if (node->as.union_decl && node->as.union_decl->fields) {
+                ASTUnionDeclNode* union_copy = (ASTUnionDeclNode*)arena->alloc(sizeof(ASTUnionDeclNode));
+                plat_memcpy(union_copy, node->as.union_decl, sizeof(ASTUnionDeclNode));
+                copy->as.union_decl = union_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                union_copy->fields = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                union_copy->fields->ensure_capacity(node->as.union_decl->fields->length());
+                for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                    union_copy->fields->append((*node->as.union_decl->fields)[i]);
+                }
+            }
+            break;
+
+        case NODE_ENUM_DECL:
+            if (node->as.enum_decl && node->as.enum_decl->fields) {
+                ASTEnumDeclNode* enum_copy = (ASTEnumDeclNode*)arena->alloc(sizeof(ASTEnumDeclNode));
+                plat_memcpy(enum_copy, node->as.enum_decl, sizeof(ASTEnumDeclNode));
+                copy->as.enum_decl = enum_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                enum_copy->fields = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                enum_copy->fields->ensure_capacity(node->as.enum_decl->fields->length());
+                for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                    enum_copy->fields->append((*node->as.enum_decl->fields)[i]);
+                }
+            }
+            break;
+
+        case NODE_ERROR_SET_DEFINITION:
+            if (node->as.error_set_decl && node->as.error_set_decl->tags) {
+                ASTErrorSetDefinitionNode* err_copy = (ASTErrorSetDefinitionNode*)arena->alloc(sizeof(ASTErrorSetDefinitionNode));
+                plat_memcpy(err_copy, node->as.error_set_decl, sizeof(ASTErrorSetDefinitionNode));
+                copy->as.error_set_decl = err_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<const char*>));
+                err_copy->tags = new (array_mem) DynamicArray<const char*>(*arena);
+                err_copy->tags->ensure_capacity(node->as.error_set_decl->tags->length());
+                for (size_t i = 0; i < node->as.error_set_decl->tags->length(); ++i) {
+                    err_copy->tags->append((*node->as.error_set_decl->tags)[i]);
+                }
+            }
+            break;
+
+        case NODE_FUNCTION_TYPE:
+            if (node->as.function_type && node->as.function_type->params) {
+                ASTFunctionTypeNode* type_copy = (ASTFunctionTypeNode*)arena->alloc(sizeof(ASTFunctionTypeNode));
+                plat_memcpy(type_copy, node->as.function_type, sizeof(ASTFunctionTypeNode));
+                copy->as.function_type = type_copy;
+
+                void* array_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+                type_copy->params = new (array_mem) DynamicArray<ASTNode*>(*arena);
+                type_copy->params->ensure_capacity(node->as.function_type->params->length());
+                for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
+                    type_copy->params->append((*node->as.function_type->params)[i]);
+                }
+            }
+            break;
+
+        default:
+            // For other out-of-line nodes that don't have DynamicArrays,
+            // we still need to clone the out-of-line structure if forEachChild
+            // doesn't handle them by value.
+            switch (node->type) {
+                case NODE_ASSIGNMENT:
+                    if (node->as.assignment) {
+                        copy->as.assignment = (ASTAssignmentNode*)arena->alloc(sizeof(ASTAssignmentNode));
+                        plat_memcpy(copy->as.assignment, node->as.assignment, sizeof(ASTAssignmentNode));
+                    }
+                    break;
+                case NODE_COMPOUND_ASSIGNMENT:
+                    if (node->as.compound_assignment) {
+                        copy->as.compound_assignment = (ASTCompoundAssignmentNode*)arena->alloc(sizeof(ASTCompoundAssignmentNode));
+                        plat_memcpy(copy->as.compound_assignment, node->as.compound_assignment, sizeof(ASTCompoundAssignmentNode));
+                    }
+                    break;
+                case NODE_BINARY_OP:
+                    if (node->as.binary_op) {
+                        copy->as.binary_op = (ASTBinaryOpNode*)arena->alloc(sizeof(ASTBinaryOpNode));
+                        plat_memcpy(copy->as.binary_op, node->as.binary_op, sizeof(ASTBinaryOpNode));
+                    }
+                    break;
+                case NODE_ARRAY_ACCESS:
+                    if (node->as.array_access) {
+                        copy->as.array_access = (ASTArrayAccessNode*)arena->alloc(sizeof(ASTArrayAccessNode));
+                        plat_memcpy(copy->as.array_access, node->as.array_access, sizeof(ASTArrayAccessNode));
+                    }
+                    break;
+                case NODE_ARRAY_SLICE:
+                    if (node->as.array_slice) {
+                        copy->as.array_slice = (ASTArraySliceNode*)arena->alloc(sizeof(ASTArraySliceNode));
+                        plat_memcpy(copy->as.array_slice, node->as.array_slice, sizeof(ASTArraySliceNode));
+                    }
+                    break;
+                case NODE_MEMBER_ACCESS:
+                    if (node->as.member_access) {
+                        copy->as.member_access = (ASTMemberAccessNode*)arena->alloc(sizeof(ASTMemberAccessNode));
+                        plat_memcpy(copy->as.member_access, node->as.member_access, sizeof(ASTMemberAccessNode));
+                    }
+                    break;
+                case NODE_IF_STMT:
+                    if (node->as.if_stmt) {
+                        copy->as.if_stmt = (ASTIfStmtNode*)arena->alloc(sizeof(ASTIfStmtNode));
+                        plat_memcpy(copy->as.if_stmt, node->as.if_stmt, sizeof(ASTIfStmtNode));
+                    }
+                    break;
+                case NODE_IF_EXPR:
+                    if (node->as.if_expr) {
+                        copy->as.if_expr = (ASTIfExprNode*)arena->alloc(sizeof(ASTIfExprNode));
+                        plat_memcpy(copy->as.if_expr, node->as.if_expr, sizeof(ASTIfExprNode));
+                    }
+                    break;
+                case NODE_WHILE_STMT:
+                    if (node->as.while_stmt) {
+                        copy->as.while_stmt = (ASTWhileStmtNode*)arena->alloc(sizeof(ASTWhileStmtNode));
+                        plat_memcpy(copy->as.while_stmt, node->as.while_stmt, sizeof(ASTWhileStmtNode));
+                    }
+                    break;
+                case NODE_FOR_STMT:
+                    if (node->as.for_stmt) {
+                        copy->as.for_stmt = (ASTForStmtNode*)arena->alloc(sizeof(ASTForStmtNode));
+                        plat_memcpy(copy->as.for_stmt, node->as.for_stmt, sizeof(ASTForStmtNode));
+                    }
+                    break;
+                case NODE_PTR_CAST:
+                    if (node->as.ptr_cast) {
+                        copy->as.ptr_cast = (ASTPtrCastNode*)arena->alloc(sizeof(ASTPtrCastNode));
+                        plat_memcpy(copy->as.ptr_cast, node->as.ptr_cast, sizeof(ASTPtrCastNode));
+                    }
+                    break;
+                case NODE_INT_CAST:
+                case NODE_FLOAT_CAST:
+                    if (node->as.numeric_cast) {
+                        copy->as.numeric_cast = (ASTNumericCastNode*)arena->alloc(sizeof(ASTNumericCastNode));
+                        plat_memcpy(copy->as.numeric_cast, node->as.numeric_cast, sizeof(ASTNumericCastNode));
+                    }
+                    break;
+                case NODE_OFFSET_OF:
+                    if (node->as.offset_of) {
+                        copy->as.offset_of = (ASTOffsetOfNode*)arena->alloc(sizeof(ASTOffsetOfNode));
+                        plat_memcpy(copy->as.offset_of, node->as.offset_of, sizeof(ASTOffsetOfNode));
+                    }
+                    break;
+                case NODE_VAR_DECL:
+                    if (node->as.var_decl) {
+                        copy->as.var_decl = (ASTVarDeclNode*)arena->alloc(sizeof(ASTVarDeclNode));
+                        plat_memcpy(copy->as.var_decl, node->as.var_decl, sizeof(ASTVarDeclNode));
+                    }
+                    break;
+                case NODE_STRUCT_FIELD:
+                    if (node->as.struct_field) {
+                        copy->as.struct_field = (ASTStructFieldNode*)arena->alloc(sizeof(ASTStructFieldNode));
+                        plat_memcpy(copy->as.struct_field, node->as.struct_field, sizeof(ASTStructFieldNode));
+                    }
+                    break;
+                case NODE_ERROR_SET_MERGE:
+                    if (node->as.error_set_merge) {
+                        copy->as.error_set_merge = (ASTErrorSetMergeNode*)arena->alloc(sizeof(ASTErrorSetMergeNode));
+                        plat_memcpy(copy->as.error_set_merge, node->as.error_set_merge, sizeof(ASTErrorSetMergeNode));
+                    }
+                    break;
+                case NODE_ERROR_UNION_TYPE:
+                    if (node->as.error_union_type) {
+                        copy->as.error_union_type = (ASTErrorUnionTypeNode*)arena->alloc(sizeof(ASTErrorUnionTypeNode));
+                        plat_memcpy(copy->as.error_union_type, node->as.error_union_type, sizeof(ASTErrorUnionTypeNode));
+                    }
+                    break;
+                case NODE_OPTIONAL_TYPE:
+                    if (node->as.optional_type) {
+                        copy->as.optional_type = (ASTOptionalTypeNode*)arena->alloc(sizeof(ASTOptionalTypeNode));
+                        plat_memcpy(copy->as.optional_type, node->as.optional_type, sizeof(ASTOptionalTypeNode));
+                    }
+                    break;
+                case NODE_CATCH_EXPR:
+                    if (node->as.catch_expr) {
+                        copy->as.catch_expr = (ASTCatchExprNode*)arena->alloc(sizeof(ASTCatchExprNode));
+                        plat_memcpy(copy->as.catch_expr, node->as.catch_expr, sizeof(ASTCatchExprNode));
+                    }
+                    break;
+                case NODE_ORELSE_EXPR:
+                    if (node->as.orelse_expr) {
+                        copy->as.orelse_expr = (ASTOrelseExprNode*)arena->alloc(sizeof(ASTOrelseExprNode));
+                        plat_memcpy(copy->as.orelse_expr, node->as.orelse_expr, sizeof(ASTOrelseExprNode));
+                    }
+                    break;
+                case NODE_IMPORT_STMT:
+                    if (node->as.import_stmt) {
+                        copy->as.import_stmt = (ASTImportStmtNode*)arena->alloc(sizeof(ASTImportStmtNode));
+                        plat_memcpy(copy->as.import_stmt, node->as.import_stmt, sizeof(ASTImportStmtNode));
+                    }
+                    break;
+                default:
+                    break;
+            }
+            break;
+    }
+
+    // 3. Recursively clone all children
+    CloningVisitor visitor(arena);
+    forEachChild(copy, visitor);
+
+    return copy;
+}
+
 const char* getTokenSpelling(TokenType op) {
     switch (op) {
         case TOKEN_PLUS: return "+";

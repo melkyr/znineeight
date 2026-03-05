@@ -157,9 +157,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
             }
             if (node->as.param_decl.is_anytype) {
                 bool is_exception = false;
-                if (current_parent_ && current_parent_->type == NODE_FN_DECL &&
-                    current_parent_->as.fn_decl->name &&
-                    plat_strcmp(current_parent_->as.fn_decl->name, "print") == 0) {
+                if (prev_parent && prev_parent->type == NODE_FN_DECL &&
+                    prev_parent->as.fn_decl->name &&
+                    plat_strcmp(prev_parent->as.fn_decl->name, "print") == 0) {
                     is_exception = true;
                 }
                 if (!is_exception) {

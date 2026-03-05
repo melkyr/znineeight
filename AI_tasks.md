@@ -1588,7 +1588,7 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor) {
 
 ---
 
-### Task 229: AST Cloning Utilities (Enhanced)
+### Task 229: AST Cloning Utilities (Enhanced) (DONE)
 **Goal**: Deep-clone AST nodes while sharing semantic info.
 
 ```cpp
@@ -1616,7 +1616,7 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
     return copy;
 }
 ```
-**Test**: Clone a nested `if` expression; verify modifying clone doesn't affect original.
+**Test**: Clone a nested `if` expression; verify modifying clone doesn't affect original. Verified with Batch 54 tests.
 
 ---
 

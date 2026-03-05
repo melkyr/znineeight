@@ -51,4 +51,17 @@ struct ChildVisitor {
  */
 void forEachChild(ASTNode* node, ChildVisitor& visitor);
 
+/**
+ * @brief Deep-clones an AST node and all its children.
+ *
+ * This function creates a deep copy of the AST structure starting from the given node.
+ * Semantic information (resolved_type, symbol pointers) is shared via shallow copy.
+ * Intermediate structures like DynamicArrays are also deep-cloned.
+ *
+ * @param node The node to clone.
+ * @param arena The arena allocator to use for new nodes and structures.
+ * @return A pointer to the newly cloned ASTNode, or NULL if the input was NULL.
+ */
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
+
 #endif // AST_UTILS_HPP

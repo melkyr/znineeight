@@ -986,3 +986,18 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 **Verification**:
 - Verified that all Batch tests pass (within established baseline).
 - Confirmed that `ScopeGuard` correctly manages `enterScope`/`exitScope` balance.
+
+---
+
+### Task 229: AST Cloning Utilities (Enhanced) [DONE]
+**Goal**: Implement a deep-cloning utility for AST nodes that shares semantic metadata but duplicates the tree structure.
+
+**Implementation**:
+- Implemented `cloneASTNode` in `ast_utils.cpp`.
+- Integrated with `forEachChild` for recursive traversal.
+- Added specialized deep-cloning for `DynamicArray` members to ensure complete tree isolation.
+- Verified semantic pointers (`Type*`, `Symbol*`) are correctly shared while node structures are unique.
+
+**Verification**:
+- Created Batch 54 with comprehensive cloning tests.
+- Verified that modifications to cloned nodes do not affect original structures.
