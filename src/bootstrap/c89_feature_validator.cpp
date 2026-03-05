@@ -471,12 +471,12 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     bool is_outermost = !in_catch_chain_;
 
     if (is_outermost) {
-        // Calculate chain total
+        // Calculate chain total (Right-associative: a catch (b catch c))
         int count = 0;
         ASTNode* curr = node;
         while (curr && curr->type == NODE_CATCH_EXPR) {
             count++;
-            curr = curr->as.catch_expr->payload;
+            curr = curr->as.catch_expr->else_expr;
         }
         catch_chain_total_ = count;
         catch_chain_index_ = 0;
@@ -486,11 +486,14 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     ASTNode* payload = node->as.catch_expr->payload;
     ASTNode* else_expr = node->as.catch_expr->else_expr;
 
-    // Recursive visit payload (inner catches first in source order)
+    // Visit payload (the expression that might fail)
+    bool prev_in_chain = in_catch_chain_;
+    in_catch_chain_ = false; // Payload is not part of THIS chain nesting
     ASTNode* prev_parent = current_parent_;
     current_parent_ = node;
     visit(payload);
     current_parent_ = prev_parent;
+    in_catch_chain_ = prev_in_chain;
 
     // Now log THIS catch expression
     int my_index = catch_chain_index_++;
@@ -513,10 +516,10 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
 
     // Extraction Analysis
     if (error_type && error_type->kind == TYPE_ERROR_UNION) {
-        Type* payload = error_type->as.error_union.payload;
+        Type* err_payload = error_type->as.error_union.payload;
         int site_idx = unit.getExtractionAnalysisCatalogue().addExtractionSite(
             node->loc,
-            payload,
+            err_payload,
             "catch",
             -1,
             catch_idx
@@ -529,13 +532,10 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
         catch_info.stack_safe = site.msvc6_safe;
     }
 
-    // Visit else_expr (handler)
-    bool prev_in_chain = in_catch_chain_;
-    in_catch_chain_ = false; // Handler is not part of the chain
+    // Visit else_expr (handler or next catch in chain)
     current_parent_ = node;
     visit(else_expr);
     current_parent_ = prev_parent;
-    in_catch_chain_ = prev_in_chain;
 
     if (is_outermost) {
         in_catch_chain_ = false;

@@ -75,7 +75,7 @@ TEST_FUNC(Codegen_IntCast_SafeWidening) {
     // Same signedness, larger or equal size
     return run_cast_codegen_test(
         "fn my_test(x: i32) i64 { return @intCast(i64, x); }",
-        "return (__int64)x;"
+        "return (i64)x;"
     );
 }
 

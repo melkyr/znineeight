@@ -261,6 +261,8 @@ void ErrorHandler::printInfos() {
     for (size_t i = 0; i < infos_.length(); ++i) {
         const InfoReport& report = infos_[i];
 
+        if (!report.message) continue;
+
         buffer.clear();
         if (report.location.file_id != 0) {
             const SourceFile* file = source_manager.getFile(report.location.file_id);

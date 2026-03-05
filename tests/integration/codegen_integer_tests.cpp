@@ -80,11 +80,19 @@ TEST_FUNC(Codegen_Int_u32) {
 }
 
 TEST_FUNC(Codegen_Int_i64) {
+#ifdef _MSC_VER
     return run_codegen_int_test("fn foo() i64 { return 42l; }", "42i64");
+#else
+    return run_codegen_int_test("fn foo() i64 { return 42l; }", "42LL");
+#endif
 }
 
 TEST_FUNC(Codegen_Int_u64) {
+#ifdef _MSC_VER
     return run_codegen_int_test("fn foo() u64 { return 42ul; }", "42ui64");
+#else
+    return run_codegen_int_test("fn foo() u64 { return 42ul; }", "42ULL");
+#endif
 }
 
 TEST_FUNC(Codegen_Int_usize) {
@@ -107,5 +115,9 @@ TEST_FUNC(Codegen_Int_LargeU64) {
     // Actually, parseInteger always uses u64.
     // visitIntegerLiteral: if !is_unsigned, it checks if it fits in i32, else i64.
     // If it's larger than i64 max, it will be negative if cast to i64.
+#ifdef _MSC_VER
     return run_codegen_int_test("fn foo() u64 { return 18446744073709551615ul; }", "18446744073709551615ui64");
+#else
+    return run_codegen_int_test("fn foo() u64 { return 18446744073709551615ul; }", "18446744073709551615ULL");
+#endif
 }
