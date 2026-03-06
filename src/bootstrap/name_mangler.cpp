@@ -15,7 +15,9 @@ const char* NameMangler::mangleFunction(const char* name,
     size_t remaining = sizeof(buffer);
 
     // Handle module prefix (skip for main and test modules)
-    if (module && plat_strcmp(module, "main") != 0 &&
+    if (name && name[0] == '_' && name[1] == '_') {
+        // Bypass mangling for compiler temporaries
+    } else if (module && plat_strcmp(module, "main") != 0 &&
         plat_strcmp(module, "test") != 0 && plat_strcmp(name, "main") != 0) {
 
         safe_append(ptr, remaining, "z_");
@@ -80,6 +82,11 @@ const char* NameMangler::mangleFunction(const char* name,
 }
 
 const char* NameMangler::mangleTypeName(const char* name, const char* module) {
+    // Bypass mangling for compiler temporaries
+    if (name && name[0] == '_' && name[1] == '_') {
+        return interner_.intern(name);
+    }
+
     char buffer[256];
     char* ptr = buffer;
     size_t remaining = sizeof(buffer);
