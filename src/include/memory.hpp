@@ -503,6 +503,22 @@ public:
     }
 
     /**
+     * @brief Inserts an item at a specific index in the array.
+     * If the array is full, it will trigger a reallocation.
+     * @param index The index at which to insert the item.
+     * @param item The item to insert.
+     */
+    void insert(size_t index, const T& item) {
+        assert(index <= len);
+        ensure_capacity(len + 1);
+        for (size_t i = len; i > index; --i) {
+            data[i] = data[i - 1];
+        }
+        data[index] = item;
+        ++len;
+    }
+
+    /**
      * @brief Removes the last element from the array.
      * Does not call the destructor on the removed element.
      */

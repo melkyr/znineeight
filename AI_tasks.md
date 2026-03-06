@@ -1752,54 +1752,37 @@ bool ControlFlowLifter::needsLifting(const ASTNode* node, const ASTNode* parent)
 
 ---
 
-### Task 233: Unified liftNode Primitive (All Control-Flow Types)
+### Task 233: Unified liftNode Primitive (All Control-Flow Types) (DONE)
 **Goal**: Single function handles `if`, `switch`, `try`, `catch`, `orelse`.
 
 ```cpp
 void ControlFlowLifter::liftNode(ASTNode** node_slot, const ASTNode* parent, const char* prefix) {
     ASTNode* node = *node_slot;
-    
-    // 1. Generate unique, interned temp name
     const char* temp_name = generateTempName(prefix);
-    
-    // 2. Clone node (children already transformed by post-order)
     ASTNode* init_expr = cloneASTNode(node, arena_);
+    ASTVarDeclNode* var_decl_data = createVarDecl(temp_name, node->resolved_type, init_expr, true);
     
-    // 3. Create variable declaration
-    ASTVarDeclNode* var_decl = createVarDecl(
-        temp_name,
-        node->resolved_type,  // Share type pointer (don't clone)
-        init_expr,
-        true  // is_const: temps are immutable
-    );
-    var_decl->loc = node->loc;
-    
-    // 4. Insert at TOP of current block (ensures scope correctness)
-    ASTBlockStmtNode* current_block = block_stack_.back();
-    if (current_block && current_block->statements) {
-        current_block->statements->insert(0, (ASTNode*)var_decl);
+    ASTNode* var_decl_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    plat_memset(var_decl_node, 0, sizeof(ASTNode));
+    var_decl_node->type = NODE_VAR_DECL;
+    var_decl_node->loc = node->loc;
+    var_decl_node->resolved_type = node->resolved_type;
+    var_decl_node->as.var_decl = var_decl_data;
+
+    // Insert BEFORE current statement to preserve evaluation order
+    if (block_stack_.length() > 0 && stmt_stack_.length() > 0) {
+        ASTBlockStmtNode* current_block = block_stack_.back();
+        ASTNode* current_stmt = stmt_stack_.back();
+        size_t insert_idx = findStatementIndex(current_block, current_stmt);
+        current_block->statements->insert(insert_idx, var_decl_node);
     }
     
-    // 5. Create identifier to replace original node
-    ASTNode* ident = createIdentifierNode(temp_name, node->loc);
-    ident->resolved_type = node->resolved_type;  // Share type
-    
-    // 6. Replace via slot
+    ASTNode* ident = createIdentifier(temp_name, node->loc);
+    ident->resolved_type = node->resolved_type;
     *node_slot = ident;
 }
-
-const char* ControlFlowLifter::getPrefixForType(NodeType type) {
-    switch (type) {
-        case NODE_IF_EXPR:    return "__tmp_if";
-        case NODE_SWITCH_EXPR: return "__tmp_switch";
-        case NODE_TRY_EXPR:   return "__tmp_try";
-        case NODE_CATCH_EXPR: return "__tmp_catch";
-        case NODE_ORELSE_EXPR: return "__tmp_orelse";
-        default: return "__tmp";
-    }
-}
 ```
-**Test**: Integration test: `foo(try bar())` → AST should have temp var + identifier.
+**Test**: Integration test: `ASTLifter_Unified` verifies all 5 constructs.
 
 ---
 
