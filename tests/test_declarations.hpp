@@ -1157,5 +1157,6 @@ TEST_FUNC(ASTLifter_BasicIf);
 TEST_FUNC(ASTLifter_Nested);
 TEST_FUNC(ASTLifter_ComplexAssignment);
 TEST_FUNC(ASTLifter_CompoundAssignment);
+TEST_FUNC(ASTLifter_Unified);
 
 #endif // TEST_DECLARATIONS_HPP

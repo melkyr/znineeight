@@ -184,6 +184,36 @@ const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
     return cur;
 }
 
+ASTVarDeclNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode* init, bool is_const) {
+    ASTVarDeclNode* var_decl_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
+    plat_memset(var_decl_data, 0, sizeof(ASTVarDeclNode));
+    var_decl_data->name = name;
+    var_decl_data->name_loc = init->loc;
+    var_decl_data->initializer = init;
+    var_decl_data->is_const = is_const;
+    var_decl_data->is_mut = !is_const;
+    return var_decl_data;
+}
+
+ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation loc) {
+    ASTNode* ident_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    plat_memset(ident_node, 0, sizeof(ASTNode));
+    ident_node->type = NODE_IDENTIFIER;
+    ident_node->loc = loc;
+    ident_node->as.identifier.name = name;
+    return ident_node;
+}
+
+int ControlFlowLifter::findStatementIndex(ASTBlockStmtNode* block, ASTNode* stmt) {
+    if (!block || !block->statements || !stmt) return -1;
+    for (size_t i = 0; i < block->statements->length(); ++i) {
+        if ((*block->statements)[i] == stmt) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
 void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix) {
     ASTNode* node = *node_slot;
     if (!node) return;
@@ -195,14 +225,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     ASTNode* init_expr = cloneASTNode(node, arena_);
 
     // 3. Create variable declaration
-    ASTVarDeclNode* var_decl_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
-    plat_memset(var_decl_data, 0, sizeof(ASTVarDeclNode));
-    var_decl_data->name = temp_name;
-    var_decl_data->name_loc = node->loc;
-    var_decl_data->initializer = init_expr;
-    var_decl_data->is_const = true;
-    var_decl_data->is_mut = false;
-
+    ASTVarDeclNode* var_decl_data = createVarDecl(temp_name, node->resolved_type, init_expr, true);
     ASTNode* var_decl_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     plat_memset(var_decl_node, 0, sizeof(ASTNode));
     var_decl_node->type = NODE_VAR_DECL;
@@ -214,40 +237,17 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     if (block_stack_.length() > 0 && stmt_stack_.length() > 0) {
         ASTBlockStmtNode* current_block = block_stack_.back();
         ASTNode* current_stmt = stmt_stack_.back();
+        int insert_idx = findStatementIndex(current_block, current_stmt);
 
-        if (current_block->statements) {
-            // Find index of current_stmt
-            size_t insert_idx = 0;
-            bool found = false;
-            for (size_t i = 0; i < current_block->statements->length(); ++i) {
-                if ((*current_block->statements)[i] == current_stmt) {
-                    insert_idx = i;
-                    found = true;
-                    break;
-                }
-            }
-
-            if (found) {
-                // Insert BEFORE current statement to preserve side-effect order
-                size_t old_len = current_block->statements->length();
-                current_block->statements->append(NULL); // Increment length
-
-                // Shift elements right
-                for (size_t j = old_len; j > insert_idx; --j) {
-                    (*current_block->statements)[j] = (*current_block->statements)[j-1];
-                }
-                (*current_block->statements)[insert_idx] = var_decl_node;
-            }
+        if (insert_idx != -1) {
+            // Insert BEFORE current statement to preserve side-effect order
+            current_block->statements->insert((size_t)insert_idx, var_decl_node);
         }
     }
 
     // 5. Replace node with identifier referencing the temp
-    ASTNode* ident_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
-    plat_memset(ident_node, 0, sizeof(ASTNode));
-    ident_node->type = NODE_IDENTIFIER;
-    ident_node->loc = node->loc;
+    ASTNode* ident_node = createIdentifier(temp_name, node->loc);
     ident_node->resolved_type = node->resolved_type;
-    ident_node->as.identifier.name = temp_name;
 
     *node_slot = ident_node;
 }

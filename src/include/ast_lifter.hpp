@@ -73,6 +73,21 @@ private:
      */
     const char* getPrefixForType(NodeType type);
 
+    /**
+     * @brief Finds the index of a statement within a block.
+     */
+    int findStatementIndex(ASTBlockStmtNode* block, ASTNode* stmt);
+
+    /**
+     * @brief Creates a new variable declaration node.
+     */
+    ASTVarDeclNode* createVarDecl(const char* name, Type* type, ASTNode* init, bool is_const);
+
+    /**
+     * @brief Creates a new identifier node.
+     */
+    ASTNode* createIdentifier(const char* name, SourceLocation loc);
+
     // Context Stacks
     ArenaAllocator* arena_;
     StringInterner* interner_;

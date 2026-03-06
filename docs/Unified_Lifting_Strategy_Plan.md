@@ -608,7 +608,7 @@ target_compile_options(compile_test_lifter PRIVATE /W4 /WX)
 
 ### Week 3: Lifting Logic
 - [x] Task 232: Context-Aware `needsLifting()`
-- [ ] Task 233: Unified `liftNode()` Primitive
+- [x] Task 233: Unified `liftNode()` Primitive
 - [ ] Task 233.5: Complex Lvalue Support
 
 ### Week 4: Integration
