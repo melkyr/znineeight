@@ -37,14 +37,16 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor) {
         // ~~~~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~
         case NODE_ASSIGNMENT:
             if (node->as.assignment) {
-                visitor.visitChild(&node->as.assignment->lvalue);
+                // Zig evaluates RHS before LHS side effects
                 visitor.visitChild(&node->as.assignment->rvalue);
+                visitor.visitChild(&node->as.assignment->lvalue);
             }
             break;
         case NODE_COMPOUND_ASSIGNMENT:
             if (node->as.compound_assignment) {
-                visitor.visitChild(&node->as.compound_assignment->lvalue);
+                // Zig evaluates RHS before LHS side effects
                 visitor.visitChild(&node->as.compound_assignment->rvalue);
+                visitor.visitChild(&node->as.compound_assignment->lvalue);
             }
             break;
         case NODE_UNARY_OP:
