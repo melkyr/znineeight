@@ -3997,6 +3997,7 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
             .withFlags(SYMBOL_FLAG_CONST | SYMBOL_FLAG_LOCAL)
             .build();
         unit_.getSymbolTable().insert(sym);
+        catch_node->error_sym = unit_.getSymbolTable().lookupInCurrentScope(catch_node->error_name);
     }
 
     if (!catch_node->else_expr) return get_g_type_undefined();

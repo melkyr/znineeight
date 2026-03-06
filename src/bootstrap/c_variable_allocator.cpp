@@ -29,6 +29,8 @@ static bool is_c_reserved_name(const char* name) {
     if (name[0] == '_') {
         // Starts with _ followed by Uppercase or another _
         if ((name[1] >= 'A' && name[1] <= 'Z') || name[1] == '_') {
+            // SPECIAL CASE: compiler-generated temporaries are allowed
+            if (plat_strncmp(name, "__tmp_", 6) == 0) return false;
             return true;
         }
     }

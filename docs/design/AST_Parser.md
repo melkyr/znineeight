@@ -1520,6 +1520,24 @@ Error sets are parsed and added to the `ErrorSetCatalogue` in the `CompilationUn
 ### Error Literal Resolution
 Unqualified error literals (`error.Tag`) are resolved by the `TypeChecker` using the `GlobalErrorRegistry`. If a tag has not been seen before, a new unique positive integer ID is assigned.
 
+### Result Propagation from Lifted Blocks
+
+When a control-flow branch (e.g., `catch |err| { ... }`) is a block expression:
+
+1. The `BlockFrame` for that branch has `yield_target` set to the result temporary
+2. Any expression inside the branch that produces a value calls `createYieldingStmt`
+3. `createYieldingStmt` assigns the expression result to `yield_target`
+4. This ensures the branch's final value flows to the correct outer temporary
+
+This pattern avoids fragile "find the last statement" logic and works correctly even when the branch contains nested lifted expressions.
+
+### Name Collision Resolution
+
+After AST lifting completes, each C block is emitted with its local declarations at the top. To preserve Zig's lexical scoping semantics:
+
+- Declarations from nested Zig blocks that are merged into a single C block are uniquely named or placed in nested C blocks as appropriate.
+- The `ControlFlowLifter` ensures that all variable declarations with initializers are split into a separate declaration and an assignment statement, ensuring correct evaluation order relative to other lifted constructs.
+
 ## 13. Try Expression Detection (Task 143)
 
 ### AST Node

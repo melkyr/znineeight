@@ -581,8 +581,18 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
-    if (!decl->symbol) return;
-    const char* c_name = var_alloc_.allocate(decl->symbol);
+    const char* c_name = NULL;
+    if (decl->symbol) {
+        c_name = var_alloc_.allocate(decl->symbol);
+    } else {
+        if (decl->name && decl->name[0] == '_' && decl->name[1] == '_') {
+            c_name = decl->name;
+        } else {
+            c_name = getC89GlobalName(decl->name);
+        }
+    }
+
+    if (!c_name) return;
 
     if (!emit_assignment) {
         writeIndent();
@@ -1678,7 +1688,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
             break;
         case NODE_IDENTIFIER:
-            if (node->as.identifier.symbol) {
+            if (node->as.identifier.name && node->as.identifier.name[0] == '_' && node->as.identifier.name[1] == '_') {
+                writeString(node->as.identifier.name);
+            } else if (node->as.identifier.name && node->as.identifier.name[0] == 'z' && node->as.identifier.name[1] == '_' && node->as.identifier.name[2] == '_' && node->as.identifier.name[3] == '_') {
+                writeString(node->as.identifier.name);
+            } else if (node->as.identifier.symbol) {
                 Symbol* sym = node->as.identifier.symbol;
                 if (sym->flags & SYMBOL_FLAG_LOCAL) {
                     writeString(var_alloc_.allocate(sym));
@@ -1688,7 +1702,13 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                     writeString(getC89GlobalName(sym->name));
                 }
             } else {
-                writeString(getC89GlobalName(node->as.identifier.name));
+                if (node->as.identifier.name && node->as.identifier.name[0] == '_' && node->as.identifier.name[1] == '_') {
+                    writeString(node->as.identifier.name);
+                } else if (node->as.identifier.name && node->as.identifier.name[0] == 'z' && node->as.identifier.name[1] == '_' && node->as.identifier.name[2] == '_' && node->as.identifier.name[3] == '_') {
+                    writeString(node->as.identifier.name);
+                } else {
+                    writeString(getC89GlobalName(node->as.identifier.name));
+                }
             }
             break;
         case NODE_PAREN_EXPR:
@@ -2541,6 +2561,11 @@ void C89Emitter::emitCharLiteral(const ASTCharLiteralNode* node) {
 const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     if (!zig_name) return "z_anonymous";
 
+    /* Compiler temporaries: emit verbatim, no module prefix, no truncation */
+    if (zig_name[0] == '_' && zig_name[1] == '_') {
+        return zig_name;
+    }
+
     /* Check cache first */
     for (size_t i = 0; i < global_names_.length(); ++i) {
         if (plat_strcmp(global_names_[i].zig_name, zig_name) == 0) {
@@ -2559,10 +2584,12 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         is_extern = true;
     }
 
-    /* Check if it's a known runtime intrinsic that should never be mangled */
+    /* Check if it's a known runtime intrinsic or compiler temporary that should never be mangled */
     if (plat_strcmp(zig_name, "__bootstrap_print") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_print_int") == 0 ||
-        plat_strcmp(zig_name, "__bootstrap_panic") == 0) {
+        plat_strcmp(zig_name, "__bootstrap_panic") == 0 ||
+        (zig_name[0] == '_' && zig_name[1] == '_') ||
+        (zig_name[0] == 'z' && zig_name[1] == '_' && zig_name[2] == '_' && zig_name[3] == '_')) {
         is_extern = true;
     }
 

@@ -7,6 +7,28 @@
 #include "compilation_unit.hpp"
 
 /**
+ * @struct BlockFrame
+ * @brief Manages the state of a block being transformed, separating declarations from statements.
+ */
+struct BlockFrame {
+    ASTBlockStmtNode* block_node;
+    DynamicArray<ASTNode*>* declarations;
+    DynamicArray<ASTNode*>* statements;
+    bool append_mode;
+    ASTNode* yield_target;  ///< If non-NULL, final expressions in this block assign to this target.
+
+    void init(ArenaAllocator* arena, ASTBlockStmtNode* node, bool is_append) {
+        block_node = node;
+        void* decls_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+        declarations = new (decls_mem) DynamicArray<ASTNode*>(*arena);
+        void* stmts_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
+        statements = new (stmts_mem) DynamicArray<ASTNode*>(*arena);
+        append_mode = is_append;
+        yield_target = NULL;
+    }
+};
+
+/**
  * @class ControlFlowLifter
  * @brief Transforms expression-valued control-flow constructs into statement-form equivalents.
  *
@@ -74,9 +96,34 @@ private:
     const char* getPrefixForType(NodeType type);
 
     /**
-     * @brief Finds the index of a statement within a block.
+     * @brief Post-lifting pass to resolve name collisions in flattened C89 blocks.
      */
-    int findStatementIndex(ASTBlockStmtNode* block, ASTNode* stmt);
+    void resolveNameCollisions(ASTNode* node);
+
+    struct NameEntry {
+        const char* name;
+        int count;
+    };
+
+    /**
+     * @brief Adds a declaration to the current block frame.
+     */
+    void addDeclaration(ASTNode* decl);
+
+    /**
+     * @brief Adds a statement to the current block frame.
+     */
+    void addStatement(ASTNode* stmt);
+
+    /**
+     * @brief Pushes a new block frame onto the stack.
+     */
+    void pushBlock(ASTBlockStmtNode* block, bool append_mode);
+
+    /**
+     * @brief Finalizes the current block frame and pops it.
+     */
+    void finalizeCurrentBlock();
 
     /**
      * @brief Creates a new variable declaration node.
@@ -131,7 +178,7 @@ private:
     // Lowering Helpers
     ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);
-    void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
+    void lowerTryExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerCatchExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerOrelseExpr(ASTNode* node, const char* temp_name);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
@@ -145,7 +192,7 @@ private:
     const int MAX_LIFTING_DEPTH;
 
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
-    DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
+    DynamicArray<BlockFrame> block_stack_;  ///< Stack of block frames for C89 compliance.
     DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
     DynamicArray<ASTFnDeclNode*> fn_stack_; ///< Stack of function declarations to find return types.
 

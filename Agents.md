@@ -84,7 +84,33 @@ When memory exceeds thresholds, optimize in this order:
 3. **Type object sharing** (reduce duplication)
 4. **String interning** (hash table optimization)
 5. **Phase memory reuse** (arena reset between phases)
-   
+
+### ControlFlowLifter Agent
+
+**Primary Responsibility**: Transform high-level control-flow expressions into C89-compatible statement sequences.
+
+**Key Invariants**:
+- All declarations appear before statements in any block (C89 rule)
+- Capture variables (`|err|`, `|val|`) are scoped to their branch body only
+- Compiler-generated temporaries (`__tmp_*`) bypass name mangling
+- Post-order traversal: children transformed before parent lifting
+
+**Frame Management Protocol**:
+1. Push new `BlockFrame` BEFORE transforming a scoped branch
+2. Set `frame.yield_target = result_temp` for branches that yield values
+3. Use `addDeclaration()` for captures, `addStatement()` for lifted code
+4. Call `finalizeCurrentBlock()` AFTER branch transformation completes
+5. Add the resulting control construct to the OUTER frame (after pop)
+
+**Key Methods**:
+- `createYieldingStmt`: Handles assigning the result of an expression to a target variable, correctly managing divergent paths (returns, breaks) and block structures.
+- `transformNode`: Recursively traverses the AST, performing lifting via `liftNode` when `needsLifting` is true. Splits variable declarations into declaration and assignment to maintain evaluation order.
+
+**Debugging Hooks**:
+- Enable `DEBUG_LIFTER` for frame stack traces
+- Use `LIFTER_LOG` to track statement emission order
+- Verify slot replacement with `plat_assert`
+
 ## Environment Setup & Build Maintenance
 
 ### Clean Environment Setup Script

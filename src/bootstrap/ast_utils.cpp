@@ -122,9 +122,8 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor) {
         // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
         case NODE_BLOCK_STMT:
             if (node->as.block_stmt.statements) {
-                // Iterate backwards to support transformations that insert statements
-                // at the current index without causing infinite re-processing.
-                for (int i = (int)node->as.block_stmt.statements->length() - 1; i >= 0; --i) {
+                // Iterate forwards to preserve evaluation order when building new statement lists.
+                for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
                     visitor.visitChild(&(*node->as.block_stmt.statements)[i]);
                 }
             }

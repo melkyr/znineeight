@@ -639,6 +639,7 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
             }
             catch_node->payload = left;
             catch_node->error_name = payload_name;
+            catch_node->error_sym = NULL;
             catch_node->else_expr = else_expr;
 
             ASTNode* new_node = createNodeAt(NODE_CATCH_EXPR, op_token.location);
