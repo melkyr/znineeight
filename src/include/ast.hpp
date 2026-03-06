@@ -597,11 +597,13 @@ struct ASTTryExprNode {
  * @brief Represents a `catch` expression, which handles a potential error from a payload.
  * @var ASTCatchExprNode::payload The expression being evaluated that may result in an error.
  * @var ASTCatchExprNode::error_name The optional name for the captured error (can be NULL).
+ * @var ASTCatchExprNode::error_sym The resolved symbol for the captured error.
  * @var ASTCatchExprNode::else_expr The expression to execute if the payload is an error.
  */
 struct ASTCatchExprNode {
     ASTNode* payload;
     const char* error_name; // Can be NULL
+    Symbol* error_sym;
     ASTNode* else_expr;
 };
 
