@@ -11,6 +11,7 @@
 #include "null_pointer_analyzer.hpp"
 #include "double_free_analyzer.hpp"
 #include "metadata_preparation_pass.hpp"
+#include "ast_lifter.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
@@ -822,6 +823,18 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     // Verify that all placeholders are resolved after type checking
     if (all_success && !verifyNoPlaceholders()) {
         all_success = false;
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+
+    // Phase 2.1: AST Lifting
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("AST Lifting");
+#endif
+    if (all_success) {
+        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
+        lifter.lift(this);
     }
 #ifdef MEASURE_MEMORY
     tracker.end_phase();

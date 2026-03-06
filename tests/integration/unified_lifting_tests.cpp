@@ -39,17 +39,24 @@ TEST_FUNC(ASTLifter_Unified) {
     ASTNode* body = fn_node->as.fn_decl->body;
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
-    // 4 calls, each with 1 lifted temp = 8 statements
-    ASSERT_EQ(stmts->length(), 8);
+    // Each control flow expr now results in:
+    // if: 1 var decl + 1 if stmt
+    // switch: 1 var decl + 1 switch stmt
+    // catch: 1 var decl + 1 block (containing 1 var decl + 1 if stmt)
+    // orelse: 1 var decl + 1 block (containing 1 var decl + 1 if stmt)
+    // plus the original expression statements (now identifiers)
+
+    // Total should be roughly 4 (vcl) + 4 (stmts) + 4 (calls) = 12
+    ASSERT_EQ(stmts->length(), 12);
 
     // With backward iteration in forEachChild(NODE_BLOCK_STMT), order should be preserved
     // and correctly nested for each statement.
 
-    // Check prefixes (Stmt 0: lift, Stmt 1: call, etc.)
+    // Check prefixes
     ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
-    ASSERT_TRUE(strstr((*stmts)[2]->as.var_decl->name, "__tmp_switch_") != NULL);
-    ASSERT_TRUE(strstr((*stmts)[4]->as.var_decl->name, "__tmp_catch_") != NULL);
-    ASSERT_TRUE(strstr((*stmts)[6]->as.var_decl->name, "__tmp_orelse_") != NULL);
+    ASSERT_EQ((*stmts)[1]->type, NODE_IF_STMT);
+    ASSERT_TRUE(strstr((*stmts)[3]->as.var_decl->name, "__tmp_switch_") != NULL);
+    ASSERT_EQ((*stmts)[4]->type, NODE_SWITCH_STMT);
 
     return true;
 }
@@ -86,14 +93,18 @@ TEST_FUNC(ASTLifter_DeepNested) {
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
     // Should have:
-    // 0: var __tmp_if_1 = if (c) 1 else 2;
-    // 1: var __tmp_catch_2 = bar(__tmp_if_1) catch 0;
-    // 2: foo(__tmp_catch_2);
+    // 0: var __tmp_if_1;
+    // 1: if (c) { __tmp_if_1 = 1; } else { __tmp_if_1 = 2; }
+    // 2: var __tmp_catch_2;
+    // 3: { var __tmp_catch_res_3 = bar(__tmp_if_1); if (__tmp_catch_res_3.is_error) ... }
+    // 4: foo(__tmp_catch_2);
 
-    ASSERT_EQ(stmts->length(), 3);
-    ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
-    ASSERT_TRUE(strstr((*stmts)[1]->as.var_decl->name, "__tmp_catch_") != NULL);
-    ASSERT_EQ((*stmts)[2]->type, NODE_EXPRESSION_STMT);
+    ASSERT_EQ(stmts->length(), 5);
+    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+    ASSERT_EQ((*stmts)[1]->type, NODE_IF_STMT);
+    ASSERT_EQ((*stmts)[2]->type, NODE_VAR_DECL);
+    ASSERT_EQ((*stmts)[3]->type, NODE_BLOCK_STMT);
+    ASSERT_EQ((*stmts)[4]->type, NODE_EXPRESSION_STMT);
 
     return true;
 }

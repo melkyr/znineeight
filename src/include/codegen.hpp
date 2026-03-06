@@ -217,41 +217,16 @@ public:
     void emitIf(const ASTIfStmtNode* node);
 
     /**
-     * @brief Emits an if expression lifted to a statement.
-     * @param node The if expression node.
-     * @param target_var The name of the variable to assign the result to (can be NULL).
-     * @param target_type Explicit target type for coercion.
-     */
-    void emitIfExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
      * @brief Emits a while statement.
      * @param node The while statement node.
      */
     void emitWhile(const ASTWhileStmtNode* node);
 
     /**
-     * @brief Emits a switch expression lifted to a statement.
-     * @param node The switch expression node.
-     * @param target_var The name of the variable to assign the result to (can be NULL).
-     * @param target_type Explicit target type for coercion.
+     * @brief Emits a switch statement.
+     * @param node The switch statement node.
      */
-    void emitSwitchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits a try expression lifted to a statement.
-     */
-    void emitTryExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits a catch expression lifted to a statement.
-     */
-    void emitCatchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits an orelse expression lifted to a statement.
-     */
-    void emitOrelseExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
+    void emitSwitch(const ASTSwitchStmtNode* node);
 
     /**
      * @brief Emits a for loop statement.

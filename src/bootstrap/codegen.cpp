@@ -513,11 +513,6 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
 
     if (is_discard) {
         switch (rvalue->type) {
-            case NODE_TRY_EXPR:    emitTryExpr(rvalue, NULL); break;
-            case NODE_CATCH_EXPR:  emitCatchExpr(rvalue, NULL); break;
-            case NODE_IF_EXPR:     emitIfExpr(rvalue, NULL); break;
-            case NODE_SWITCH_EXPR: emitSwitchExpr(rvalue, NULL); break;
-            case NODE_ORELSE_EXPR: emitOrelseExpr(rvalue, NULL); break;
             case NODE_STRUCT_INITIALIZER:
                 /* Special case: discarding a struct initializer means evaluating its components for side effects */
                 if (rvalue->as.struct_initializer->fields) {
@@ -533,38 +528,6 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
                 emitExpression(rvalue);
                 writeString(");\n");
                 break;
-        }
-        return;
-    }
-
-    /* Lifting (must come before coercions because they handle their own recursive wrapping) */
-    if (rvalue->type == NODE_SWITCH_EXPR || rvalue->type == NODE_IF_EXPR ||
-               rvalue->type == NODE_TRY_EXPR || rvalue->type == NODE_CATCH_EXPR ||
-               rvalue->type == NODE_ORELSE_EXPR) {
-
-        if (effective_target) {
-            if (allPathsExit(rvalue)) {
-                emitStatement(rvalue);
-                return;
-            }
-            switch (rvalue->type) {
-                case NODE_SWITCH_EXPR: emitSwitchExpr(rvalue, effective_target, target_type); break;
-                case NODE_IF_EXPR:     emitIfExpr(rvalue, effective_target, target_type); break;
-                case NODE_TRY_EXPR:    emitTryExpr(rvalue, effective_target, target_type); break;
-                case NODE_CATCH_EXPR:  emitCatchExpr(rvalue, effective_target, target_type); break;
-                case NODE_ORELSE_EXPR: emitOrelseExpr(rvalue, effective_target, target_type); break;
-                default: break;
-            }
-        } else {
-            /* Complex lvalue for lifted expression - currently not supported for assignment
-               We'll fall back to normal emission which will report an error */
-            writeIndent();
-            if (lvalue_node) {
-                emitExpression(lvalue_node);
-                writeString(" = ");
-            }
-            emitExpression(rvalue);
-            writeString(";\n");
         }
         return;
     }
@@ -862,9 +825,6 @@ void C89Emitter::emitStatement(const ASTNode* node) {
     current_loc_ = node->loc;
 
     switch (node->type) {
-        case NODE_IF_EXPR:
-            emitIfExpr(node, NULL);
-            break;
         case NODE_BLOCK_STMT:
             writeIndent();
             emitBlock(&node->as.block_stmt);
@@ -875,6 +835,9 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             break;
         case NODE_WHILE_STMT:
             emitWhile(node->as.while_stmt);
+            break;
+        case NODE_SWITCH_STMT:
+            emitSwitch(node->as.switch_stmt);
             break;
         case NODE_FOR_STMT:
             emitFor(node->as.for_stmt);
@@ -899,11 +862,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             break;
         case NODE_EXPRESSION_STMT: {
             ASTNode* expr = node->as.expression_stmt.expression;
-            if (expr->type == NODE_SWITCH_EXPR || expr->type == NODE_IF_EXPR ||
-                expr->type == NODE_TRY_EXPR || expr->type == NODE_CATCH_EXPR ||
-                expr->type == NODE_ORELSE_EXPR) {
-                emitAssignmentWithLifting(NULL, NULL, expr);
-            } else if (expr->type == NODE_ASSIGNMENT) {
+            if (expr->type == NODE_ASSIGNMENT) {
                 emitAssignmentWithLifting(NULL, expr->as.assignment->lvalue, expr->as.assignment->rvalue);
             } else if (expr->type == NODE_FUNCTION_CALL) {
                 /* Check if it's std.debug.print */
@@ -963,51 +922,51 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         {
             IndentScope scope_indent(*this);
             const char* cond_tmp = var_alloc_.generate("opt_tmp");
-        writeIndent();
-        emitType(cond_type, cond_tmp);
-        writeString(" = ");
-        emitExpression(node->condition);
-        writeString(";\n");
-
-        writeIndent();
-        writeString("if (");
-        writeString(cond_tmp);
-        writeString(".has_value) {\n");
-        {
-            IndentScope if_indent(*this);
-            if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
             writeIndent();
-            const char* c_name = var_alloc_.allocate(node->capture_sym);
-            emitType(node->capture_sym->symbol_type, c_name);
+            emitType(cond_type, cond_tmp);
             writeString(" = ");
+            emitExpression(node->condition);
+            writeString(";\n");
+
+            writeIndent();
+            writeString("if (");
             writeString(cond_tmp);
-            writeString(".value;\n");
-        }
-            if (node->then_block->type == NODE_BLOCK_STMT) {
-                emitBlock(&node->then_block->as.block_stmt);
-            } else {
-                emitStatement(node->then_block);
-            }
-        }
-        writeIndent();
-        writeString("}");
-        if (node->else_block) {
-            writeString(" else {\n");
+            writeString(".has_value) {\n");
             {
-                IndentScope else_indent(*this);
-                if (node->else_block->type == NODE_IF_STMT) {
-                emitIf(node->else_block->as.if_stmt);
-            } else if (node->else_block->type == NODE_BLOCK_STMT) {
-                emitBlock(&node->else_block->as.block_stmt);
+                IndentScope if_indent(*this);
+                if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+                    writeIndent();
+                    const char* c_name = var_alloc_.allocate(node->capture_sym);
+                    emitType(node->capture_sym->symbol_type, c_name);
+                    writeString(" = ");
+                    writeString(cond_tmp);
+                    writeString(".value;\n");
+                }
+                if (node->then_block->type == NODE_BLOCK_STMT) {
+                    emitBlock(&node->then_block->as.block_stmt);
                 } else {
-                    emitStatement(node->else_block);
+                    emitStatement(node->then_block);
                 }
             }
             writeIndent();
-            writeString("}\n");
-        } else {
-            writeString("\n");
-        }
+            writeString("}");
+            if (node->else_block) {
+                writeString(" else {\n");
+                {
+                    IndentScope else_indent(*this);
+                    if (node->else_block->type == NODE_IF_STMT) {
+                        emitIf(node->else_block->as.if_stmt);
+                    } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                        emitBlock(&node->else_block->as.block_stmt);
+                    } else {
+                        emitStatement(node->else_block);
+                    }
+                }
+                writeIndent();
+                writeString("}\n");
+            } else {
+                writeString("\n");
+            }
         }
         writeIndent();
         writeString("}\n");
@@ -1035,113 +994,6 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
         writeString("\n");
     }
-}
-
-void C89Emitter::emitIfExpr(const ASTNode* node, const char* target_var, Type* target_type) {
-    if (!node) return;
-    current_loc_ = node->loc;
-    if (node->type != NODE_IF_EXPR) return;
-
-    const ASTIfExprNode* if_expr = node->as.if_expr;
-    if (!if_expr || !if_expr->condition || !if_expr->then_expr || !if_expr->else_expr) {
-        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: if expression components are NULL");
-        return;
-    }
-
-    Type* cond_type = if_expr->condition->resolved_type;
-    bool is_optional = (cond_type && cond_type->kind == TYPE_OPTIONAL);
-
-    writeIndent();
-    writeString("{\n");
-    {
-        IndentScope scope_indent(*this);
-
-        const char* cond_var = NULL;
-    if (is_optional) {
-        cond_var = var_alloc_.generate("opt_tmp");
-        writeIndent();
-        emitType(cond_type, cond_var);
-        writeString(" = ");
-        emitExpression(if_expr->condition);
-        writeString(";\n");
-    }
-
-        writeIndent();
-        writeString("if (");
-        if (is_optional) {
-            writeString(cond_var);
-            writeString(".has_value");
-        } else {
-            emitExpression(if_expr->condition);
-        }
-        writeString(") {\n");
-        {
-            IndentScope then_indent(*this);
-
-            if (is_optional && if_expr->capture_name && if_expr->capture_sym && if_expr->capture_sym->symbol_type->kind != TYPE_VOID) {
-        writeIndent();
-        const char* c_name = var_alloc_.allocate(if_expr->capture_sym);
-        emitType(if_expr->capture_sym->symbol_type, c_name);
-        writeString(" = ");
-        writeString(cond_var);
-        writeString(".value;\n");
-    }
-
-            if (target_var && !allPathsExit(if_expr->then_expr)) {
-                if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&if_expr->then_expr->as.block_stmt, target_var, -1, target_type);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(target_var, NULL, if_expr->then_expr, target_type);
-                }
-    } else if (allPathsExit(if_expr->then_expr)) {
-        if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
-            emitBlock(&if_expr->then_expr->as.block_stmt);
-            writeString("\n");
-        } else {
-            emitStatement(if_expr->then_expr);
-        }
-            } else {
-                if (if_expr->then_expr->type == NODE_BLOCK_STMT) {
-                    emitBlock(&if_expr->then_expr->as.block_stmt);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(NULL, NULL, if_expr->then_expr, NULL);
-                }
-            }
-        }
-        writeIndent();
-        writeString("} else {\n");
-        {
-            IndentScope else_indent(*this);
-            if (target_var && !allPathsExit(if_expr->else_expr)) {
-                if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&if_expr->else_expr->as.block_stmt, target_var, -1, target_type);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(target_var, NULL, if_expr->else_expr, target_type);
-                }
-        } else if (allPathsExit(if_expr->else_expr)) {
-            if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
-                emitBlock(&if_expr->else_expr->as.block_stmt);
-                writeString("\n");
-            } else {
-                emitStatement(if_expr->else_expr);
-            }
-            } else {
-                if (if_expr->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlock(&if_expr->else_expr->as.block_stmt);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(NULL, NULL, if_expr->else_expr, NULL);
-                }
-            }
-        }
-        writeIndent();
-        writeString("}\n");
-    }
-    writeIndent();
-    writeString("}\n");
 }
 
 static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
@@ -1234,203 +1086,10 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
     }
 }
 
-void C89Emitter::emitTryExpr(const ASTNode* node, const char* target_var, Type* target_type) {
+void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     if (!node) return;
-    current_loc_ = node->loc;
-    if (node->type != NODE_TRY_EXPR) return;
 
-    const ASTTryExprNode& try_node = node->as.try_expr;
-
-    if (!try_node.expression) {
-        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: try expression is NULL");
-        return;
-    }
-
-    Type* inner_type = try_node.expression->resolved_type;
-    if (!inner_type) {
-        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: try operand type not resolved");
-        return;
-    }
-    const char* mangled_inner = getMangledTypeName(inner_type);
-
-    writeIndent();
-    writeString("{\n");
-    {
-        IndentScope scope_indent(*this);
-
-        writeIndent();
-    writeString(mangled_inner);
-    writeString(" __try_res = ");
-    emitExpression(try_node.expression);
-    writeString(";\n");
-
-        writeIndent();
-        writeString("if (__try_res.is_error) {\n");
-        {
-            IndentScope err_indent(*this);
-
-            if (!current_fn_ret_type_) {
-        emitDefersForScopeExit(-1);
-        writeIndent();
-        writeString("return;\n");
-    } else if (current_fn_ret_type_->kind == TYPE_ERROR_UNION) {
-        const char* mangled_ret = getMangledTypeName(current_fn_ret_type_);
-        writeIndent();
-        writeString(mangled_ret);
-        writeString(" __ret_err;\n");
-
-        emitDefersForScopeExit(-1);
-
-        writeIndent();
-        writeString("__ret_err.is_error = 1;\n");
-        writeIndent();
-        if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
-            writeString("__ret_err.data.err = ");
-            if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-                writeString("__try_res.data.err");
-            } else {
-                writeString("__try_res.err");
-            }
-        } else {
-            writeString("__ret_err.err = ");
-            if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-                writeString("__try_res.data.err");
-            } else {
-                writeString("__try_res.err");
-            }
-        }
-        writeString(";\n");
-                writeIndent();
-                writeString("return __ret_err;\n");
-            } else {
-                emitDefersForScopeExit(-1);
-                writeIndent();
-                writeString("return;\n");
-            }
-        }
-        writeIndent();
-        writeString("}\n");
-
-        if (target_var && !allPathsExit(try_node.expression)) {
-            Type* payload_type = inner_type->as.error_union.payload;
-            const char* payload_expr = (payload_type->kind != TYPE_VOID) ? "__try_res.data.payload" : "0";
-
-            if (target_type && target_type->kind == TYPE_ERROR_UNION && payload_type->kind != TYPE_ERROR_UNION) {
-                emitErrorUnionWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-            } else if (target_type && target_type->kind == TYPE_OPTIONAL && payload_type->kind != TYPE_OPTIONAL) {
-                emitOptionalWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-            } else {
-                writeIndent();
-                writeString(target_var);
-                writeString(" = ");
-                writeString(payload_expr);
-                writeString(";\n");
-            }
-        }
-    }
-    writeIndent();
-    writeString("}\n");
-}
-
-void C89Emitter::emitCatchExpr(const ASTNode* node, const char* target_var, Type* target_type) {
-    if (!node) return;
-    current_loc_ = node->loc;
-    if (node->type != NODE_CATCH_EXPR) return;
-
-    const ASTCatchExprNode* catch_node = node->as.catch_expr;
-
-    if (!catch_node || !catch_node->payload || !catch_node->else_expr) {
-        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: catch components are NULL");
-        return;
-    }
-
-    Type* inner_type = catch_node->payload->resolved_type;
-    const char* mangled_inner = getMangledTypeName(inner_type);
-
-    writeIndent();
-    writeString("{\n");
-    {
-        IndentScope scope_indent(*this);
-
-        writeIndent();
-    writeString(mangled_inner);
-    writeString(" __catch_res = ");
-    emitExpression(catch_node->payload);
-    writeString(";\n");
-
-        writeIndent();
-        writeString("if (__catch_res.is_error) {\n");
-        {
-            IndentScope err_indent(*this);
-            if (catch_node->error_name) {
-        writeIndent();
-        writeString("int ");
-        writeString(catch_node->error_name);
-        writeString(" = ");
-        if (inner_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString("__catch_res.data.err");
-        } else {
-            writeString("__catch_res.err");
-        }
-        writeString(";\n");
-    }
-
-    if (target_var) {
-        if (catch_node->else_expr->type == NODE_BLOCK_STMT) {
-            emitBlockWithAssignment(&catch_node->else_expr->as.block_stmt, target_var, -1, target_type);
-            writeString("\n");
-        } else {
-            emitAssignmentWithLifting(target_var, NULL, catch_node->else_expr, target_type);
-        }
-    } else {
-        if (catch_node->else_expr->type == NODE_BLOCK_STMT) {
-            emitBlock(&catch_node->else_expr->as.block_stmt);
-            writeString("\n");
-        } else {
-            emitAssignmentWithLifting(NULL, NULL, catch_node->else_expr, NULL);
-        }
-    }
-        }
-        writeIndent();
-        writeString("} else {\n");
-        {
-            IndentScope payload_indent(*this);
-            if (target_var && !allPathsExit(catch_node->payload)) {
-                Type* payload_type = inner_type->as.error_union.payload;
-                const char* payload_expr = (payload_type->kind != TYPE_VOID) ? "__catch_res.data.payload" : "0";
-
-                if (target_type && target_type->kind == TYPE_ERROR_UNION && payload_type->kind != TYPE_ERROR_UNION) {
-                    emitErrorUnionWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-                } else if (target_type && target_type->kind == TYPE_OPTIONAL && payload_type->kind != TYPE_OPTIONAL) {
-                    emitOptionalWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-                } else {
-                    writeIndent();
-                    writeString(target_var);
-                    writeString(" = ");
-                    writeString(payload_expr);
-                    writeString(";\n");
-                }
-            }
-        }
-        writeIndent();
-        writeString("}\n");
-    }
-    writeIndent();
-    writeString("}\n");
-}
-
-void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Type* target_type) {
-    if (!node) return;
-    current_loc_ = node->loc;
-    if (node->type != NODE_SWITCH_EXPR) return;
-
-    const ASTSwitchExprNode* switch_node = node->as.switch_expr;
-    if (!switch_node || !switch_node->expression || !switch_node->prongs) {
-        error_handler_.report(ERR_INTERNAL_ERROR, current_loc_, "Internal error: switch expression components are NULL");
-        return;
-    }
-
-    Type* cond_type = switch_node->expression->resolved_type;
+    Type* cond_type = node->expression->resolved_type;
     bool is_tagged_union = (cond_type && cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
     const char* switch_tmp = NULL;
 
@@ -1443,7 +1102,7 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Typ
             writeIndent();
             emitType(cond_type, switch_tmp);
             writeString(" = ");
-            emitExpression(switch_node->expression);
+            emitExpression(node->expression);
             writeString(";\n");
 
             writeIndent();
@@ -1454,14 +1113,14 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Typ
     } else {
         writeIndent();
         writeString("switch (");
-        emitExpression(switch_node->expression);
+        emitExpression(node->expression);
         writeString(") {\n");
     }
 
     {
         IndentScope switch_indent(*this);
-        for (size_t i = 0; i < switch_node->prongs->length(); ++i) {
-            const ASTSwitchProngNode* prong = (*switch_node->prongs)[i];
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
             if (prong->is_else) {
                 writeIndent();
                 writeString("default:\n");
@@ -1512,36 +1171,10 @@ void C89Emitter::emitSwitchExpr(const ASTNode* node, const char* target_var, Typ
                     }
                 }
 
-                if (target_var && !allPathsExit(prong->body)) {
-                    if (prong->body->type == NODE_BLOCK_STMT) {
-                        writeIndent();
-                        emitBlockWithAssignment(&prong->body->as.block_stmt, target_var, -1, target_type);
-                        writeString("\n");
-                    } else {
-                        emitAssignmentWithLifting(target_var, NULL, prong->body, target_type);
-                    }
-                } else if (allPathsExit(prong->body)) {
-                    if (prong->body->type == NODE_BLOCK_STMT) {
-                        writeIndent();
-                        emitBlock(&prong->body->as.block_stmt);
-                        writeString("\n");
-                    } else {
-                        emitStatement(prong->body);
-                    }
+                if (prong->body->type == NODE_BLOCK_STMT) {
+                    emitBlock(&prong->body->as.block_stmt);
                 } else {
-                    /* Just emit expression for side effects if no target or if it diverges */
-                    if (prong->body->type == NODE_BLOCK_STMT) {
-                        writeIndent();
-                        emitBlock(&prong->body->as.block_stmt);
-                        writeString("\n");
-                    } else if (prong->body->type == NODE_RETURN_STMT ||
-                        prong->body->type == NODE_BREAK_STMT ||
-                        prong->body->type == NODE_CONTINUE_STMT ||
-                        prong->body->type == NODE_UNREACHABLE) {
-                        emitStatement(prong->body);
-                    } else {
-                        emitAssignmentWithLifting(NULL, NULL, prong->body, NULL);
-                    }
+                    emitStatement(prong->body);
                 }
 
                 if (is_tagged_union && prong->capture_name && prong->capture_sym) {
@@ -1767,79 +1400,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     loop_id_stack_.pop_back();
 }
 
-void C89Emitter::emitOrelseExpr(const ASTNode* node, const char* target_var, Type* target_type) {
-    if (!node || node->type != NODE_ORELSE_EXPR) return;
-    const ASTOrelseExprNode* orelse = node->as.orelse_expr;
-
-    Type* inner_type = orelse->payload->resolved_type;
-    const char* mangled_inner = getMangledTypeName(inner_type);
-
-    writeIndent();
-    writeString("{\n");
-    {
-        IndentScope scope_indent(*this);
-
-        writeIndent();
-        writeString(mangled_inner);
-        writeString(" __orelse_res = ");
-        emitExpression(orelse->payload);
-        writeString(";\n");
-
-        writeIndent();
-        writeString("if (__orelse_res.has_value) {\n");
-        {
-            IndentScope then_indent(*this);
-            if (target_var && !allPathsExit(orelse->payload)) {
-                Type* payload_type = inner_type->as.optional.payload;
-                const char* payload_expr = (payload_type->kind != TYPE_VOID) ? "__orelse_res.value" : "0 /* void */";
-
-                if (target_type && target_type->kind == TYPE_ERROR_UNION && payload_type->kind != TYPE_ERROR_UNION) {
-                    emitErrorUnionWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-                } else if (target_type && target_type->kind == TYPE_OPTIONAL && payload_type->kind != TYPE_OPTIONAL) {
-                    emitOptionalWrapping(target_var, NULL, target_type, payload_expr, payload_type);
-                } else {
-                    writeIndent();
-                    writeString(target_var);
-                    writeString(" = ");
-                    writeString(payload_expr);
-                    writeString(";\n");
-                }
-            }
-        }
-        writeIndent();
-        writeString("} else {\n");
-        {
-            IndentScope else_indent(*this);
-            if (target_var && !allPathsExit(orelse->else_expr)) {
-                if (orelse->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlockWithAssignment(&orelse->else_expr->as.block_stmt, target_var, -1, target_type);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(target_var, NULL, orelse->else_expr, target_type);
-                }
-            } else if (allPathsExit(orelse->else_expr)) {
-                if (orelse->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlock(&orelse->else_expr->as.block_stmt);
-                    writeString("\n");
-                } else {
-                    emitStatement(orelse->else_expr);
-                }
-            } else {
-                if (orelse->else_expr->type == NODE_BLOCK_STMT) {
-                    emitBlock(&orelse->else_expr->as.block_stmt);
-                    writeString("\n");
-                } else {
-                    emitAssignmentWithLifting(NULL, NULL, orelse->else_expr, NULL);
-                }
-            }
-        }
-        writeIndent();
-        writeString("}\n");
-    }
-
-    writeIndent();
-    writeString("}\n");
-}
 
 void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     if (!node) return;
@@ -2098,6 +1658,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_TRY_EXPR:
         case NODE_CATCH_EXPR:
         case NODE_ORELSE_EXPR:
+        case NODE_SWITCH_STMT:
             emitControlFlow(node);
             break;
 
@@ -3501,13 +3062,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
                            source_type && source_type->kind != TYPE_ERROR_UNION);
     bool needs_opt_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_OPTIONAL &&
                                source_type && source_type->kind != TYPE_OPTIONAL);
-    bool is_special = (node->expression && (node->expression->type == NODE_TRY_EXPR ||
-                                          node->expression->type == NODE_CATCH_EXPR ||
-                                          node->expression->type == NODE_ORELSE_EXPR ||
-                                          node->expression->type == NODE_SWITCH_EXPR ||
-                                          node->expression->type == NODE_IF_EXPR));
-
-    if (has_defers || needs_wrapping || needs_opt_wrapping || is_special ||
+    if (has_defers || needs_wrapping || needs_opt_wrapping ||
         (node->expression && node->expression->type == NODE_STRUCT_INITIALIZER)) {
         writeIndent();
         writeString("{\n");
