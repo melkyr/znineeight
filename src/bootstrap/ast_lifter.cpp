@@ -136,12 +136,18 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
         case NODE_UNARY_OP:
         case NODE_FUNCTION_CALL:
         case NODE_ARRAY_ACCESS:
+        case NODE_ARRAY_SLICE:
         case NODE_MEMBER_ACCESS:
+        case NODE_STRUCT_INITIALIZER:
+        case NODE_TUPLE_LITERAL:
         case NODE_IF_EXPR:
         case NODE_SWITCH_EXPR:
         case NODE_TRY_EXPR:
         case NODE_CATCH_EXPR:
         case NODE_ORELSE_EXPR:
+        case NODE_IF_STMT:
+        case NODE_WHILE_STMT:
+        case NODE_FOR_STMT:
         case NODE_PAREN_EXPR: // already skipped, but left for completeness
             return true;
         default:

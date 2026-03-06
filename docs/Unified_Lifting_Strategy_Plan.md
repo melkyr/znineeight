@@ -609,7 +609,7 @@ target_compile_options(compile_test_lifter PRIVATE /W4 /WX)
 ### Week 3: Lifting Logic
 - [x] Task 232: Context-Aware `needsLifting()`
 - [x] Task 233: Unified `liftNode()` Primitive
-- [ ] Task 233.5: Complex Lvalue Support
+- [x] Task 233.5: Complex Lvalue Support (Evaluates RHS before LHS)
 
 ### Week 4: Integration
 - [ ] Task 237: Hook into Pipeline + Simplify Emitter
