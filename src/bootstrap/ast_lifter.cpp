@@ -128,9 +128,6 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         if (root_block || is_block) {
             pushBlock(&node->as.block_stmt, false);
             
-            // Set yield_target if this block is expected to produce a value (handled by lower* methods)
-            // But for generic blocks, we don't know the target here.
-
             struct TransformVisitor : ChildVisitor {
                 ControlFlowLifter* lifter;
                 ASTNode* current_node;
@@ -143,6 +140,11 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
             forEachChild(node, visitor);
 
             finalizeCurrentBlock();
+
+            // Nested blocks must be added to their parent block's statement list
+            if (!root_block && parent && parent->type == NODE_BLOCK_STMT) {
+                addStatement(node);
+            }
         } else {
             struct Inner {
                 static void process(ControlFlowLifter* lifter, ASTNode* node) {
