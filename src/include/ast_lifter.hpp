@@ -81,12 +81,60 @@ private:
     /**
      * @brief Creates a new variable declaration node.
      */
-    ASTVarDeclNode* createVarDecl(const char* name, Type* type, ASTNode* init, bool is_const);
+    ASTNode* createVarDecl(const char* name, Type* type, ASTNode* init, bool is_const);
 
     /**
      * @brief Creates a new identifier node.
      */
     ASTNode* createIdentifier(const char* name, SourceLocation loc);
+
+    /**
+     * @brief Creates a new assignment node.
+     */
+    ASTNode* createAssignment(ASTNode* lvalue, ASTNode* rvalue, SourceLocation loc);
+
+    /**
+     * @brief Creates a new block statement node.
+     */
+    ASTNode* createBlock(DynamicArray<ASTNode*>* statements, SourceLocation loc);
+
+    /**
+     * @brief Creates a new if statement node.
+     */
+    ASTNode* createIfStmt(ASTNode* cond, ASTNode* then_block, ASTNode* else_block, SourceLocation loc);
+
+    /**
+     * @brief Creates a new switch statement node.
+     */
+    ASTNode* createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchStmtProngNode*>* prongs, SourceLocation loc);
+
+    /**
+     * @brief Creates a new expression statement node.
+     */
+    ASTNode* createExpressionStmt(ASTNode* expr, SourceLocation loc);
+
+    /**
+     * @brief Creates a new return statement node.
+     */
+    ASTNode* createReturn(ASTNode* expr, SourceLocation loc);
+
+    /**
+     * @brief Creates a new member access node.
+     */
+    ASTNode* createMemberAccess(ASTNode* base, const char* field_name, SourceLocation loc);
+
+    /**
+     * @brief Creates a new integer literal node.
+     */
+    ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
+
+    // Lowering Helpers
+    ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
+    ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);
+    void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
+    ASTNode* lowerCatchExpr(ASTNode* node, const char* temp_name);
+    ASTNode* lowerOrelseExpr(ASTNode* node, const char* temp_name);
+    ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
 
     // Context Stacks
     ArenaAllocator* arena_;
@@ -99,6 +147,7 @@ private:
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
     DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
+    DynamicArray<ASTFnDeclNode*> fn_stack_; ///< Stack of function declarations to find return types.
 
     // RAII Helpers
     struct StmtGuard {
@@ -117,6 +166,12 @@ private:
         ControlFlowLifter& lifter_;
         ParentGuard(ControlFlowLifter& l, ASTNode* node);
         ~ParentGuard();
+    };
+
+    struct FnGuard {
+        ControlFlowLifter& lifter_;
+        FnGuard(ControlFlowLifter& l, ASTFnDeclNode* fn);
+        ~FnGuard();
     };
 };
 

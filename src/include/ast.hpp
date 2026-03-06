@@ -47,6 +47,7 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_IF_EXPR,         ///< An if-else expression (mandatory else, can be braceless).
     NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_SWITCH_STMT,     ///< A switch statement.
     NODE_BREAK_STMT,      ///< A break statement.
     NODE_CONTINUE_STMT,   ///< A continue statement.
     NODE_RETURN_STMT,     ///< A return statement.
@@ -123,6 +124,8 @@ struct ASTContinueStmtNode;
 struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
 struct ASTForStmtNode;
+struct ASTSwitchStmtNode;
+struct ASTSwitchStmtProngNode;
 struct ASTExpressionStmtNode;
 struct ASTParenExprNode;
 struct ASTRangeNode;
@@ -550,6 +553,34 @@ struct ASTSwitchExprNode {
     DynamicArray<ASTSwitchProngNode*>* prongs;
 };
 
+/**
+ * @struct ASTSwitchStmtProngNode
+ * @brief Represents a single prong in a switch statement.
+ * @var ASTSwitchStmtProngNode::items A dynamic array of case items.
+ * @var ASTSwitchStmtProngNode::is_else True if this is the `else` prong.
+ * @var ASTSwitchStmtProngNode::body The statement to execute for this prong.
+ * @var ASTSwitchStmtProngNode::capture_name Optional capture variable name.
+ * @var ASTSwitchStmtProngNode::capture_sym Resolved symbol for the capture variable.
+ */
+struct ASTSwitchStmtProngNode {
+    DynamicArray<ASTNode*>* items;
+    bool is_else;
+    ASTNode* body;
+    const char* capture_name;
+    Symbol* capture_sym;
+};
+
+/**
+ * @struct ASTSwitchStmtNode
+ * @brief Represents a switch statement.
+ * @var ASTSwitchStmtNode::expression The expression whose value is being switched on.
+ * @var ASTSwitchStmtNode::prongs A dynamic array of pointers to the switch statement prongs.
+ */
+struct ASTSwitchStmtNode {
+    ASTNode* expression;
+    DynamicArray<ASTSwitchStmtProngNode*>* prongs;
+};
+
 // --- Error Handling Nodes ---
 
 /**
@@ -929,6 +960,7 @@ struct ASTNode {
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line
+        ASTSwitchStmtNode* switch_stmt; // Out-of-line
         ASTUnreachableNode unreachable;
         ASTPtrCastNode* ptr_cast; // Out-of-line
         ASTNumericCastNode* numeric_cast; // Out-of-line

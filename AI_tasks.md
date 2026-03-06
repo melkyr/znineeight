@@ -1829,7 +1829,7 @@ if (parent && parent->type == NODE_ASSIGNMENT) {
 
 ## Phase 3: Integration & Codegen Simplification (Week 4)
 
-### Task 237: Hook Lifter into Pipeline + Simplify Emitter
+### Task 237: Hook Lifter into Pipeline + Simplify Emitter (DONE)
 **Goal**: Run lifting after type checking; remove ad-hoc lifting from codegen.
 
 ```cpp

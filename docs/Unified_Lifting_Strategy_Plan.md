@@ -25,7 +25,7 @@ This document defines the **unified lifting strategy** for transforming expressi
 | Memory predictability | ✅ | ⚠️ | AST |
 | RAII state management | ✅ (adapted) | ✅ | Tie |
 
-**Decision**: AST-based lifting with RAII state management adapted from the codegen document's `LiftContext`.
+**Decision**: AST-based lifting with RAII state management adapted from the codegen document's `LiftContext`. This strategy is now FULLY IMPLEMENTED as of Task 237.
 
 ---
 
@@ -612,7 +612,7 @@ target_compile_options(compile_test_lifter PRIVATE /W4 /WX)
 - [x] Task 233.5: Complex Lvalue Support (Evaluates RHS before LHS)
 
 ### Week 4: Integration
-- [ ] Task 237: Hook into Pipeline + Simplify Emitter
+- [x] Task 237: Hook into Pipeline + Simplify Emitter
 - [ ] Task 237.5: Memory Verification Gate
 
 ### Week 5: Polish

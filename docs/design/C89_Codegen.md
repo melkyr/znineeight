@@ -81,12 +81,13 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.
 
-### 4.3 Unified Assignment and Lifting
-The `C89Emitter::emitAssignmentWithLifting` method provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
-- **Expression Lifting**: Transforms control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) into statement blocks when used in an assignment context.
+### 4.3 Unified Assignment and Wrapping
+The `C89Emitter::emitAssignmentWithLifting` method (retained for backward compatibility and wrapping logic) provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
 - **Type Coercion**: Generates the necessary C code to wrap values into `Optional` or `ErrorUnion` structures.
 - **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments.
 - **Discarding Results**: Correctly handles assignments to the blank identifier `_` by evaluating the RHS for side effects and casting to `(void)`.
+
+Note: Control-flow expression lifting is now handled at the AST level by the `ControlFlowLifter` pass, so the emitter no longer performs ad-hoc lifting.
 
 This unification reduces code duplication and ensures consistent behavior across different parts of the code generator.
 
@@ -109,11 +110,6 @@ This unification reduces code duplication and ensures consistent behavior across
         }
     }
     ```
-- **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Supported in assignments to identifiers, variable initializers, return statements, switch prongs, and as expression statements.
-  - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
-  - **Optional Capture**: Supported similar to `if` statements.
-  - **Nesting Limitation**: Standalone `if` expressions in branches do not support further lifting unless wrapped in a block `{ ... }`.
 - **While Loops**:
   - **Unlabeled**: Mapped to C `while (cond) { ... }`. Supports `while (cond) : (iter)` by emitting `iter` at the end of the loop body.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
@@ -156,35 +152,6 @@ This unification reduces code duplication and ensures consistent behavior across
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
-- **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Currently supported in direct assignments to identifiers, variable initializers, return statements, and as expression statements.
-  - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
-  - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
-  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block. Note that `try`, `catch`, and `orelse` are NOT recursively lifted in this context unless wrapped in a block.
-- **Try Expressions**: Unwraps an error union or propagates the error. Lifted to an `if` check on the `is_error` flag.
-  - **Defer Interaction**: When `try` detects an error, it performs an early return. The emitter ensures that all active `defer` statements in the current scope (and any outer scopes being exited) are executed in LIFO order before the `return` statement is emitted. This is verified by integration tests.
-  ```c
-  {
-      ErrorUnion_T __try_res = expr;
-      if (__try_res.is_error) {
-          /* emit defers */
-          return __try_res;
-      }
-      result = __try_res.data.payload;
-  }
-  ```
-- **Catch Expressions**: Handles errors from an error union. Lifted to an `if-else` statement.
-  ```c
-  {
-      ErrorUnion_T __catch_res = expr;
-      if (__catch_res.is_error) {
-          int err = __catch_res.data.err;
-          result = fallback_expr;
-      } else {
-          result = __catch_res.data.payload;
-      }
-  }
-  ```
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
