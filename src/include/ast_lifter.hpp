@@ -15,6 +15,7 @@ struct BlockFrame {
     DynamicArray<ASTNode*>* declarations;
     DynamicArray<ASTNode*>* statements;
     bool append_mode;
+    ASTNode* yield_target;  ///< If non-NULL, final expressions in this block assign to this target.
 
     void init(ArenaAllocator* arena, ASTBlockStmtNode* node, bool is_append) {
         block_node = node;
@@ -23,6 +24,7 @@ struct BlockFrame {
         void* stmts_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
         statements = new (stmts_mem) DynamicArray<ASTNode*>(*arena);
         append_mode = is_append;
+        yield_target = NULL;
     }
 };
 
@@ -92,6 +94,16 @@ private:
      * @brief Returns a prefix based on the node type.
      */
     const char* getPrefixForType(NodeType type);
+
+    /**
+     * @brief Post-lifting pass to resolve name collisions in flattened C89 blocks.
+     */
+    void resolveNameCollisions(ASTNode* node);
+
+    struct NameEntry {
+        const char* name;
+        int count;
+    };
 
     /**
      * @brief Adds a declaration to the current block frame.

@@ -87,4 +87,17 @@ inline const char* getPrefixForType(NodeType type) {
     }
 }
 
+/**
+ * @brief Checks if a node type represents a statement.
+ */
+inline bool isStatement(NodeType type) {
+    return type == NODE_BLOCK_STMT || type == NODE_IF_STMT ||
+           type == NODE_WHILE_STMT || type == NODE_SWITCH_STMT ||
+           type == NODE_FOR_STMT || type == NODE_BREAK_STMT ||
+           type == NODE_CONTINUE_STMT || type == NODE_RETURN_STMT ||
+           type == NODE_DEFER_STMT || type == NODE_EXPRESSION_STMT ||
+           type == NODE_VAR_DECL || type == NODE_ERRDEFER_STMT ||
+           type == NODE_EMPTY_STMT;
+}
+
 #endif // AST_UTILS_HPP

@@ -41,6 +41,13 @@ bool isCKeyword(const char* str) {
 }
 
 bool isCReservedName(const char* str) {
+    if (!str) return false;
+
+    // Compiler-generated temporaries starting with __ should NEVER be mangled
+    if (str[0] == '_' && str[1] == '_') {
+        return false;
+    }
+
     if (str[0] == '_') {
         // Starts with _ followed by Uppercase or another _
         if ((str[1] >= 'A' && str[1] <= 'Z') || str[1] == '_') {
@@ -52,6 +59,11 @@ bool isCReservedName(const char* str) {
 
 void sanitizeForC89(char* buffer) {
     if (!buffer || buffer[0] == '\0') return;
+
+    // Never modify compiler-generated names
+    if (buffer[0] == '_' && buffer[1] == '_') {
+        return;
+    }
 
     // 1. Replace invalid characters with '_'
     for (char* p = buffer; *p; p++) {

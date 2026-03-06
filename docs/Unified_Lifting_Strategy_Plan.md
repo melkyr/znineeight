@@ -111,9 +111,44 @@ Lifted:    __tmp_assign_1 = try foo();
 
 This ensures the lvalue (`s.x`) is evaluated *after* the potentially-failing `try`.
 
+### 3.4 Variable Declarations in Blocks
+To maintain evaluation order, all variable declarations with initializers in a block are split into a declaration and an assignment during lifting:
+
+```zig
+{
+    const x = try foo();
+    bar(x);
+}
+```
+becomes (conceptually):
+```c
+{
+    int x; // Declared at top
+    ErrorUnion __tmp_try_1 = foo();
+    if (__tmp_try_1.is_error) return ...;
+    x = __tmp_try_1.payload; // Assigned after lifting
+    bar(x);
+}
+```
+
 ---
 
 ## 4. Implementation Details (C++98 Compatible)
+
+### 4.1 BlockFrame and Yield Targets
+The lifter uses a `BlockFrame` stack to manage C89-compliant output. Each frame has a `yield_target`:
+
+```cpp
+struct BlockFrame {
+    ASTBlockStmtNode* block_node;
+    DynamicArray<ASTNode*>* declarations;
+    DynamicArray<ASTNode*>* statements;
+    ASTNode* yield_target; // target for branch results
+};
+```
+
+When entering a branch block (e.g. `if (c) branch_expr`), `yield_target` is set to the temporary variable assigned the expression's result. `createYieldingStmt` uses this target to generate the final assignment.
+
 
 ### 4.1 AST Child Traversal Helpers
 **File**: `ast_utils.hpp`
