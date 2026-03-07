@@ -1,5 +1,6 @@
 #include "platform.hpp"
 #include <stdio.h>
+#include <stdarg.h>
 
 static void plat_reverse(char* str, int length) {
     int start = 0;
@@ -115,6 +116,17 @@ void plat_write_str(const char* s) {
     if (hStdErr != INVALID_HANDLE_VALUE && hStdErr != NULL) {
         WriteFile(hStdErr, s, (DWORD)plat_strlen(s), &written, NULL);
     }
+}
+
+void plat_printf(const char* fmt, ...) {
+#ifdef DEBUG
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+#else
+    (void)fmt;
+#endif
 }
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
@@ -420,6 +432,17 @@ void plat_write_str(const char* s) {
         if (written <= 0) break;
         total_written += written;
     }
+}
+
+void plat_printf(const char* fmt, ...) {
+#ifdef DEBUG
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+#else
+    (void)fmt;
+#endif
 }
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {

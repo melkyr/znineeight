@@ -6,7 +6,6 @@
 #include "platform.hpp"
 #include "utils.hpp"
 #include <new>
-
 ControlFlowLifter::StmtGuard::StmtGuard(ControlFlowLifter& l, ASTNode* stmt) : lifter_(l) {
     lifter_.stmt_stack_.append(stmt);
 }
@@ -30,7 +29,7 @@ void ControlFlowLifter::addDeclaration(ASTNode* decl) {
 }
 
 void ControlFlowLifter::addStatement(ASTNode* stmt) {
-    if (block_stack_.length() > 0) {
+    if (stmt && block_stack_.length() > 0) {
         block_stack_.back().statements->append(stmt);
     }
 }
@@ -45,6 +44,8 @@ void ControlFlowLifter::finalizeCurrentBlock() {
     if (block_stack_.length() == 0) return;
     BlockFrame frame = block_stack_.back();
     block_stack_.pop_back();
+
+    if (!frame.declarations || !frame.statements || !frame.block_node) return;
 
     size_t total_len = frame.declarations->length() + frame.statements->length();
     void* mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
@@ -93,15 +94,22 @@ void ControlFlowLifter::lift(CompilationUnit* unit) {
         depth_ = 0;
 
         transformNode(&mod->ast_root, NULL);
-        resolveNameCollisions(mod->ast_root);
+        // resolveNameCollisions(mod->ast_root);
     }
 }
 
 void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
+    if (!node_slot) return;
     ASTNode* node = *node_slot;
     if (!node) return;
 
-    depth_++;
+    // Use a local guard for depth to ensure it's always decremented
+    struct DepthGuard {
+        int* d;
+        DepthGuard(int* depth) : d(depth) { (*d)++; }
+        ~DepthGuard() { (*d)--; }
+    } dguard(&depth_);
+
     if (depth_ > MAX_LIFTING_DEPTH) {
         error_handler_->report(ERR_INTERNAL_ERROR, node->loc, "AST lifting recursion depth exceeded", NULL);
         plat_abort();
@@ -128,16 +136,65 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         if (root_block || is_block) {
             pushBlock(&node->as.block_stmt, false);
             
-            struct TransformVisitor : ChildVisitor {
-                ControlFlowLifter* lifter;
-                ASTNode* current_node;
-                TransformVisitor(ControlFlowLifter* l, ASTNode* n) : lifter(l), current_node(n) {}
-                void visitChild(ASTNode** child_slot) {
-                    lifter->transformNode(child_slot, current_node);
+            // Iterate over the statements. If we split a variable declaration,
+            // we'll be adding to the current block's declaration and statement lists
+            // which are separated from the original block's statement list.
+            DynamicArray<ASTNode*>* stmts = node->as.block_stmt.statements;
+            if (stmts) {
+                size_t original_count = stmts->length();
+                // Take a snapshot of the pointers to avoid issues if the original array were modified
+                // (though we are building a NEW list in finalizeCurrentBlock, the pointers in 'stmts' are stable)
+                ASTNode** snapshot = (ASTNode**)arena_->alloc(original_count * sizeof(ASTNode*));
+                for (size_t i = 0; i < original_count; ++i) snapshot[i] = (*stmts)[i];
+
+                for (size_t i = 0; i < original_count; ++i) {
+                    ASTNode* stmt = snapshot[i];
+                    if (!stmt) continue;
+
+                    // Split variable declarations to maintain evaluation order relative to lifted statements.
+                    if (stmt->type == NODE_VAR_DECL) {
+                        ASTVarDeclNode* decl = stmt->as.var_decl;
+                        if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL &&
+                            decl->initializer->resolved_type &&
+                            decl->initializer->resolved_type->kind != TYPE_TYPE &&
+                            decl->initializer->resolved_type->kind != TYPE_MODULE) {
+
+                            ASTNode* target = createIdentifier(decl->name, stmt->loc);
+                            target->as.identifier.symbol = decl->symbol;
+                            target->resolved_type = stmt->resolved_type;
+
+                            ASTNode* init = decl->initializer;
+                            decl->initializer = NULL;
+                            addDeclaration(stmt);
+                            
+                            // Transform the initializer as an independent expression.
+                            // If it contains control flow, it will be lifted into statements
+                            // that are added to the current block BEFORE the assignment.
+                            transformNode(&init, stmt);
+                            
+                            ASTNode* assignment = createAssignment(target, init, stmt->loc);
+                            ASTNode* assign_stmt = createExpressionStmt(assignment, stmt->loc);
+                            addStatement(assign_stmt);
+                            
+                            if (allPathsExit(assign_stmt)) break;
+                            continue;
+                        }
+                    }
+
+                    transformNode(&snapshot[i], node);
+                    if (snapshot[i]) {
+                        if (snapshot[i]->type == NODE_VAR_DECL) {
+                            addDeclaration(snapshot[i]);
+                        } else {
+                            addStatement(snapshot[i]);
+                        }
+                    }
+
+                    if (snapshot[i] && allPathsExit(snapshot[i])) {
+                        break;
+                    }
                 }
-            };
-            TransformVisitor visitor(this, node);
-            forEachChild(node, visitor);
+            }
 
             finalizeCurrentBlock();
 
@@ -164,29 +221,13 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
             if (is_fn) {
                 FnGuard fguard(*this, node->as.fn_decl);
                 Inner::process(this, node);
+            } else if (node->type == NODE_RETURN_STMT) {
+                ASTNode** expr_slot = &node->as.return_stmt.expression;
+                if (*expr_slot) {
+                    transformNode(expr_slot, node);
+                }
             } else {
                 Inner::process(this, node);
-            }
-
-            // Split ALL variable declarations in a block into declaration + assignment.
-            // This ensures correct evaluation order relative to lifted statements.
-            if (parent && parent->type == NODE_BLOCK_STMT && node->type == NODE_VAR_DECL) {
-                ASTVarDeclNode* decl = node->as.var_decl;
-                if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL &&
-                    decl->initializer->resolved_type &&
-                    decl->initializer->resolved_type->kind != TYPE_TYPE &&
-                    decl->initializer->resolved_type->kind != TYPE_MODULE) {
-
-                    ASTNode* target = createIdentifier(decl->name, node->loc);
-                    target->as.identifier.symbol = decl->symbol;
-                    target->resolved_type = node->resolved_type;
-
-                    ASTNode* assignment = createAssignment(target, decl->initializer, node->loc);
-                    decl->initializer = NULL;
-                    addDeclaration(node);
-                    addStatement(createExpressionStmt(assignment, node->loc));
-                    return;
-                }
             }
 
             if (parent && parent->type == NODE_BLOCK_STMT) {
@@ -199,7 +240,6 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         }
     }
 
-    depth_--;
 }
 
 bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
@@ -246,6 +286,8 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
 
 const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
     if (!parent) return NULL;
+    if (parent_stack_.length() == 0) return parent;
+
     const ASTNode* cur = parent;
 
     // We expect the parent to be at the top of the stack when needsLifting is called
@@ -253,8 +295,14 @@ const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
     // If 'cur' is a Paren, we need to go higher in the stack.
 
     int idx = (int)parent_stack_.length() - 1;
+    
+    // Validate index before access
+    if (idx < 0 || idx >= (int)parent_stack_.length()) {
+        return parent;
+    }
+
     // Verify top of stack is indeed our parent
-    if (idx < 0 || parent_stack_[idx] != parent) {
+    if (idx >= 0 && idx < (int)parent_stack_.length() && parent_stack_[idx] != parent) {
         // Fallback: search for it if stack isn't what we expect
         idx = -1;
         for (int i = (int)parent_stack_.length() - 1; i >= 0; --i) {
@@ -265,7 +313,7 @@ const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
         }
     }
 
-    if (idx < 0) return parent; // Should not happen
+    if (idx < 0) return parent;
 
     while (cur && cur->type == NODE_PAREN_EXPR) {
         if (idx > 0) {
@@ -457,6 +505,10 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, const char* temp_name) {
     addStatement(createYieldingStmt(if_expr->else_expr, temp_ident, loc));
     finalizeCurrentBlock();
 
+    if (!then_block_node || !else_block_node) {
+        return NULL;
+    }
+
     ASTNode* if_stmt = createIfStmt(if_expr->condition, then_block_node, else_block_node, loc);
     addStatement(if_stmt);
     return if_stmt;
@@ -491,6 +543,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
         pushBlock(&prong_body_node->as.block_stmt, true);
         block_stack_.back().yield_target = temp_ident;
 
+
         if (orig_prong->capture_name && orig_prong->capture_sym) {
             ASTNode* capture_val;
             Type* cond_type = sw_expr->expression->resolved_type;
@@ -520,7 +573,16 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
         }
 
         transformNode(&orig_prong->body, node);
-        addStatement(createYieldingStmt(orig_prong->body, temp_ident, loc));
+        
+        // CRITICAL: Verify yield_target is still set
+        if (block_stack_.length() > 0 && !block_stack_.back().yield_target) {
+            block_stack_.back().yield_target = temp_ident;
+        }
+
+        ASTNode* yielding_stmt = createYieldingStmt(orig_prong->body, temp_ident, loc);
+        if (yielding_stmt) {
+            addStatement(yielding_stmt);
+        }
         finalizeCurrentBlock();
         new_prong->body = prong_body_node;
 
@@ -761,8 +823,16 @@ ASTNode* ControlFlowLifter::createYieldingStmt(ASTNode* node, ASTNode* temp_iden
     if (block_stack_.length() > 0) {
         target = block_stack_.back().yield_target;
     }
+    
+    // Fallback to temp_ident if provided, but prioritize yield_target
     if (!target) {
         target = temp_ident;
+    }
+    
+    if (!target) {
+        // Only error if we really have no target to assign to
+        error_handler_->report(ERR_INTERNAL_ERROR, loc, "yield_target not set for block and no fallback temp provided", NULL);
+        return node;
     }
 
     ASTNode* expr = node;
@@ -853,16 +923,18 @@ void ControlFlowLifter::resolveNameCollisions(ASTNode* node) {
         if (stmts) {
             for (size_t i = 0; i < stmts->length(); ++i) {
                 ASTNode* stmt = (*stmts)[i];
-                if (stmt->type == NODE_VAR_DECL) {
+                if (stmt && stmt->type == NODE_VAR_DECL) {
                     const char* name = stmt->as.var_decl->name;
                     bool found = false;
                     for (size_t j = 0; j < names.length(); ++j) {
                         if (plat_strcmp(names[j].name, name) == 0) {
                             names[j].count++;
-                            char buf[256];
-                            char num_buf[16];
+                            char buf[512];
+                            char num_buf[32];
                             plat_i64_to_string(names[j].count - 1, num_buf, sizeof(num_buf));
-                            plat_strcpy(buf, name);
+                            
+                            buf[0] = '\0';
+                            plat_strncpy(buf, name, 450); // Leave space for suffix
                             plat_strcat(buf, "_");
                             plat_strcat(buf, num_buf);
                             stmt->as.var_decl->name = interner_->intern(buf);

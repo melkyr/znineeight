@@ -148,6 +148,8 @@ public:
                 return emitSwitchExpression(node->as.switch_expr);
             case NODE_BLOCK_STMT:
                 return emitBlockStatement(&node->as.block_stmt);
+            case NODE_SWITCH_STMT:
+                return emitSwitchStatement(node->as.switch_stmt);
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
             case NODE_WHILE_STMT:
@@ -309,6 +311,33 @@ public:
         }
         ss << " __idx++; } }";
 
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 switch statement.
+     */
+    std::string emitSwitchStatement(const ASTSwitchStmtNode* node) {
+        if (!node) return "/* INVALID SWITCH STMT */";
+        std::stringstream ss;
+        ss << "switch (" << emitExpression(node->expression) << ") { ";
+        for (size_t i = 0; i < node->prongs->length(); ++i) {
+            const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+            if (prong->is_else) {
+                ss << "default: ";
+            } else {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    ss << "case " << emitExpression((*prong->items)[j]) << ": ";
+                }
+            }
+            if (prong->body && prong->body->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&prong->body->as.block_stmt);
+            } else {
+                ss << "{ " << emitExpression(prong->body) << " }";
+            }
+            ss << " break; ";
+        }
+        ss << "}";
         return ss.str();
     }
 
