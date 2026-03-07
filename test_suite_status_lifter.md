@@ -20,11 +20,12 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 ## Detailed Failure Analysis
 
 ### 1. Missing Variable Declarations (Batches 45, 46, 47)
-**Symptoms**: Generated C code fails to compile due to undeclared identifiers (e.g., `z__tmp_catch_res_4`).
-**Possible Cause**:
+**Symptoms**: Generated C code fails to compile due to undeclared identifiers (e.g., `__tmp_catch_res_4`).
+**Note**: Mangling issue (prefixing `__` with `z_`) has been RESOLVED (Task 9.16).
+**Remaining Issues**:
 *   The `ControlFlowLifter` generates temporary names (e.g., `__tmp_if_1`) using the `interner` but does not create or register `Symbol` objects for them.
 *   The `C89Emitter::emitLocalVarDecl` returns early if `decl->symbol` is `NULL`, meaning the `typedef` and variable declaration are never emitted.
-*   Simultaneously, `C89Emitter::emitExpression` mangles these identifiers via `getC89GlobalName` (adding `z_` prefixes), while the declaration (if it were emitted) would use `var_alloc_`, leading to a name mismatch even if declared.
+*   Even though mangling is now bypassed for `__` identifiers, the variables are still not being declared in the C code because they lack `Symbol` entries in the local table.
 
 ### 2. Statement Count Mismatch (Batch 55)
 **Symptoms**:
