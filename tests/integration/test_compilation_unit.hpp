@@ -13,6 +13,7 @@
 #include "lifetime_analyzer.hpp"
 #include "null_pointer_analyzer.hpp"
 #include "double_free_analyzer.hpp"
+#include "ast_lifter.hpp"
 #include "ast.hpp"
 #include "utils.hpp"
 #include "mock_emitter.hpp"
@@ -194,6 +195,15 @@ public:
         last_ast = parser->parse();
         if (!last_ast) return false;
 
+        // Ensure module has ast_root set for the lifter
+        const DynamicArray<Module*>& mods = getModules();
+        for (size_t i = 0; i < mods.length(); ++i) {
+            if (mods[i]->file_id == file_id) {
+                mods[i]->ast_root = last_ast;
+                break;
+            }
+        }
+
         // Pass 0.25: Name Collision Detection
         NameCollisionDetector name_detector(*this);
         name_detector.check(last_ast);
@@ -214,6 +224,10 @@ public:
         if (!success || sig_analyzer.hasInvalidSignatures() || getErrorHandler().hasErrors()) {
             return false;
         }
+
+        // Pass 1.5: AST Lifting
+        ControlFlowLifter lifter(&getArena(), &getStringInterner(), &getErrorHandler());
+        lifter.lift(this);
 
         // Pass 2+: Static Analyzers (if enabled)
         if (getOptions().enable_lifetime_analysis) {
