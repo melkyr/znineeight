@@ -15,6 +15,7 @@ struct BlockFrame {
     DynamicArray<ASTNode*>* declarations;
     DynamicArray<ASTNode*>* statements;
     bool append_mode;
+    bool finalized;
     ASTNode* yield_target;  ///< If non-NULL, final expressions in this block assign to this target.
 
     void init(ArenaAllocator* arena, ASTBlockStmtNode* node, bool is_append) {
@@ -24,6 +25,7 @@ struct BlockFrame {
         void* stmts_mem = arena->alloc(sizeof(DynamicArray<ASTNode*>));
         statements = new (stmts_mem) DynamicArray<ASTNode*>(*arena);
         append_mode = is_append;
+        finalized = false;
         yield_target = NULL;
     }
 };
@@ -99,6 +101,13 @@ private:
      * @brief Post-lifting pass to resolve name collisions in flattened C89 blocks.
      */
     void resolveNameCollisions(ASTNode* node);
+
+    /**
+     * @brief Post-processing pass to handle variable declaration splitting.
+     */
+    void postProcessLifting(Module* mod);
+    void splitVarDeclarations(ASTNode* node);
+    void validateReturnStatements(ASTNode* node);
 
     struct NameEntry {
         const char* name;

@@ -112,7 +112,7 @@ Lifted:    __tmp_assign_1 = try foo();
 This ensures the lvalue (`s.x`) is evaluated *after* the potentially-failing `try`.
 
 ### 3.4 Variable Declarations in Blocks
-To maintain evaluation order, all variable declarations with initializers in a block are split into a declaration and an assignment during lifting:
+To maintain evaluation order and ensure memory stability during AST traversal, all variable declarations with initializers in a block are split into a declaration and an assignment in a dedicated **post-processing pass** (`splitVarDeclarations`) after the main transformation.
 
 ```zig
 {
