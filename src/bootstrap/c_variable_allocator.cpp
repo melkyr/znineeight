@@ -94,7 +94,9 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
 
     // 2. Keyword/Reserved/Digit-start prefixing
     bool needs_prefix = false;
-    if (base_buffer[0] >= '0' && base_buffer[0] <= '9') {
+    if (base_buffer[0] == '_' && base_buffer[1] == '_') {
+        needs_prefix = false;
+    } else if (base_buffer[0] >= '0' && base_buffer[0] <= '9') {
         needs_prefix = true;
     } else if (is_c89_keyword(base_buffer) || is_c_reserved_name(base_buffer)) {
         needs_prefix = true;

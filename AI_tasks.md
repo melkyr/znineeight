@@ -1550,6 +1550,13 @@ Key changes:
     - **Ordered Emission**: Modified `CBackend` to emit struct, union, and enum definitions before dependent special types (slices, error unions, optionals). This ensures that recursive types where an error union contains a struct payload are correctly defined.
     - **C Char Interop**: Introduced implicit coercion between `u8` and `c_char` in the type system. Updated `json_parser/file.zig` to use `c_char` for `fopen` signatures, ensuring compatibility with C's `char*`.
 
+236.5 [COMPLETE] **Task 9.16: Fix Internal Identifier Mangling**
+    - **Modification**: Modified `sanitizeForC89` in `utils.cpp` to bypass prefixing for identifiers starting with `__`.
+    - **Modification**: Modified `CVariableAllocator::makeUnique` to skip keyword/reserved prefixing for `__` names.
+    - **Modification**: Modified `C89Emitter::getC89GlobalName` to bypass mangling and return `__` names verbatim (after truncation).
+    - **Modification**: Modified `NameMangler` to bypass module prefixing for `__` names.
+    - **Verification**: Verified that Batch 55 and Batch 45 integration tests pass, resolving "undeclared identifier" errors in generated C code.
+
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
 

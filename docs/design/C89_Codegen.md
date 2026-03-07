@@ -54,7 +54,7 @@ emitter.writeString("}\n");
 The `CVariableAllocator` manages the allocation and uniquification of C variable names within a function scope. It ensures that all generated identifiers are valid in C89 and compatible with legacy compilers like MSVC 6.0.
 
 ### Responsibilities:
-- **Keyword Avoidance**: Automatically detects conflicts with the 32 standard C89 keywords (e.g., `int`, `return`, `static`) and prefixes conflicting identifiers with `z_`.
+- **Keyword Avoidance**: Automatically detects conflicts with the 32 standard C89 keywords (e.g., `int`, `return`, `static`) and prefixes conflicting identifiers with `z_`. Identifiers beginning with `__` bypass this check.
 - **Length Enforcement**: Enforces a strict 31-character limit for all identifiers to comply with MSVC 6.0 constraints.
 - **Uniquification**: Resolves name collisions within a function by appending numeric suffixes (e.g., `my_var`, `my_var_1`).
 - **Sanitization**: Replaces invalid characters in Zig identifiers with underscores to produce valid C identifiers.
@@ -67,7 +67,17 @@ The `CVariableAllocator` manages the allocation and uniquification of C variable
 ### Example:
 Zig name `long_variable_name_exceeding_31_chars` might become `long_variable_name_exceeding_3`.
 Zig name `int` becomes `z_int`.
+Zig name `__tmp_if_result_very_long_identifier` becomes `__tmp_if_result_very_long_ide`.
 Multiple uses of `tmp` result in `tmp`, `tmp_1`, `tmp_2`, etc.
+
+### 3.1 Compiler-Internal Identifiers
+Identifiers starting with `__` (double underscore) are reserved for compiler use (e.g., `__tmp_if_1`, `__bootstrap_print`). These identifiers bypass the standard mangling process:
+- They do **not** receive a module prefix.
+- They do **not** receive a `z_` prefix if they conflict with C keywords (the compiler ensures they don't).
+- They are **not** sanitized (the compiler ensures they contain only valid characters).
+- They **are** truncated to 31 characters for MSVC 6.0 compatibility.
+
+This bypass is implemented in `C89Emitter::getC89GlobalName` and `CVariableAllocator::makeUnique`. The rationale is to ensure that compiler-generated temporaries remain unique and predictable, without interference from the user-level mangling rules.
 
 ## 4. Emission Strategies
 
