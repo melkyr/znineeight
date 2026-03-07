@@ -647,6 +647,7 @@ To maintain C89 compatibility and compiler simplicity:
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
     *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
+    *   **Compiler-Generated Identifiers**: Any identifier beginning with `__` (such as `__tmp_if_1` or runtime intrinsics like `__bootstrap_print`) bypasses all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and do not conflict with user-defined symbols, which are forbidden from using the `__` prefix in Zig.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
 **Defer Statement Semantics:**

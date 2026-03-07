@@ -2541,6 +2541,14 @@ void C89Emitter::emitCharLiteral(const ASTCharLiteralNode* node) {
 const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     if (!zig_name) return "z_anonymous";
 
+    if (zig_name[0] == '_' && zig_name[1] == '_') {
+        /* Truncate if needed, then return directly (no prefix, no uniquification) */
+        char buf[256];
+        plat_strcpy(buf, zig_name);
+        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        return unit_.getStringInterner().intern(buf);
+    }
+
     /* Check cache first */
     for (size_t i = 0; i < global_names_.length(); ++i) {
         if (plat_strcmp(global_names_[i].zig_name, zig_name) == 0) {

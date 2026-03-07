@@ -1004,6 +1004,21 @@ Also test nested tagged unions (e.g., a union containing another union) and ensu
 
 ---
 
+### Task 9.16: Fix Internal Identifier Mangling [DONE]
+**Goal**: Ensure that compiler-generated internal identifiers (starting with `__`) bypass standard C89 mangling to avoid 'undeclared identifier' errors.
+
+**Implementation**:
+- Modified `sanitizeForC89` in `utils.cpp` to return early for `__` identifiers.
+- Modified `CVariableAllocator::makeUnique` to skip keyword/reserved prefixing for `__` identifiers.
+- Modified `C89Emitter::getC89GlobalName` to return `__` identifiers verbatim (after 31-char truncation).
+- Modified `NameMangler` to bypass module prefixing for `__` identifiers.
+
+**Verification**:
+- Verified that Batch 55 and Batch 45 tests pass.
+- Confirmed that internal names like `__tmp_if_1` are no longer mangled as `z__tmp_if_1`.
+
+---
+
 ### Task 229.5: Memory Tracking Hooks [DONE]
 **Goal**: Instrument the memory arena to track peak usage and enforce a hard limit to prevent silent OOM on legacy hardware.
 

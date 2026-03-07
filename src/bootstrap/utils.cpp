@@ -61,6 +61,8 @@ void sanitizeForC89(char* buffer) {
     }
 
     // 2. Check for reserved names, keywords, or starting with digit
+    if (buffer[0] == '_' && buffer[1] == '_') return;
+
     bool needs_prefix = false;
     if (buffer[0] >= '0' && buffer[0] <= '9') {
         needs_prefix = true;
