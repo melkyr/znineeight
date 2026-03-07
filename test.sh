@@ -29,7 +29,7 @@ for MAIN_FILE in tests/main_batch*.cpp; do
     # Find needed test files
     TEMP_FILE_LIST=$(mktemp)
     grep -o 'test_[a-zA-Z0-9_]*' "$MAIN_FILE" | sed 's/test_//' | sort | uniq | while read name; do
-        find tests -name "*.cpp" | xargs grep -lE "TEST_FUNC\($name\)|bool test_$name\(\)" | grep -v "main_batch" | grep -v "test_declarations.hpp"
+        find tests -name "*.cpp" | xargs grep -lE "TEST_FUNC\($name\)|bool test_$name\(\)" | grep -v "main_batch" | grep -v "main_task" | grep -v "test_declarations.hpp"
     done | sort | uniq > "$TEMP_FILE_LIST"
 
     # Add dependencies: if a file in a subdirectory is needed, include all files in that subdirectory
