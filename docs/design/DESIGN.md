@@ -199,23 +199,21 @@ filename.zig:23:5: error: type mismatch
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the AST for the entry module.
-- **Import Resolution (Task 214 & 216):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution.
-    - **Search Order:**
-        1.  Directory of the importing file.
-        2.  Directories specified via `-I` command-line flags (searched in the order they were provided).
-        3.  Default `lib/` directory located relative to the compiler executable.
-    - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
-- **Modular Semantic Analysis (Task 215):** Compilation passes are executed unit-wide but with module-level granularity:
-    - **Context Switching:** The `CompilationUnit` iterates through all loaded modules for each pass (Type Checking, C89 Validation, Static Analyzers).
-    - **Isolated Context:** Each module maintains its own `SymbolTable` and feature catalogues (Generic, ErrorSet, etc.) to prevent cross-module state leakage while allowing qualified symbol resolution.
-    3.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
-    3.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0. This is where descriptive error messages for unsupported features are reported.
-    4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
-    5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
-    6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
-    7.  **Pass 5: AST Lifting (Task 230):** Transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission. **Debugging**: Supports verbose logging via `--debug-lifter` to track transformations and temp variable registration.
-    8.  **Pass 6: Metadata Preparation (Task 9.15):** A post-typechecking pass that transitively collects all reachable types for module headers, ensures consistent mangling (MSVC 6.0 compatible), and verifies complete type layouts.
-    9.  **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
+    2.  **Import Resolution (Task 214 & 216):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution.
+        - **Search Order:**
+            1.  Directory of the importing file.
+            2.  Directories specified via `-I` command-line flags (searched in the order they were provided).
+            3.  Default `lib/` directory located relative to the compiler executable.
+        - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
+    3.  **Modular Semantic Analysis (Task 215):** Compilation unit orchestrates modular passes. Each module maintains its own `SymbolTable` and feature catalogues.
+    4.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types, to enable accurate semantic analysis.
+    5.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0.
+    6.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
+    7.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
+    8.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks.
+    9.  **Pass 5: AST Lifting (Task 230):** A mandatory pass that transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission. **Debugging**: Supports verbose logging via `--debug-lifter`.
+    10. **Pass 6: Metadata Preparation (Task 9.15):** A post-typechecking pass that transitively collects all reachable types for module headers, ensures consistent mangling (MSVC 6.0 compatible), and verifies complete type layouts.
+    11. **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 #### 4.0.1 Non-C89 Feature Detection Strategy
@@ -650,7 +648,8 @@ To maintain C89 compatibility and compiler simplicity:
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
     *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
-    *   **Compiler-Generated Identifiers**: Any identifier beginning with `__` (such as `__tmp_if_1` or runtime intrinsics like `__bootstrap_print`) bypasses all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and do not conflict with user-defined symbols, which are forbidden from using the `__` prefix in Zig.
+    *   **Compiler-Generated Identifiers**: Symbols used internally by the compiler (identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`) bypass all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and predictable.
+    *   **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.
 *   **Debugging Improvements**: The compiler supports verbose logging and tracing via `--debug-lifter` and `--debug-codegen` flags.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
@@ -976,7 +975,7 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **RAII State Guards**: Uses `IndentScope` and `DeferScopeGuard` to ensure state consistency (indentation level and defer stack) across complex control flow.
-- **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize expression lifting, type coercion, and initializer decomposition, ensuring consistent behavior across variable declarations and assignments.
+- **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize type coercion and initializer decomposition, ensuring consistent behavior across variable declarations and assignments. (Note: Control-flow lifting is now handled in a separate AST pass).
 - **Comments**: Standard C89 `/* ... */` comment emission.
 - **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations and identifier resolution.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.

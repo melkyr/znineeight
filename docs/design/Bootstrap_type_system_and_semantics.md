@@ -342,6 +342,7 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
 7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
 
+- **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
@@ -691,6 +692,15 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 | `TYPE_ERROR_UNION` | `struct`              | Size/Align: calculated dynamically. |
 | `TYPE_ERROR_SET`   | `int`                 | Size: 4, Align: 4. |
 
+### 5.4 Internal Compiler Identifiers
+
+To ensure that compiler-generated symbols (like temporaries and runtime intrinsics) never collide with user-defined identifiers, a specialized bypass mechanism is used:
+
+1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`.
+2. **Mangling Bypass**: These identifiers bypass the standard mangling process (module prefixing, keyword avoidance, and character sanitization).
+3. **Truncation Only**: They are emitted verbatim, except for truncation to 31 characters to ensure compatibility with MSVC 6.0.
+4. **User Symbol Protection**: User-defined identifiers starting with `__` are **not** treated as internal and are mangled with a `z_` prefix (e.g., `__reserved` becomes `z__reserved`).
+
 ### Bootstrap Type Compatibility Matrix
 
 The following table defines the allowed and rejected types in the bootstrap compiler, along with their C89 equivalents and bootstrap-specific notes.
@@ -771,6 +781,34 @@ A static inline function, `is_c89_compatible(Type* type)`, provides the mechanis
 -   **Returns `false`** for anonymous composite types (structs/unions/enums not assigned to a `const`).
 
 This function is a cornerstone of the semantic analysis phase, allowing the `TypeChecker` and `C89FeatureValidator` to reject unsupported Zig features early in the compilation process.
+
+## 5.5 AST Lifting (Pass 5)
+
+The `ControlFlowLifter` pass transforms Zig's expression-form control flow into statement-based equivalents that are directly translatable to C89.
+
+### Transformation Strategy
+1. **Top-Down Traversal**: Control-flow constructs (`if`, `switch`, `try`, `catch`, `orelse`) are identified and handled during a top-down traversal of the AST.
+2. **Temporary Allocation**: A unique temporary variable (e.g., `__tmp_if_5_1`) is declared in the current block to hold the result of the expression.
+3. **Statement Lowering**: The expression is lowered into one or more primitive statements (e.g., `NODE_IF_STMT`, `NODE_SWITCH_STMT`) that perform the necessary logic and assign the result to the temporary.
+4. **Identifier Replacement**: The original expression node is replaced with an identifier referencing the temporary variable.
+5. **Symbol Registration**: Every generated temporary is registered in the module's `SymbolTable` to ensure consistent resolution during code generation.
+
+### Example Transformation
+Zig:
+```zig
+var x = if (c) 1 else 2;
+```
+
+Lifted AST (Conceptual):
+```zig
+var __tmp_if_1: i32 = undefined;
+if (c) {
+    __tmp_if_1 = 1;
+} else {
+    __tmp_if_1 = 2;
+}
+var x = __tmp_if_1;
+```
 
 ## Rejected Zig Features (Milestone 4)
 

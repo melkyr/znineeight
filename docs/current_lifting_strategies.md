@@ -1,98 +1,65 @@
-# C89 Lifting Strategies: Technical Design
+# AST Lifting Strategies: Technical Design
 
 This document describes the "lifting" mechanism used by the RetroZig bootstrap compiler to translate Zig expressions with control flow into C89-compliant code.
 
 ## 1. Overview
 
-In Zig, constructs like `if`, `switch`, `try`, `catch`, and `orelse` are expressions that yield values. However, C89 does not support control flow within expressions. To bridge this gap, the `C89Emitter` performs **lifting**: it transforms these expressions into one or more C statements (typically inside a scoped block) that assign the result to a temporary variable or a direct target.
+In Zig, constructs like `if`, `switch`, `try`, `catch`, and `orelse` are expressions that yield values. However, C89 does not support control flow within expressions. To bridge this gap, the compiler performs **AST Lifting**: it transforms these expressions into statement-based equivalents using temporary variables before code generation.
 
-## 2. Core Mechanism
+## 2. Core Mechanism: The `ControlFlowLifter` (Pass 5)
 
-### 2.1 The `emitAssignmentWithLifting` Hub
-Lifting logic is centralized in `C89Emitter::emitAssignmentWithLifting`. This function serves as a unified dispatcher for any operation that behaves like an assignment (variable declaration, return statement, or explicit assignment) where the right-hand side (RHS) might require control-flow lifting or type coercion.
+Lifting is performed by a dedicated AST pass, the `ControlFlowLifter`, which runs after type checking. This ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission.
 
-Key responsibilities:
-- **Lifting Dispatch**: If the RHS is an `if`, `switch`, `try`, `catch`, or `orelse` expression, it delegates to the corresponding `emit*Expr` function, passing the target variable and target type.
-- **Type Coercion**: If the target type is an `ErrorUnion` or `Optional` but the RHS is a compatible payload type, it automatically invokes wrapping logic (`emitErrorUnionWrapping` or `emitOptionalWrapping`).
-- **Initializer Decomposition**: If the RHS is a struct or array initializer, it decomposes it into individual C field assignments.
-- **Discard Handling**: If the target is the blank identifier `_` or NULL, it evaluates the RHS for side effects, using `(void)` casts or side-effect-only lifting.
+### 2.1 Parent-Slot Traversal Pattern
+The lifter performs a post-order traversal of the AST using a "Parent-Slot" pattern. It receives pointers to AST node slots (`ASTNode**`), allowing it to replace nodes in-place without needing to manually track sibling indices or parent pointers.
 
-### 2.2 The `target_var` Strategy
-Lifting functions (e.g., `emitTryExpr`, `emitIfExpr`) take a `const char* target_var` and an optional `Type* target_type`.
-- If `target_var` is **non-NULL**, the logic generates an assignment to that variable.
-- If `target_var` is **NULL**, the expression is evaluated solely for its side effects.
-- `target_type` ensures that nested results are correctly coerced into the top-level target type (e.g., a payload inside a branch being wrapped into an error union return).
+### 2.2 Decision Logic (`needsLifting`)
+The lifter identifies control-flow expressions that appear in "unsafe" contexts (e.g., nested inside a binary operation, a function call argument, or a struct initializer). Root expressions that are already statements (like the expression in an `NODE_EXPRESSION_STMT`) generally do not need lifting unless they contain further nested control flow.
 
-### 2.2 Scoped Blocks
-Most lifted expressions are wrapped in a C block `{ ... }`. This allows the emitter to:
-1. Declare temporary variables (like `__try_res`) that are local to the lifting operation.
-2. Comply with C89's rule that all declarations must appear at the start of a block.
-
-### 2.3 Temporary Result Variables
-For complex contexts like `return try foo()`, the emitter generates a temporary result variable (e.g., `__return_val`) to hold the expression's value while other logic (like `defer` statements) is executed.
+### 2.3 Lifting Primitive (`liftNode`)
+When an expression needs lifting, the lifter:
+1.  **Generates a Temporary Variable**: Creates a unique, interned name like `__tmp_if_5_1`. The name includes the current lifting depth and a counter to ensure global uniqueness.
+2.  **Symbol Registration**: Registers a new `Symbol` for the temporary in the current module's `SymbolTable`.
+3.  **Statement Lowering**: Transforms the expression into a series of statements (variable declaration and primitive control flow) that assign the result to the temporary.
+4.  **Insertion**: Inserts these statements into the enclosing block immediately before the current statement, preserving the original execution order of side effects.
+5.  **Replacement**: Replaces the original expression node with a simple `NODE_IDENTIFIER` referencing the temporary variable.
 
 ## 3. Detailed Construct Strategies
 
-### 3.1 `if` Expressions
-Lifted into a C `if-else` statement.
-- **Nesting**: Each branch body is emitted via `emitAssignmentWithLifting`. This provides **full recursive support** for nested `if`, `switch`, `try`, `catch`, and `orelse` within both `then` and `else` branches.
-- **Divergence**: If a branch ends in `return`, `break`, or `continue`, the assignment is skipped for that branch as the code path diverges.
-- **Optional Capture**: If the condition is an optional type, a temporary `opt_tmp` is used to prevent double-evaluation of the condition.
+### 3.1 `if` and `switch` Expressions
+Lifted into their statement-form counterparts (`NODE_IF_STMT`, `NODE_SWITCH_STMT`).
+- **Assignment**: Each yielding branch in the lifted construct is updated to assign its final value to the temporary variable.
+- **Top-Down Transformation**: Input children (like the condition or switched expression) are transformed first to handle nested lifting correctly.
 
-### 3.2 `switch` Expressions
-Lifted into a C `switch` statement.
-- **Nesting**: Each prong body is emitted via `emitAssignmentWithLifting`, enabling uniform nesting of all lifted constructs.
-- **Divergence**: Like `if` branches, divergent prongs skip the assignment to `target_var`.
+### 3.2 `try` Expressions
+Lifted into an `if` statement that checks the `is_error` flag of the error union.
+- **Propagation**: On error, it executes active `defer` statements and returns the error union.
+- **Success**: On success, it unwraps the payload and assigns it to the temporary variable.
 
-### 3.3 `try` Expressions
-Lifted into an `if` check for the `is_error` flag.
-- **Propagation**: If an error is detected, the emitter executes active `defer` statements and returns the error.
-- **Success**: The payload is assigned to `target_var`, potentially involving wrapping if `target_type` is itself an error union or optional.
-- **Limitation**: The operand of `try` (the expression being tried) must currently be a simple expression, though it can be a function call.
+### 3.3 `catch` and `orelse` Expressions
+Lifted into an `if-else` statement.
+- **`catch`**: Checks `is_error`. If true, evaluates the fallback (potentially capturing the error). If false, yields the payload.
+- **`orelse`**: Checks `has_value`. If false, evaluates the fallback. If true, yields the value.
+- **Nesting**: Both constructs wrap their lowering logic in mandatory scoped blocks to handle potential nested lifting within the fallback branches.
 
-### 3.4 `catch` and `orelse` Expressions
-Lifted into an `if-else` check.
-- **Success/Value**: The payload/value is assigned to `target_var`, with support for type coercion.
-- **Fallback/Nesting**: The fallback branch is emitted via `emitAssignmentWithLifting`, providing **full recursive support** for all other lifted constructs.
+## 4. Complex Lvalue Handling
+For assignments to complex lvalues (like `s.field = try foo()`), the lifter evaluates the RHS first and stores it in a temporary. This ensures that the lvalue evaluation (which might have side effects) happens after the potentially-failing control flow, matching Zig's evaluation order.
 
-## 4. Nesting Support Matrix
+## 5. C89 Mapping Decisions (Name Mangling)
 
-The following table describes which constructs can be nested inside others. As of Task 9.5.5, the implementation provides uniform support for nesting all lifted constructs within branches, prongs, and fallbacks.
+To ensure that compiler-generated symbols never collide with user-defined identifiers, a specialized bypass mechanism is used in the `NameMangler` and `CVariableAllocator`:
 
-| Outer \ Inner | `if` | `switch` | `try` | `catch` | `orelse` |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **`if` branch** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **`switch` prong** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **`catch` fallback** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **`orelse` fallback** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **`try` operand** | ✗ | ✗ | ✗ | ✗ | ✗ |
-
-**Note**: Recursive nesting is achieved by having each construct call back into `emitAssignmentWithLifting` for its result-yielding paths. This ensures that even deeply nested constructs are correctly flattened into C statement blocks.
-
-## 5. Current Implementation Limitations
-
-### 5.1 Assignments to Non-Identifiers
-Lifting is currently only triggered for assignments where the left-hand side is a simple identifier (e.g., `x = try foo();`). Assignments to struct members or array elements (e.g., `s.x = try foo();`) do not trigger lifting and will result in invalid C code containing error comments.
-
-### 5.2 Control Flow Conditions and Iterables
-Expressions used as conditions for `if` or `while`, or as iterables for `for`, do not support lifting.
-- **Unsupported**: `while (try foo()) { ... }`
-- **Unsupported**: `for (try getList()) |item| { ... }`
-
-### 5.3 Fixed: Omission of `orelse`
-The `orelse` expression is now fully integrated into the unified assignment logic and is correctly supported as the final value of a block in `emitBlockWithAssignment`.
+- **Internal Identifiers**: Identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`. These bypass all mangling (module prefixing, keyword avoidance) and are emitted verbatim (truncated to 31 characters).
+- **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.
 
 ## 6. Technical Constraints
 
 ### 6.1 Stack Usage
-Since lifting functions can call each other recursively (e.g., a `switch` containing an `if` containing a `block` containing a `switch`), deep nesting of control flow expressions can lead to significant C++ stack usage.
-- **Constraint**: The parser implements a 255-level recursion limit, which indirectly protects the codegen phase.
-- **Legacy Limit**: On Windows 9x, the stack is typically 1MB. Developers should avoid extremely deep expression nesting.
+The lifter uses a recursion depth guard (`MAX_LIFTING_DEPTH = 200`) to prevent stack overflow on memory-constrained 1990s hardware.
 
 ### 6.2 Memory Overhead
-Lifting generates temporary variables and scoped blocks, which increases the size of the generated C code and the number of local variables the C89 compiler must track.
-- **Impact**: Heavy use of lifting can increase the memory pressure on the host C compiler (e.g., MSVC 6.0).
+Lifting increases the size of the AST and the number of local variables. Every generated temporary is allocated from the `ArenaAllocator` and persists for the lifetime of the module compilation.
 
 ## 7. Conclusion
 
-The current lifting strategy provides a pragmatic way to support Zig's expression-oriented control flow in a C89 environment. While there are inconsistencies in recursive nesting and assignment targets, most common patterns are supported. Future improvements should focus on unifying the recursive calls across all lifting functions and extending support to non-identifier assignment targets.
+By moving control-flow lifting to a dedicated AST pass, the RetroZig compiler achieves a clean separation between high-level language semantics and low-level C89 emission. This strategy improves robustness, simplifies the emitter, and provides a solid foundation for supporting more complex Zig features in a restricted target environment.
