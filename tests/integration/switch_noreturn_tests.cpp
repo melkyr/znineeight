@@ -41,12 +41,11 @@ TEST_FUNC(SwitchNoreturn_BasicDivergence) {
     std::string emission = emitter.emitExpression(fn->body);
 
     // Verify emission for divergent prongs
-    if (emission.find("case 1: return 20; break;") == std::string::npos &&
-        emission.find("case 1: return 20;  break;") == std::string::npos) {
-        printf("FAIL: Expected 'return 20' without assignment in case 1, got: %s\n", emission.c_str());
+    if (emission.find("case 1: { return 20; } break;") == std::string::npos) {
+        printf("FAIL: Expected 'case 1: { return 20; } break;' in case 1, got: %s\n", emission.c_str());
         return false;
     }
-    if (emission.find("default: __bootstrap_panic") == std::string::npos) {
+    if (emission.find("default: { __bootstrap_panic") == std::string::npos) {
         printf("FAIL: Expected panic in default prong, got: %s\n", emission.c_str());
         return false;
     }

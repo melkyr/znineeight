@@ -935,50 +935,17 @@ private:
 
     std::string emitSwitchExpression(const ASTSwitchExprNode* node) {
         if (!node) return "/* INVALID SWITCH */";
-        std::stringstream ss;
-        ss << "switch (" << emitExpression(node->expression) << ") { ";
-        for (size_t i = 0; i < node->prongs->length(); ++i) {
-            const ASTSwitchProngNode* prong = (*node->prongs)[i];
-            if (prong->is_else) {
-                ss << "default: ";
-            } else {
-                for (size_t j = 0; j < prong->items->length(); ++j) {
-                    ss << "case " << emitExpression((*prong->items)[j]) << ": ";
-                }
-            }
-            if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
-                std::string body = emitExpression(prong->body);
-                ss << body;
-                if (body.empty() || body[body.length()-1] != ';') ss << ";";
-                ss << " break; ";
-            } else {
-                ss << "__ret = " << emitExpression(prong->body) << "; break; ";
-            }
-        }
-        ss << "}";
-        return ss.str();
+        return "/* Switch expression should have been lifted */";
     }
 
     std::string emitTryExpression(const ASTTryExprNode* node) {
         if (!node) return "/* INVALID TRY */";
-        std::stringstream ss;
-        // The lifter handles this now, but if mock emitter is called on unlifted node...
-        ss << "{ " << getMangledTypeName(node->expression->resolved_type) << " __tmp_try_res_" << try_expr_counter_++ << " = " << emitExpression(node->expression) << "; ";
-        ss << "if (__tmp_try_res_" << (try_expr_counter_ - 1) << ".is_error) " << emitDefersForScopeExit() << "return __ret_err; ";
-        ss << "__ret = __tmp_try_res_" << (try_expr_counter_ - 1) << ".data.payload; }";
-        return ss.str();
+        return "/* Try expression should have been lifted */";
     }
 
     std::string emitCatchExpression(const ASTCatchExprNode* node) {
         if (!node) return "/* INVALID CATCH */";
-        std::stringstream ss;
-        // The lifter handles this now, but if mock emitter is called on unlifted node...
-        ss << "{ " << getMangledTypeName(node->payload->resolved_type) << " __tmp_catch_res_" << catch_expr_counter_++ << " = " << emitExpression(node->payload) << "; ";
-        ss << "if (__tmp_catch_res_" << (catch_expr_counter_ - 1) << ".is_error) { ";
-        if (node->error_name) ss << "int " << node->error_name << " = __tmp_catch_res_" << (catch_expr_counter_ - 1) << ".data.err; ";
-        ss << "__ret = " << emitExpression(node->else_expr) << "; } ";
-        ss << "else { __ret = __tmp_catch_res_" << (catch_expr_counter_ - 1) << ".data.payload; } }";
-        return ss.str();
+        return "/* Catch expression should have been lifted */";
     }
 
 public:

@@ -9,10 +9,10 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 | 43    | PASSED | None |
 | 44    | PARTIAL| `Task225_2_PrintLowering` (Print lowering regression) |
 | 45    | PASSED | None |
-| 46    | PARTIAL| `Integration_Nested_Try_Catch` (C89 compilation failure) |
-| 47    | PARTIAL| `Task228_OptionalOrelse` (Test expectation mismatch) |
+| 46    | PASSED | None |
+| 47    | PASSED | None |
 | 48-54 | PASSED | None |
-| 55    | PASSED | None |
+| 55    | PARTIAL| `UnifiedLifting_Complex` (Statement count mismatch) |
 | 56    | PASSED | None |
 
 ---
@@ -25,10 +25,8 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 *   Updated `ControlFlowLifter` to correctly propagate these symbols to `NODE_IDENTIFIER` nodes.
 *   Included `depth_` in temporary names (e.g., `__tmp_catch_5_1`) to ensure uniqueness in nested control flow.
 *   Enhanced `C89Emitter` with defensive fallback logic for internal compiler variables (`__tmp_`, `__return_`).
-
-**Remaining Issues in 46/47**:
-*   **Batch 46**: `Integration_Nested_Try_Catch` fails because the capture `err` is reported as undeclared in `main` after transformation. This suggests a scope leakage or transformation issue when captures are used in complex switch/if expressions.
-*   **Batch 47**: `Task228_OptionalOrelse` fails due to a test runner expectation mismatch. The generated C code uses `y = __tmp_orelse_res_...` but the test might be looking for a different pattern or the symbol is not being substituted as expected in the Mock emitter.
+*   **Batch 46 Fixed**: Reverted capture name uniquification (no depth suffix) and implemented proper C block scoping. Added `updateCaptureSymbols` to correctly link identifiers in branch bodies to new local symbols.
+*   **Batch 47 Fixed**: Removed ad-hoc lifting from `MockC89Emitter` and updated test expectations to match lifted patterns.
 
 ### 2. Statement Count Mismatch (Batch 55) [RESOLVED]
 **Resolution**:
