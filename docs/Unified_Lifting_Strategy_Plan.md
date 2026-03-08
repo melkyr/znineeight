@@ -664,12 +664,13 @@ void liftNode(ASTNode** node_slot, const ASTNode* parent, const char* prefix);
 void ControlFlowLifter::lift(CompilationUnit* unit);
 ```
 
-### Debug Helpers (DEBUG builds only)
-```cpp
-#ifdef DEBUG
-void dumpAST(ASTNode* node, int indent = 0);  // Print AST structure
-void logLiftingDecision(const ASTNode* node, bool lifted);  // Trace lifting
-#endif
-```
+### Debug Helpers
+Verbose logging can be enabled via the `--debug-lifter` command-line flag. This provides a detailed trace of all lifting transformations, including:
+- Which nodes are being lifted and their source locations.
+- Generated temporary variable names and their types.
+- Symbol registration events for temporary variables.
+- Post-transformation AST integrity checks.
+
+Additionally, `SymbolTable::dumpSymbols()` can be called at any point to inspect the state of the symbol table across all active scopes.
 
 ---

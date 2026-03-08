@@ -1,5 +1,6 @@
 #include "platform.hpp"
 #include <stdio.h>
+#include <stdarg.h>
 
 static void plat_reverse(char* str, int length) {
     int start = 0;
@@ -107,6 +108,22 @@ void plat_print_error(const char* message) {
 
 void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
+    plat_print_error(message);
+}
+
+void plat_printf_debug(const char* format, ...) {
+    char buffer[4096];
+    va_list args;
+    va_start(args, format);
+#ifdef _MSC_VER
+    _vsnprintf(buffer, sizeof(buffer), format, args);
+#else
+    vsnprintf(buffer, sizeof(buffer), format, args);
+#endif
+    va_end(args);
+    buffer[sizeof(buffer)-1] = '\0';
+    OutputDebugStringA(buffer);
+    plat_print_error(buffer);
 }
 
 void plat_write_str(const char* s) {
@@ -410,6 +427,14 @@ void plat_print_error(const char* message) {
 void plat_print_debug(const char* message) {
     plat_print_error("[DEBUG] ");
     plat_print_error(message);
+}
+
+void plat_printf_debug(const char* format, ...) {
+    plat_print_error("[DEBUG] ");
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
 }
 
 void plat_write_str(const char* s) {

@@ -30,6 +30,21 @@ public:
      */
     void lift(CompilationUnit* unit);
 
+    /**
+     * @brief Enables or disables verbose debug logging.
+     */
+    void setDebugMode(bool enabled) { debug_mode_ = enabled; }
+
+    /**
+     * @brief Performs post-lifting validation of the AST and symbol registrations.
+     */
+    void validateLifting(Module* mod);
+
+    /**
+     * @brief Checks AST integrity and reports warnings for suspicious nodes.
+     */
+    void validateASTIntegrity(ASTNode* node, const char* context);
+
 private:
     /**
      * @brief Core traversal method using post-order and slot-based replacement.
@@ -72,6 +87,11 @@ private:
      * @brief Returns a prefix based on the node type.
      */
     const char* getPrefixForType(NodeType type);
+
+    /**
+     * @brief Formats a source location into a string for debugging.
+     */
+    void formatSourceLocation(SourceLocation loc, char* buf, size_t buf_size);
 
     /**
      * @brief Finds the index of a statement within a block.
@@ -140,10 +160,14 @@ private:
     ArenaAllocator* arena_;
     StringInterner* interner_;
     ErrorHandler* error_handler_;
+    CompilationUnit* unit_;
+    const char* module_name_;
+    bool debug_mode_;
     int tmp_counter_;
     int depth_;
     const int MAX_LIFTING_DEPTH;
 
+    DynamicArray<const char*> registered_temps_;
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
     DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
@@ -172,6 +196,12 @@ private:
         ControlFlowLifter& lifter_;
         FnGuard(ControlFlowLifter& l, ASTFnDeclNode* fn);
         ~FnGuard();
+    };
+
+    struct ScopeGuard {
+        ControlFlowLifter& lifter_;
+        ScopeGuard(ControlFlowLifter& l);
+        ~ScopeGuard();
     };
 };
 

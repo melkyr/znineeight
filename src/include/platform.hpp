@@ -33,6 +33,7 @@ bool plat_file_read(const char* path, char** buffer, size_t* size);
 void plat_print_info(const char* message);  // stdout
 void plat_print_error(const char* message); // stderr
 void plat_print_debug(const char* message); // debugger only
+void plat_printf_debug(const char* format, ...); // variadic debug print
 void plat_write_str(const char* s);         // low-level stderr write
 
 // String operations (CRT-free on Windows)

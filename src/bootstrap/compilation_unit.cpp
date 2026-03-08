@@ -834,6 +834,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #endif
     if (all_success) {
         ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
+        lifter.setDebugMode(options_.debug_lifter);
         lifter.lift(this);
     }
 #ifdef MEASURE_MEMORY

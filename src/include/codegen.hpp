@@ -106,6 +106,16 @@ public:
     void setModule(const char* name) { module_name_ = name; }
 
     /**
+     * @brief Enables or disables debug emission tracing.
+     */
+    void setDebugTrace(bool enabled) { debug_trace_ = enabled; }
+
+    /**
+     * @brief Performs post-emission validation.
+     */
+    void validateEmission();
+
+    /**
      * @brief Writes the standard C89 prologue (comments and includes).
      */
     void emitPrologue();
@@ -491,6 +501,9 @@ private:
     PlatFile output_file_;
     int indent_level_;
     bool owns_file_;
+    bool debug_trace_;
+    int emit_depth_;
+    DynamicArray<const char*> emitted_decls_;
     CompilationUnit& unit_;
     CVariableAllocator var_alloc_;
     ErrorHandler& error_handler_;

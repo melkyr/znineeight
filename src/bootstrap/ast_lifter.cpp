@@ -39,23 +39,42 @@ ControlFlowLifter::FnGuard::~FnGuard() {
     lifter_.fn_stack_.pop_back();
 }
 
+ControlFlowLifter::ScopeGuard::ScopeGuard(ControlFlowLifter& l) : lifter_(l) {
+    if (lifter_.unit_ && lifter_.module_name_) {
+        lifter_.unit_->getSymbolTable(lifter_.module_name_).enterScope();
+    }
+}
+
+ControlFlowLifter::ScopeGuard::~ScopeGuard() {
+    if (lifter_.unit_ && lifter_.module_name_) {
+        lifter_.unit_->getSymbolTable(lifter_.module_name_).exitScope();
+    }
+}
+
 ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* interner, ErrorHandler* error_handler)
     : arena_(arena), interner_(interner), error_handler_(error_handler),
+      unit_(NULL), module_name_(NULL), debug_mode_(false),
       tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(200),
+      registered_temps_(*arena),
       stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena), fn_stack_(*arena) {}
 
 void ControlFlowLifter::lift(CompilationUnit* unit) {
+    unit_ = unit;
     const DynamicArray<Module*>& modules = unit->getModules();
     for (size_t i = 0; i < modules.length(); ++i) {
         Module* mod = modules[i];
         if (!mod->ast_root) continue;
 
-        // Reset per-module counter
+        module_name_ = mod->name;
         tmp_counter_ = 0;
         depth_ = 0;
+        registered_temps_.clear();
 
         transformNode(&mod->ast_root, NULL);
+        validateLifting(mod);
     }
+    unit_ = NULL;
+    module_name_ = NULL;
 }
 
 void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
@@ -102,12 +121,14 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         if (is_stmt && is_block) {
             StmtGuard sguard(*this, node);
             BlockGuard bguard(*this, &node->as.block_stmt);
+            ScopeGuard scguard(*this);
             Inner::process(this, node);
         } else if (is_stmt) {
             StmtGuard sguard(*this, node);
             Inner::process(this, node);
         } else if (is_block) {
             BlockGuard bguard(*this, &node->as.block_stmt);
+            ScopeGuard scguard(*this);
             Inner::process(this, node);
         } else if (is_fn) {
             FnGuard fguard(*this, node->as.fn_decl);
@@ -120,6 +141,10 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     // Decision: does THIS node need lifting?
     if (needsLifting(node, parent)) {
         liftNode(node_slot, parent, getPrefixForType(node->type));
+
+        if (debug_mode_ && *node_slot) {
+            validateASTIntegrity(*node_slot, "post-lift");
+        }
     }
 
     depth_--;
@@ -210,6 +235,24 @@ ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode*
     var_decl_data->initializer = init;
     var_decl_data->is_const = is_const;
     var_decl_data->is_mut = !is_const;
+
+    if (name && plat_strncmp(name, "__tmp_", 6) == 0) {
+        Symbol* sym = (Symbol*)arena_->alloc(sizeof(Symbol));
+        plat_memset(sym, 0, sizeof(Symbol));
+        sym->name = name;
+        sym->symbol_type = type;
+        sym->flags = SYMBOL_FLAG_LOCAL;
+        sym->scope_level = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).getCurrentScopeLevel() : 0;
+
+        if (unit_ && module_name_) {
+            unit_->getSymbolTable(module_name_).registerTempSymbol(sym);
+            registered_temps_.append(name);
+            if (debug_mode_) {
+                plat_printf_debug("[LIFTER] Registered temp symbol: %s at scope level %d\n", name, sym->scope_level);
+            }
+        }
+        var_decl_data->symbol = sym;
+    }
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
@@ -624,8 +667,19 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     ASTNode* node = *node_slot;
     if (!node) return;
 
+    if (debug_mode_) {
+        char loc_buf[128];
+        formatSourceLocation(node->loc, loc_buf, sizeof(loc_buf));
+        plat_printf_debug("[LIFTER] Lifting node type=%d prefix=%s at %s\n",
+                         (int)node->type, prefix, loc_buf);
+    }
+
     // 1. Generate unique temp name
     const char* temp_name = generateTempName(prefix);
+
+    if (debug_mode_) {
+        plat_printf_debug("[LIFTER] Generated temp name: %s\n", temp_name);
+    }
 
     // 2. Create variable declaration (initially NULL, or simple default)
     // C89 requires local variables to be declared at the top, but we insert them
@@ -676,7 +730,34 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     ASTNode* ident_node = createIdentifier(temp_name, node->loc);
     ident_node->resolved_type = node->resolved_type;
 
+    if (debug_mode_) {
+        plat_printf_debug("[LIFTER] Replaced node with identifier: %s\n", temp_name);
+    }
+
     *node_slot = ident_node;
+}
+
+void ControlFlowLifter::formatSourceLocation(SourceLocation loc, char* buf, size_t buf_size) {
+    if (buf_size == 0) return;
+    buf[0] = '\0';
+
+    char* cur = buf;
+    size_t rem = buf_size;
+
+    if (unit_ && loc.file_id != 0) {
+        const SourceFile* file = unit_->getSourceManager().getFile(loc.file_id);
+        if (file) {
+            safe_append(cur, rem, file->filename);
+            safe_append(cur, rem, ":");
+        }
+    }
+
+    char num_buf[32];
+    plat_i64_to_string(loc.line, num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
+    safe_append(cur, rem, ":");
+    plat_i64_to_string(loc.column, num_buf, sizeof(num_buf));
+    safe_append(cur, rem, num_buf);
 }
 
 const char* ControlFlowLifter::getPrefixForType(NodeType type) {
@@ -700,5 +781,70 @@ const char* ControlFlowLifter::generateTempName(const char* prefix) {
     plat_strcat(buf, "_");
     plat_strcat(buf, num_buf);
 
-    return interner_->intern(buf);
+    if (plat_strlen(buf) > 63) {
+        error_handler_->report(ERR_INTERNAL_ERROR, SourceLocation(), "Temp name too long", buf);
+        plat_abort();
+    }
+
+    const char* interned = interner_->intern(buf);
+    if (debug_mode_) {
+        plat_printf_debug("[LIFTER] Temp counter=%d name=%s\n", tmp_counter_, interned);
+    }
+    return interned;
+}
+
+void ControlFlowLifter::validateLifting(Module* mod) {
+    if (!debug_mode_) return;
+
+    plat_printf_debug("[LIFTER] Validation: %d temp variables registered in module %s\n",
+                     (int)registered_temps_.length(), mod->name);
+
+    for (size_t i = 0; i < registered_temps_.length(); ++i) {
+        for (size_t j = i + 1; j < registered_temps_.length(); ++j) {
+            if (plat_strcmp(registered_temps_[i], registered_temps_[j]) == 0) {
+                error_handler_->report(ERR_INTERNAL_ERROR, SourceLocation(),
+                                       "Duplicate temp variable name",
+                                       registered_temps_[i]);
+            }
+        }
+    }
+}
+
+void ControlFlowLifter::validateASTIntegrity(ASTNode* node, const char* context) {
+    if (!debug_mode_ || !node) return;
+
+    if (node->type == NODE_IDENTIFIER ||
+        node->type == NODE_BINARY_OP ||
+        node->type == NODE_FUNCTION_CALL) {
+        if (!node->resolved_type) {
+            char loc_buf[128];
+            formatSourceLocation(node->loc, loc_buf, sizeof(loc_buf));
+            plat_printf_debug("[LIFTER] WARNING: Node type=%d has NULL resolved_type at %s context=%s\n",
+                             (int)node->type, loc_buf, context);
+        }
+    }
+
+    if (node->type == NODE_IDENTIFIER) {
+        if (!node->as.identifier.symbol &&
+            (!node->as.identifier.name ||
+             plat_strncmp(node->as.identifier.name, "__tmp_", 6) != 0)) {
+            char loc_buf[128];
+            formatSourceLocation(node->loc, loc_buf, sizeof(loc_buf));
+            plat_printf_debug("[LIFTER] WARNING: Identifier has no symbol and is not temp at %s\n", loc_buf);
+        }
+    }
+
+    struct ValidateVisitor : ChildVisitor {
+        ControlFlowLifter* lifter;
+        const char* context;
+        ValidateVisitor(ControlFlowLifter* l, const char* c) : lifter(l), context(c) {}
+        void visitChild(ASTNode** child_slot) {
+            if (*child_slot) {
+                lifter->validateASTIntegrity(*child_slot, context);
+            }
+        }
+    };
+
+    ValidateVisitor visitor(this, context);
+    forEachChild(node, visitor);
 }

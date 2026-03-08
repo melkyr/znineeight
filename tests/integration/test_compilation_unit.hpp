@@ -17,6 +17,7 @@
 #include "utils.hpp"
 #include "mock_emitter.hpp"
 #include "codegen.hpp"
+#include "test_debug_config.hpp"
 #include <cstring>
 
 /**
@@ -34,6 +35,10 @@ public:
         : CompilationUnit(arena, interner), last_ast(NULL) {
         setTestMode(true);
         injectRuntimeSymbols();
+
+        CompilationOptions& opts = getOptions();
+        opts.debug_lifter = TestDebugConfig::lifter_debug();
+        opts.debug_codegen = TestDebugConfig::codegen_debug();
     }
 
     /**

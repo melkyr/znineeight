@@ -60,6 +60,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     C89Emitter emitter(unit_, false);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open .c file for writing");
         return false;
@@ -165,6 +166,7 @@ bool CBackend::generateMasterMain(const char* output_dir) {
     safe_append(cur, rem, entry_filename_);
 
     C89Emitter emitter(unit_, false);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open master main file for writing");
         return false;
@@ -253,6 +255,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     C89Emitter emitter(unit_, true);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open .h file for writing");
         return false;
