@@ -106,7 +106,7 @@ private:
     /**
      * @brief Creates a new identifier node.
      */
-    ASTNode* createIdentifier(const char* name, SourceLocation loc);
+    ASTNode* createIdentifier(const char* name, SourceLocation loc, Symbol* sym = NULL);
 
     /**
      * @brief Creates a new assignment node.
@@ -152,8 +152,8 @@ private:
     ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);
     void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
-    ASTNode* lowerCatchExpr(ASTNode* node, const char* temp_name);
-    ASTNode* lowerOrelseExpr(ASTNode* node, const char* temp_name);
+    void lowerCatchExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
+    void lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
 
     // Context Stacks

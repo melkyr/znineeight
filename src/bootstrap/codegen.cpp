@@ -593,7 +593,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     const char* c_name = NULL;
     if (decl->symbol) {
         c_name = var_alloc_.allocate(decl->symbol);
-    } else if (decl->name && plat_strncmp(decl->name, "__tmp_", 6) == 0) {
+    } else if (decl->name && (plat_strncmp(decl->name, "__tmp_", 6) == 0 ||
+                              plat_strncmp(decl->name, "__return_", 9) == 0)) {
         c_name = decl->name;
         if (debug_trace_) {
             plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
@@ -1751,7 +1752,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             } else {
                 const char* name = node->as.identifier.name;
                 if (name && (plat_strncmp(name, "__tmp_", 6) == 0 ||
-                             plat_strncmp(name, "__return_", 7) == 0)) {
+                             plat_strncmp(name, "__return_", 9) == 0)) {
 
                     bool found = false;
                     for (size_t i = 0; i < emitted_decls_.length(); ++i) {

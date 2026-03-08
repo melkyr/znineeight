@@ -231,27 +231,40 @@ ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode*
     ASTVarDeclNode* var_decl_data = (ASTVarDeclNode*)arena_->alloc(sizeof(ASTVarDeclNode));
     plat_memset(var_decl_data, 0, sizeof(ASTVarDeclNode));
     var_decl_data->name = name;
-    var_decl_data->name_loc = init ? init->loc : SourceLocation();
+    var_decl_data->name_loc = init ? init->loc : (stmt_stack_.length() > 0 ? stmt_stack_.back()->loc : SourceLocation());
     var_decl_data->initializer = init;
     var_decl_data->is_const = is_const;
     var_decl_data->is_mut = !is_const;
 
-    if (name && plat_strncmp(name, "__tmp_", 6) == 0) {
-        Symbol* sym = (Symbol*)arena_->alloc(sizeof(Symbol));
-        plat_memset(sym, 0, sizeof(Symbol));
-        sym->name = name;
-        sym->symbol_type = type;
-        sym->flags = SYMBOL_FLAG_LOCAL;
-        sym->scope_level = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).getCurrentScopeLevel() : 0;
+    if (name) {
+        Symbol sym_val;
+        plat_memset(&sym_val, 0, sizeof(Symbol));
+        sym_val.name = name;
+        sym_val.symbol_type = type;
+        sym_val.kind = SYMBOL_VARIABLE;
+        sym_val.flags = SYMBOL_FLAG_LOCAL;
+        if (is_const) sym_val.flags |= SYMBOL_FLAG_CONST;
 
         if (unit_ && module_name_) {
-            unit_->getSymbolTable(module_name_).registerTempSymbol(sym);
-            registered_temps_.append(name);
-            if (debug_mode_) {
-                plat_printf_debug("[LIFTER] Registered temp symbol: %s at scope level %d\n", name, sym->scope_level);
+            SymbolTable& table = unit_->getSymbolTable(module_name_);
+            sym_val.scope_level = table.getCurrentScopeLevel();
+            table.registerTempSymbol(&sym_val);
+            // Crucial: Use the pointer to the symbol stored in the table, not our stack copy.
+            // This ensures both declaration and identifiers point to the same Symbol object.
+            var_decl_data->symbol = table.lookupInCurrentScope(name);
+
+            if (plat_strncmp(name, "__tmp_", 6) == 0) {
+                registered_temps_.append(name);
             }
+            if (debug_mode_) {
+                plat_printf_debug("[LIFTER] Registered symbol: %s at scope level %d\n", name, sym_val.scope_level);
+            }
+        } else {
+            Symbol* sym = (Symbol*)arena_->alloc(sizeof(Symbol));
+            *sym = sym_val;
+            sym->scope_level = 0;
+            var_decl_data->symbol = sym;
         }
-        var_decl_data->symbol = sym;
     }
 
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
@@ -263,12 +276,13 @@ ASTNode* ControlFlowLifter::createVarDecl(const char* name, Type* type, ASTNode*
     return node;
 }
 
-ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation loc) {
+ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation loc, Symbol* sym) {
     ASTNode* ident_node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     plat_memset(ident_node, 0, sizeof(ASTNode));
     ident_node->type = NODE_IDENTIFIER;
     ident_node->loc = loc;
     ident_node->as.identifier.name = name;
+    ident_node->as.identifier.symbol = sym;
     return ident_node;
 }
 
@@ -372,7 +386,10 @@ ASTNode* ControlFlowLifter::lowerIfExpr(ASTNode* node, const char* temp_name) {
     ASTIfExprNode* if_expr = node->as.if_expr;
     SourceLocation loc = node->loc;
 
-    ASTNode* temp_ident = createIdentifier(temp_name, loc);
+    // Use current_module_ instead of looking up in loop if possible,
+    // but lookup is safer if we don't have it cached.
+    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
     // Then branch
@@ -414,7 +431,8 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
     ASTSwitchExprNode* sw_expr = node->as.switch_expr;
     SourceLocation loc = node->loc;
 
-    ASTNode* temp_ident = createIdentifier(temp_name, loc);
+    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
     void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
@@ -441,6 +459,14 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
             new_prong->body = createYieldingStmt(orig_prong->body, temp_ident, loc);
         }
 
+        if (new_prong->capture_sym && new_prong->capture_sym->name) {
+             if (unit_ && module_name_) {
+                 SymbolTable& table = unit_->getSymbolTable(module_name_);
+                 new_prong->capture_sym->scope_level = table.getCurrentScopeLevel();
+                 table.registerTempSymbol(new_prong->capture_sym);
+             }
+        }
+
         prongs->append(new_prong);
     }
 
@@ -457,7 +483,7 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
     ASTNode* res_decl = createVarDecl(res_name, error_union_type, try_expr.expression, true);
     out_stmts.append(res_decl);
 
-    ASTNode* res_ident = createIdentifier(res_name, loc);
+    ASTNode* res_ident = createIdentifier(res_name, loc, res_decl->as.var_decl->symbol);
     res_ident->resolved_type = error_union_type;
 
     // 2. Check is_error
@@ -480,6 +506,10 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
         // If they have same payload, we can just return res_ident.
         // Otherwise, we might need wrapping if we support implicit error union coercion.
         // For now, assume they are compatible enough for return if type checked.
+
+        // However, we MUST use a return variable name if we want to match emitter's
+        // internal expectations or ensure it works with defers.
+        // The emitter often wraps returns with defers in a block using __return_val.
     }
 
     ASTNode* ret_stmt = createReturn(ret_val, loc);
@@ -492,12 +522,14 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
     out_stmts.append(if_stmt);
 
     // 4. Assign payload to temp_name
-    ASTNode* temp_ident = createIdentifier(temp_name, loc);
+    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
     ASTNode* payload_access;
     if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
         ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+        data_access->resolved_type = error_union_type; // actually it's a union but we just need a non-null type
         payload_access = createMemberAccess(data_access, "payload", loc);
     } else {
         payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
@@ -507,23 +539,20 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
     out_stmts.append(createYieldingStmt(payload_access, temp_ident, loc));
 }
 
-ASTNode* ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name) {
+void ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts) {
     ASTCatchExprNode* catch_expr = node->as.catch_expr;
     SourceLocation loc = node->loc;
     Type* error_union_type = catch_expr->payload->resolved_type;
 
-    ASTNode* temp_ident = createIdentifier(temp_name, loc);
+    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
-
-    // 1. Evaluate payload once (handled by C89Emitter::emitCatchExpr for now, but we should do it here)
-    // Actually, we can just transform it to:
-    // var res = payload;
-    // if (res.is_error) { temp = else_expr; } else { temp = res.data.payload; }
 
     const char* res_name = generateTempName("catch_res");
     ASTNode* res_decl = createVarDecl(res_name, error_union_type, catch_expr->payload, true);
+    out_stmts.append(res_decl);
 
-    ASTNode* res_ident = createIdentifier(res_name, loc);
+    ASTNode* res_ident = createIdentifier(res_name, loc, res_decl->as.var_decl->symbol);
     res_ident->resolved_type = error_union_type;
 
     ASTNode* is_error_access = createMemberAccess(res_ident, "is_error", loc);
@@ -537,12 +566,27 @@ ASTNode* ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name)
         ASTNode* err_access;
         if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
             ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+            data_access->resolved_type = error_union_type;
             err_access = createMemberAccess(data_access, "err", loc);
         } else {
             err_access = createMemberAccess(res_ident, "err", loc);
         }
         err_access->resolved_type = get_g_type_i32(); // ErrorSet is i32
-        catch_stmts->append(createVarDecl(catch_expr->error_name, get_g_type_i32(), err_access, true));
+
+        char capture_name_buf[128];
+        plat_strcpy(capture_name_buf, catch_expr->error_name);
+        char depth_buf[16];
+        plat_i64_to_string(depth_, depth_buf, sizeof(depth_buf));
+        plat_strcat(capture_name_buf, "_");
+        plat_strcat(capture_name_buf, depth_buf);
+        const char* uniquified_capture_name = interner_->intern(capture_name_buf);
+
+        ASTNode* err_decl = createVarDecl(uniquified_capture_name, get_g_type_i32(), err_access, true);
+        catch_stmts->append(err_decl);
+
+        // We also need to transform the body to use this new name if it used the old one.
+        // But the body was already type-checked and might have symbols.
+        // If we clone the body, we need to update identifiers.
     }
     if (catch_expr->else_expr->type == NODE_BLOCK_STMT) {
         ASTNode* else_block_inner = cloneASTNode(catch_expr->else_expr, arena_);
@@ -561,6 +605,7 @@ ASTNode* ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name)
     ASTNode* payload_access;
     if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
         ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+        data_access->resolved_type = error_union_type;
         payload_access = createMemberAccess(data_access, "payload", loc);
     } else {
         payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
@@ -572,27 +617,23 @@ ASTNode* ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name)
     ASTNode* else_block = createBlock(succ_stmts, loc);
 
     ASTNode* if_stmt = createIfStmt(is_error_access, then_block, else_block, loc);
-
-    void* outer_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* outer_stmts = new (outer_stmts_mem) DynamicArray<ASTNode*>(*arena_);
-    outer_stmts->append(res_decl);
-    outer_stmts->append(if_stmt);
-
-    return createBlock(outer_stmts, loc);
+    out_stmts.append(if_stmt);
 }
 
-ASTNode* ControlFlowLifter::lowerOrelseExpr(ASTNode* node, const char* temp_name) {
+void ControlFlowLifter::lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts) {
     ASTOrelseExprNode* orelse = node->as.orelse_expr;
     SourceLocation loc = node->loc;
     Type* optional_type = orelse->payload->resolved_type;
 
-    ASTNode* temp_ident = createIdentifier(temp_name, loc);
+    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
     const char* res_name = generateTempName("orelse_res");
     ASTNode* res_decl = createVarDecl(res_name, optional_type, orelse->payload, true);
+    out_stmts.append(res_decl);
 
-    ASTNode* res_ident = createIdentifier(res_name, loc);
+    ASTNode* res_ident = createIdentifier(res_name, loc, res_decl->as.var_decl->symbol);
     res_ident->resolved_type = optional_type;
 
     ASTNode* has_value_access = createMemberAccess(res_ident, "has_value", loc);
@@ -628,16 +669,11 @@ ASTNode* ControlFlowLifter::lowerOrelseExpr(ASTNode* node, const char* temp_name
     }
 
     ASTNode* if_stmt = createIfStmt(has_value_access, then_block, else_block, loc);
-
-    void* outer_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* outer_stmts = new (outer_stmts_mem) DynamicArray<ASTNode*>(*arena_);
-    outer_stmts->append(res_decl);
-    outer_stmts->append(if_stmt);
-
-    return createBlock(outer_stmts, loc);
+    out_stmts.append(if_stmt);
 }
 
 ASTNode* ControlFlowLifter::createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc) {
+    if (!expr) return NULL;
     if (allPathsExit(expr)) {
         // If the expression always exits (return, break, continue, unreachable),
         // we emit it as a statement directly.
@@ -700,10 +736,10 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
             lowerTryExpr(node, temp_name, lowering_stmts);
             break;
         case NODE_CATCH_EXPR:
-            lowering_stmts.append(lowerCatchExpr(node, temp_name));
+            lowerCatchExpr(node, temp_name, lowering_stmts);
             break;
         case NODE_ORELSE_EXPR:
-            lowering_stmts.append(lowerOrelseExpr(node, temp_name));
+            lowerOrelseExpr(node, temp_name, lowering_stmts);
             break;
         default:
             // Should not happen for isControlFlowExpr
@@ -727,7 +763,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     }
 
     // 5. Replace node with identifier referencing the temp
-    ASTNode* ident_node = createIdentifier(temp_name, node->loc);
+    ASTNode* ident_node = createIdentifier(temp_name, node->loc, var_decl_node->as.var_decl->symbol);
     ident_node->resolved_type = node->resolved_type;
 
     if (debug_mode_) {
@@ -774,10 +810,14 @@ const char* ControlFlowLifter::getPrefixForType(NodeType type) {
 const char* ControlFlowLifter::generateTempName(const char* prefix) {
     char buf[64];
     char num_buf[16];
+    char depth_buf[16];
     plat_i64_to_string(++tmp_counter_, num_buf, sizeof(num_buf));
+    plat_i64_to_string(depth_, depth_buf, sizeof(depth_buf));
 
     plat_strcpy(buf, "__tmp_");
     plat_strcat(buf, prefix);
+    plat_strcat(buf, "_");
+    plat_strcat(buf, depth_buf);
     plat_strcat(buf, "_");
     plat_strcat(buf, num_buf);
 
@@ -787,9 +827,7 @@ const char* ControlFlowLifter::generateTempName(const char* prefix) {
     }
 
     const char* interned = interner_->intern(buf);
-    if (debug_mode_) {
-        plat_printf_debug("[LIFTER] Temp counter=%d name=%s\n", tmp_counter_, interned);
-    }
+    /* plat_printf_debug("[LIFTER] generateTempName counter=%d name=%s depth=%d\n", tmp_counter_, interned, depth_); */
     return interned;
 }
 

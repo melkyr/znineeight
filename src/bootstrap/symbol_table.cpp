@@ -102,6 +102,17 @@ void Scope::insert(Symbol& symbol) {
     u32 hash = hash_string(symbol.name);
     size_t index = hash % bucket_count;
 
+    // Check for existing symbol and update if found
+    for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
+        if (plat_strcmp(entry->symbol.name, symbol.name) == 0) {
+            if (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
+                plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0) {
+                entry->symbol = symbol;
+                return;
+            }
+        }
+    }
+
     // Allocate a new entry from the arena
     SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
 #ifdef MEASURE_MEMORY
@@ -253,6 +264,9 @@ unsigned int SymbolTable::getCurrentScopeLevel() const {
 void SymbolTable::registerTempSymbol(Symbol* symbol) {
     if (symbol && scopes.length() > 0) {
         symbol->scope_level = current_scope_level_;
+        // Before inserting, if it's already there, we might want to update it or skip?
+        // Usually lifting generates unique names, but catch prongs might reuse names.
+        // For local temps, they MUST be unique.
         scopes.back()->insert(*symbol);
     }
 }
