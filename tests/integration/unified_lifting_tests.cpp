@@ -47,7 +47,8 @@ TEST_FUNC(ASTLifter_Unified) {
     // plus the original expression statements (now identifiers)
 
     // Total should be roughly 4 (vcl) + 4 (stmts) + 4 (calls) = 12
-    ASSERT_EQ(stmts->length(), 12);
+    // With top-down lifting, catch and orelse lowering blocks also contain their own lifting.
+    ASSERT_EQ(stmts->length(), 14);
 
     // With backward iteration in forEachChild(NODE_BLOCK_STMT), order should be preserved
     // and correctly nested for each statement.
