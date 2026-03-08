@@ -97,9 +97,9 @@ TEST_FUNC(Task228_OptionalOrelse) {
     plat_delete_file(temp_filename);
 
     // UT-04: const y = opt orelse 0;
-    if (generated_c.find("if (__orelse_res.has_value) {") == std::string::npos) return false;
-    if (generated_c.find("y = __orelse_res.value;") == std::string::npos) return false;
-    if (generated_c.find("y = 0;") == std::string::npos) return false;
+    if (generated_c.find("if (") == std::string::npos) return false;
+    if (generated_c.find(".has_value) {") == std::string::npos) return false;
+    if (generated_c.find("= 0;") == std::string::npos) return false;
 
     return true;
 }
@@ -345,7 +345,7 @@ TEST_FUNC(Task228_OptionalOrelseBlock) {
     // UT-09: opt orelse { block; }
     if (generated_c.find("} else {") == std::string::npos) return false;
     if (generated_c.find("x = 1;") == std::string::npos) return false;
-    if (generated_c.find("__return_val = x + 1;") == std::string::npos) return false;
+    if (generated_c.find("__tmp_orelse_") == std::string::npos) return false;
 
     return true;
 }

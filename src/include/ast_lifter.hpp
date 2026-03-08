@@ -156,6 +156,8 @@ private:
     void lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
 
+    void updateCaptureSymbols(ASTNode* node, const char* name, Symbol* new_sym);
+
     // Context Stacks
     ArenaAllocator* arena_;
     StringInterner* interner_;
