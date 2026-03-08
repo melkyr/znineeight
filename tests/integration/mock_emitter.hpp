@@ -150,6 +150,8 @@ public:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
+            case NODE_SWITCH_STMT:
+                return emitSwitchStatement(node->as.switch_stmt);
             case NODE_WHILE_STMT:
                 return emitWhileStatement(node->as.while_stmt);
             case NODE_FOR_STMT:
@@ -309,6 +311,47 @@ public:
         }
         ss << " __idx++; } }";
 
+        return ss.str();
+    }
+
+    /**
+     * @brief Emits a C89 switch statement.
+     */
+    std::string emitSwitchStatement(const ASTSwitchStmtNode* node) {
+        if (!node) return "/* INVALID SWITCH STMT */";
+        std::stringstream ss;
+        ss << "switch (" << emitExpression(node->expression) << ") { ";
+        if (node->prongs) {
+            for (size_t i = 0; i < node->prongs->length(); ++i) {
+                const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+                if (prong->is_else) {
+                    ss << "default: ";
+                } else {
+                    for (size_t j = 0; j < prong->items->length(); ++j) {
+                        ss << "case " << emitExpression((*prong->items)[j]) << ": ";
+                    }
+                }
+                if (prong->body->type == NODE_BLOCK_STMT) {
+                    ss << emitBlockStatement(&prong->body->as.block_stmt);
+                } else {
+                    // Try to emit as statement for better robustness
+                    if (prong->body->type == NODE_EXPRESSION_STMT ||
+                        prong->body->type == NODE_RETURN_STMT ||
+                        prong->body->type == NODE_BREAK_STMT ||
+                        prong->body->type == NODE_CONTINUE_STMT ||
+                        prong->body->type == NODE_UNREACHABLE) {
+                        ss << emitExpression(prong->body);
+                    } else {
+                        // Fallback to expression with semicolon if needed
+                        std::string body = emitExpression(prong->body);
+                        ss << body;
+                        if (!body.empty() && body[body.length()-1] != ';') ss << ";";
+                    }
+                }
+                ss << " break; ";
+            }
+        }
+        ss << "}";
         return ss.str();
     }
 

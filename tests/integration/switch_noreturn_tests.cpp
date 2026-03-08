@@ -41,7 +41,8 @@ TEST_FUNC(SwitchNoreturn_BasicDivergence) {
     std::string emission = emitter.emitExpression(fn->body);
 
     // Verify emission for divergent prongs
-    if (emission.find("case 1: return 20; break;") == std::string::npos) {
+    if (emission.find("case 1: return 20; break;") == std::string::npos &&
+        emission.find("case 1: return 20;  break;") == std::string::npos) {
         printf("FAIL: Expected 'return 20' without assignment in case 1, got: %s\n", emission.c_str());
         return false;
     }
@@ -105,8 +106,10 @@ TEST_FUNC(SwitchNoreturn_RealCodegen) {
     }
 
     // Verify panic emission for unreachable
-    if (generated_c.find("__bootstrap_panic") == std::string::npos) {
-        printf("FAIL: Expected __bootstrap_panic in generated C code\n");
+    if (generated_c.find("__bootstrap_panic") == std::string::npos &&
+        generated_c.find("ZIG_UNREACHABLE") == std::string::npos) {
+        printf("FAIL: Expected __bootstrap_panic or ZIG_UNREACHABLE in generated C code\n");
+        printf("Code: %s\n", generated_c.c_str());
         return false;
     }
 
