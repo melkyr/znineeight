@@ -14,7 +14,7 @@ const char* NameMangler::mangleFunction(const char* name,
     char* ptr = buffer;
     size_t remaining = sizeof(buffer);
 
-    if (name[0] == '_' && name[1] == '_') {
+    if (isInternalCompilerIdentifier(name)) {
         plat_strcpy(buffer, name);
         if (plat_strlen(buffer) > 31) buffer[31] = '\0';
         return interner_.intern(buffer);
@@ -90,7 +90,7 @@ const char* NameMangler::mangleTypeName(const char* name, const char* module) {
     char* ptr = buffer;
     size_t remaining = sizeof(buffer);
 
-    if (name[0] == '_' && name[1] == '_') {
+    if (isInternalCompilerIdentifier(name)) {
         plat_strcpy(buffer, name);
         if (plat_strlen(buffer) > 31) buffer[31] = '\0';
         return interner_.intern(buffer);

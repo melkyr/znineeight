@@ -92,11 +92,18 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     }
     base_buffer[len] = '\0';
 
-    // 2. Keyword/Reserved/Digit-start prefixing
+    // 2. Check for internal compiler identifiers (bypass mangling)
+    if (isInternalCompilerIdentifier(base_buffer)) {
+        // Just truncate and return
+        if (plat_strlen(base_buffer) > 31) base_buffer[31] = '\0';
+        char* interned = arena_.allocString(base_buffer);
+        assigned_names_.append(interned);
+        return interned;
+    }
+
+    // 3. Keyword/Reserved/Digit-start prefixing
     bool needs_prefix = false;
-    if (base_buffer[0] == '_' && base_buffer[1] == '_') {
-        needs_prefix = false;
-    } else if (base_buffer[0] >= '0' && base_buffer[0] <= '9') {
+    if (base_buffer[0] >= '0' && base_buffer[0] <= '9') {
         needs_prefix = true;
     } else if (is_c89_keyword(base_buffer) || is_c_reserved_name(base_buffer)) {
         needs_prefix = true;
