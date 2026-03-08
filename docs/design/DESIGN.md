@@ -97,6 +97,7 @@ extern Arena* zig_default_arena;
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
+* **`plat_printf_debug(const char* format, ...)`**: Variadic debug print utility. On Windows, outputs to both the debugger and stderr. On POSIX, outputs to stderr.
 * **`plat_abort()`**: Terminates the process immediately without calling destructors or performing CRT cleanup. Uses `ExitProcess(1)` on Windows.
 * **`join_paths(const char* dir, const char* rel_path, ArenaAllocator& arena)`**: Combines a directory and a relative path into a normalized path, handling both Windows and POSIX separators.
 * **`get_directory(const char* filepath, ArenaAllocator& arena)`**: Extracts the directory component from a file path.
@@ -212,7 +213,7 @@ filename.zig:23:5: error: type mismatch
     4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
     5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
     6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
-    7.  **Pass 5: AST Lifting (Task 230):** Transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission.
+    7.  **Pass 5: AST Lifting (Task 230):** Transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission. **Debugging**: Supports verbose logging via `--debug-lifter` to track transformations and temp variable registration.
     8.  **Pass 6: Metadata Preparation (Task 9.15):** A post-typechecking pass that transitively collects all reachable types for module headers, ensures consistent mangling (MSVC 6.0 compatible), and verifies complete type layouts.
     9.  **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
@@ -498,7 +499,9 @@ public:
     void enterScope();
     void exitScope();
     bool insert(const Symbol& symbol); // Inserts into the current scope.
+    void registerTempSymbol(Symbol* symbol); // Bypasses redeclaration checks.
     Symbol* lookup(const char* name);  // Searches from current scope outwards.
+    void dumpSymbols(const char* context); // Debug dump utility.
 };
 ```
 
@@ -648,6 +651,7 @@ To maintain C89 compatibility and compiler simplicity:
     *   Enum members are mangled as `EnumName_MemberName`.
     *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
     *   **Compiler-Generated Identifiers**: Any identifier beginning with `__` (such as `__tmp_if_1` or runtime intrinsics like `__bootstrap_print`) bypasses all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and do not conflict with user-defined symbols, which are forbidden from using the `__` prefix in Zig.
+*   **Debugging Improvements**: The compiler supports verbose logging and tracing via `--debug-lifter` and `--debug-codegen` flags.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
 **Defer Statement Semantics:**
@@ -974,6 +978,7 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **RAII State Guards**: Uses `IndentScope` and `DeferScopeGuard` to ensure state consistency (indentation level and defer stack) across complex control flow.
 - **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize expression lifting, type coercion, and initializer decomposition, ensuring consistent behavior across variable declarations and assignments.
 - **Comments**: Standard C89 `/* ... */` comment emission.
+- **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations and identifier resolution.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 - **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.

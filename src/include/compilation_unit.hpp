@@ -30,11 +30,15 @@ struct CompilationOptions {
     bool enable_double_free_analysis;
     bool enable_null_pointer_analysis;
     bool enable_lifetime_analysis;
+    bool debug_lifter;
+    bool debug_codegen;
 
     CompilationOptions()
         : enable_double_free_analysis(false),
           enable_null_pointer_analysis(false),
-          enable_lifetime_analysis(false) {}
+          enable_lifetime_analysis(false),
+          debug_lifter(false),
+          debug_codegen(false) {}
 };
 
 // Forward-declare to avoid circular dependencies.

@@ -3,6 +3,7 @@
 
 #include "../src/include/test_framework.hpp"
 #include "test_utils.hpp"
+#include "test_debug_config.hpp"
 #include "../src/include/platform.hpp"
 #include <cstdio>
 #include <cstring>
@@ -30,7 +31,17 @@ static char* read_source_from_file_common(const char* path) {
 }
 
 inline int run_batch(int argc, char* argv[], bool (*tests[])(), int num_tests) {
-    if (argc == 3) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--debug-lifter") == 0) {
+            TestDebugConfig::lifter_debug() = true;
+        } else if (strcmp(argv[i], "--debug-codegen") == 0) {
+            TestDebugConfig::codegen_debug() = true;
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            TestDebugConfig::enableAll();
+        }
+    }
+
+    if (argc == 3 && argv[1][0] == '-' && argv[1][1] == '-') {
         const char* flag = argv[1];
         const char* filepath = argv[2];
         char* source = read_source_from_file_common(filepath);

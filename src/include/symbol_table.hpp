@@ -102,6 +102,9 @@ public:
     Symbol* findInAnyScope(const char* name); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 
+    void registerTempSymbol(Symbol* symbol); // Register compiler-generated symbol
+    void dumpSymbols(const char* context);   // Debug dump
+
     const DynamicArray<Scope*>& getAllScopes() const { return all_scopes_; }
 };
 

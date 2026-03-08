@@ -23,6 +23,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **Buffered Output**: Uses a 4KB stack-based buffer to batch writes to the filesystem, minimizing system call overhead without requiring heap allocations in the hot path.
 - **Indentation Management**: Maintains a simple indentation level counter and provides a `writeIndent()` helper to ensure consistent code formatting (fixed at 4 spaces).
 - **C89-Compliant Comments**: Provides an `emitComment()` helper that ensures all comments use the `/* ... */` style, as `//` comments are not supported in standard C89.
+- **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations, identifier resolution, and scope management.
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
 - **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
 - **Modular Dispatch**: Large emission functions are decomposed into focused helpers to improve legibility and maintainability. For example, `emitExpression` dispatches to:
