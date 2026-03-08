@@ -54,21 +54,27 @@ TEST_FUNC(ASTLifter_BasicIf) {
     ASTNode* body = fn_node->as.fn_decl->body;
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
-    // Should now have 2 statements
-    ASSERT_EQ(stmts->length(), 2);
+    // Should now have 3 statements
+    ASSERT_EQ(3, stmts->length());
 
     ASTNode* stmt1 = (*stmts)[0];
-    ASSERT_EQ(stmt1->type, NODE_VAR_DECL);
+    ASSERT_EQ(NODE_VAR_DECL, stmt1->type);
     ASSERT_TRUE(strstr(stmt1->as.var_decl->name, "__tmp_if_") != NULL);
-    ASSERT_EQ(stmt1->as.var_decl->initializer->type, NODE_IF_EXPR);
 
     ASTNode* stmt2 = (*stmts)[1];
-    ASSERT_EQ(stmt2->type, NODE_EXPRESSION_STMT);
-    ASTNode* call = stmt2->as.expression_stmt.expression;
-    ASSERT_EQ(call->type, NODE_FUNCTION_CALL);
+    ASSERT_EQ(NODE_IF_STMT, stmt2->type);
+
+    ASTNode* stmt3 = (*stmts)[2];
+    ASSERT_EQ(NODE_EXPRESSION_STMT, stmt3->type);
+    ASTNode* call = stmt3->as.expression_stmt.expression;
+    ASSERT_TRUE(call != (void*)0);
+    ASSERT_EQ(NODE_FUNCTION_CALL, call->type);
+    ASSERT_TRUE(call->as.function_call != NULL);
+    ASSERT_TRUE(call->as.function_call->args != NULL);
+    ASSERT_EQ(1, call->as.function_call->args->length());
     ASTNode* arg = (*call->as.function_call->args)[0];
-    ASSERT_EQ(arg->type, NODE_IDENTIFIER);
-    ASSERT_EQ(arg->as.identifier.name, stmt1->as.var_decl->name);
+    ASSERT_EQ(NODE_IDENTIFIER, arg->type);
+    ASSERT_STREQ(stmt1->as.var_decl->name, arg->as.identifier.name);
 
     return true;
 }
@@ -117,18 +123,28 @@ TEST_FUNC(ASTLifter_Nested) {
     // With backward iteration in NODE_BLOCK_STMT and insert(idx, ...) in liftNode:
     // foo(try bar(if (true) 1 else 2));
     // Post-order visits: if, bar call, try
-    // 1. 'if' is lifted. Stmts: [var __tmp_if_1 = ..., foo(try bar(__tmp_if_1))]
-    // 2. 'try' is lifted. Stmts: [var __tmp_if_1 = ..., var __tmp_try_2 = try bar(__tmp_if_1), foo(__tmp_try_2)]
+    // 1. 'if' is lifted.
+    // 2. 'try' is lifted.
+    // Stmts:
+    // [0] var __tmp_if_1
+    // [1] if (true) { __tmp_if_1 = 1 } else { __tmp_if_1 = 2 }
+    // [2] var __tmp_try_2
+    // [3] var __tmp_try_res_3 = bar(__tmp_if_1)
+    // [4] if (__tmp_try_res_3.is_error) return ...
+    // [5] __tmp_try_2 = __tmp_try_res_3.payload
+    // [6] foo(__tmp_try_2)
 
-    ASSERT_EQ(stmts->length(), 3);
+    ASSERT_EQ(7, stmts->length());
 
-    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+    ASSERT_EQ(NODE_VAR_DECL, (*stmts)[0]->type);
     ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
 
-    ASSERT_EQ((*stmts)[1]->type, NODE_VAR_DECL);
-    ASSERT_TRUE(strstr((*stmts)[1]->as.var_decl->name, "__tmp_try_") != NULL);
+    ASSERT_EQ(NODE_IF_STMT, (*stmts)[1]->type);
 
-    ASSERT_EQ((*stmts)[2]->type, NODE_EXPRESSION_STMT);
+    ASSERT_EQ(NODE_VAR_DECL, (*stmts)[2]->type);
+    ASSERT_TRUE(strstr((*stmts)[2]->as.var_decl->name, "__tmp_try_") != NULL);
+
+    ASSERT_EQ(NODE_EXPRESSION_STMT, (*stmts)[6]->type);
 
     return true;
 }
@@ -170,15 +186,18 @@ TEST_FUNC(ASTLifter_ComplexAssignment) {
     ASTNode* body = fn_node->as.fn_decl->body;
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
-    ASSERT_EQ(stmts->length(), 2);
-    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+    ASSERT_EQ(3, stmts->length());
+    ASSERT_EQ(NODE_VAR_DECL, (*stmts)[0]->type);
     ASSERT_TRUE(strstr((*stmts)[0]->as.var_decl->name, "__tmp_if_") != NULL);
 
-    ASSERT_EQ((*stmts)[1]->type, NODE_EXPRESSION_STMT);
-    ASTNode* assign = (*stmts)[1]->as.expression_stmt.expression;
-    ASSERT_EQ(assign->type, NODE_ASSIGNMENT);
-    ASSERT_EQ(assign->as.assignment->rvalue->type, NODE_IDENTIFIER);
-    ASSERT_EQ(assign->as.assignment->rvalue->as.identifier.name, (*stmts)[0]->as.var_decl->name);
+    ASSERT_EQ(NODE_IF_STMT, (*stmts)[1]->type);
+
+    ASSERT_EQ(NODE_EXPRESSION_STMT, (*stmts)[2]->type);
+    ASTNode* assign = (*stmts)[2]->as.expression_stmt.expression;
+    ASSERT_TRUE(assign != (void*)0);
+    ASSERT_EQ(NODE_ASSIGNMENT, assign->type);
+    ASSERT_EQ(NODE_IDENTIFIER, assign->as.assignment->rvalue->type);
+    ASSERT_STREQ((*stmts)[0]->as.var_decl->name, assign->as.assignment->rvalue->as.identifier.name);
 
     return true;
 }
@@ -219,13 +238,16 @@ TEST_FUNC(ASTLifter_CompoundAssignment) {
     ASTNode* body = fn_node->as.fn_decl->body;
     DynamicArray<ASTNode*>* stmts = body->as.block_stmt.statements;
 
-    ASSERT_EQ(stmts->length(), 2);
-    ASSERT_EQ((*stmts)[0]->type, NODE_VAR_DECL);
+    ASSERT_EQ(3, stmts->length());
+    ASSERT_EQ(NODE_VAR_DECL, (*stmts)[0]->type);
 
-    ASSERT_EQ((*stmts)[1]->type, NODE_EXPRESSION_STMT);
-    ASTNode* assign = (*stmts)[1]->as.expression_stmt.expression;
-    ASSERT_EQ(assign->type, NODE_COMPOUND_ASSIGNMENT);
-    ASSERT_EQ(assign->as.compound_assignment->rvalue->type, NODE_IDENTIFIER);
+    ASSERT_EQ(NODE_IF_STMT, (*stmts)[1]->type);
+
+    ASSERT_EQ(NODE_EXPRESSION_STMT, (*stmts)[2]->type);
+    ASTNode* assign = (*stmts)[2]->as.expression_stmt.expression;
+    ASSERT_TRUE(assign != (void*)0);
+    ASSERT_EQ(NODE_COMPOUND_ASSIGNMENT, assign->type);
+    ASSERT_EQ(NODE_IDENTIFIER, assign->as.compound_assignment->rvalue->type);
 
     return true;
 }
