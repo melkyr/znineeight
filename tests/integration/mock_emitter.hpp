@@ -962,20 +962,22 @@ private:
     std::string emitTryExpression(const ASTTryExprNode* node) {
         if (!node) return "/* INVALID TRY */";
         std::stringstream ss;
-        ss << "{ " << getMangledTypeName(node->expression->resolved_type) << " __try_res_" << try_expr_counter_++ << " = " << emitExpression(node->expression) << "; ";
-        ss << "if (__try_res_" << (try_expr_counter_ - 1) << ".is_error) " << emitDefersForScopeExit() << "return __ret_err; ";
-        ss << "__ret = __try_res_" << (try_expr_counter_ - 1) << ".data.payload; }";
+        // The lifter handles this now, but if mock emitter is called on unlifted node...
+        ss << "{ " << getMangledTypeName(node->expression->resolved_type) << " __tmp_try_res_" << try_expr_counter_++ << " = " << emitExpression(node->expression) << "; ";
+        ss << "if (__tmp_try_res_" << (try_expr_counter_ - 1) << ".is_error) " << emitDefersForScopeExit() << "return __ret_err; ";
+        ss << "__ret = __tmp_try_res_" << (try_expr_counter_ - 1) << ".data.payload; }";
         return ss.str();
     }
 
     std::string emitCatchExpression(const ASTCatchExprNode* node) {
         if (!node) return "/* INVALID CATCH */";
         std::stringstream ss;
-        ss << "{ " << getMangledTypeName(node->payload->resolved_type) << " __catch_res_" << catch_expr_counter_++ << " = " << emitExpression(node->payload) << "; ";
-        ss << "if (__catch_res_" << (catch_expr_counter_ - 1) << ".is_error) { ";
-        if (node->error_name) ss << "int " << node->error_name << " = __catch_res_" << (catch_expr_counter_ - 1) << ".data.err; ";
+        // The lifter handles this now, but if mock emitter is called on unlifted node...
+        ss << "{ " << getMangledTypeName(node->payload->resolved_type) << " __tmp_catch_res_" << catch_expr_counter_++ << " = " << emitExpression(node->payload) << "; ";
+        ss << "if (__tmp_catch_res_" << (catch_expr_counter_ - 1) << ".is_error) { ";
+        if (node->error_name) ss << "int " << node->error_name << " = __tmp_catch_res_" << (catch_expr_counter_ - 1) << ".data.err; ";
         ss << "__ret = " << emitExpression(node->else_expr) << "; } ";
-        ss << "else { __ret = __catch_res_" << (catch_expr_counter_ - 1) << ".data.payload; } }";
+        ss << "else { __ret = __tmp_catch_res_" << (catch_expr_counter_ - 1) << ".data.payload; } }";
         return ss.str();
     }
 
