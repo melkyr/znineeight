@@ -12,14 +12,14 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 | 46    | FAILED | 5 Integration Tests (Try/Catch/Defer) |
 | 47    | FAILED | `OptionalOrelse`, `OptionalOrelseBlock`, `OptionalOrelseUnreachable` |
 | 48-54 | PASSED | None |
-| 55    | FAILED | `ASTLifter_BasicIf`, `ASTLifter_Nested`, `ASTLifter_ComplexAssignment`, `ASTLifter_CompoundAssignment` |
+| 55    | PASSED | None |
 | 56    | PASSED | None |
 
 ---
 
 ## Detailed Failure Analysis
 
-### 1. Missing Variable Declarations (Batches 45, 46, 47)
+### 1. Missing Variable Declarations (Batches 45, 46, 47) [PARTIALLY RESOLVED]
 **Symptoms**: Generated C code fails to compile due to undeclared identifiers (e.g., `__tmp_catch_res_4`).
 **Note**: Mangling issue (prefixing `__` with `z_`) has been RESOLVED (Task 9.16).
 **Remaining Issues**:
@@ -27,16 +27,11 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 *   The `C89Emitter::emitLocalVarDecl` returns early if `decl->symbol` is `NULL`, meaning the `typedef` and variable declaration are never emitted.
 *   Even though mangling is now bypassed for `__` identifiers, the variables are still not being declared in the C code because they lack `Symbol` entries in the local table.
 
-### 2. Statement Count Mismatch (Batch 55)
-**Symptoms**:
-*   `ASTLifter_BasicIf`: Expected 3 but got 2 (tests/integration/ast_lifter_tests.cpp:58)
-*   `ASTLifter_Nested`: Expected 7 but got 3 (tests/integration/ast_lifter_tests.cpp:123)
-*   `ASTLifter_ComplexAssignment`: Expected 3 but got 2 (tests/integration/ast_lifter_tests.cpp:173)
-*   `ASTLifter_CompoundAssignment`: Expected 3 but got 2 (tests/integration/ast_lifter_tests.cpp:222)
-**Possible Cause**:
-*   The lifter tests in `tests/integration/ast_lifter_tests.cpp` were written when the lifter only produced a `NODE_VAR_DECL` with an initializer.
-*   The current `ControlFlowLifter` performs a "full lowering" strategy, splitting constructs into multiple statements (e.g., a declaration followed by an `if` statement for an `if` expression).
-*   Example: `foo(if (b) 1 else 2)` now becomes 3 statements (Decl, If-Stmt, Call) instead of the expected 2.
+### 2. Statement Count Mismatch (Batch 55) [RESOLVED]
+**Resolution**:
+*   Updated `tests/integration/ast_lifter_tests.cpp` to reflect the "full lowering" strategy of the `ControlFlowLifter`.
+*   The lifter now splits expression-valued control flow into a `NODE_VAR_DECL`, a lowering statement (e.g., `NODE_IF_STMT`), and the original statement updated to use the temporary.
+*   Expectations adjusted to correctly count and verify these additional nodes.
 
 ### 3. Codegen Pattern Mismatch (Batch 43, 44)
 **Symptoms**: Tests fail to find expected strings like `__return_val = 1;` or `__bootstrap_panic`.
