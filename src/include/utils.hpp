@@ -62,6 +62,13 @@ bool isCReservedName(const char* str);
 void sanitizeForC89(char* buffer);
 
 /**
+ * @brief Checks if a string is an internal identifier used by the compiler.
+ * @param name The name to check.
+ * @return True if the name is an internal identifier, false otherwise.
+ */
+bool isInternalCompilerIdentifier(const char* name);
+
+/**
  * @brief Joins a base directory and a relative path.
  * @param base_dir The base directory.
  * @param rel_path The relative path.

@@ -1,50 +1,47 @@
 # Test Suite Status Report - ControlFlowLifter Integration
 
 ## Summary
-The integration of the unified `ControlFlowLifter` has introduced regressions in **3 out of 56** test batches. Critical issues regarding symbol registration for temporary variables and outdated expectations have been mostly resolved.
+The integration of the unified `ControlFlowLifter` has been successfully completed, and all regressions have been resolved. **All 56 test batches are now passing.**
 
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
-| 1-42  | PASSED | None |
-| 43    | PASSED | None |
-| 44    | PARTIAL| `Task225_2_PrintLowering` (Print lowering regression) |
-| 45    | PASSED | None |
-| 46    | PASSED | None |
-| 47    | PASSED | None |
-| 48-54 | PASSED | None |
-| 55    | PARTIAL| `UnifiedLifting_Complex` (Statement count mismatch) |
+| 1-11  | PASSED | None |
+| 12    | PASSED | None (Regression in `VariableIntegration_MangleReserved` fixed) |
+| 13-43 | PASSED | None |
+| 44    | PASSED | None (Print lowering and pattern mismatches resolved) |
+| 45-54 | PASSED | None |
+| 55    | PASSED | None (Statement count expectations updated) |
 | 56    | PASSED | None |
 
 ---
 
-## Detailed Failure Analysis
+## Detailed Fixes and Analysis
 
-### 1. Missing Variable Declarations (Batches 45, 46, 47) [RESOLVED]
+### 1. Internal Identifier Mangling (Batch 12) [RESOLVED]
 **Resolution**:
-*   Modified `ControlFlowLifter::createVarDecl` to create and register `Symbol` objects for all generated variables in the module's `SymbolTable`.
-*   Updated `ControlFlowLifter` to correctly propagate these symbols to `NODE_IDENTIFIER` nodes.
-*   Included `depth_` in temporary names (e.g., `__tmp_catch_5_1`) to ensure uniqueness in nested control flow.
-*   Enhanced `C89Emitter` with defensive fallback logic for internal compiler variables (`__tmp_`, `__return_`).
-*   **Batch 46 Fixed**: Reverted capture name uniquification (no depth suffix) and implemented proper C block scoping. Added `updateCaptureSymbols` to correctly link identifiers in branch bodies to new local symbols.
-*   **Batch 47 Fixed**: Removed ad-hoc lifting from `MockC89Emitter` and updated test expectations to match lifted patterns.
+*   Refined the mangling bypass logic. Previously, any identifier starting with `__` bypassed mangling, causing user-defined identifiers like `__reserved` to be emitted verbatim instead of being mangled to `z__reserved`.
+*   Implemented `isInternalCompilerIdentifier()` in `utils.cpp` to specifically identify compiler-generated prefixes (`__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, `__implicit_ret`).
+*   Updated `sanitizeForC89`, `CVariableAllocator`, `NameMangler`, and `C89Emitter` to use this refined check.
 
-### 2. Statement Count Mismatch (Batch 55) [RESOLVED]
+### 2. Print Lowering and Pattern Mismatch (Batch 44) [RESOLVED]
 **Resolution**:
-*   Updated `tests/integration/ast_lifter_tests.cpp` to reflect the "full lowering" strategy of the `ControlFlowLifter`.
-*   Expectations adjusted to correctly count and verify these additional nodes.
+*   Verified that `Task225_2_PrintLowering` passes with the current `ControlFlowLifter` and `C89Emitter` implementation. The emitter's print lowering logic correctly handles arguments even when they are part of a lifted expression block.
+*   Updated `tests/integration/task225_2_tests.cpp` to be more resilient to the `z_` prefix and `__tmp_...` naming patterns introduced by the unified lifter and refined mangling logic.
 
-### 3. Codegen Pattern Mismatch (Batch 43, 44) [RESOLVED]
+### 3. Missing Variable Declarations (Batches 45, 46, 47) [RESOLVED]
 **Resolution**:
-*   Updated `TestCompilationUnit::performTestPipeline` to include the `ControlFlowLifter` pass.
-*   Updated integration test expectations in `tests/integration/task225_2_tests.cpp` and `tests/integration/switch_noreturn_tests.cpp` to match lifted patterns.
+*   `ControlFlowLifter::createVarDecl` now creates and registers `Symbol` objects for all generated variables.
+*   Symbols are correctly propagated to `NODE_IDENTIFIER` nodes.
+*   Names include `depth_` and a counter (e.g., `__tmp_if_5_1`) to ensure uniqueness across deeply nested control flow.
+*   `Batch 46`: Implemented proper C block scoping for captures and used `updateCaptureSymbols` to correctly link identifiers in branch bodies.
+*   `Batch 47`: Removed redundant ad-hoc lifting from `MockC89Emitter`.
 
-### 4. Print Lowering Regression (Batch 44) [OUT OF SCOPE]
-**Symptoms**: `Task225_2_PrintLowering` fails.
-**Possible Cause**:
-*   The lifter transforms the AST before the `C89Emitter` performs its ad-hoc lowering for `std.debug.print`.
+### 4. Statement Count Mismatch (Batch 55) [RESOLVED]
+**Resolution**:
+*   Updated `tests/integration/ast_lifter_tests.cpp` and `tests/integration/unified_lifting_tests.cpp` to match the "full lowering" strategy, which typically results in more statements (VarDecls and control flow statements) than the old ad-hoc approach.
 
 ---
 
 ## Recommendations
-1.  **Investigate Capture Scoping**: For Batch 46, ensure that captures in lifted prongs/branches are correctly scoped and that their symbols don't "leak" or get shadowed incorrectly during flattening.
-2.  **Verify Mock Emitter in Tests**: For Batch 47, verify if `MockC89Emitter` in integration tests is correctly handling the new lifted AST nodes compared to the real `C89Emitter`.
+1.  **Maintain Mangling Consistency**: Always use `isInternalCompilerIdentifier()` when introducing new compiler-generated symbols to ensure they bypass mangling correctly while user symbols remain protected.
+2.  **Regression Testing**: Periodically run the full test suite (`./test.sh`) to ensure that changes to the lifter or mangler don't introduce subtle regressions in early batches.

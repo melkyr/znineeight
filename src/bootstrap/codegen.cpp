@@ -2621,7 +2621,7 @@ void C89Emitter::emitCharLiteral(const ASTCharLiteralNode* node) {
 const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     if (!zig_name) return "z_anonymous";
 
-    if (zig_name[0] == '_' && zig_name[1] == '_') {
+    if (isInternalCompilerIdentifier(zig_name)) {
         /* Truncate if needed, then return directly (no prefix, no uniquification) */
         char buf[256];
         plat_strcpy(buf, zig_name);

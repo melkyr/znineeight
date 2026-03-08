@@ -50,6 +50,18 @@ bool isCReservedName(const char* str) {
     return false;
 }
 
+bool isInternalCompilerIdentifier(const char* name) {
+    if (!name) return false;
+    if (plat_strncmp(name, "__tmp_", 6) == 0) return true;
+    if (plat_strncmp(name, "__return_", 9) == 0) return true;
+    if (plat_strncmp(name, "__bootstrap_", 12) == 0) return true;
+    if (plat_strncmp(name, "__zig_label_", 12) == 0) return true;
+    if (plat_strncmp(name, "__for_", 6) == 0) return true;
+    if (plat_strncmp(name, "__make_slice_", 13) == 0) return true;
+    if (plat_strncmp(name, "__implicit_ret", 14) == 0) return true;
+    return false;
+}
+
 void sanitizeForC89(char* buffer) {
     if (!buffer || buffer[0] == '\0') return;
 
@@ -60,9 +72,10 @@ void sanitizeForC89(char* buffer) {
         }
     }
 
-    // 2. Check for reserved names, keywords, or starting with digit
-    if (buffer[0] == '_' && buffer[1] == '_') return;
+    // 2. Check for internal compiler identifiers (bypass mangling)
+    if (isInternalCompilerIdentifier(buffer)) return;
 
+    // 3. Check for reserved names, keywords, or starting with digit
     bool needs_prefix = false;
     if (buffer[0] >= '0' && buffer[0] <= '9') {
         needs_prefix = true;
