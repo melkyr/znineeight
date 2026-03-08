@@ -6,11 +6,11 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
 | 1-42  | PASSED | None |
-| 43    | FAILED | `SwitchNoreturn_RealCodegen` |
-| 44    | FAILED | `Task225_2_BracelessIfExpr`, `Task225_2_PrintLowering` |
+| 43    | PASSED | None |
+| 44    | PARTIAL| `Task225_2_PrintLowering` (Print lowering regression) |
 | 45    | FAILED | `ErrorHandling_C89Execution` |
 | 46    | FAILED | 5 Integration Tests (Try/Catch/Defer) |
-| 47    | FAILED | `OptionalOrelse`, `OptionalOrelseBlock`, `OptionalOrelseUnreachable` |
+| 47    | FAILED | `OptionalOrelse`, `OptionalOrelseBlock` |
 | 48-54 | PASSED | None |
 | 55    | PASSED | None |
 | 56    | PASSED | None |
@@ -33,11 +33,16 @@ The integration of the unified `ControlFlowLifter` has introduced regressions in
 *   The lifter now splits expression-valued control flow into a `NODE_VAR_DECL`, a lowering statement (e.g., `NODE_IF_STMT`), and the original statement updated to use the temporary.
 *   Expectations adjusted to correctly count and verify these additional nodes.
 
-### 3. Codegen Pattern Mismatch (Batch 43, 44)
+### 3. Codegen Pattern Mismatch (Batch 43, 44) [RESOLVED]
 **Symptoms**: Tests fail to find expected strings like `__return_val = 1;` or `__bootstrap_panic`.
-**Possible Cause**:
-*   **Batch 44**: `Task225_2_BracelessIfExpr` expects a direct assignment to `__return_val`. Because the `if` expression is lifted, the assignment is now indirect (`__tmp_if_1 = 1; __return_val = __tmp_if_1;`).
-*   **Batch 43**: Lifting a switch containing an `unreachable` prong might be causing the `NODE_UNREACHABLE` to be wrapped or transformed in a way that the `C89Emitter` no longer emits the expected `__bootstrap_panic` call in the specific context the test searches for.
+**Root Cause**:
+1. `TestCompilationUnit::performTestPipeline` did not call the `ControlFlowLifter`. Since `C89Emitter` no longer performs ad-hoc lifting, control-flow expressions (if/switch/try/catch/orelse) were not emitted at all, causing expected strings like `__bootstrap_panic` (from `unreachable`) to be missing.
+2. Even when lifted, the generated code pattern changes. `return if (b) 1 else 2` becomes a statement `if (b) { __tmp_if_1 = 1; } else { __tmp_if_1 = 2; }` followed by `return __tmp_if_1;`. The tests previously expected direct assignments to `__return_val` or literals, which are no longer present in the same form.
+
+**Resolution**:
+*   Updated `TestCompilationUnit::performTestPipeline` in `tests/integration/test_compilation_unit.hpp` to include the `ControlFlowLifter` pass.
+*   Updated integration test expectations in `tests/integration/task225_2_tests.cpp` and `tests/integration/switch_noreturn_tests.cpp` to match lifted patterns.
+*   Updated `MockC89Emitter` in `tests/integration/mock_emitter.hpp` to support `NODE_SWITCH_STMT`.
 
 ### 4. Print Lowering Regression (Batch 44)
 **Symptoms**: `Task225_2_PrintLowering` fails.

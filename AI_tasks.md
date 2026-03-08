@@ -1838,6 +1838,7 @@ if (parent && parent->type == NODE_ASSIGNMENT) {
 
 ### Task 237: Hook Lifter into Pipeline + Simplify Emitter (DONE)
 **Goal**: Run lifting after type checking; remove ad-hoc lifting from codegen.
+    - **Update**: Fixed integration test regressions (Batches 43, 44) by enabling `ControlFlowLifter` in `TestCompilationUnit` and updating expectations to match lifted code patterns.
 
 ```cpp
 // In CompilationUnit::performFullPipeline:
