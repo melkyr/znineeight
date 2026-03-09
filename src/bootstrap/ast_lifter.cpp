@@ -54,7 +54,7 @@ ControlFlowLifter::ScopeGuard::~ScopeGuard() {
 ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* interner, ErrorHandler* error_handler)
     : arena_(arena), interner_(interner), error_handler_(error_handler),
       unit_(NULL), module_name_(NULL), debug_mode_(false),
-      tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(200),
+      tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(1000),
       registered_temps_(*arena),
       stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena), fn_stack_(*arena) {}
 

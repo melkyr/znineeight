@@ -9,8 +9,8 @@
 #include <cassert> // For assert()
 
 // Define the maximum recursion depth for the parser to prevent stack overflows.
-// A value of 255 is a reasonable limit for expressions.
-#define MAX_PARSER_RECURSION_DEPTH 255
+// Increased to 1000 to support deeply nested stress tests.
+#define MAX_PARSER_RECURSION_DEPTH 1000
 
 // Forward-declarations for core data structures
 struct ASTNode;
