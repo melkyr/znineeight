@@ -1,11 +1,7 @@
 {
   "name": "RetroZig",
   "version": 1,
-  "stable": true,
-  "tags": ["bootstrap", "c89", "minimal"],
-  "author": {
-    "name": "Jules",
-    "role": "Engineer"
-  },
-  "bugs": null
+  "is_awesome": true,
+  "features": ["arena", "c89", "zig"],
+  "meta": null
 }
