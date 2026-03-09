@@ -124,7 +124,7 @@ private:
     ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
     ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
 
-    static const int MAX_VISIT_DEPTH = 200;
+    static const int MAX_VISIT_DEPTH = 1000;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;

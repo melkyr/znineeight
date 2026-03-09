@@ -1158,5 +1158,6 @@ TEST_FUNC(ASTLifter_Nested);
 TEST_FUNC(ASTLifter_ComplexAssignment);
 TEST_FUNC(ASTLifter_CompoundAssignment);
 TEST_FUNC(ASTLifter_Unified);
+TEST_FUNC(ASTLifter_MemoryStressTest);
 
 #endif // TEST_DECLARATIONS_HPP

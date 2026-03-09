@@ -52,6 +52,13 @@ The RetroZig project utilizes arena-based allocation for both the compiler itsel
 #### 3.1.1 Bootstrap Compiler Memory (`memory.hpp`)
 **Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
 
+#### 3.1.1.1 Memory Verification Gate
+To ensure the compiler operates reliably on legacy hardware with 16MB–64MB of RAM, a **Memory Verification Gate** is implemented as part of the integration test suite. This gate stresses the compiler's memory-intensive passes—specifically the `ControlFlowLifter`—using programmatically generated, deeply nested control-flow structures (100+ levels).
+
+**Key Metrics Verified:**
+- **Peak Usage**: Must remain strictly under the 16MB budget (`ArenaAllocator::getPeakAllocated()`).
+- **Growth Heuristic**: The lifting pass, which clones AST nodes and generates temporary variables, must not cause an exponential blow-up. Memory growth during lifting is expected to remain proportional to the total compiler state (typically verified as `growth < state_before_lift * 5`).
+
 ```cpp
 class ArenaAllocator {
     struct Chunk {

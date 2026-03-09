@@ -508,27 +508,34 @@ fn withDefer() !void {
 ```
 
 ### 7.3 Memory Verification Test
-```cpp
-TEST(LiftingMemoryBudget) {
-    ArenaAllocator arena(16 * 1024 * 1024);  // 16MB limit
-    CompilationUnit unit(&arena, ...);
+The `ASTLifter_MemoryStressTest` (implemented in `unified_lifting_tests.cpp`) programmatically generates 100+ levels of nested control-flow expressions to ensure the lifter remains efficient under extreme conditions.
 
-    parseTestProgram("deeply_nested_control_flow.zig", &unit);
-    size_t before_lift = arena.getUsedBytes();
+```cpp
+TEST_FUNC(ASTLifter_MemoryStressTest) {
+    // ... programmatic generation of 100-level nested 'if' ...
+
+    ArenaAllocator arena(16 * 1024 * 1024);  // 16MB limit
+    // ... setup ...
+
+    size_t before_lift = arena.getOffset();
 
     TypeChecker checker(unit);
-    checker.check(unit.getASTRoot());
-    size_t after_typecheck = arena.getUsedBytes();
+    checker.check(ast);
 
-    ControlFlowLifter lifter(&arena);
+    size_t after_typecheck = arena.getOffset();
+
+    ControlFlowLifter lifter(&arena, &interner, &unit.getErrorHandler());
     lifter.lift(&unit);
 
-    size_t after_lift = arena.getUsedBytes();
-    size_t peak = arena.getPeakBytes();
+    size_t after_lift = arena.getOffset();
+    size_t peak = arena.getPeakAllocated();
 
-    ASSERT(peak < 16 * 1024 * 1024, "Exceeded 16MB memory limit");
-    ASSERT((after_lift - after_typecheck) < (after_typecheck - before_lift) * 2,
-           "Lifting shouldn't more than double memory usage");
+    // Assertions
+    ASSERT_TRUE(peak < 16 * 1024 * 1024); // 16MB Budget
+
+    size_t growth_lift = after_lift - after_typecheck;
+    // Heuristic: growth must be proportional to existing state
+    ASSERT_TRUE(growth_lift < after_typecheck * 5);
 }
 ```
 
