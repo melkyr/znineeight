@@ -279,6 +279,16 @@ public:
     void emitTypeDefinition(Type* type);
 
     /**
+     * @brief Emits the body of a struct type (struct { ... }).
+     */
+    void emitStructBody(Type* type);
+
+    /**
+     * @brief Emits the body of a union type (union { ... }).
+     */
+    void emitUnionBody(Type* type);
+
+    /**
      * @brief Returns true if the expression is a C89 constant initializer.
      * @param node The expression node.
      */
@@ -330,6 +340,11 @@ public:
      * @brief Gets the Zig primitive name for a type (e.g. "i32", "u64").
      */
     const char* getZigTypeName(Type* type) const;
+
+    /**
+     * @brief Gets a sanitized field name (mangled if it's a C keyword).
+     */
+    const char* getSafeFieldName(const char* name);
 
     /**
      * @brief Gets a mangled name for a type (e.g. "ptr_i32" for *i32).
