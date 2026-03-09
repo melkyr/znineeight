@@ -76,6 +76,7 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
+    void coerceNode(ASTNode** node_slot, Type* target_type);
 
     Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
     bool is_type_undefined(Type* t);

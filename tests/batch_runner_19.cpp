@@ -63,6 +63,7 @@
 #include "integration/task9_9_union_capture_tests.cpp"
 #include "integration/task_9_8_verification_tests.cpp"
 #include "integration/unified_lifting_tests.cpp"
+#include "integration/union_slice_lifting_tests.cpp"
 #include "integration/union_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_loop_tests.cpp"

@@ -83,14 +83,12 @@ fn createJsonValue(p: *Parser, tag: JsonValueTag) *JsonValue {
     return v_ptr;
 }
 
-pub fn parseJson(arena: *void, input: []const u8) ParseError!JsonValue {
-    var p: Parser = undefined;
-    p.input = input;
-    p.pos = 0;
-    p.arena = arena;
-    const result = try parseValue(&p);
-    skipWhitespace(&p);
-    if (p.pos < p.input.len) {
+fn parseNull(p: *Parser) ParseError!JsonValue {
+    const input = p.input;
+    const pos = p.pos;
+    if (input.len - pos < 4 or
+        !slice_eql(input[pos..][0..4], "null"))
+    {
         return error.InvalidSyntax;
     }
     return result.*;

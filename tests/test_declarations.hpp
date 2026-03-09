@@ -1160,4 +1160,9 @@ TEST_FUNC(ASTLifter_CompoundAssignment);
 TEST_FUNC(ASTLifter_Unified);
 TEST_FUNC(ASTLifter_MemoryStressTest);
 
+// Batch 56: Union Slice Lifting
+TEST_FUNC(UnionSliceLifting_Basic);
+TEST_FUNC(UnionSliceLifting_Coercion);
+TEST_FUNC(UnionSliceLifting_ManualConstruction);
+
 #endif // TEST_DECLARATIONS_HPP

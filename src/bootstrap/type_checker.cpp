@@ -1142,30 +1142,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             arg_type = promoted;
         }
 
-        /* Implicit Array to Slice coercion */
-        if (param_type->kind == TYPE_SLICE && arg_type->kind == TYPE_ARRAY) {
-            if (areTypesEqual(param_type->as.slice.element_type, arg_type->as.array.element_type)) {
-                /* Wrap in synthetic slice node */
-                slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
-                plat_memset(slice_node, 0, sizeof(ASTNode));
-                slice_node->type = NODE_ARRAY_SLICE;
-                slice_node->loc = arg_node->loc;
-                slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
-                plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
-                slice_node->as.array_slice->array = arg_node;
-
-                /* Recursively call visitArraySlice to populate base_ptr and len */
-                visitArraySlice(slice_node->as.array_slice);
-                slice_node->resolved_type = param_type;
-                (*node->args)[i] = slice_node;
-                arg_type = param_type;
-            }
-        }
-
-        if (needsStringLiteralCoercion(arg_node, param_type)) {
-            coerceStringLiteralToSlice(&(*node->args)[i], param_type, arg_node->loc);
-            arg_type = param_type;
-        }
+        /* Consistent Coercion Handling */
+        coerceNode(&(*node->args)[i], param_type);
+        arg_type = (*node->args)[i]->resolved_type;
 
         if (!areTypesCompatible(param_type, arg_type)) {
             char param_type_str[64];
@@ -1199,7 +1178,6 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     Type* lvalue_type;
     Type* rvalue_type;
     Type* promoted;
-    ASTNode* slice_node;
 
     /* Step 0: Ensure the l-value is a valid l-value.
        This check is implicitly handled by isLValueConst and the type checks below.
@@ -1226,34 +1204,14 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
         rvalue_type = promoted;
     }
 
-    /* Implicit Array to Slice coercion. */
-    if (lvalue_type->kind == TYPE_SLICE && rvalue_type->kind == TYPE_ARRAY) {
-        if (areTypesEqual(lvalue_type->as.slice.element_type, rvalue_type->as.array.element_type)) {
-            /* Wrap in synthetic slice node. */
-            slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
-            plat_memset(slice_node, 0, sizeof(ASTNode));
-            slice_node->type = NODE_ARRAY_SLICE;
-            slice_node->loc = node->rvalue->loc;
-            slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
-            plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
-            slice_node->as.array_slice->array = node->rvalue;
-
-            visitArraySlice(slice_node->as.array_slice);
-            slice_node->resolved_type = lvalue_type;
-            node->rvalue = slice_node;
-            rvalue_type = lvalue_type;
-        }
-    }
+    /* Consistent Coercion Handling */
+    coerceNode(&node->rvalue, lvalue_type);
+    rvalue_type = node->rvalue->resolved_type;
 
     /* Step 3: Check if the r-value type is assignable to the l-value type using strict C89 rules. */
     if (!IsTypeAssignableTo(rvalue_type, lvalue_type, node->rvalue->loc, node->rvalue)) {
         /* IsTypeAssignableTo already reports a detailed error. */
         return get_g_type_undefined();
-    }
-
-    if (needsStringLiteralCoercion(node->rvalue, lvalue_type)) {
-        coerceStringLiteralToSlice(&node->rvalue, lvalue_type, node->rvalue->loc);
-        rvalue_type = lvalue_type;
     }
 
     injectPtrAccessIfNeeded(node->rvalue, lvalue_type);
@@ -1904,6 +1862,19 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
 
     if (areTypesEqual(then_type, else_type)) return then_type;
 
+    /* Distribute Coercions: if a control-flow expression is used where a common type is expected,
+       we try to coerce both branches to a compatible common type. */
+    if (then_type->kind == TYPE_SLICE || else_type->kind == TYPE_SLICE) {
+        if (areTypesCompatible(then_type, else_type)) {
+             coerceNode(&node->else_expr, then_type);
+             return then_type;
+        }
+        if (areTypesCompatible(else_type, then_type)) {
+             coerceNode(&node->then_expr, else_type);
+             return else_type;
+        }
+    }
+
     if (areTypesCompatible(then_type, else_type)) return then_type;
     if (areTypesCompatible(else_type, then_type)) return else_type;
 
@@ -2016,29 +1987,9 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
                 return reportAndReturnUndefined(parent->loc, ERR_MISSING_RETURN_VALUE, NULL);
             }
         } else {
-            /* Implicit Array to Slice coercion */
-            if (current_fn_return_type_->kind == TYPE_SLICE && return_type && return_type->kind == TYPE_ARRAY) {
-                if (areTypesEqual(current_fn_return_type_->as.slice.element_type, return_type->as.array.element_type)) {
-                    /* Wrap in synthetic slice node */
-                    ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
-                    plat_memset(slice_node, 0, sizeof(ASTNode));
-                    slice_node->type = NODE_ARRAY_SLICE;
-                    slice_node->loc = node->expression->loc;
-                    slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
-                    plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
-                    slice_node->as.array_slice->array = node->expression;
-
-                    visitArraySlice(slice_node->as.array_slice);
-                    slice_node->resolved_type = current_fn_return_type_;
-                    node->expression = slice_node;
-                    return_type = current_fn_return_type_;
-                }
-            }
-
-            if (needsStringLiteralCoercion(node->expression, current_fn_return_type_)) {
-                coerceStringLiteralToSlice(&node->expression, current_fn_return_type_, node->expression->loc);
-                return_type = current_fn_return_type_;
-            }
+            /* Consistent Coercion Handling */
+            coerceNode(&node->expression, current_fn_return_type_);
+            return_type = node->expression->resolved_type;
 
             if (return_type && !areTypesCompatible(current_fn_return_type_, return_type)) {
                 /* Error: return type mismatch */
@@ -2532,6 +2483,14 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
         return get_g_type_noreturn();
     }
 
+    /* Distribute Coercions across all prongs if needed */
+    if (common_type->kind == TYPE_SLICE) {
+        for (i = 0; i < node->prongs->length(); ++i) {
+            ASTSwitchProngNode* prong = (*node->prongs)[i];
+            coerceNode(&prong->body, common_type);
+        }
+    }
+
     return common_type;
 }
 
@@ -2748,6 +2707,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
         if (declared_type) {
             if (initializer_type && !is_type_undefined(initializer_type)) {
+                    /* Consistent Coercion Handling */
+                    coerceNode(&node->initializer, declared_type);
+                    initializer_type = node->initializer->resolved_type;
+
                 if (!IsTypeAssignableTo(initializer_type, declared_type, node->initializer->loc)) {
                     return get_g_type_undefined();
                 }
@@ -3494,6 +3457,11 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
         /* 2. Type check initializer values */
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
+
+        /* Consistent Coercion Handling */
+        coerceNode(&init->value, field_type);
+        val_type = init->value->resolved_type;
+
         if (val_type && !IsTypeAssignableTo(val_type, field_type, init->loc)) {
              /* IsTypeAssignableTo already reports the error */
         }
@@ -5563,6 +5531,69 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
     node->as.integer_literal.resolved_type = type;
     node->resolved_type = type;
     return node;
+}
+
+void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
+    if (!node_slot || !*node_slot || !target_type) return;
+    ASTNode* node = *node_slot;
+    Type* source_type = node->resolved_type;
+    if (!source_type) source_type = visit(node);
+    if (!source_type || is_type_undefined(source_type)) return;
+
+    if (source_type == target_type) return;
+
+    /* Handle recursion for control-flow expressions (distributive property) */
+    if (node->type == NODE_IF_EXPR) {
+        coerceNode(&node->as.if_expr->then_expr, target_type);
+        coerceNode(&node->as.if_expr->else_expr, target_type);
+        node->resolved_type = target_type;
+        return;
+    }
+
+    if (node->type == NODE_SWITCH_EXPR) {
+        if (node->as.switch_expr->prongs) {
+            for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                coerceNode(&(*node->as.switch_expr->prongs)[i]->body, target_type);
+            }
+        }
+        node->resolved_type = target_type;
+        return;
+    }
+
+    /* Coercion 1: Array -> Slice */
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
+        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type)) {
+            ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(slice_node, 0, sizeof(ASTNode));
+            slice_node->type = NODE_ARRAY_SLICE;
+            slice_node->loc = node->loc;
+            slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
+            plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+            slice_node->as.array_slice->array = node;
+
+            visitArraySlice(slice_node->as.array_slice);
+            slice_node->resolved_type = target_type;
+            *node_slot = slice_node;
+            return;
+        }
+    }
+
+    /* Coercion 2: String Literal -> Slice */
+    if (needsStringLiteralCoercion(node, target_type)) {
+        coerceStringLiteralToSlice(node_slot, target_type, node->loc);
+        return;
+    }
+
+    /* Coercion 3: Slice -> Slice (const conversion) */
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
+        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
+            /* If elements match, we just update the type to the target type (e.g. adding const).
+               Since slices are passed by value and have identical C representation,
+               a simple type change is sufficient. */
+            node->resolved_type = target_type;
+            return;
+        }
+    }
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
