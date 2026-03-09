@@ -1159,6 +1159,9 @@ TEST_FUNC(ASTLifter_ComplexAssignment);
 TEST_FUNC(ASTLifter_CompoundAssignment);
 TEST_FUNC(ASTLifter_Unified);
 TEST_FUNC(ASTLifter_MemoryStressTest);
+TEST_FUNC(Integration_Return_Try_I32);
+TEST_FUNC(Integration_Return_Try_Void);
+TEST_FUNC(Integration_Return_Try_In_Expression);
 
 // Batch 56: Union Slice Lifting
 TEST_FUNC(UnionSliceLifting_Basic);

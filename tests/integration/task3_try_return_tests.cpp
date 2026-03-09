@@ -94,30 +94,6 @@ static bool run_integration_test_task3(const char* source, const char* expected_
     return success;
 }
 
-TEST_FUNC(Integration_Return_Try_I32);
-TEST_FUNC(Integration_Return_Try_Void);
-TEST_FUNC(Integration_Return_Try_In_Expression);
-
-int main() {
-    int passed = 0;
-    int total = 0;
-
-    total++;
-    printf("Running Integration_Return_Try_I32...\n");
-    if (test_Integration_Return_Try_I32()) passed++;
-
-    total++;
-    printf("Running Integration_Return_Try_Void...\n");
-    if (test_Integration_Return_Try_Void()) passed++;
-
-    total++;
-    printf("Running Integration_Return_Try_In_Expression...\n");
-    if (test_Integration_Return_Try_In_Expression()) passed++;
-
-    printf("Passed %d/%d tests\n", passed, total);
-    return (passed == total) ? 0 : 1;
-}
-
 TEST_FUNC(Integration_Return_Try_I32) {
     const char* source =
         "const std = @import(\"std.zig\");\n"
