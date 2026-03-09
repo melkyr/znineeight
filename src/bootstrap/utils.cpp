@@ -136,7 +136,12 @@ void get_directory(const char* path, char* buffer, size_t buffer_size) {
 
     const char* last_slash = plat_strrchr(path, '/');
     const char* last_backslash = plat_strrchr(path, '\\');
-    const char* sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    const char* sep = NULL;
+    if (last_slash && last_backslash) {
+        sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+    } else {
+        sep = last_slash ? last_slash : last_backslash;
+    }
 
     if (sep) {
         size_t len = sep - path;

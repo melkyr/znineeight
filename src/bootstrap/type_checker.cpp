@@ -970,11 +970,11 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             arg_type = visit(arg_node);
             if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
 
-            if (arg_type->kind != TYPE_ENUM) {
-                return reportAndReturnUndefined(arg_node->loc, ERR_TYPE_MISMATCH, "argument to @enumToInt must be an enum");
+            if (arg_type->kind != TYPE_ENUM && arg_type->kind != TYPE_ERROR_SET) {
+                return reportAndReturnUndefined(arg_node->loc, ERR_TYPE_MISMATCH, "argument to @enumToInt must be an enum or error set");
             }
 
-            Type* backing = arg_type->as.enum_details.backing_type;
+            Type* backing = (arg_type->kind == TYPE_ENUM) ? arg_type->as.enum_details.backing_type : get_g_type_i32();
             if (!backing) backing = get_g_type_i32();
 
             /* Constant fold if argument is already a folded enum member. */
@@ -4384,7 +4384,8 @@ bool TypeChecker::isNumericType(Type* type) {
     return (type->kind >= TYPE_I8 && type->kind <= TYPE_F64) ||
            type->kind == TYPE_C_CHAR ||
            type->kind == TYPE_INTEGER_LITERAL ||
-           type->kind == TYPE_ERROR_SET;
+           type->kind == TYPE_ERROR_SET ||
+           type->kind == TYPE_ENUM;
 }
 
 bool TypeChecker::isIntegerType(Type* type) {
@@ -4395,7 +4396,8 @@ bool TypeChecker::isIntegerType(Type* type) {
            type->kind == TYPE_C_CHAR ||
            type->kind == TYPE_INTEGER_LITERAL ||
            type->kind == TYPE_BOOL ||
-           type->kind == TYPE_ERROR_SET;
+           type->kind == TYPE_ERROR_SET ||
+           type->kind == TYPE_ENUM;
 }
 
 bool TypeChecker::isUnsignedIntegerType(Type* type) {
@@ -4575,6 +4577,12 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
         /* C89 allows implicit conversion from integer literals to floats. */
         case TYPE_F32: return true;
         case TYPE_F64: return true;
+        case TYPE_ENUM: {
+             Type* backing = target_type->as.enum_details.backing_type;
+             if (!backing) backing = get_g_type_i32();
+             return canLiteralFitInType(literal_type, backing);
+        }
+        case TYPE_ERROR_SET: return true; /* Error tags are usually small integers */
         default:       return false;
     }
 }
@@ -4598,6 +4606,12 @@ bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
         /* For isize/usize, we assume 32-bit for the bootstrap compiler. */
         case TYPE_ISIZE: return value >= (i64)-2147483647 - 1 && value <= 2147483647;
         case TYPE_USIZE: return value >= 0 && (u64)value <= 0xFFFFFFFFU;
+        case TYPE_ENUM: {
+             Type* backing = int_type->as.enum_details.backing_type;
+             if (!backing) backing = get_g_type_i32();
+             return checkIntegerLiteralFit(value, backing);
+        }
+        case TYPE_ERROR_SET: return true;
         default: return false; /* Not an integer type */
     }
 }

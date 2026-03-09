@@ -7,9 +7,7 @@ extern fn fseek(file: File, offset: i64, whence: i32) i32;
 extern fn ftell(file: File) i64;
 extern fn ferror(file: File) i32;
 extern fn feof(file: File) i32;
-
-// Runtime allocation
-extern fn arena_alloc(arena: *void, size: usize) *void;
+extern fn strtod(nptr: [*]const c_char, endptr: [*][*]u8) f64;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;
@@ -21,6 +19,9 @@ pub const FileError = error{
     TooLarge,
 };
 
+// Runtime allocation
+extern fn arena_alloc(arena: *void, size: usize) *void;
+
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
     const f = fopen(@ptrCast([*]const c_char, path.ptr), "rb") orelse return error.OpenFailed;
     defer { _ = fclose(f); }
@@ -31,11 +32,12 @@ pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
     if (fseek(f, 0, SEEK_SET) != 0) { return error.SeekFailed; }
 
     const usize_size = @intCast(usize, size);
-    const buffer_void = arena_alloc(arena, usize_size);
-    const buffer = @ptrCast([*]u8, buffer_void);
+    const buffer_ptr = @ptrCast([*]u8, arena_alloc(arena, usize_size));
+    const buffer = buffer_ptr[0..usize_size];
 
-    const bytes_read = fread(buffer, 1, usize_size, f);
+    const bytes_read = fread(buffer.ptr, 1, usize_size, f);
     if (bytes_read != usize_size) { return error.ReadFailed; }
+    if (ferror(f) != 0) { return error.ReadFailed; }
 
-    return buffer[0..usize_size];
+    return buffer;
 }

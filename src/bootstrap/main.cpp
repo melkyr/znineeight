@@ -43,6 +43,9 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
 
 #ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
+    bool debug_lifter = false;
+    bool debug_codegen = false;
+
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
         plat_print_info("Executing self-test...\n");
 
@@ -105,8 +108,6 @@ int main(int argc, char* argv[]) {
     const char* input_file = NULL;
     const char* output_file = NULL;
     bool parse_only = false;
-    bool debug_lifter = false;
-    bool debug_codegen = false;
     bool full_pipeline = false;
     RETR_UNUSED(full_pipeline);
 
@@ -172,8 +173,6 @@ int main(int argc, char* argv[]) {
             ASTNode* ast = parser->parse();
             success = (ast != NULL);
         } else {
-            success = unit.performFullPipeline(file_id);
-
             success = runCompilationPipeline(unit, file_id);
             if (success && output_file) {
                 success = unit.generateCode(output_file);
