@@ -144,6 +144,14 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         }
     }
 
+    // Pass 2.5: Static Function Prototypes
+    for (size_t i = 0; i < module->static_function_prototypes.length(); ++i) {
+        emitter.emitFunctionPrototype(module->static_function_prototypes[i]);
+    }
+    if (module->static_function_prototypes.length() > 0) {
+        emitter.writeString("\n");
+    }
+
     // Pass 3: Function Definitions
     for (size_t i = 0; i < stmts->length(); ++i) {
         if ((*stmts)[i]->type == NODE_FN_DECL) {
@@ -319,32 +327,13 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         emitter.writeString("\n");
     }
 
-    // Use pre-computed header types
+    // Use pre-computed header types in dependency order
     for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ENUM) {
-            emitter.emitTypeDefinition(type);
-        }
+        Type* t = module->header_types[i];
+        if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
+        emitter.emitTypeDefinition(t);
     }
     emitter.emitBufferedTypeDefinitions();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_SLICE) emitter.ensureSliceType(type);
-    }
-    emitter.emitBufferedSlices();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(type);
-    }
-    emitter.emitBufferedErrorUnions();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_OPTIONAL) emitter.ensureOptionalType(type);
-    }
-    emitter.emitBufferedOptionals();
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;

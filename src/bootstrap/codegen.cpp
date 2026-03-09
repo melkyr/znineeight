@@ -358,7 +358,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     if (decl->initializer && decl->initializer->resolved_type) {
         Type* init_type = decl->initializer->resolved_type;
         if (init_type->kind == TYPE_MODULE ||
-            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
+            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM || init_type->kind == TYPE_ERROR_SET))) {
             return;
         }
     }
@@ -411,7 +411,13 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
         if (is_tagged) {
             /* Emit tag assignment */
-            const char* field_name = (*init->fields)[0]->field_name;
+        const char* field_name = NULL;
+        if (init->fields->length() > 0) {
+            field_name = (*init->fields)[0]->field_name;
+        } else {
+            /* Fallback for empty union initializer? Should have been checked. */
+            return;
+        }
             writeIndent();
             writeString(base_name);
             writeString(".tag = ");
@@ -678,6 +684,36 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         emitTypeSuffix(ret_type);
         writeString(";");
     }
+}
+
+void C89Emitter::emitFunctionPrototype(Symbol* sym) {
+    if (!sym || !sym->details) return;
+
+    ASTFnDeclNode* fn = (ASTFnDeclNode*)sym->details;
+    Type* ret_type = fn->return_type ? fn->return_type->resolved_type : get_g_type_void();
+    const char* mangled_name = sym->mangled_name;
+
+    writeIndent();
+    if (!fn->is_pub) {
+        writeString("static ");
+    }
+
+    emitTypePrefix(ret_type);
+    writeString(" ");
+    writeString(mangled_name);
+    writeString("(");
+    if (!fn->params || fn->params->length() == 0) {
+        writeString("void");
+    } else {
+        for (size_t i = 0; i < fn->params->length(); ++i) {
+            if (i > 0) writeString(", ");
+            ASTNode* param_node = (*fn->params)[i];
+            emitType(param_node->as.param_decl.type->resolved_type);
+        }
+    }
+    writeString(")");
+    emitTypeSuffix(ret_type);
+    writeString(";\n");
 }
 
 void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
@@ -1727,6 +1763,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
             break;
         case NODE_IDENTIFIER:
+            if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
+                writeString("0");
+                break;
+            }
             if (node->as.identifier.symbol) {
                 Symbol* sym = node->as.identifier.symbol;
                 if (sym->flags & SYMBOL_FLAG_LOCAL) {

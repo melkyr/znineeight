@@ -182,7 +182,12 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     // Derive module name: "foo.zig" -> "foo"
     const char* slash = plat_strrchr(filename, '/');
     const char* backslash = plat_strrchr(filename, '\\');
-    const char* last_sep = (slash > backslash) ? slash : backslash;
+    const char* last_sep = NULL;
+    if (slash && backslash) {
+        last_sep = (slash > backslash) ? slash : backslash;
+    } else {
+        last_sep = slash ? slash : backslash;
+    }
     const char* basename = last_sep ? last_sep + 1 : filename;
 
     // Remove extension
@@ -695,6 +700,7 @@ size_t CompilationUnit::getTotalCatalogueEntries() const {
 }
 
 bool CompilationUnit::generateCode(const char* output_path) {
+    if (getErrorHandler().hasErrors()) return false;
     CBackend backend(*this);
 
     // Extract directory from output_path

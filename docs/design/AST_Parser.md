@@ -1536,8 +1536,8 @@ In the C89 backend, control-flow constructs like `try`, `if`, and `switch` are s
 The `ControlFlowLifter` performs a post-order traversal of the AST using a **Parent-Slot Traversal Pattern**. This pattern passes `ASTNode**` pointers, allowing for clean in-place replacement of nodes without needing to track sibling indices. When it encounters a control-flow expression in an "unsafe" context (e.g., nested inside a binary operation or a function call argument), it:
 1.  **Generates a Temporary Variable**: Creates a unique, interned name like `__tmp_try_1`.
 2.  **Clones the Expression**: Deep-clones the control-flow node into a new `ASTVarDeclNode`.
-3.  **Inserts at Point of evaluation**: Inserts the new variable declaration immediately before the current statement in its enclosing block. This preserves the original order of side effects.
-4.  **Replaces with Identifier**: Replaces the original nested expression with an `ASTIdentifierNode` referencing the temporary variable.
+3.  **Inserts at Point of evaluation**: Inserts the new variable declaration immediately before the current statement in its enclosing block. This preserves the original order of side effects. **Note**: If the expression yields `void`, the variable declaration is skipped to comply with C89 rules.
+4.  **Replaces with Identifier**: Replaces the original nested expression with an `ASTIdentifierNode` referencing the temporary variable. For `void` expressions, the code generator emits a dummy value or statement.
 
 By the time the AST reaches the code generator, all nested control-flow expressions have been eliminated, allowing the `C89Emitter` to remain focused on simple statement-to-statement translation.
 
