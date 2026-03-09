@@ -149,6 +149,11 @@ private:
      */
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
 
+    /**
+     * @brief Creates a generic node at a location.
+     */
+    ASTNode* createNodeAt(NodeType type, SourceLocation loc);
+
     // Lowering Helpers
     ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);

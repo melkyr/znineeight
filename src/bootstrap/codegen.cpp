@@ -288,8 +288,8 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_C_CHAR: writeString("char"); break;
         case TYPE_F32: writeString("float"); break;
         case TYPE_F64: writeString("double"); break;
-        case TYPE_ISIZE: writeString("int"); break;
-        case TYPE_USIZE: writeString("unsigned int"); break;
+        case TYPE_ISIZE: writeString("isize"); break;
+        case TYPE_USIZE: writeString("usize"); break;
         case TYPE_SLICE:
             ensureSliceType(type);
             writeString(getMangledTypeName(type));
@@ -404,7 +404,32 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
+        if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
+            /* Handle ErrorUnion and Optional special structures */
+            const ASTStructInitializerNode* init = init_node->as.struct_initializer;
+            for (size_t j = 0; j < init->fields->length(); ++j) {
+                ASTNamedInitializer* field_init = (*init->fields)[j];
+                char nested_name[256];
+                char* cur = nested_name;
+                size_t rem = sizeof(nested_name);
+                safe_append(cur, rem, base_name);
+                safe_append(cur, rem, ".");
+                safe_append(cur, rem, field_init->field_name);
+
+                if (field_init->value->type == NODE_STRUCT_INITIALIZER) {
+                    emitInitializerAssignments(nested_name, field_init->value);
+                } else {
+                    writeIndent();
+                    writeString(nested_name);
+                    writeString(" = ");
+                    emitExpression(field_init->value);
+                    writeString(";\n");
+                }
+            }
+            return;
+        }
+
         DynamicArray<StructField>* fields = type->as.struct_details.fields;
         bool is_union = (type->kind == TYPE_UNION);
         bool is_tagged = is_union && type->as.struct_details.is_tagged;
@@ -642,6 +667,10 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
         writeString("int main(int argc, char* argv[]);");
+    } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_panic") == 0) {
+        /* Skip internal runtime prototypes in module headers to avoid conflicts with zig_runtime.h */
     } else {
         if (node->is_extern) {
             writeString("extern ");
@@ -694,7 +723,7 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
     const char* mangled_name = sym->mangled_name;
 
     writeIndent();
-    if (!fn->is_pub) {
+    if (!fn->is_pub && !fn->is_extern) {
         writeString("static ");
     }
 
@@ -737,6 +766,12 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
         writeString("int main(int argc, char* argv[])");
         is_main_function_ = true;
+    } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_panic") == 0) {
+        /* Use standard prototypes from zig_runtime.h for internal helpers */
+        const char* mangled_name = node->name;
+        emitDeclarator(ret_type, mangled_name, node);
     } else {
         if (node->is_extern) {
             writeString("extern ");

@@ -444,6 +444,15 @@ ASTNode* ControlFlowLifter::createIntegerLiteral(u64 value, Type* type, SourceLo
     return node;
 }
 
+ASTNode* ControlFlowLifter::createNodeAt(NodeType type, SourceLocation loc) {
+    ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
+    plat_memset(node, 0, sizeof(ASTNode));
+    node->type = type;
+    node->loc = loc;
+    node->module = module_name_;
+    return node;
+}
+
 void ControlFlowLifter::updateCaptureSymbols(ASTNode* node, const char* name, Symbol* new_sym) {
     if (!node) return;
 
@@ -676,7 +685,57 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
                 err_access = createMemberAccess(res_ident, "err", loc);
             }
             err_access->resolved_type = get_g_type_i32();
-            ret_val = err_access;
+            
+            // Build a synthetic wrapper for the return type
+            void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            DynamicArray<ASTNamedInitializer*>* fields = new (array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+            
+            if (ret_type->as.error_union.payload->kind == TYPE_VOID) {
+                ASTNamedInitializer* err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                err_init->field_name = "err";
+                err_init->value = err_access;
+                err_init->loc = loc;
+                fields->append(err_init);
+            } else {
+                // .{ .data = .{ .err = err_access } }
+                void* inner_array_mem = arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                DynamicArray<ASTNamedInitializer*>* inner_fields = new (inner_array_mem) DynamicArray<ASTNamedInitializer*>(*arena_);
+                
+                ASTNamedInitializer* err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                err_init->field_name = "err";
+                err_init->value = err_access;
+                err_init->loc = loc;
+                inner_fields->append(err_init);
+
+                ASTStructInitializerNode* inner_init = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+                inner_init->type_expr = NULL;
+                inner_init->fields = inner_fields;
+
+                ASTNode* inner_init_node = createNodeAt(NODE_STRUCT_INITIALIZER, loc);
+                inner_init_node->as.struct_initializer = inner_init;
+                // Type of 'data' is a union, but we can use any non-null type for now as emitter handles it
+                inner_init_node->resolved_type = get_g_type_anytype(); 
+
+                ASTNamedInitializer* data_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+                data_init->field_name = "data";
+                data_init->value = inner_init_node;
+                data_init->loc = loc;
+                fields->append(data_init);
+            }
+
+            ASTNamedInitializer* is_err_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
+            is_err_init->field_name = "is_error";
+            is_err_init->value = createIntegerLiteral(1, get_g_type_i32(), loc);
+            is_err_init->loc = loc;
+            fields->append(is_err_init);
+
+            ASTStructInitializerNode* init = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+            init->type_expr = NULL;
+            init->fields = fields;
+
+            ret_val = createNodeAt(NODE_STRUCT_INITIALIZER, loc);
+            ret_val->as.struct_initializer = init;
+            ret_val->resolved_type = ret_type;
         }
 
         ASTNode* ret_stmt = createReturn(ret_val, loc);
@@ -701,6 +760,8 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
                 payload_access = createMemberAccess(data_access, "payload", loc);
             } else {
                 payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
+                // Important: ensure the expression stmt gets emitted as a dummy 0; for void payloads
+                // that are being lifted into a void temp (which is then skipped).
             }
             payload_access->resolved_type = node->resolved_type;
 

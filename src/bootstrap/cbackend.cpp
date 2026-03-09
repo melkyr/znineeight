@@ -117,10 +117,10 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         if ((*stmts)[i]->type == NODE_VAR_DECL) {
             if (!(*stmts)[i]->as.var_decl->is_pub) {
                 emitter.emitTypeDefinition((*stmts)[i]);
+                emitter.emitBufferedTypeDefinitions();
             }
         }
     }
-    emitter.emitBufferedTypeDefinitions();
 
     // Pass 1.5: Special types (slices, error unions, optionals)
     // These are emitted AFTER structs because they might depend on them (recursive types).
@@ -332,8 +332,8 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         Type* t = module->header_types[i];
         if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
         emitter.emitTypeDefinition(t);
+        emitter.emitBufferedTypeDefinitions();
     }
-    emitter.emitBufferedTypeDefinitions();
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;

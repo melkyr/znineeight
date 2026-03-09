@@ -578,6 +578,44 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .build();
         table.insert(sym_free);
     }
+
+    // __bootstrap_print(s: [*]const u8) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(createPointerType(arena_, get_g_type_u8(), true, true, &type_interner_));
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_print");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
+
+    // __bootstrap_print_int(n: i32) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print_int");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(get_g_type_i32());
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_print_int");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
 }
 
 void CompilationUnit::validateErrorHandlingRules() {

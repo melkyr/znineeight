@@ -808,7 +808,6 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     Type* arg_type;
     Type* param_type;
     Type* promoted;
-    ASTNode* slice_node;
     Type* target_type;
     Symbol* sym;
 
@@ -1347,7 +1346,7 @@ bool TypeChecker::needsStringLiteralCoercion(ASTNode* src, Type* target) {
     if (!src || !target) return false;
     if (src->type != NODE_STRING_LITERAL) return false;
     if (target->kind != TYPE_SLICE) return false;
-    if (target->as.slice.element_type->kind != TYPE_U8) return false;
+    if (target->as.slice.element_type->kind != TYPE_U8 && target->as.slice.element_type->kind != TYPE_C_CHAR) return false;
     if (target->as.slice.is_const != true) return false;
     return true;
 }
@@ -2892,7 +2891,6 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
     Symbol* fn_symbol;
     DynamicArray<Type*>* param_types;
     size_t i;
-    Type* body_res;
     Type* sig_res;
 
     fn_symbol = unit_.getSymbolTable().lookup(node->name);
@@ -2928,7 +2926,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
             }
         }
 
-        body_res = visit(node->body);
+        visit(node->body);
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
             /* Allow implicit return for Error!void (Task: Fix #2) */
@@ -3861,8 +3859,6 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
     Type* right;
     void* tags_mem;
     DynamicArray<const char*>* merged_tags;
-    size_t i;
-    size_t j;
 
     if (!node->left || !node->right) return get_g_type_undefined();
     left = visit(node->left);
@@ -3990,7 +3986,6 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
     Type* left_type;
     Type* right_type;
     Type* payload_type;
-    char expected_buf[128], actual_buf[128];
 
     if (!node->payload) return get_g_type_undefined();
     left_type = visit(node->payload);
@@ -4012,15 +4007,15 @@ Type* TypeChecker::visitOrelseExpr(ASTOrelseExprNode* node) {
         }
 
         if (!IsTypeAssignableTo(right_type, payload_type, node->else_expr->loc)) {
-            char expected_buf[128], actual_buf[128];
-            typeToString(payload_type, expected_buf, sizeof(expected_buf));
-            typeToString(right_type, actual_buf, sizeof(actual_buf));
+            char expected_buf_msg[128], actual_buf_msg[128];
+            typeToString(payload_type, expected_buf_msg, sizeof(expected_buf_msg));
+            typeToString(right_type, actual_buf_msg, sizeof(actual_buf_msg));
 
             char msg[256];
             plat_strcpy(msg, "Expected type '");
-            plat_strcat(msg, expected_buf);
+            plat_strcat(msg, expected_buf_msg);
             plat_strcat(msg, "' for orelse fallback, found '");
-            plat_strcat(msg, actual_buf);
+            plat_strcat(msg, actual_buf_msg);
             plat_strcat(msg, "'");
             return reportAndReturnUndefined(node->else_expr->loc, ERR_TYPE_MISMATCH, msg);
         }
@@ -4733,14 +4728,30 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         return true;
     }
 
+    /* c_char and u8 compatibility */
+    if ((source_type->kind == TYPE_U8 && target_type->kind == TYPE_C_CHAR) ||
+        (source_type->kind == TYPE_C_CHAR && target_type->kind == TYPE_U8)) {
+        return true;
+    }
+
     /* Array to Slice coercion */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
-        return areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type);
+        Type* e_elem = target_type->as.slice.element_type;
+        Type* a_elem = source_type->as.array.element_type;
+        if (areTypesEqual(e_elem, a_elem)) return true;
+        if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
+            (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
+        return false;
     }
 
     /* Slice to Slice assignment/coercion */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
-        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
+        Type* e_elem = target_type->as.slice.element_type;
+        Type* a_elem = source_type->as.slice.element_type;
+        bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
+                               ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
+                                (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
+        if (elems_compatible) {
             /* Const correctness: []T can be used as []const T, but not vice-versa */
             return target_type->as.slice.is_const || !source_type->as.slice.is_const;
         }
@@ -4849,7 +4860,15 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
 
         /* Base types must match */
-        if (areTypesEqual(src_base, tgt_base)) {
+        bool base_match = areTypesEqual(src_base, tgt_base);
+        if (!base_match) {
+            if ((src_base->kind == TYPE_U8 && tgt_base->kind == TYPE_C_CHAR) ||
+                (src_base->kind == TYPE_C_CHAR && tgt_base->kind == TYPE_U8)) {
+                base_match = true;
+            }
+        }
+
+        if (base_match) {
             /* Zig allows implicit conversion from single-item pointer to many-item pointer. */
             if (!source_type->as.pointer.is_many && target_type->as.pointer.is_many) {
                 if (const_compatible) return true;

@@ -97,13 +97,13 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
     // Recursively visit component types FIRST (Post-order traversal)
     switch (type->kind) {
         case TYPE_POINTER:
-            collectReachableTypes(mod, type->as.pointer.base, visited);
+            // Pointers only need forward declaration of base type, so they don't force ordering.
             break;
         case TYPE_ARRAY:
             collectReachableTypes(mod, type->as.array.element_type, visited);
             break;
         case TYPE_SLICE:
-            collectReachableTypes(mod, type->as.slice.element_type, visited);
+            // Slices only contain a pointer to the element type, so they don't force ordering.
             break;
         case TYPE_OPTIONAL:
             collectReachableTypes(mod, type->as.optional.payload, visited);
@@ -207,9 +207,9 @@ void MetadataPreparationPass::collectStaticFunctions(Module* mod) {
             /* In RetroZig, every top-level function should have a symbol in the module scope. */
             Symbol* sym = mod->symbols->lookup(fn->name);
             if (sym && sym->kind == SYMBOL_FUNCTION) {
-                /* We collect ONLY static (non-pub) functions for forward declarations in .c files. */
-                /* Public functions are already handled by .h file includes. */
-                if (!fn->is_pub && !(sym->flags & SYMBOL_FLAG_EXTERN)) {
+                /* We collect non-pub functions for forward declarations in .c files. 
+                   Includes both static and non-pub extern functions to ensure they are prototyped before use. */
+                if (!fn->is_pub) {
                     mod->static_function_prototypes.append(sym);
                 }
             }

@@ -75,7 +75,7 @@ fn printValue(val: json.JsonValue, level: usize) void {
 
 pub fn main() void {
     const arena = &zig_default_arena;
-    const content = file.readFile(arena, "test.json") catch |err| {
+    const content = file.readFile(arena, "../test.json") catch |err| {
         __bootstrap_print(@ptrCast([*]const u8, "Error reading file: "));
         __bootstrap_print_int(@enumToInt(err));
         __bootstrap_print(@ptrCast([*]const u8, "\n"));

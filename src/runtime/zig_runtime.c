@@ -1,11 +1,12 @@
 #include "zig_runtime.h"
+#include <string.h>
+#include <stdlib.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
-#include <stdlib.h>
-#include <string.h>
+#include <unistd.h>
 #endif
 
 /* Alignment requirement (8 bytes for safety on most architectures) */
@@ -142,20 +143,60 @@ void arena_free(void* ptr) {
     (void)ptr;
 }
 
+void __bootstrap_print(const unsigned char* s) {
+    if (!s) return;
+#ifdef _WIN32
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)strlen((const char*)s), NULL, NULL);
+#else
+    write(2, (const char*)s, strlen((const char*)s));
+#endif
+}
+
+void __bootstrap_panic(const char* msg, const char* file, int line) {
+    char buf[32];
+    int i = 0;
+    unsigned int val;
+
+    __bootstrap_print((const unsigned char*)"PANIC: ");
+    __bootstrap_print((const unsigned char*)msg);
+    __bootstrap_print((const unsigned char*)" at ");
+    __bootstrap_print((const unsigned char*)file);
+    __bootstrap_print((const unsigned char*)":");
+
+    val = (unsigned int)line;
+    if (val == 0) {
+        __bootstrap_print((const unsigned char*)"0");
+    } else {
+        while (val > 0) {
+            buf[i++] = '0' + (val % 10);
+            val /= 10;
+        }
+        while (i > 0) {
+            char c = buf[--i];
+            char s[2];
+            s[0] = c;
+            s[1] = '\0';
+            __bootstrap_print((const unsigned char*)s);
+        }
+    }
+    __bootstrap_print((const unsigned char*)"\n");
+    abort();
+}
+
 void __bootstrap_print_int(i32 n) {
     char buf[32];
     int i = 0;
     unsigned int val;
 
     if (n < 0) {
-        fputc('-', stderr);
+        __bootstrap_print((const unsigned char*)"-");
         val = (unsigned int)(-n);
     } else {
         val = (unsigned int)n;
     }
 
     if (val == 0) {
-        fputc('0', stderr);
+        __bootstrap_print((const unsigned char*)"0");
         return;
     }
 
@@ -167,7 +208,11 @@ void __bootstrap_print_int(i32 n) {
 
     /* Reverse and print */
     while (i > 0) {
-        fputc(buf[--i], stderr);
+        char c = buf[--i];
+        char s[2];
+        s[0] = c;
+        s[1] = '\0';
+        __bootstrap_print((const unsigned char*)s);
     }
 }
 
@@ -179,4 +224,9 @@ u8 __bootstrap_u8_from_i32(i32 x) {
 u8 __bootstrap_u8_from_usize(usize x) {
     if (x > 255) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u8)x;
+}
+
+usize __bootstrap_usize_from_i64(i64 x) {
+    if (x < 0) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
+    return (usize)x;
 }

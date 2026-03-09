@@ -191,10 +191,11 @@ fn parseFloat(s: []const u8) f64 {
     buf[i] = 0;
     // Note: strtod expects a pointer to char, but we use u8.
     // In our runtime, strtod is declared as strtod(nptr: [*]const u8, endptr: ?*[*]u8) f64;
-    return strtod(@ptrCast([*]const u8, &buf[0]), null);
+    const endptr_null: ?[*]const c_char = null;
+    return strtod(@ptrCast([*]const c_char, &buf[0]), endptr_null);
 }
 
-extern fn strtod(nptr: [*]const u8, endptr: ?[*]const u8) f64;
+extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;
 
 fn parseArray(p: *Parser) ParseError!JsonValue {
     try parser_expect(p, '[');
