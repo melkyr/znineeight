@@ -149,7 +149,7 @@ Then remove `#include <stdio.h>` from `zig_runtime.h`.
 
 ---
 
-### Task 3: Optional Pointer ABI for Extern Functions
+### Task 3: Optional Pointer ABI for Extern Functions [DONE]
 
 **Goal:** Make `?*T` in `extern` function signatures map to raw pointer `T*` in C, preserving ABI compatibility.
 
