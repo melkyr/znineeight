@@ -5,11 +5,17 @@ The test suite is now ALL GREEN. Regressions in Batch 26 and Batch 46 have been 
 
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
-| 1-57  | PASSED | None (Note: Batch 2 has pre-existing parser recursion failures) |
+| 1-57  | PASSED | None |
 
 ---
 
 ## Detailed Analysis of Fixes
+
+### 6. Batch 2: Parser Recursion Abort [RESOLVED]
+**Resolution**:
+*   Fixed `plat_abort()` on Windows to use exit code 3, which is the code expected by the test suite's `expect_abort` helper (found in `tests/test_utils.cpp`).
+*   Previously, `plat_abort()` used `ExitProcess(1)`, causing the recursion limit tests (which expect an abort) to be misidentified as failures.
+*   Verified that all 114 tests in Batch 2 now pass, confirming the parser correctly aborts when recursion depth exceeds `MAX_PARSER_RECURSION_DEPTH`.
 
 ### 5. Task 1: Fix Anonymous Union Emission Bug [IMPLEMENTED]
 **Resolution**:

@@ -331,7 +331,11 @@ void plat_get_executable_dir(char* buffer, size_t size) {
 }
 
 void plat_abort() {
-    ExitProcess(1);
+    /*
+     * Use exit code 3 on Windows to match what expect_abort() in test_utils.cpp
+     * expects for an aborting child process.
+     */
+    TerminateProcess(GetCurrentProcess(), 3);
 }
 
 #else
