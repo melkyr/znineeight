@@ -53,7 +53,6 @@ test_runner_batch*
 
 # Temporary binaries
 test_multi_file
-tests/batch_runner_*.cpp
 tr*
 zig0
 zig0.exe
