@@ -39,6 +39,11 @@ private:
      * @brief Checks if a type should be included in the header type list.
      */
     bool isHeaderType(Type* type);
+
+    /**
+     * @brief Collects static functions that need forward declarations in the .c file.
+     */
+    void collectStaticFunctions(Module* mod);
 };
 
 #endif // METADATA_PREPARATION_PASS_HPP

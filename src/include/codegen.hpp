@@ -190,6 +190,11 @@ public:
     void emitFnDecl(const ASTFnDeclNode* node);
 
     /**
+     * @brief Emits a function prototype for a symbol.
+     */
+    void emitFunctionPrototype(Symbol* sym);
+
+    /**
      * @brief Emits a block of statements.
      * @param node The block statement node.
      * @param label_id The label_id of the loop this block belongs to (if any).

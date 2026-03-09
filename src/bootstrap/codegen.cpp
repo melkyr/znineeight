@@ -358,16 +358,14 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     if (decl->initializer && decl->initializer->resolved_type) {
         Type* init_type = decl->initializer->resolved_type;
         if (init_type->kind == TYPE_MODULE ||
-            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM))) {
+            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM || init_type->kind == TYPE_ERROR_SET))) {
             return;
         }
     }
 
     if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && !isConstantInitializer(decl->initializer)) {
-        /*
         error_handler_.report(ERR_GLOBAL_VAR_NON_CONSTANT_INIT, decl->name_loc, ErrorHandler::getMessage(ERR_GLOBAL_VAR_NON_CONSTANT_INIT), "Try using a literal or a constant expression");
         return;
-        */
     }
 
     writeIndent();
@@ -686,6 +684,36 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         emitTypeSuffix(ret_type);
         writeString(";");
     }
+}
+
+void C89Emitter::emitFunctionPrototype(Symbol* sym) {
+    if (!sym || !sym->details) return;
+
+    ASTFnDeclNode* fn = (ASTFnDeclNode*)sym->details;
+    Type* ret_type = fn->return_type ? fn->return_type->resolved_type : get_g_type_void();
+    const char* mangled_name = sym->mangled_name;
+
+    writeIndent();
+    if (!fn->is_pub) {
+        writeString("static ");
+    }
+
+    emitTypePrefix(ret_type);
+    writeString(" ");
+    writeString(mangled_name);
+    writeString("(");
+    if (!fn->params || fn->params->length() == 0) {
+        writeString("void");
+    } else {
+        for (size_t i = 0; i < fn->params->length(); ++i) {
+            if (i > 0) writeString(", ");
+            ASTNode* param_node = (*fn->params)[i];
+            emitType(param_node->as.param_decl.type->resolved_type);
+        }
+    }
+    writeString(")");
+    emitTypeSuffix(ret_type);
+    writeString(";\n");
 }
 
 void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
