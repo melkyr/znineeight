@@ -4,6 +4,7 @@
 #include "c89_validation/gcc_validator.cpp"
 #include "c89_validation/msvc6_validator.cpp"
 #include "integer_widening_tests.cpp"
+#include "integration/anon_union_tests.cpp"
 #include "integration/arena_tests.cpp"
 #include "integration/arithmetic_tests.cpp"
 #include "integration/array_tests.cpp"
