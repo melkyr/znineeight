@@ -5,11 +5,19 @@ The test suite is now ALL GREEN. Regressions in Batch 26 and Batch 46 have been 
 
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
-| 1-56  | PASSED | None (Note: Batch 2 has pre-existing parser recursion failures) |
+| 1-57  | PASSED | None (Note: Batch 2 has pre-existing parser recursion failures) |
 
 ---
 
 ## Detailed Analysis of Fixes
+
+### 5. Task 1: Fix Anonymous Union Emission Bug [IMPLEMENTED]
+**Resolution**:
+*   Implemented `emitUnionBody` and `emitStructBody` helpers in `C89Emitter` to correctly inline union and struct bodies when used as anonymous field types.
+*   Updated `emitBaseType` to use these helpers for types without a C name (tag).
+*   Added `getSafeFieldName` to handle C keyword mangling for field names (e.g., `int` -> `z_int`).
+*   Updated `docs/design/C89_Codegen.md` with documentation on the new emission strategy.
+*   Verified with Batch 57 integration tests covering basic and nested anonymous types.
 
 ### 4. Milestone 7 Task 3: Error Union Return Coercion [IMPLEMENTED]
 **Resolution**:
