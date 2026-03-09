@@ -6,13 +6,14 @@
 TEST_FUNC(Parser_RecursionLimit) {
     // Create a very deeply nested expression string to trigger the recursion limit.
     // Example: "((...((1))...))"
-    char source[2048] = {0};
+    // MAX_PARSER_RECURSION_DEPTH is 1000, so we use 1100 to trigger the limit.
+    char source[8192] = {0};
     strcat(source, "var x: i32 = ");
-    for (int i = 0; i < 300; ++i) { // 300 is well over the limit of 255
+    for (int i = 0; i < 1100; ++i) {
         strcat(source, "(");
     }
     strcat(source, "1");
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 1100; ++i) {
         strcat(source, ")");
     }
     strcat(source, ";");
@@ -27,9 +28,10 @@ TEST_FUNC(Parser_RecursionLimit) {
 TEST_FUNC(Parser_RecursionLimit_Binary) {
     // Create a deeply nested binary expression: "a = a = a = ..."
     // Assignment is right-associative and recursive in this parser.
-    char source[4096] = {0};
+    // MAX_PARSER_RECURSION_DEPTH is 1000, so we use 1100 to trigger the limit.
+    char source[16384] = {0};
     strcat(source, "fn foo() void { var a: i32 = 0; ");
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 1100; ++i) {
         strcat(source, "a = ");
     }
     strcat(source, "0; }");
@@ -41,9 +43,10 @@ TEST_FUNC(Parser_RecursionLimit_Binary) {
 
 TEST_FUNC(Parser_RecursionLimit_Unary) {
     // Create a deeply nested unary expression using `try`, which is recursive.
-    char source[4096] = {0};
+    // MAX_PARSER_RECURSION_DEPTH is 1000, so we use 1100 to trigger the limit.
+    char source[8192] = {0};
     strcat(source, "var x: i32 = ");
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 1100; ++i) {
         strcat(source, "try ");
     }
     strcat(source, "1;");
