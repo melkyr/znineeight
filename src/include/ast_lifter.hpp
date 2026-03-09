@@ -73,8 +73,9 @@ private:
      * @param node_slot A pointer to the pointer holding the node to be lifted.
      * @param parent The parent node.
      * @param prefix The prefix for the temporary variable name.
+     * @param needs_wrapping Whether to wrap the result (e.g., for return try).
      */
-    void liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix);
+    void liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix, bool needs_wrapping = false);
 
     /**
      * @brief Generates a unique temporary variable name.
@@ -151,7 +152,7 @@ private:
     // Lowering Helpers
     ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
     ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);
-    void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
+    void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping);
     void lowerCatchExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
     void lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
@@ -169,6 +170,7 @@ private:
     int depth_;
     const int MAX_LIFTING_DEPTH;
 
+    Type* current_fn_return_type_;
     DynamicArray<const char*> registered_temps_;
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.

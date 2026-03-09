@@ -33,10 +33,17 @@ ControlFlowLifter::ParentGuard::~ParentGuard() {
 
 ControlFlowLifter::FnGuard::FnGuard(ControlFlowLifter& l, ASTFnDeclNode* fn) : lifter_(l) {
     lifter_.fn_stack_.append(fn);
+    lifter_.current_fn_return_type_ = fn->return_type ? fn->return_type->resolved_type : get_g_type_void();
 }
 
 ControlFlowLifter::FnGuard::~FnGuard() {
     lifter_.fn_stack_.pop_back();
+    if (lifter_.fn_stack_.length() > 0) {
+        ASTFnDeclNode* prev_fn = lifter_.fn_stack_.back();
+        lifter_.current_fn_return_type_ = prev_fn->return_type ? prev_fn->return_type->resolved_type : get_g_type_void();
+    } else {
+        lifter_.current_fn_return_type_ = NULL;
+    }
 }
 
 ControlFlowLifter::ScopeGuard::ScopeGuard(ControlFlowLifter& l) : lifter_(l) {
@@ -55,6 +62,7 @@ ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* inte
     : arena_(arena), interner_(interner), error_handler_(error_handler),
       unit_(NULL), module_name_(NULL), debug_mode_(false),
       tmp_counter_(0), depth_(0), MAX_LIFTING_DEPTH(1000),
+      current_fn_return_type_(NULL),
       registered_temps_(*arena),
       stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena), fn_stack_(*arena) {}
 
@@ -113,7 +121,14 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
             transformNode(&node->as.orelse_expr->payload, node);
         }
 
-        liftNode(node_slot, parent, getPrefixForType(node->type));
+        bool needs_wrapping = false;
+        if (node->type == NODE_TRY_EXPR) {
+            const ASTNode* effective_parent = skipParens(parent);
+            if (effective_parent && effective_parent->type == NODE_RETURN_STMT) {
+                needs_wrapping = true;
+            }
+        }
+        liftNode(node_slot, parent, getPrefixForType(node->type), needs_wrapping);
 
         if (debug_mode_ && *node_slot) {
             validateASTIntegrity(*node_slot, "pre-lift-transformed");
@@ -180,7 +195,14 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
 
     // Decision: does THIS node need lifting? (for non-CF expressions if any)
     if (needsLifting(node, parent)) {
-        liftNode(node_slot, parent, getPrefixForType(node->type));
+        bool needs_wrapping = false;
+        if (node->type == NODE_TRY_EXPR) {
+            const ASTNode* effective_parent = skipParens(parent);
+            if (effective_parent && effective_parent->type == NODE_RETURN_STMT) {
+                needs_wrapping = true;
+            }
+        }
+        liftNode(node_slot, parent, getPrefixForType(node->type), needs_wrapping);
 
         if (debug_mode_ && *node_slot) {
             validateASTIntegrity(*node_slot, "post-lift");
@@ -566,7 +588,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
     return createSwitchStmt(sw_expr->expression, prongs, loc);
 }
 
-void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts) {
+void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping) {
     ASTTryExprNode& try_expr = node->as.try_expr;
     SourceLocation loc = node->loc;
     Type* error_union_type = try_expr.expression->resolved_type;
@@ -583,59 +605,107 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
     ASTNode* is_error_access = createMemberAccess(res_ident, "is_error", loc);
     is_error_access->resolved_type = get_g_type_bool();
 
-    // 3. Early return block
-    // We need to return the error union with the error code.
-    Type* ret_type = get_g_type_void();
-    if (fn_stack_.length() > 0) {
-        ASTFnDeclNode* current_fn = fn_stack_.back();
-        if (current_fn->return_type) {
-            ret_type = current_fn->return_type->resolved_type;
-        }
-    }
-
-    ASTNode* ret_val;
-    if (areTypesEqual(ret_type, error_union_type)) {
-        ret_val = res_ident;
-    } else {
-        // Wrap the error from res_ident into ret_type
-        ASTNode* err_access;
-        if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
-            ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
-            data_access->resolved_type = error_union_type;
-            err_access = createMemberAccess(data_access, "err", loc);
-        } else {
-            err_access = createMemberAccess(res_ident, "err", loc);
-        }
-        err_access->resolved_type = createErrorSetType(*arena_, NULL, NULL, true);
-        ret_val = err_access;
-    }
-
-    ASTNode* ret_stmt = createReturn(ret_val, loc);
-    void* ret_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-    DynamicArray<ASTNode*>* ret_stmts = new (ret_stmts_mem) DynamicArray<ASTNode*>(*arena_);
-    ret_stmts->append(ret_stmt);
-    ASTNode* then_block = createBlock(ret_stmts, loc);
-
-    ASTNode* if_stmt = createIfStmt(is_error_access, then_block, NULL, loc);
-    out_stmts.append(if_stmt);
-
-    // 4. Assign payload to temp_name (skip if void)
-    if (node->resolved_type && node->resolved_type->kind != TYPE_VOID) {
+    if (needs_wrapping && current_fn_return_type_) {
+        // Full wrapping mode: populate temp_name (which is of current_fn_return_type_)
         Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
         ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
-        temp_ident->resolved_type = node->resolved_type;
+        temp_ident->resolved_type = current_fn_return_type_;
 
-        ASTNode* payload_access;
+        // If error path
+        void* err_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* err_stmts = new (err_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+
+        // ret_temp.is_error = 1;
+        ASTNode* is_error_assign = createAssignment(createMemberAccess(temp_ident, "is_error", loc), createIntegerLiteral(1, get_g_type_i32(), loc), loc);
+        err_stmts->append(createExpressionStmt(is_error_assign, loc));
+
+        // ret_temp.data.err = operand_temp.data.err; (or .err if void payload)
+        ASTNode* src_err;
+        ASTNode* dest_err;
         if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
-            ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
-            data_access->resolved_type = error_union_type; // actually it's a union but we just need a non-null type
-            payload_access = createMemberAccess(data_access, "payload", loc);
+            src_err = createMemberAccess(createMemberAccess(res_ident, "data", loc), "err", loc);
         } else {
-            payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
+            src_err = createMemberAccess(res_ident, "err", loc);
         }
-        payload_access->resolved_type = node->resolved_type;
+        if (current_fn_return_type_->as.error_union.payload->kind != TYPE_VOID) {
+            dest_err = createMemberAccess(createMemberAccess(temp_ident, "data", loc), "err", loc);
+        } else {
+            dest_err = createMemberAccess(temp_ident, "err", loc);
+        }
+        dest_err->resolved_type = src_err->resolved_type = get_g_type_i32();
+        err_stmts->append(createExpressionStmt(createAssignment(dest_err, src_err, loc), loc));
 
-        out_stmts.append(createYieldingStmt(payload_access, temp_ident, loc));
+        ASTNode* then_block = createBlock(err_stmts, loc);
+
+        // Success path
+        void* succ_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* succ_stmts = new (succ_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+
+        // ret_temp.is_error = 0;
+        ASTNode* is_error_succ_assign = createAssignment(createMemberAccess(temp_ident, "is_error", loc), createIntegerLiteral(0, get_g_type_i32(), loc), loc);
+        succ_stmts->append(createExpressionStmt(is_error_succ_assign, loc));
+
+        // ret_temp.data.payload = operand_temp.data.payload; (if not void)
+        if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
+             ASTNode* src_payload = createMemberAccess(createMemberAccess(res_ident, "data", loc), "payload", loc);
+             ASTNode* dest_payload = createMemberAccess(createMemberAccess(temp_ident, "data", loc), "payload", loc);
+             dest_payload->resolved_type = src_payload->resolved_type = error_union_type->as.error_union.payload;
+             succ_stmts->append(createExpressionStmt(createAssignment(dest_payload, src_payload, loc), loc));
+        }
+
+        ASTNode* else_block = createBlock(succ_stmts, loc);
+
+        out_stmts.append(createIfStmt(is_error_access, then_block, else_block, loc));
+    } else {
+        // Normal early return mode
+        // 3. Early return block
+        // We need to return the error union with the error code.
+        Type* ret_type = current_fn_return_type_ ? current_fn_return_type_ : get_g_type_void();
+
+        ASTNode* ret_val;
+        if (areTypesEqual(ret_type, error_union_type)) {
+            ret_val = res_ident;
+        } else {
+            // Wrap the error from res_ident into ret_type
+            ASTNode* err_access;
+            if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
+                ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+                data_access->resolved_type = error_union_type;
+                err_access = createMemberAccess(data_access, "err", loc);
+            } else {
+                err_access = createMemberAccess(res_ident, "err", loc);
+            }
+            err_access->resolved_type = get_g_type_i32();
+            ret_val = err_access;
+        }
+
+        ASTNode* ret_stmt = createReturn(ret_val, loc);
+        void* ret_stmts_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        DynamicArray<ASTNode*>* ret_stmts = new (ret_stmts_mem) DynamicArray<ASTNode*>(*arena_);
+        ret_stmts->append(ret_stmt);
+        ASTNode* then_block = createBlock(ret_stmts, loc);
+
+        ASTNode* if_stmt = createIfStmt(is_error_access, then_block, NULL, loc);
+        out_stmts.append(if_stmt);
+
+        // 4. Assign payload to temp_name (skip if void)
+        if (node->resolved_type && node->resolved_type->kind != TYPE_VOID) {
+            Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+            ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
+            temp_ident->resolved_type = node->resolved_type;
+
+            ASTNode* payload_access;
+            if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
+                ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+                data_access->resolved_type = error_union_type; // actually it's a union but we just need a non-null type
+                payload_access = createMemberAccess(data_access, "payload", loc);
+            } else {
+                payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
+            }
+            payload_access->resolved_type = node->resolved_type;
+
+            out_stmts.append(createYieldingStmt(payload_access, temp_ident, loc));
+        }
     }
 }
 
@@ -821,15 +891,15 @@ int ControlFlowLifter::findStatementIndex(ASTBlockStmtNode* block, ASTNode* stmt
     return -1;
 }
 
-void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix) {
+void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix, bool needs_wrapping) {
     ASTNode* node = *node_slot;
     if (!node) return;
 
     if (debug_mode_) {
         char loc_buf[128];
         formatSourceLocation(node->loc, loc_buf, sizeof(loc_buf));
-        plat_printf_debug("[LIFTER] Lifting node type=%d prefix=%s at %s\n",
-                         (int)node->type, prefix, loc_buf);
+        plat_printf_debug("[LIFTER] Lifting node type=%d prefix=%s at %s needs_wrapping=%d\n",
+                         (int)node->type, prefix, loc_buf, needs_wrapping ? 1 : 0);
     }
 
     // 1. Generate unique temp name
@@ -844,8 +914,13 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     // just before the current statement for now, which our emitter handles.
     // Skip VarDecl if the type is void.
     ASTNode* var_decl_node = NULL;
-    if (node->resolved_type && node->resolved_type->kind != TYPE_VOID) {
-        var_decl_node = createVarDecl(temp_name, node->resolved_type, NULL, false);
+    Type* temp_type = node->resolved_type;
+    if (needs_wrapping && current_fn_return_type_) {
+        temp_type = current_fn_return_type_;
+    }
+
+    if (temp_type && temp_type->kind != TYPE_VOID) {
+        var_decl_node = createVarDecl(temp_name, temp_type, NULL, false);
     }
 
     // 3. Lower the expression into statements
@@ -859,7 +934,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
             lowering_stmts.append(lowerSwitchExpr(node, temp_name));
             break;
         case NODE_TRY_EXPR:
-            lowerTryExpr(node, temp_name, lowering_stmts);
+            lowerTryExpr(node, temp_name, lowering_stmts, needs_wrapping);
             break;
         case NODE_CATCH_EXPR:
             lowerCatchExpr(node, temp_name, lowering_stmts);
@@ -894,7 +969,7 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
     // 5. Replace node with identifier referencing the temp (or dummy if void)
     ASTNode* ident_node = createIdentifier(temp_name, node->loc, var_decl_node ? var_decl_node->as.var_decl->symbol : NULL);
-    ident_node->resolved_type = node->resolved_type;
+    ident_node->resolved_type = temp_type;
 
     if (debug_mode_) {
         plat_printf_debug("[LIFTER] Replaced node with identifier: %s\n", temp_name);
