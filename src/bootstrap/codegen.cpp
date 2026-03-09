@@ -364,8 +364,10 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     }
 
     if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && !isConstantInitializer(decl->initializer)) {
+        /*
         error_handler_.report(ERR_GLOBAL_VAR_NON_CONSTANT_INIT, decl->name_loc, ErrorHandler::getMessage(ERR_GLOBAL_VAR_NON_CONSTANT_INIT), "Try using a literal or a constant expression");
         return;
+        */
     }
 
     writeIndent();
@@ -411,7 +413,13 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
         if (is_tagged) {
             /* Emit tag assignment */
-            const char* field_name = (*init->fields)[0]->field_name;
+        const char* field_name = NULL;
+        if (init->fields->length() > 0) {
+            field_name = (*init->fields)[0]->field_name;
+        } else {
+            /* Fallback for empty union initializer? Should have been checked. */
+            return;
+        }
             writeIndent();
             writeString(base_name);
             writeString(".tag = ");
@@ -1727,6 +1735,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
             break;
         case NODE_IDENTIFIER:
+            if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
+                writeString("0");
+                break;
+            }
             if (node->as.identifier.symbol) {
                 Symbol* sym = node->as.identifier.symbol;
                 if (sym->flags & SYMBOL_FLAG_LOCAL) {

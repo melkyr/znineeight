@@ -593,16 +593,21 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
         }
     }
 
-    ASTNode* ret_val = res_ident;
-    if (ret_type->kind == TYPE_ERROR_UNION && error_union_type->kind == TYPE_ERROR_UNION) {
-        // Simple case: both are error unions.
-        // If they have same payload, we can just return res_ident.
-        // Otherwise, we might need wrapping if we support implicit error union coercion.
-        // For now, assume they are compatible enough for return if type checked.
-
-        // However, we MUST use a return variable name if we want to match emitter's
-        // internal expectations or ensure it works with defers.
-        // The emitter often wraps returns with defers in a block using __return_val.
+    ASTNode* ret_val;
+    if (areTypesEqual(ret_type, error_union_type)) {
+        ret_val = res_ident;
+    } else {
+        // Wrap the error from res_ident into ret_type
+        ASTNode* err_access;
+        if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
+            ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+            data_access->resolved_type = error_union_type;
+            err_access = createMemberAccess(data_access, "err", loc);
+        } else {
+            err_access = createMemberAccess(res_ident, "err", loc);
+        }
+        err_access->resolved_type = createErrorSetType(*arena_, NULL, NULL, true);
+        ret_val = err_access;
     }
 
     ASTNode* ret_stmt = createReturn(ret_val, loc);
@@ -614,22 +619,24 @@ void ControlFlowLifter::lowerTryExpr(ASTNode* node, const char* temp_name, Dynam
     ASTNode* if_stmt = createIfStmt(is_error_access, then_block, NULL, loc);
     out_stmts.append(if_stmt);
 
-    // 4. Assign payload to temp_name
-    Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
-    ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
-    temp_ident->resolved_type = node->resolved_type;
+    // 4. Assign payload to temp_name (skip if void)
+    if (node->resolved_type && node->resolved_type->kind != TYPE_VOID) {
+        Symbol* temp_sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(temp_name) : NULL;
+        ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
+        temp_ident->resolved_type = node->resolved_type;
 
-    ASTNode* payload_access;
-    if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
-        ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
-        data_access->resolved_type = error_union_type; // actually it's a union but we just need a non-null type
-        payload_access = createMemberAccess(data_access, "payload", loc);
-    } else {
-        payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
+        ASTNode* payload_access;
+        if (error_union_type->as.error_union.payload->kind != TYPE_VOID) {
+            ASTNode* data_access = createMemberAccess(res_ident, "data", loc);
+            data_access->resolved_type = error_union_type; // actually it's a union but we just need a non-null type
+            payload_access = createMemberAccess(data_access, "payload", loc);
+        } else {
+            payload_access = createIntegerLiteral(0, get_g_type_void(), loc);
+        }
+        payload_access->resolved_type = node->resolved_type;
+
+        out_stmts.append(createYieldingStmt(payload_access, temp_ident, loc));
     }
-    payload_access->resolved_type = node->resolved_type;
-
-    out_stmts.append(createYieldingStmt(payload_access, temp_ident, loc));
 }
 
 void ControlFlowLifter::lowerCatchExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts) {
@@ -796,7 +803,11 @@ ASTNode* ControlFlowLifter::createYieldingStmt(ASTNode* expr, ASTNode* temp_iden
         return createExpressionStmt(expr, loc);
     }
 
-    // Otherwise, assign to temp
+    // Otherwise, assign to temp (skip if void)
+    if (expr->resolved_type && expr->resolved_type->kind == TYPE_VOID) {
+        if (expr->type == NODE_EXPRESSION_STMT) return expr;
+        return createExpressionStmt(expr, loc);
+    }
     return createExpressionStmt(createAssignment(temp_ident, expr, loc), loc);
 }
 
@@ -831,7 +842,11 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
     // 2. Create variable declaration (initially NULL, or simple default)
     // C89 requires local variables to be declared at the top, but we insert them
     // just before the current statement for now, which our emitter handles.
-    ASTNode* var_decl_node = createVarDecl(temp_name, node->resolved_type, NULL, false);
+    // Skip VarDecl if the type is void.
+    ASTNode* var_decl_node = NULL;
+    if (node->resolved_type && node->resolved_type->kind != TYPE_VOID) {
+        var_decl_node = createVarDecl(temp_name, node->resolved_type, NULL, false);
+    }
 
     // 3. Lower the expression into statements
     DynamicArray<ASTNode*> lowering_stmts(*arena_);
@@ -866,15 +881,19 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
         if (insert_idx != -1) {
             // Insert VarDecl and then lowering statements BEFORE current statement
-            current_block->statements->insert((size_t)insert_idx, var_decl_node);
+            size_t offset = 0;
+            if (var_decl_node) {
+                current_block->statements->insert((size_t)insert_idx, var_decl_node);
+                offset = 1;
+            }
             for (size_t i = 0; i < lowering_stmts.length(); ++i) {
-                current_block->statements->insert((size_t)insert_idx + 1 + i, lowering_stmts[i]);
+                current_block->statements->insert((size_t)insert_idx + offset + i, lowering_stmts[i]);
             }
         }
     }
 
-    // 5. Replace node with identifier referencing the temp
-    ASTNode* ident_node = createIdentifier(temp_name, node->loc, var_decl_node->as.var_decl->symbol);
+    // 5. Replace node with identifier referencing the temp (or dummy if void)
+    ASTNode* ident_node = createIdentifier(temp_name, node->loc, var_decl_node ? var_decl_node->as.var_decl->symbol : NULL);
     ident_node->resolved_type = node->resolved_type;
 
     if (debug_mode_) {

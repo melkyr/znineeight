@@ -1,11 +1,11 @@
 {
   "name": "RetroZig",
-  "version": 0.1,
-  "is_fun": true,
-  "tags": ["compiler", "C89", "Win95"],
+  "version": 1,
+  "stable": true,
+  "tags": ["bootstrap", "c89", "minimal"],
   "author": {
     "name": "Jules",
     "role": "Engineer"
   },
-  "null_val": null
+  "bugs": null
 }

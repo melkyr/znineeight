@@ -76,6 +76,7 @@ void CallSiteLookupTable::printUnresolved() const {
 
             char* current = buffer;
             size_t remaining = sizeof(buffer);
+            buffer[0] = '\0';
 
             safe_append(current, remaining, "Unresolved call at ");
             safe_append(current, remaining, line_buf);
@@ -89,6 +90,7 @@ void CallSiteLookupTable::printUnresolved() const {
                 safe_append(current, remaining, " Reason: ");
                 safe_append(current, remaining, entry.error_if_unresolved);
             }
+            safe_append(current, remaining, "\n");
 
             plat_print_info(buffer);
         }
