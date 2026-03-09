@@ -110,6 +110,11 @@ private:
     ASTNode* createIdentifier(const char* name, SourceLocation loc, Symbol* sym = NULL);
 
     /**
+     * @brief Creates a new binary op node.
+     */
+    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
+
+    /**
      * @brief Creates a new assignment node.
      */
     ASTNode* createAssignment(ASTNode* lvalue, ASTNode* rvalue, SourceLocation loc);
@@ -162,7 +167,13 @@ private:
     void lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
 
-    void updateCaptureSymbols(ASTNode* node, const char* name, Symbol* new_sym);
+    void updateCaptureSymbols(ASTNode* node, Symbol* old_sym, Symbol* new_sym);
+
+    // ABI Lowering Helpers
+    void lowerExternCall(ASTNode** node_slot, ASTNode* parent);
+    void lowerExportPrologue(ASTFnDeclNode* fn);
+    void lowerExportReturn(ASTNode** node_slot, ASTNode* parent);
+    bool isOptionalPointer(Type* t);
 
     // Context Stacks
     ArenaAllocator* arena_;
@@ -177,6 +188,7 @@ private:
 
     Type* current_fn_return_type_;
     DynamicArray<const char*> registered_temps_;
+    DynamicArray<ASTNode*> processed_calls_;
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
     DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
@@ -211,6 +223,11 @@ private:
         ControlFlowLifter& lifter_;
         ScopeGuard(ControlFlowLifter& l);
         ~ScopeGuard();
+    };
+
+    struct RebindEntry {
+        Symbol* old_sym;
+        Symbol* new_sym;
     };
 };
 

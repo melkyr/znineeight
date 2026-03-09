@@ -438,7 +438,7 @@ Deeply nested `try`, `catch`, or `orelse` expressions within complex binary oper
 ### Optional Representation
 Optional types are emitted as C structures. The name is mangled as `Optional_T`.
 
-**Uniform Struct Representation (Bootstrap Limitation)**: While modern Zig optimizes `?*T` to be the same size as a raw pointer (using 0 as null), the Z98 bootstrap compiler uses a uniform struct representation for all optional types.
+**Uniform Struct Representation (Bootstrap Limitation)**: While modern Zig optimizes `?*T` to be the same size as a raw pointer (using 0 as null), the Z98 bootstrap compiler uses a uniform struct representation for all optional types internally.
 
 ```c
 typedef struct {
@@ -446,6 +446,19 @@ typedef struct {
     int has_value;   /* 1 = has value, 0 = null */
 } Optional_T;
 ```
+
+### C ABI Mapping for Optional Pointers (Milestone 8)
+To maintain compatibility with the C ABI, optional pointers (`?*T`, `?[*]T`, and `?fn(...)`) are automatically transformed into raw C pointers when they cross the boundary of `extern` or `export` functions.
+
+- **Extern Functions (Zig calls C)**:
+    - **Arguments**: The `ControlFlowLifter` generates a temporary raw pointer. If the optional has a value, the temporary is assigned the payload; otherwise, it is assigned `NULL` (0). The raw pointer is then passed to the C function.
+    - **Return Value**: If a C function returns a raw pointer that Zig expects as an optional, the lifter wraps the result. If the pointer is non-null, it produces an optional with `has_value = 1`; otherwise, `has_value = 0`.
+
+- **Export Functions (C calls Zig)**:
+    - **Parameters**: In the function prologue, the lifter wraps each raw pointer parameter from C into a Zig-internal optional struct.
+    - **Return Value**: Before returning to C, the lifter unwraps the Zig optional into a raw C pointer.
+
+This "lift early, emit simply" strategy ensures that the `C89Emitter` sees standard C signatures for boundary functions while the rest of the Zig code continues to use the uniform struct representation.
 
 ### Lifting Strategy
 Like other control-flow expressions, `orelse` is "lifted" into a statement block.

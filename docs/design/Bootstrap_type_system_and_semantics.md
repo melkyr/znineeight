@@ -1506,7 +1506,8 @@ The `catch` expression provides a fallback mechanism.
 ### 23.1 Optional Types (`?T`)
 Optional types represent a value that can either be a payload of type `T` or `null`. In C89, these are represented as structures with a mangled name `Optional_T`.
 
-- **Uniform Struct Representation (Bootstrap Limitation)**: In standard Zig, `?*T` is optimized to be the same size as `*T` (using 0 for null). In the Z98 bootstrap compiler, **all** optional types (including pointers) use a uniform struct representation `{ T value; int has_value; }`. This ensures a simple and consistent code generation path for all types.
+- **Uniform Struct Representation (Bootstrap Limitation)**: In standard Zig, `?*T` is optimized to be the same size as `*T` (using 0 for null). In the Z98 bootstrap compiler, **all** optional types (including pointers) use a uniform struct representation `{ T value; int has_value; }` internally. This ensures a simple and consistent code generation path for all types within Zig-compiled code.
+- **C ABI Mapping for Optional Pointers (Milestone 8)**: To maintain compatibility with external C code, optional pointers (`?*T`, `?[*]T`, and `?fn(...)`) are automatically transformed into raw C pointers when they cross the boundary of `extern` or `export` functions. The `ControlFlowLifter` handles the conversion between the raw pointer and the internal struct representation at these boundaries.
 - **Implicit Wrapping**: Assigning a value of type `T` to `?T` automatically wraps it as a present value.
 - **Null Assignment**: Assigning `null` to `?T` sets the `has_value` flag to 0.
 

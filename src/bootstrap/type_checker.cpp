@@ -2884,7 +2884,32 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         }
     }
 
+    if (fn_symbol && (node->is_extern || node->is_export)) {
+        DynamicArray<Type*>* abi_params = new (unit_.getArena().alloc(sizeof(DynamicArray<Type*>))) DynamicArray<Type*>(unit_.getArena());
+        for (size_t i = 0; i < param_types->length(); ++i) {
+            abi_params->append(transformExternType((*param_types)[i]));
+        }
+        Type* abi_ret = transformExternType(return_type);
+        fn_symbol->c_prototype_type = createFunctionType(unit_.getArena(), abi_params, abi_ret);
+    }
+
     return function_type;
+}
+
+Type* TypeChecker::transformExternType(Type* t) {
+    if (!t) return NULL;
+    if (t->kind == TYPE_OPTIONAL) {
+        Type* payload = t->as.optional.payload;
+        if (payload->kind == TYPE_POINTER) {
+            return createPointerType(unit_.getArena(), payload->as.pointer.base,
+                                     payload->as.pointer.is_const, payload->as.pointer.is_many,
+                                     &unit_.getTypeInterner());
+        }
+        if (payload->kind == TYPE_FUNCTION_POINTER) {
+            return payload;
+        }
+    }
+    return t;
 }
 
 Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {

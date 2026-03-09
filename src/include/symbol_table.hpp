@@ -45,6 +45,7 @@ struct Symbol {
     unsigned int scope_level; // Set by SymbolTable on insertion
     unsigned int flags;        // Bitmask of SymbolFlag
     bool is_generic;           // True if it's a generic function
+    Type* c_prototype_type;    // For extern/export functions, the C-compatible type
 };
 
 class SymbolBuilder {
@@ -63,6 +64,7 @@ public:
     SymbolBuilder& inScope(unsigned int level);
     SymbolBuilder& withFlags(unsigned int flags);
     SymbolBuilder& asGeneric(bool generic = true);
+    SymbolBuilder& withCPrototypeType(Type* type);
     Symbol build();
 };
 

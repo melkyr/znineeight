@@ -1507,6 +1507,14 @@ Key changes:
     - **Codegen**: Implemented `Optional_T` struct emission and `orelse` expression lifting. Updated `if` and `if-expr` to support optional unwrapping with temporary variables to prevent double-evaluation. Fixed bug in standalone optional assignments.
     - **Verification**: Created Batch 47 with 9 comprehensive integration tests covering the requested test matrix (null assignment, implicit wrapping, orelse fallbacks, if-captures, nested optionals, and optional structs). Verified all 47 batches pass.
 
+228.1 [COMPLETE] **Task 228.1: Optional Pointer ABI Mapping (DONE)**
+    - **Symbol Table**: Added `c_prototype_type` to `Symbol` to store ABI-compliant C signatures.
+    - **Type Checker**: Modified `visitFnSignature` to compute and store ABI-transformed signatures for `extern` and `export` functions. Updated compatibility rules to use structural equality for function pointers.
+    - **Lifter**: Implemented `lowerExternCall`, `lowerExportPrologue`, and `lowerExportReturn` to perform boundary wrapping/unwrapping for `?*T`, `?[*]T`, and `?fn(...)`.
+    - **Safety**: Protected against double-evaluation by ensuring optional expressions are evaluated into temporaries exactly once at boundaries.
+    - **Codegen**: Updated `C89Emitter` to use C-compatible prototypes for boundary functions.
+    - **Documentation**: Updated `DESIGN.md`, `C89_Codegen.md`, and `Bootstrap_type_system_and_semantics.md`.
+
 ### Bugfixes & Hardening (Milestone 7)
 
 229.1 [COMPLETE] **Task 9.2: Cross-Module Qualified Type Names (DONE)**

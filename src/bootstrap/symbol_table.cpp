@@ -25,6 +25,7 @@ SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     temp_symbol_.scope_level = 0;
     temp_symbol_.flags = 0;
     temp_symbol_.is_generic = false;
+    temp_symbol_.c_prototype_type = NULL;
     // location is a struct, hopefully its default constructor (if any) or bitwise zero is fine
 }
 
@@ -75,6 +76,11 @@ SymbolBuilder& SymbolBuilder::withFlags(unsigned int flags) {
 
 SymbolBuilder& SymbolBuilder::asGeneric(bool generic) {
     temp_symbol_.is_generic = generic;
+    return *this;
+}
+
+SymbolBuilder& SymbolBuilder::withCPrototypeType(Type* type) {
+    temp_symbol_.c_prototype_type = type;
     return *this;
 }
 

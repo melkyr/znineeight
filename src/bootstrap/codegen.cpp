@@ -693,21 +693,38 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
             mangled_name = getC89GlobalName(node->name);
         }
 
-        /* For prototype, we don't necessarily want to allocate parameter names in var_alloc_, */
-        /* so we don't pass 'node' as params_node if we want to avoid side effects. */
-        /* But we want to emit parameter types correctly. */
-        emitTypePrefix(ret_type);
-        writeString(" ");
-        writeString(mangled_name);
-        writeString("(");
-        if (!node->params || node->params->length() == 0) {
-            writeString("void");
+        if (sym && sym->c_prototype_type) {
+            Type* abi_type = sym->c_prototype_type;
+            emitTypePrefix(abi_type->as.function.return_type);
+            writeString(" ");
+            writeString(mangled_name);
+            writeString("(");
+            DynamicArray<Type*>* params = abi_type->as.function.params;
+            if (!params || params->length() == 0) {
+                writeString("void");
+            } else {
+                for (size_t i = 0; i < params->length(); ++i) {
+                    emitDeclarator((*params)[i], NULL);
+                    if (i < params->length() - 1) writeString(", ");
+                }
+            }
         } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+            /* For prototype, we don't necessarily want to allocate parameter names in var_alloc_, */
+            /* so we don't pass 'node' as params_node if we want to avoid side effects. */
+            /* But we want to emit parameter types correctly. */
+            emitTypePrefix(ret_type);
+            writeString(" ");
+            writeString(mangled_name);
+            writeString("(");
+            if (!node->params || node->params->length() == 0) {
+                writeString("void");
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
                 }
             }
         }
@@ -725,25 +742,44 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
     const char* mangled_name = sym->mangled_name;
 
     writeIndent();
-    if (!fn->is_pub && !fn->is_extern) {
+    if (!fn->is_pub && !fn->is_extern && !fn->is_export) {
         writeString("static ");
     }
 
-    emitTypePrefix(ret_type);
-    writeString(" ");
-    writeString(mangled_name);
-    writeString("(");
-    if (!fn->params || fn->params->length() == 0) {
-        writeString("void");
-    } else {
-        for (size_t i = 0; i < fn->params->length(); ++i) {
-            if (i > 0) writeString(", ");
-            ASTNode* param_node = (*fn->params)[i];
-            emitType(param_node->as.param_decl.type->resolved_type);
+    if (sym->c_prototype_type) {
+        Type* abi_type = sym->c_prototype_type;
+        emitTypePrefix(abi_type->as.function.return_type);
+        writeString(" ");
+        writeString(mangled_name);
+        writeString("(");
+        DynamicArray<Type*>* params = abi_type->as.function.params;
+        if (!params || params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < params->length(); ++i) {
+                if (i > 0) writeString(", ");
+                emitDeclarator((*params)[i], NULL);
+            }
         }
+        writeString(")");
+        emitTypeSuffix(abi_type->as.function.return_type);
+    } else {
+        emitTypePrefix(ret_type);
+        writeString(" ");
+        writeString(mangled_name);
+        writeString("(");
+        if (!fn->params || fn->params->length() == 0) {
+            writeString("void");
+        } else {
+            for (size_t i = 0; i < fn->params->length(); ++i) {
+                if (i > 0) writeString(", ");
+                ASTNode* param_node = (*fn->params)[i];
+                emitType(param_node->as.param_decl.type->resolved_type);
+            }
+        }
+        writeString(")");
+        emitTypeSuffix(ret_type);
     }
-    writeString(")");
-    emitTypeSuffix(ret_type);
     writeString(";\n");
 }
 
@@ -761,7 +797,12 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     writeIndent();
 
     Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
-    current_fn_ret_type_ = ret_type;
+    Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+    if (sym && sym->c_prototype_type) {
+        current_fn_ret_type_ = sym->c_prototype_type->as.function.return_type;
+    } else {
+        current_fn_ret_type_ = ret_type;
+    }
     defer_stack_.clear();
 
     /* Special handling for the main entry point */
@@ -793,7 +834,30 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             mangled_name = getC89GlobalName(node->name);
         }
 
-        emitDeclarator(ret_type, mangled_name, node);
+        if (sym && sym->c_prototype_type) {
+            Type* abi_type = sym->c_prototype_type;
+            emitTypePrefix(abi_type->as.function.return_type);
+            writeString(" ");
+            writeString(mangled_name);
+            writeString("(");
+            DynamicArray<Type*>* params = abi_type->as.function.params;
+            if (!params || params->length() == 0) {
+                writeString("void");
+            } else {
+                for (size_t i = 0; i < params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    ASTParamDeclNode& param = param_node->as.param_decl;
+                    /* Use mangled local name for parameters even in ABI mode */
+                    const char* p_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                    emitDeclarator((*params)[i], p_name);
+                    if (i < params->length() - 1) writeString(", ");
+                }
+            }
+            writeString(")");
+            emitTypeSuffix(abi_type->as.function.return_type);
+        } else {
+            emitDeclarator(ret_type, mangled_name, node);
+        }
     }
 
     if (node->body) {

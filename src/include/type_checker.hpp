@@ -109,6 +109,7 @@ private:
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
+    Type* transformExternType(Type* t);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
