@@ -80,6 +80,8 @@ void MetadataPreparationPass::run() {
                 }
             }
         }
+
+        collectStaticFunctions(mod);
     }
 }
 
@@ -190,6 +192,27 @@ void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
     if (isTypeComplete(type)) {
         if (type->size == 0 && type->kind != TYPE_VOID && type->kind != TYPE_NORETURN) {
             refreshLayout(type);
+        }
+    }
+}
+
+void MetadataPreparationPass::collectStaticFunctions(Module* mod) {
+    if (!mod->ast_root || mod->ast_root->type != NODE_BLOCK_STMT) return;
+
+    DynamicArray<ASTNode*>* stmts = mod->ast_root->as.block_stmt.statements;
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        ASTNode* node = (*stmts)[i];
+        if (node->type == NODE_FN_DECL) {
+            ASTFnDeclNode* fn = node->as.fn_decl;
+            /* In RetroZig, every top-level function should have a symbol in the module scope. */
+            Symbol* sym = mod->symbols->lookup(fn->name);
+            if (sym && sym->kind == SYMBOL_FUNCTION) {
+                /* We collect ONLY static (non-pub) functions for forward declarations in .c files. */
+                /* Public functions are already handled by .h file includes. */
+                if (!fn->is_pub && !(sym->flags & SYMBOL_FLAG_EXTERN)) {
+                    mod->static_function_prototypes.append(sym);
+                }
+            }
         }
     }
 }

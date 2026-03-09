@@ -144,6 +144,14 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         }
     }
 
+    // Pass 2.5: Static Function Prototypes
+    for (size_t i = 0; i < module->static_function_prototypes.length(); ++i) {
+        emitter.emitFunctionPrototype(module->static_function_prototypes[i]);
+    }
+    if (module->static_function_prototypes.length() > 0) {
+        emitter.writeString("\n");
+    }
+
     // Pass 3: Function Definitions
     for (size_t i = 0; i < stmts->length(); ++i) {
         if ((*stmts)[i]->type == NODE_FN_DECL) {
