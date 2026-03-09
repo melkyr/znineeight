@@ -482,3 +482,33 @@ target.has_value = 0;
 
 ### Defer Interaction
 While `orelse` itself doesn't cause early returns (unlike `try`), the fallback expression (right side of `orelse`) can contain a `return` or `unreachable`. The emitter correctly handles these by executing any active `defer` statements before the `return` or emitting a panic for `unreachable`.
+
+### 4.13 Anonymous Structs and Unions
+Zig allows defining anonymous structs and unions as types for fields (e.g., `data: union { a: i32, b: f32 }`). Standard C89 supports anonymous types if they are defined inline with the field declaration.
+
+#### Emission Strategy
+The `C89Emitter` identifies anonymous structs and unions by checking if their `c_name` and `as.struct_details.name` are `NULL`.
+
+- **Inlined Definition**: Instead of emitting a named type (e.g., `struct S data;`), the emitter outputs the full type body followed by the field name: `union { int a; float b; } data;`.
+- **Recursive Emission**: The `emitStructBody` and `emitUnionBody` helpers recursively handle fields, ensuring that nested anonymous types are also inlined correctly.
+- **Keyword Mangling**: Field names that conflict with C keywords (like `int` or `float`) are mangled (e.g., `z_int`) using `getSafeFieldName` to ensure valid C89 syntax.
+
+Example Zig:
+```zig
+const S = struct {
+    data: union {
+        val: i32,
+        other: f32,
+    },
+};
+```
+
+Generated C89:
+```c
+struct S {
+    union {
+        int val;
+        float other;
+    } data;
+};
+```

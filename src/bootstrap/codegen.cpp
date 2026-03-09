@@ -313,18 +313,20 @@ void C89Emitter::emitBaseType(Type* type) {
                 writeString("struct ");
                 writeString(type->c_name);
             } else {
-                writeString("/* anonymous */");
+                writeString("struct ");
+                emitStructBody(type);
             }
             break;
         case TYPE_UNION:
-            writeString("union ");
             if (!type->c_name && type->as.struct_details.name) {
                 type->c_name = getC89GlobalName(type->as.struct_details.name);
             }
             if (type->c_name) {
+                writeString("union ");
                 writeString(type->c_name);
             } else {
-                writeString("/* anonymous */");
+                writeString("union ");
+                emitUnionBody(type);
             }
             break;
         case TYPE_ENUM:
@@ -2418,6 +2420,62 @@ void C89Emitter::emitTypeDefinition(const ASTNode* node) {
     }
 }
 
+void C89Emitter::emitStructBody(Type* type) {
+    if (!type || type->kind != TYPE_STRUCT) return;
+
+    writeString("{\n");
+    {
+        IndentScope struct_indent(*this);
+        DynamicArray<StructField>* fields = type->as.struct_details.fields;
+        if (fields) {
+            for (size_t i = 0; i < fields->length(); ++i) {
+                /* Skip void fields in C */
+                if ((*fields)[i].type->kind == TYPE_VOID) continue;
+                writeIndent();
+
+                Type* field_type = (*fields)[i].type;
+                const char* field_name = getSafeFieldName((*fields)[i].name);
+
+                emitType(field_type, field_name);
+                writeString(";\n");
+            }
+        }
+    }
+    writeIndent();
+    writeString("}");
+}
+
+void C89Emitter::emitUnionBody(Type* type) {
+    if (!type || type->kind != TYPE_UNION) return;
+
+    writeString("{\n");
+    {
+        IndentScope union_indent(*this);
+        DynamicArray<StructField>* fields = type->as.struct_details.fields;
+        int emitted_fields = 0;
+        if (fields) {
+            for (size_t i = 0; i < fields->length(); ++i) {
+                /* Skip void fields in C */
+                if ((*fields)[i].type->kind == TYPE_VOID) continue;
+                writeIndent();
+
+                Type* field_type = (*fields)[i].type;
+                const char* field_name = getSafeFieldName((*fields)[i].name);
+
+                emitType(field_type, field_name);
+                writeString(";\n");
+                emitted_fields++;
+            }
+        }
+        if (emitted_fields == 0) {
+            writeIndent();
+            writeString("char __dummy;\n");
+        }
+    }
+    writeIndent();
+    writeString("}");
+}
+
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
@@ -2426,20 +2484,9 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeString("struct ");
         writeString(type->c_name ? type->c_name : "/* unknown */");
         if (type->as.struct_details.fields) {
-            writeString(" {\n");
-            {
-                IndentScope struct_indent(*this);
-                DynamicArray<StructField>* fields = type->as.struct_details.fields;
-                for (size_t i = 0; i < fields->length(); ++i) {
-                    /* Skip void fields in C */
-                    if ((*fields)[i].type->kind == TYPE_VOID) continue;
-                    writeIndent();
-                    emitType((*fields)[i].type, (*fields)[i].name);
-                    writeString(";\n");
-                }
-            }
-            writeIndent();
-            writeString("};\n\n");
+            writeString(" ");
+            emitStructBody(type);
+            writeString(";\n\n");
         } else {
             writeString("; /* opaque */\n\n");
         }
@@ -2456,26 +2503,9 @@ void C89Emitter::emitTypeDefinition(Type* type) {
                     emitType(type->as.struct_details.tag_type, "tag");
                     writeString(";\n");
                     writeIndent();
-                    writeString("union {\n");
-                    {
-                        IndentScope union_indent(*this);
-                        DynamicArray<StructField>* fields = type->as.struct_details.fields;
-                        int emitted_fields = 0;
-                        for (size_t i = 0; i < fields->length(); ++i) {
-                            /* Skip void fields in C */
-                            if ((*fields)[i].type->kind == TYPE_VOID) continue;
-                            writeIndent();
-                            emitType((*fields)[i].type, (*fields)[i].name);
-                            writeString(";\n");
-                            emitted_fields++;
-                        }
-                        if (emitted_fields == 0) {
-                            writeIndent();
-                            writeString("char __dummy;\n");
-                        }
-                    }
-                    writeIndent();
-                    writeString("} data;\n");
+                    writeString("union ");
+                    emitUnionBody(type);
+                    writeString(" data;\n");
                 }
                 writeIndent();
                 writeString("};\n\n");
@@ -2486,26 +2516,9 @@ void C89Emitter::emitTypeDefinition(Type* type) {
             writeString("union ");
             writeString(type->c_name ? type->c_name : "/* unknown */");
             if (type->as.struct_details.fields) {
-                writeString(" {\n");
-                {
-                    IndentScope union_indent(*this);
-                    DynamicArray<StructField>* fields = type->as.struct_details.fields;
-                    int emitted_fields = 0;
-                    for (size_t i = 0; i < fields->length(); ++i) {
-                        /* Skip void fields in C */
-                        if ((*fields)[i].type->kind == TYPE_VOID) continue;
-                        writeIndent();
-                        emitType((*fields)[i].type, (*fields)[i].name);
-                        writeString(";\n");
-                        emitted_fields++;
-                    }
-                    if (emitted_fields == 0) {
-                        writeIndent();
-                        writeString("char __dummy;\n");
-                    }
-                }
-                writeIndent();
-                writeString("};\n\n");
+                writeString(" ");
+                emitUnionBody(type);
+                writeString(";\n\n");
             } else {
                 writeString("; /* opaque union */\n\n");
             }
@@ -2871,6 +2884,17 @@ const char* C89Emitter::getZigTypeName(Type* type) const {
         case TYPE_C_CHAR: return "c_char";
         default: return "unknown";
     }
+}
+
+const char* C89Emitter::getSafeFieldName(const char* name) {
+    if (!name) return "z_anon";
+    if (isCKeyword(name)) {
+        char buf[256];
+        plat_strcpy(buf, "z_");
+        plat_strcat(buf, name);
+        return unit_.getStringInterner().intern(buf);
+    }
+    return name;
 }
 
 const char* C89Emitter::getMangledTypeName(Type* type) {

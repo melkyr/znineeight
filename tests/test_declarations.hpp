@@ -1168,4 +1168,9 @@ TEST_FUNC(UnionSliceLifting_Basic);
 TEST_FUNC(UnionSliceLifting_Coercion);
 TEST_FUNC(UnionSliceLifting_ManualConstruction);
 
+// Batch 57: Anonymous Union Emission
+bool test_Codegen_AnonymousUnion_Basic();
+bool test_Codegen_AnonymousUnion_Nested();
+bool test_Codegen_AnonymousStruct_Nested();
+
 #endif // TEST_DECLARATIONS_HPP
