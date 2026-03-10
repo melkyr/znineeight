@@ -36,7 +36,8 @@ TEST_FUNC(DeferIntegration_Basic) {
         "    x = 2;\n"
         "}";
     // x = 1 should be emitted before the closing brace of foo's body block.
-    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 2; x = 1; }");
+    // Lifter wraps defer bodies in blocks if they aren't already.
+    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 2; { x = 1; } }");
 }
 
 TEST_FUNC(DeferIntegration_LIFO) {
@@ -47,7 +48,7 @@ TEST_FUNC(DeferIntegration_LIFO) {
         "    defer x = 2;\n"
         "    x = 10;\n"
         "}";
-    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 10; x = 2; x = 1; }");
+    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 10; { x = 2; } { x = 1; } }");
 }
 
 TEST_FUNC(DeferIntegration_Return) {
@@ -57,7 +58,7 @@ TEST_FUNC(DeferIntegration_Return) {
         "    defer x = 20;\n"
         "    return x;\n"
         "}";
-    return run_defer_test(source, "foo", "int foo(void) { int x = 10; { int __return_val; __return_val = x; x = 20; return __return_val; } }");
+    return run_defer_test(source, "foo", "int foo(void) { int x = 10; { int __return_val; __return_val = x; { x = 20; } return __return_val; } }");
 }
 
 TEST_FUNC(DeferIntegration_NestedScopes) {
@@ -71,7 +72,7 @@ TEST_FUNC(DeferIntegration_NestedScopes) {
         "fn a() void {}\n"
         "fn b() void {}";
     // b() should run at end of its block, a() at end of foo.
-    return run_defer_test(source, "foo", "void foo(void) { { b(); } a(); }");
+    return run_defer_test(source, "foo", "void foo(void) { { { b(); } } { a(); } }");
 }
 
 TEST_FUNC(DeferIntegration_Break) {
@@ -83,7 +84,7 @@ TEST_FUNC(DeferIntegration_Break) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ bar(); break; } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ { bar(); } break; } }");
 }
 
 TEST_FUNC(DeferIntegration_LabeledBreak) {
@@ -100,7 +101,7 @@ TEST_FUNC(DeferIntegration_LabeledBreak) {
         "fn a() void {}\n"
         "fn b() void {}";
     // Redundant a() at the end of outer block is acceptable as it is unreachable.
-    return run_defer_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { while (1) { /* defers for break */ b(); a(); goto __zig_label_outer_0_end; } a(); } goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+    return run_defer_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { while (1) { /* defers for break */ { b(); } { a(); } goto __zig_label_outer_0_end; } { a(); } } goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_Continue) {
@@ -112,7 +113,7 @@ TEST_FUNC(DeferIntegration_Continue) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ bar(); continue; } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ { bar(); } continue; } }");
 }
 
 TEST_FUNC(DeferIntegration_NestedContinue) {
@@ -128,7 +129,7 @@ TEST_FUNC(DeferIntegration_NestedContinue) {
         "}\n"
         "fn a() void {}\n"
         "fn b() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ b(); a(); continue; } } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ { b(); } { a(); } continue; } } }");
 }
 
 TEST_FUNC(DeferIntegration_RejectReturn) {

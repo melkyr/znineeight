@@ -150,6 +150,13 @@ private:
     ASTNode* createMemberAccess(ASTNode* base, const char* field_name, SourceLocation loc);
 
     /**
+     * @brief Wraps a non-block statement in a synthetic block.
+     * @param stmt The statement to wrap.
+     * @return A new block statement node containing the given statement.
+     */
+    ASTNode* wrapInBlock(ASTNode* stmt);
+
+    /**
      * @brief Creates a new integer literal node.
      */
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);

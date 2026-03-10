@@ -111,6 +111,36 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     bool is_block = (node->type == NODE_BLOCK_STMT);
     bool is_fn = (node->type == NODE_FN_DECL);
 
+    // Wrap non-block bodies of control-flow statements before they are transformed.
+    if (node->type == NODE_IF_STMT) {
+        ASTIfStmtNode* if_stmt = node->as.if_stmt;
+        if (if_stmt->then_block && if_stmt->then_block->type != NODE_BLOCK_STMT) {
+            if_stmt->then_block = wrapInBlock(if_stmt->then_block);
+        }
+        if (if_stmt->else_block && if_stmt->else_block->type != NODE_BLOCK_STMT &&
+            if_stmt->else_block->type != NODE_IF_STMT) {
+            if_stmt->else_block = wrapInBlock(if_stmt->else_block);
+        }
+    } else if (node->type == NODE_WHILE_STMT) {
+        ASTWhileStmtNode* while_stmt = node->as.while_stmt;
+        if (while_stmt->body && while_stmt->body->type != NODE_BLOCK_STMT) {
+            while_stmt->body = wrapInBlock(while_stmt->body);
+        }
+    } else if (node->type == NODE_FOR_STMT) {
+        ASTForStmtNode* for_stmt = node->as.for_stmt;
+        if (for_stmt->body && for_stmt->body->type != NODE_BLOCK_STMT) {
+            for_stmt->body = wrapInBlock(for_stmt->body);
+        }
+    } else if (node->type == NODE_DEFER_STMT) {
+        if (node->as.defer_stmt.statement && node->as.defer_stmt.statement->type != NODE_BLOCK_STMT) {
+            node->as.defer_stmt.statement = wrapInBlock(node->as.defer_stmt.statement);
+        }
+    } else if (node->type == NODE_ERRDEFER_STMT) {
+        if (node->as.errdefer_stmt.statement && node->as.errdefer_stmt.statement->type != NODE_BLOCK_STMT) {
+            node->as.errdefer_stmt.statement = wrapInBlock(node->as.errdefer_stmt.statement);
+        }
+    }
+
     // Expression-form control flow gets handled Top-Down to ensure nested lifting
     // is contained within the branches' lowering blocks.
     if (isControlFlowExpr(node->type) && needsLifting(node, parent)) {
@@ -234,6 +264,18 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     }
 
     depth_--;
+}
+
+ASTNode* ControlFlowLifter::wrapInBlock(ASTNode* stmt) {
+    if (!stmt) return NULL;
+    if (stmt->type == NODE_BLOCK_STMT) return stmt;
+
+    void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    DynamicArray<ASTNode*>* stmts = new (array_mem) DynamicArray<ASTNode*>(*arena_);
+    stmts->append(stmt);
+
+    ASTNode* block_node = createBlock(stmts, stmt->loc);
+    return block_node;
 }
 
 void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {

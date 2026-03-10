@@ -30,7 +30,7 @@ TEST_FUNC(C89Rejection_GenericFnDecl_ShouldBeRejected) {
     return true;
 }
 
-TEST_FUNC(C89Rejection_DeferAndErrDefer) {
+TEST_FUNC(C89Support_DeferAndErrDefer) {
     const char* source =
         "fn main() void {\n"
         "    defer { var x: i32 = 1; }\n"
@@ -45,23 +45,8 @@ TEST_FUNC(C89Rejection_DeferAndErrDefer) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.performFullPipeline(file_id);
 
-    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
-    bool found_errdefer = false;
-    bool found_defer_error = false;
-
-    for (size_t i = 0; i < unit.getErrorHandler().getErrors().length(); ++i) {
-        const char* msg = unit.getErrorHandler().getErrors()[i].hint;
-        if (msg && strstr(msg, "errdefer statements are not supported")) {
-            found_errdefer = true;
-        } else if (msg && strstr(msg, "defer statements are not supported")) {
-            // This should only match if "errdefer" is NOT present in this specific string
-            // but since we are in else if, it already ensures it didn't match the first one.
-            found_defer_error = true;
-        }
-    }
-
-    ASSERT_TRUE(found_errdefer);
-    ASSERT_FALSE(found_defer_error);
+    // Defer and errdefer are now supported as placeholders
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
 
     return true;
 }
