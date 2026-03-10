@@ -162,6 +162,15 @@ This unification reduces code duplication and ensures consistent behavior across
 - **Break/Continue**:
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
+- **Switch Statements**:
+  - **Tagged Union Capture**: When switching on a tagged union, the emitter generates a block for each case that has a capture variable.
+    ```c
+    case Union_Tag_A: {
+        int x = switch_tmp.data.A;
+        /* body */
+    } break;
+    ```
+    - **Void Handling**: If the captured field has type `void`, the C variable declaration and assignment are skipped to comply with C89 rules.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.

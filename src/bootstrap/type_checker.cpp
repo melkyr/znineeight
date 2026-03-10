@@ -2438,7 +2438,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                 .withName(prong->capture_name)
                 .ofType(SYMBOL_VARIABLE)
                 .withType((field_type && !is_type_undefined(field_type)) ? field_type : get_g_type_void())
-                .atLocation(node->expression->loc)
+                .atLocation(item_expr->loc)
                 .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
                 .build();
             unit_.getSymbolTable().insert(sym);

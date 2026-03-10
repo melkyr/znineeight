@@ -1195,15 +1195,19 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
     ```cpp
     /**
      * @struct ASTSwitchProngNode
-     * @brief Represents a single prong in a switch expression (e.g., `case => ...`).
+     * @brief Represents a single prong in a switch expression (e.g., `case => |capture| ...`).
      * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
      * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
      * @var ASTSwitchProngNode::body The expression to execute for this prong.
+     * @var ASTSwitchProngNode::capture_name Optional name for the payload capture (e.g., `|val|`).
+     * @var ASTSwitchProngNode::capture_sym Resolved symbol for the capture.
      */
     struct ASTSwitchProngNode {
         DynamicArray<ASTNode*>* items;
         bool is_else;
         ASTNode* body;
+        const char* capture_name;
+        Symbol* capture_sym;
     };
 
     /**

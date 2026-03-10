@@ -1333,7 +1333,10 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
             {
                 IndentScope prong_indent(*this);
 
-                if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+                bool has_non_void_capture = (is_tagged_union && prong->capture_name && prong->capture_sym &&
+                                            prong->capture_sym->symbol_type->kind != TYPE_VOID);
+
+                if (has_non_void_capture) {
                     writeIndent();
                     writeString("{\n");
                     {
@@ -1345,7 +1348,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         writeString(".data.");
                         /* Field name is preserved in original_name of the case item literal */
                         ASTNode* item_expr = (*prong->items)[0];
-                        writeString(item_expr->as.integer_literal.original_name);
+                        writeString(getSafeFieldName(item_expr->as.integer_literal.original_name));
                         writeString(";\n");
                     }
                 }
@@ -1356,7 +1359,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                     emitStatement(prong->body);
                 }
 
-                if (is_tagged_union && prong->capture_name && prong->capture_sym) {
+                if (has_non_void_capture) {
                     writeIndent();
                     writeString("}\n");
                 }
