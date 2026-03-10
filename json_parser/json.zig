@@ -1,4 +1,3 @@
-// json.zig
 const file = @import("file.zig");
 const arena_mod = @import("arena.zig");
 
@@ -79,7 +78,7 @@ fn parser_expect(self: *Parser, c: u8) ParseError!void {
 }
 
 pub fn parseJson(arena: *void, input: []const u8) ParseError!JsonValue {
-    const zero: usize = 0u;
+    const zero: usize = 0;
     var p = Parser{
         .input = input,
         .pos = zero,
@@ -181,16 +180,14 @@ fn isDigit(c: u8) bool {
 
 fn parseFloat(s: []const u8) f64 {
     var buf: [64]u8 = undefined;
-    var i: usize = 0u;
-    const buf_len: usize = 64u;
-    const one: usize = 1u;
+    var i: usize = 0;
+    const buf_len: usize = 64;
+    const one: usize = 1;
     while (i < s.len and i < buf_len - one) {
         buf[i] = s[i];
-        i += 1u;
+        i += 1;
     }
     buf[i] = 0;
-    // Note: strtod expects a pointer to char, but we use u8.
-    // In our runtime, strtod is declared as strtod(nptr: [*]const u8, endptr: ?*[*]u8) f64;
     const endptr_null: ?[*]const c_char = null;
     return strtod(@ptrCast([*]const c_char, &buf[0]), endptr_null);
 }
@@ -223,7 +220,6 @@ fn parseArray(p: *Parser) ParseError!JsonValue {
     p.pos = saved_pos;
 
     // Allocate array
-    // We don't have generics, so we manually calculate size and cast
     const bytes = arena_mod.alloc_bytes(count * @sizeOf(JsonValue));
     const arr = @ptrCast([*]JsonValue, bytes.ptr)[0..count];
 
@@ -291,7 +287,10 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
             // Allocate memory for the value since JsonObjectEntry stores a pointer
             const val_ptr_bytes = arena_mod.alloc_bytes(@sizeOf(JsonValue));
             const val_ptr = @ptrCast(*JsonValue, val_ptr_bytes.ptr);
-            val_ptr.* = val_inner;
+
+            // Manual field assignments to avoid potential issues with struct copy in union context
+            val_ptr.tag = val_inner.tag;
+            val_ptr.data = val_inner.data;
 
             fields[idx].key = key;
             fields[idx].value = val_ptr;

@@ -1,7 +1,11 @@
 {
   "name": "RetroZig",
-  "version": 1,
+  "version": 0.1,
   "is_awesome": true,
-  "features": ["arena", "c89", "zig"],
-  "meta": null
+  "features": ["C89", "Bootstrap", "Minimal"],
+  "meta": {
+    "author": "AI",
+    "year": 1998
+  },
+  "null_val": null
 }

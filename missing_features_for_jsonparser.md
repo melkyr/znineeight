@@ -1,72 +1,59 @@
-# Missing Features and Issues for JSON Parser in Z98
+# Missing Features for JSON Parser
 
-This document tracks the issues encountered during the "Baptism of Fire" for the RetroZig compiler using a modular JSON parser example.
+During the "baptism of fire" compilation of the JSON parser example, the following features were found to be missing or limited in the current RetroZig bootstrap compiler (Z98):
 
-## Encountered Issues
-
-### 1. Mandatory Braced Blocks
-The bootstrap compiler requires all `if`, `while`, and `for` statements to use braced blocks `{ ... }`, even for single statements.
-- **Example failing code:** `if (cond) return error.Fail;`
-- **Workaround:** Use `if (cond) { return error.Fail; }`
-
-### 2. No Struct Methods
-Methods declared inside a `struct` block are not supported.
-- **Example failing code:**
+## 1. Tagged Unions (`union(enum)`)
+- **Status**: Not supported in Z98.
+- **Observation**: The parser fails with a syntax error when encountering `union(enum)`.
+- **Workaround**: Manually implement tagged unions using a `struct` containing an `enum` tag and a bare `union` for the data.
+- **Example of failure**:
   ```zig
-  const Parser = struct {
-      fn peek(self: *Parser) u8 { ... }
-  };
+  pub const JsonValue = union(enum) { ... }; // Syntax Error
   ```
-- **Workaround:** Use standalone functions that take a pointer to the struct as the first argument.
 
-### 3. Strict Type Compatibility for Literals
-The compiler does not implicitly coerce `i32` literals (like `0`) to `usize` in assignments or struct initializers.
-- **Example failing code:** `.pos = 0` (where `pos` is `usize`)
-- **Workaround:** Use unsigned literals: `.pos = 0u`
-
-### 4. Recursive Type Layout
-Encountered `error: type mismatch` with hint `field 'value' has incomplete type '(placeholder) JsonValue'` when a struct contains a slice of another struct that contains the first struct by value.
-- **Example:**
+## 2. Switch Payload Capture
+- **Status**: Not supported in Z98.
+- **Observation**: The parser expects a block `{}` for switch arms and does not recognize the `|payload|` capture syntax.
+- **Workaround**: Use explicit member access after checking the tag in a manual tagged union.
+- **Example of failure**:
   ```zig
-  const JsonValue = struct {
-      data: union {
-          object: []struct { key: []const u8, value: JsonValue },
-      },
-  };
+  switch (val) {
+      .Boolean => |b| { ... } // Syntax Error
+  }
   ```
-- **Status:** Investigating if this is a limitation of anonymous structs or recursive types in general.
 
-### 5. Member Access on Literals
-Accessing `.ptr` on a string literal directly is not supported.
-- **Example failing code:** `"rb".ptr`
-- **Workaround:** Assign the literal to a `[]const u8` variable first.
-
-### 6. Compiler Segmentation Fault (Resolved via Refactoring)
-The compiler initially segfaulted on complex ASTs. This was mitigated by avoiding nested anonymous structs and ensuring all types are named. It appears the lifter or type-checker might have issues with deeply nested anonymous structures.
-
-### 7. C Interop: Optional Pointers vs. C ABI
-The compiler maps `?*T` to a struct `{ T* value, int has_value }`. This is **not** ABI-compatible with C functions that expect or return nullable pointers (which are just `T*` where `NULL` is the none value).
-- **Example failing code:** `extern fn fopen(...) ?*File;` generates `Optional_Ptr_void fopen(...)` in C, which conflicts with standard `FILE* fopen(...)`.
-- **Workaround:** Use a bare pointer `*File` and check for null by casting to `usize` or similar, or provide a C wrapper.
-
-### 8. Anonymous Union Emission Bug
-The C89 emitter fails to emit the body of anonymous unions within structs in the generated header files.
-- **Example failing code:**
+## 3. Braceless `if` and `while`
+- **Status**: Not supported in Z98.
+- **Observation**: The parser strictly requires `{}` for the bodies of `if`, `else`, `while`, etc.
+- **Example of failure**:
   ```zig
-  data: union { boolean: bool, ... }
+  if (cond) return err; // Syntax Error: Expected '{'
   ```
-  Generates:
-  ```c
-  union /* anonymous */ data;
-  ```
-  This is invalid C and causes "has no member named 'data'" errors because the members aren't defined.
-- **Workaround:** Use a named union. For example, move the union to a top-level `const Data = union { ... };` and use that type within the struct.
 
-### 9. Standard Library Conflicts
-`zig_runtime.h` includes `<stdio.h>`, which pre-defines functions like `fopen`, `fread`, etc. Declaring them as `extern fn` in Zig with even slightly different signatures (e.g., using `u8` instead of `char`) causes C compilation errors.
-- **Workaround:** Ensure Zig `extern` declarations perfectly match the C standard library if you intend to link against it.
+## 4. Range-based `switch` arms
+- **Status**: Uncertain/Limited.
+- **Observation**: While `NODE_RANGE` exists, the JSON parser example was downgraded to avoid complex switch logic to ensure first-pass success.
 
-## Pending Investigation
-- [x] Support for `[]T` where `T` is the struct currently being defined. (Works if named).
-- [x] Anonymous struct support within unions/slices. (Causes issues, avoid for now).
-- [ ] Investigation into why the C89 emitter uses `->` for union members (e.g., `val.data->boolean`) when `data` is a union member of a struct (should be `val.data.boolean`). This suggests the emitter thinks `data` is a pointer.
+## 5. String Literals as Slices in Comparisons
+- **Status**: Limited.
+- **Observation**: Expressions like `p.input[p.pos..][0..4] == "null"` are not reliably handled in the bootstrap phase.
+- **Workaround**: Use manual byte-by-byte comparison or explicit C-interop helpers.
+
+## 6. `@ptrCast` and `[*]T` usage
+- **Status**: Sensitive.
+- **Observation**: The compiler is strict about pointer types. Using `[*]T` (many-item pointer) and explicit `@ptrCast` is often necessary when interacting with C-like buffers or slices.
+
+## 7. `defer` without blocks
+- **Status**: Not supported.
+- **Observation**: `defer _ = fclose(f);` failed; `defer { _ = fclose(f); }` is required.
+
+## 8. `comptime` parameters
+- **Status**: Syntactically recognized but limited in effect.
+- **Observation**: Generic-like behavior (e.g., `fn alloc(..., comptime T: type, ...)` ) is not fully realized in the bootstrap compiler's type system for custom functions.
+- **Workaround**: Use `usize` and manual `@ptrCast`.
+
+## 9. Potential Struct/Union Layout Mismatches
+- **Status**: Investigating.
+- **Observation**: When returning structs containing unions by value, or when accessing them via pointers in the arena, the `tag` field or union data sometimes appears corrupted or misaligned in the generated C code.
+- **Impact**: This led to segmentation faults or incorrect logic branches in the JSON printer.
+- **Recommendation**: For bootstrap-critical code, keep aggregate types simple and avoid deep nesting of unions within structs if possible, or use explicit padding/alignment if the C compiler's behavior is known.
