@@ -330,6 +330,9 @@ private:
     /** @brief Parses an optional type (e.g., `?i32`). Helper for `parseType`. */
     ASTNode* parseOptionalType();
 
+    /** @brief Parses a switch statement. Helper for `parseStatement`. */
+    ASTNode* parseSwitchStatement();
+
     /** @brief Parses a struct declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseStructDeclaration();
 

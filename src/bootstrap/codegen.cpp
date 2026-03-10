@@ -1074,6 +1074,11 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitAssignmentWithLifting(NULL, node->as.assignment->lvalue, node->as.assignment->rvalue);
             break;
         }
+        case NODE_FUNCTION_CALL:
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
+            break;
         case NODE_EMPTY_STMT:
             writeIndent();
             writeString(";\n");
@@ -1299,7 +1304,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     {
         IndentScope switch_indent(*this);
         for (size_t i = 0; i < node->prongs->length(); ++i) {
-            const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+            const ASTSwitchProngNode* prong = (*node->prongs)[i];
             if (prong->is_else) {
                 writeIndent();
                 writeString("default:\n");
@@ -1310,7 +1315,12 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         i64 start, end;
                         if (evaluateSimpleConstant(item->as.range.start, &start) &&
                             evaluateSimpleConstant(item->as.range.end, &end)) {
-                            for (i64 k = start; k <= end; ++k) {
+                            i64 limit = item->as.range.is_inclusive ? end : end - 1;
+                            if (debug_trace_) {
+                                plat_printf_debug("[CODEGEN] Range: start=%ld, end=%ld, inclusive=%d, limit=%ld\n",
+                                                 (long)start, (long)end, (int)item->as.range.is_inclusive, (long)limit);
+                            }
+                            for (i64 k = start; k <= limit; ++k) {
                                 writeIndent();
                                 writeString("case ");
                                 char buf[32];

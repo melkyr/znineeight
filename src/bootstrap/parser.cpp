@@ -170,6 +170,94 @@ ASTNode* Parser::parseComptimeBlock() {
     return node;
 }
 
+/**
+ * @brief Parses a switch statement.
+ *
+ * Grammar:
+ * `switch '(' expr ')' '{' (prong (',' prong)* ','?)? '}'`
+ * `prong ::= (expr (',' expr)* | 'else') '=>' statement`
+ *
+ * @return A pointer to an `ASTNode` representing the parsed switch statement.
+ */
+ASTNode* Parser::parseSwitchStatement() {
+    Token switch_token = expect(TOKEN_SWITCH, "Expected 'switch' keyword");
+
+    expect(TOKEN_LPAREN, "Missing opening parenthesis after switch");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Missing closing parenthesis around condition");
+
+    expect(TOKEN_LBRACE, "Missing opening brace for prongs");
+
+    ASTSwitchStmtNode* switch_node = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
+    if (!switch_node) {
+        error("Out of memory");
+    }
+    switch_node->expression = condition;
+    switch_node->prongs = (DynamicArray<ASTSwitchProngNode*>*)arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+    if (!switch_node->prongs) {
+        error("Out of memory");
+    }
+    new (switch_node->prongs) DynamicArray<ASTSwitchProngNode*>(*arena_);
+
+    bool has_else = false;
+
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        if (!prong_node) {
+            error("Out of memory");
+        }
+        plat_memset(prong_node, 0, sizeof(ASTSwitchProngNode));
+        prong_node->items = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!prong_node->items) {
+            error("Out of memory");
+        }
+        new (prong_node->items) DynamicArray<ASTNode*>(*arena_);
+        prong_node->is_else = false;
+
+        if (match(TOKEN_ELSE)) {
+            if (has_else) {
+                error("Duplicate else prong");
+            }
+            has_else = true;
+            prong_node->is_else = true;
+        } else {
+            // Parse one or more case items
+            do {
+                prong_node->items->append(parseExpression());
+            } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
+        }
+
+        expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
+
+        // Support for captures: |payload|
+        if (match(TOKEN_PIPE)) {
+            Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
+            prong_node->capture_name = cap_token.value.identifier;
+            expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
+        }
+
+        prong_node->body = parseStatement();
+        if (prong_node->body == NULL) {
+             error("Cases without corresponding body statement");
+        }
+
+        switch_node->prongs->append(prong_node);
+
+        if (!match(TOKEN_COMMA)) break;
+    }
+
+    if (switch_node->prongs->length() == 0) {
+        error("Empty switch body {}");
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to close switch statement");
+
+    ASTNode* node = createNodeAt(NODE_SWITCH_STMT, switch_token.location);
+    node->as.switch_stmt = switch_node;
+
+    return node;
+}
+
 const Token& Parser::peekNext() const {
     // Check if both the current and the next index are within bounds.
     if (current_index_ >= token_count_ || current_index_ + 1 >= token_count_) {
@@ -296,8 +384,10 @@ ASTNode* Parser::parsePrimaryExpr() {
                 return parseErrorLiteral();
             }
             return parseErrorSetDefinition();
-        case TOKEN_SWITCH:
-            return parseSwitchExpression();
+        case TOKEN_SWITCH: {
+            ASTNode* node = parseSwitchExpression();
+            return node;
+        }
         case TOKEN_RETURN:
             return parseReturnExpr();
         case TOKEN_BREAK:
@@ -1785,8 +1875,11 @@ ASTNode* Parser::parseStatement() {
             return parseReturnStatement();
         case TOKEN_COMPTIME:
             return parseComptimeBlock();
-        case TOKEN_IF:
-            return parseIfStatement();
+        case TOKEN_SWITCH: {
+            ASTNode* node = parseSwitchStatement();
+            plat_printf_debug("[PARSER] parseStatement created switch stmt\n");
+            return node;
+        }
         case TOKEN_FOR:
             return parseForStatement();
         case TOKEN_WHILE:

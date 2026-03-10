@@ -105,6 +105,7 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     bool is_stmt = (node->type == NODE_EXPRESSION_STMT || node->type == NODE_RETURN_STMT ||
                     node->type == NODE_VAR_DECL || node->type == NODE_IF_STMT ||
                     node->type == NODE_WHILE_STMT || node->type == NODE_FOR_STMT ||
+                    node->type == NODE_SWITCH_STMT ||
                     node->type == NODE_BREAK_STMT || node->type == NODE_CONTINUE_STMT ||
                     node->type == NODE_DEFER_STMT || node->type == NODE_ERRDEFER_STMT);
 
@@ -130,6 +131,16 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         ASTForStmtNode* for_stmt = node->as.for_stmt;
         if (for_stmt->body && for_stmt->body->type != NODE_BLOCK_STMT) {
             for_stmt->body = wrapInBlock(for_stmt->body);
+        }
+    } else if (node->type == NODE_SWITCH_STMT) {
+        ASTSwitchStmtNode* switch_stmt = node->as.switch_stmt;
+        if (switch_stmt->prongs) {
+            for (size_t i = 0; i < switch_stmt->prongs->length(); ++i) {
+                ASTSwitchProngNode* prong = (*switch_stmt->prongs)[i];
+                if (prong->body && prong->body->type != NODE_BLOCK_STMT) {
+                    prong->body = wrapInBlock(prong->body);
+                }
+            }
         }
     } else if (node->type == NODE_DEFER_STMT) {
         if (node->as.defer_stmt.statement && node->as.defer_stmt.statement->type != NODE_BLOCK_STMT) {
@@ -708,7 +719,7 @@ ASTNode* ControlFlowLifter::createIfStmt(ASTNode* cond, ASTNode* then_block, AST
     return node;
 }
 
-ASTNode* ControlFlowLifter::createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchStmtProngNode*>* prongs, SourceLocation loc) {
+ASTNode* ControlFlowLifter::createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, SourceLocation loc) {
     ASTSwitchStmtNode* switch_stmt = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
     plat_memset(switch_stmt, 0, sizeof(ASTSwitchStmtNode));
     switch_stmt->expression = cond;
@@ -867,13 +878,13 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, const char* temp_name
     ASTNode* temp_ident = createIdentifier(temp_name, loc, temp_sym);
     temp_ident->resolved_type = node->resolved_type;
 
-    void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
-    DynamicArray<ASTSwitchStmtProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
+    void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+    DynamicArray<ASTSwitchProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchProngNode*>(*arena_);
 
     for (size_t i = 0; i < sw_expr->prongs->length(); ++i) {
         ASTSwitchProngNode* orig_prong = (*sw_expr->prongs)[i];
-        ASTSwitchStmtProngNode* new_prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
-        plat_memset(new_prong, 0, sizeof(ASTSwitchStmtProngNode));
+        ASTSwitchProngNode* new_prong = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        plat_memset(new_prong, 0, sizeof(ASTSwitchProngNode));
 
         new_prong->items = orig_prong->items;
         new_prong->is_else = orig_prong->is_else;

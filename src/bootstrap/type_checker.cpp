@@ -291,6 +291,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
         case NODE_RANGE:            resolved_type = visitRange(&node->as.range); break;
+        case NODE_SWITCH_STMT:      resolved_type = visitSwitchStmt(node->as.switch_stmt); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
@@ -2028,18 +2029,24 @@ Type* TypeChecker::visitRange(ASTRangeNode* node) {
     if (!end_type || is_type_undefined(end_type)) return get_g_type_undefined();
 
     if (!isIntegerType(start_type)) {
-        return reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Range start must be an integer");
+        return reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Range start must be an integer or enum");
     }
     if (!isIntegerType(end_type)) {
-        return reportAndReturnUndefined(node->end->loc, ERR_TYPE_MISMATCH, "Range end must be an integer");
+        return reportAndReturnUndefined(node->end->loc, ERR_TYPE_MISMATCH, "Range end must be an integer or enum");
     }
 
-    /* For inclusive ranges in switch, we check start <= end if they are constants */
+    /* Check bounds if they are constants */
     i64 start_val, end_val;
     if (evaluateConstantExpression(node->start, &start_val) &&
         evaluateConstantExpression(node->end, &end_val)) {
-        if (start_val > end_val) {
-            reportAndReturnUndefined(node->start->loc, ERR_TYPE_MISMATCH, "Range start must be less than or equal to end");
+        if (node->is_inclusive) {
+            if (start_val > end_val) {
+                reportAndReturnUndefined(node->start->loc, ERR_INVALID_RANGE, "Inclusive range start must be less than or equal to end");
+            }
+        } else {
+            if (start_val >= end_val) {
+                reportAndReturnUndefined(node->start->loc, ERR_INVALID_RANGE, "Exclusive range start must be less than end");
+            }
         }
     }
 
@@ -2308,18 +2315,17 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
     return type;
 }
 
-Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
+bool TypeChecker::validateSwitch(ASTNode* cond_node, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& common_type) {
     Type* cond_type;
     bool is_tagged_union;
     Type* tag_type;
-    bool has_else;
-    Type* common_type;
-    bool has_non_noreturn;
-    size_t i;
+    bool has_else = false;
+    bool has_non_noreturn = false;
+    common_type = NULL;
 
-    if (!node->expression) return get_g_type_undefined();
-    cond_type = visit(node->expression);
-    if (!cond_type || is_type_undefined(cond_type)) return get_g_type_undefined();
+    if (!cond_node) return false;
+    cond_type = visit(cond_node);
+    if (!cond_type || is_type_undefined(cond_type)) return false;
 
     if (cond_type->kind == TYPE_PLACEHOLDER) {
         cond_type = resolvePlaceholder(cond_type);
@@ -2329,28 +2335,67 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
 
     if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
+        reportAndReturnUndefined(cond_node->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
+        return false;
     }
 
-    has_else = false;
-    common_type = NULL;
-    has_non_noreturn = false;
+    if (!prongs) return true;
 
-    for (i = 0; i < node->prongs->length(); ++i) {
-        ASTSwitchProngNode* prong = (*node->prongs)[i];
+    for (size_t i = 0; i < prongs->length(); ++i) {
+        ASTSwitchProngNode* prong = (*prongs)[i];
 
         if (prong->is_else) {
+            if (has_else) {
+                 reportAndReturnUndefined(prong->body ? prong->body->loc : cond_node->loc, ERR_SYNTAX_ERROR, "Duplicate else prong");
+                 return false;
+            }
             has_else = true;
         } else {
             for (size_t j = 0; j < prong->items->length(); ++j) {
                 ASTNode* item_expr = (*prong->items)[j];
                 Type* item_type = NULL;
 
-                if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                if (item_expr->type == NODE_RANGE) {
+                    item_type = visit(item_expr);
+                    if (!item_type || is_type_undefined(item_type)) return false;
+
+                    i64 start_val, end_val;
+                    if (!evaluateConstantExpression(item_expr->as.range.start, &start_val) ||
+                        !evaluateConstantExpression(item_expr->as.range.end, &end_val)) {
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch range bounds must be constant integers");
+                        return false;
+                    }
+
+                    i64 count = 0;
+                    if (item_expr->as.range.is_inclusive) {
+                        if (start_val > end_val) {
+                            reportAndReturnUndefined(item_expr->loc, ERR_INVALID_RANGE, "Range start must be less than or equal to end");
+                            return false;
+                        }
+                        count = end_val - start_val + 1;
+                    } else {
+                        if (start_val >= end_val) {
+                            reportAndReturnUndefined(item_expr->loc, ERR_INVALID_RANGE, "Range start must be less than end");
+                            return false;
+                        }
+                        count = end_val - start_val;
+                    }
+
+                    if (count > MAX_RANGE_CASES) {
+                        char buf[128];
+                        char count_buf[32];
+                        plat_i64_to_string(count, count_buf, sizeof(count_buf));
+                        plat_strcpy(buf, "Switch range too large: ");
+                        plat_strcat(buf, count_buf);
+                        plat_strcat(buf, " cases (max 1000)");
+                        reportAndReturnUndefined(item_expr->loc, ERR_RANGE_TOO_LARGE, buf);
+                        return false;
+                    }
+                } else if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
                     /* Resolve .Tag against union's tag type. */
                     if (!tag_type || tag_type->kind != TYPE_ENUM) {
                         reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag type must be an enum");
-                        return get_g_type_undefined();
+                        return false;
                     }
 
                     const char* tag_name = item_expr->as.member_access->field_name;
@@ -2372,7 +2417,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 
                     if (!found) {
                         reportAndReturnUndefined(item_expr->loc, ERR_UNDEFINED_ENUM_MEMBER, "Tag not found in union");
-                        return get_g_type_undefined();
+                        return false;
                     }
 
                     /* Constant fold to integer literal of the tag. */
@@ -2384,7 +2429,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                     item_type = tag_type;
                 } else {
                     item_type = visit(item_expr);
-                    if (item_type && is_type_undefined(item_type)) return get_g_type_undefined();
+                    if (item_type && is_type_undefined(item_type)) return false;
                 }
 
                 if (item_type) {
@@ -2395,10 +2440,8 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
                     } else if (areTypesCompatible(cond_type, item_type)) {
                         compatible = true;
                     } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
-                        /* C89 allows integers for enum cases */
                         compatible = true;
                     } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
-                        /* Allow enum members for integer switch */
                         compatible = true;
                     } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
                         compatible = true;
@@ -2408,7 +2451,7 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 
                     if (!compatible) {
                         reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch case type mismatch");
-                        return get_g_type_undefined();
+                        return false;
                     }
                 }
             }
@@ -2416,16 +2459,20 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
 
         if (prong->capture_name) {
             if (!is_tagged_union) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
+                reportAndReturnUndefined(cond_node->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
+                return false;
             } else if (prong->is_else) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
+                reportAndReturnUndefined(cond_node->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
+                return false;
             } else if (prong->items->length() != 1) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
+                reportAndReturnUndefined(cond_node->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
+                return false;
             } else {
             ASTNode* item_expr = (*prong->items)[0];
             const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
             if (!field_name) {
-                return reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
+                reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
+                return false;
             }
             Type* field_type = findStructField(cond_type, field_name);
 
@@ -2446,50 +2493,69 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
             }
         }
 
-        if (!prong->body) return get_g_type_undefined();
+        if (!prong->body) return false;
         Type* prong_type = visit(prong->body);
         if (!prong_type || is_type_undefined(prong_type)) {
             if (prong->capture_name) unit_.getSymbolTable().exitScope();
-            return get_g_type_undefined();
+            return false;
         }
 
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
-        if (prong_type && prong_type->kind != TYPE_NORETURN) {
+
+        if (is_expr && prong_type && prong_type->kind != TYPE_NORETURN) {
             if (!common_type) {
                 common_type = prong_type;
                 has_non_noreturn = true;
             } else if (!areTypesEqual(common_type, prong_type)) {
-                /* If they are not strictly equal, check if one can be coerced to the other.
-                   For simplicity, we currently expect them to match common_type. */
                 if (areTypesCompatible(common_type, prong_type)) {
                     /* common_type is OK */
                 } else if (areTypesCompatible(prong_type, common_type)) {
                     common_type = prong_type;
                 } else {
                     reportAndReturnUndefined(prong->body->loc, ERR_TYPE_MISMATCH, "Switch prong type does not match previous prongs");
+                    return false;
                 }
             }
         }
     }
 
-    if (!has_else) {
-        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch expression must have an 'else' prong");
-    }
-
-    if (!has_non_noreturn) {
-        return get_g_type_noreturn();
-    }
-
-    /* Distribute Coercions across all prongs if needed */
-    if (common_type->kind == TYPE_SLICE) {
-        for (i = 0; i < node->prongs->length(); ++i) {
-            ASTSwitchProngNode* prong = (*node->prongs)[i];
-            coerceNode(&prong->body, common_type);
+    if (is_expr) {
+        if (!has_else) {
+            reportAndReturnUndefined(cond_node->loc, ERR_TYPE_MISMATCH, "Switch expression must have an 'else' prong");
+            return false;
         }
+        if (!has_non_noreturn) {
+            common_type = get_g_type_noreturn();
+        }
+        /* Distribute Coercions across all prongs if needed */
+        if (common_type->kind == TYPE_SLICE) {
+            for (size_t i = 0; i < prongs->length(); ++i) {
+                ASTSwitchProngNode* prong = (*prongs)[i];
+                coerceNode(&prong->body, common_type);
+            }
+        }
+    } else {
+        common_type = get_g_type_void();
     }
 
+    return true;
+}
+
+Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
+    Type* common_type;
+    if (!validateSwitch(node->expression, node->prongs, false, common_type)) {
+        return get_g_type_undefined();
+    }
+    return common_type;
+}
+
+Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
+    Type* common_type;
+    if (!validateSwitch(node->expression, node->prongs, true, common_type)) {
+        return get_g_type_undefined();
+    }
     return common_type;
 }
 

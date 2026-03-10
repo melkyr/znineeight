@@ -49,6 +49,7 @@ public:
     Type* visitForStmt(ASTForStmtNode* node);
     Type* visitRange(ASTRangeNode* node);
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
+    Type* visitSwitchStmt(ASTSwitchStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
@@ -89,6 +90,7 @@ public:
     Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
     void logFeatureLocation(const char* feature, SourceLocation loc);
     void injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type);
+    bool validateSwitch(ASTNode* expression, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& out_common_type);
 private:
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
@@ -129,6 +131,7 @@ private:
 
     static const int MAX_VISIT_DEPTH = 1000;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
+    static const int MAX_RANGE_CASES = 1000;
 
     CompilationUnit& unit_;
     Type* current_fn_return_type_;

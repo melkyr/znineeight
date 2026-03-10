@@ -323,7 +323,7 @@ public:
         ss << "switch (" << emitExpression(node->expression) << ") { ";
         if (node->prongs) {
             for (size_t i = 0; i < node->prongs->length(); ++i) {
-                const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+                const ASTSwitchProngNode* prong = (*node->prongs)[i];
                 if (prong->is_else) {
                     ss << "default: ";
                 } else {
@@ -331,9 +331,9 @@ public:
                         ss << "case " << emitExpression((*prong->items)[j]) << ": ";
                     }
                 }
-                if (prong->body->type == NODE_BLOCK_STMT) {
+                if (prong->body && prong->body->type == NODE_BLOCK_STMT) {
                     ss << emitBlockStatement(&prong->body->as.block_stmt);
-                } else {
+                } else if (prong->body) {
                     // Try to emit as statement for better robustness
                     if (prong->body->type == NODE_EXPRESSION_STMT ||
                         prong->body->type == NODE_RETURN_STMT ||

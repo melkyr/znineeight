@@ -132,7 +132,7 @@ private:
     /**
      * @brief Creates a new switch statement node.
      */
-    ASTNode* createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchStmtProngNode*>* prongs, SourceLocation loc);
+    ASTNode* createSwitchStmt(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, SourceLocation loc);
 
     /**
      * @brief Creates a new expression statement node.

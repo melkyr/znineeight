@@ -125,7 +125,6 @@ struct ASTReturnStmtNode;
 struct ASTDeferStmtNode;
 struct ASTForStmtNode;
 struct ASTSwitchStmtNode;
-struct ASTSwitchStmtProngNode;
 struct ASTExpressionStmtNode;
 struct ASTParenExprNode;
 struct ASTRangeNode;
@@ -554,23 +553,6 @@ struct ASTSwitchExprNode {
 };
 
 /**
- * @struct ASTSwitchStmtProngNode
- * @brief Represents a single prong in a switch statement.
- * @var ASTSwitchStmtProngNode::items A dynamic array of case items.
- * @var ASTSwitchStmtProngNode::is_else True if this is the `else` prong.
- * @var ASTSwitchStmtProngNode::body The statement to execute for this prong.
- * @var ASTSwitchStmtProngNode::capture_name Optional capture variable name.
- * @var ASTSwitchStmtProngNode::capture_sym Resolved symbol for the capture variable.
- */
-struct ASTSwitchStmtProngNode {
-    DynamicArray<ASTNode*>* items;
-    bool is_else;
-    ASTNode* body;
-    const char* capture_name;
-    Symbol* capture_sym;
-};
-
-/**
  * @struct ASTSwitchStmtNode
  * @brief Represents a switch statement.
  * @var ASTSwitchStmtNode::expression The expression whose value is being switched on.
@@ -578,7 +560,7 @@ struct ASTSwitchStmtProngNode {
  */
 struct ASTSwitchStmtNode {
     ASTNode* expression;
-    DynamicArray<ASTSwitchStmtProngNode*>* prongs;
+    DynamicArray<ASTSwitchProngNode*>* prongs;
 };
 
 // --- Error Handling Nodes ---
