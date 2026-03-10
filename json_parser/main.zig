@@ -1,92 +1,133 @@
-// main.zig
 const file = @import("file.zig");
 const json = @import("json.zig");
 
 extern fn __bootstrap_print(s: [*]const u8) void;
 extern fn __bootstrap_print_int(i: i32) void;
-extern var zig_default_arena: void;
+extern var zig_default_arena: *void;
 
 fn printIndent(level: usize) void {
     var i: usize = 0;
     while (i < level) {
-        __bootstrap_print(@ptrCast([*]const u8, "  "));
+        const space: []const u8 = "  ";
+        __bootstrap_print(space.ptr);
         i += 1;
     }
 }
 
 fn printValue(val: json.JsonValue, level: usize) void {
     if (val.tag == json.JsonValueTag.Null) {
-        __bootstrap_print(@ptrCast([*]const u8, "null"));
+        const s: []const u8 = "null";
+        __bootstrap_print(s.ptr);
     } else if (val.tag == json.JsonValueTag.Boolean) {
         if (val.data.boolean) {
-            __bootstrap_print(@ptrCast([*]const u8, "true"));
+            const s: []const u8 = "true";
+            __bootstrap_print(s.ptr);
         } else {
-            __bootstrap_print(@ptrCast([*]const u8, "false"));
+            const s: []const u8 = "false";
+            __bootstrap_print(s.ptr);
         }
     } else if (val.tag == json.JsonValueTag.Number) {
-        __bootstrap_print(@ptrCast([*]const u8, "<number>"));
+        const s: []const u8 = "<number>";
+        __bootstrap_print(s.ptr);
     } else if (val.tag == json.JsonValueTag.String) {
         const s: []const u8 = val.data.string;
-        __bootstrap_print(@ptrCast([*]const u8, "\""));
-        __bootstrap_print(s.ptr); // Warning: not null terminated in Zig, but __bootstrap_print uses fputs
-        __bootstrap_print(@ptrCast([*]const u8, "\""));
+        const quote: []const u8 = "\"";
+        __bootstrap_print(quote.ptr);
+        var i: usize = 0;
+        while (i < s.len) {
+            var buf: [2]u8 = undefined;
+            buf[0] = s[i];
+            buf[1] = 0;
+            __bootstrap_print(&buf[0]);
+            i += 1;
+        }
+        __bootstrap_print(quote.ptr);
     } else if (val.tag == json.JsonValueTag.Array) {
-        __bootstrap_print(@ptrCast([*]const u8, "["));
+        const lbr: []const u8 = "[";
+        __bootstrap_print(lbr.ptr);
         const arr = val.data.array;
         if (arr.len > 0) {
-            __bootstrap_print(@ptrCast([*]const u8, "\n"));
+            const nl: []const u8 = "\n";
+            __bootstrap_print(nl.ptr);
             var i: usize = 0;
             while (i < arr.len) {
                 printIndent(level + 1);
                 printValue(arr[i], level + 1);
                 if (i < arr.len - 1) {
-                    __bootstrap_print(@ptrCast([*]const u8, ","));
+                    const comma: []const u8 = ",";
+                    __bootstrap_print(comma.ptr);
                 }
-                __bootstrap_print(@ptrCast([*]const u8, "\n"));
+                __bootstrap_print(nl.ptr);
                 i += 1;
             }
             printIndent(level);
         }
-        __bootstrap_print(@ptrCast([*]const u8, "]"));
+        const rbr: []const u8 = "]";
+        __bootstrap_print(rbr.ptr);
     } else if (val.tag == json.JsonValueTag.Object) {
-        __bootstrap_print(@ptrCast([*]const u8, "{"));
+        const lbr: []const u8 = "{";
+        __bootstrap_print(lbr.ptr);
         const obj = val.data.object;
         if (obj.len > 0) {
-            __bootstrap_print(@ptrCast([*]const u8, "\n"));
+            const nl: []const u8 = "\n";
+            __bootstrap_print(nl.ptr);
             var i: usize = 0;
             while (i < obj.len) {
                 printIndent(level + 1);
                 const key_s: []const u8 = obj[i].key;
-                __bootstrap_print(@ptrCast([*]const u8, "\""));
-                __bootstrap_print(key_s.ptr);
-                __bootstrap_print(@ptrCast([*]const u8, "\": "));
-                printValue(obj[i].value.*, level + 1);
-                if (i < obj.len - 1) {
-                    __bootstrap_print(@ptrCast([*]const u8, ","));
+                const quote: []const u8 = "\"";
+                __bootstrap_print(quote.ptr);
+
+                var j: usize = 0;
+                while (j < key_s.len) {
+                    var buf: [2]u8 = undefined;
+                    buf[0] = key_s[j];
+                    buf[1] = 0;
+                    __bootstrap_print(&buf[0]);
+                    j += 1;
                 }
-                __bootstrap_print(@ptrCast([*]const u8, "\n"));
+
+                const sep: []const u8 = "\": ";
+                __bootstrap_print(sep.ptr);
+
+                // Dereference pointer to JsonValue
+                const inner_val_ptr = obj[i].value;
+                const inner_val = inner_val_ptr.*;
+                printValue(inner_val, level + 1);
+
+                if (i < obj.len - 1) {
+                    const comma: []const u8 = ",";
+                    __bootstrap_print(comma.ptr);
+                }
+                __bootstrap_print(nl.ptr);
                 i += 1;
             }
             printIndent(level);
         }
-        __bootstrap_print(@ptrCast([*]const u8, "}"));
+        const rbr: []const u8 = "}";
+        __bootstrap_print(rbr.ptr);
     }
 }
 
 pub fn main() void {
-    const arena = &zig_default_arena;
-    const content = file.readFile(arena, "../test.json") catch |err| {
-        __bootstrap_print(@ptrCast([*]const u8, "Error reading file: "));
+    const arena = zig_default_arena;
+    const content = file.readFile(arena, "test.json") catch |err| {
+        const msg: []const u8 = "Error reading file: ";
+        __bootstrap_print(msg.ptr);
         __bootstrap_print_int(@enumToInt(err));
-        __bootstrap_print(@ptrCast([*]const u8, "\n"));
+        const nl: []const u8 = "\n";
+        __bootstrap_print(nl.ptr);
         return;
     };
     const parsed = json.parseJson(arena, content) catch |err| {
-        __bootstrap_print(@ptrCast([*]const u8, "Parse error: "));
+        const msg: []const u8 = "Parse error: ";
+        __bootstrap_print(msg.ptr);
         __bootstrap_print_int(@enumToInt(err));
-        __bootstrap_print(@ptrCast([*]const u8, "\n"));
+        const nl: []const u8 = "\n";
+        __bootstrap_print(nl.ptr);
         return;
     };
     printValue(parsed, 0);
-    __bootstrap_print(@ptrCast([*]const u8, "\n"));
+    const nl: []const u8 = "\n";
+    __bootstrap_print(nl.ptr);
 }

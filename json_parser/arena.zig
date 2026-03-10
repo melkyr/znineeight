@@ -1,4 +1,3 @@
-// arena.zig
 extern fn arena_alloc_default(size: usize) *void;
 
 pub fn alloc_bytes(count: usize) []u8 {
