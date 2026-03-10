@@ -289,6 +289,16 @@ public:
     void emitUnionBody(Type* type);
 
     /**
+     * @brief Emits a tagged union definition.
+     */
+    void emitTaggedUnionDefinition(Type* type);
+
+    /**
+     * @brief Emits the body of a tagged union payload union.
+     */
+    void emitTaggedUnionPayloadBody(Type* type);
+
+    /**
      * @brief Returns true if the expression is a C89 constant initializer.
      * @param node The expression node.
      */

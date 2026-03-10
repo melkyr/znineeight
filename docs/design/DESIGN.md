@@ -637,7 +637,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **No Tagged Unions**: Only bare (untagged) unions are supported.
+*   **Tagged Unions**: Supported as of Phase 1 of Milestone 9.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.

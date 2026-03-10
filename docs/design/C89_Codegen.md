@@ -32,6 +32,8 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitCast`: Centralizes `@intCast`, `@floatCast`, and `@ptrCast` logic.
     - `emitAccess`: Manages array, member, and slice access.
     - `emitControlFlow`: Reports errors for control-flow expressions that have not been correctly lifted into statements.
+    - `emitTaggedUnionDefinition`: Handles the emission of named tagged unions as C `struct`s.
+    - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
@@ -522,6 +524,53 @@ struct S {
     union {
         int val;
         float other;
+    } data;
+};
+```
+
+### 4.14 Tagged Unions
+Tagged unions (`TYPE_TAGGED_UNION`) are emitted as C `struct`s containing a `tag` field and a `data` union.
+
+#### Emission Strategy
+The `C89Emitter::emitTaggedUnionDefinition` handles the emission of named tagged unions.
+
+- **Layout**:
+  ```c
+  struct UnionName {
+      TagType tag;
+      union {
+          Field1Type Field1;
+          Field2Type Field2;
+          /* ... */
+      } data;
+  };
+  ```
+- **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
+- **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected.
+
+Example Zig:
+```zig
+const U = union(enum) {
+    A: i32,
+    B: f64,
+    C: void,
+};
+```
+
+Generated C89:
+```c
+enum U_Tag {
+    U_Tag_A = 0,
+    U_Tag_B = 1,
+    U_Tag_C = 2
+};
+typedef enum U_Tag U_Tag;
+
+struct U {
+    U_Tag tag;
+    union {
+        int A;
+        double B;
     } data;
 };
 ```

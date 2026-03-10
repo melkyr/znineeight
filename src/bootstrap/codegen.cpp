@@ -406,7 +406,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
         if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
             /* Handle ErrorUnion and Optional special structures */
             const ASTStructInitializerNode* init = init_node->as.struct_initializer;
@@ -432,9 +432,9 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             return;
         }
 
-        DynamicArray<StructField>* fields = type->as.struct_details.fields;
-        bool is_union = (type->kind == TYPE_UNION);
-        bool is_tagged = is_union && type->as.struct_details.is_tagged;
+        DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
+        bool is_union = (type->kind == TYPE_UNION) || (type->kind == TYPE_TAGGED_UNION);
+        bool is_tagged = (type->kind == TYPE_TAGGED_UNION) || (is_union && type->as.struct_details.is_tagged);
 
         if (is_tagged) {
             /* Emit tag assignment */
@@ -448,10 +448,11 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             writeIndent();
             writeString(base_name);
             writeString(".tag = ");
-            if (type->as.struct_details.tag_type && type->as.struct_details.tag_type->c_name) {
-                writeString(type->as.struct_details.tag_type->c_name);
-            } else if (type->as.struct_details.tag_type && type->as.struct_details.tag_type->as.enum_details.name) {
-                writeString(getC89GlobalName(type->as.struct_details.tag_type->as.enum_details.name));
+            Type* t_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+            if (t_type && t_type->c_name) {
+                writeString(t_type->c_name);
+            } else if (t_type && t_type->as.enum_details.name) {
+                writeString(getC89GlobalName(t_type->as.enum_details.name));
             } else {
                 writeString("/* enum */");
             }
@@ -1268,7 +1269,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     if (!node) return;
 
     Type* cond_type = node->expression->resolved_type;
-    bool is_tagged_union = (cond_type && cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    bool is_tagged_union = (cond_type && (cond_type->kind == TYPE_TAGGED_UNION || (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged)));
     const char* switch_tmp = NULL;
 
     if (is_tagged_union) {
@@ -2540,10 +2541,68 @@ void C89Emitter::emitUnionBody(Type* type) {
     writeString("}");
 }
 
+void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
+    if (!type || type->kind != TYPE_TAGGED_UNION) return;
+
+    writeString("{\n");
+    {
+        IndentScope union_indent(*this);
+        DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+        int emitted_fields = 0;
+        if (fields) {
+            for (size_t i = 0; i < fields->length(); ++i) {
+                /* Skip void fields in C */
+                if ((*fields)[i].type->kind == TYPE_VOID) continue;
+                writeIndent();
+
+                Type* field_type = (*fields)[i].type;
+                const char* field_name = getSafeFieldName((*fields)[i].name);
+
+                emitType(field_type, field_name);
+                writeString(";\n");
+                emitted_fields++;
+            }
+        }
+        if (emitted_fields == 0) {
+            writeIndent();
+            writeString("char __dummy;\n");
+        }
+    }
+    writeIndent();
+    writeString("}");
+}
+
+void C89Emitter::emitTaggedUnionDefinition(Type* type) {
+    if (!type || type->kind != TYPE_TAGGED_UNION) return;
+
+    writeIndent();
+    writeString("struct ");
+    writeString(type->c_name ? type->c_name : "/* unknown */");
+    writeString(" {\n");
+    {
+        IndentScope struct_indent(*this);
+
+        /* tag */
+        writeIndent();
+        emitType(type->as.tagged_union.tag_type, "tag");
+        writeString(";\n");
+
+        /* union of payloads */
+        writeIndent();
+        writeString("union ");
+        emitTaggedUnionPayloadBody(type);
+        writeString(" data;\n");
+    }
+    writeIndent();
+    writeString("};\n\n");
+}
+
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT) {
+    if (type->kind == TYPE_TAGGED_UNION) {
+        emitTaggedUnionDefinition(type);
+    } else if (type->kind == TYPE_STRUCT) {
         writeIndent();
         writeString("struct ");
         writeString(type->c_name ? type->c_name : "/* unknown */");

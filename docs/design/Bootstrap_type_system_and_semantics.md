@@ -117,6 +117,12 @@ struct Type {
             DynamicArray<StructField>* fields;
         } struct_details;
 
+        struct {
+            const char* name;
+            DynamicArray<StructField>* payload_fields;
+            Type* tag_type;
+        } tagged_union;
+
         struct ErrorUnionDetails {
             Type* payload;
             Type* error_set; // NULL for inferred
@@ -327,9 +333,27 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
     -   No extra fields are provided in the initializer.
     -   Each initializer expression's type is compatible with the corresponding field's type.
 
-### Union Field Validation
+### Union and Tagged Union Type Declarations
 
-For union declarations (`ASTUnionDeclNode`), the `TypeChecker` currently performs basic field name uniqueness validation. Full union type creation and layout are deferred to future milestones.
+When visiting a union declaration (`ASTUnionDeclNode`), the `TypeChecker` creates either a `TYPE_UNION` or a `TYPE_TAGGED_UNION` based on whether the union is tagged.
+
+#### Bare Unions (`TYPE_UNION`)
+Bare unions represent a standard C union where all fields share the same memory location. The layout is calculated as:
+- **Size**: The maximum size of all payload fields, rounded up to the maximum alignment.
+- **Alignment**: The maximum alignment requirement among all payload fields.
+
+#### Tagged Unions (`TYPE_TAGGED_UNION`)
+Tagged unions (`union(enum)` or `union(TagType)`) are represented as a C `struct` containing a tag and a `union` of payloads.
+
+1.  **Tag Type Resolution**:
+    -   For `union(enum)`, the compiler generates an implicit enum type with members named after the union fields. The enum is named `UnionName_Tag` and uses `i32` as its backing type.
+    -   For `union(TagType)`, the compiler uses the provided `TagType`.
+
+2.  **Layout Calculation**:
+    -   **Tag Part**: Treated as a field of the tag type (default `int`, 4 bytes, align 4).
+    -   **Union Part**: Max of payload field sizes and alignments.
+    -   **Overall Alignment**: `max(tag_alignment, union_alignment)`.
+    -   **Overall Size**: The tag is placed first, followed by padding to meet the union's alignment requirement, then the union data. The final size is padded to the overall alignment.
 
 ### Recursive Type Handling (Task 228+)
 
