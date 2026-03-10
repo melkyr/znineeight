@@ -44,6 +44,8 @@
 #include "integration/multi_level_pointer_tests.cpp"
 #include "integration/multi_module_tests.cpp"
 #include "integration/param_tests.cpp"
+#include "integration/phase1_tagged_union_verification.cpp"
+#include "integration/phase2_switch_capture_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
 #include "integration/recursive_slice_tests.cpp"
