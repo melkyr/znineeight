@@ -2026,7 +2026,253 @@ DynamicArray<ASTNode*> children(arena);
 
 
 ---
+## Milestone 9: Adding final missing features incrementally.
 
+Here’s a step‑by‑step plan to add the remaining features to your bootstrap compiler (zig0). Each phase builds on the previous, and you can stop after any phase if you have a working compiler for your needs. The goal is to reach a point where you can compile an unmodified zig1 source.
+Phase 1: Tagged Unions (union(enum))
+
+Goal: Support union(enum) { field1: Type1, field2: Type2, ... } syntax.
+
+Why needed: zig1 uses tagged unions extensively for AST nodes.
+
+Implementation steps:
+
+    Parser: Extend parseUnionDecl to recognize union(enum) token sequence. Create a new AST node (or reuse ASTUnionDeclNode with a flag is_tagged = true and an optional tag_type expression). For union(enum), the tag type is implicit; we'll handle it later.
+    cpp
+
+    // In parser.cpp, parseUnionDecl()
+    if (match(TOKEN_LPAREN) && match(TOKEN_ENUM)) {
+        // union(enum) { ... }
+        expect(TOKEN_RPAREN);
+        union_node->is_tagged = true;
+        union_node->tag_type_expr = NULL; // implicit
+    } else {
+        // bare union
+    }
+
+    Type Checker: Create a new type kind TYPE_TAGGED_UNION. In visitUnionDecl, if is_tagged:
+
+        For union(enum), create an implicit enum type with members named after the fields, values 0,1,2,….
+
+        Store the enum type as the tag type.
+
+        Process fields as before, but now each field corresponds to a tag value.
+
+        Compute layout: a struct containing the tag (int) and a union of the payloads.
+
+        Return the type (maybe TYPE_TAGGED_UNION).
+    cpp
+
+    Type* visitUnionDecl(ASTUnionDeclNode* node) {
+        if (node->is_tagged) {
+            // Create implicit enum
+            DynamicArray<EnumMember>* members = ...;
+            for each field in node->fields:
+                members->append({field->name, i++, field->loc});
+            Type* tag_type = createEnumType(arena, NULL, get_g_type_i32(), members, 0, i-1);
+            // Now create the tagged union type (struct with tag and union)
+            Type* union_type = createTaggedUnionType(arena, fields, tag_type);
+            // layout calculation
+            return union_type;
+        } else {
+            // bare union (existing)
+        }
+    }
+
+    Code Generator: In emitTypeDefinition, for a tagged union, emit a C struct with a tag (int) and a union of payloads.
+    cpp
+
+    void emitTaggedUnionDefinition(Type* type) {
+        writeIndent();
+        writeString("struct ");
+        writeString(type->c_name);
+        writeString(" {\n");
+        indent();
+        writeIndent();
+        emitType(type->as.tagged_union.tag_type, "tag");
+        writeString(";\n");
+        writeIndent();
+        writeString("union {\n");
+        indent();
+        for each field in type->as.tagged_union.fields {
+            writeIndent();
+            emitType(field.type, field.name);
+            writeString(";\n");
+        }
+        dedent();
+        writeIndent();
+        writeString("} data;\n");
+        dedent();
+        writeIndent();
+        writeString("};\n");
+    }
+
+    Testing:
+
+        Write a simple Zig file with a tagged union and a function that creates and uses it.
+
+        Verify that the generated C compiles and runs.
+
+Phase 2: Switch Payload Captures
+
+Goal: Support switch (tagged_union) { .Field => |x| { ... }, ... } syntax.
+
+Why needed: zig1 uses captures extensively.
+
+Implementation steps:
+
+    Parser: In parseSwitchExpr, after parsing a case item (like .Field), allow an optional |identifier| capture. Extend ASTSwitchProngNode to store capture_name (const char) and capture_sym (Symbol).
+    cpp
+
+    // In parseSwitchProng()
+    if (match(TOKEN_PIPE)) {
+        capture_name = parseIdentifier();
+        expect(TOKEN_PIPE);
+    }
+    // then expect TOKEN_ARROW and parse body
+
+    Type Checker: In visitSwitchExpr, when the condition is a tagged union and a prong has a capture:
+
+        Determine the field type (from the union's field list).
+
+        Enter a new scope, create a symbol for the capture with that type, and store it in the prong node.
+
+        Visit the prong body within that scope.
+    cpp
+
+    if (prong->capture_name) {
+        unit_.getSymbolTable().enterScope();
+        Symbol sym = SymbolBuilder(...).withName(prong->capture_name).withType(field_type).build();
+        unit_.getSymbolTable().insert(sym);
+        prong->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(prong->capture_name);
+    }
+    Type* body_type = visit(prong->body);
+    if (prong->capture_name) unit_.getSymbolTable().exitScope();
+
+    Code Generator: In emitSwitchExpr, for each prong with a capture, emit a block that declares the capture variable initialized from the union's data.
+    cpp
+
+    if (prong->capture_name && prong->capture_sym) {
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        emitType(prong->capture_sym->symbol_type, prong->capture_sym->mangled_name);
+        writeString(" = ");
+        writeString(switch_temp); // the temporary holding the union
+        writeString(".data.");
+        writeString(prong->capture_name);
+        writeString(";\n");
+        // emit prong body (already transformed)
+        dedent();
+        writeIndent();
+        writeString("}\n");
+    } else {
+        // normal case
+    }
+
+    Testing:
+
+        Write a switch on a tagged union with captures, using the captured variable.
+
+        Verify generated C code.
+
+Phase 3: Braceless if and while
+
+Goal: Allow if (cond) statement; without braces, and similarly for while.
+
+Why needed: zig1 uses this syntax pervasively.
+
+Implementation steps:
+
+    Parser: Modify parseIfStatement and parseWhileStatement to accept either a block or a single statement.
+    cpp
+
+    // In parseIfStatement
+    ASTNode* then_stmt = parseStatement(); // not necessarily a block
+    // then later, if there's an else, parseStatement again.
+
+    Similarly for while.
+
+    Note: The existing code already has a parseStatement that can parse any statement. The current code may be expecting a block; just remove the block requirement.
+
+    Testing:
+
+        Write a function with braceless if and while.
+
+        Verify it compiles and runs.
+
+Phase 4: Range‑based switch arms
+
+Goal: Support 1...10 => ... in switch cases.
+
+Why needed: Used in zig1 for range checks.
+
+Implementation steps:
+
+    Parser: In parseSwitchProng, when parsing a case item, look for ... token (inclusive range) or .. (exclusive). Create an ASTRangeNode with start and end expressions.
+    cpp
+
+    if (match(TOKEN_ELLIPSIS) || match(TOKEN_RANGE)) {
+        // parse range: start ... end
+        ASTNode* start = current_item;
+        TokenType op = previous;
+        ASTNode* end = parseExpression();
+        // create range node
+    }
+
+    Type Checker: In visitSwitchExpr, when the case is a range, evaluate the start and end to constants (if possible) and check that they are integers. The condition type must be integer.
+
+    Code Generator: For a range, emit multiple case labels for each integer in the range. Since ranges can be large, we may need to handle them efficiently. For bootstrap, we can just loop from start to end and emit a case for each integer (if the range is small). For larger ranges, we could use a default handler, but for simplicity, we'll assume ranges are small (as in zig1). Alternatively, we can emit a single case if the range is contiguous? In C89, you cannot specify a range; you must list each value. So we'll just emit a series of case statements. This is acceptable for small ranges.
+    cpp
+
+    for (i64 val = start; val <= end; ++val) {
+        writeIndent();
+        writeString("case ");
+        char buf[32];
+        plat_i64_to_string(val, buf, sizeof(buf));
+        writeString(buf);
+        writeString(":\n");
+    }
+
+    Testing: Write a switch with integer ranges.
+
+Phase 5: defer without braces
+
+Goal: Allow defer statement; where statement is a single statement (not a block).
+
+Why needed: zig1 uses this.
+
+Implementation steps:
+
+    Parser: In parseDeferStatement, call parseStatement() (which already parses any statement). The existing code may already allow this; check. If it currently expects a block, remove that restriction.
+
+    Type Checker: No change – defer just wraps the statement.
+
+    Code Generator: Already works because emitStatement handles any statement.
+
+    Testing: Write a function with defer foo();.
+
+Phase 6: (Optional) Basic comptime parameters
+
+Goal: Support fn foo(comptime T: type, x: T) ... where T is a type parameter. This is needed for generic‑like functions in zig1.
+
+Why needed: zig1 uses comptime for some generic functions.
+
+Implementation steps (minimal):
+
+    Parser: Recognize comptime keyword in parameter list. Mark the parameter as is_comptime.
+
+    Type Checker: In visitFnDecl, when a parameter is comptime, its type must be type. During type checking of the function body, treat the parameter as a type (i.e., its symbol has kind SYMBOL_TYPE). When the function is called with a type argument, we need to instantiate the function. This is complex. For a minimal implementation, we could simply ignore comptime parameters and treat them as normal parameters, but that would break semantics. Instead, we can handle the simplest case: when a function has a comptime parameter, we can require that at the call site the argument is a type literal (e.g., i32), and we simply substitute that type into the function body. This is essentially a very limited form of generics.
+
+    This is a non‑trivial feature. Given the complexity, you might decide to defer comptime and instead modify zig1 to avoid them. But zig1 likely uses comptime in a few places. Perhaps you can identify those places and add workarounds in the zig1 source. Since the goal is to compile an unmodified zig1, you'll need some support.
+
+    Recommendation: Implement a very basic version: when encountering a function with comptime parameters, treat the function as generic. At a call site, if the argument is a type expression, record the mapping and instantiate a new function type with concrete types. Use name mangling to create a unique symbol. This is similar to what you already have for generic functions (maybe you already have some generic support). Check if your GenericCatalogue already handles this. If so, you might just need to ensure that comptime parameters are recognized and added to the catalogue.
+
+    Given the time, you might skip this phase and first attempt to compile zig1 without it; you may find that zig1's use of comptime is limited and can be worked around with macros in Zig? Probably not. I'd include a basic implementation.
+
+    Since the user said "we will have to avoid comptime until zig1", maybe they want to defer it. So we'll list it as optional.
+---
 
 
 ## Phase 1: The Cross-Compiler (Zig)
