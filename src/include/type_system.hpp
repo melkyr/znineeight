@@ -45,6 +45,7 @@ enum TypeKind {
     TYPE_ANYTYPE,
     TYPE_MODULE,
     TYPE_TUPLE,
+    TYPE_TAGGED_UNION,
     TYPE_PLACEHOLDER
 };
 
@@ -121,6 +122,11 @@ struct Type {
             bool is_tagged;
             Type* tag_type;
         } struct_details;
+        struct {
+            const char* name;
+            DynamicArray<StructField>* payload_fields;
+            Type* tag_type;
+        } tagged_union;
         struct {
             Type* payload;
             Type* error_set; // NULL for inferred
@@ -257,6 +263,16 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
 Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL, bool is_tagged = false, Type* tag_type = NULL);
 
 /**
+ * @brief Creates a new tagged union Type object from the arena.
+ * @param arena The ArenaAllocator to use for allocation.
+ * @param payload_fields A dynamic array of the union's payload fields.
+ * @param tag_type The tag enum type for the tagged union.
+ * @param name The optional name of the tagged union type.
+ * @return A pointer to the newly allocated Type object.
+ */
+Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name = NULL);
+
+/**
  * @brief Creates a new error union Type object from the arena.
  * @param arena The ArenaAllocator to use for allocation.
  * @param payload The payload type.
@@ -289,6 +305,12 @@ Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<c
  * @param struct_type The struct type to calculate the layout for.
  */
 void calculateStructLayout(Type* struct_type);
+
+/**
+ * @brief Calculates the layout of a tagged union type.
+ * @param tagged_union_type The tagged union type to calculate the layout for.
+ */
+void calculateTaggedUnionLayout(Type* tagged_union_type);
 
 void updateArrayLayout(Type* t);
 void updateOptionalLayout(Type* t);

@@ -1099,11 +1099,9 @@ ASTNode* Parser::parseUnionDeclaration() {
 
     if (match(TOKEN_LPAREN)) {
         is_tagged = true;
-        if (peek().type == TOKEN_ENUM) {
+        if (match(TOKEN_ENUM)) {
             // union(enum) - implicit enum
-            tag_type_expr = createNode(NODE_IDENTIFIER);
-            tag_type_expr->as.identifier.name = "enum";
-            advance();
+            tag_type_expr = NULL;
         } else {
             // union(TagType) - explicit enum
             tag_type_expr = parseType();

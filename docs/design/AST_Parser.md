@@ -1270,9 +1270,13 @@ Represents a `union` definition.
      * @struct ASTUnionDeclNode
      * @brief Represents a `union` declaration. Allocated out-of-line.
      * @var ASTUnionDeclNode::fields A dynamic array of pointers to ASTNode (of type NODE_STRUCT_FIELD) representing the union fields.
+     * @var ASTUnionDeclNode::is_tagged True if it's a tagged union (union(enum) or union(TagType)).
+     * @var ASTUnionDeclNode::tag_type_expr Optional tag type expression. NULL for implicit union(enum).
      */
     struct ASTUnionDeclNode {
         DynamicArray<ASTNode*>* fields;
+        bool is_tagged;
+        ASTNode* tag_type_expr;
     };
     ```
 

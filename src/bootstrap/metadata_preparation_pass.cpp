@@ -138,6 +138,16 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
                 }
             }
             break;
+        case TYPE_TAGGED_UNION:
+            if (type->as.tagged_union.tag_type) {
+                collectReachableTypes(mod, type->as.tagged_union.tag_type, visited);
+            }
+            if (type->as.tagged_union.payload_fields) {
+                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
+                    collectReachableTypes(mod, (*type->as.tagged_union.payload_fields)[i].type, visited);
+                }
+            }
+            break;
         case TYPE_ENUM:
             collectReachableTypes(mod, type->as.enum_details.backing_type, visited);
             break;
@@ -172,9 +182,13 @@ void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
     }
 
     // 2. Ensure c_name is set for aggregate types
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ENUM) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
         if (!type->c_name) {
-            const char* name = (type->kind == TYPE_ENUM) ? type->as.enum_details.name : type->as.struct_details.name;
+            const char* name = NULL;
+            if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
+            else if (type->kind == TYPE_TAGGED_UNION) name = type->as.tagged_union.name;
+            else name = type->as.struct_details.name;
+
             if (name) {
                 type->c_name = unit_.getNameMangler().mangleTypeName(name, mod->name);
             }
@@ -222,8 +236,13 @@ bool MetadataPreparationPass::isHeaderType(Type* type) {
     if (type->kind < TYPE_POINTER && type->kind != TYPE_C_CHAR) return false;
 
     // Aggregates with names
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ENUM) {
-        if (type->kind == TYPE_ENUM ? type->as.enum_details.name : type->as.struct_details.name) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
+        const char* name = NULL;
+        if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
+        else if (type->kind == TYPE_TAGGED_UNION) name = type->as.tagged_union.name;
+        else name = type->as.struct_details.name;
+
+        if (name) {
             return true;
         }
     }

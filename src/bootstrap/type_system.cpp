@@ -318,6 +318,23 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
     return new_type;
 }
 
+Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name) {
+    if (!payload_fields) {
+        plat_print_debug("createTaggedUnionType: payload_fields array is NULL\n");
+    }
+    Type* new_type = (Type*)arena.alloc(sizeof(Type));
+#ifdef MEASURE_MEMORY
+    MemoryTracker::types++;
+#endif
+    if (new_type) plat_memset(new_type, 0, sizeof(Type));
+    new_type->kind = TYPE_TAGGED_UNION;
+    new_type->as.tagged_union.name = name;
+    new_type->as.tagged_union.payload_fields = payload_fields;
+    new_type->as.tagged_union.tag_type = tag_type;
+
+    return new_type;
+}
+
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
     if (!payload) {
         plat_print_debug("createErrorUnionType: payload is NULL\n");
@@ -569,11 +586,63 @@ void refreshLayout(Type* t) {
             }
             calculateStructLayout(t);
             break;
+        case TYPE_TAGGED_UNION:
+            if (t->as.tagged_union.tag_type) {
+                refreshLayout(t->as.tagged_union.tag_type);
+            }
+            if (t->as.tagged_union.payload_fields) {
+                for (size_t i = 0; i < t->as.tagged_union.payload_fields->length(); ++i) {
+                    refreshLayout((*t->as.tagged_union.payload_fields)[i].type);
+                }
+            }
+            calculateTaggedUnionLayout(t);
+            break;
         default:
             break;
     }
 
     t->is_resolving = false;
+}
+
+void calculateTaggedUnionLayout(Type* type) {
+    if (type->kind != TYPE_TAGGED_UNION) return;
+    /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
+    size_t tag_align = 4;
+    size_t tag_size = 4;
+
+    if (type->as.tagged_union.tag_type) {
+        tag_size = type->as.tagged_union.tag_type->size;
+        tag_align = type->as.tagged_union.tag_type->alignment;
+    }
+
+    /* union part: max of field sizes and alignments */
+    size_t union_align = 1;
+    size_t union_size = 0;
+    DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            StructField& field = (*fields)[i];
+            if (field.type->alignment > union_align) union_align = field.type->alignment;
+            if (field.type->size > union_size) union_size = field.type->size;
+        }
+    }
+    /* round union_size up to union_align */
+    if (union_align > 0)
+        union_size = (union_size + union_align - 1) & ~(union_align - 1);
+
+    /* struct overall alignment = max(tag_align, union_align) */
+    type->alignment = (tag_align > union_align) ? tag_align : union_align;
+
+    /* struct size = tag_size (padded to union_align) + union_size */
+    size_t tag_padded = tag_size;
+    if (union_align > 0 && tag_padded % union_align != 0) {
+        tag_padded += (union_align - (tag_padded % union_align));
+    }
+    type->size = tag_padded + union_size;
+    /* round struct size to its alignment */
+    if (type->alignment > 0 && type->size % type->alignment != 0) {
+        type->size += (type->alignment - (type->size % type->alignment));
+    }
 }
 
 void calculateStructLayout(Type* struct_type) {
@@ -901,6 +970,8 @@ bool isTypeComplete(Type* type) {
             /* Heuristic for completion: layout must have been calculated (alignment >= 1)
                and fields must be processed. We allow alignment >= 1 even for empty structs. */
             return type->alignment >= 1 && type->as.struct_details.fields != NULL;
+        case TYPE_TAGGED_UNION:
+            return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
         default:
             return false;
     }
@@ -989,6 +1060,14 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
             safe_append(current, remaining, "enum ");
             if (type->as.enum_details.name) {
                 safe_append(current, remaining, type->as.enum_details.name);
+            } else {
+                safe_append(current, remaining, "{...}");
+            }
+            break;
+        case TYPE_TAGGED_UNION:
+            safe_append(current, remaining, "union(enum) ");
+            if (type->as.tagged_union.name) {
+                safe_append(current, remaining, type->as.tagged_union.name);
             } else {
                 safe_append(current, remaining, "{...}");
             }
@@ -1119,6 +1198,7 @@ bool areTypesEqual(Type* a, Type* b) {
 
         case TYPE_STRUCT:
         case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
         case TYPE_ENUM:
         case TYPE_PLACEHOLDER:
             return false; // Nominal types, handled by pointer check at top
