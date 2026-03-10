@@ -1547,11 +1547,11 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
 
     symbol_table_->insert(fn_symbol);
     fn_decl->name = name_token.value.identifier;
-    fn_decl->params = (DynamicArray<ASTParamDeclNode*>*)arena_->alloc(sizeof(DynamicArray<ASTParamDeclNode*>));
+    fn_decl->params = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!fn_decl->params) {
         error("Out of memory");
     }
-    new (fn_decl->params) DynamicArray<ASTParamDeclNode*>(*arena_);
+    new (fn_decl->params) DynamicArray<ASTNode*>(*arena_);
     fn_decl->return_type = NULL;
     fn_decl->body = NULL;
     fn_decl->is_pub = is_pub;
@@ -1620,17 +1620,14 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
                 first_generic_kind = GENERIC_KIND_COMPTIME;
             }
 
-            ASTParamDeclNode* param_decl = (ASTParamDeclNode*)arena_->alloc(sizeof(ASTParamDeclNode));
-            if (!param_decl) {
-                error("Out of memory");
-            }
-            param_decl->name = param_name;
-            param_decl->type = param_type_node;
-            param_decl->is_comptime = is_comptime;
-            param_decl->is_anytype = is_anytype;
-            param_decl->is_type_param = is_type_param;
+            ASTNode* param_node = createNodeAt(NODE_PARAM_DECL, param_loc);
+            param_node->as.param_decl.name = param_name;
+            param_node->as.param_decl.type = param_type_node;
+            param_node->as.param_decl.is_comptime = is_comptime;
+            param_node->as.param_decl.is_anytype = is_anytype;
+            param_node->as.param_decl.is_type_param = is_type_param;
 
-            fn_decl->params->append(param_decl);
+            fn_decl->params->append(param_node);
         } while (match(TOKEN_COMMA));
     }
     expect(TOKEN_RPAREN, "Expected ')' after parameter list");

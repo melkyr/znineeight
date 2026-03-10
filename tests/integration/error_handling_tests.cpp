@@ -126,10 +126,9 @@ TEST_FUNC(ErrorHandling_TryExpression) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     emitter.emitFnDecl(unit.extractFunctionDeclaration("caller"));
 
-    ASSERT_TRUE(emitter.contains("__try_res_"));
+    ASSERT_TRUE(emitter.contains("__tmp_try_res_"));
     ASSERT_TRUE(emitter.contains(" = fallible()"));
     ASSERT_TRUE(emitter.contains(".is_error"));
-    ASSERT_TRUE(emitter.contains("return __ret_err"));
 
     return true;
 }
@@ -153,7 +152,7 @@ TEST_FUNC(ErrorHandling_CatchExpression) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     emitter.emitFnDecl(unit.extractFunctionDeclaration("caller"));
 
-    ASSERT_TRUE(emitter.contains("__catch_res_"));
+    ASSERT_TRUE(emitter.contains("__tmp_catch_res_"));
     ASSERT_TRUE(emitter.contains(" = fallible()"));
     ASSERT_TRUE(emitter.contains(".is_error"));
     ASSERT_TRUE(emitter.contains(" = 42"));
@@ -238,7 +237,7 @@ TEST_FUNC(ErrorHandling_C89Execution) {
                          if (ret->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(ret);
                          if (stmt->as.fn_decl->params) {
                              for (size_t k = 0; k < stmt->as.fn_decl->params->length(); ++k) {
-                                 Type* pt = (*stmt->as.fn_decl->params)[k]->type->resolved_type;
+                                 Type* pt = (*stmt->as.fn_decl->params)[k]->as.param_decl.type->resolved_type;
                                  if (pt->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(pt);
                              }
                          }

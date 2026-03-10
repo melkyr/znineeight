@@ -106,6 +106,16 @@ public:
     void setModule(const char* name) { module_name_ = name; }
 
     /**
+     * @brief Enables or disables debug emission tracing.
+     */
+    void setDebugTrace(bool enabled) { debug_trace_ = enabled; }
+
+    /**
+     * @brief Performs post-emission validation.
+     */
+    void validateEmission();
+
+    /**
      * @brief Writes the standard C89 prologue (comments and includes).
      */
     void emitPrologue();
@@ -180,6 +190,11 @@ public:
     void emitFnDecl(const ASTFnDeclNode* node);
 
     /**
+     * @brief Emits a function prototype for a symbol.
+     */
+    void emitFunctionPrototype(Symbol* sym);
+
+    /**
      * @brief Emits a block of statements.
      * @param node The block statement node.
      * @param label_id The label_id of the loop this block belongs to (if any).
@@ -217,41 +232,16 @@ public:
     void emitIf(const ASTIfStmtNode* node);
 
     /**
-     * @brief Emits an if expression lifted to a statement.
-     * @param node The if expression node.
-     * @param target_var The name of the variable to assign the result to (can be NULL).
-     * @param target_type Explicit target type for coercion.
-     */
-    void emitIfExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
      * @brief Emits a while statement.
      * @param node The while statement node.
      */
     void emitWhile(const ASTWhileStmtNode* node);
 
     /**
-     * @brief Emits a switch expression lifted to a statement.
-     * @param node The switch expression node.
-     * @param target_var The name of the variable to assign the result to (can be NULL).
-     * @param target_type Explicit target type for coercion.
+     * @brief Emits a switch statement.
+     * @param node The switch statement node.
      */
-    void emitSwitchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits a try expression lifted to a statement.
-     */
-    void emitTryExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits a catch expression lifted to a statement.
-     */
-    void emitCatchExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
-
-    /**
-     * @brief Emits an orelse expression lifted to a statement.
-     */
-    void emitOrelseExpr(const ASTNode* node, const char* target_var, Type* target_type = NULL);
+    void emitSwitch(const ASTSwitchStmtNode* node);
 
     /**
      * @brief Emits a for loop statement.
@@ -287,6 +277,16 @@ public:
      * @brief Emits a top-level type definition from a Type object.
      */
     void emitTypeDefinition(Type* type);
+
+    /**
+     * @brief Emits the body of a struct type (struct { ... }).
+     */
+    void emitStructBody(Type* type);
+
+    /**
+     * @brief Emits the body of a union type (union { ... }).
+     */
+    void emitUnionBody(Type* type);
 
     /**
      * @brief Returns true if the expression is a C89 constant initializer.
@@ -340,6 +340,11 @@ public:
      * @brief Gets the Zig primitive name for a type (e.g. "i32", "u64").
      */
     const char* getZigTypeName(Type* type) const;
+
+    /**
+     * @brief Gets a sanitized field name (mangled if it's a C keyword).
+     */
+    const char* getSafeFieldName(const char* name);
 
     /**
      * @brief Gets a mangled name for a type (e.g. "ptr_i32" for *i32).
@@ -516,6 +521,9 @@ private:
     PlatFile output_file_;
     int indent_level_;
     bool owns_file_;
+    bool debug_trace_;
+    int emit_depth_;
+    DynamicArray<const char*> emitted_decls_;
     CompilationUnit& unit_;
     CVariableAllocator var_alloc_;
     ErrorHandler& error_handler_;

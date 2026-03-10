@@ -25,6 +25,7 @@ SymbolBuilder::SymbolBuilder(ArenaAllocator& arena) : arena_(arena) {
     temp_symbol_.scope_level = 0;
     temp_symbol_.flags = 0;
     temp_symbol_.is_generic = false;
+    temp_symbol_.c_prototype_type = NULL;
     // location is a struct, hopefully its default constructor (if any) or bitwise zero is fine
 }
 
@@ -78,6 +79,11 @@ SymbolBuilder& SymbolBuilder::asGeneric(bool generic) {
     return *this;
 }
 
+SymbolBuilder& SymbolBuilder::withCPrototypeType(Type* type) {
+    temp_symbol_.c_prototype_type = type;
+    return *this;
+}
+
 Symbol SymbolBuilder::build() {
     return temp_symbol_;
 }
@@ -101,6 +107,17 @@ void Scope::insert(Symbol& symbol) {
 
     u32 hash = hash_string(symbol.name);
     size_t index = hash % bucket_count;
+
+    // Check for existing symbol and update if found
+    for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
+        if (plat_strcmp(entry->symbol.name, symbol.name) == 0) {
+            if (symbol.module_name == NULL || entry->symbol.module_name == NULL ||
+                plat_strcmp(entry->symbol.module_name, symbol.module_name) == 0) {
+                entry->symbol = symbol;
+                return;
+            }
+        }
+    }
 
     // Allocate a new entry from the arena
     SymbolEntry* new_entry = (SymbolEntry*)arena.alloc(sizeof(SymbolEntry));
@@ -248,4 +265,32 @@ Symbol* SymbolTable::findInAnyScope(const char* name) {
 
 unsigned int SymbolTable::getCurrentScopeLevel() const {
     return current_scope_level_;
+}
+
+void SymbolTable::registerTempSymbol(Symbol* symbol) {
+    if (symbol && scopes.length() > 0) {
+        symbol->scope_level = current_scope_level_;
+        // Before inserting, if it's already there, we might want to update it or skip?
+        // Usually lifting generates unique names, but catch prongs might reuse names.
+        // For local temps, they MUST be unique.
+        scopes.back()->insert(*symbol);
+    }
+}
+
+void SymbolTable::dumpSymbols(const char* context) {
+    plat_printf_debug("[SYMBOLS] === Dump: %s ===\n", context);
+    for (size_t i = 0; i < scopes.length(); ++i) {
+        plat_printf_debug("[SYMBOLS]  Scope level %d:\n", (int)i + 1);
+        Scope* scope = scopes[i];
+        for (size_t j = 0; j < scope->bucket_count; ++j) {
+            Scope::SymbolEntry* entry = scope->buckets[j];
+            while (entry) {
+                Symbol& sym = entry->symbol;
+                plat_printf_debug("[SYMBOLS]    name=%s kind=%d flags=0x%x\n",
+                                 sym.name ? sym.name : "NULL", (int)sym.kind, sym.flags);
+                entry = entry->next;
+            }
+        }
+    }
+    plat_printf_debug("[SYMBOLS] === End Dump ===\n");
 }

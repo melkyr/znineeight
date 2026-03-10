@@ -24,6 +24,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Dereference**: `pointer.*` accesses the value.
 - **Indexing**: `ptr[i]` is allowed for many-item pointers, but strictly rejected for single-item pointers.
 - **Arithmetic**: `ptr + i`, `ptr - i`, and `ptr1 - ptr2` are allowed for many-item pointers.
+- **Identifiers**: Identifiers starting with `__` are reserved for the compiler. User-defined identifiers starting with `__` are automatically mangled to avoid collisions with internal compiler symbols.
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
 - **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
 
@@ -185,7 +186,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
-- **Lifting Limitations**: Some nested control-flow expressions (like `try try foo()`) are not supported due to C89 backend limitations. See [Current Lifting Strategies](../current_lifting_strategies.md) for details.
+- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.

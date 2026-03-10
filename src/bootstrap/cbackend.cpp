@@ -60,6 +60,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
     C89Emitter emitter(unit_, false);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open .c file for writing");
         return false;
@@ -116,10 +117,10 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         if ((*stmts)[i]->type == NODE_VAR_DECL) {
             if (!(*stmts)[i]->as.var_decl->is_pub) {
                 emitter.emitTypeDefinition((*stmts)[i]);
+                emitter.emitBufferedTypeDefinitions();
             }
         }
     }
-    emitter.emitBufferedTypeDefinitions();
 
     // Pass 1.5: Special types (slices, error unions, optionals)
     // These are emitted AFTER structs because they might depend on them (recursive types).
@@ -141,6 +142,14 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         if ((*stmts)[i]->type == NODE_VAR_DECL) {
             emitter.emitGlobalVarDecl((*stmts)[i], (*stmts)[i]->as.var_decl->is_pub);
         }
+    }
+
+    // Pass 2.5: Static Function Prototypes
+    for (size_t i = 0; i < module->static_function_prototypes.length(); ++i) {
+        emitter.emitFunctionPrototype(module->static_function_prototypes[i]);
+    }
+    if (module->static_function_prototypes.length() > 0) {
+        emitter.writeString("\n");
     }
 
     // Pass 3: Function Definitions
@@ -165,6 +174,7 @@ bool CBackend::generateMasterMain(const char* output_dir) {
     safe_append(cur, rem, entry_filename_);
 
     C89Emitter emitter(unit_, false);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open master main file for writing");
         return false;
@@ -253,6 +263,7 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     C89Emitter emitter(unit_, true);
     emitter.setModule(module->name);
     emitter.setExternalSliceCache(public_slices);
+    emitter.setDebugTrace(unit_.getOptions().debug_codegen);
     if (!emitter.open(path)) {
         unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open .h file for writing");
         return false;
@@ -316,32 +327,13 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         emitter.writeString("\n");
     }
 
-    // Use pre-computed header types
+    // Use pre-computed header types in dependency order
     for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_ENUM) {
-            emitter.emitTypeDefinition(type);
-        }
+        Type* t = module->header_types[i];
+        if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
+        emitter.emitTypeDefinition(t);
+        emitter.emitBufferedTypeDefinitions();
     }
-    emitter.emitBufferedTypeDefinitions();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_SLICE) emitter.ensureSliceType(type);
-    }
-    emitter.emitBufferedSlices();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_ERROR_UNION) emitter.ensureErrorUnionType(type);
-    }
-    emitter.emitBufferedErrorUnions();
-
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* type = module->header_types[i];
-        if (type->kind == TYPE_OPTIONAL) emitter.ensureOptionalType(type);
-    }
-    emitter.emitBufferedOptionals();
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
@@ -426,7 +418,7 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds
         ASTFnDeclNode* fn = node->as.fn_decl;
         if (fn->params) {
             for (size_t i = 0; i < fn->params->length(); ++i) {
-                scanForSpecialTypes((*fn->params)[i]->type, emitter, kinds);
+                scanForSpecialTypes((*fn->params)[i], emitter, kinds);
             }
         }
         if (fn->return_type) scanForSpecialTypes(fn->return_type, emitter, kinds);

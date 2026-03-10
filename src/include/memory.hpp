@@ -132,6 +132,8 @@ class ArenaAllocator {
     size_t total_cap;
     size_t total_allocated_from_os;
     size_t total_used_for_stats; // To maintain compatibility with old getOffset() behavior
+    size_t peak_allocated_;
+    size_t hard_limit_;
 
 public:
     /**
@@ -139,7 +141,8 @@ public:
      * @param capacity_cap The maximum total size of the memory arena in bytes.
      */
     ArenaAllocator(size_t capacity_cap)
-        : head(NULL), total_cap(capacity_cap), total_allocated_from_os(0), total_used_for_stats(0) {}
+        : head(NULL), total_cap(capacity_cap), total_allocated_from_os(0), total_used_for_stats(0),
+          peak_allocated_(0), hard_limit_(16 * 1024 * 1024) {}
 
     /**
      * @brief Destroys the ArenaAllocator, freeing all memory chunks.
@@ -177,7 +180,23 @@ public:
 
         // Check if this request would exceed total_cap regardless of chunking
         // This maintains compatibility with tests using small capacities.
-        if (total_used_for_stats + size > total_cap) {
+        if (total_used_for_stats + size > total_cap || total_used_for_stats + size > hard_limit_) {
+            if (total_used_for_stats + size > hard_limit_) {
+                char msg[256];
+                char n_used[21], n_limit[21];
+                plat_u64_to_string(total_used_for_stats + size, n_used, sizeof(n_used));
+                plat_u64_to_string(hard_limit_, n_limit, sizeof(n_limit));
+
+                plat_strcpy(msg, "FATAL: Memory limit exceeded (Requested: ");
+                plat_strcat(msg, n_used);
+                plat_strcat(msg, " bytes, Limit: ");
+                plat_strcat(msg, n_limit);
+                plat_strcat(msg, " bytes)\n");
+
+                plat_print_error(msg);
+                plat_abort();
+            }
+
 #ifdef DEBUG
             char dbg[256];
             char* cur = dbg;
@@ -245,6 +264,27 @@ public:
         MemoryTracker::record_free(getOffset());
 #endif
         freeAllChunks();
+    }
+
+    /**
+     * @brief Resets only the peak tracking, not the actual memory.
+     */
+    void resetPeak() {
+        peak_allocated_ = 0;
+    }
+
+    /**
+     * @brief Returns the peak memory usage recorded so far.
+     */
+    size_t getPeakAllocated() const {
+        return peak_allocated_;
+    }
+
+    /**
+     * @brief Sets the hard limit for memory usage.
+     */
+    void setHardLimit(size_t limit) {
+        hard_limit_ = limit;
     }
 
     /**
@@ -334,13 +374,34 @@ private:
         }
 
         if (aligned_offset + size <= chunk->capacity) {
-#ifdef MEASURE_MEMORY
             size_t actual_size = padding + size;
+#ifdef MEASURE_MEMORY
             MemoryTracker::record_allocation(actual_size);
 #endif
             void* ptr = (u8*)chunk + aligned_offset;
             chunk->offset = aligned_offset + size;
-            total_used_for_stats += (padding + size);
+            total_used_for_stats += actual_size;
+
+            if (total_used_for_stats > peak_allocated_) {
+                peak_allocated_ = total_used_for_stats;
+            }
+
+            if (peak_allocated_ > hard_limit_) {
+                char msg[256];
+                char n_peak[21], n_limit[21];
+                plat_u64_to_string(peak_allocated_, n_peak, sizeof(n_peak));
+                plat_u64_to_string(hard_limit_, n_limit, sizeof(n_limit));
+
+                plat_strcpy(msg, "FATAL: Memory limit exceeded (Used: ");
+                plat_strcat(msg, n_peak);
+                plat_strcat(msg, " bytes, Limit: ");
+                plat_strcat(msg, n_limit);
+                plat_strcat(msg, " bytes)\n");
+
+                plat_print_error(msg);
+                plat_abort();
+            }
+
             return ptr;
         }
         return NULL;
@@ -438,6 +499,22 @@ public:
     void append(const T& item) {
         ensure_capacity(len + 1);
         data[len] = item;
+        ++len;
+    }
+
+    /**
+     * @brief Inserts an item at a specific index in the array.
+     * If the array is full, it will trigger a reallocation.
+     * @param index The index at which to insert the item.
+     * @param item The item to insert.
+     */
+    void insert(size_t index, const T& item) {
+        assert(index <= len);
+        ensure_capacity(len + 1);
+        for (size_t i = len; i > index; --i) {
+            data[i] = data[i - 1];
+        }
+        data[index] = item;
         ++len;
     }
 

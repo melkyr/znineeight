@@ -30,7 +30,7 @@ The bootstrap compiler assumes a **32-bit little-endian** platform with the foll
 This matches the target Win32/x86 environment of the late 90s.
 
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
-* **Memory Limit:** < 16MB peak usage preferred. No smart pointers or heavy templates
+* **Memory Limit:** < 16MB peak usage **strictly enforced**. The `ArenaAllocator` will abort the compiler if peak usage exceeds this limit to ensure reliability on legacy hardware. No smart pointers or heavy templates.
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
 * **Platform Abstraction Layer (PAL):** To ensure portability and strict compliance, all system calls (memory allocation, file I/O, console output, process termination) MUST go through the PAL (`platform.hpp`).
 * **C++ Standard Library Usage Policy:**
@@ -52,6 +52,13 @@ The RetroZig project utilizes arena-based allocation for both the compiler itsel
 #### 3.1.1 Bootstrap Compiler Memory (`memory.hpp`)
 **Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
 
+#### 3.1.1.1 Memory Verification Gate
+To ensure the compiler operates reliably on legacy hardware with 16MB–64MB of RAM, a **Memory Verification Gate** is implemented as part of the integration test suite. This gate stresses the compiler's memory-intensive passes—specifically the `ControlFlowLifter`—using programmatically generated, deeply nested control-flow structures (100+ levels).
+
+**Key Metrics Verified:**
+- **Peak Usage**: Must remain strictly under the 16MB budget (`ArenaAllocator::getPeakAllocated()`).
+- **Growth Heuristic**: The lifting pass, which clones AST nodes and generates temporary variables, must not cause an exponential blow-up. Memory growth during lifting is expected to remain proportional to the total compiler state (typically verified as `growth < state_before_lift * 5`).
+
 ```cpp
 class ArenaAllocator {
     struct Chunk {
@@ -60,7 +67,8 @@ class ArenaAllocator {
         size_t offset;
     };
     Chunk* head;            // Linked list of allocated chunks
-    size_t total_cap;       // Maximum allowed total capacity (e.g., 16MB)
+    size_t total_cap;       // Maximum allowed total capacity (requested size)
+    size_t hard_limit_;     // Strictly enforced 16MB cap
 public:
     void* alloc(size_t size); // Allocs in current chunk or creates new one
     void* alloc_aligned(size_t size, size_t align);
@@ -96,6 +104,7 @@ extern Arena* zig_default_arena;
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.
+* **`plat_printf_debug(const char* format, ...)`**: Variadic debug print utility. On Windows, outputs to both the debugger and stderr. On POSIX, outputs to stderr.
 * **`plat_abort()`**: Terminates the process immediately without calling destructors or performing CRT cleanup. Uses `ExitProcess(1)` on Windows.
 * **`join_paths(const char* dir, const char* rel_path, ArenaAllocator& arena)`**: Combines a directory and a relative path into a normalized path, handling both Windows and POSIX separators.
 * **`get_directory(const char* filepath, ArenaAllocator& arena)`**: Extracts the directory component from a file path.
@@ -197,22 +206,21 @@ filename.zig:23:5: error: type mismatch
 - **Source Aggregation:** Manages one or more source files through the `SourceManager`.
 - **Pipeline Orchestration:** Manages the sequential execution of compilation phases:
     1.  **Lexing & Parsing:** Produces the AST for the entry module.
-- **Import Resolution (Task 214 & 216):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution.
-    - **Search Order:**
-        1.  Directory of the importing file.
-        2.  Directories specified via `-I` command-line flags (searched in the order they were provided).
-        3.  Default `lib/` directory located relative to the compiler executable.
-    - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
-- **Modular Semantic Analysis (Task 215):** Compilation passes are executed unit-wide but with module-level granularity:
-    - **Context Switching:** The `CompilationUnit` iterates through all loaded modules for each pass (Type Checking, C89 Validation, Static Analyzers).
-    - **Isolated Context:** Each module maintains its own `SymbolTable` and feature catalogues (Generic, ErrorSet, etc.) to prevent cross-module state leakage while allowing qualified symbol resolution.
-    3.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types (e.g., error unions, optionals, multi-level pointers, `isize`/`usize`), to enable accurate semantic analysis. This permissive approach ensures that the TypeChecker remains focused on understanding the language, while leaving feature restriction to later passes.
-    3.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0. This is where descriptive error messages for unsupported features are reported.
-    4.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
-    5.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
-    6.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks, tracks allocation/deallocation sites, and handles ownership transfers.
-    7.  Pass 5: Metadata Preparation (Task 9.15): A post-typechecking pass that transitively collects all reachable types for module headers, ensures consistent mangling (MSVC 6.0 compatible), and verifies complete type layouts.
-    8.  Code Generation: Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target.
+    2.  **Import Resolution (Task 214 & 216):** Recursively discovers, loads, and parses all imported Zig modules. This phase includes circular dependency detection and path resolution.
+        - **Search Order:**
+            1.  Directory of the importing file.
+            2.  Directories specified via `-I` command-line flags (searched in the order they were provided).
+            3.  Default `lib/` directory located relative to the compiler executable.
+        - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
+    3.  **Modular Semantic Analysis (Task 215):** Compilation unit orchestrates modular passes. Each module maintains its own `SymbolTable` and feature catalogues.
+    4.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types, to enable accurate semantic analysis.
+    5.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0.
+    6.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
+    7.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
+    8.  **Pass 4: Double Free Detection (Task 127-129):** Detects arena double frees and leaks.
+    9.  **Pass 5: AST Lifting (Task 230):** A mandatory pass that transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents by lifting them into temporary variables. This pass ensures that the code generator never encounters nested control-flow expressions, significantly simplifying C89 emission. **Refinement**: Lifted expressions yielding `void` (common in `try` and `catch` statements) skip variable declarations in C to avoid invalid `void __tmp` definitions. **Debugging**: Supports verbose logging via `--debug-lifter`.
+    10. **Pass 6: Metadata Preparation (Task 9.15):** A post-typechecking pass that transitively collects all reachable types for module headers using a **post-order dependency traversal**. This ensures that C headers define aggregate types (structs/unions) before they are used in typedefs (slices/error unions), resolving "incomplete type" errors.
+    11. **Code Generation:** Emits target code (C89). All code generation MUST avoid standard C library functions like `sprintf` and instead use the `plat_*_to_string` utilities to ensure compatibility with the `kernel32.dll`-only target. **Constraint**: C89 requires functions to be declared before use. The current backend requires Zig code to be ordered appropriately or may require a future forward-declaration pass.
 - **Parser Creation:** Provides a factory method, `createParser()`, which encapsulates the entire process of lexing a source file and preparing a `Parser` instance for syntactic analysis. It uses a `TokenSupplier` internally, which guarantees that the token stream passed to the parser has a stable memory address that will not change for the lifetime of the `CompilationUnit`'s arena. This prevents dangling pointer errors.
 
 #### 4.0.1 Non-C89 Feature Detection Strategy
@@ -496,7 +504,9 @@ public:
     void enterScope();
     void exitScope();
     bool insert(const Symbol& symbol); // Inserts into the current scope.
+    void registerTempSymbol(Symbol* symbol); // Bypasses redeclaration checks.
     Symbol* lookup(const char* name);  // Searches from current scope outwards.
+    void dumpSymbols(const char* context); // Debug dump utility.
 };
 ```
 
@@ -600,8 +610,9 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Defer**: `defer statement;` or `defer { ... }`.
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
 *   **Optional Types**: Fully supported as of Task 9.3 stabilization. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
-    *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types. Size and alignment are dynamically calculated based on the payload type `T` and an `int` flag, including proper padding for alignment.
-    *   **Stability**: Hardened with NULL checks and placeholder awareness during type creation.
+    *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types internally.
+    *   **C ABI Mapping (Milestone 8)**: Optional pointers (`?*T`, `?[*]T`, `?fn(...)`) are automatically transformed into raw C pointers at `extern`/`export` boundaries to maintain C ABI compatibility.
+    *   **Stability**: Hardened with NULL checks and placeholder awareness during type creation. Size and alignment are dynamically calculated based on the payload type `T` and an `int` flag.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.
 *   **Built-ins (Compile-Time)**: Intrinsics evaluated at compile-time and replaced with constants:
     *   `@sizeOf(T)` -> `usize` literal
@@ -645,6 +656,9 @@ To maintain C89 compatibility and compiler simplicity:
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
     *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
+    *   **Compiler-Generated Identifiers**: Symbols used internally by the compiler (identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`) bypass all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and predictable.
+    *   **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.
+*   **Debugging Improvements**: The compiler supports verbose logging and tracing via `--debug-lifter` and `--debug-codegen` flags.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.
 
 **Defer Statement Semantics:**
@@ -969,8 +983,9 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Buffering**: 4KB stack-based buffer to minimize system call overhead.
 - **Indentation**: Automatic indentation management (4 spaces).
 - **RAII State Guards**: Uses `IndentScope` and `DeferScopeGuard` to ensure state consistency (indentation level and defer stack) across complex control flow.
-- **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize expression lifting, type coercion, and initializer decomposition, ensuring consistent behavior across variable declarations and assignments.
+- **Unified Assignment**: Employs `emitAssignmentWithLifting` to centralize type coercion and initializer decomposition, ensuring consistent behavior across variable declarations and assignments. (Note: Control-flow lifting is now handled in a separate AST pass).
 - **Comments**: Standard C89 `/* ... */` comment emission.
+- **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations and identifier resolution.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
 - **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.

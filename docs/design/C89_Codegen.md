@@ -23,6 +23,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **Buffered Output**: Uses a 4KB stack-based buffer to batch writes to the filesystem, minimizing system call overhead without requiring heap allocations in the hot path.
 - **Indentation Management**: Maintains a simple indentation level counter and provides a `writeIndent()` helper to ensure consistent code formatting (fixed at 4 spaces).
 - **C89-Compliant Comments**: Provides an `emitComment()` helper that ensures all comments use the `/* ... */` style, as `//` comments are not supported in standard C89.
+- **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations, identifier resolution, and scope management.
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
 - **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
 - **Modular Dispatch**: Large emission functions are decomposed into focused helpers to improve legibility and maintainability. For example, `emitExpression` dispatches to:
@@ -54,7 +55,7 @@ emitter.writeString("}\n");
 The `CVariableAllocator` manages the allocation and uniquification of C variable names within a function scope. It ensures that all generated identifiers are valid in C89 and compatible with legacy compilers like MSVC 6.0.
 
 ### Responsibilities:
-- **Keyword Avoidance**: Automatically detects conflicts with the 32 standard C89 keywords (e.g., `int`, `return`, `static`) and prefixes conflicting identifiers with `z_`.
+- **Keyword Avoidance**: Automatically detects conflicts with the 32 standard C89 keywords (e.g., `int`, `return`, `static`) and prefixes conflicting identifiers with `z_`. Identifiers beginning with `__` bypass this check.
 - **Length Enforcement**: Enforces a strict 31-character limit for all identifiers to comply with MSVC 6.0 constraints.
 - **Uniquification**: Resolves name collisions within a function by appending numeric suffixes (e.g., `my_var`, `my_var_1`).
 - **Sanitization**: Replaces invalid characters in Zig identifiers with underscores to produce valid C identifiers.
@@ -67,7 +68,17 @@ The `CVariableAllocator` manages the allocation and uniquification of C variable
 ### Example:
 Zig name `long_variable_name_exceeding_31_chars` might become `long_variable_name_exceeding_3`.
 Zig name `int` becomes `z_int`.
+Zig name `__tmp_if_result_very_long_identifier` becomes `__tmp_if_result_very_long_ide`.
 Multiple uses of `tmp` result in `tmp`, `tmp_1`, `tmp_2`, etc.
+
+### 3.1 Compiler-Internal Identifiers
+Identifiers starting with `__` (double underscore) are reserved for compiler use (e.g., `__tmp_if_1`, `__bootstrap_print`). These identifiers bypass the standard mangling process:
+- They do **not** receive a module prefix.
+- They do **not** receive a `z_` prefix if they conflict with C keywords (the compiler ensures they don't).
+- They are **not** sanitized (the compiler ensures they contain only valid characters).
+- They **are** truncated to 31 characters for MSVC 6.0 compatibility.
+
+This bypass is implemented in `C89Emitter::getC89GlobalName` and `CVariableAllocator::makeUnique`. The rationale is to ensure that compiler-generated temporaries remain unique and predictable, without interference from the user-level mangling rules.
 
 ## 4. Emission Strategies
 
@@ -81,12 +92,13 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.
 
-### 4.3 Unified Assignment and Lifting
-The `C89Emitter::emitAssignmentWithLifting` method provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
-- **Expression Lifting**: Transforms control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) into statement blocks when used in an assignment context.
+### 4.3 Unified Assignment and Wrapping
+The `C89Emitter::emitAssignmentWithLifting` method (retained for backward compatibility and wrapping logic) provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
 - **Type Coercion**: Generates the necessary C code to wrap values into `Optional` or `ErrorUnion` structures.
 - **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments.
 - **Discarding Results**: Correctly handles assignments to the blank identifier `_` by evaluating the RHS for side effects and casting to `(void)`.
+
+Note: Control-flow expression lifting is now handled at the AST level by the `ControlFlowLifter` pass, so the emitter no longer performs ad-hoc lifting.
 
 This unification reduces code duplication and ensures consistent behavior across different parts of the code generator.
 
@@ -109,11 +121,6 @@ This unification reduces code duplication and ensures consistent behavior across
         }
     }
     ```
-- **If Expressions**: Since C89 does not have expression-valued `if`, they are "lifted" into a C `if-else` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Supported in assignments to identifiers, variable initializers, return statements, switch prongs, and as expression statements.
-  - **Divergence**: If a branch contains a control-flow statement like `return` or `break`, the result assignment is skipped for that branch.
-  - **Optional Capture**: Supported similar to `if` statements.
-  - **Nesting Limitation**: Standalone `if` expressions in branches do not support further lifting unless wrapped in a block `{ ... }`.
 - **While Loops**:
   - **Unlabeled**: Mapped to C `while (cond) { ... }`. Supports `while (cond) : (iter)` by emitting `iter` at the end of the loop body.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
@@ -156,35 +163,6 @@ This unification reduces code duplication and ensures consistent behavior across
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
-- **Switch Expressions**: Since C89 does not have expression-valued switches, they are "lifted" into a C `switch` statement that assigns the result to a temporary variable or the target variable.
-  - **Lifting Contexts**: Currently supported in direct assignments to identifiers, variable initializers, return statements, and as expression statements.
-  - **Temporary Variables**: For `return switch` or complex expressions, a temporary `__return_val` or similar is used.
-  - **Range Expansion**: Inclusive ranges `a...b` are expanded into multiple `case` labels for each value in the range.
-  - **Nested Lifting**: If a prong body is an `if` expression or another `switch` expression, it is recursively lifted within the `case` block. Note that `try`, `catch`, and `orelse` are NOT recursively lifted in this context unless wrapped in a block.
-- **Try Expressions**: Unwraps an error union or propagates the error. Lifted to an `if` check on the `is_error` flag.
-  - **Defer Interaction**: When `try` detects an error, it performs an early return. The emitter ensures that all active `defer` statements in the current scope (and any outer scopes being exited) are executed in LIFO order before the `return` statement is emitted. This is verified by integration tests.
-  ```c
-  {
-      ErrorUnion_T __try_res = expr;
-      if (__try_res.is_error) {
-          /* emit defers */
-          return __try_res;
-      }
-      result = __try_res.data.payload;
-  }
-  ```
-- **Catch Expressions**: Handles errors from an error union. Lifted to an `if-else` statement.
-  ```c
-  {
-      ErrorUnion_T __catch_res = expr;
-      if (__catch_res.is_error) {
-          int err = __catch_res.data.err;
-          result = fallback_expr;
-      } else {
-          result = __catch_res.data.payload;
-      }
-  }
-  ```
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
@@ -205,7 +183,7 @@ For each unique slice type encountered, the compiler generates a `typedef` and a
 - **Indexing**: `s[i]` is emitted as `s.ptr[i]`.
 - **Length**: `s.len` is emitted as `s.len`.
 - **Slicing**: `base[start..end]` is emitted as a call to the generated helper: `__make_slice_T(computed_ptr, computed_len)`.
-- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call. String literals are also implicitly coerced to `[]const u8` slices.
+- **Implicit Coercion**: Array-to-slice coercion is automatically handled by the `TypeChecker` by inserting a synthetic slicing node, which the emitter then translates into a helper call. String literals are also implicitly coerced to `[]const u8` slices. For control-flow expressions yielding slices, the TypeChecker uses a **Distributed Coercion** strategy to ensure branches produce structs, not pointers, before lifting occurs.
 
 #### Helper Functions
 For each unique slice type, a construction helper is generated:
@@ -460,7 +438,7 @@ Deeply nested `try`, `catch`, or `orelse` expressions within complex binary oper
 ### Optional Representation
 Optional types are emitted as C structures. The name is mangled as `Optional_T`.
 
-**Uniform Struct Representation (Bootstrap Limitation)**: While modern Zig optimizes `?*T` to be the same size as a raw pointer (using 0 as null), the Z98 bootstrap compiler uses a uniform struct representation for all optional types.
+**Uniform Struct Representation (Bootstrap Limitation)**: While modern Zig optimizes `?*T` to be the same size as a raw pointer (using 0 as null), the Z98 bootstrap compiler uses a uniform struct representation for all optional types internally.
 
 ```c
 typedef struct {
@@ -468,6 +446,19 @@ typedef struct {
     int has_value;   /* 1 = has value, 0 = null */
 } Optional_T;
 ```
+
+### C ABI Mapping for Optional Pointers (Milestone 8)
+To maintain compatibility with the C ABI, optional pointers (`?*T`, `?[*]T`, and `?fn(...)`) are automatically transformed into raw C pointers when they cross the boundary of `extern` or `export` functions.
+
+- **Extern Functions (Zig calls C)**:
+    - **Arguments**: The `ControlFlowLifter` generates a temporary raw pointer. If the optional has a value, the temporary is assigned the payload; otherwise, it is assigned `NULL` (0). The raw pointer is then passed to the C function.
+    - **Return Value**: If a C function returns a raw pointer that Zig expects as an optional, the lifter wraps the result. If the pointer is non-null, it produces an optional with `has_value = 1`; otherwise, `has_value = 0`.
+
+- **Export Functions (C calls Zig)**:
+    - **Parameters**: In the function prologue, the lifter wraps each raw pointer parameter from C into a Zig-internal optional struct.
+    - **Return Value**: Before returning to C, the lifter unwraps the Zig optional into a raw C pointer.
+
+This "lift early, emit simply" strategy ensures that the `C89Emitter` sees standard C signatures for boundary functions while the rest of the Zig code continues to use the uniform struct representation.
 
 ### Lifting Strategy
 Like other control-flow expressions, `orelse` is "lifted" into a statement block.
@@ -504,3 +495,33 @@ target.has_value = 0;
 
 ### Defer Interaction
 While `orelse` itself doesn't cause early returns (unlike `try`), the fallback expression (right side of `orelse`) can contain a `return` or `unreachable`. The emitter correctly handles these by executing any active `defer` statements before the `return` or emitting a panic for `unreachable`.
+
+### 4.13 Anonymous Structs and Unions
+Zig allows defining anonymous structs and unions as types for fields (e.g., `data: union { a: i32, b: f32 }`). Standard C89 supports anonymous types if they are defined inline with the field declaration.
+
+#### Emission Strategy
+The `C89Emitter` identifies anonymous structs and unions by checking if their `c_name` and `as.struct_details.name` are `NULL`.
+
+- **Inlined Definition**: Instead of emitting a named type (e.g., `struct S data;`), the emitter outputs the full type body followed by the field name: `union { int a; float b; } data;`.
+- **Recursive Emission**: The `emitStructBody` and `emitUnionBody` helpers recursively handle fields, ensuring that nested anonymous types are also inlined correctly.
+- **Keyword Mangling**: Field names that conflict with C keywords (like `int` or `float`) are mangled (e.g., `z_int`) using `getSafeFieldName` to ensure valid C89 syntax.
+
+Example Zig:
+```zig
+const S = struct {
+    data: union {
+        val: i32,
+        other: f32,
+    },
+};
+```
+
+Generated C89:
+```c
+struct S {
+    union {
+        int val;
+        float other;
+    } data;
+};
+```

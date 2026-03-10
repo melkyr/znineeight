@@ -17,6 +17,8 @@
 #include "utils.hpp"
 #include "mock_emitter.hpp"
 #include "codegen.hpp"
+#include "ast_lifter.hpp"
+#include "test_debug_config.hpp"
 #include <cstring>
 
 /**
@@ -34,6 +36,10 @@ public:
         : CompilationUnit(arena, interner), last_ast(NULL) {
         setTestMode(true);
         injectRuntimeSymbols();
+
+        CompilationOptions& opts = getOptions();
+        opts.debug_lifter = TestDebugConfig::lifter_debug();
+        opts.debug_codegen = TestDebugConfig::codegen_debug();
     }
 
     /**
@@ -194,6 +200,18 @@ public:
         last_ast = parser->parse();
         if (!last_ast) return false;
 
+        // Ensure the module has the ast_root set for subsequent passes (like lifting)
+        Module* target_mod = NULL;
+        for (size_t i = 0; i < getModules().length(); ++i) {
+            if (getModules()[i]->file_id == file_id) {
+                target_mod = getModules()[i];
+                break;
+            }
+        }
+        if (target_mod) {
+            target_mod->ast_root = last_ast;
+        }
+
         // Pass 0.25: Name Collision Detection
         NameCollisionDetector name_detector(*this);
         name_detector.check(last_ast);
@@ -214,6 +232,19 @@ public:
         if (!success || sig_analyzer.hasInvalidSignatures() || getErrorHandler().hasErrors()) {
             return false;
         }
+
+        // Pass 1.5: AST Lifting
+        ControlFlowLifter lifter(&getArena(), &getStringInterner(), &getErrorHandler());
+        lifter.setDebugMode(getOptions().debug_lifter);
+        lifter.lift(this);
+
+        // Update last_ast to the lifted version (usually it's already updated if in-place,
+        // but ensure we point to the correct root if it changed).
+        if (target_mod && target_mod->ast_root) {
+            last_ast = target_mod->ast_root;
+        }
+
+        if (getErrorHandler().hasErrors()) return false;
 
         // Pass 2+: Static Analyzers (if enabled)
         if (getOptions().enable_lifetime_analysis) {

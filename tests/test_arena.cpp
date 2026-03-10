@@ -65,3 +65,39 @@ TEST_FUNC(aligned_allocation) {
 
     return true;
 }
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#include <unistd.h>
+
+static void do_oom_allocation() {
+    ArenaAllocator arena(1000);
+    arena.setHardLimit(100);
+    // Attempt to allocate 200 bytes in a 100-byte limit arena
+    arena.alloc(200);
+}
+
+TEST_FUNC(arena_alloc_hard_limit_abort) {
+    pid_t pid = fork();
+    if (pid == 0) { // Child
+        // Redirect stderr to /dev/null to avoid confusing output during tests
+        FILE* f = fopen("/dev/null", "w");
+        if (f) {
+            dup2(fileno(f), 2);
+            fclose(f);
+        }
+        do_oom_allocation();
+        exit(0);
+    } else if (pid > 0) { // Parent
+        int status;
+        waitpid(pid, &status, 0);
+        // On some systems, plat_abort() might cause SIGABRT (6) or ExitProcess(1)
+        // Let's check for either signaled or non-zero exit
+        if (WIFSIGNALED(status)) {
+            return WTERMSIG(status) == SIGABRT;
+        }
+        return WIFEXITED(status) && WEXITSTATUS(status) != 0;
+    }
+    return false;
+}
+#endif

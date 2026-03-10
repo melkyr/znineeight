@@ -153,11 +153,12 @@ void NameCollisionDetector::visitFnDecl(ASTFnDeclNode* node) {
     // Visit parameters in a new scope
     enterScope();
     for (size_t i = 0; i < node->params->length(); ++i) {
-        ASTParamDeclNode* param = (*node->params)[i];
-        if (checkCollisionInCurrentScope(param->name)) {
-             reportCollision(node->body ? node->body->loc : SourceLocation(), param->name, "parameter");
+        ASTNode* param_node = (*node->params)[i];
+        ASTParamDeclNode& param = param_node->as.param_decl;
+        if (checkCollisionInCurrentScope(param.name)) {
+             reportCollision(node->body ? node->body->loc : SourceLocation(), param.name, "parameter");
         } else {
-            scope_stack_.back()->variable_names.append(param->name);
+            scope_stack_.back()->variable_names.append(param.name);
         }
     }
     visit(node->body);

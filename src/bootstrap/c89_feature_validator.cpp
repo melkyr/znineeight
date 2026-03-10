@@ -16,8 +16,10 @@ bool C89FeatureValidator::validate(ASTNode* node) {
 
     // Generate extraction analysis report even if error found,
     // as it's useful for Milestone 5 planning.
-    unit.getExtractionAnalysisCatalogue().generateReport(&unit);
-    unit.getErrorHandler().printInfos();
+    if (unit.getModule(unit.getCurrentModule())->file_id == node->loc.file_id) {
+        unit.getExtractionAnalysisCatalogue().generateReport(&unit);
+        unit.getErrorHandler().printInfos();
+    }
 
     return !error_found_;
 }
@@ -43,8 +45,9 @@ static bool isErrorType(Type* type) {
 static bool hasGenericParams(ASTFnDeclNode* node) {
     if (!node->params) return false;
     for (size_t i = 0; i < node->params->length(); ++i) {
-        ASTParamDeclNode* p = (*node->params)[i];
-        if (p->is_comptime || p->is_anytype || p->is_type_param) return true;
+        ASTNode* param_node = (*node->params)[i];
+        ASTParamDeclNode& p = param_node->as.param_decl;
+        if (p.is_comptime || p.is_anytype || p.is_type_param) return true;
     }
     return false;
 }
@@ -156,9 +159,9 @@ void C89FeatureValidator::visit(ASTNode* node) {
             }
             if (node->as.param_decl.is_anytype) {
                 bool is_exception = false;
-                if (current_parent_ && current_parent_->type == NODE_FN_DECL &&
-                    current_parent_->as.fn_decl->name &&
-                    plat_strcmp(current_parent_->as.fn_decl->name, "print") == 0) {
+                if (prev_parent && prev_parent->type == NODE_FN_DECL &&
+                    prev_parent->as.fn_decl->name &&
+                    plat_strcmp(prev_parent->as.fn_decl->name, "print") == 0) {
                     is_exception = true;
                 }
                 if (!is_exception) {
@@ -729,9 +732,7 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
     current_parent_ = node;
     if (fn->params) {
         for (size_t i = 0; i < fn->params->length(); ++i) {
-            if ((*fn->params)[i]) {
-                visit((*fn->params)[i]->type);
-            }
+            visit((*fn->params)[i]);
         }
     }
     if (fn->return_type) {

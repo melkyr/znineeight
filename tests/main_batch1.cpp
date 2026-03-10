@@ -15,6 +15,7 @@ int main(int argc, char* argv[]) {
         test_allocation_failure,
         test_reset,
         test_aligned_allocation,
+        test_arena_alloc_hard_limit_abort,
         test_dynamic_array_append,
         test_dynamic_array_growth,
         test_dynamic_array_growth_from_zero,

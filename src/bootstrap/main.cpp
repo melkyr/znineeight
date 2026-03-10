@@ -43,6 +43,9 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
 
 #ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
+    bool debug_lifter = false;
+    bool debug_codegen = false;
+
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
         plat_print_info("Executing self-test...\n");
 
@@ -69,6 +72,8 @@ int main(int argc, char* argv[]) {
         opts.enable_double_free_analysis = true;
         opts.enable_null_pointer_analysis = true;
         opts.enable_lifetime_analysis = true;
+        opts.debug_lifter = debug_lifter;
+        opts.debug_codegen = debug_codegen;
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource("self_test.zig", source);
@@ -114,6 +119,10 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (plat_strcmp(argv[i], "-o") == 0) {
             if (i + 1 < argc) output_file = argv[++i];
+        } else if (plat_strcmp(argv[i], "--debug-lifter") == 0) {
+            debug_lifter = true;
+        } else if (plat_strcmp(argv[i], "--debug-codegen") == 0) {
+            debug_codegen = true;
         } else if (plat_strcmp(argv[i], "-I") == 0) {
             if (i + 1 < argc && include_path_count < 64) {
                 temp_include_paths[include_path_count++] = argv[++i];
@@ -180,6 +189,8 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --self-test             Run internal self-tests\n");
     plat_print_info("  -o <file>               Specify output C file\n");
     plat_print_info("  -I <path>               Add include search path\n");
+    plat_print_info("  --debug-lifter          Enable debug logging in AST lifter\n");
+    plat_print_info("  --debug-codegen         Enable debug tracing in C89 code generator\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 

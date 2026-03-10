@@ -47,6 +47,19 @@ The `TypeChecker` validates slice usage and prepares the AST for code generation
 ### 3.2 Implicit Coercion
 The compiler supports implicit coercion from a fixed-size array `[N]T` to a slice `[]T` (or `[]const T`) if the element types match.
 
+#### Distributed Coercion (Distributed Strategy)
+To ensure that control-flow expressions (like `if` and `switch`) correctly yield slice results during lifting, the TypeChecker employs a **Distributed Coercion** strategy. When an `if` or `switch` expression is used in a context where a slice is expected (e.g., assignment to a union field or function argument), the TypeChecker recursively distributes the required coercion into each branch of the construct.
+
+This ensures that:
+1. Each branch (prong) produces a valid slice struct.
+2. The compiler-generated temporary variable for the lifted expression is declared with the correct slice struct type (e.g., `Slice_i32`), not a raw pointer.
+
+Example:
+```zig
+var u: UnionWithSlice = UnionWithSlice{ .A = if (cond) arr1 else arr2 };
+```
+The TypeChecker transforms this such that both `arr1` and `arr2` are wrapped in `NODE_ARRAY_SLICE` before the `if` is lifted.
+
 ### 3.3 Built-in Properties
 Slices have a built-in `.len` property which returns a `usize`. Accessing this property is handled as a standard member access in the AST.
 

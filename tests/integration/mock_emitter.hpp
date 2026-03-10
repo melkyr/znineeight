@@ -150,6 +150,8 @@ public:
                 return emitBlockStatement(&node->as.block_stmt);
             case NODE_IF_STMT:
                 return emitIfStatement(node->as.if_stmt);
+            case NODE_SWITCH_STMT:
+                return emitSwitchStatement(node->as.switch_stmt);
             case NODE_WHILE_STMT:
                 return emitWhileStatement(node->as.while_stmt);
             case NODE_FOR_STMT:
@@ -313,6 +315,47 @@ public:
     }
 
     /**
+     * @brief Emits a C89 switch statement.
+     */
+    std::string emitSwitchStatement(const ASTSwitchStmtNode* node) {
+        if (!node) return "/* INVALID SWITCH STMT */";
+        std::stringstream ss;
+        ss << "switch (" << emitExpression(node->expression) << ") { ";
+        if (node->prongs) {
+            for (size_t i = 0; i < node->prongs->length(); ++i) {
+                const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+                if (prong->is_else) {
+                    ss << "default: ";
+                } else {
+                    for (size_t j = 0; j < prong->items->length(); ++j) {
+                        ss << "case " << emitExpression((*prong->items)[j]) << ": ";
+                    }
+                }
+                if (prong->body->type == NODE_BLOCK_STMT) {
+                    ss << emitBlockStatement(&prong->body->as.block_stmt);
+                } else {
+                    // Try to emit as statement for better robustness
+                    if (prong->body->type == NODE_EXPRESSION_STMT ||
+                        prong->body->type == NODE_RETURN_STMT ||
+                        prong->body->type == NODE_BREAK_STMT ||
+                        prong->body->type == NODE_CONTINUE_STMT ||
+                        prong->body->type == NODE_UNREACHABLE) {
+                        ss << emitExpression(prong->body);
+                    } else {
+                        // Fallback to expression with semicolon if needed
+                        std::string body = emitExpression(prong->body);
+                        ss << body;
+                        if (!body.empty() && body[body.length()-1] != ';') ss << ";";
+                    }
+                }
+                ss << " break; ";
+            }
+        }
+        ss << "}";
+        return ss.str();
+    }
+
+    /**
      * @brief Emits a C89 while statement.
      */
     std::string emitWhileStatement(const ASTWhileStmtNode* node) {
@@ -456,9 +499,9 @@ public:
                 if (i > 0) ss << ", ";
                 Type* param_type = (*params)[i];
                 if (param_type->kind == TYPE_ARRAY) {
-                    ss << getC89TypeName(param_type->as.array.element_type) << " " << (*fn->params)[i]->name << "[" << (unsigned long)param_type->as.array.size << "]";
+                    ss << getC89TypeName(param_type->as.array.element_type) << " " << (*fn->params)[i]->as.param_decl.name << "[" << (unsigned long)param_type->as.array.size << "]";
                 } else {
-                    ss << getC89TypeName(param_type) << " " << (*fn->params)[i]->name;
+                    ss << getC89TypeName(param_type) << " " << (*fn->params)[i]->as.param_decl.name;
                 }
             }
         } else {
@@ -892,48 +935,17 @@ private:
 
     std::string emitSwitchExpression(const ASTSwitchExprNode* node) {
         if (!node) return "/* INVALID SWITCH */";
-        std::stringstream ss;
-        ss << "switch (" << emitExpression(node->expression) << ") { ";
-        for (size_t i = 0; i < node->prongs->length(); ++i) {
-            const ASTSwitchProngNode* prong = (*node->prongs)[i];
-            if (prong->is_else) {
-                ss << "default: ";
-            } else {
-                for (size_t j = 0; j < prong->items->length(); ++j) {
-                    ss << "case " << emitExpression((*prong->items)[j]) << ": ";
-                }
-            }
-            if (prong->body->resolved_type && prong->body->resolved_type->kind == TYPE_NORETURN) {
-                std::string body = emitExpression(prong->body);
-                ss << body;
-                if (body.empty() || body[body.length()-1] != ';') ss << ";";
-                ss << " break; ";
-            } else {
-                ss << "__ret = " << emitExpression(prong->body) << "; break; ";
-            }
-        }
-        ss << "}";
-        return ss.str();
+        return "/* Switch expression should have been lifted */";
     }
 
     std::string emitTryExpression(const ASTTryExprNode* node) {
         if (!node) return "/* INVALID TRY */";
-        std::stringstream ss;
-        ss << "{ " << getMangledTypeName(node->expression->resolved_type) << " __try_res_" << try_expr_counter_++ << " = " << emitExpression(node->expression) << "; ";
-        ss << "if (__try_res_" << (try_expr_counter_ - 1) << ".is_error) " << emitDefersForScopeExit() << "return __ret_err; ";
-        ss << "__ret = __try_res_" << (try_expr_counter_ - 1) << ".data.payload; }";
-        return ss.str();
+        return "/* Try expression should have been lifted */";
     }
 
     std::string emitCatchExpression(const ASTCatchExprNode* node) {
         if (!node) return "/* INVALID CATCH */";
-        std::stringstream ss;
-        ss << "{ " << getMangledTypeName(node->payload->resolved_type) << " __catch_res_" << catch_expr_counter_++ << " = " << emitExpression(node->payload) << "; ";
-        ss << "if (__catch_res_" << (catch_expr_counter_ - 1) << ".is_error) { ";
-        if (node->error_name) ss << "int " << node->error_name << " = __catch_res_" << (catch_expr_counter_ - 1) << ".data.err; ";
-        ss << "__ret = " << emitExpression(node->else_expr) << "; } ";
-        ss << "else { __ret = __catch_res_" << (catch_expr_counter_ - 1) << ".data.payload; } }";
-        return ss.str();
+        return "/* Catch expression should have been lifted */";
     }
 
 public:

@@ -27,6 +27,65 @@ The `TypeChecker` supports Zig-style type inference for `var` and `const` declar
 - **Internal Representation**: Inferred variables have their `type` pointer set to `NULL` in the `ASTVarDeclNode`.
 - **Location Tracking**: Since inferred variables lack an explicit type annotation, the `TypeChecker` uses the declaration node's location (typically the `var` or `const` keyword) as the source location for the symbol in the `SymbolTable`. This ensures robust error reporting and prevents NULL pointer dereferences during semantic analysis.
 
+### 2.3 AST Traversal Helpers
+
+To simplify AST manipulation and avoid duplicating complex `switch` logic across multiple passes (type checking, cloning, codegen), the compiler provides a uniform child traversal mechanism in `ast_utils.hpp`.
+
+#### `ChildVisitor` Interface
+
+This interface defines a single method, `visitChild`, which receives a pointer to an `ASTNode*` slot. This allows visitors to not only read but also modify or replace child nodes in-place.
+
+```cpp
+struct ChildVisitor {
+    virtual ~ChildVisitor() {}
+    virtual void visitChild(ASTNode** child_slot) = 0;
+};
+```
+
+#### `forEachChild` Function
+
+The `forEachChild` function iterates over every syntactic and semantic child of a given `ASTNode`. It handles all node types defined in `NodeType` that contain any `ASTNode*` or `DynamicArray<ASTNode*>` members.
+
+```cpp
+void forEachChild(ASTNode* node, ChildVisitor& visitor);
+
+/**
+ * @brief Deep-clones an AST node and all its children.
+ *
+ * This function creates a deep copy of the AST structure starting from the given node.
+ * Semantic information (resolved_type, symbol pointers) is shared via shallow copy.
+ * Intermediate structures like DynamicArrays are also deep-cloned.
+ *
+ * @param node The node to clone.
+ * @param arena The arena allocator to use for new nodes and structures.
+ * @return A pointer to the newly cloned ASTNode, or NULL if the input was NULL.
+ */
+ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
+```
+
+##### Key Features:
+- **Transparent Traversal**: Automatically reaches into intermediate structures like `DynamicArray`s in `ASTBlockStmtNode`, `ASTStructInitializerNode`, and `ASTSwitchExprNode`.
+- **Computed Node Access**: Includes children that are computed during later phases, such as `base_ptr` and `len` in `ASTArraySliceNode`.
+- **Mutable Slots**: By providing `ASTNode**`, it enables powerful tree transformation patterns like AST cloning and expression lifting.
+- **Excludes Metadata**: Skips non-AST pointers like `Type*` and `Symbol*`.
+
+##### Usage Example: Counting Nodes
+```cpp
+struct NodeCounter : ChildVisitor {
+    int count;
+    NodeCounter() : count(0) {}
+    void visitChild(ASTNode** child_slot) override {
+        if (*child_slot) {
+            count++;
+            forEachChild(*child_slot, *this);
+        }
+    }
+};
+
+NodeCounter counter;
+forEachChild(root, counter);
+```
+
 ### `NodeType` Enum
 
 This enum is the discriminator for the `union` inside the `ASTNode` struct.
@@ -1044,16 +1103,17 @@ Represents a function declaration. This is a large node, so the `ASTNode` union 
 *   **Structure:**
     ```cpp
     /**
+/**
      * @struct ASTFnDeclNode
      * @brief Represents a function declaration.
      * @var ASTFnDeclNode::name The name of the function.
-     * @var ASTFnDeclNode::params A dynamic array of pointers to ASTParamDeclNode.
+ * @var ASTFnDeclNode::params A dynamic array of pointers to ASTNode (of type NODE_PARAM_DECL).
      * @var ASTFnDeclNode::return_type A pointer to the return type expression (can be NULL).
      * @var ASTFnDeclNode::body A pointer to the function's body (a block statement).
      */
     struct ASTFnDeclNode {
         const char* name;
-        DynamicArray<ASTParamDeclNode*>* params;
+    DynamicArray<ASTNode*>* params;
         ASTNode* return_type; // Can be NULL
         ASTNode* body; // NULL for extern
         bool is_pub;
@@ -1469,10 +1529,17 @@ struct ASTTryExprNode {
 };
 ```
 
-### Transformation Note: Lifting
-In the C89 backend, `try` is not an expression but a statement block. During code generation, any `ASTTryExprNode` encountered in an expression context (like assignment or return) is "lifted" into a preceding C block. The result is stored in a temporary variable which is then used in the original expression.
+### Transformation Note: Unified Lifting (Task 230)
+In the C89 backend, control-flow constructs like `try`, `if`, and `switch` are statement blocks rather than expressions. To support Zig's expression-valued control-flow, the compiler uses a **Unified AST Lifting Pass** that runs after type checking.
 
-**Limitation**: The current `C89Emitter` only supports lifting for certain contexts (see `docs/current_lifting_strategies.md`). Deeply nested `try` expressions or `try` inside complex operators may not be lifted correctly and will result in a compiler error.
+#### Core Principle: Lift Early, Emit Simply
+The `ControlFlowLifter` performs a post-order traversal of the AST using a **Parent-Slot Traversal Pattern**. This pattern passes `ASTNode**` pointers, allowing for clean in-place replacement of nodes without needing to track sibling indices. When it encounters a control-flow expression in an "unsafe" context (e.g., nested inside a binary operation or a function call argument), it:
+1.  **Generates a Temporary Variable**: Creates a unique, interned name like `__tmp_try_1`.
+2.  **Clones the Expression**: Deep-clones the control-flow node into a new `ASTVarDeclNode`.
+3.  **Inserts at Point of evaluation**: Inserts the new variable declaration immediately before the current statement in its enclosing block. This preserves the original order of side effects. **Note**: If the expression yields `void`, the variable declaration is skipped to comply with C89 rules.
+4.  **Replaces with Identifier**: Replaces the original nested expression with an `ASTIdentifierNode` referencing the temporary variable. For `void` expressions, the code generator emits a dummy value or statement.
+
+By the time the AST reaches the code generator, all nested control-flow expressions have been eliminated, allowing the `C89Emitter` to remain focused on simple statement-to-statement translation.
 
 ### Detection Context
 Try expressions are detected in various contexts to provide detailed analysis:

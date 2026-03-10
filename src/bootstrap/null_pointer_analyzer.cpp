@@ -189,8 +189,8 @@ void NullPointerAnalyzer::visitFnDecl(ASTFnDeclNode* node) {
 
     if (node->params) {
         for (size_t i = 0; i < node->params->length(); ++i) {
-            ASTParamDeclNode* param = (*node->params)[i];
-            addVariable(param->name, PS_MAYBE);
+            ASTNode* param_node = (*node->params)[i];
+            addVariable(param_node->as.param_decl.name, PS_MAYBE);
         }
     }
 

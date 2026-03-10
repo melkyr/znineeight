@@ -76,6 +76,7 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
+    void coerceNode(ASTNode** node_slot, Type* target_type);
 
     Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
     bool is_type_undefined(Type* t);
@@ -108,6 +109,7 @@ private:
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
+    Type* transformExternType(Type* t);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
@@ -124,7 +126,7 @@ private:
     ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
     ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
 
-    static const int MAX_VISIT_DEPTH = 200;
+    static const int MAX_VISIT_DEPTH = 1000;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;

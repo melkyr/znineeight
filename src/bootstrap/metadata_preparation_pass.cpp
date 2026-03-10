@@ -80,6 +80,8 @@ void MetadataPreparationPass::run() {
                 }
             }
         }
+
+        collectStaticFunctions(mod);
     }
 }
 
@@ -95,13 +97,13 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
     // Recursively visit component types FIRST (Post-order traversal)
     switch (type->kind) {
         case TYPE_POINTER:
-            collectReachableTypes(mod, type->as.pointer.base, visited);
+            // Pointers only need forward declaration of base type, so they don't force ordering.
             break;
         case TYPE_ARRAY:
             collectReachableTypes(mod, type->as.array.element_type, visited);
             break;
         case TYPE_SLICE:
-            collectReachableTypes(mod, type->as.slice.element_type, visited);
+            // Slices only contain a pointer to the element type, so they don't force ordering.
             break;
         case TYPE_OPTIONAL:
             collectReachableTypes(mod, type->as.optional.payload, visited);
@@ -190,6 +192,27 @@ void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
     if (isTypeComplete(type)) {
         if (type->size == 0 && type->kind != TYPE_VOID && type->kind != TYPE_NORETURN) {
             refreshLayout(type);
+        }
+    }
+}
+
+void MetadataPreparationPass::collectStaticFunctions(Module* mod) {
+    if (!mod->ast_root || mod->ast_root->type != NODE_BLOCK_STMT) return;
+
+    DynamicArray<ASTNode*>* stmts = mod->ast_root->as.block_stmt.statements;
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        ASTNode* node = (*stmts)[i];
+        if (node->type == NODE_FN_DECL) {
+            ASTFnDeclNode* fn = node->as.fn_decl;
+            /* In RetroZig, every top-level function should have a symbol in the module scope. */
+            Symbol* sym = mod->symbols->lookup(fn->name);
+            if (sym && sym->kind == SYMBOL_FUNCTION) {
+                /* We collect non-pub functions for forward declarations in .c files. 
+                   Includes both static and non-pub extern functions to ensure they are prototyped before use. */
+                if (!fn->is_pub) {
+                    mod->static_function_prototypes.append(sym);
+                }
+            }
         }
     }
 }

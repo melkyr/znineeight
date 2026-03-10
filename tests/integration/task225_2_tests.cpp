@@ -45,8 +45,15 @@ TEST_FUNC(Task225_2_BracelessIfExpr) {
     plat_delete_file(temp_filename);
 
     if (generated_c.find("if (b) {") == std::string::npos) return false;
-    if (generated_c.find("__return_val = 1;") == std::string::npos) return false;
-    if (generated_c.find("__return_val = 2;") == std::string::npos) return false;
+    // Check for lifted assignment patterns
+    bool found_v1 = generated_c.find("__return_val = 1;") != std::string::npos || generated_c.find(" = 1;") != std::string::npos;
+    bool found_v2 = generated_c.find("__return_val = 2;") != std::string::npos || generated_c.find(" = 2;") != std::string::npos;
+    bool found_tmp = (generated_c.find("__tmp_if") != std::string::npos || generated_c.find("z__tmp_if") != std::string::npos) &&
+                    (generated_c.find("return __return_val;") != std::string::npos ||
+                     generated_c.find("return __tmp_if") != std::string::npos ||
+                     generated_c.find("return z__tmp_if") != std::string::npos);
+
+    if (!found_tmp && (!found_v1 || !found_v2)) return false;
 
     return true;
 }

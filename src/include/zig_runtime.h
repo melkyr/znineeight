@@ -2,8 +2,6 @@
 #define ZIG_RUNTIME_H
 
 #include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #ifndef __cplusplus
 /* Boolean support for C89 */
@@ -30,6 +28,7 @@ typedef int            i32;
 typedef unsigned int   u32;
 typedef float          f32;
 typedef double         f64;
+typedef char           c_char;
 
 /**
  * @brief Macro to suppress "unused function" warnings in generated C code.
@@ -64,17 +63,12 @@ typedef struct Arena {
 /**
  * @brief Runtime panic handler.
  */
-static void __bootstrap_panic(const char* msg, const char* file, int line) {
-    fprintf(stderr, "PANIC: %s at %s:%d\n", msg, file, line);
-    abort();
-}
+void __bootstrap_panic(const char* msg, const char* file, int line);
 
 /**
  * @brief Print helper for std.debug.print
  */
-static void __bootstrap_print(const unsigned char* s) {
-    fputs((const char*)s, stderr);
-}
+void __bootstrap_print(const unsigned char* s);
 
 /**
  * @brief Print integer helper
@@ -90,6 +84,8 @@ void arena_destroy(Arena* a);
 extern Arena* zig_default_arena;
 void* arena_alloc_default(usize size);
 void arena_free(void* ptr);
+
+usize __bootstrap_usize_from_i64(i64 x);
 
 /* Runtime checked numeric conversions */
 

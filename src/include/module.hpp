@@ -34,6 +34,7 @@ struct Module {
     DynamicArray<const char*> imports;
     DynamicArray<ASTNode*> import_nodes;
     DynamicArray<Type*> header_types;
+    DynamicArray<Symbol*> static_function_prototypes;
     bool is_analyzed;
 
     // Per-module catalogues
@@ -51,6 +52,7 @@ struct Module {
         : imports(arena),
           import_nodes(arena),
           header_types(arena),
+          static_function_prototypes(arena),
           error_set_catalogue(arena),
           generic_catalogue(arena),
           error_function_catalogue(arena),

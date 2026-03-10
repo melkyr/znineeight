@@ -11,6 +11,7 @@
 #include "null_pointer_analyzer.hpp"
 #include "double_free_analyzer.hpp"
 #include "metadata_preparation_pass.hpp"
+#include "ast_lifter.hpp"
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
@@ -160,6 +161,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     if (plat_file_exists(lib_path)) {
         default_lib_path_ = interner_.intern(lib_path);
     }
+
+    arena_.resetPeak();
 }
 
 u32 CompilationUnit::addSource(const char* filename, const char* source) {
@@ -179,7 +182,12 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     // Derive module name: "foo.zig" -> "foo"
     const char* slash = plat_strrchr(filename, '/');
     const char* backslash = plat_strrchr(filename, '\\');
-    const char* last_sep = (slash > backslash) ? slash : backslash;
+    const char* last_sep = NULL;
+    if (slash && backslash) {
+        last_sep = (slash > backslash) ? slash : backslash;
+    } else {
+        last_sep = slash ? slash : backslash;
+    }
     const char* basename = last_sep ? last_sep + 1 : filename;
 
     // Remove extension
@@ -570,6 +578,44 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             .build();
         table.insert(sym_free);
     }
+
+    // __bootstrap_print(s: [*]const u8) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(createPointerType(arena_, get_g_type_u8(), true, true, &type_interner_));
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_print");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
+
+    // __bootstrap_print_int(n: i32) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print_int");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(get_g_type_i32());
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_print_int");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
 }
 
 void CompilationUnit::validateErrorHandlingRules() {
@@ -692,6 +738,7 @@ size_t CompilationUnit::getTotalCatalogueEntries() const {
 }
 
 bool CompilationUnit::generateCode(const char* output_path) {
+    if (getErrorHandler().hasErrors()) return false;
     CBackend backend(*this);
 
     // Extract directory from output_path
@@ -825,6 +872,19 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.end_phase();
 #endif
 
+    // Phase 2.1: AST Lifting
+#ifdef MEASURE_MEMORY
+    tracker.begin_phase("AST Lifting");
+#endif
+    if (all_success) {
+        ControlFlowLifter lifter(&arena_, &interner_, &error_handler_);
+        lifter.setDebugMode(options_.debug_lifter);
+        lifter.lift(this);
+    }
+#ifdef MEASURE_MEMORY
+    tracker.end_phase();
+#endif
+
     // Phase 2.5: Metadata Preparation
 #ifdef MEASURE_MEMORY
     tracker.begin_phase("Metadata Preparation");
@@ -926,6 +986,12 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     }
 
 #ifdef MEASURE_MEMORY
+    char peak_buf[64];
+    char n_peak[21];
+    plat_u64_to_string(arena_.getPeakAllocated(), n_peak, sizeof(n_peak));
+    plat_print_info("\nPeak Memory Usage: ");
+    plat_print_info(n_peak);
+    plat_print_info(" bytes\n");
     tracker.print_report();
     MemoryTracker::reset_counts();
 #endif

@@ -16,6 +16,7 @@ TEST_FUNC(multiple_allocations);
 TEST_FUNC(allocation_failure);
 TEST_FUNC(reset);
 TEST_FUNC(aligned_allocation);
+TEST_FUNC(arena_alloc_hard_limit_abort);
 TEST_FUNC(dynamic_array_append);
 TEST_FUNC(dynamic_array_growth);
 TEST_FUNC(dynamic_array_growth_from_zero);
@@ -1145,5 +1146,31 @@ TEST_FUNC(MetadataPreparation_TransitiveHeaders);
 TEST_FUNC(MetadataPreparation_SpecialTypes);
 TEST_FUNC(MetadataPreparation_RecursivePlaceholder);
 TEST_FUNC(PlaceholderHardening_RecursiveComposites);
+
+// Batch 54: AST Cloning
+TEST_FUNC(ASTCloning_Basic);
+TEST_FUNC(ASTCloning_FunctionCall);
+TEST_FUNC(ASTCloning_Switch);
+
+// Batch 55: AST Lifter
+TEST_FUNC(ASTLifter_BasicIf);
+TEST_FUNC(ASTLifter_Nested);
+TEST_FUNC(ASTLifter_ComplexAssignment);
+TEST_FUNC(ASTLifter_CompoundAssignment);
+TEST_FUNC(ASTLifter_Unified);
+TEST_FUNC(ASTLifter_MemoryStressTest);
+TEST_FUNC(Integration_Return_Try_I32);
+TEST_FUNC(Integration_Return_Try_Void);
+TEST_FUNC(Integration_Return_Try_In_Expression);
+
+// Batch 56: Union Slice Lifting
+TEST_FUNC(UnionSliceLifting_Basic);
+TEST_FUNC(UnionSliceLifting_Coercion);
+TEST_FUNC(UnionSliceLifting_ManualConstruction);
+
+// Batch 57: Anonymous Union Emission
+bool test_Codegen_AnonymousUnion_Basic();
+bool test_Codegen_AnonymousUnion_Nested();
+bool test_Codegen_AnonymousStruct_Nested();
 
 #endif // TEST_DECLARATIONS_HPP
