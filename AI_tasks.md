@@ -2028,7 +2028,6 @@ DynamicArray<ASTNode*> children(arena);
 ---
 ## Milestone 9: Adding final missing features incrementally.
 
-Here’s a step‑by‑step plan to add the remaining features to your bootstrap compiler (zig0). Each phase builds on the previous, and you can stop after any phase if you have a working compiler for your needs. The goal is to reach a point where you can compile an unmodified zig1 source.
 Phase 1: Tagged Unions (union(enum))
 
 Goal: Support union(enum) { field1: Type1, field2: Type2, ... } syntax.
