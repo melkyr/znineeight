@@ -158,6 +158,13 @@ public:
      */
     ASTNode* parseIfStatement();
 
+    /**
+     * @brief Parses a switch statement.
+     *        Grammar: `'switch' '(' expr ')' '{' (prong (',' prong)* ','?)? '}'`
+     * @return A pointer to the ASTNode representing the switch statement.
+     */
+    ASTNode* parseSwitchStatement();
+
     /** @brief Parses an if expression.
      *        Grammar: `'if' '(' expr ')' expr 'else' expr`
      * @return A pointer to the ASTNode representing the if expression.
@@ -335,6 +342,9 @@ private:
 
     /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseSwitchExpression();
+
+    /** @brief Parses a case item (literal or range) in a switch prong. */
+    ASTNode* parseCaseItem();
 
     /** @brief Parses a union declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseUnionDeclaration();

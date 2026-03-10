@@ -487,10 +487,6 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
                 plat_memcpy(sw_copy, node->as.switch_stmt, sizeof(ASTSwitchStmtNode));
                 copy->as.switch_stmt = sw_copy;
 
-                if (node->as.switch_stmt->expression) {
-                    sw_copy->expression = cloneASTNode(node->as.switch_stmt->expression, arena);
-                }
-
                 if (node->as.switch_stmt->prongs) {
                     void* array_mem = arena->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
                     sw_copy->prongs = new (array_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena);
@@ -506,11 +502,8 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
                             prong_copy->items = new (items_mem) DynamicArray<ASTNode*>(*arena);
                             prong_copy->items->ensure_capacity(prong_orig->items->length());
                             for (size_t j = 0; j < prong_orig->items->length(); ++j) {
-                                prong_copy->items->append(cloneASTNode((*prong_orig->items)[j], arena));
+                                prong_copy->items->append((*prong_orig->items)[j]);
                             }
-                        }
-                        if (prong_orig->body) {
-                            prong_copy->body = cloneASTNode(prong_orig->body, arena);
                         }
                         sw_copy->prongs->append(prong_copy);
                     }

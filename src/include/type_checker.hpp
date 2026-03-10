@@ -50,6 +50,7 @@ public:
     Type* visitRange(ASTRangeNode* node);
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
+    Type* visitSwitchStmt(ASTSwitchStmtNode* node);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
     Type* visitFnSignature(ASTFnDeclNode* node);
@@ -105,6 +106,10 @@ private:
     Type* checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
+    bool validateRange(ASTRangeNode* range, Type* cond_type);
+    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* expr_prongs,
+                        DynamicArray<ASTSwitchStmtProngNode*>* stmt_prongs,
+                        bool is_expr, Type*& result_type, SourceLocation loc);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
     IndirectType detectIndirectType(ASTNode* callee);

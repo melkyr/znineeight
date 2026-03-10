@@ -1310,7 +1310,8 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         i64 start, end;
                         if (evaluateSimpleConstant(item->as.range.start, &start) &&
                             evaluateSimpleConstant(item->as.range.end, &end)) {
-                            for (i64 k = start; k <= end; ++k) {
+                            i64 effective_end = item->as.range.is_inclusive ? end : end - 1;
+                            for (i64 k = start; k <= effective_end; ++k) {
                                 writeIndent();
                                 writeString("case ");
                                 char buf[32];
@@ -1449,7 +1450,19 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString(len_name);
     writeString(" = ");
     if (is_range) {
-        emitExpression(node->iterable_expr->as.range.end);
+        if (node->iterable_expr->as.range.is_inclusive) {
+            i64 end_val;
+            if (evaluateSimpleConstant(node->iterable_expr->as.range.end, &end_val)) {
+                char buf[32];
+                plat_i64_to_string(end_val + 1, buf, sizeof(buf));
+                writeString(buf);
+            } else {
+                emitExpression(node->iterable_expr->as.range.end);
+                writeString(" + 1");
+            }
+        } else {
+            emitExpression(node->iterable_expr->as.range.end);
+        }
     } else {
         Type* iterable_type = node->iterable_expr->resolved_type;
         if (iterable_type && iterable_type->kind == TYPE_ARRAY) {

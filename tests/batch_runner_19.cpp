@@ -57,6 +57,7 @@
 #include "integration/slice_to_pointer_tests.cpp"
 #include "integration/struct_tests.cpp"
 #include "integration/switch_noreturn_tests.cpp"
+#include "integration/switch_range_tests.cpp"
 #include "integration/switch_tests.cpp"
 #include "integration/tagged_union_tests.cpp"
 #include "integration/task182_183_tests.cpp"

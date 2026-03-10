@@ -23,7 +23,8 @@ We are implementing multi-module support and `@import` resolution, moving toward
 2. **Feature Detection & Rejection** (`C89FeatureValidator`)
 3. **Comprehensive Cataloguing** (9 specialized catalogues)
 4. **Pass-Based Semantic Analysis** (Type checking → Validation → Lifetime → Null pointer → Double free)
-5. **AST Lifting Pass**: Transforms control-flow expressions into statements. Handles `void` expressions specially to ensure C89 compatibility.
+    - **TypeChecker**: Now validates switch ranges (bounds, types, size limits).
+5. **AST Lifting Pass**: Transforms control-flow expressions into statements. Handles `void` expressions specially to ensure C89 compatibility. Preserves `NODE_SWITCH_STMT` as it is already in statement form.
 6. **Metadata Preparation Pass**: Ensures dependency-ordered type definitions in C headers.
 7. **Multi-File C89 Generation** (`CBackend` / `C89Emitter`)
 

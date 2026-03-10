@@ -123,6 +123,7 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_IF_EXPR,         ///< An if-else expression (mandatory else, braceless).
     NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_SWITCH_STMT,     ///< A switch statement.
     NODE_BREAK_STMT,      ///< A break statement.
     NODE_CONTINUE_STMT,   ///< A continue statement.
     NODE_RETURN_STMT,     ///< A return statement.
@@ -1220,7 +1221,41 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
         ASTNode* expression;
         DynamicArray<ASTSwitchProngNode*>* prongs;
     };
+
+    /**
+     * @struct ASTSwitchStmtNode
+     * @brief Represents a switch statement.
+     * @var ASTSwitchStmtNode::expression The expression whose value is being switched on.
+     * @var ASTSwitchStmtNode::prongs A dynamic array of switch statement prongs.
+     */
+    struct ASTSwitchStmtNode {
+        ASTNode* expression;
+        DynamicArray<ASTSwitchStmtProngNode*>* prongs;
+    };
+
+    /**
+     * @struct ASTSwitchStmtProngNode
+     * @brief Represents a single prong in a switch statement.
+     * @var ASTSwitchStmtProngNode::items A dynamic array of case items (literals or ranges).
+     * @var ASTSwitchStmtProngNode::is_else True if this is the `else` prong.
+     * @var ASTSwitchStmtProngNode::body The statement to execute for this prong.
+     * @var ASTSwitchStmtProngNode::capture_name Optional name for the payload capture (e.g., `|val|`).
+     * @var ASTSwitchStmtProngNode::capture_sym Resolved symbol for the capture.
+     */
+    struct ASTSwitchStmtProngNode {
+        DynamicArray<ASTNode*>* items;
+        bool is_else;
+        ASTNode* body;
+        const char* capture_name;
+        Symbol* capture_sym;
+    };
     ```
+
+#### Parsing Logic (`parseSwitchStatement`)
+The `parseSwitchStatement` function handles the `switch` statement. It follows the same grammar as `switch` expressions but produces a `NODE_SWITCH_STMT` and parses prong bodies as statements rather than expressions.
+
+#### Parsing Logic (`parseCaseItem`)
+Handles individual items in a switch prong. It parses a base expression and then checks for `..` or `...` to create a `NODE_RANGE` if applicable.
 
 ## 10. Container Declaration Node Types
 

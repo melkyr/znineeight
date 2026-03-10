@@ -29,6 +29,12 @@ TEST_FUNC(C89Rejection_NestedTryInMemberAccess) {
     return true;
 }
 
+TEST_FUNC(C89Rejection_DeferAndErrDefer) {
+    const char* source = "fn f() void { defer {}; errdefer {}; }";
+    ASSERT_TRUE(run_type_checker_test_successfully(source));
+    return true;
+}
+
 TEST_FUNC(C89Rejection_NestedTryInStructInitializer) {
     const char* source =
         "const S = struct { f: i32 };\n"

@@ -811,6 +811,7 @@ ASTNode* Parser::parseSwitchExpression() {
     bool has_else = false;
 
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        SourceLocation prong_loc = peek().location;
         ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
         if (!prong_node) {
             error("Out of memory");
@@ -832,7 +833,7 @@ ASTNode* Parser::parseSwitchExpression() {
         } else {
             // Parse one or more case items
             do {
-                prong_node->items->append(parseExpression());
+                prong_node->items->append(parseCaseItem());
             } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
         }
 
@@ -845,6 +846,7 @@ ASTNode* Parser::parseSwitchExpression() {
             expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
         }
 
+        prong_node->loc = prong_loc;
         prong_node->body = parseExpression();
         if (prong_node->body == NULL) {
              error("Cases without corresponding body expression");
@@ -1787,6 +1789,8 @@ ASTNode* Parser::parseStatement() {
             return parseComptimeBlock();
         case TOKEN_IF:
             return parseIfStatement();
+        case TOKEN_SWITCH:
+            return parseSwitchStatement();
         case TOKEN_FOR:
             return parseForStatement();
         case TOKEN_WHILE:
@@ -1851,7 +1855,7 @@ ASTNode* Parser::parseBlockStatement() {
                 stmt->type == NODE_EMPTY_STMT || stmt->type == NODE_DEFER_STMT ||
                 stmt->type == NODE_ERRDEFER_STMT || stmt->type == NODE_RETURN_STMT ||
                 stmt->type == NODE_BREAK_STMT || stmt->type == NODE_CONTINUE_STMT ||
-                stmt->type == NODE_UNREACHABLE) {
+                stmt->type == NODE_UNREACHABLE || stmt->type == NODE_SWITCH_STMT) {
                 needs_semicolon = false;
             }
 
@@ -1909,6 +1913,105 @@ ASTNode* Parser::parseIfStatement() {
     node->as.if_stmt = if_stmt_node;
 
     return node;
+}
+
+ASTNode* Parser::parseSwitchStatement() {
+    Token switch_token = expect(TOKEN_SWITCH, "Expected 'switch' keyword");
+
+    expect(TOKEN_LPAREN, "Missing opening parenthesis after switch");
+    ASTNode* condition = parseExpression();
+    expect(TOKEN_RPAREN, "Missing closing parenthesis around condition");
+
+    expect(TOKEN_LBRACE, "Missing opening brace for prongs");
+
+    ASTSwitchStmtNode* switch_node = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
+    if (!switch_node) {
+        error("Out of memory");
+    }
+    switch_node->expression = condition;
+    switch_node->prongs = (DynamicArray<ASTSwitchStmtProngNode*>*)arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
+    if (!switch_node->prongs) {
+        error("Out of memory");
+    }
+    new (switch_node->prongs) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
+
+    bool has_else = false;
+
+    while (peek().type != TOKEN_RBRACE && !is_at_end()) {
+        SourceLocation prong_loc = peek().location;
+        ASTSwitchStmtProngNode* prong_node = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
+        if (!prong_node) {
+            error("Out of memory");
+        }
+        plat_memset(prong_node, 0, sizeof(ASTSwitchStmtProngNode));
+        prong_node->items = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!prong_node->items) {
+            error("Out of memory");
+        }
+        new (prong_node->items) DynamicArray<ASTNode*>(*arena_);
+        prong_node->is_else = false;
+
+        if (match(TOKEN_ELSE)) {
+            if (has_else) {
+                error("Duplicate else prong");
+            }
+            has_else = true;
+            prong_node->is_else = true;
+        } else {
+            // Parse one or more case items
+            do {
+                prong_node->items->append(parseCaseItem());
+            } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
+        }
+
+        expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
+
+        // Support for captures: |payload|
+        if (match(TOKEN_PIPE)) {
+            Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
+            prong_node->capture_name = cap_token.value.identifier;
+            expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
+        }
+
+        prong_node->loc = prong_loc;
+        prong_node->body = parseStatement();
+        if (prong_node->body == NULL) {
+             error("Cases without corresponding body statement");
+        }
+
+        switch_node->prongs->append(prong_node);
+
+        if (!match(TOKEN_COMMA)) break;
+    }
+
+    if (switch_node->prongs->length() == 0) {
+        error("Empty switch body {}");
+    }
+
+    expect(TOKEN_RBRACE, "Expected '}' to close switch statement");
+
+    ASTNode* node = createNodeAt(NODE_SWITCH_STMT, switch_token.location);
+    node->as.switch_stmt = switch_node;
+
+    return node;
+}
+
+ASTNode* Parser::parseCaseItem() {
+    ASTNode* start = parseExpression();
+    if (match(TOKEN_ELLIPSIS) || match(TOKEN_RANGE)) {
+        bool inclusive = (tokens_[current_index_ - 1].type == TOKEN_ELLIPSIS);
+        ASTNode* end = parseExpression();
+
+        ASTRangeNode range_data;
+        range_data.start = start;
+        range_data.end = end;
+        range_data.is_inclusive = inclusive;
+
+        ASTNode* node = createNodeAt(NODE_RANGE, start->loc);
+        node->as.range = range_data;
+        return node;
+    }
+    return start;
 }
 
 /**

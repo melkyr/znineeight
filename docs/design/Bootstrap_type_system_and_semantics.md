@@ -663,6 +663,17 @@ The `DoubleFreeAnalyzer` correctly handles more complex scenarios:
 #### 5. Integration with other passes
 The analyzer runs as Pass 4 in the semantic pipeline, following Type Checking, Lifetime Analysis, and Null Pointer Analysis. This ensures it has access to accurate symbol information.
 
+### Range Validation in Type Checker
+The `TypeChecker` validates ranges used in `switch` and `for` constructs:
+1.  **Constant Bounds**: Both the start and end of a range must be compile-time constants.
+2.  **Valid Types**: Ranges are only permitted for integer and enum types.
+3.  **Direction & Emptiness**:
+    -   Inclusive ranges (`...`) must have `start <= end`.
+    -   Exclusive ranges (`..`) must have `start < end`.
+    -   Empty or inverted ranges are rejected with `ERR_INVALID_RANGE`.
+4.  **Size Limit**: Ranges are limited to `MAX_RANGE_CASES` (1000 values) to prevent excessive C `case` label generation. Exceeding this limit triggers `ERR_RANGE_TOO_LARGE`.
+5.  **Constant Folding**: Range bounds are evaluated during type checking using `evaluateConstantExpression`.
+
 ### `void` Type Validation
 
 To ensure C89 compatibility, the `TypeChecker` enforces several strict rules regarding the use of the `void` type:

@@ -163,6 +163,10 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Switch Statements**:
+  - **Range Expansion**: Switch ranges (`start..end` or `start...end`) are expanded into individual `case` labels during code generation.
+    - Inclusive ranges (`start...end`) emit labels from `start` to `end`.
+    - Exclusive ranges (`start..end`) emit labels from `start` to `end - 1`.
+    - A limit of `MAX_RANGE_CASES` (1000) is enforced by the Type Checker to prevent excessive code growth.
   - **Tagged Union Capture**: When switching on a tagged union, the emitter generates a block for each case that has a capture variable.
     ```c
     case Union_Tag_A: {
