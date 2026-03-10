@@ -1167,14 +1167,14 @@ ASTNode* Parser::parseUnionDeclaration() {
 
 /**
  * @brief Parses an errdefer statement.
- *        Grammar: `'errdefer' block_statement`
+ *        Grammar: `'errdefer' statement`
  * @return A pointer to the ASTNode representing the errdefer statement.
  */
 ASTNode* Parser::parseErrDeferStatement() {
     Token errdefer_token = expect(TOKEN_ERRDEFER, "Expected 'errdefer' keyword");
 
-    // The statement following 'errdefer' must be a block statement.
-    ASTNode* statement = parseBlockStatement();
+    // The statement following 'errdefer' can be any statement.
+    ASTNode* statement = parseStatement();
 
     ASTErrDeferStmtNode errdefer_stmt;
     errdefer_stmt.statement = statement;
@@ -1470,7 +1470,7 @@ ASTNode* Parser::parseForStatement(const char* label) {
 
     expect(TOKEN_PIPE, "Expected '|' to end for loop capture list");
 
-    ASTNode* body = parseBlockStatement();
+    ASTNode* body = parseStatement();
 
     ASTForStmtNode* for_stmt_node = (ASTForStmtNode*)arena_->alloc(sizeof(ASTForStmtNode));
     if (!for_stmt_node) {
@@ -1888,15 +1888,11 @@ ASTNode* Parser::parseIfStatement() {
         expect(TOKEN_PIPE, "Expected closing '|' after if capture");
     }
 
-    ASTNode* then_block = parseBlockStatement();
+    ASTNode* then_block = parseStatement();
     ASTNode* else_block = NULL;
 
     if (match(TOKEN_ELSE)) {
-        if (peek().type == TOKEN_IF) {
-            else_block = parseIfStatement();
-        } else {
-            else_block = parseBlockStatement();
-        }
+        else_block = parseStatement();
     }
 
     ASTIfStmtNode* if_stmt_node = (ASTIfStmtNode*)arena_->alloc(sizeof(ASTIfStmtNode));
@@ -2023,7 +2019,7 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
         expect(TOKEN_RPAREN, "Expected ')' after while continue expression");
     }
 
-    ASTNode* body = parseBlockStatement();
+    ASTNode* body = parseStatement();
 
     ASTWhileStmtNode* while_stmt_node = (ASTWhileStmtNode*)arena_->alloc(sizeof(ASTWhileStmtNode));
     if (!while_stmt_node) error("Out of memory");

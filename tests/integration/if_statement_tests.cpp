@@ -167,11 +167,11 @@ TEST_FUNC(IfStatementIntegration_RejectFloatCondition) {
     return true;
 }
 
-TEST_FUNC(IfStatementIntegration_RejectBracelessIf) {
+TEST_FUNC(IfStatementIntegration_AllowBracelessIf) {
     const char* source =
         "fn foo(b: bool) void {\n"
         "    if (b) return;\n"
         "}";
 
-    return expect_parser_abort(source);
+    return run_if_stmt_test(source, "foo", "void foo(int b) { if (b) { return; } }");
 }

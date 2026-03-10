@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
         test_WhileLoopIntegration_Scoping,
         test_WhileLoopIntegration_ComplexCondition,
         test_WhileLoopIntegration_RejectFloatCondition,
-        test_WhileLoopIntegration_RejectBracelessWhile,
+        test_WhileLoopIntegration_AllowBracelessWhile,
         test_WhileLoopIntegration_EmptyWhileBlock
     };
 

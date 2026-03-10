@@ -11,6 +11,7 @@
 #include "integration/ast_cloning_tests.cpp"
 #include "integration/ast_lifter_tests.cpp"
 #include "integration/batch50_tests.cpp"
+#include "integration/braceless_tests.cpp"
 #include "integration/builtin_offsetof_tests.cpp"
 #include "integration/builtin_size_tests.cpp"
 #include "integration/cast_tests.cpp"

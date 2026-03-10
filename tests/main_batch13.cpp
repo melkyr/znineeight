@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
         test_IfStatementIntegration_EmptyBlocks,
         test_IfStatementIntegration_ReturnFromBranches,
         test_IfStatementIntegration_RejectFloatCondition,
-        test_IfStatementIntegration_RejectBracelessIf
+        test_IfStatementIntegration_AllowBracelessIf
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

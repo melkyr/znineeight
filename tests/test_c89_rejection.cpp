@@ -9,7 +9,8 @@ TEST_FUNC(C89Rejection_Slice) {
 
 TEST_FUNC(Task147_ErrDeferRejection) {
     const char* source = "fn f() void { errdefer {}; }";
-    ASSERT_TRUE(expect_type_checker_abort(source));
+    // errdefer is now accepted as a placeholder
+    ASSERT_FALSE(expect_type_checker_abort(source));
     return true;
 }
 

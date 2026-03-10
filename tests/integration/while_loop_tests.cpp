@@ -172,12 +172,12 @@ TEST_FUNC(WhileLoopIntegration_RejectFloatCondition) {
     return expect_type_checker_abort(source);
 }
 
-TEST_FUNC(WhileLoopIntegration_RejectBracelessWhile) {
+TEST_FUNC(WhileLoopIntegration_AllowBracelessWhile) {
     const char* source =
         "fn foo(b: bool) void {\n"
         "    while (b) break;\n"
         "}";
-    return expect_parser_abort(source);
+    return run_while_test(source, "foo", "void foo(int b) { while (b) { break; } }");
 }
 
 TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
