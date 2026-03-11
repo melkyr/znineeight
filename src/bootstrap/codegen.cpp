@@ -111,7 +111,7 @@ void C89Emitter::emitType(Type* type, const char* name) {
 
 void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
     emitTypePrefix(type);
-    if (name) {
+    if (name && type->kind != TYPE_ANYTYPE) {
         if (last_char_ != '(' && last_char_ != ' ') {
             writeString(" ");
         }
