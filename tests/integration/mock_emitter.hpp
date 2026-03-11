@@ -299,13 +299,19 @@ public:
 
         ss << "{ ";
         // Mock simplification of the complex for-to-while translation
-        ss << "size_t __idx = 0; ";
+        ss << getC89TypeName(get_g_type_usize()) << " __idx = 0; ";
         ss << "while (__idx < /* len */) { ";
         if (node->item_name && plat_strcmp(node->item_name, "_") != 0) {
-            ss << getC89TypeName(get_g_type_usize()) << " " << node->item_name << " = /* ... */; ";
+            Type* item_type = get_g_type_void();
+            if (node->iterable_expr && node->iterable_expr->resolved_type) {
+                Type* iter_type = node->iterable_expr->resolved_type;
+                if (iter_type->kind == TYPE_ARRAY) item_type = iter_type->as.array.element_type;
+                else if (iter_type->kind == TYPE_SLICE) item_type = iter_type->as.slice.element_type;
+            }
+            ss << getC89TypeName(item_type) << " " << node->item_name << " = /* ... */; ";
         }
         if (node->index_name && plat_strcmp(node->index_name, "_") != 0) {
-            ss << "size_t " << node->index_name << " = __idx; ";
+            ss << getC89TypeName(get_g_type_usize()) << " " << node->index_name << " = __idx; ";
         }
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
             ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
@@ -762,7 +768,7 @@ private:
         if (!type) return "/* unknown type */";
 
         if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION) {
-            return getMangledTypeName(type);
+            return "struct " + getMangledTypeName(type);
         }
 
         if (type->kind == TYPE_POINTER) {

@@ -84,8 +84,7 @@ TEST_FUNC(BracelessControlFlow_ErrDefer) {
         "    if (b) return error.Fail;\n"
         "}";
     // Lifter now wraps errdefer.
-    // ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { ErrorUnion_void __return_val; __return_val.err = ERROR_Fail; __return_val.is_error = 1; return __return_val; } } }
-    return run_braceless_test(source, "foo", "ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { ErrorUnion_void __return_val; __return_val.err = ERROR_Fail; __return_val.is_error = 1; return __return_val; } } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { struct ErrorUnion_void __return_val; __return_val.err = ERROR_Fail; __return_val.is_error = 1; return __return_val; } } }");
 }
 
 TEST_FUNC(BracelessControlFlow_Defer) {
@@ -152,7 +151,7 @@ TEST_FUNC(BracelessControlFlow_CombinedDefers) {
         "    defer cleanup();\n"
         "    errdefer cleanup();\n"
         "}";
-    return run_braceless_test(source, "foo", "ErrorUnion_void foo(void) { /* unsupported node type */ { cleanup(); } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* unsupported node type */ { cleanup(); } }");
 }
 
 TEST_FUNC(BracelessControlFlow_InsideLifted) {
@@ -174,5 +173,5 @@ TEST_FUNC(BracelessControlFlow_EmptyFor) {
         "fn foo(arr: [5]i32) void {\n"
         "    for (arr) |_| ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int arr[5]) { { size_t __idx = 0; while (__idx < /* len */) { { /* unsupported node type */ } __idx++; } } }");
+    return run_braceless_test(source, "foo", "void foo(int arr[5]) { { unsigned int __idx = 0; while (__idx < /* len */) { { /* unsupported node type */ } __idx++; } } }");
 }
