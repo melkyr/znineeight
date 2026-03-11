@@ -26,6 +26,13 @@ We are implementing multi-module support and `@import` resolution, moving toward
 5. **AST Lifting Pass**: Transforms control-flow expressions into statements. Handles `void` expressions specially to ensure C89 compatibility.
 6. **Metadata Preparation Pass**: Ensures dependency-ordered type definitions in C headers.
 7. **Multi-File C89 Generation** (`CBackend` / `C89Emitter`)
+8. **Range Support**: Inclusive (`...`) and exclusive (`..`) ranges in `switch` and `for`. Expanded to `case` labels in C89.
+
+### Range Implementation Responsibilities
+- **Parser**: Creates `NODE_RANGE` for `...`/`..` tokens. Uses context flags to create `NODE_SWITCH_STMT` vs `NODE_SWITCH_EXPR`.
+- **TypeChecker**: Validates ranges via `validateRange` and `validateSwitch`, enforcing constant bounds and the 1000-case limit.
+- **ControlFlowLifter**: Preserves `NODE_SWITCH_STMT` as a statement while recursing into children to lift nested control flow.
+- **C89Emitter**: Expands `NODE_RANGE` into individual `case` labels during switch emission.
 
 ## AI Agent Role: Specialized Compiler Implementer
 
@@ -44,7 +51,7 @@ The AI agent acts as a focused, knowledgeable assistant for implementing specifi
     - **Platform Abstraction Layer (PAL)**:
         - All system-level operations (memory, files, console) MUST use the PAL (`platform.hpp`) to ensure compatibility and ease of development across Windows and Linux.
 4. **Implement Code**: Generate C++ code (.h, .cpp files) that fulfills the task requirements, considering architecture principles like Arena Allocation and string interning.
-5. **Document Changes**: Update existing documentation (e.g., `docs/design/AST_Parser.md`) and add Doxygen-style comments to the generated code.
+5. **Document Changes**: Update existing documentation (e.g., `docs/design/AST_Parser.md`, `docs/design/C89_Codegen.md`, `docs/design/Bootstrap_type_system_and_semantics.md`) and add Doxygen-style comments to the generated code.
 6. **Task Review**: Review completed tasks for architectural alignment and completeness.
 7. **Seek Clarification**: When encountering ambiguity in task specifications or required decisions not covered by documentation, explicitly ask for clarification rather than making assumptions.
 8. **Follow Methodology**: Implement code with a Test-Driven Development (TDD) mindset, ensuring modularity and correctness for future testing phases.

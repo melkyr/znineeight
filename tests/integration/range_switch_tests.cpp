@@ -169,6 +169,61 @@ TEST_FUNC(RangeSwitch_NestedControl) {
     return true;
 }
 
+TEST_FUNC(RangeSwitch_NegativeValues) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    const char* source = "fn foo(x: i32) void { switch (x) { -5...5 => {}, else => {} } }";
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* root = parser->parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
+    return true;
+}
+
+TEST_FUNC(RangeSwitch_ExclusiveEmpty) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    /* 1..1 is an empty range, which is rejected by validateRange */
+    const char* source = "fn foo(x: i32) void { switch (x) { 1..1 => {}, else => {} } }";
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* root = parser->parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    ASSERT_TRUE(unit.getErrorHandler().hasErrors());
+    ASSERT_EQ(ERR_INVALID_RANGE, unit.getErrorHandler().getErrors()[0].code);
+    return true;
+}
+
+TEST_FUNC(RangeSwitch_EnumActualRange) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    CompilationUnit unit(arena, interner);
+    const char* source =
+        "const Color = enum { Red, Green, Blue };\n"
+        "fn foo(c: Color) i32 {\n"
+        "    return switch (c) {\n"
+        "        Color.Red...Color.Green => 1,\n"
+        "        Color.Blue => 2,\n"
+        "        else => 0,\n"
+        "    };\n"
+        "}\n";
+    u32 file_id = unit.addSource("test.zig", source);
+    Parser* parser = unit.createParser(file_id);
+    ASTNode* root = parser->parse();
+    TypeChecker checker(unit);
+    checker.check(root);
+    if (unit.getErrorHandler().hasErrors()) {
+        unit.getErrorHandler().printErrors();
+    }
+    ASSERT_FALSE(unit.getErrorHandler().hasErrors());
+    return true;
+}
+
 #ifndef RETROZIG_TEST
 int main() {
     int passed = 0;
@@ -182,6 +237,9 @@ int main() {
     total++; if (test_RangeSwitch_ErrorEmpty()) passed++;
     total++; if (test_RangeSwitch_EnumRange()) passed++;
     total++; if (test_RangeSwitch_NestedControl()) passed++;
+    total++; if (test_RangeSwitch_NegativeValues()) passed++;
+    total++; if (test_RangeSwitch_ExclusiveEmpty()) passed++;
+    total++; if (test_RangeSwitch_EnumActualRange()) passed++;
 
     printf("Range Switch Integration Tests: %d/%d passed\n", passed, total);
     return (passed == total) ? 0 : 1;

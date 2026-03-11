@@ -50,6 +50,7 @@
 #include "integration/phase2_switch_capture_tests.cpp"
 #include "integration/pointer_arithmetic_tests.cpp"
 #include "integration/pointer_tests.cpp"
+#include "integration/range_switch_tests.cpp"
 #include "integration/recursive_slice_tests.cpp"
 #include "integration/recursive_type_tests.cpp"
 #include "integration/rejection_tests.cpp"

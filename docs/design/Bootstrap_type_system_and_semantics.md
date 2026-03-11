@@ -367,9 +367,13 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
+- **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
+    - **Constant Bounds**: Both `start` and `end` must be compile-time constants.
+    - **Type Compatibility**: Ranges are only allowed for switch conditions of integer or enum types.
+    - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
+    - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
-- **No Tagged Unions**: Only bare unions are supported. Zig's `union(Enum)` syntax is not supported by the parser.
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
 - **Braces Required**: All control flow blocks (`if`, `while`, `for`) must use curly braces `{}`.
 
