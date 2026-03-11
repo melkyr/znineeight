@@ -6,4 +6,5 @@
 #include "unit/ast_clone_test.cpp"
 #include "unit/ast_traversal_test.cpp"
 #include "unit/parser_switch_stmt_test.cpp"
+#include "integration/range_switch_tests.cpp"
 #include "main_batch60.cpp"
