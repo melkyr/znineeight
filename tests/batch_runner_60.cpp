@@ -5,4 +5,5 @@
 #include "c89_validation/msvc6_validator.cpp"
 #include "unit/ast_clone_test.cpp"
 #include "unit/ast_traversal_test.cpp"
+#include "unit/parser_switch_stmt_test.cpp"
 #include "main_batch60.cpp"

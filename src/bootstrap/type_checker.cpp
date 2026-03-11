@@ -291,6 +291,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
         case NODE_RANGE:            resolved_type = visitRange(node->as.range); break;
+        case NODE_SWITCH_STMT:      resolved_type = visitSwitchStmt(node->as.switch_stmt); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
@@ -2491,6 +2492,146 @@ Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
     }
 
     return common_type;
+}
+
+Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
+    Type* cond_type;
+    bool is_tagged_union;
+    Type* tag_type;
+    size_t i;
+
+    if (!node->expression) return get_g_type_undefined();
+    cond_type = visit(node->expression);
+    if (!cond_type || is_type_undefined(cond_type)) return get_g_type_undefined();
+
+    if (cond_type->kind == TYPE_PLACEHOLDER) {
+        cond_type = resolvePlaceholder(cond_type);
+    }
+
+    is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
+
+    if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
+        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
+    }
+
+    for (i = 0; i < node->prongs->length(); ++i) {
+        ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
+
+        if (!prong->is_else) {
+            for (size_t j = 0; j < prong->items->length(); ++j) {
+                ASTNode* item_expr = (*prong->items)[j];
+                Type* item_type = NULL;
+
+                if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                    /* Resolve .Tag against union's tag type. */
+                    if (!tag_type || tag_type->kind != TYPE_ENUM) {
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag type must be an enum");
+                        return get_g_type_undefined();
+                    }
+
+                    const char* tag_name = item_expr->as.member_access->field_name;
+                    DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
+                    if (!members) {
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag enum has no members");
+                        continue;
+                    }
+
+                    bool found = false;
+                    size_t member_idx = 0;
+                    for (size_t k = 0; k < members->length(); ++k) {
+                        if (plat_strcmp((*members)[k].name, tag_name) == 0) {
+                            found = true;
+                            member_idx = k;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        reportAndReturnUndefined(item_expr->loc, ERR_UNDEFINED_ENUM_MEMBER, "Tag not found in union");
+                        return get_g_type_undefined();
+                    }
+
+                    /* Constant fold to integer literal of the tag. */
+                    item_expr->type = NODE_INTEGER_LITERAL;
+                    item_expr->as.integer_literal.value = (u64)(*members)[member_idx].value;
+                    item_expr->as.integer_literal.resolved_type = tag_type;
+                    item_expr->as.integer_literal.original_name = (*members)[member_idx].name;
+                    item_expr->resolved_type = tag_type;
+                    item_type = tag_type;
+                } else {
+                    item_type = visit(item_expr);
+                    if (item_type && is_type_undefined(item_type)) return get_g_type_undefined();
+                }
+
+                if (item_type) {
+                    /* Check compatibility between condition and case item */
+                    bool compatible = false;
+                    if (is_tagged_union) {
+                        compatible = areTypesEqual(tag_type, item_type);
+                    } else if (areTypesCompatible(cond_type, item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
+                        compatible = true;
+                    } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
+                        compatible = true;
+                    } else if (cond_type->kind == TYPE_BOOL && isIntegerType(item_type)) {
+                        compatible = true;
+                    }
+
+                    if (!compatible) {
+                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch case type mismatch");
+                        return get_g_type_undefined();
+                    }
+                }
+            }
+        }
+
+        if (prong->capture_name) {
+            if (!is_tagged_union) {
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
+            } else if (prong->is_else) {
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
+            } else if (prong->items->length() != 1) {
+                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
+            } else {
+                ASTNode* item_expr = (*prong->items)[0];
+                const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
+                if (!field_name) {
+                    return reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
+                }
+                Type* field_type = findStructField(cond_type, field_name);
+
+                if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+                    field_type = resolvePlaceholder(field_type);
+                }
+
+                unit_.getSymbolTable().enterScope();
+                Symbol sym = SymbolBuilder(unit_.getArena())
+                    .withName(prong->capture_name)
+                    .ofType(SYMBOL_VARIABLE)
+                    .withType((field_type && !is_type_undefined(field_type)) ? field_type : get_g_type_void())
+                    .atLocation(item_expr->loc)
+                    .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+                    .build();
+                unit_.getSymbolTable().insert(sym);
+                prong->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(prong->capture_name);
+            }
+        }
+
+        if (!prong->body) return get_g_type_undefined();
+        Type* prong_type = visit(prong->body);
+
+        if (prong->capture_name) {
+            unit_.getSymbolTable().exitScope();
+        }
+
+        if (!prong_type || is_type_undefined(prong_type)) return get_g_type_undefined();
+    }
+
+    return get_g_type_void();
 }
 
 /**
