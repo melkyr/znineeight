@@ -31,7 +31,9 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
 - **Enums**: `const E = enum(T) { Member, ... };`
-- **Unions**: `const U = union { field: T, ... };` (Bare unions only).
+- **Unions**:
+    - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
+    - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
 - **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 
 ### 1.4 Arrays and Slices
@@ -100,20 +102,21 @@ Memory is reclaimed by resetting or destroying the arena.
 ## 3. Control Flow
 
 ### 3.1 Statements
-- `if (cond) { ... } else { ... }`: Braces are **strictly required** for all `if` statement bodies in the bootstrap compiler.
-  - **Optional Capture**: `if (optional_val) |val| { ... }`. Unwraps the optional value if it is not null. `val` is immutable.
+- `if (cond) statement else statement`: Braces are **optional** for `if` statement bodies. Single statements are normalized into synthetic blocks by the compiler.
+  - **Optional Capture**: `if (optional_val) |val| statement`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
-- `while (cond) : (iter) { ... }`: While loop with a continue expression. `iter` is evaluated after the loop body on each iteration, before the condition is re-evaluated. Braces are **strictly required** for the loop body.
-- `for (iterable) |item| { ... }`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`.
+- `while (cond) : (iter) statement`: While loop with a continue expression. `iter` is evaluated after the loop body on each iteration, before the condition is re-evaluated. Braces are **optional** for the loop body.
+- `for (iterable) |item| statement`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`. Braces are **optional** for the loop body.
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
   - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|` or `for (arr) |_|`). Discarded captures are not bound to a symbol and cannot be accessed.
   - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
-  - **Condition**: Must be an integer, enum, or boolean.
+  - **Condition**: Must be a tagged union, integer, enum, or boolean.
   - **Prongs**: Comma-separated case items followed by `=>` and an expression.
+  - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag.
   - **Case Items**: Can be single values or ranges.
   - **Ranges**:
     - **Inclusive**: `start...end` (includes both `start` and `end`).
@@ -158,12 +161,11 @@ Memory is reclaimed by resetting or destroying the arena.
         else => handleCool(),
     }
     ```
-- `defer statement`: Schedules `statement` to be executed at the end of the current scope.
-  - The statement can be a single expression statement or a block `{ ... }`.
+- `defer statement`: Schedules `statement` to be executed at the end of the current scope. Braces are **optional**.
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
-- `errdefer statement`: Recognized but NOT supported in the C89 backend. Strictly rejected by the validator. Schedules code to execute only when the scope exits with an error.
+- `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**. Currently supported as a placeholder in the C89 backend (emits a comment).
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
   - **Example**:
     ```zig
@@ -226,6 +228,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
+- **Tagged Unions**: `union(enum)` and switch captures are **supported**.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.
