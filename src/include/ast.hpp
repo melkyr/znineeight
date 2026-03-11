@@ -957,7 +957,7 @@ struct ASTNode {
         ASTForStmtNode* for_stmt; // Out-of-line
         ASTExpressionStmtNode expression_stmt;
         ASTParenExprNode paren_expr;
-        ASTRangeNode range;
+        ASTRangeNode* range; // Out-of-line
 
         // Expressions
         ASTSwitchExprNode* switch_expr; // Out-of-line

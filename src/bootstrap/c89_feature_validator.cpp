@@ -139,8 +139,10 @@ void C89FeatureValidator::visit(ASTNode* node) {
             break;
         case NODE_RANGE:
             current_parent_ = node;
-            visit(node->as.range.start);
-            visit(node->as.range.end);
+            if (node->as.range) {
+                visit(node->as.range->start);
+                visit(node->as.range->end);
+            }
             current_parent_ = prev_parent;
             break;
         case NODE_BREAK_STMT:

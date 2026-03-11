@@ -466,8 +466,10 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds
         scanForSpecialTypes(node->as.compound_assignment->lvalue, emitter, kinds);
         scanForSpecialTypes(node->as.compound_assignment->rvalue, emitter, kinds);
     } else if (node->type == NODE_RANGE) {
-        scanForSpecialTypes(node->as.range.start, emitter, kinds);
-        scanForSpecialTypes(node->as.range.end, emitter, kinds);
+        if (node->as.range) {
+            scanForSpecialTypes(node->as.range->start, emitter, kinds);
+            scanForSpecialTypes(node->as.range->end, emitter, kinds);
+        }
     } else if (node->type == NODE_BINARY_OP) {
         scanForSpecialTypes(node->as.binary_op->left, emitter, kinds);
         scanForSpecialTypes(node->as.binary_op->right, emitter, kinds);

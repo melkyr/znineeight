@@ -290,7 +290,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_FOR_STMT:         resolved_type = visitForStmt(node->as.for_stmt); break;
         case NODE_EXPRESSION_STMT:  resolved_type = visitExpressionStmt(&node->as.expression_stmt); break;
         case NODE_PAREN_EXPR:       resolved_type = visit(node->as.paren_expr.expr); break;
-        case NODE_RANGE:            resolved_type = visitRange(&node->as.range); break;
+        case NODE_RANGE:            resolved_type = visitRange(node->as.range); break;
         case NODE_SWITCH_EXPR:      resolved_type = visitSwitchExpr(node->as.switch_expr); break;
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;

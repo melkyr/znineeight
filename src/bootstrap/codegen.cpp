@@ -1308,8 +1308,8 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                     const ASTNode* item = (*prong->items)[j];
                     if (item->type == NODE_RANGE) {
                         i64 start, end;
-                        if (evaluateSimpleConstant(item->as.range.start, &start) &&
-                            evaluateSimpleConstant(item->as.range.end, &end)) {
+                        if (evaluateSimpleConstant(item->as.range->start, &start) &&
+                            evaluateSimpleConstant(item->as.range->end, &end)) {
                             for (i64 k = start; k <= end; ++k) {
                                 writeIndent();
                                 writeString("case ");
@@ -1438,7 +1438,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString(idx_name);
     writeString(" = ");
     if (is_range) {
-        emitExpression(node->iterable_expr->as.range.start);
+        emitExpression(node->iterable_expr->as.range->start);
     } else {
         writeString("0");
     }
@@ -1449,7 +1449,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString(len_name);
     writeString(" = ");
     if (is_range) {
-        emitExpression(node->iterable_expr->as.range.end);
+        emitExpression(node->iterable_expr->as.range->end);
     } else {
         Type* iterable_type = node->iterable_expr->resolved_type;
         if (iterable_type && iterable_type->kind == TYPE_ARRAY) {
@@ -1923,9 +1923,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         case NODE_RANGE:
             /* This should only happen if range is used outside for/slicing */
-            emitExpression(node->as.range.start);
-            writeString(" /* .. */ ");
-            emitExpression(node->as.range.end);
+            if (node->as.range) {
+                emitExpression(node->as.range->start);
+                writeString(" /* .. */ ");
+                emitExpression(node->as.range->end);
+            }
             break;
         case NODE_IMPORT_STMT:
             writeString("/* import \"");

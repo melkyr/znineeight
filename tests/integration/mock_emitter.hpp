@@ -157,7 +157,10 @@ public:
             case NODE_FOR_STMT:
                 return emitForStatement(node->as.for_stmt);
             case NODE_RANGE:
-                return emitExpression(node->as.range.start) + (node->as.range.is_inclusive ? "..." : "..") + emitExpression(node->as.range.end);
+                if (node->as.range) {
+                    return emitExpression(node->as.range->start) + (node->as.range->is_inclusive ? "..." : "..") + emitExpression(node->as.range->end);
+                }
+                return "/* NULL RANGE */";
             case NODE_BREAK_STMT:
                 return emitBreakStatement(&node->as.break_stmt);
             case NODE_CONTINUE_STMT:

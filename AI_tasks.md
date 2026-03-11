@@ -2201,40 +2201,31 @@ Implementation steps:
 
         Verify it compiles and runs.
 
-Phase 4: Range‑based switch arms
+Phase 4: Range‑based switch arms (IN PROGRESS)
 
 Goal: Support 1...10 => ... in switch cases.
-
 Why needed: Used in zig1 for range checks.
 
-Implementation steps:
-
-    Parser: In parseSwitchProng, when parsing a case item, look for ... token (inclusive range) or .. (exclusive). Create an ASTRangeNode with start and end expressions.
-    cpp
-
-    if (match(TOKEN_ELLIPSIS) || match(TOKEN_RANGE)) {
-        // parse range: start ... end
-        ASTNode* start = current_item;
-        TokenType op = previous;
-        ASTNode* end = parseExpression();
-        // create range node
-    }
-
-    Type Checker: In visitSwitchExpr, when the case is a range, evaluate the start and end to constants (if possible) and check that they are integers. The condition type must be integer.
-
-    Code Generator: For a range, emit multiple case labels for each integer in the range. Since ranges can be large, we may need to handle them efficiently. For bootstrap, we can just loop from start to end and emit a case for each integer (if the range is small). For larger ranges, we could use a default handler, but for simplicity, we'll assume ranges are small (as in zig1). Alternatively, we can emit a single case if the range is contiguous? In C89, you cannot specify a range; you must list each value. So we'll just emit a series of case statements. This is acceptable for small ranges.
-    cpp
-
-    for (i64 val = start; val <= end; ++val) {
-        writeIndent();
-        writeString("case ");
-        char buf[32];
-        plat_i64_to_string(val, buf, sizeof(buf));
-        writeString(buf);
-        writeString(":\n");
-    }
-
-    Testing: Write a switch with integer ranges.
+- **Phase 0: Foundation & Safety Net (COMPLETE)**
+    - Established debug infrastructure (`AST_NODE_TYPE_NAME`, `plat_print_ast_node`).
+    - Implemented unit test Batch 60 for AST cloning and traversal.
+- **Phase 1: AST Node Definitions & Safe Cloning (COMPLETE)**
+    - Defined `NODE_RANGE` and `NODE_SWITCH_STMT`.
+    - Refactored `ASTRangeNode` to an out-of-line pointer for memory efficiency (<16MB budget).
+    - Implemented robust deep cloning in `cloneASTNode` for all node types.
+    - Resolved downstream compilation errors in Parser, Type Checker, and Codegen.
+- **Phase 2: AST Traversal Infrastructure (forEachChild)**
+    - Finalize exhaustive traversal for new nodes to support transformation passes.
+- **Phase 3: Parser Integration**
+    - Context-aware parsing for `...`/`..` and `NODE_SWITCH_STMT` vs `NODE_SWITCH_EXPR`.
+- **Phase 4: Type Checker Validation**
+    - Constant folding for ranges, size limits (`MAX_RANGE_CASES = 1000`), and type compatibility.
+- **Phase 5: ControlFlowLifter Integration**
+    - Ensure statement-level switches are preserved while children are lifted.
+- **Phase 6: C89 Code Generation**
+    - Expand ranges into individual `case` labels.
+- **Phase 7: Integration Testing & Documentation**
+    - End-to-end validation and documentation updates.
 
 Phase 5: defer without braces
 
