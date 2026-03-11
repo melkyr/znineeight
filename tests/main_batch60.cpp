@@ -15,6 +15,14 @@ bool test_Parser_Switch_InclusiveRange();
 bool test_Parser_Switch_ExclusiveRange();
 bool test_Parser_Switch_MixedItems();
 bool test_Parser_Switch_ExpressionContext();
+bool test_RangeSwitch_InclusiveBasic();
+bool test_RangeSwitch_ExclusiveBasic();
+bool test_RangeSwitch_MixedItems();
+bool test_RangeSwitch_ErrorNonConstant();
+bool test_RangeSwitch_ErrorTooLarge();
+bool test_RangeSwitch_ErrorEmpty();
+bool test_RangeSwitch_EnumRange();
+bool test_RangeSwitch_NestedControl();
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
@@ -30,7 +38,15 @@ int main(int argc, char* argv[]) {
         test_Parser_Switch_InclusiveRange,
         test_Parser_Switch_ExclusiveRange,
         test_Parser_Switch_MixedItems,
-        test_Parser_Switch_ExpressionContext
+        test_Parser_Switch_ExpressionContext,
+        test_RangeSwitch_InclusiveBasic,
+        test_RangeSwitch_ExclusiveBasic,
+        test_RangeSwitch_MixedItems,
+        test_RangeSwitch_ErrorNonConstant,
+        test_RangeSwitch_ErrorTooLarge,
+        test_RangeSwitch_ErrorEmpty,
+        test_RangeSwitch_EnumRange,
+        test_RangeSwitch_NestedControl
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
