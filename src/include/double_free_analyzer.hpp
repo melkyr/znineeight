@@ -134,6 +134,7 @@ private:
     void visitArraySlice(ASTNode* node);
     void visitCompoundAssignment(ASTNode* node);
     void visitSwitchExpr(ASTNode* node);
+    void visitSwitchStmt(ASTNode* node);
     void visitTryExpr(ASTNode* node);
     void visitCatchExpr(ASTNode* node);
     void visitOrelseExpr(ASTNode* node);
@@ -157,6 +158,7 @@ private:
     const char* extractVariableName(ASTNode* node);
 
     // Branching helpers
+    void mergeSwitchProngStates(AllocationStateMap* entry_state, const DynamicArray<AllocationStateMap*>& prong_states);
     TrackedPointer mergeTrackedPointers(const TrackedPointer& a, const TrackedPointer& b);
     void mergeScopesAlternative(AllocationStateMap* target, AllocationStateMap* branch);
     void mergeScopesLinear(AllocationStateMap* target, AllocationStateMap* source);
