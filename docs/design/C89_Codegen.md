@@ -163,6 +163,20 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
   - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
 - **Switch Statements**:
+  - **Range Lowering Strategy**: Switch cases involving ranges (`start...end` or `start..end`) are expanded into individual C `case` labels.
+    - Inclusive (`...`): All values from `start` to `end` (inclusive) get a label.
+    - Exclusive (`..`): Values from `start` up to `end - 1` get a label.
+    - **Pseudocode**:
+      ```cpp
+      i64 effective_end = range->is_inclusive ? end : end - 1;
+      for (i64 val = start; val <= effective_end; ++val) {
+          writeIndent();
+          writeString("case ");
+          writeI64(val);
+          writeString(":\n");
+      }
+      ```
+    - **Limit**: Expansion is limited to 1000 labels per range to prevent excessive code bloat.
   - **Tagged Union Capture**: When switching on a tagged union, the emitter generates a block for each case that has a capture variable.
     ```c
     case Union_Tag_A: {
