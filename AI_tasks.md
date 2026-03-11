@@ -2176,30 +2176,16 @@ Implementation steps:
 
         Verify generated C code.
 
-Phase 3: Braceless if and while
+Phase 3: Braceless if and while (COMPLETE)
 
 Goal: Allow if (cond) statement; without braces, and similarly for while.
-
 Why needed: zig1 uses this syntax pervasively.
 
-Implementation steps:
-
-    Parser: Modify parseIfStatement and parseWhileStatement to accept either a block or a single statement.
-    cpp
-
-    // In parseIfStatement
-    ASTNode* then_stmt = parseStatement(); // not necessarily a block
-    // then later, if there's an else, parseStatement again.
-
-    Similarly for while.
-
-    Note: The existing code already has a parseStatement that can parse any statement. The current code may be expecting a block; just remove the block requirement.
-
-    Testing:
-
-        Write a function with braceless if and while.
-
-        Verify it compiles and runs.
+- **Implementation (COMPLETE)**
+    - Parser: `parseIfStatement` and `parseWhileStatement` already used `parseStatement()`, allowing braceless bodies.
+    - Lifter: `ControlFlowLifter` automatically normalizes non-block bodies into synthetic `NODE_BLOCK_STMT` nodes, ensuring compatibility with the C89 backend.
+- **Verification (COMPLETE)**
+    - Verified 13 scenarios in `tests/integration/braceless_tests.cpp` (Batch 61), including dangling `else` ambiguity, nested braceless constructs, and interaction with `try`/`defer`.
 
 Phase 4: Range‑based switch arms (COMPLETE)
 
@@ -2216,21 +2202,16 @@ Why needed: Used in zig1 for range checks.
     - Verified all edge cases (negative values, empty exclusive ranges, enum ranges) via Batch 60 integration tests.
     - Updated `AST_Parser.md`, `C89_Codegen.md`, `Bootstrap_type_system_and_semantics.md`, `Agents.md`, and `Language_Spec_Z98.md` with exhaustive feature documentation.
 
-Phase 5: defer without braces
+Phase 5: defer without braces (COMPLETE)
 
 Goal: Allow defer statement; where statement is a single statement (not a block).
-
 Why needed: zig1 uses this.
 
-Implementation steps:
-
-    Parser: In parseDeferStatement, call parseStatement() (which already parses any statement). The existing code may already allow this; check. If it currently expects a block, remove that restriction.
-
-    Type Checker: No change – defer just wraps the statement.
-
-    Code Generator: Already works because emitStatement handles any statement.
-
-    Testing: Write a function with defer foo();.
+- **Implementation (COMPLETE)**
+    - Parser: `parseDeferStatement` already uses `parseStatement()`, supporting braceless defer.
+    - Lifter: Normalizes braceless defer bodies into blocks during the lifting pass.
+- **Verification (COMPLETE)**
+    - Verified via Batch 61 integration tests.
 
 Phase 6: (Optional) Basic comptime parameters
 

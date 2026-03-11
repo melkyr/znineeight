@@ -106,6 +106,7 @@ This unification reduces code duplication and ensures consistent behavior across
 
 ### 4.4 Control Flow Mapping
 - **If Statements**: Mapped to C `if (cond) { ... } else { ... }`. The condition is always parenthesized.
+  - **Braceless Support**: Zig allows `if (cond) stmt;`. The `ControlFlowLifter` normalizes these into synthetic blocks before they reach the emitter, so the `C89Emitter` always sees and emits braced blocks.
   - **Optional Capture**: If the condition is an optional type and uses the `|val|` capture, the emitter generates a temporary variable to hold the condition's result and an `if (tmp.has_value)` check. Inside the `then` block, it declares the capture variable and assigns `tmp.value` to it.
   - **Example (if-capture)**:
     ```zig
@@ -124,6 +125,7 @@ This unification reduces code duplication and ensures consistent behavior across
     }
     ```
 - **While Loops**:
+  - **Braceless Support**: Like `if`, braceless `while` bodies are normalized into blocks by the `ControlFlowLifter`.
   - **Unlabeled**: Mapped to C `while (cond) { ... }`. Supports `while (cond) : (iter)` by emitting `iter` at the end of the loop body.
   - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
     ```c
@@ -134,6 +136,7 @@ This unification reduces code duplication and ensures consistent behavior across
     __zig_label_L_0_end: ;
     ```
 - **For Loops**: Translated to an equivalent `while` loop wrapped in a new block to handle capture variables and unique loop state.
+  - **Braceless Support**: Braceless `for` bodies are normalized into blocks by the `ControlFlowLifter`.
   - **Discarding Captures**: If a capture is named `_`, the emitter does not generate a C variable declaration or assignment for it.
   - **Arrays/Slices**:
     ```c
@@ -189,6 +192,7 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
+  - **Braceless Support**: Braceless `defer stmt;` is normalized into a block-wrapped defer by the `ControlFlowLifter`.
   - When entering a block, a new scope is pushed onto the stack.
   - `defer` statements are added to the current scope on the stack.
   - At the natural end of a block, all defers in that scope are emitted in reverse order.

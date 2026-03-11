@@ -103,11 +103,14 @@ Memory is reclaimed by resetting or destroying the arena.
 
 ### 3.1 Statements
 - `if (cond) statement else statement`: Braces are **optional** for `if` statement bodies. Single statements are normalized into synthetic blocks by the compiler.
+  - **Example**: `if (a) return 1; else return 0;`
   - **Optional Capture**: `if (optional_val) |val| statement`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
 - `while (cond) : (iter) statement`: While loop with a continue expression. `iter` is evaluated after the loop body on each iteration, before the condition is re-evaluated. Braces are **optional** for the loop body.
+  - **Example**: `while (i < 10) i = i + 1;`
 - `for (iterable) |item| statement`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`. Braces are **optional** for the loop body.
+  - **Example**: `for (arr) |item| sum = sum + item;`
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
@@ -162,10 +165,12 @@ Memory is reclaimed by resetting or destroying the arena.
     }
     ```
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope. Braces are **optional**.
+  - **Example**: `defer cleanup();`
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
 - `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**. Currently supported as a placeholder in the C89 backend (emits a comment).
+  - **Example**: `errdefer rollback();`
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
   - **Example**:
     ```zig

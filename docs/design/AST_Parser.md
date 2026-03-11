@@ -845,9 +845,9 @@ The `parseIfStatement` function handles the `if-else` control flow structure. It
 `'if' '(' expr ')' statement ('else' statement)?`
 
 - It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
-- It then parses a statement for the `then` branch. This can be a block or a single statement.
+- It then parses a statement for the `then` branch using `parseStatement()`. This allows either a block `{ ... }` or a single statement (e.g., `return 1;`).
 - It checks for an optional `else` token and parses the corresponding statement.
-- **Braceless Support**: If a branch is not a block, the `ControlFlowLifter` will later normalize it into a synthetic `NODE_BLOCK_STMT` during the lifting pass to simplify code generation.
+- **Braceless Support & Normalization**: If a branch is not a block, the `ControlFlowLifter` automatically normalizes it into a synthetic `NODE_BLOCK_STMT` during the lifting pass. This ensures that the code generator can assume all control-flow bodies are blocks, simplifying C89 emission.
 - Any deviation from this structure results in a fatal error.
 
 ### While Statements (Bootstrap) (Task 176)
@@ -881,10 +881,11 @@ Represents a `while` loop. Allocated out-of-line.
 
 #### Parsing Logic (`parseWhileStatement`)
 The `parseWhileStatement` function is responsible for parsing a `while` loop. It adheres to the grammar:
-`(label ':')? 'while' '(' expr ')' statement`
+`(label ':')? 'while' '(' expr ')' (':' '(' expr ')')? statement`
 
 - It consumes an optional label and colon, then the `while` token, followed by a parenthesized expression parsed by `parseExpression`.
-- It then parses a statement for the loop body. Like `if`, this can be a block or a single statement, which is normalized during the lifting pass.
+- It handles the optional continue expression ` : (expr)`.
+- It then parses a statement for the loop body using `parseStatement()`. Like `if`, this can be a block or a single statement, which is normalized into a `NODE_BLOCK_STMT` during the lifting pass.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTDeferStmtNode`
@@ -987,7 +988,7 @@ The `parseForStatement` function is responsible for parsing a `for` loop. It adh
 - It then expects an identifier for the item capture variable.
 - It checks for an optional comma followed by another identifier for the index capture variable.
 - It requires a closing `|` to end the capture list.
-- Finally, it parses a statement for the loop body. Like `if`, this can be a block or a single statement.
+- Finally, it parses a statement for the loop body using `parseStatement()`. Like `if`, this can be a block or a single statement, which is normalized during the lifting pass.
 - Any deviation from this structure results in a fatal error with a specific message.
 
 ### `ASTReturnStmtNode`
@@ -1034,7 +1035,8 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 `'defer' statement`
 
 - It consumes a `defer` token.
-- It then parses the subsequent statement (block or single statement).
+- It then parses the subsequent statement using `parseStatement()`. This supports both braced blocks and single statements (braceless defer).
+- Braceless bodies are normalized into blocks during the lifting pass.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTErrDeferStmtNode`
