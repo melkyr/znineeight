@@ -780,16 +780,17 @@ ASTNode* Parser::parseAssignmentExpression() {
 ASTNode* Parser::parseExpression() {
     return parseAssignmentExpression();
 }
+
 /**
- * @brief Parses a switch expression.
+ * @brief Parses a switch expression or statement.
  *
  * Grammar:
  * `switch '(' expr ')' '{' (prong (',' prong)* ','?)? '}'`
- * `prong ::= (expr (',' expr)* | 'else') '=>' expr`
+ * `prong ::= (expr (',' expr)* | 'else') '=>' (|capture|)? (expr | statement)`
  *
- * @return A pointer to an `ASTNode` representing the parsed switch expression.
+ * @return A pointer to an `ASTNode` representing the parsed switch.
  */
-ASTNode* Parser::parseSwitchExpression() {
+ASTNode* Parser::parseSwitch(ParseContext ctx) {
     Token switch_token = expect(TOKEN_SWITCH, "Expected 'switch' keyword");
 
     expect(TOKEN_LPAREN, "Missing opening parenthesis after switch");
@@ -798,74 +799,121 @@ ASTNode* Parser::parseSwitchExpression() {
 
     expect(TOKEN_LBRACE, "Missing opening brace for prongs");
 
-    ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)arena_->alloc(sizeof(ASTSwitchExprNode));
-    if (!switch_node) {
-        error("Out of memory");
+    ASTNode* result_node = NULL;
+    DynamicArray<ASTSwitchProngNode*>* expr_prongs = NULL;
+    DynamicArray<ASTSwitchStmtProngNode*>* stmt_prongs = NULL;
+
+    if (ctx == CTX_EXPRESSION) {
+        ASTSwitchExprNode* switch_node = (ASTSwitchExprNode*)arena_->alloc(sizeof(ASTSwitchExprNode));
+        if (!switch_node) error("Out of memory");
+        plat_memset(switch_node, 0, sizeof(ASTSwitchExprNode));
+        switch_node->expression = condition;
+        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
+        if (!array_mem) error("Out of memory");
+        expr_prongs = new (array_mem) DynamicArray<ASTSwitchProngNode*>(*arena_);
+        switch_node->prongs = expr_prongs;
+
+        result_node = createNodeAt(NODE_SWITCH_EXPR, switch_token.location);
+        result_node->as.switch_expr = switch_node;
+    } else {
+        ASTSwitchStmtNode* switch_node = (ASTSwitchStmtNode*)arena_->alloc(sizeof(ASTSwitchStmtNode));
+        if (!switch_node) error("Out of memory");
+        plat_memset(switch_node, 0, sizeof(ASTSwitchStmtNode));
+        switch_node->expression = condition;
+        void* array_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
+        if (!array_mem) error("Out of memory");
+        stmt_prongs = new (array_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
+        switch_node->prongs = stmt_prongs;
+
+        result_node = createNodeAt(NODE_SWITCH_STMT, switch_token.location);
+        result_node->as.switch_stmt = switch_node;
     }
-    switch_node->expression = condition;
-    switch_node->prongs = (DynamicArray<ASTSwitchProngNode*>*)arena_->alloc(sizeof(DynamicArray<ASTSwitchProngNode*>));
-    if (!switch_node->prongs) {
-        error("Out of memory");
-    }
-    new (switch_node->prongs) DynamicArray<ASTSwitchProngNode*>(*arena_);
 
     bool has_else = false;
 
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
-        ASTSwitchProngNode* prong_node = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
-        if (!prong_node) {
-            error("Out of memory");
-        }
-        plat_memset(prong_node, 0, sizeof(ASTSwitchProngNode));
-        prong_node->items = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        if (!prong_node->items) {
-            error("Out of memory");
-        }
-        new (prong_node->items) DynamicArray<ASTNode*>(*arena_);
-        prong_node->is_else = false;
+        void* items_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+        if (!items_mem) error("Out of memory");
+        DynamicArray<ASTNode*>* items = new (items_mem) DynamicArray<ASTNode*>(*arena_);
+        bool is_else = false;
 
         if (match(TOKEN_ELSE)) {
             if (has_else) {
                 error("Duplicate else prong");
             }
             has_else = true;
-            prong_node->is_else = true;
+            is_else = true;
         } else {
             // Parse one or more case items
             do {
-                prong_node->items->append(parseExpression());
+                ASTNode* item = parseExpression();
+                if (peek().type == TOKEN_RANGE || peek().type == TOKEN_ELLIPSIS) {
+                    Token range_token = advance();
+                    ASTNode* end = parseExpression();
+                    ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
+                    if (!range_data) error("Out of memory");
+                    range_data->start = item;
+                    range_data->end = end;
+                    range_data->is_inclusive = (range_token.type == TOKEN_ELLIPSIS);
+
+                    ASTNode* range_node = createNodeAt(NODE_RANGE, range_token.location);
+                    range_node->as.range = range_data;
+                    item = range_node;
+                }
+                items->append(item);
             } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
         }
 
         expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
 
-        // Support for captures: |payload|
+        const char* capture_name = NULL;
         if (match(TOKEN_PIPE)) {
             Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
-            prong_node->capture_name = cap_token.value.identifier;
+            capture_name = cap_token.value.identifier;
             expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
         }
 
-        prong_node->body = parseExpression();
-        if (prong_node->body == NULL) {
-             error("Cases without corresponding body expression");
+        if (ctx == CTX_EXPRESSION) {
+            ASTSwitchProngNode* prong = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+            if (!prong) error("Out of memory");
+            plat_memset(prong, 0, sizeof(ASTSwitchProngNode));
+            prong->items = items;
+            prong->is_else = is_else;
+            prong->capture_name = capture_name;
+            prong->body = parseExpression();
+            if (prong->body == NULL) error("Cases without corresponding body expression");
+            expr_prongs->append(prong);
+        } else {
+            ASTSwitchStmtProngNode* prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
+            if (!prong) error("Out of memory");
+            plat_memset(prong, 0, sizeof(ASTSwitchStmtProngNode));
+            prong->items = items;
+            prong->is_else = is_else;
+            prong->capture_name = capture_name;
+            prong->body = parseStatement();
+            if (prong->body == NULL) error("Cases without corresponding body statement");
+            stmt_prongs->append(prong);
         }
-
-        switch_node->prongs->append(prong_node);
 
         if (!match(TOKEN_COMMA)) break;
     }
 
-    if (switch_node->prongs->length() == 0) {
+    if ((ctx == CTX_EXPRESSION && expr_prongs->length() == 0) ||
+        (ctx == CTX_STATEMENT && stmt_prongs->length() == 0)) {
         error("Empty switch body {}");
     }
 
-    expect(TOKEN_RBRACE, "Expected '}' to close switch expression");
+    expect(TOKEN_RBRACE, "Expected '}' to close switch");
 
-    ASTNode* node = createNodeAt(NODE_SWITCH_EXPR, switch_token.location);
-    node->as.switch_expr = switch_node;
+    return result_node;
+}
 
-    return node;
+/**
+ * @brief Parses a switch expression.
+ * @return A pointer to an `ASTNode` representing the parsed switch expression.
+ */
+ASTNode* Parser::parseSwitchExpression() {
+    return parseSwitch(CTX_EXPRESSION);
 }
 
 /**
@@ -1792,6 +1840,8 @@ ASTNode* Parser::parseStatement() {
             return parseForStatement();
         case TOKEN_WHILE:
             return parseWhileStatement();
+        case TOKEN_SWITCH:
+            return parseSwitch(CTX_STATEMENT);
         case TOKEN_BREAK:
             return parseBreakStatement();
         case TOKEN_CONTINUE:
@@ -1852,7 +1902,7 @@ ASTNode* Parser::parseBlockStatement() {
                 stmt->type == NODE_EMPTY_STMT || stmt->type == NODE_DEFER_STMT ||
                 stmt->type == NODE_ERRDEFER_STMT || stmt->type == NODE_RETURN_STMT ||
                 stmt->type == NODE_BREAK_STMT || stmt->type == NODE_CONTINUE_STMT ||
-                stmt->type == NODE_UNREACHABLE) {
+                stmt->type == NODE_UNREACHABLE || stmt->type == NODE_SWITCH_STMT) {
                 needs_semicolon = false;
             }
 
