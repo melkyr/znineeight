@@ -33,7 +33,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Enums**: `const E = enum(T) { Member, ... };`
 - **Unions**:
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
-    - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
+    - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload. In the bootstrap compiler, every field MUST have an explicit type (use `void` for tags without payloads).
 - **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 
 ### 1.4 Arrays and Slices
@@ -230,15 +230,15 @@ Memory is reclaimed by resetting or destroying the arena.
 To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
 
 - **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
+- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. This is the preferred type for interacting with existing C libraries (e.g., `char*`). Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
-- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
+- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility. Note: Deeply nested or highly complex lifted expressions within function bodies may trigger compiler stability issues in the current bootstrap phase.
 - **Tagged Unions**: `union(enum)` and switch captures are **supported**.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}`).
-- **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
+- **No Method Syntax**: `struct.func()` and internal `fn` definitions in structs are not supported; use top-level functions that take a pointer to the struct as the first argument. (Exception: `std.debug.print`).
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
 
 ## Type Coercions
