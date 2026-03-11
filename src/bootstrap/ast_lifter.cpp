@@ -166,6 +166,26 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
             transformNode(&node->as.catch_expr->payload, node);
         } else if (node->type == NODE_ORELSE_EXPR) {
             transformNode(&node->as.orelse_expr->payload, node);
+        } else if (node->type == NODE_SWITCH_STMT) {
+            // Recurse but do NOT lift
+            ASTSwitchStmtNode* sw = node->as.switch_stmt;
+            transformNode(&sw->expression, node);
+            if (sw->prongs) {
+                for (size_t i = 0; i < sw->prongs->length(); ++i) {
+                    ASTSwitchStmtProngNode* prong = (*sw->prongs)[i];
+                    if (prong->items) {
+                        for (size_t j = 0; j < prong->items->length(); ++j) {
+                            transformNode(&(*prong->items)[j], node);
+                        }
+                    }
+                    transformNode(&prong->body, node);
+                    if (prong->body->type != NODE_BLOCK_STMT) {
+                        prong->body = wrapInBlock(prong->body);
+                    }
+                }
+            }
+            depth_--;
+            return;
         }
 
         bool needs_wrapping = false;
