@@ -46,152 +46,152 @@ static inline bool isIdentifierChar(char c) {
  * - Operators for expressions
  * - Delimiters for code structure
  */
-enum TokenType {
+enum Zig0TokenType {
     // Control Tokens
-    TOKEN_EOF,              ///< End of the source file.
-    TOKEN_ERROR,            ///< Represents a lexical error.
+    ZIG_TOKEN_EOF,              ///< End of the source file.
+    ZIG_TOKEN_ERROR,            ///< Represents a lexical error.
 
     // Literals
-    TOKEN_IDENTIFIER,       ///< An identifier (e.g., variable name, function name).
-    TOKEN_INTEGER_LITERAL,  ///< An integer literal (e.g., 123, 0xFF).
-    TOKEN_STRING_LITERAL,   ///< A string literal (e.g., "hello").
-    TOKEN_CHAR_LITERAL,     ///< A character literal (e.g., 'a').
-    TOKEN_FLOAT_LITERAL,    ///< A float literal (e.g., 3.14).
+    ZIG_TOKEN_IDENTIFIER,       ///< An identifier (e.g., variable name, function name).
+    ZIG_TOKEN_INTEGER_LITERAL,  ///< An integer literal (e.g., 123, 0xFF).
+    ZIG_TOKEN_STRING_LITERAL,   ///< A string literal (e.g., "hello").
+    ZIG_TOKEN_CHAR_LITERAL,     ///< A character literal (e.g., 'a').
+    ZIG_TOKEN_FLOAT_LITERAL,    ///< A float literal (e.g., 3.14).
 
     // Keywords
-    TOKEN_FN,               ///< 'fn' keyword for function definitions.
-    TOKEN_VAR,              ///< 'var' keyword for mutable variable declarations.
-    TOKEN_CONST,            ///< 'const' keyword for immutable variable declarations.
-    TOKEN_IF,               ///< 'if' keyword for conditional statements.
-    TOKEN_ELSE,             ///< 'else' keyword for conditional statements.
-    TOKEN_WHILE,            ///< 'while' keyword for loops.
-    TOKEN_RETURN,           ///< 'return' keyword for function returns.
-    TOKEN_DEFER,            ///< 'defer' keyword for scope-exit actions.
-    TOKEN_TRUE,             ///< 'true' keyword.
-    TOKEN_FALSE,            ///< 'false' keyword.
-    TOKEN_NULL,             ///< 'null' keyword.
-    TOKEN_UNDEFINED,        ///< 'undefined' keyword.
-    TOKEN_BREAK,            ///< 'break' keyword.
-    TOKEN_CATCH,            ///< 'catch' keyword.
-    TOKEN_CONTINUE,         ///< 'continue' keyword.
-    TOKEN_FOR,              ///< 'for' keyword.
-    TOKEN_ORELSE,           ///< 'orelse' keyword.
-    TOKEN_RESUME,           ///< 'resume' keyword.
-    TOKEN_SUSPEND,          ///< 'suspend' keyword.
-    TOKEN_SWITCH,           ///< 'switch' keyword.
-    TOKEN_TRY,              ///< 'try' keyword.
+    ZIG_TOKEN_FN,               ///< 'fn' keyword for function definitions.
+    ZIG_TOKEN_VAR,              ///< 'var' keyword for mutable variable declarations.
+    ZIG_TOKEN_CONST,            ///< 'const' keyword for immutable variable declarations.
+    ZIG_TOKEN_IF,               ///< 'if' keyword for conditional statements.
+    ZIG_TOKEN_ELSE,             ///< 'else' keyword for conditional statements.
+    ZIG_TOKEN_WHILE,            ///< 'while' keyword for loops.
+    ZIG_TOKEN_RETURN,           ///< 'return' keyword for function returns.
+    ZIG_TOKEN_DEFER,            ///< 'defer' keyword for scope-exit actions.
+    ZIG_TOKEN_TRUE,             ///< 'true' keyword.
+    ZIG_TOKEN_FALSE,            ///< 'false' keyword.
+    ZIG_TOKEN_NULL,             ///< 'null' keyword.
+    ZIG_TOKEN_UNDEFINED,        ///< 'undefined' keyword.
+    ZIG_TOKEN_BREAK,            ///< 'break' keyword.
+    ZIG_TOKEN_CATCH,            ///< 'catch' keyword.
+    ZIG_TOKEN_CONTINUE,         ///< 'continue' keyword.
+    ZIG_TOKEN_FOR,              ///< 'for' keyword.
+    ZIG_TOKEN_ORELSE,           ///< 'orelse' keyword.
+    ZIG_TOKEN_RESUME,           ///< 'resume' keyword.
+    ZIG_TOKEN_SUSPEND,          ///< 'suspend' keyword.
+    ZIG_TOKEN_SWITCH,           ///< 'switch' keyword.
+    ZIG_TOKEN_TRY,              ///< 'try' keyword.
 
     // Type Declaration Keywords
-    TOKEN_ENUM,             ///< 'enum' keyword.
-    TOKEN_ERROR_SET,        ///< 'error' keyword.
-    TOKEN_STRUCT,           ///< 'struct' keyword.
-    TOKEN_UNION,            ///< 'union' keyword.
-    TOKEN_OPAQUE,           ///< 'opaque' keyword.
+    ZIG_TOKEN_ENUM,             ///< 'enum' keyword.
+    ZIG_TOKEN_ERROR_SET,        ///< 'error' keyword.
+    ZIG_TOKEN_STRUCT,           ///< 'struct' keyword.
+    ZIG_TOKEN_UNION,            ///< 'union' keyword.
+    ZIG_TOKEN_OPAQUE,           ///< 'opaque' keyword.
 
     // Visibility and Linkage Keywords
-    TOKEN_EXPORT,           ///< 'export' keyword.
-    TOKEN_EXTERN,           ///< 'extern' keyword.
-    TOKEN_PUB,              ///< 'pub' keyword.
-    TOKEN_LINKSECTION,      ///< 'linksection' keyword.
-    TOKEN_USINGNAMESPACE,   ///< 'usingnamespace' keyword.
+    ZIG_TOKEN_EXPORT,           ///< 'export' keyword.
+    ZIG_TOKEN_EXTERN,           ///< 'extern' keyword.
+    ZIG_TOKEN_PUB,              ///< 'pub' keyword.
+    ZIG_TOKEN_LINKSECTION,      ///< 'linksection' keyword.
+    ZIG_TOKEN_USINGNAMESPACE,   ///< 'usingnamespace' keyword.
 
     // Compile-time and Special Function Keywords
-    TOKEN_ASM,              ///< 'asm' keyword.
-    TOKEN_COMPTIME,         ///< 'comptime' keyword.
-    TOKEN_ERRDEFER,         ///< 'errdefer' keyword.
-    TOKEN_INLINE,           ///< 'inline' keyword.
-    TOKEN_NOINLINE,         ///< 'noinline' keyword.
-    TOKEN_TEST,             ///< 'test' keyword.
-    TOKEN_UNREACHABLE,      ///< 'unreachable' keyword.
+    ZIG_TOKEN_ASM,              ///< 'asm' keyword.
+    ZIG_TOKEN_COMPTIME,         ///< 'comptime' keyword.
+    ZIG_TOKEN_ERRDEFER,         ///< 'errdefer' keyword.
+    ZIG_TOKEN_INLINE,           ///< 'inline' keyword.
+    ZIG_TOKEN_NOINLINE,         ///< 'noinline' keyword.
+    ZIG_TOKEN_TEST,             ///< 'test' keyword.
+    ZIG_TOKEN_UNREACHABLE,      ///< 'unreachable' keyword.
 
     // Miscellaneous Keywords
-    TOKEN_ADDRSPACE,        ///< 'addrspace' keyword.
-    TOKEN_ALIGN,            ///< 'align' keyword.
-    TOKEN_ALLOWZERO,        ///< 'allowzero' keyword.
-    TOKEN_AND,              ///< 'and' keyword.
-    TOKEN_ANYFRAME,         ///< 'anyframe' keyword.
-    TOKEN_ANYTYPE,          ///< 'anytype' keyword.
-    TOKEN_C_CHAR,           ///< 'c_char' keyword.
-    TOKEN_TYPE,             ///< 'type' keyword.
-    TOKEN_CALLCONV,         ///< 'callconv' keyword.
-    TOKEN_NOALIAS,          ///< 'noalias' keyword.
-    TOKEN_NORETURN,         ///< 'noreturn' keyword.
-    TOKEN_NOSUSPEND,        ///< 'nosuspend' keyword.
-    TOKEN_OR,               ///< 'or' keyword.
-    TOKEN_PACKED,           ///< 'packed' keyword.
-    TOKEN_THREADLOCAL,      ///< 'threadlocal' keyword.
-    TOKEN_VOLATILE,         ///< 'volatile' keyword.
+    ZIG_TOKEN_ADDRSPACE,        ///< 'addrspace' keyword.
+    ZIG_TOKEN_ALIGN,            ///< 'align' keyword.
+    ZIG_TOKEN_ALLOWZERO,        ///< 'allowzero' keyword.
+    ZIG_TOKEN_AND,              ///< 'and' keyword.
+    ZIG_TOKEN_ANYFRAME,         ///< 'anyframe' keyword.
+    ZIG_TOKEN_ANYTYPE,          ///< 'anytype' keyword.
+    ZIG_TOKEN_C_CHAR,           ///< 'c_char' keyword.
+    ZIG_TOKEN_TYPE,             ///< 'type' keyword.
+    ZIG_TOKEN_CALLCONV,         ///< 'callconv' keyword.
+    ZIG_TOKEN_NOALIAS,          ///< 'noalias' keyword.
+    ZIG_TOKEN_NORETURN,         ///< 'noreturn' keyword.
+    ZIG_TOKEN_NOSUSPEND,        ///< 'nosuspend' keyword.
+    ZIG_TOKEN_OR,               ///< 'or' keyword.
+    ZIG_TOKEN_PACKED,           ///< 'packed' keyword.
+    ZIG_TOKEN_THREADLOCAL,      ///< 'threadlocal' keyword.
+    ZIG_TOKEN_VOLATILE,         ///< 'volatile' keyword.
 
     // Operators
-    TOKEN_PLUS,             ///< '+' operator.
-    TOKEN_MINUS,            ///< '-' operator.
-    TOKEN_STAR,             ///< '*' operator.
-    TOKEN_SLASH,            ///< '/' operator.
-    TOKEN_PERCENT,          ///< '%' operator.
-    TOKEN_TILDE,            ///< '~' operator.
-    TOKEN_AMPERSAND,        ///< '&' operator.
-    TOKEN_PIPE,             ///< '|' operator.
-    TOKEN_CARET,            ///< '^' operator.
-    TOKEN_LARROW2,          ///< '<<' operator.
-    TOKEN_RARROW2,          ///< '>>' operator.
+    ZIG_TOKEN_PLUS,             ///< '+' operator.
+    ZIG_TOKEN_MINUS,            ///< '-' operator.
+    ZIG_TOKEN_STAR,             ///< '*' operator.
+    ZIG_TOKEN_SLASH,            ///< '/' operator.
+    ZIG_TOKEN_PERCENT,          ///< '%' operator.
+    ZIG_TOKEN_TILDE,            ///< '~' operator.
+    ZIG_TOKEN_AMPERSAND,        ///< '&' operator.
+    ZIG_TOKEN_PIPE,             ///< '|' operator.
+    ZIG_TOKEN_CARET,            ///< '^' operator.
+    ZIG_TOKEN_LARROW2,          ///< '<<' operator.
+    ZIG_TOKEN_RARROW2,          ///< '>>' operator.
 
     // Comparison and Equality Operators
-    TOKEN_EQUAL,            ///< '=' operator (assignment).
-    TOKEN_EQUAL_EQUAL,      ///< '==' operator (equality).
-    TOKEN_BANG,             ///< '!' operator (logical not).
-    TOKEN_BANG_EQUAL,       ///< '!=' operator (inequality).
-    TOKEN_LESS,             ///< '<' operator.
-    TOKEN_LESS_EQUAL,       ///< '<=' operator.
-    TOKEN_GREATER,          ///< '>' operator.
-    TOKEN_GREATER_EQUAL,    ///< '>=' operator.
+    ZIG_TOKEN_EQUAL,            ///< '=' operator (assignment).
+    ZIG_TOKEN_EQUAL_EQUAL,      ///< '==' operator (equality).
+    ZIG_TOKEN_BANG,             ///< '!' operator (logical not).
+    ZIG_TOKEN_BANG_EQUAL,       ///< '!=' operator (inequality).
+    ZIG_TOKEN_LESS,             ///< '<' operator.
+    ZIG_TOKEN_LESS_EQUAL,       ///< '<=' operator.
+    ZIG_TOKEN_GREATER,          ///< '>' operator.
+    ZIG_TOKEN_GREATER_EQUAL,    ///< '>=' operator.
 
     // Compound Assignment Operators
-    TOKEN_PLUS_EQUAL,       ///< '+=' operator.
-    TOKEN_MINUS_EQUAL,      ///< '-=' operator.
-    TOKEN_STAR_EQUAL,       ///< '*=' operator.
-    TOKEN_SLASH_EQUAL,      ///< '/=' operator.
-    TOKEN_PERCENT_EQUAL,    ///< '%=' operator.
-    TOKEN_AMPERSAND_EQUAL,  ///< '&=' operator.
-    TOKEN_PIPE_EQUAL,       ///< '|=' operator.
-    TOKEN_CARET_EQUAL,      ///< '^=' operator.
-    TOKEN_LARROW2_EQUAL,    ///< '<<=' operator.
-    TOKEN_RARROW2_EQUAL,    ///< '>>=' operator.
-    TOKEN_PIPE_PIPE,        ///< '||' operator.
-    TOKEN_AT_IMPORT,        ///< '@import' keyword-like.
-    TOKEN_AT_SIZEOF,        ///< '@sizeOf'
-    TOKEN_AT_ALIGNOF,       ///< '@alignOf'
-    TOKEN_AT_PTRCAST,       ///< '@ptrCast'
-    TOKEN_AT_INTCAST,       ///< '@intCast'
-    TOKEN_AT_FLOATCAST,     ///< '@floatCast'
-    TOKEN_AT_OFFSETOF,      ///< '@offsetOf'
-    TOKEN_AT_ENUM_TO_INT,   ///< '@enumToInt'
-    TOKEN_AT_PTR_TO_INT,    ///< '@ptrToInt'
-    TOKEN_AT_INT_TO_ENUM,   ///< '@intToEnum'
+    ZIG_TOKEN_PLUS_EQUAL,       ///< '+=' operator.
+    ZIG_TOKEN_MINUS_EQUAL,      ///< '-=' operator.
+    ZIG_TOKEN_STAR_EQUAL,       ///< '*=' operator.
+    ZIG_TOKEN_SLASH_EQUAL,      ///< '/=' operator.
+    ZIG_TOKEN_PERCENT_EQUAL,    ///< '%=' operator.
+    ZIG_TOKEN_AMPERSAND_EQUAL,  ///< '&=' operator.
+    ZIG_TOKEN_PIPE_EQUAL,       ///< '|=' operator.
+    ZIG_TOKEN_CARET_EQUAL,      ///< '^=' operator.
+    ZIG_TOKEN_LARROW2_EQUAL,    ///< '<<=' operator.
+    ZIG_TOKEN_RARROW2_EQUAL,    ///< '>>=' operator.
+    ZIG_TOKEN_PIPE_PIPE,        ///< '||' operator.
+    ZIG_TOKEN_AT_IMPORT,        ///< '@import' keyword-like.
+    ZIG_TOKEN_AT_SIZEOF,        ///< '@sizeOf'
+    ZIG_TOKEN_AT_ALIGNOF,       ///< '@alignOf'
+    ZIG_TOKEN_AT_PTRCAST,       ///< '@ptrCast'
+    ZIG_TOKEN_AT_INTCAST,       ///< '@intCast'
+    ZIG_TOKEN_AT_FLOATCAST,     ///< '@floatCast'
+    ZIG_TOKEN_AT_OFFSETOF,      ///< '@offsetOf'
+    ZIG_TOKEN_AT_ENUM_TO_INT,   ///< '@enumToInt'
+    ZIG_TOKEN_AT_PTR_TO_INT,    ///< '@ptrToInt'
+    ZIG_TOKEN_AT_INT_TO_ENUM,   ///< '@intToEnum'
 
     // Delimiters
-    TOKEN_LPAREN,           ///< '(' - Left parenthesis.
-    TOKEN_RPAREN,           ///< ')' - Right parenthesis.
-    TOKEN_LBRACE,           ///< '{' - Left brace.
-    TOKEN_RBRACE,           ///< '}' - Right brace.
-    TOKEN_LBRACKET,         ///< '[' - Left bracket.
-    TOKEN_RBRACKET,         ///< ']' - Right bracket.
-    TOKEN_SEMICOLON,        ///< ';' - Semicolon.
-    TOKEN_COLON,            ///< ':' - Colon.
-    TOKEN_COMMA,            ///< ',' - Comma.
-    TOKEN_ARROW,            ///< '->' - Arrow.
-    TOKEN_FAT_ARROW,        ///< '=>' - Fat arrow.
-    TOKEN_ELLIPSIS,         ///< '...' - Ellipsis.
-    TOKEN_RANGE,            ///< '..' - Range operator.
+    ZIG_TOKEN_LPAREN,           ///< '(' - Left parenthesis.
+    ZIG_TOKEN_RPAREN,           ///< ')' - Right parenthesis.
+    ZIG_TOKEN_LBRACE,           ///< '{' - Left brace.
+    ZIG_TOKEN_RBRACE,           ///< '}' - Right brace.
+    ZIG_TOKEN_LBRACKET,         ///< '[' - Left bracket.
+    ZIG_TOKEN_RBRACKET,         ///< ']' - Right bracket.
+    ZIG_TOKEN_SEMICOLON,        ///< ';' - Semicolon.
+    ZIG_TOKEN_COLON,            ///< ':' - Colon.
+    ZIG_TOKEN_COMMA,            ///< ',' - Comma.
+    ZIG_TOKEN_ARROW,            ///< '->' - Arrow.
+    ZIG_TOKEN_FAT_ARROW,        ///< '=>' - Fat arrow.
+    ZIG_TOKEN_ELLIPSIS,         ///< '...' - Ellipsis.
+    ZIG_TOKEN_RANGE,            ///< '..' - Range operator.
 
     // Special and Wrapping Operators
-    TOKEN_DOT,              ///< '.' operator.
-    TOKEN_DOT_ASTERISK,     ///< '.*' operator.
-    TOKEN_DOT_QUESTION,     ///< '.?' operator.
-    TOKEN_QUESTION,         ///< '?' operator.
-    TOKEN_STAR2,            ///< '**' operator.
-    TOKEN_PLUSPERCENT,      ///< '+%' operator.
-    TOKEN_MINUSPERCENT,     ///< '-%' operator.
-    TOKEN_STARPERCENT       ///< '*%' operator.
+    ZIG_TOKEN_DOT,              ///< '.' operator.
+    ZIG_TOKEN_DOT_ASTERISK,     ///< '.*' operator.
+    ZIG_TOKEN_DOT_QUESTION,     ///< '.?' operator.
+    ZIG_TOKEN_QUESTION,         ///< '?' operator.
+    ZIG_TOKEN_STAR2,            ///< '**' operator.
+    ZIG_TOKEN_PLUSPERCENT,      ///< '+%' operator.
+    ZIG_TOKEN_MINUSPERCENT,     ///< '-%' operator.
+    ZIG_TOKEN_STARPERCENT       ///< '*%' operator.
 };
 
 /**
@@ -201,7 +201,7 @@ enum TokenType {
 struct Keyword {
     const char* name;
     size_t len;      // Optimized length field
-    TokenType type;
+    Zig0TokenType type;
 };
 
 /**
@@ -220,8 +220,8 @@ extern const int num_keywords;
  * a type, its location in the source file, and an optional value for literals.
  */
 struct Token {
-    /** @brief The type of the token, as defined by the TokenType enum. */
-    TokenType type;
+    /** @brief The type of the token, as defined by the Zig0TokenType enum. */
+    Zig0TokenType type;
 
     /** @brief The location (file, line, column) where the token was found. */
     SourceLocation location;
@@ -251,7 +251,7 @@ struct Token {
         u32 character;
     } value;
 
-    Token() : type(TOKEN_ERROR), location() {
+    Token() : type(ZIG_TOKEN_ERROR), location() {
         value.integer_literal.value = 0;
         value.integer_literal.is_unsigned = false;
         value.integer_literal.is_long = false;

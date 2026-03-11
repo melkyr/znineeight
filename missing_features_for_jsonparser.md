@@ -8,22 +8,28 @@ During the "baptism of fire" compilation and execution of the JSON parser exampl
 - **Impact**: When the generated C code is compiled with a 64-bit C compiler, memory layout mismatches occur. This leads to data corruption because the C compiler assumes 64-bit pointers and different struct padding while `@sizeOf` constants were folded as 32-bit values.
 - **Workaround**: The generated code MUST be compiled with a 32-bit C compiler (e.g., `gcc -m32`) for correct execution.
 
-## 2. Cross-Module Call Resolution Warnings
+## 2. Runtime Memory Corruption in Complex Returns
+- **Status**: Critical Bug / Design Limitation.
+- **Observation**: The JSON parser fails at runtime with `Parse error: 7` (`ExpectedValue`) even when compiled with `gcc -m32`.
+- **Root Cause**: The bootstrap compiler's handling of complex structures (like `ErrorUnion(Slice)`) when returned by value is unreliable. In the JSON example, the file content is returned as an `ErrorUnion([]u8)` from `readFile` to `main`, and then passed as a `[]u8` to `parseJson`. Internal layout mismatches or incorrect C89 code generation for struct copying leads to slice corruption (invalid `ptr` or `len`).
+- **Impact**: Functions returning or passing large structs/unions by value may receive garbage data, causing logic failures like the observed parser error.
+
+## 3. Cross-Module Call Resolution Warnings
 - **Status**: Diagnostic Defect.
 - **Observation**: The compiler issues `Unresolved call` warnings for functions imported from other modules (e.g., `file.readFile`).
 - **Impact**: While code generation (`CBackend`) correctly handles these calls, the `TypeChecker`'s internal side-table resolution is incomplete for cross-module calls, leading to noise in the compiler output.
 
-## 3. Native Zig Feature Support Verification
+## 4. Native Zig Feature Support Verification
 - **union(enum)**: **Supported.** The bootstrap compiler correctly handles tagged unions and generates appropriate C structs and enums.
 - **Switch Payload Capture**: **Supported.** The `|payload|` syntax in switch prongs is correctly parsed and lowered into C blocks with local variable assignments.
 - **Braceless Control Flow**: **Supported.** `if`, `while`, and `defer` without braces are normalized into blocks by the `ControlFlowLifter`.
 
-## 4. C String Literal Signedness
+## 5. C String Literal Signedness
 - **Status**: Interop Sensitivity.
 - **Observation**: Zig `u8` maps to C `unsigned char`, but C string literals are `char*`.
 - **Impact**: Compiling generated C code with `-pedantic` results in "pointer targets differ in signedness" warnings.
 - **Recommendation**: Use `c_char` for C interop where possible.
 
-## 5. Memory Performance
+## 6. Memory Performance
 - **Peak Arena Usage**: ~510 KB during JSON parser compilation.
 - **Compliance**: Well within the 16MB peak usage constraint.
