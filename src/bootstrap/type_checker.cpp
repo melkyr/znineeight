@@ -2309,231 +2309,92 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
     return type;
 }
 
-Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
-    Type* cond_type;
-    bool is_tagged_union;
-    Type* tag_type;
-    bool has_else;
-    Type* common_type;
-    bool has_non_noreturn;
-    size_t i;
+bool TypeChecker::validateRange(ASTRangeNode* range, Type* cond_type) {
+    i64 start_val, end_val;
 
-    if (!node->expression) return get_g_type_undefined();
-    cond_type = visit(node->expression);
-    if (!cond_type || is_type_undefined(cond_type)) return get_g_type_undefined();
+    if (!evaluateConstantExpression(range->start, &start_val) || !evaluateConstantExpression(range->end, &end_val)) {
+        unit_.getErrorHandler().report(ERR_NONCONSTANT_RANGE, range->start->loc, "Range bounds must be compile-time constants");
+        return false;
+    }
+
+    if (!isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM) {
+        unit_.getErrorHandler().report(ERR_INVALID_RANGE, range->start->loc, "Ranges only allowed for integer/enum switches");
+        return false;
+    }
+
+    i64 effective_end = range->is_inclusive ? end_val : end_val - 1;
+    if (start_val > effective_end) {
+        unit_.getErrorHandler().report(ERR_INVALID_RANGE, range->start->loc, "Empty or inverted range (start > end)");
+        return false;
+    }
+
+    const int MAX_RANGE_LABELS = 1000;
+    i64 count = effective_end - start_val + 1;
+    if (count > MAX_RANGE_LABELS) {
+        char msg[128];
+        char count_str[32];
+        plat_i64_to_string(count, count_str, sizeof(count_str));
+        plat_strcpy(msg, "Range too large (");
+        plat_strcat(msg, count_str);
+        plat_strcat(msg, " values > max 1000)");
+        unit_.getErrorHandler().report(ERR_RANGE_TOO_LARGE, range->start->loc, msg);
+        return false;
+    }
+
+    return true;
+}
+
+bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc) {
+    Type* cond_type = visit(cond);
+    if (!cond_type || is_type_undefined(cond_type)) return false;
 
     if (cond_type->kind == TYPE_PLACEHOLDER) {
         cond_type = resolvePlaceholder(cond_type);
     }
 
-    is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
-    tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
+    bool is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
+    Type* tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
 
     if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, cond->loc, "Switch condition must be tagged union, integer, enum, or boolean type");
+        return false;
     }
 
-    has_else = false;
-    common_type = NULL;
-    has_non_noreturn = false;
+    bool has_else = false;
+    Type* common_type = NULL;
+    bool has_non_noreturn = false;
 
-    for (i = 0; i < node->prongs->length(); ++i) {
-        ASTSwitchProngNode* prong = (*node->prongs)[i];
+    for (size_t i = 0; i < prongs->length(); ++i) {
+        ASTSwitchProngNode* prong = (*prongs)[i];
 
         if (prong->is_else) {
+            if (has_else) {
+                unit_.getErrorHandler().report(ERR_DUPLICATE_ELSE, prong->loc, "Duplicate 'else' prong");
+                return false;
+            }
             has_else = true;
         } else {
             for (size_t j = 0; j < prong->items->length(); ++j) {
                 ASTNode* item_expr = (*prong->items)[j];
-                Type* item_type = NULL;
 
-                if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
-                    /* Resolve .Tag against union's tag type. */
-                    if (!tag_type || tag_type->kind != TYPE_ENUM) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag type must be an enum");
-                        return get_g_type_undefined();
-                    }
-
-                    const char* tag_name = item_expr->as.member_access->field_name;
-                    DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
-                    if (!members) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag enum has no members");
-                        continue;
-                    }
-
-                    bool found = false;
-                    size_t member_idx = 0;
-                    for (size_t k = 0; k < members->length(); ++k) {
-                        if (plat_strcmp((*members)[k].name, tag_name) == 0) {
-                            found = true;
-                            member_idx = k;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_UNDEFINED_ENUM_MEMBER, "Tag not found in union");
-                        return get_g_type_undefined();
-                    }
-
-                    /* Constant fold to integer literal of the tag. */
-                    item_expr->type = NODE_INTEGER_LITERAL;
-                    item_expr->as.integer_literal.value = (u64)(*members)[member_idx].value;
-                    item_expr->as.integer_literal.resolved_type = tag_type;
-                    item_expr->as.integer_literal.original_name = (*members)[member_idx].name;
-                    item_expr->resolved_type = tag_type;
-                    item_type = tag_type;
-                } else {
-                    item_type = visit(item_expr);
-                    if (item_type && is_type_undefined(item_type)) return get_g_type_undefined();
-                }
-
-                if (item_type) {
-                    /* Check compatibility between condition and case item */
-                    bool compatible = false;
+                if (item_expr->type == NODE_RANGE) {
                     if (is_tagged_union) {
-                        compatible = areTypesEqual(tag_type, item_type);
-                    } else if (areTypesCompatible(cond_type, item_type)) {
-                        compatible = true;
-                    } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
-                        /* C89 allows integers for enum cases */
-                        compatible = true;
-                    } else if (isIntegerType(cond_type) && item_type->kind == TYPE_ENUM) {
-                        /* Allow enum members for integer switch */
-                        compatible = true;
-                    } else if (isIntegerType(cond_type) && isIntegerType(item_type)) {
-                        compatible = true;
-                    } else if (cond_type->kind == TYPE_BOOL && isIntegerType(item_type)) {
-                        compatible = true;
+                        unit_.getErrorHandler().report(ERR_INVALID_RANGE, item_expr->loc, "Ranges not allowed in tagged union switch");
+                        return false;
                     }
-
-                    if (!compatible) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch case type mismatch");
-                        return get_g_type_undefined();
+                    if (!validateRange(item_expr->as.range, cond_type)) {
+                        return false;
                     }
-                }
-            }
-        }
-
-        if (prong->capture_name) {
-            if (!is_tagged_union) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
-            } else if (prong->is_else) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
-            } else if (prong->items->length() != 1) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
-            } else {
-            ASTNode* item_expr = (*prong->items)[0];
-            const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
-            if (!field_name) {
-                return reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
-            }
-            Type* field_type = findStructField(cond_type, field_name);
-
-            if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
-                field_type = resolvePlaceholder(field_type);
-            }
-
-            unit_.getSymbolTable().enterScope();
-            Symbol sym = SymbolBuilder(unit_.getArena())
-                .withName(prong->capture_name)
-                .ofType(SYMBOL_VARIABLE)
-                .withType((field_type && !is_type_undefined(field_type)) ? field_type : get_g_type_void())
-                .atLocation(item_expr->loc)
-                .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
-                .build();
-            unit_.getSymbolTable().insert(sym);
-            prong->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(prong->capture_name);
-            }
-        }
-
-        if (!prong->body) return get_g_type_undefined();
-        Type* prong_type = visit(prong->body);
-        if (!prong_type || is_type_undefined(prong_type)) {
-            if (prong->capture_name) unit_.getSymbolTable().exitScope();
-            return get_g_type_undefined();
-        }
-
-        if (prong->capture_name) {
-            unit_.getSymbolTable().exitScope();
-        }
-        if (prong_type && prong_type->kind != TYPE_NORETURN) {
-            if (!common_type) {
-                common_type = prong_type;
-                has_non_noreturn = true;
-            } else if (!areTypesEqual(common_type, prong_type)) {
-                /* If they are not strictly equal, check if one can be coerced to the other.
-                   For simplicity, we currently expect them to match common_type. */
-                if (areTypesCompatible(common_type, prong_type)) {
-                    /* common_type is OK */
-                } else if (areTypesCompatible(prong_type, common_type)) {
-                    common_type = prong_type;
-                } else {
-                    reportAndReturnUndefined(prong->body->loc, ERR_TYPE_MISMATCH, "Switch prong type does not match previous prongs");
-                }
-            }
-        }
-    }
-
-    if (!has_else) {
-        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch expression must have an 'else' prong");
-    }
-
-    if (!has_non_noreturn) {
-        return get_g_type_noreturn();
-    }
-
-    /* Distribute Coercions across all prongs if needed */
-    if (common_type->kind == TYPE_SLICE) {
-        for (i = 0; i < node->prongs->length(); ++i) {
-            ASTSwitchProngNode* prong = (*node->prongs)[i];
-            coerceNode(&prong->body, common_type);
-        }
-    }
-
-    return common_type;
-}
-
-Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
-    Type* cond_type;
-    bool is_tagged_union;
-    Type* tag_type;
-    size_t i;
-
-    if (!node->expression) return get_g_type_undefined();
-    cond_type = visit(node->expression);
-    if (!cond_type || is_type_undefined(cond_type)) return get_g_type_undefined();
-
-    if (cond_type->kind == TYPE_PLACEHOLDER) {
-        cond_type = resolvePlaceholder(cond_type);
-    }
-
-    is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
-    tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
-
-    if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-        return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Switch condition must be tagged union, integer, enum, or boolean type");
-    }
-
-    for (i = 0; i < node->prongs->length(); ++i) {
-        ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
-
-        if (!prong->is_else) {
-            for (size_t j = 0; j < prong->items->length(); ++j) {
-                ASTNode* item_expr = (*prong->items)[j];
-                Type* item_type = NULL;
-
-                if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
-                    /* Resolve .Tag against union's tag type. */
+                } else if (is_tagged_union && item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
                     if (!tag_type || tag_type->kind != TYPE_ENUM) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag type must be an enum");
-                        return get_g_type_undefined();
+                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, "Union tag type must be an enum");
+                        return false;
                     }
 
                     const char* tag_name = item_expr->as.member_access->field_name;
                     DynamicArray<EnumMember>* members = tag_type->as.enum_details.members;
                     if (!members) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Union tag enum has no members");
+                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, "Union tag enum has no members");
                         continue;
                     }
 
@@ -2548,24 +2409,19 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
                     }
 
                     if (!found) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_UNDEFINED_ENUM_MEMBER, "Tag not found in union");
-                        return get_g_type_undefined();
+                        unit_.getErrorHandler().report(ERR_UNDEFINED_ENUM_MEMBER, item_expr->loc, "Tag not found in union");
+                        return false;
                     }
 
-                    /* Constant fold to integer literal of the tag. */
                     item_expr->type = NODE_INTEGER_LITERAL;
                     item_expr->as.integer_literal.value = (u64)(*members)[member_idx].value;
                     item_expr->as.integer_literal.resolved_type = tag_type;
                     item_expr->as.integer_literal.original_name = (*members)[member_idx].name;
                     item_expr->resolved_type = tag_type;
-                    item_type = tag_type;
                 } else {
-                    item_type = visit(item_expr);
-                    if (item_type && is_type_undefined(item_type)) return get_g_type_undefined();
-                }
+                    Type* item_type = visit(item_expr);
+                    if (!item_type || is_type_undefined(item_type)) return false;
 
-                if (item_type) {
-                    /* Check compatibility between condition and case item */
                     bool compatible = false;
                     if (is_tagged_union) {
                         compatible = areTypesEqual(tag_type, item_type);
@@ -2582,8 +2438,8 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
                     }
 
                     if (!compatible) {
-                        reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Switch case type mismatch");
-                        return get_g_type_undefined();
+                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, "Switch case type mismatch");
+                        return false;
                     }
                 }
             }
@@ -2591,19 +2447,22 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
 
         if (prong->capture_name) {
             if (!is_tagged_union) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture only supported for tagged union switch");
+                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, cond->loc, "Capture only supported for tagged union switch");
+                return false;
             } else if (prong->is_else) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture not supported for else prong");
+                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->loc, "Capture not supported for else prong");
+                return false;
             } else if (prong->items->length() != 1) {
-                return reportAndReturnUndefined(node->expression->loc, ERR_TYPE_MISMATCH, "Capture in switch prong only allowed with a single case");
+                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->loc, "Capture in switch prong only allowed with a single case");
+                return false;
             } else {
                 ASTNode* item_expr = (*prong->items)[0];
                 const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
                 if (!field_name) {
-                    return reportAndReturnUndefined(item_expr->loc, ERR_TYPE_MISMATCH, "Capture requires a tag name case item");
+                    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, "Capture requires a tag name case item");
+                    return false;
                 }
                 Type* field_type = findStructField(cond_type, field_name);
-
                 if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
                     field_type = resolvePlaceholder(field_type);
                 }
@@ -2621,17 +2480,68 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
             }
         }
 
-        if (!prong->body) return get_g_type_undefined();
         Type* prong_type = visit(prong->body);
-
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
+        if (!prong_type || is_type_undefined(prong_type)) return false;
 
-        if (!prong_type || is_type_undefined(prong_type)) return get_g_type_undefined();
+        if (is_expr) {
+            if (prong_type->kind != TYPE_NORETURN) {
+                if (!common_type) {
+                    common_type = prong_type;
+                    has_non_noreturn = true;
+                } else if (!areTypesEqual(common_type, prong_type)) {
+                    if (areTypesCompatible(common_type, prong_type)) {
+                        /* common_type is OK */
+                    } else if (areTypesCompatible(prong_type, common_type)) {
+                        common_type = prong_type;
+                    } else {
+                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                        return false;
+                    }
+                }
+            }
+        }
     }
 
-    return get_g_type_void();
+    if (is_expr && !has_else) {
+        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, cond->loc, "Switch expression must have an 'else' prong");
+        return false;
+    }
+
+    if (is_expr) {
+        if (!has_non_noreturn) {
+            result_type = get_g_type_noreturn();
+        } else {
+            result_type = common_type;
+            if (common_type->kind == TYPE_SLICE) {
+                for (size_t i = 0; i < prongs->length(); ++i) {
+                    coerceNode(&(*prongs)[i]->body, common_type);
+                }
+            }
+        }
+    } else {
+        result_type = get_g_type_void();
+    }
+
+    return true;
+}
+
+Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
+    Type* result_type = NULL;
+    if (validateSwitch(node->expression, node->prongs, true, result_type, node->expression->loc)) {
+        return result_type;
+    }
+    return get_g_type_undefined();
+}
+
+Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
+    Type* result_type = NULL;
+    if (validateSwitch(node->expression, (DynamicArray<ASTSwitchProngNode*>*)node->prongs, false, result_type, node->expression->loc)) {
+        return result_type;
+    }
+    return get_g_type_undefined();
 }
 
 /**
@@ -4782,8 +4692,13 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             return true;
         case NODE_BLOCK_STMT: {
             DynamicArray<ASTNode*>* statements = node->as.block_stmt.statements;
-            if (statements->length() > 0) {
-                return all_paths_return((*statements)[statements->length() - 1]);
+            if (!statements || statements->length() == 0) return false;
+
+            /* Iterate backwards to skip trailing empty statements (semicolons) */
+            for (int i = (int)statements->length() - 1; i >= 0; --i) {
+                ASTNode* stmt = (*statements)[i];
+                if (stmt->type == NODE_EMPTY_STMT) continue;
+                return all_paths_return(stmt);
             }
             return false;
         }
@@ -4795,13 +4710,7 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
             return false;
         }
         case NODE_WHILE_STMT: {
-            /* If the condition is the boolean literal 'true', and the body always returns, */
-            /* then the while statement always returns. */
-            /* Note: This doesn't account for 'break' statements inside the loop. */
-            /* But since we just added 'break', we should be careful. */
-            /* For bootstrap, we'll keep it simple: only 'while (true)' with no breaks. */
-            /* Actually, even simpler: just return false for now to avoid complexity, */
-            /* and fix the test case. */
+            /* For bootstrap, we don't assume while loops always return even if while(true) */
             return false;
         }
         case NODE_EXPRESSION_STMT:
@@ -4809,11 +4718,27 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
         case NODE_SWITCH_EXPR: {
             ASTSwitchExprNode* sw = node->as.switch_expr;
             if (!sw->prongs || sw->prongs->length() == 0) return false;
+            bool has_else = false;
             for (size_t i = 0; i < sw->prongs->length(); ++i) {
-                if (!all_paths_return((*sw->prongs)[i]->body)) return false;
+                ASTSwitchProngNode* prong = (*sw->prongs)[i];
+                if (prong->is_else) has_else = true;
+                if (!all_paths_return(prong->body)) return false;
             }
-            return true;
+            return has_else;
         }
+        case NODE_SWITCH_STMT: {
+            ASTSwitchStmtNode* sw = node->as.switch_stmt;
+            if (!sw->prongs || sw->prongs->length() == 0) return false;
+            bool has_else = false;
+            for (size_t i = 0; i < sw->prongs->length(); ++i) {
+                ASTSwitchStmtProngNode* prong = (*sw->prongs)[i];
+                if (prong->is_else) has_else = true;
+                if (!all_paths_return(prong->body)) return false;
+            }
+            return has_else;
+        }
+        case NODE_PAREN_EXPR:
+            return all_paths_return(node->as.paren_expr.expr);
         default:
             return false;
     }

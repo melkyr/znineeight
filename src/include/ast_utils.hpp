@@ -70,7 +70,7 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena);
 inline bool isControlFlowExpr(NodeType type) {
     return type == NODE_IF_EXPR || type == NODE_SWITCH_EXPR ||
            type == NODE_TRY_EXPR || type == NODE_CATCH_EXPR ||
-           type == NODE_ORELSE_EXPR || type == NODE_SWITCH_STMT;
+           type == NODE_ORELSE_EXPR;
 }
 
 /**

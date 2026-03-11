@@ -540,6 +540,7 @@ struct ASTSwitchProngNode {
     ASTNode* body;
     const char* capture_name;
     Symbol* capture_sym;
+    SourceLocation loc;
 };
 
 /**
@@ -568,6 +569,7 @@ struct ASTSwitchStmtProngNode {
     ASTNode* body;
     const char* capture_name;
     Symbol* capture_sym;
+    SourceLocation loc;
 };
 
 /**

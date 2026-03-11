@@ -1261,6 +1261,13 @@ The parser supports both inclusive (`...`) and exclusive (`..`) range syntax wit
 - `1..10`: An exclusive range from 1 to 9 (10 is excluded).
 Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag.
 
+### Range Validation in Type Checker
+Ranges are validated during the type checking phase:
+- **Constant Bounds**: Both the start and end expressions of a range must be compile-time constants.
+- **Type Compatibility**: Ranges are only allowed for integer or enum switch conditions.
+- **Size Limits**: To prevent excessive C code generation, ranges are limited to a maximum of 1000 case labels. Exceeding this limit results in `ERR_RANGE_TOO_LARGE`.
+- **Direction**: Inverted ranges (start > end) are rejected with `ERR_INVALID_RANGE`.
+
 ## 10. Container Declaration Node Types
 
 These nodes represent container types like structs, unions, and enums.
