@@ -880,6 +880,7 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
             prong->items = items;
             prong->is_else = is_else;
             prong->capture_name = capture_name;
+            prong->loc = peek().location;
             prong->body = parseExpression();
             if (prong->body == NULL) error("Cases without corresponding body expression");
             expr_prongs->append(prong);
@@ -890,6 +891,7 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
             prong->items = items;
             prong->is_else = is_else;
             prong->capture_name = capture_name;
+            prong->loc = peek().location;
             prong->body = parseStatement();
             if (prong->body == NULL) error("Cases without corresponding body statement");
             stmt_prongs->append(prong);

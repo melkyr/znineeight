@@ -51,6 +51,8 @@ public:
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchStmt(ASTSwitchStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
+    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc);
+    bool validateRange(ASTRangeNode* range, Type* cond_type);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
     Type* visitFnSignature(ASTFnDeclNode* node);
