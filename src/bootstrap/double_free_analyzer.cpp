@@ -193,6 +193,9 @@ void DoubleFreeAnalyzer::visit(ASTNode* node) {
         case NODE_SWITCH_EXPR:
             visitSwitchExpr(node);
             break;
+        case NODE_SWITCH_STMT:
+            visitSwitchStmt(node);
+            break;
         case NODE_TRY_EXPR:
             visitTryExpr(node);
             break;
@@ -637,56 +640,100 @@ void DoubleFreeAnalyzer::visitSwitchExpr(ASTNode* node) {
             popScope();
         }
 
-        // Merge all prong states
-        DynamicArray<const char*> to_merge(unit_.getArena());
-        for (size_t i = 0; i < prong_states.length(); ++i) {
-            for (size_t j = 0; j < prong_states[i]->modified.length(); ++j) {
-                const char* name = prong_states[i]->modified[j];
-                bool already = false;
-                for (size_t k = 0; k < to_merge.length(); ++k) {
-                    if (identifiers_equal(to_merge[k], name)) {
-                        already = true;
-                        break;
-                    }
-                }
-                if (!already) to_merge.append(name);
-            }
-        }
-
-        for (size_t i = 0; i < to_merge.length(); ++i) {
-            const char* name = to_merge[i];
-            if (entry_state->hasVariable(name)) {
-                TrackedPointer* first_prong_tp = prong_states[0]->getState(name);
-
-                TrackedPointer merged;
-                if (first_prong_tp) {
-                    merged = *first_prong_tp;
-                } else {
-                    // Not modified in first prong, take from entry state
-                    TrackedPointer* entry_tp = entry_state->getState(name);
-                    if (entry_tp) merged = *entry_tp;
-                    else continue; // Should not happen if hasVariable was true
-                }
-
-                for (size_t j = 1; j < prong_states.length(); ++j) {
-                    TrackedPointer* next_prong_tp = prong_states[j]->getState(name);
-                    if (next_prong_tp) {
-                        merged = mergeTrackedPointers(merged, *next_prong_tp);
-                    } else {
-                        // If one prong doesn't have it, it means it's unchanged from entry state
-                        TrackedPointer* entry_tp = entry_state->getState(name);
-                        if (entry_tp) {
-                            merged = mergeTrackedPointers(merged, *entry_tp);
-                        }
-                    }
-                }
-                entry_state->setState(name, merged);
-            }
-        }
+        mergeSwitchProngStates(entry_state, prong_states);
 
         AllocationStateMap* final_switch_state = current_state_;
         popScope();
         mergeScopesLinear(current_state_, final_switch_state);
+    }
+}
+
+void DoubleFreeAnalyzer::visitSwitchStmt(ASTNode* node) {
+    ASTSwitchStmtNode* sw = node->as.switch_stmt;
+    visit(sw->expression);
+
+    if (sw->prongs && sw->prongs->length() > 0) {
+        pushScope(true);
+        AllocationStateMap* entry_state = current_state_;
+
+        DynamicArray<AllocationStateMap*> prong_states(unit_.getArena());
+
+        for (size_t i = 0; i < sw->prongs->length(); ++i) {
+            ASTSwitchStmtProngNode* prong = (*sw->prongs)[i];
+
+            pushScope(true);
+            if (prong->items) {
+                for (size_t j = 0; j < prong->items->length(); ++j) {
+                    visit((*prong->items)[j]);
+                }
+            }
+            visit(prong->body);
+            prong_states.append(current_state_);
+            popScope();
+        }
+
+        mergeSwitchProngStates(entry_state, prong_states);
+
+        AllocationStateMap* final_switch_state = current_state_;
+        popScope();
+        mergeScopesLinear(current_state_, final_switch_state);
+    }
+}
+
+void DoubleFreeAnalyzer::mergeSwitchProngStates(AllocationStateMap* entry_state, const DynamicArray<AllocationStateMap*>& prong_states) {
+    if (prong_states.length() == 0) return;
+
+    // Merge all prong states
+    DynamicArray<const char*> to_merge(unit_.getArena());
+    for (size_t i = 0; i < prong_states.length(); ++i) {
+        for (size_t j = 0; j < prong_states[i]->modified.length(); ++j) {
+            const char* name = prong_states[i]->modified[j];
+            bool already = false;
+            for (size_t k = 0; k < to_merge.length(); ++k) {
+                if (identifiers_equal(to_merge[k], name)) {
+                    already = true;
+                    break;
+                }
+            }
+            if (!already) to_merge.append(name);
+        }
+    }
+
+    for (size_t i = 0; i < to_merge.length(); ++i) {
+        const char* name = to_merge[i];
+        if (entry_state->hasVariable(name)) {
+            TrackedPointer* first_prong_tp = prong_states[0]->getState(name);
+
+            TrackedPointer merged;
+            bool first_found = false;
+            if (first_prong_tp) {
+                merged = *first_prong_tp;
+                first_found = true;
+            } else {
+                // Not modified in first prong, take from entry state
+                TrackedPointer* entry_tp = entry_state->getState(name);
+                if (entry_tp) {
+                    merged = *entry_tp;
+                    first_found = true;
+                }
+            }
+
+            if (!first_found) continue;
+
+            for (size_t j = 1; j < prong_states.length(); ++j) {
+                TrackedPointer* next_prong_tp = prong_states[j]->getState(name);
+                if (next_prong_tp) {
+                    merged = mergeTrackedPointers(merged, *next_prong_tp);
+                } else {
+                    // If one prong doesn't have it, it means it's unchanged from entry state
+                    TrackedPointer* entry_tp = entry_state->getState(name);
+                    if (entry_tp) {
+                        merged = mergeTrackedPointers(merged, *entry_tp);
+                    }
+                }
+            }
+            entry_state->setState(name, merged);
+        }
     }
 }
 
