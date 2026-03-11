@@ -1220,7 +1220,46 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
         ASTNode* expression;
         DynamicArray<ASTSwitchProngNode*>* prongs;
     };
+
+    /**
+     * @struct ASTSwitchStmtProngNode
+     * @brief Represents a single prong in a switch statement.
+     * @var ASTSwitchStmtProngNode::items A dynamic array of case items.
+     * @var ASTSwitchStmtProngNode::is_else True if this is the `else` prong.
+     * @var ASTSwitchStmtProngNode::body The statement to execute for this prong.
+     * @var ASTSwitchStmtProngNode::capture_name Optional name for the payload capture.
+     * @var ASTSwitchStmtProngNode::capture_sym Resolved symbol for the capture.
+     */
+    struct ASTSwitchStmtProngNode {
+        DynamicArray<ASTNode*>* items;
+        bool is_else;
+        ASTNode* body;
+        const char* capture_name;
+        Symbol* capture_sym;
+    };
+
+    /**
+     * @struct ASTSwitchStmtNode
+     * @brief Represents a switch statement.
+     * @var ASTSwitchStmtNode::expression The expression whose value is being switched on.
+     * @var ASTSwitchStmtNode::prongs A dynamic array of pointers to the switch statement prongs.
+     */
+    struct ASTSwitchStmtNode {
+        ASTNode* expression;
+        DynamicArray<ASTSwitchStmtProngNode*>* prongs;
+    };
     ```
+
+### Context-Aware Switch Parsing
+The parser distinguishes between `switch` as a statement and `switch` as an expression based on the call site:
+- **Statement context**: When `parseStatement` encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_STATEMENT)`, which creates a `NODE_SWITCH_STMT`. Bodies of prongs are parsed as statements.
+- **Expression context**: When `parsePrimaryExpr` (or other expression parsing paths) encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_EXPRESSION)`, which creates a `NODE_SWITCH_EXPR`. Bodies of prongs are parsed as expressions.
+
+### Range Parsing in Switch Cases
+The parser supports both inclusive (`...`) and exclusive (`..`) range syntax within `switch` case items:
+- `1...10`: An inclusive range from 1 to 10.
+- `1..10`: An exclusive range from 1 to 9 (10 is excluded).
+Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag.
 
 ## 10. Container Declaration Node Types
 
