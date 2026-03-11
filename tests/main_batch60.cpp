@@ -23,6 +23,9 @@ bool test_RangeSwitch_ErrorTooLarge();
 bool test_RangeSwitch_ErrorEmpty();
 bool test_RangeSwitch_EnumRange();
 bool test_RangeSwitch_NestedControl();
+bool test_RangeSwitch_NegativeValues();
+bool test_RangeSwitch_ExclusiveEmpty();
+bool test_RangeSwitch_EnumActualRange();
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
@@ -46,7 +49,10 @@ int main(int argc, char* argv[]) {
         test_RangeSwitch_ErrorTooLarge,
         test_RangeSwitch_ErrorEmpty,
         test_RangeSwitch_EnumRange,
-        test_RangeSwitch_NestedControl
+        test_RangeSwitch_NestedControl,
+        test_RangeSwitch_NegativeValues,
+        test_RangeSwitch_ExclusiveEmpty,
+        test_RangeSwitch_EnumActualRange
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

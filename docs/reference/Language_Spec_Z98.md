@@ -114,11 +114,50 @@ Memory is reclaimed by resetting or destroying the arena.
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
   - **Condition**: Must be an integer, enum, or boolean.
   - **Prongs**: Comma-separated case items followed by `=>` and an expression.
-  - **Case Items**: Can be single values or inclusive ranges (`a...b`).
+  - **Case Items**: Can be single values or ranges.
+  - **Ranges**:
+    - **Inclusive**: `start...end` (includes both `start` and `end`).
+    - **Exclusive**: `start..end` (includes `start`, excludes `end`).
+    - **Bounds**: Must be compile-time constants of the same type as the switch condition.
+    - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
+    - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
+    - **Limit**: To prevent excessive C code generation, each range is limited to 1000 individual case labels.
   - **Else**: An `else` prong is **mandatory** in all switch expressions.
+  - **Grammar**:
+    ```
+    switch (expression) {
+        pattern1, pattern2, ... => body,
+        ...
+        else => body,
+    }
+    pattern ::= literal | identifier | range
+    range   ::= start '...' end   (inclusive)
+             |  start '..' end    (exclusive)
+    ```
   - **Result Type**: Computed by merging the types of all non-divergent prongs. If all prongs diverge, the result type is `noreturn`.
   - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`.
   - **Value Blocks**: Switch prongs can use blocks that yield a value (e.g., `=> { var x = 5; x + 1 }`).
+  - **Examples**:
+    ```zig
+    // Inclusive range on integer
+    switch (x) {
+        1...5 => handleSmall(),
+        else => handleLarge(),
+    }
+
+    // Exclusive range and multiple items
+    switch (y) {
+        0, 10..20 => handleSpecial(),
+        else => handleDefault(),
+    }
+
+    // Range on enum
+    const Color = enum { Red, Green, Blue };
+    switch (c) {
+        Color.Red...Color.Green => handleWarm(),
+        else => handleCool(),
+    }
+    ```
 - `defer statement`: Schedules `statement` to be executed at the end of the current scope.
   - The statement can be a single expression statement or a block `{ ... }`.
   - `defer` statements are executed in reverse order of declaration (LIFO).

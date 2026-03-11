@@ -2201,31 +2201,20 @@ Implementation steps:
 
         Verify it compiles and runs.
 
-Phase 4: Range‑based switch arms (IN PROGRESS)
+Phase 4: Range‑based switch arms (COMPLETE)
 
 Goal: Support 1...10 => ... in switch cases.
 Why needed: Used in zig1 for range checks.
 
-- **Phase 0: Foundation & Safety Net (COMPLETE)**
-    - Established debug infrastructure (`AST_NODE_TYPE_NAME`, `plat_print_ast_node`).
-    - Implemented unit test Batch 60 for AST cloning and traversal.
-- **Phase 1: AST Node Definitions & Safe Cloning (COMPLETE)**
-    - Defined `NODE_RANGE` and `NODE_SWITCH_STMT`.
-    - Refactored `ASTRangeNode` to an out-of-line pointer for memory efficiency (<16MB budget).
-    - Implemented robust deep cloning in `cloneASTNode` for all node types.
-    - Resolved downstream compilation errors in Parser, Type Checker, and Codegen.
-- **Phase 2: AST Traversal Infrastructure (forEachChild)**
-    - Finalize exhaustive traversal for new nodes to support transformation passes.
-- **Phase 3: Parser Integration**
-    - Context-aware parsing for `...`/`..` and `NODE_SWITCH_STMT` vs `NODE_SWITCH_EXPR`.
-- **Phase 4: Type Checker Validation**
-    - Constant folding for ranges, size limits (`MAX_RANGE_CASES = 1000`), and type compatibility.
-- **Phase 5: ControlFlowLifter Integration**
-    - Ensure statement-level switches are preserved while children are lifted.
-- **Phase 6: C89 Code Generation**
-    - Expand ranges into individual `case` labels.
-- **Phase 7: Integration Testing & Documentation**
-    - End-to-end validation and documentation updates.
+- **Phases 0-6: Functional Implementation (COMPLETE)**
+    - Established debug infrastructure and robust deep cloning/traversal for new nodes.
+    - Implemented `NODE_RANGE` and context-aware `NODE_SWITCH_STMT`/`NODE_SWITCH_EXPR` parsing.
+    - Added comprehensive type validation (constant bounds, enum support, 1000-case limit).
+    - Integrated with `ControlFlowLifter` to preserve statements while lifting nested expressions.
+    - Expanded ranges into sequential C `case` labels in `C89Emitter`.
+- **Phase 7: Integration Testing & Documentation (COMPLETE)**
+    - Verified all edge cases (negative values, empty exclusive ranges, enum ranges) via Batch 60 integration tests.
+    - Updated `AST_Parser.md`, `C89_Codegen.md`, `Bootstrap_type_system_and_semantics.md`, `Agents.md`, and `Language_Spec_Z98.md` with exhaustive feature documentation.
 
 Phase 5: defer without braces
 

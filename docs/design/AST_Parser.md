@@ -228,7 +228,7 @@ struct ASTNode {
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
         ASTExpressionStmtNode expression_stmt;
-        ASTRangeNode range;
+        ASTRangeNode* range; // Out-of-line
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
@@ -308,6 +308,7 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
 | `ASTFnDeclNode`             | 16           | Pointer (4)     |
 | `ASTWhileStmtNode`          | 16           | Pointer (4)     |
+| `ASTRangeNode`              | 12           | Pointer (4)     |
 | `ASTArraySliceNode`         | 20           | Pointer (4)     |
 | `ASTArrayTypeNode`          | 12           | Inline          |
 | `ASTParamDeclNode`          | 8            | Inline          |
@@ -952,7 +953,7 @@ Represents a `for` loop, which iterates over an expression.
     ```
 
 #### `ASTRangeNode`
-Represents a range expression.
+Represents a range expression used in `for` loops and `switch` cases.
 *   **Zig Code:** `0..10` (exclusive), `0...10` (inclusive)
 *   **Structure:**
     ```cpp
@@ -969,6 +970,17 @@ Represents a range expression.
         bool is_inclusive;
     };
     ```
+
+### Context-Aware Switch Parsing
+The parser distinguishes between `switch` as a statement and `switch` as an expression based on the call site:
+- **Statement context**: When `parseStatement` encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_STATEMENT)`, which creates a `NODE_SWITCH_STMT`. Bodies of prongs are parsed as statements.
+- **Expression context**: When `parsePrimaryExpr` (or other expression parsing paths) encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_EXPRESSION)`, which creates a `NODE_SWITCH_EXPR`. Bodies of prongs are parsed as expressions.
+
+### Range Parsing in Switch Cases
+The parser supports both inclusive (`...`) and exclusive (`..`) range syntax within `switch` case items:
+- `1...10`: An inclusive range from 1 to 10.
+- `1..10`: An exclusive range from 1 to 9 (10 is excluded).
+Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag.
 
 #### Parsing Logic (`parseForStatement`)
 The `parseForStatement` function is responsible for parsing a `for` loop. It adheres to the grammar:

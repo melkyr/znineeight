@@ -2312,6 +2312,9 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
 bool TypeChecker::validateRange(ASTRangeNode* range, Type* cond_type) {
     i64 start_val, end_val;
 
+    /* Ensure bounds are resolved (handles enum member folding) */
+    if (!visit(range->start) || !visit(range->end)) return false;
+
     if (!evaluateConstantExpression(range->start, &start_val) || !evaluateConstantExpression(range->end, &end_val)) {
         unit_.getErrorHandler().report(ERR_NONCONSTANT_RANGE, range->start->loc, "Range bounds must be compile-time constants");
         return false;
