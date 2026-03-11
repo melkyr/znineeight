@@ -842,15 +842,12 @@ Represents an `if` statement with an optional `else` clause.
 
 #### Parsing Logic (`parseIfStatement`)
 The `parseIfStatement` function handles the `if-else` control flow structure. It adheres to the grammar:
-`'if' '(' expr ')' block_statement ('else' (block_statement | if_statement))?`
+`'if' '(' expr ')' statement ('else' statement)?`
 
 - It consumes an `if` token, followed by a parenthesized expression parsed by `parseExpression`.
-- It then requires a block statement (`{...}`) for the `then` branch, parsed by `parseBlockStatement`.
-- It checks for an optional `else` token.
-- If an `else` is found, it looks ahead:
-    - If the next token is `if`, it recursively calls `parseIfStatement` to handle an `else if` chain.
-    - Otherwise, it requires a block statement (`{...}`) for the `else` branch.
-- **Strict Bracing**: While `else if` is supported, bare statements (without braces) are NOT allowed in any branch of an `if` statement.
+- It then parses a statement for the `then` branch. This can be a block or a single statement.
+- It checks for an optional `else` token and parses the corresponding statement.
+- **Braceless Support**: If a branch is not a block, the `ControlFlowLifter` will later normalize it into a synthetic `NODE_BLOCK_STMT` during the lifting pass to simplify code generation.
 - Any deviation from this structure results in a fatal error.
 
 ### While Statements (Bootstrap) (Task 176)
@@ -887,7 +884,7 @@ The `parseWhileStatement` function is responsible for parsing a `while` loop. It
 `(label ':')? 'while' '(' expr ')' statement`
 
 - It consumes an optional label and colon, then the `while` token, followed by a parenthesized expression parsed by `parseExpression`.
-- It then requires a statement for the loop body. At this foundational stage, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- It then parses a statement for the loop body. Like `if`, this can be a block or a single statement, which is normalized during the lifting pass.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTDeferStmtNode`
@@ -990,7 +987,7 @@ The `parseForStatement` function is responsible for parsing a `for` loop. It adh
 - It then expects an identifier for the item capture variable.
 - It checks for an optional comma followed by another identifier for the index capture variable.
 - It requires a closing `|` to end the capture list.
-- Finally, it requires a statement for the loop body, which, like `while` and `if`, must be a block statement at this stage.
+- Finally, it parses a statement for the loop body. Like `if`, this can be a block or a single statement.
 - Any deviation from this structure results in a fatal error with a specific message.
 
 ### `ASTReturnStmtNode`
@@ -1037,7 +1034,7 @@ The `parseDeferStatement` function handles the `defer` statement. It adheres to 
 `'defer' statement`
 
 - It consumes a `defer` token.
-- It then requires a subsequent statement. Based on the current implementation phase, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- It then parses the subsequent statement (block or single statement).
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTErrDeferStmtNode`
@@ -1060,7 +1057,7 @@ The `parseErrDeferStatement` function handles the `errdefer` statement. It adher
 `'errdefer' statement`
 
 - It consumes an `errdefer` token.
-- It then requires a subsequent statement. Consistent with `defer`, this must be a block statement (`{...}`), which is parsed by `parseBlockStatement`.
+- It then parses the subsequent statement (block or single statement).
 - Any deviation from this structure results in a fatal error.
 
 ## 8. Declaration Node Types
@@ -1266,6 +1263,7 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
 The parser distinguishes between `switch` as a statement and `switch` as an expression based on the call site:
 - **Statement context**: When `parseStatement` encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_STATEMENT)`, which creates a `NODE_SWITCH_STMT`. Bodies of prongs are parsed as statements.
 - **Expression context**: When `parsePrimaryExpr` (or other expression parsing paths) encounters `TOKEN_SWITCH`, it calls `parseSwitch(CTX_EXPRESSION)`, which creates a `NODE_SWITCH_EXPR`. Bodies of prongs are parsed as expressions.
+- **Payload Captures**: Both switch statements and expressions support payload captures using the `|ident|` syntax after a case item. These captures are only allowed for tagged union switch conditions and are rejected for integer/enum conditions.
 
 ### Range Parsing in Switch Cases
 The parser supports both inclusive (`...`) and exclusive (`..`) range syntax within `switch` case items:
@@ -1344,7 +1342,7 @@ Represents a `union` definition.
 
 #### Parsing Logic (`parseUnionDeclaration`)
 The `parseUnionDeclaration` function is responsible for parsing union declarations. It can be invoked from `parsePrimaryExpr` to handle anonymous union literals or from `parseTopLevelItem` to handle top-level declarations. The function's logic is nearly identical to that of `parseStructDeclaration`. It adheres to the grammar:
-`'union' '{' (field (',' field)* ','?)? '}'`
+`'union' ('(' 'enum' | type ')')? '{' (field (',' field)* ','?)? '}'`
 `field ::= IDENTIFIER ':' type`
 
 - It consumes the `union` and `{` tokens.

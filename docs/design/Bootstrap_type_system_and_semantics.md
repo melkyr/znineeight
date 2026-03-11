@@ -372,10 +372,11 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
     - **Type Compatibility**: Ranges are only allowed for switch conditions of integer or enum types.
     - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
     - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
+- **Tagged Union support**: Full support for `union(enum)` and switch captures (`|val|`).
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
-- **Braces Required**: All control flow blocks (`if`, `while`, `for`) must use curly braces `{}`.
+- **Braces Optional**: Braces are optional for `if`, `while`, `for`, `defer`, and `errdefer` statement bodies. Single statements are normalized into blocks during the lifting pass.
 
 ### Enum Type Declarations
 
@@ -844,13 +845,13 @@ var x = __tmp_if_1;
 | Zig Feature | C89 Equivalent | Status | Rejection Point |
 |-------------|----------------|--------|-----------------|
 | `!T` (error union) | `struct` | SUPPORTED | - |
-| `?T` (optional) | No equivalent | REJECTED | `C89FeatureValidator` |
+| `?T` (optional) | `struct` | SUPPORTED | - |
 | `error { ... }` | `int` | SUPPORTED | - |
 | `fn() !T` (error return) | `struct` | SUPPORTED | - |
 | `try expr` | `if` check | SUPPORTED | - |
 | `catch expr` | `if-else` | SUPPORTED | - |
-| `orelse expr` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `errdefer` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `orelse expr` | `if-else` | SUPPORTED | - |
+| `errdefer` | `goto` cleanup | SUPPORTED | - |
 | `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `anytype` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `type` (as type) | No equivalent | REJECTED | `C89FeatureValidator` |
