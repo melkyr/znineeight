@@ -1310,7 +1310,8 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         i64 start, end;
                         if (evaluateSimpleConstant(item->as.range->start, &start) &&
                             evaluateSimpleConstant(item->as.range->end, &end)) {
-                            for (i64 k = start; k <= end; ++k) {
+                            i64 effective_end = item->as.range->is_inclusive ? end : end - 1;
+                            for (i64 k = start; k <= effective_end; ++k) {
                                 writeIndent();
                                 writeString("case ");
                                 char buf[32];
