@@ -673,10 +673,11 @@ ASTNode* Parser::parsePrecedenceExpr(int min_precedence) {
         } else if (op_token.type == TOKEN_RANGE || op_token.type == TOKEN_ELLIPSIS) {
             ASTNode* right = parsePrecedenceExpr(precedence + 1);
 
-            ASTRangeNode range_data;
-            range_data.start = left;
-            range_data.end = right;
-            range_data.is_inclusive = (op_token.type == TOKEN_ELLIPSIS);
+            ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
+            if (!range_data) error("Out of memory");
+            range_data->start = left;
+            range_data->end = right;
+            range_data->is_inclusive = (op_token.type == TOKEN_ELLIPSIS);
 
             ASTNode* new_node = createNodeAt(NODE_RANGE, op_token.location);
             new_node->as.range = range_data;
