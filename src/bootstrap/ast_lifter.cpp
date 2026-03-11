@@ -106,7 +106,8 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
                     node->type == NODE_VAR_DECL || node->type == NODE_IF_STMT ||
                     node->type == NODE_WHILE_STMT || node->type == NODE_FOR_STMT ||
                     node->type == NODE_BREAK_STMT || node->type == NODE_CONTINUE_STMT ||
-                    node->type == NODE_DEFER_STMT || node->type == NODE_ERRDEFER_STMT);
+                    node->type == NODE_DEFER_STMT || node->type == NODE_ERRDEFER_STMT ||
+                    node->type == NODE_SWITCH_STMT);
 
     bool is_block = (node->type == NODE_BLOCK_STMT);
     bool is_fn = (node->type == NODE_FN_DECL);
@@ -138,6 +139,16 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     } else if (node->type == NODE_ERRDEFER_STMT) {
         if (node->as.errdefer_stmt.statement && node->as.errdefer_stmt.statement->type != NODE_BLOCK_STMT) {
             node->as.errdefer_stmt.statement = wrapInBlock(node->as.errdefer_stmt.statement);
+        }
+    } else if (node->type == NODE_SWITCH_STMT) {
+        ASTSwitchStmtNode* switch_stmt = node->as.switch_stmt;
+        if (switch_stmt->prongs) {
+            for (size_t i = 0; i < switch_stmt->prongs->length(); ++i) {
+                ASTSwitchStmtProngNode* prong = (*switch_stmt->prongs)[i];
+                if (prong->body && prong->body->type != NODE_BLOCK_STMT) {
+                    prong->body = wrapInBlock(prong->body);
+                }
+            }
         }
     }
 

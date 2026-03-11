@@ -333,6 +333,10 @@ private:
     /** @brief Parses a struct declaration type expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseStructDeclaration();
 
+    enum ParseContext { CTX_STATEMENT, CTX_EXPRESSION };
+    /** @brief Parses a switch expression or statement. */
+    ASTNode* parseSwitch(ParseContext ctx);
+
     /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseSwitchExpression();
 
