@@ -1148,13 +1148,14 @@ ASTNode* Parser::parseUnionDeclaration() {
     bool is_tagged = false;
     ASTNode* tag_type_expr = NULL;
 
-    if (match(TOKEN_LPAREN)) {
+    // Explicitly check for tagged union (union(enum) or union(TagType))
+    if (peek().type == TOKEN_LPAREN) {
+        advance(); // consume '('
         is_tagged = true;
-        if (match(TOKEN_ENUM)) {
-            // union(enum) - implicit enum
+        if (peek().type == TOKEN_ENUM) {
+            advance(); // consume 'enum'
             tag_type_expr = NULL;
         } else {
-            // union(TagType) - explicit enum
             tag_type_expr = parseType();
         }
         expect(TOKEN_RPAREN, "Expected ')' after union tag type");
@@ -1189,7 +1190,7 @@ ASTNode* Parser::parseUnionDeclaration() {
             // Naked tag sugar: Null -> Null: void
             type_node = createNode(NODE_TYPE_NAME);
             type_node->loc = name_token.location;
-            type_node->as.type_name.name = "void";
+            type_node->as.type_name.name = interner_ ? interner_->intern("void") : "void";
         } else {
             error_handler_->report(ERR_EXPECTED_TYPE_FOR_FIELD, name_token.location,
                                    "Bare unions require explicit type for every field",
