@@ -86,10 +86,10 @@ public:
 
     // Public for TDD
     bool IsTypeAssignableTo(Type* source, Type* target, SourceLocation loc, ASTNode* source_node = NULL);
-    Type* checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
+    Type* checkBinaryOperation(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc);
     Type* findStructField(Type* struct_type, const char* field_name);
     void fatalError(const char* msg);
-    Type* checkBinaryOpCompatibility(Type* left, Type* right, TokenType op, SourceLocation loc);
+    Type* checkBinaryOpCompatibility(Type* left, Type* right, Zig0TokenType op, SourceLocation loc);
     void logFeatureLocation(const char* feature, SourceLocation loc);
     void injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type);
 private:
@@ -104,8 +104,8 @@ private:
     bool checkIntegerLiteralFit(i64 value, Type* int_type);
     bool all_paths_return(ASTNode* node);
     Type* checkComparisonWithLiteralPromotion(Type* left_type, Type* right_type);
-    Type* checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op);
-    Type* checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc);
+    Type* checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, Zig0TokenType op);
+    Type* checkPointerArithmetic(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc);
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
@@ -125,10 +125,10 @@ private:
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
-    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
+    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc);
     ASTNode* createMemberAccess(ASTNode* base, const char* member, Type* type, SourceLocation loc);
     ASTNode* createArrayAccess(ASTNode* array, ASTNode* index, Type* type, SourceLocation loc);
-    ASTNode* createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc);
+    ASTNode* createUnaryOp(ASTNode* operand, Zig0TokenType op, Type* type, SourceLocation loc);
 
     static const int MAX_VISIT_DEPTH = 1000;
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;

@@ -211,7 +211,7 @@ void Lexer::advance(int n) {
     }
 }
 
-static TokenType lookupIdentifier(const char* name, size_t len) {
+static Zig0TokenType lookupIdentifier(const char* name, size_t len) {
     int left = 0;
     int right = num_keywords - 1;
 

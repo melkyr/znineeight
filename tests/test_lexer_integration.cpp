@@ -22,7 +22,7 @@ TEST_FUNC(Lexer_MultiLineIntegrationTest) {
     Parser* parser = unit.createParser(file_id);
 
     struct ExpectedToken {
-        TokenType type;
+        Zig0TokenType type;
         const char* value; // For identifiers, literals
         double float_val;
         u32 line;

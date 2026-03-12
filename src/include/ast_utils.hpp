@@ -18,7 +18,7 @@ bool isTypeExpression(ASTNode* node, SymbolTable& symbols);
  * @param op The token type.
  * @return The string representation.
  */
-const char* getTokenSpelling(TokenType op);
+const char* getTokenSpelling(Zig0TokenType op);
 
 /**
  * @brief Checks if a node and its sub-paths are guaranteed to exit the current block.

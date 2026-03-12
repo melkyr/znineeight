@@ -112,7 +112,7 @@ private:
     /**
      * @brief Creates a new binary op node.
      */
-    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc);
+    ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc);
 
     /**
      * @brief Creates a new assignment node.

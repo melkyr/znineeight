@@ -3,4 +3,4 @@
 
 /* Master Single Translation Unit (STU) file */
 
-#include "test_decay.c"
+#include "chain_test.c"

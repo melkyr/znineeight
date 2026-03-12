@@ -492,7 +492,7 @@ Type* TypeChecker::visitBinaryOp(ASTNode* parent, ASTBinaryOpNode* node) {
  * @param loc Source location for error reporting.
  * @return The resulting Type*, or NULL if the operation is invalid.
  */
-Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc) {
     if (is_type_undefined(left_type) || is_type_undefined(right_type)) return get_g_type_undefined();
 
     /* Try literal promotion first for all operators that support it.
@@ -1226,7 +1226,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
     Type* r_ptr;
     Type right_lit;
     bool used_right_lit;
-    TokenType binary_op;
+    Zig0TokenType binary_op;
     Type* result_type;
 
     /* First, resolve the type of the left-hand side. */
@@ -1309,7 +1309,7 @@ Type* TypeChecker::visitCompoundAssignment(ASTCompoundAssignmentNode* node) {
  * @param loc The source location for error reporting.
  * @return The resulting type of the operation, or NULL if incompatible.
  */
-Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, TokenType /*op*/, SourceLocation loc) {
+Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, Zig0TokenType /*op*/, SourceLocation loc) {
     if ((left->kind >= TYPE_I8 && left->kind <= TYPE_F64) && (right->kind >= TYPE_I8 && right->kind <= TYPE_F64)) {
         return left; /* Simplified promotion */
     }
@@ -4522,7 +4522,7 @@ bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
  * - Addition/Subtraction requires an unsigned integer offset.
  * - Subtraction between compatible pointers yields an isize.
  */
-Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, TokenType op, SourceLocation loc) {
+Type* TypeChecker::checkPointerArithmetic(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc) {
     bool left_is_ptr = (left_type->kind == TYPE_POINTER);
     bool right_is_ptr = (right_type->kind == TYPE_POINTER);
 
@@ -4605,7 +4605,7 @@ Type* TypeChecker::checkComparisonWithLiteralPromotion(Type* left_type, Type* ri
     return NULL; /* NULL means "no promotion possible" */
 }
 
-Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, TokenType op) {
+Type* TypeChecker::checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, Zig0TokenType op) {
     bool is_arithmetic_op = (op == TOKEN_PLUS || op == TOKEN_PLUSPERCENT ||
                              op == TOKEN_MINUS || op == TOKEN_MINUSPERCENT ||
                              op == TOKEN_STAR || op == TOKEN_STARPERCENT ||
@@ -5761,7 +5761,7 @@ void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
     }
 }
 
-ASTNode* TypeChecker::createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc) {
+ASTNode* TypeChecker::createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc) {
     ASTNode* node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_BINARY_OP;
@@ -5798,7 +5798,7 @@ ASTNode* TypeChecker::createArrayAccess(ASTNode* array, ASTNode* index, Type* ty
     return node;
 }
 
-ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, TokenType op, Type* type, SourceLocation loc) {
+ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, Zig0TokenType op, Type* type, SourceLocation loc) {
     ASTNode* node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_UNARY_OP;

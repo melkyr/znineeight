@@ -6,7 +6,7 @@
 #include <cstring>
 
 // Helper function to test a single keyword token
-static bool test_single_keyword(const char* keyword_str, TokenType expected_type) {
+static bool test_single_keyword(const char* keyword_str, Zig0TokenType expected_type) {
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
     SourceManager sm(arena);
