@@ -95,9 +95,9 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.
 
 ### 4.3 Unified Assignment and Wrapping
-The `C89Emitter::emitAssignmentWithLifting` method (retained for backward compatibility and wrapping logic) provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
+The `C89Emitter::emitAssignmentWithLifting` method provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
 - **Type Coercion**: Generates the necessary C code to wrap values into `Optional` or `ErrorUnion` structures.
-- **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments.
+- **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments. For complex l-values (array elements, member access, pointer dereferences), it uses the `captureExpression` mechanism to stringify the l-value before performing field-by-field decomposition.
 - **Discarding Results**: Correctly handles assignments to the blank identifier `_` by evaluating the RHS for side effects and casting to `(void)`.
 
 Note: Control-flow expression lifting is now handled at the AST level by the `ControlFlowLifter` pass, so the emitter no longer performs ad-hoc lifting.
@@ -230,6 +230,7 @@ Standard C89 does not allow array or struct assignment after declaration (e.g., 
      arr[1] = 2;
      arr[2] = 3;
      ```
+   - **Complex L-values**: When assigning to a complex location (e.g., `ptr.* = .{ .x = 1 }`), the emitter uses `captureExpression` to stringify the l-value (e.g., `(*ptr)`) and then emits individual assignments (e.g., `(*ptr).x = 1;`).
    - This approach ensures compatibility with C89 and works correctly even if the initializer elements are non-constant expressions.
 2. **Global Constant Initializers**: Global variables (using `pub const` or `pub var`) are emitted using C-style constant initializers: `static int arr[3] = {1, 2, 3};`.
 
@@ -269,10 +270,18 @@ Arithmetic on multi-level pointers is supported only if the outer level is a man
 ### 4.7 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
 
-### 4.8 Multi-level Pointers (**T)
+This logic is implemented in `requiresParentheses()` and is applied both in `emitAccess` and during initializer decomposition in `emitInitializerAssignments`.
+
+### 4.8 Expression Capture (Redirection)
+The `C89Emitter::captureExpression` helper allows the compiler to obtain the C string representation of an AST node without writing it to the output file.
+- **Mechanism**: Temporarily redirects the emitter's output by disabling the `output_file_` and enabling `in_type_def_mode_`, which writes to the `type_def_buffer_`.
+- **Reentrancy**: Carefully saves and restores the global buffer position and state to allow nested captures during complex decomposition.
+- **Usage**: Primarily used for stringifying l-values during struct/array initializer decomposition.
+
+### 4.9 Multi-level Pointers (**T)
 Multi-level pointers (e.g., `**i32`, `***f64`) are fully supported in the bootstrap compiler and map directly to C's multi-level pointers (e.g., `int**`, `double***`).
 
-### 4.9 Function Pointers
+### 4.10 Function Pointers
 Function pointers (e.g., `fn(i32) i32`) are supported and map to C's function pointer syntax.
 
 #### Recursive Declarators
@@ -305,7 +314,7 @@ This is safe because the Zig compiler frontend already enforces const-correctnes
 #### Extern *void Handling
 Zig's `*void` (pointer to a zero-sized type) is consistently emitted as `void *` in C, especially in `extern` signatures. This ensures that declarations like `extern fn alloc(size: usize) *void` map correctly to `extern void* alloc(unsigned int size)`.
 
-### 4.10 Error Handling Support
+### 4.11 Error Handling Support
 Error handling in the bootstrap compiler is implemented using a C89-compatible structure and a global error registry.
 
 #### Error Tag Registry
@@ -364,7 +373,7 @@ target.is_error = 1;
 #### Return Statements
 Returning from a function that returns an error union performs implicit wrapping if the returned expression is not already an error union. This is implemented by using a temporary variable `__return_val` and then returning it.
 
-## 5. Master STU File & Build System
+## 6. Master STU File & Build System
 
 To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.
 
@@ -379,7 +388,7 @@ The backend automatically generates basic build scripts in the output directory:
 - **`build.bat`**: A Windows batch script that invokes the MSVC compiler (`cl`) to produce `app.exe`.
 - **`Makefile`**: A standard Makefile for Unix-like environments that uses `gcc` to produce the `app` binary.
 
-## 4.11 Error Handling Code Generation (Milestone 7)
+## 6.1 Error Handling Code Generation (Milestone 7)
 
 **Preamble:** These features are part of the extended feature set enabled after Milestone 7, building on the core bootstrap compiler. They enable Zig-style error propagation and handling while remaining compatible with C89.
 
@@ -460,7 +469,7 @@ Generated C:
 ### Known Limitations
 Deeply nested `try`, `catch`, or `orelse` expressions within complex binary operations or array indices may not be fully supported by the current lifting mechanism. A more robust second-pass lifter is planned for a future enhancement.
 
-## 4.12 Optional Types Code Generation (Milestone 7)
+## 6.2 Optional Types Code Generation (Milestone 7)
 
 **Preamble:** Optional types (`?T`) are supported as part of the bootstrap language extension. They enable nullable values for both pointers and value types using a uniform struct representation.
 
@@ -525,7 +534,7 @@ target.has_value = 0;
 ### Defer Interaction
 While `orelse` itself doesn't cause early returns (unlike `try`), the fallback expression (right side of `orelse`) can contain a `return` or `unreachable`. The emitter correctly handles these by executing any active `defer` statements before the `return` or emitting a panic for `unreachable`.
 
-### 4.13 Anonymous Structs and Unions
+### 6.3 Anonymous Structs and Unions
 Zig allows defining anonymous structs and unions as types for fields (e.g., `data: union { a: i32, b: f32 }`). Standard C89 supports anonymous types if they are defined inline with the field declaration.
 
 #### Emission Strategy
@@ -555,7 +564,7 @@ struct S {
 };
 ```
 
-### 4.14 Tagged Unions
+### 6.4 Tagged Unions
 Tagged unions (`TYPE_TAGGED_UNION`) are emitted as C `struct`s containing a `tag` field and a `data` union.
 
 #### Emission Strategy

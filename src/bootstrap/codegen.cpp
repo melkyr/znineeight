@@ -581,62 +581,18 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
                                   lvalue_node->type == NODE_MEMBER_ACCESS ||
                                   (lvalue_node->type == NODE_UNARY_OP && (lvalue_node->as.unary_op.op == TOKEN_STAR || lvalue_node->as.unary_op.op == TOKEN_DOT_ASTERISK)))) {
             /* For complex l-values, decompose initializer into field-by-field assignments */
-
-            /* Let's try to emit to a temporary buffer */
             char lval_buf[512];
-            plat_memset(lval_buf, 0, sizeof(lval_buf));
-
-            /* Save current state */
-            size_t saved_pos = buffer_pos_;
-            PlatFile saved_file = output_file_;
-            char saved_last_char = last_char_;
-            output_file_ = PLAT_INVALID_FILE; /* Prevent writing to file */
-
-            /* Reset buffer for capture.
-               C89Emitter uses a fixed size buffer buffer_[4096].
-               We're temporarily hijacking it. */
-
-            /* Actually, we have a type_def_buffer_ already!
-               Let's use it instead of buffer_[4096] to avoid interfering with regular emission. */
-
-            bool old_in_type_def = in_type_def_mode_;
-            size_t old_type_def_pos = type_def_pos_;
-            char old_last_char = last_char_;
-
-            in_type_def_mode_ = true;
-            type_def_pos_ = 0;
-            last_char_ = '\0';
-            emitExpression(lvalue_node);
-
-            size_t lval_len = type_def_pos_;
-            if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
-            plat_memcpy(lval_buf, type_def_buffer_, lval_len);
-            lval_buf[lval_len] = '\0';
-
-            /* Restore type def buffer state */
-            in_type_def_mode_ = old_in_type_def;
-            type_def_pos_ = old_type_def_pos;
-            last_char_ = old_last_char;
-
-            /* Restore state */
-            buffer_pos_ = saved_pos;
-            last_char_ = saved_last_char;
-            output_file_ = saved_file;
-
-            /* If capture was successful and not empty */
-            if (lval_buf[0] != '\0') {
+            if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
                 emitInitializerAssignments(lval_buf, rvalue);
             } else {
-                /* Fallback if capture failed for some reason */
+                /* Fallback if capture failed or truncated */
                 writeIndent();
-                if (lvalue_node) {
-                    emitExpression(lvalue_node);
-                    writeString(" = ");
-                }
+                emitExpression(lvalue_node);
+                writeString(" = ");
                 emitExpression(rvalue);
                 writeString(";\n");
             }
-            return; /* Crucial: return so we don't fall through to the default emission */
+            return;
         } else {
             if (allPathsExit(rvalue)) {
                 emitStatement(rvalue);
@@ -3086,6 +3042,43 @@ const char* C89Emitter::getSafeFieldName(const char* name) {
     return name;
 }
 
+bool C89Emitter::captureExpression(const ASTNode* node, char* buf, size_t buf_size) {
+    if (!node || !buf || buf_size == 0) return false;
+
+    /* Save current state */
+    PlatFile saved_file = output_file_;
+    size_t saved_pos = buffer_pos_;
+    char saved_last_char = last_char_;
+    bool saved_in_type_def = in_type_def_mode_;
+    size_t saved_type_def_pos = type_def_pos_;
+
+    /* Redirect to type_def_buffer_ */
+    output_file_ = PLAT_INVALID_FILE;
+    in_type_def_mode_ = true;
+    type_def_pos_ = 0;
+    last_char_ = '\0';
+
+    emitExpression(node);
+
+    bool success = true;
+    size_t len = type_def_pos_;
+    if (len >= buf_size) {
+        len = buf_size - 1;
+        success = false;
+    }
+    plat_memcpy(buf, type_def_buffer_, len);
+    buf[len] = '\0';
+
+    /* Restore state */
+    in_type_def_mode_ = saved_in_type_def;
+    type_def_pos_ = saved_type_def_pos;
+    buffer_pos_ = saved_pos;
+    last_char_ = saved_last_char;
+    output_file_ = saved_file;
+
+    return success;
+}
+
 const char* C89Emitter::getMangledTypeName(Type* type) {
     if (!type) return "void";
 
@@ -3230,26 +3223,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
     if (target_name) {
         plat_strcpy(lval_buf, target_name);
     } else {
-        /* Capture target_node expression */
-        size_t saved_pos = buffer_pos_;
-        PlatFile saved_file = output_file_;
-        char saved_last_char = last_char_;
-        output_file_ = PLAT_INVALID_FILE;
-        bool old_in_type_def = in_type_def_mode_;
-        size_t old_type_def_pos = type_def_pos_;
-        in_type_def_mode_ = true;
-        type_def_pos_ = 0;
-        last_char_ = '\0';
-        emitExpression(target_node);
-        size_t lval_len = type_def_pos_;
-        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
-        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
-        lval_buf[lval_len] = '\0';
-        in_type_def_mode_ = old_in_type_def;
-        type_def_pos_ = old_type_def_pos;
-        buffer_pos_ = saved_pos;
-        last_char_ = saved_last_char;
-        output_file_ = saved_file;
+        captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
     if (source_type->kind == TYPE_NULL) {
@@ -3282,26 +3256,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
     if (target_name) {
         plat_strcpy(lval_buf, target_name);
     } else {
-        /* Capture target_node expression */
-        size_t saved_pos = buffer_pos_;
-        PlatFile saved_file = output_file_;
-        char saved_last_char = last_char_;
-        output_file_ = PLAT_INVALID_FILE;
-        bool old_in_type_def = in_type_def_mode_;
-        size_t old_type_def_pos = type_def_pos_;
-        in_type_def_mode_ = true;
-        type_def_pos_ = 0;
-        last_char_ = '\0';
-        emitExpression(target_node);
-        size_t lval_len = type_def_pos_;
-        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
-        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
-        lval_buf[lval_len] = '\0';
-        in_type_def_mode_ = old_in_type_def;
-        type_def_pos_ = old_type_def_pos;
-        buffer_pos_ = saved_pos;
-        last_char_ = saved_last_char;
-        output_file_ = saved_file;
+        captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
     if (source_type->kind == TYPE_NULL) {
@@ -3335,26 +3290,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
     if (target_name) {
         plat_strcpy(lval_buf, target_name);
     } else {
-        /* Capture target_node expression */
-        size_t saved_pos = buffer_pos_;
-        PlatFile saved_file = output_file_;
-        char saved_last_char = last_char_;
-        output_file_ = PLAT_INVALID_FILE;
-        bool old_in_type_def = in_type_def_mode_;
-        size_t old_type_def_pos = type_def_pos_;
-        in_type_def_mode_ = true;
-        type_def_pos_ = 0;
-        last_char_ = '\0';
-        emitExpression(target_node);
-        size_t lval_len = type_def_pos_;
-        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
-        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
-        lval_buf[lval_len] = '\0';
-        in_type_def_mode_ = old_in_type_def;
-        type_def_pos_ = old_type_def_pos;
-        buffer_pos_ = saved_pos;
-        last_char_ = saved_last_char;
-        output_file_ = saved_file;
+        captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
@@ -3396,26 +3332,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
     if (target_name) {
         plat_strcpy(lval_buf, target_name);
     } else {
-        /* Capture target_node expression */
-        size_t saved_pos = buffer_pos_;
-        PlatFile saved_file = output_file_;
-        char saved_last_char = last_char_;
-        output_file_ = PLAT_INVALID_FILE;
-        bool old_in_type_def = in_type_def_mode_;
-        size_t old_type_def_pos = type_def_pos_;
-        in_type_def_mode_ = true;
-        type_def_pos_ = 0;
-        last_char_ = '\0';
-        emitExpression(target_node);
-        size_t lval_len = type_def_pos_;
-        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
-        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
-        lval_buf[lval_len] = '\0';
-        in_type_def_mode_ = old_in_type_def;
-        type_def_pos_ = old_type_def_pos;
-        buffer_pos_ = saved_pos;
-        last_char_ = saved_last_char;
-        output_file_ = saved_file;
+        captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {

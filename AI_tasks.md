@@ -2024,6 +2024,7 @@ DynamicArray<ASTNode*> children(arena);
 
 7. **Interaction with type checker**: Run lifting **after** type checking but **before** codegen. The lifter should not re-run type resolution.
 
+8. **C89 Assignment Limits**: C89 does not support braced initializers in assignments (e.g., `*ptr = {1, 2}`). These must be decomposed into field-by-field assignments using a stringified l-value (Expression Capture).
 
 ---
 ## Milestone 9: Adding final missing features incrementally.
@@ -2232,6 +2233,18 @@ Implementation steps (minimal):
     Given the time, you might skip this phase and first attempt to compile zig1 without it; you may find that zig1's use of comptime is limited and can be worked around with macros in Zig? Probably not. I'd include a basic implementation.
 
     Since the user said "we will have to avoid comptime until zig1", maybe they want to defer it. So we'll list it as optional.
+
+### Bugfixes & Hardening (Milestone 9)
+
+241. [COMPLETE] **Task 9.17: Fix Runtime Memory Corruption for Complex Returns (Failure 2)**
+    - **Analysis**: Identified invalid C code generation (braced initializers in assignments) as the cause of corruption in `ErrorUnion(Slice)` returns.
+    - **C89Emitter**: Implemented `captureExpression` for safe, reentrant l-value stringification via `type_def_buffer_`.
+    - **Decomposition**: Updated `emitAssignmentWithLifting` to decompose struct/union initializers into field-by-field assignments for complex l-values (array elements, member access, pointer dereference).
+    - **Precedence**: Ensured correct parenthesization (e.g., `(*ptr).field`) for decomposed pointer dereferences.
+    - **Wrapping**: Refactored `emitErrorUnionWrapping` and `emitOptionalWrapping` to use unified assignment logic.
+    - **Runtime**: Added `__bootstrap_i32_from_u8` and improved `isSafeWidening` to support safe widening casts.
+    - **Verification**: Verified via `issue_slice_return.zig` and the full test suite (Batches 1-62).
+
 ---
 
 
