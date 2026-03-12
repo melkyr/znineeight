@@ -391,7 +391,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 
     emitDeclarator(type, c_name);
 
-    if (decl->initializer) {
+    if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
         writeString(" = ");
         emitExpression(decl->initializer);
     }
