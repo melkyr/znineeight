@@ -419,15 +419,17 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
                 safe_append(cur, rem, ".");
                 safe_append(cur, rem, field_init->field_name);
 
-                if (field_init->value->type == NODE_STRUCT_INITIALIZER) {
-                    emitInitializerAssignments(nested_name, field_init->value);
+                Type* f_type = NULL;
+                if (type->kind == TYPE_OPTIONAL) {
+                    if (plat_strcmp(field_init->field_name, "value") == 0) f_type = type->as.optional.payload;
+                    else if (plat_strcmp(field_init->field_name, "has_value") == 0) f_type = get_g_type_bool();
                 } else {
-                    writeIndent();
-                    writeString(nested_name);
-                    writeString(" = ");
-                    emitExpression(field_init->value);
-                    writeString(";\n");
+                    if (plat_strcmp(field_init->field_name, "is_error") == 0) f_type = get_g_type_bool();
+                    else if (plat_strcmp(field_init->field_name, "err") == 0) f_type = get_g_type_i32();
+                    else if (plat_strcmp(field_init->field_name, "data") == 0) f_type = get_g_type_anytype();
                 }
+
+                emitAssignmentWithLifting(nested_name, NULL, field_init->value, f_type);
             }
             return;
         }
@@ -481,22 +483,23 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
                 char nested_name[256];
                 char* cur = nested_name;
                 size_t rem = sizeof(nested_name);
+
+                bool needs_parens = false;
+                /* If base_name contains operators that have lower precedence than '.', wrap it.
+                   Specifically if it starts with '*' (dereference). */
+                if (base_name[0] == '*') needs_parens = true;
+
+                if (needs_parens) safe_append(cur, rem, "(");
                 safe_append(cur, rem, base_name);
+                if (needs_parens) safe_append(cur, rem, ")");
+
                 if (is_tagged) {
                     safe_append(cur, rem, ".data");
                 }
                 safe_append(cur, rem, ".");
                 safe_append(cur, rem, field_name);
 
-                if (val->type == NODE_STRUCT_INITIALIZER) {
-                    emitInitializerAssignments(nested_name, val);
-                } else {
-                    writeIndent();
-                    writeString(nested_name);
-                    writeString(" = ");
-                    emitExpression(val);
-                    writeString(";\n");
-                }
+                emitAssignmentWithLifting(nested_name, NULL, val, field_type);
             }
         }
     } else if (type->kind == TYPE_ARRAY) {
@@ -505,24 +508,15 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             char idx_str[32];
             plat_i64_to_string(i, idx_str, sizeof(idx_str));
 
-            if (val->type == NODE_STRUCT_INITIALIZER) {
-                char nested_name[256];
-                char* cur = nested_name;
-                size_t rem = sizeof(nested_name);
-                safe_append(cur, rem, base_name);
-                safe_append(cur, rem, "[");
-                safe_append(cur, rem, idx_str);
-                safe_append(cur, rem, "]");
-                emitInitializerAssignments(nested_name, val);
-            } else {
-                writeIndent();
-                writeString(base_name);
-                writeString("[");
-                writeString(idx_str);
-                writeString("] = ");
-                emitExpression(val);
-                writeString(";\n");
-            }
+            char nested_name[256];
+            char* cur = nested_name;
+            size_t rem = sizeof(nested_name);
+            safe_append(cur, rem, base_name);
+            safe_append(cur, rem, "[");
+            safe_append(cur, rem, idx_str);
+            safe_append(cur, rem, "]");
+
+            emitAssignmentWithLifting(nested_name, NULL, val, type->as.array.element_type);
         }
     }
 }
@@ -583,6 +577,66 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     if (rvalue->type == NODE_STRUCT_INITIALIZER) {
         if (effective_target) {
             emitInitializerAssignments(effective_target, rvalue);
+        } else if (lvalue_node && (lvalue_node->type == NODE_ARRAY_ACCESS ||
+                                  lvalue_node->type == NODE_MEMBER_ACCESS ||
+                                  (lvalue_node->type == NODE_UNARY_OP && (lvalue_node->as.unary_op.op == TOKEN_STAR || lvalue_node->as.unary_op.op == TOKEN_DOT_ASTERISK)))) {
+            /* For complex l-values, decompose initializer into field-by-field assignments */
+
+            /* Let's try to emit to a temporary buffer */
+            char lval_buf[512];
+            plat_memset(lval_buf, 0, sizeof(lval_buf));
+
+            /* Save current state */
+            size_t saved_pos = buffer_pos_;
+            PlatFile saved_file = output_file_;
+            char saved_last_char = last_char_;
+            output_file_ = PLAT_INVALID_FILE; /* Prevent writing to file */
+
+            /* Reset buffer for capture.
+               C89Emitter uses a fixed size buffer buffer_[4096].
+               We're temporarily hijacking it. */
+
+            /* Actually, we have a type_def_buffer_ already!
+               Let's use it instead of buffer_[4096] to avoid interfering with regular emission. */
+
+            bool old_in_type_def = in_type_def_mode_;
+            size_t old_type_def_pos = type_def_pos_;
+            char old_last_char = last_char_;
+
+            in_type_def_mode_ = true;
+            type_def_pos_ = 0;
+            last_char_ = '\0';
+            emitExpression(lvalue_node);
+
+            size_t lval_len = type_def_pos_;
+            if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
+            plat_memcpy(lval_buf, type_def_buffer_, lval_len);
+            lval_buf[lval_len] = '\0';
+
+            /* Restore type def buffer state */
+            in_type_def_mode_ = old_in_type_def;
+            type_def_pos_ = old_type_def_pos;
+            last_char_ = old_last_char;
+
+            /* Restore state */
+            buffer_pos_ = saved_pos;
+            last_char_ = saved_last_char;
+            output_file_ = saved_file;
+
+            /* If capture was successful and not empty */
+            if (lval_buf[0] != '\0') {
+                emitInitializerAssignments(lval_buf, rvalue);
+            } else {
+                /* Fallback if capture failed for some reason */
+                writeIndent();
+                if (lvalue_node) {
+                    emitExpression(lvalue_node);
+                    writeString(" = ");
+                }
+                emitExpression(rvalue);
+                writeString(";\n");
+            }
+            return; /* Crucial: return so we don't fall through to the default emission */
         } else {
             if (allPathsExit(rvalue)) {
                 emitStatement(rvalue);
@@ -2973,14 +3027,20 @@ bool C89Emitter::isSafeWidening(Type* src, Type* dest) const {
     bool dest_is_int = (dest->kind >= TYPE_I8 && dest->kind <= TYPE_U64) || dest->kind == TYPE_ISIZE || dest->kind == TYPE_USIZE;
 
     if (src_is_int && dest_is_int) {
-        /* Signedness must match */
         bool src_signed = (src->kind == TYPE_I8 || src->kind == TYPE_I16 || src->kind == TYPE_I32 || src->kind == TYPE_I64 || src->kind == TYPE_ISIZE);
         bool dest_signed = (dest->kind == TYPE_I8 || dest->kind == TYPE_I16 || dest->kind == TYPE_I32 || dest->kind == TYPE_I64 || dest->kind == TYPE_ISIZE);
 
-        if (src_signed != dest_signed) return false;
+        if (src_signed == dest_signed) {
+            /* Size must be non-decreasing */
+            return dest->size >= src->size;
+        }
 
-        /* Size must be non-decreasing */
-        return dest->size >= src->size;
+        if (!src_signed && dest_signed) {
+            /* Unsigned to signed: safe if dest is strictly larger */
+            return dest->size > src->size;
+        }
+
+        return false;
     }
 
     /* Float widening */
@@ -3166,20 +3226,51 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         return;
     }
 
+    char lval_buf[512];
+    if (target_name) {
+        plat_strcpy(lval_buf, target_name);
+    } else {
+        /* Capture target_node expression */
+        size_t saved_pos = buffer_pos_;
+        PlatFile saved_file = output_file_;
+        char saved_last_char = last_char_;
+        output_file_ = PLAT_INVALID_FILE;
+        bool old_in_type_def = in_type_def_mode_;
+        size_t old_type_def_pos = type_def_pos_;
+        in_type_def_mode_ = true;
+        type_def_pos_ = 0;
+        last_char_ = '\0';
+        emitExpression(target_node);
+        size_t lval_len = type_def_pos_;
+        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
+        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
+        lval_buf[lval_len] = '\0';
+        in_type_def_mode_ = old_in_type_def;
+        type_def_pos_ = old_type_def_pos;
+        buffer_pos_ = saved_pos;
+        last_char_ = saved_last_char;
+        output_file_ = saved_file;
+    }
+
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".has_value = 0;\n");
     } else {
         if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            writeIndent();
-            if (target_name) writeString(target_name); else emitExpression(target_node);
-            writeString(".value = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            char payload_lval[512];
+            char* cur = payload_lval;
+            size_t rem = sizeof(payload_lval);
+            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
+            safe_append(cur, rem, lval_buf);
+            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
+            safe_append(cur, rem, ".value");
+            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+        } else {
+            emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".has_value = 1;\n");
     }
 }
@@ -3187,20 +3278,46 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
 void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
+    char lval_buf[512];
+    if (target_name) {
+        plat_strcpy(lval_buf, target_name);
+    } else {
+        /* Capture target_node expression */
+        size_t saved_pos = buffer_pos_;
+        PlatFile saved_file = output_file_;
+        char saved_last_char = last_char_;
+        output_file_ = PLAT_INVALID_FILE;
+        bool old_in_type_def = in_type_def_mode_;
+        size_t old_type_def_pos = type_def_pos_;
+        in_type_def_mode_ = true;
+        type_def_pos_ = 0;
+        last_char_ = '\0';
+        emitExpression(target_node);
+        size_t lval_len = type_def_pos_;
+        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
+        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
+        lval_buf[lval_len] = '\0';
+        in_type_def_mode_ = old_in_type_def;
+        type_def_pos_ = old_type_def_pos;
+        buffer_pos_ = saved_pos;
+        last_char_ = saved_last_char;
+        output_file_ = saved_file;
+    }
+
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".has_value = 0;\n");
     } else {
+        writeIndent();
+        writeString(lval_buf);
         if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            writeIndent();
-            if (target_name) writeString(target_name); else emitExpression(target_node);
             writeString(".value = ");
             if (source_expr) writeString(source_expr); else writeString("0");
             writeString(";\n");
         }
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".has_value = 1;\n");
     }
 }
@@ -3214,9 +3331,35 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         return;
     }
 
+    char lval_buf[512];
+    if (target_name) {
+        plat_strcpy(lval_buf, target_name);
+    } else {
+        /* Capture target_node expression */
+        size_t saved_pos = buffer_pos_;
+        PlatFile saved_file = output_file_;
+        char saved_last_char = last_char_;
+        output_file_ = PLAT_INVALID_FILE;
+        bool old_in_type_def = in_type_def_mode_;
+        size_t old_type_def_pos = type_def_pos_;
+        in_type_def_mode_ = true;
+        type_def_pos_ = 0;
+        last_char_ = '\0';
+        emitExpression(target_node);
+        size_t lval_len = type_def_pos_;
+        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
+        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
+        lval_buf[lval_len] = '\0';
+        in_type_def_mode_ = old_in_type_def;
+        type_def_pos_ = old_type_def_pos;
+        buffer_pos_ = saved_pos;
+        last_char_ = saved_last_char;
+        output_file_ = saved_file;
+    }
+
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             writeString(".data.err = ");
         } else {
@@ -3225,18 +3368,23 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         emitExpression(rvalue);
         writeString(";\n");
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".is_error = 1;\n");
     } else {
-        writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(".data.payload = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            char payload_lval[512];
+            char* cur = payload_lval;
+            size_t rem = sizeof(payload_lval);
+            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
+            safe_append(cur, rem, lval_buf);
+            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
+            safe_append(cur, rem, ".data.payload");
+            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+        } else {
+            emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".is_error = 0;\n");
     }
 }
@@ -3244,9 +3392,35 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
+    char lval_buf[512];
+    if (target_name) {
+        plat_strcpy(lval_buf, target_name);
+    } else {
+        /* Capture target_node expression */
+        size_t saved_pos = buffer_pos_;
+        PlatFile saved_file = output_file_;
+        char saved_last_char = last_char_;
+        output_file_ = PLAT_INVALID_FILE;
+        bool old_in_type_def = in_type_def_mode_;
+        size_t old_type_def_pos = type_def_pos_;
+        in_type_def_mode_ = true;
+        type_def_pos_ = 0;
+        last_char_ = '\0';
+        emitExpression(target_node);
+        size_t lval_len = type_def_pos_;
+        if (lval_len >= sizeof(lval_buf)) lval_len = sizeof(lval_buf) - 1;
+        plat_memcpy(lval_buf, type_def_buffer_, lval_len);
+        lval_buf[lval_len] = '\0';
+        in_type_def_mode_ = old_in_type_def;
+        type_def_pos_ = old_type_def_pos;
+        buffer_pos_ = saved_pos;
+        last_char_ = saved_last_char;
+        output_file_ = saved_file;
+    }
+
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             writeString(".data.err = ");
         } else {
@@ -3255,18 +3429,18 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         if (source_expr) writeString(source_expr); else writeString("0");
         writeString(";\n");
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".is_error = 1;\n");
     } else {
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             writeString(".data.payload = ");
             if (source_expr) writeString(source_expr); else writeString("0");
             writeString(";\n");
         }
         writeIndent();
-        if (target_name) writeString(target_name); else emitExpression(target_node);
+        writeString(lval_buf);
         writeString(".is_error = 0;\n");
     }
 }

@@ -127,4 +127,8 @@ static f32 __bootstrap_f32_from_f64(double x) {
     return (f32)x;
 }
 
+static i32 __bootstrap_i32_from_u8(u8 x) {
+    return (i32)x;
+}
+
 #endif /* ZIG_RUNTIME_H */
