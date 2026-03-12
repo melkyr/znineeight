@@ -10,3 +10,4 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Regression test for function return segfault in Batch 62.
+- Implemented "Union Naked Tags" (Milestone 9 Phase 1 extension). Support for writing `Null` instead of `Null: void` in tagged unions.

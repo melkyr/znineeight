@@ -345,6 +345,8 @@ Bare unions represent a standard C union where all fields share the same memory 
 #### Tagged Unions (`TYPE_TAGGED_UNION`)
 Tagged unions (`union(enum)` or `union(TagType)`) are represented as a C `struct` containing a tag and a `union` of payloads.
 
+**Syntactic Sugar (Naked Tags)**: In tagged unions, fields can be declared without an explicit type (e.g., `A,` instead of `A: void,`). The parser automatically treats these as carrying a `void` payload.
+
 1.  **Tag Type Resolution**:
     -   For `union(enum)`, the compiler generates an implicit enum type with members named after the union fields. The enum is named `UnionName_Tag` and uses `i32` as its backing type.
     -   For `union(TagType)`, the compiler uses the provided `TagType`.

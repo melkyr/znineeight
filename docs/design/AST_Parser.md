@@ -1343,14 +1343,18 @@ Represents a `union` definition.
     ```
 
 #### Parsing Logic (`parseUnionDeclaration`)
-The `parseUnionDeclaration` function is responsible for parsing union declarations. It can be invoked from `parsePrimaryExpr` to handle anonymous union literals or from `parseTopLevelItem` to handle top-level declarations. The function's logic is nearly identical to that of `parseStructDeclaration`. It adheres to the grammar:
+The `parseUnionDeclaration` function is responsible for parsing union declarations. It can be invoked from `parsePrimaryExpr` to handle anonymous union literals or from `parseTopLevelItem` to handle top-level declarations. The function's logic is similar to `parseStructDeclaration` but with support for tagged unions and naked tags. It adheres to the grammar:
 `'union' ('(' 'enum' | type ')')? '{' (field (',' field)* ','?)? '}'`
-`field ::= IDENTIFIER ':' type`
+`field ::= IDENTIFIER (':' type)?`
 
 - It consumes the `union` and `{` tokens.
+- It determines if the union is **tagged** (either `union(enum)` or `union(TagType)`).
 - It then enters a loop that continues as long as the next token is not `}`.
-- Inside the loop, it parses a single field by expecting an identifier, a colon, and a type expression (parsed via `parseType`).
-- It constructs an `ASTStructFieldNode` for each field, which is then wrapped in an `ASTNode` of type `NODE_STRUCT_FIELD`. This `ASTNode` is then appended to the `DynamicArray` in the `ASTUnionDeclNode`. This is the same node type used for struct fields, as the syntax is identical.
+- Inside the loop, it parses a single field:
+    - If a colon follows the identifier, it parses the type expression normally.
+    - If the union is **tagged** and no colon follows the identifier (a "naked tag"), the parser automatically generates a `void` type node.
+    - Naked tags are strictly rejected in untagged (bare) unions and structs.
+- It constructs an `ASTStructFieldNode` for each field, which is then wrapped in an `ASTNode` of type `NODE_STRUCT_FIELD`. This `ASTNode` is then appended to the `DynamicArray` in the `ASTUnionDeclNode`.
 - The loop correctly handles an optional trailing comma.
 - It correctly handles empty unions (`{}`).
 - Finally, it consumes the closing `}` token. Any deviation from this structure results in a fatal error.

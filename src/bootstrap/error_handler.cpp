@@ -100,6 +100,7 @@ const char* ErrorHandler::getMessage(ErrorCode code) {
         case ERR_CATCH_ON_NON_ERROR_UNION:      return "catch operand must be an error union";
         case ERR_CATCH_TYPE_MISMATCH:           return "catch fallback type mismatch";
         case ERR_TRY_INCOMPATIBLE_ERROR_SETS:   return "incompatible error sets in try";
+        case ERR_EXPECTED_TYPE_FOR_FIELD:       return "expected type for field";
 
         /* Semantic Errors */
         case ERR_UNDEFINED_VARIABLE:            return "use of undeclared identifier";

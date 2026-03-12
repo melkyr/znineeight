@@ -2214,6 +2214,18 @@ Why needed: zig1 uses this.
 - **Verification (COMPLETE)**
     - Verified via Batch 61 integration tests.
 
+Post-Milestone 9: Quality of Life Updates
+
+Phase 1: Union naked tags (sugar for : void) (COMPLETE)
+
+Goal: Allow writing `Null` instead of `Null: void` inside a `union(enum)` declaration.
+
+- **Implementation (COMPLETE)**:
+    - Parser: Modified `parseUnionDeclaration` to allow naked identifiers in tagged unions. If an identifier is not followed by a colon, it is automatically treated as a `void` field.
+    - Error Handling: Added `ERR_EXPECTED_TYPE_FOR_FIELD` to explicitly reject naked identifiers in structs and untagged unions with a helpful hint.
+- **Verification (COMPLETE)**:
+    - Verified via Batch 63 integration tests, covering implicit/explicit tagged unions and rejection in structs/bare unions.
+
 Phase 6: (Optional) Basic comptime parameters
 
 Goal: Support fn foo(comptime T: type, x: T) ... where T is a type parameter. This is needed for generic‑like functions in zig1.

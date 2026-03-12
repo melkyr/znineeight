@@ -1181,8 +1181,21 @@ ASTNode* Parser::parseUnionDeclaration() {
         }
 
         Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in union declaration");
-        expect(TOKEN_COLON, "Expected ':' after field name");
-        ASTNode* type_node = parseType();
+
+        ASTNode* type_node = NULL;
+        if (match(TOKEN_COLON)) {
+            type_node = parseType();
+        } else if (is_tagged) {
+            // Naked tag sugar: Null -> Null: void
+            type_node = createNode(NODE_TYPE_NAME);
+            type_node->loc = name_token.location;
+            type_node->as.type_name.name = "void";
+        } else {
+            error_handler_->report(ERR_EXPECTED_TYPE_FOR_FIELD, name_token.location,
+                                   "Bare unions require explicit type for every field",
+                                   "Did you mean 'union(enum)'?");
+            error("Expected ':' after field name");
+        }
 
         if (peek().type == TOKEN_EQUAL) {
             error("Default field values are not supported in bootstrap compiler");
@@ -1376,7 +1389,12 @@ ASTNode* Parser::parseStructDeclaration() {
         }
 
         Token name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct declaration");
-        expect(TOKEN_COLON, "Expected ':' after field name");
+        if (!match(TOKEN_COLON)) {
+            error_handler_->report(ERR_EXPECTED_TYPE_FOR_FIELD, name_token.location,
+                                   "Structs require explicit type for every field",
+                                   "Sugar for ': void' is only allowed in tagged unions.");
+            error("Expected ':' after field name");
+        }
         ASTNode* type_node = parseType();
 
         if (peek().type == TOKEN_EQUAL) {
