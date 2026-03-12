@@ -2981,14 +2981,29 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
     Symbol* fn_symbol;
     DynamicArray<Type*>* param_types;
     size_t i;
-    Type* sig_res;
 
     fn_symbol = unit_.getSymbolTable().lookup(node->name);
-    if (!fn_symbol || !fn_symbol->symbol_type) {
+    if (!fn_symbol) {
+        return reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR,
+            "Function symbol not found");
+    }
+
+    if (!fn_symbol->symbol_type) {
         /* Try to resolve signature if not already done. */
-        sig_res = visitFnSignature(node);
-        if (!sig_res || is_type_undefined(sig_res)) return get_g_type_undefined();
-        fn_symbol = unit_.getSymbolTable().lookup(node->name);
+        if (!visitFnSignature(node)) {
+            return get_g_type_undefined();
+        }
+        fn_symbol = unit_.getSymbolTable().lookup(node->name); /* re-fetch */
+    }
+
+    if (!fn_symbol || !fn_symbol->symbol_type) {
+        return reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR,
+            "Function symbol or type not found after resolution");
+    }
+
+    if (fn_symbol->symbol_type->kind != TYPE_FUNCTION) {
+        return reportAndReturnUndefined(node->loc, ERR_INTERNAL_ERROR,
+            "Function symbol has non-function type");
     }
 
     {

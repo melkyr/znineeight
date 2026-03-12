@@ -751,6 +751,7 @@ struct ASTVarDeclNode {
  */
 struct ASTFnDeclNode {
     const char* name;
+    SourceLocation loc;
     DynamicArray<ASTNode*>* params;
     ASTNode* return_type; // Can be NULL
     ASTNode* body;
