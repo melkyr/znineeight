@@ -81,7 +81,7 @@ bool Parser::is_at_end() const {
     return tokens_[current_index_].type == TOKEN_EOF;
 }
 
-bool Parser::match(TokenType type) {
+bool Parser::match(Zig0TokenType type) {
     if (is_at_end() || peek().type != type) {
         return false;
     }
@@ -89,7 +89,7 @@ bool Parser::match(TokenType type) {
     return true;
 }
 
-Token Parser::expect(TokenType type, const char* msg) {
+Token Parser::expect(Zig0TokenType type, const char* msg) {
     if (is_at_end() || peek().type != type) {
         error(msg);
     }
@@ -524,11 +524,11 @@ ASTNode* Parser::parseUnaryExpr() {
 
 /**
  * @brief Gets the precedence level for a given binary operator token.
- * @param type The TokenType of the operator.
+ * @param type The Zig0TokenType of the operator.
  * @return The operator's precedence level (higher value means higher precedence),
  *         or -1 if the token is not a binary operator.
  */
-static int get_token_precedence(TokenType type) {
+static int get_token_precedence(Zig0TokenType type) {
     switch (type) {
         // Arithmetic operators (highest precedence)
         case TOKEN_STAR:
@@ -746,7 +746,7 @@ ASTNode* Parser::parseAssignmentExpression() {
         return node;
     }
 
-    TokenType compound_ops[] = {
+    Zig0TokenType compound_ops[] = {
         TOKEN_PLUS_EQUAL, TOKEN_MINUS_EQUAL, TOKEN_STAR_EQUAL,
         TOKEN_SLASH_EQUAL, TOKEN_PERCENT_EQUAL, TOKEN_AMPERSAND_EQUAL,
         TOKEN_PIPE_EQUAL, TOKEN_CARET_EQUAL, TOKEN_LARROW2_EQUAL,
@@ -755,7 +755,7 @@ ASTNode* Parser::parseAssignmentExpression() {
 
     for (size_t i = 0; i < sizeof(compound_ops) / sizeof(compound_ops[0]); ++i) {
         if (match(compound_ops[i])) {
-            TokenType op = compound_ops[i];
+            Zig0TokenType op = compound_ops[i];
             ASTNode* right = parseAssignmentExpression();
 
             ASTCompoundAssignmentNode* comp_node = (ASTCompoundAssignmentNode*)arena_->alloc(sizeof(ASTCompoundAssignmentNode));
@@ -2093,7 +2093,7 @@ ASTNode* Parser::parseReturnExpr() {
     Token return_token = expect(TOKEN_RETURN, "Expected 'return' keyword");
 
     ASTNode* expression = NULL;
-    TokenType t = peek().type;
+    Zig0TokenType t = peek().type;
     if (t != TOKEN_SEMICOLON && t != TOKEN_RBRACE && t != TOKEN_COMMA && t != TOKEN_RPAREN && t != TOKEN_FAT_ARROW) {
         expression = parseExpression();
     }

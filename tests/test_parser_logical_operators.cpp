@@ -9,7 +9,7 @@ bool expect_parser_abort(const char* source);
 
 // --- Test Helper Functions ---
 
-static bool verify_binary_op(ASTNode* node, TokenType op, const char* left_name, const char* right_name) {
+static bool verify_binary_op(ASTNode* node, Zig0TokenType op, const char* left_name, const char* right_name) {
     ASSERT_TRUE(node->type == NODE_BINARY_OP);
     ASSERT_TRUE(node->as.binary_op->op == op);
     ASSERT_TRUE(node->as.binary_op->left->type == NODE_IDENTIFIER);

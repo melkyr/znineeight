@@ -273,7 +273,7 @@ public:
     Token nextToken();
 };
 ```
-* **Token Definition (`TokenType`):** The core of the lexer is the `TokenType` enum, which defines all possible tokens. For a complete and up-to-date list of all tokens and their implementation status, please see the `Lexer.md` document.
+* **Token Definition (`Zig0TokenType`):** The core of the lexer is the `Zig0TokenType` enum, which defines all possible tokens. For a complete and up-to-date list of all tokens and their implementation status, please see the `Lexer.md` document.
 
 * **Value Storage:** Unions for `i64`, `double`, and `char*` (interned string)
 * **Token Precedence Table:**
@@ -297,8 +297,8 @@ private:
     ArenaAllocator* allocator;
     Token current_token;
     void advance();
-    bool match(TokenType type);
-    void expect(TokenType type);
+    bool match(Zig0TokenType type);
+    void expect(Zig0TokenType type);
 public:
     Parser(TokenStream* ts, SymbolTable* sym, ArenaAllocator* alloc);
     ASTNode* parseProgram();
@@ -737,11 +737,11 @@ arena.reset();  // Free all at once
 #### Lookup Tables
 ```cpp
 // Keyword recognition
-static const struct { const char* keyword; TokenType type; } KEYWORDS[] = {
+static const struct { const char* keyword; Zig0TokenType type; } KEYWORDS[] = {
     {"fn", TOKEN_FN}, {"var", TOKEN_VAR}, {"const", TOKEN_CONST},
     {"if", TOKEN_IF}, {"else", TOKEN_ELSE}, {"while", TOKEN_WHILE}
 };
-TokenType getKeywordType(const char* word) {
+Zig0TokenType getKeywordType(const char* word) {
     for (auto& kw : KEYWORDS) {
         if (strcmp(kw.keyword, word) == 0) return kw.type;
     }
@@ -888,7 +888,7 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [x] Implement Arena Allocator with alignment support
 - [x] Create String Interning system
 - [x] Implement lexer class with token definitions
-  - [x] Define Token struct and TokenType enum
+  - [x] Define Token struct and Zig0TokenType enum
   - [x] Implement Lexer class skeleton
   - [x] Implement lexing for single-character tokens
   - [x] Implement lexing for multi-character tokens (`==`, `!=`, `<=`, `>=`)

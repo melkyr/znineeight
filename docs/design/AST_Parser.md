@@ -462,7 +462,7 @@ Represents an operation with a single operand.
      */
     struct ASTUnaryOpNode {
         ASTNode* operand;
-        TokenType op;
+        Zig0TokenType op;
     };
     ```
 
@@ -571,7 +571,7 @@ The `parsePostfixExpression` function is responsible for handling postfix operat
         - It constructs an `ASTArrayAccessNode`.
         - It calls `parseExpression` to parse the index expression.
     - It expects a closing `TOKEN_RBRACKET` for both cases.
-- The result of the postfix operation (e.g., the `ASTFunctionCallNode` or `ASTArraySliceNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for chaining.
+- The result of the postfix operation (e.g., the `ASTFunctionCallNode`, `ASTArrayAccessNode`, `ASTArraySliceNode`, or `ASTMemberAccessNode`) becomes the new left-hand side expression for the next iteration of the loop, allowing for complex chaining such as `arr[0].field.subfield` or `get_array()[i].ptr.*`.
 - If no postfix operator is found, the loop terminates, and the function returns the constructed expression tree.
 
 
@@ -590,7 +590,7 @@ Represents an operation with two operands.
     struct ASTBinaryOpNode {
         ASTNode* left;
         ASTNode* right;
-        TokenType op;
+        Zig0TokenType op;
     };
     ```
 
@@ -610,7 +610,7 @@ Represents a compound assignment operation.
     struct ASTCompoundAssignmentNode {
         ASTNode* lvalue;
         ASTNode* rvalue;
-        TokenType op;
+        Zig0TokenType op;
     };
     ```
 

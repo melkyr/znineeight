@@ -283,7 +283,7 @@ private:
      * @param type The expected token type.
      * @return True if the token matched and was consumed, false otherwise.
      */
-    bool match(TokenType type);
+    bool match(Zig0TokenType type);
 
     /**
      * @brief If the current token matches the expected type, consumes it and returns it.
@@ -292,7 +292,7 @@ private:
      * @param msg The error message to display if the token does not match.
      * @return The consumed token.
      */
-    Token expect(TokenType type, const char* msg);
+    Token expect(Zig0TokenType type, const char* msg);
 
     /**
      * @brief Reports a fatal syntax error and terminates the compilation process.

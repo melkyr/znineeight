@@ -763,7 +763,7 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
     return copy;
 }
 
-const char* getTokenSpelling(TokenType op) {
+const char* getTokenSpelling(Zig0TokenType op) {
     switch (op) {
         case TOKEN_PLUS: return "+";
         case TOKEN_MINUS: return "-";

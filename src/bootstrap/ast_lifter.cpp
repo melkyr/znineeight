@@ -683,7 +683,7 @@ ASTNode* ControlFlowLifter::createIdentifier(const char* name, SourceLocation lo
     return ident_node;
 }
 
-ASTNode* ControlFlowLifter::createBinaryOp(ASTNode* left, ASTNode* right, TokenType op, Type* type, SourceLocation loc) {
+ASTNode* ControlFlowLifter::createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc) {
     ASTNode* node = (ASTNode*)arena_->alloc(sizeof(ASTNode));
     plat_memset(node, 0, sizeof(ASTNode));
     node->type = NODE_BINARY_OP;

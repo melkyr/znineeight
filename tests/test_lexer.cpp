@@ -196,7 +196,7 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
 
-    TokenType expected_tokens[] = {
+    Zig0TokenType expected_tokens[] = {
         TOKEN_IF, TOKEN_LPAREN, TOKEN_IDENTIFIER, TOKEN_GREATER, TOKEN_INTEGER_LITERAL, TOKEN_RPAREN, TOKEN_LBRACE,
         TOKEN_RETURN, TOKEN_INTEGER_LITERAL, TOKEN_SEMICOLON,
         TOKEN_RBRACE, TOKEN_ELSE, TOKEN_LBRACE,
@@ -208,7 +208,7 @@ TEST_FUNC(Lexer_ComprehensiveCrossGroup) {
         TOKEN_EOF
     };
 
-    for (int i = 0; i < static_cast<int>(sizeof(expected_tokens) / sizeof(TokenType)); ++i) {
+    for (int i = 0; i < static_cast<int>(sizeof(expected_tokens) / sizeof(Zig0TokenType)); ++i) {
         if (expected_tokens[i] == TOKEN_EOF) {
             Token t = parser->peek();
             ASSERT_EQ(expected_tokens[i], t.type);

@@ -17,13 +17,13 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
 10. **Task 10:** Create initial `build.bat` and `test.bat` scripts. (DONE)
 
 ### Milestone 2: Lexer Implementation (COMPLETE)
-11. **Task 11:** Define initial `TokenType` enum in `lexer.hpp`. (DONE)
+11. **Task 11:** Define initial `Zig0TokenType` enum in `lexer.hpp`. (DONE)
 12. **Task 12:** Implement the `Token` struct with a union for literal values. (DONE)
 13. **Task 13:** Implement the `Lexer` class skeleton. (DONE)
 14. **Task 14:** Implement lexing for single-character tokens. (DONE)
 15. **Task 15:** Implement lexing for multi-character tokens. (DONE)
 16. **Task 16:** Implement basic identifier and keyword recognition. (DONE)
-17. **Task 17:** Update `TokenType` enum in `src/include/lexer.hpp` to include all missing tokens as defined in `Lexer.md`. (DONE)
+17. **Task 17:** Update `Zig0TokenType` enum in `src/include/lexer.hpp` to include all missing tokens as defined in `Lexer.md`. (DONE)
 18. **Task 18:** Implement lexing for `TOKEN_CHAR_LITERAL` (e.g., `'a'`). (DONE)
 19. **Task 19:** Implement lexing for `TOKEN_FLOAT_LITERAL` (e.g., `3.14`). (DONE)
 20. **Task 20:** Implement lexing for remaining arithmetic and bitwise operators (`%`, `~`, `&`, `|`, `^`, `<<`, `>>`). (DONE)
@@ -106,7 +106,7 @@ This document outlines a granular, step-by-step roadmap for an AI agent to imple
     - Write a suite of tests that parse snippets of Zig-like code combining multiple features (e.g., a function with a `while` loop containing an `if` statement with complex expressions).
     - Verify that the resulting AST is structured correctly.
 75. **Task 75:** Implement Range Operator (..) Lexing. (DONE)
-    - Add TOKEN_RANGE to the TokenType enum in src/include/lexer.hpp
+    - Add TOKEN_RANGE to the Zig0TokenType enum in src/include/lexer.hpp
     - Update the lexer's dot handling logic in src/bootstrap/lexer.cpp to recognize .. as TOKEN_RANGE before attempting to parse ... (ELLIPSIS)
     - Add unit tests for the range operator lexing
     - Recommendation: This is critical as it's blocking the for loop test case and will likely be needed for slice operations throughout the language.
@@ -976,7 +976,7 @@ Output: Runtime assertions in codegen module
     void visitBinaryOp(BinaryOpNode* expr) {
         Type* left = getType(expr->left);
         Type* right = getType(expr->right);
-        TokenType op = expr->op;
+        Zig0TokenType op = expr->op;
 
         if (isPointerType(left) && isPointerType(right)) {
             if (op == TOKEN_MINUS && areSamePointerType(left, right)) {

@@ -2,7 +2,7 @@
 #define AST_HPP
 
 #include "common.hpp"
-#include "lexer.hpp" // For SourceLocation and TokenType
+#include "lexer.hpp" // For SourceLocation and Zig0TokenType
 #include "memory.hpp" // For DynamicArray
 
 // Forward-declare the main ASTNode struct so it can be used in the specific node structs.
@@ -237,7 +237,7 @@ struct ASTTupleLiteralNode {
 struct ASTCompoundAssignmentNode {
     ASTNode* lvalue;
     ASTNode* rvalue;
-    TokenType op;
+    Zig0TokenType op;
 };
 
 /**
@@ -250,7 +250,7 @@ struct ASTCompoundAssignmentNode {
 struct ASTBinaryOpNode {
     ASTNode* left;
     ASTNode* right;
-    TokenType op;
+    Zig0TokenType op;
 };
 
 /**
@@ -261,7 +261,7 @@ struct ASTBinaryOpNode {
  */
 struct ASTUnaryOpNode {
     ASTNode* operand;
-    TokenType op;
+    Zig0TokenType op;
 };
 
 /**

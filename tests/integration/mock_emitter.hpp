@@ -924,7 +924,7 @@ private:
         return std::string(op_str) + operand;
     }
 
-    const char* binaryOpToString(TokenType op) {
+    const char* binaryOpToString(Zig0TokenType op) {
         switch (op) {
             case TOKEN_PLUS: return "+";
             case TOKEN_MINUS: return "-";
@@ -966,7 +966,7 @@ public:
     std::string last_output_;
 private:
 
-    const char* unaryOpToString(TokenType op) {
+    const char* unaryOpToString(Zig0TokenType op) {
         switch (op) {
             case TOKEN_MINUS: return "-";
             case TOKEN_BANG: return "!";

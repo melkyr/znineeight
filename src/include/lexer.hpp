@@ -31,12 +31,12 @@ static inline bool isIdentifierChar(char c) {
  * @brief Defines the token types and structures for the RetroZig lexer.
  *
  * This file contains the core definitions for the lexical analysis phase of
- * the compiler, including the TokenType enum which represents all possible
+ * the compiler, including the Zig0TokenType enum which represents all possible
  * tokens in the Zig subset.
  */
 
 /**
- * @enum TokenType
+ * @enum Zig0TokenType
  * @brief Defines the different types of tokens that the lexer can produce.
  *
  * The enum is organized into logical groups for clarity:
@@ -46,7 +46,7 @@ static inline bool isIdentifierChar(char c) {
  * - Operators for expressions
  * - Delimiters for code structure
  */
-enum TokenType {
+enum Zig0TokenType {
     // Control Tokens
     TOKEN_EOF,              ///< End of the source file.
     TOKEN_ERROR,            ///< Represents a lexical error.
@@ -201,7 +201,7 @@ enum TokenType {
 struct Keyword {
     const char* name;
     size_t len;      // Optimized length field
-    TokenType type;
+    Zig0TokenType type;
 };
 
 /**
@@ -220,8 +220,8 @@ extern const int num_keywords;
  * a type, its location in the source file, and an optional value for literals.
  */
 struct Token {
-    /** @brief The type of the token, as defined by the TokenType enum. */
-    TokenType type;
+    /** @brief The type of the token, as defined by the Zig0TokenType enum. */
+    Zig0TokenType type;
 
     /** @brief The location (file, line, column) where the token was found. */
     SourceLocation location;

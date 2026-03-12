@@ -37,7 +37,7 @@ TEST_FUNC(Parser_CompoundAssignment_AllOperators) {
         "a &= 1", "a |= 1", "a ^= 1", "a <<= 1", "a >>= 1"
     };
 
-    TokenType expectedOps[] = {
+    Zig0TokenType expectedOps[] = {
         TOKEN_PLUS_EQUAL, TOKEN_MINUS_EQUAL, TOKEN_STAR_EQUAL,
         TOKEN_SLASH_EQUAL, TOKEN_PERCENT_EQUAL, TOKEN_AMPERSAND_EQUAL,
         TOKEN_PIPE_EQUAL, TOKEN_CARET_EQUAL, TOKEN_LARROW2_EQUAL,
