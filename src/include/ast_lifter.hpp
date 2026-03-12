@@ -167,14 +167,15 @@ private:
     ASTNode* createNodeAt(NodeType type, SourceLocation loc);
 
     // Lowering Helpers
-    ASTNode* lowerIfExpr(ASTNode* node, const char* temp_name);
-    ASTNode* lowerSwitchExpr(ASTNode* node, const char* temp_name);
-    void lowerTryExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping);
-    void lowerCatchExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
-    void lowerOrelseExpr(ASTNode* node, const char* temp_name, DynamicArray<ASTNode*>& out_stmts);
+    ASTNode* lowerIfExpr(ASTNode* node, Symbol* temp_sym);
+    ASTNode* lowerSwitchExpr(ASTNode* node, Symbol* temp_sym);
+    void lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping);
+    void lowerCatchExpr(ASTNode* node, Symbol* temp_sym, DynamicArray<ASTNode*>& out_stmts);
+    void lowerOrelseExpr(ASTNode* node, Symbol* temp_sym, DynamicArray<ASTNode*>& out_stmts);
     ASTNode* createYieldingStmt(ASTNode* expr, ASTNode* temp_ident, SourceLocation loc);
 
     void updateCaptureSymbols(ASTNode* node, Symbol* old_sym, Symbol* new_sym);
+    Symbol* createSymbol(const char* name, Type* type, bool is_const);
 
     // ABI Lowering Helpers
     void lowerExternCall(ASTNode** node_slot, ASTNode* parent);

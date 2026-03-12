@@ -163,6 +163,8 @@ int main(int argc, char* argv[]) {
         opts.enable_double_free_analysis = true;
         opts.enable_null_pointer_analysis = true;
         opts.enable_lifetime_analysis = true;
+        opts.debug_lifter = debug_lifter;
+        opts.debug_codegen = debug_codegen;
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource(input_file, source);
