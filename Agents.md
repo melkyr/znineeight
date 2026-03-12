@@ -27,6 +27,10 @@ We are implementing multi-module support and `@import` resolution, moving toward
 6. **Metadata Preparation Pass**: Ensures dependency-ordered type definitions in C headers.
 7. **Multi-File C89 Generation** (`CBackend` / `C89Emitter`)
 8. **Range Support**: Inclusive (`...`) and exclusive (`..`) ranges in `switch` and `for`. Expanded to `case` labels in C89.
+9. **Initializer Decomposition**: Decomposes struct/union initializers into field-by-field assignments for complex C89 l-values (array elements, member access, pointer dereferences).
+
+### Initializer Decomposition Responsibilities
+- **C89Emitter**: Implements `captureExpression` to safely stringify l-values and `emitInitializerAssignments` to perform the decomposition. Corrects precedence for pointer dereferences (e.g., `(*ptr).field`).
 
 ### Range Implementation Responsibilities
 - **Parser**: Creates `NODE_RANGE` for `...`/`..` tokens. Uses context flags to create `NODE_SWITCH_STMT` vs `NODE_SWITCH_EXPR`.

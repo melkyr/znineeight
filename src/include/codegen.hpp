@@ -362,6 +362,15 @@ public:
     const char* getMangledTypeName(Type* type);
 
     /**
+     * @brief Captures the C89 representation of an expression into a buffer.
+     * @param node The AST node to emit.
+     * @param buf The destination buffer.
+     * @param buf_size The size of the buffer.
+     * @return True if successful, false if truncation occurred.
+     */
+    bool captureExpression(const ASTNode* node, char* buf, size_t buf_size);
+
+    /**
      * @brief Ensures a slice type is defined and its helper is emitted.
      * @param type The slice type.
      */
