@@ -239,11 +239,12 @@ public:
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
             }
             case NODE_VAR_DECL: {
-                if (symbol_table_) {
-                    Symbol* sym = symbol_table_->findInAnyScope(node->as.var_decl->name);
-                    if (sym) {
-                        return emitVariableDeclaration(node->as.var_decl, sym);
-                    }
+                const Symbol* sym = node->as.var_decl->symbol;
+                if (!sym && symbol_table_) {
+                    sym = symbol_table_->findInAnyScope(node->as.var_decl->name);
+                }
+                if (sym) {
+                    return emitVariableDeclaration(node->as.var_decl, sym);
                 }
                 return "/* var " + std::string(node->as.var_decl->name) + " */";
             }
