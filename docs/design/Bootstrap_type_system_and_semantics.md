@@ -410,6 +410,8 @@ When visiting a function declaration (`ASTFnDeclNode`), the `TypeChecker` perfor
 
 5.  **Return Statement Validation:** After processing the signature, it proceeds to visit the function's body. When it encounters a `return` statement, it compares the type of the returned expression against the `current_fn_return_type` it recorded while visiting the signature, ensuring that the return value is compatible with the function's declared return type.
 
+6.  **Function Body Robustness**: To prevent crashes during the analysis of complex function bodies (e.g., those returning union literals), `visitFnBody` includes explicit null checks for the function symbol and its type. If the signature was not previously resolved, it is forced before proceeding with the body analysis.
+
 ### Function Calls
 
 -   The analyzer will verify that the number of arguments in a function call matches the number of parameters in the function's declaration.

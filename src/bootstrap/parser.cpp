@@ -1596,6 +1596,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
 
     symbol_table_->insert(fn_symbol);
     fn_decl->name = name_token.value.identifier;
+    fn_decl->loc = name_token.location;
     fn_decl->params = (DynamicArray<ASTNode*>*)arena_->alloc(sizeof(DynamicArray<ASTNode*>));
     if (!fn_decl->params) {
         error("Out of memory");

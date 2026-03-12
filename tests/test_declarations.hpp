@@ -1173,4 +1173,7 @@ bool test_Codegen_AnonymousUnion_Basic();
 bool test_Codegen_AnonymousUnion_Nested();
 bool test_Codegen_AnonymousStruct_Nested();
 
+// Batch 62: Regression tests
+TEST_FUNC(IssueSegfaultReturn);
+
 #endif // TEST_DECLARATIONS_HPP
