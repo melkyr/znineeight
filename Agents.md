@@ -28,6 +28,7 @@ We are implementing multi-module support and `@import` resolution, moving toward
 7. **Multi-File C89 Generation** (`CBackend` / `C89Emitter`)
 8. **Range Support**: Inclusive (`...`) and exclusive (`..`) ranges in `switch` and `for`. Expanded to `case` labels in C89.
 9. **Initializer Decomposition**: Decomposes struct/union initializers into field-by-field assignments for complex C89 l-values (array elements, member access, pointer dereferences).
+10. **Union Naked Tags**: Syntactic sugar in tagged unions allowing fields without explicit types (implicitly `: void`).
 
 ### Initializer Decomposition Responsibilities
 - **C89Emitter**: Implements `captureExpression` to safely stringify l-values and `emitInitializerAssignments` to perform the decomposition. Corrects precedence for pointer dereferences (e.g., `(*ptr).field`).
