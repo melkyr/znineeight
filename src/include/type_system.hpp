@@ -157,6 +157,18 @@ struct Type {
 };
 
 /**
+ * @brief Checks if a type is a tagged union (either TYPE_TAGGED_UNION or TYPE_UNION with is_tagged flag).
+ * @param type The type to check.
+ * @return True if it is a tagged union, false otherwise.
+ */
+static inline bool isTaggedUnion(const Type* type) {
+    if (!type) return false;
+    if (type->kind == TYPE_TAGGED_UNION) return true;
+    if (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) return true;
+    return false;
+}
+
+/**
  * @brief Resolves a string identifier into a pointer to a primitive Type.
  * @param name The string name of the type (e.g., "i32", "bool").
  * @return A pointer to the static Type object, or NULL if the name is not a

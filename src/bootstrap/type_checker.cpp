@@ -1327,11 +1327,11 @@ Type* TypeChecker::checkBinaryOpCompatibility(Type* left, Type* right, Zig0Token
  * @return Returns NULL as it is a placeholder.
  */
 Type* TypeChecker::findStructField(Type* struct_type, const char* field_name) {
-    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION) {
+    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION) {
         return NULL;
     }
 
-    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    DynamicArray<StructField>* fields = (struct_type->kind == TYPE_TAGGED_UNION) ? struct_type->as.tagged_union.payload_fields : struct_type->as.struct_details.fields;
     if (!fields) {
         return NULL;
     }
@@ -2355,8 +2355,11 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
         cond_type = resolvePlaceholder(cond_type);
     }
 
-    bool is_tagged_union = (cond_type->kind == TYPE_UNION && cond_type->as.struct_details.is_tagged);
-    Type* tag_type = is_tagged_union ? cond_type->as.struct_details.tag_type : NULL;
+    bool is_tagged_union = isTaggedUnion(cond_type);
+    Type* tag_type = NULL;
+    if (is_tagged_union) {
+        tag_type = (cond_type->kind == TYPE_TAGGED_UNION) ? cond_type->as.tagged_union.tag_type : cond_type->as.struct_details.tag_type;
+    }
 
     if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
         unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, cond->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Switch condition must be tagged union, integer, enum, or boolean type");
@@ -2640,11 +2643,19 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         declared_type = NULL;
     }
 
-    /* Reject anonymous structs/enums in variable declarations. */
+    /* Reject anonymous aggregates in variable declarations. */
     if (declared_type && !node->is_const) {
-        bool is_aggregate = (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION || declared_type->kind == TYPE_ENUM);
-        if (is_aggregate && !declared_type->as.struct_details.name) {
-            return reportAndReturnUndefined(node->type->loc, ERR_TYPE_MISMATCH, "anonymous structs/enums not allowed in variable declarations");
+        bool is_anon = false;
+        if (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION) {
+            is_anon = (declared_type->as.struct_details.name == NULL);
+        } else if (declared_type->kind == TYPE_ENUM) {
+            is_anon = (declared_type->as.enum_details.name == NULL);
+        } else if (declared_type->kind == TYPE_TAGGED_UNION) {
+            is_anon = (declared_type->as.tagged_union.name == NULL);
+        }
+
+        if (is_anon) {
+            return reportAndReturnUndefined(node->type->loc, ERR_TYPE_MISMATCH, "anonymous aggregates not allowed in variable declarations");
         }
     }
 

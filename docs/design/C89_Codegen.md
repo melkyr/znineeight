@@ -33,6 +33,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitAccess`: Manages array, member, and slice access.
     - `emitControlFlow`: Reports errors for control-flow expressions that have not been correctly lifted into statements.
     - `emitTaggedUnionDefinition`: Handles the emission of named tagged unions as C `struct`s.
+    - `emitTaggedUnionBody`: Emits the full body (tag + data union) of a tagged union.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
 #### Base Type Mapping
@@ -580,11 +581,13 @@ struct S {
 ```
 
 ### 6.4 Tagged Unions
-Tagged unions (`TYPE_TAGGED_UNION`) are emitted as C `struct`s containing a `tag` field and a `data` union.
+Tagged unions (both `TYPE_TAGGED_UNION` and `TYPE_UNION` with `is_tagged` flag) are emitted as C `struct`s containing a `tag` field and a `data` union. This is abstracted by the `isTaggedUnion()` helper in `type_system.hpp`.
 
 #### Emission Strategy
-The `C89Emitter::emitTaggedUnionDefinition` handles the emission of named tagged unions.
+The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handle tagged union emission.
 
+- **Named Tagged Unions**: Emitted as `struct Name`. The definition includes the tag and the payload union.
+- **Anonymous Tagged Unions**: Emitted inline where they are used (e.g., as struct fields) as an anonymous `struct { TagType tag; union { ... } data; }`.
 - **Layout**:
   ```c
   struct UnionName {
@@ -597,9 +600,9 @@ The `C89Emitter::emitTaggedUnionDefinition` handles the emission of named tagged
   };
   ```
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
-- **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected.
+- **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
 
-Example Zig:
+Example Zig (Named):
 ```zig
 const U = union(enum) {
     A: i32,
@@ -623,5 +626,25 @@ struct U {
         int A;
         double B;
     } data;
+};
+```
+
+Example Zig (Anonymous Field):
+```zig
+const S = struct {
+    u: union(enum) { a: i32, b: f32 },
+};
+```
+
+Generated C89:
+```c
+struct S {
+    struct {
+        int tag;
+        union {
+            int a;
+            float b;
+        } data;
+    } u;
 };
 ```
