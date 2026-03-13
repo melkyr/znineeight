@@ -14,6 +14,9 @@ int main(int argc, char* argv[]) {
         test_TaggedUnion_ImplicitEnum,
         test_TaggedUnion_ElseProng,
         test_TaggedUnion_ExplicitEnumCustomValues,
+        test_TaggedUnion_Emission_VarDecl,
+        test_TaggedUnion_Emission_ParamReturn,
+        test_TaggedUnion_Emission_Comprehensive,
         test_TaggedUnion_CaptureImmutability
     };
 

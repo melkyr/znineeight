@@ -376,6 +376,17 @@ bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray
      */
     bool isTypeComplete(Type* type);
 
+/**
+ * @brief Checks if a type is a tagged union.
+ * @param type The type to check.
+ * @return True if the type is a tagged union, false otherwise.
+ */
+static inline bool isTaggedUnion(const Type* type) {
+    if (!type) return false;
+    return (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) ||
+           (type->kind == TYPE_TAGGED_UNION);
+}
+
 // Accessor functions for global primitive types to prevent static init order fiasco.
 Type* get_g_type_void();
 Type* get_g_type_bool();

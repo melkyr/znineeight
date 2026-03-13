@@ -33,7 +33,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Enums**: `const E = enum(T) { Member, ... };`
 - **Unions**:
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
-    - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
+    - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload. Tagged unions are lowered to C `struct`s containing a tag and a data union.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
 - **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 

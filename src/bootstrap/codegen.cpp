@@ -317,15 +317,33 @@ void C89Emitter::emitBaseType(Type* type) {
                 emitStructBody(type);
             }
             break;
+        case TYPE_TAGGED_UNION:
+            if (!type->c_name && type->as.tagged_union.name) {
+                type->c_name = getC89GlobalName(type->as.tagged_union.name);
+            }
+            if (!type->c_name) {
+                error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Anonymous tagged unions are not supported in variable declarations");
+                plat_abort();
+            }
+            writeString("struct ");
+            writeString(type->c_name);
+            break;
         case TYPE_UNION:
             if (!type->c_name && type->as.struct_details.name) {
                 type->c_name = getC89GlobalName(type->as.struct_details.name);
             }
-            if (type->c_name) {
-                writeString("union ");
-                writeString(type->c_name);
+            if (isTaggedUnion(type)) {
+                if (!type->c_name) {
+                    error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Anonymous tagged unions are not supported in variable declarations");
+                    plat_abort();
+                }
+                writeString("struct ");
             } else {
                 writeString("union ");
+            }
+            if (type->c_name) {
+                writeString(type->c_name);
+            } else {
                 emitUnionBody(type);
             }
             break;

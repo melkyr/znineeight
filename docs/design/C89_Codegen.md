@@ -35,6 +35,29 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitTaggedUnionDefinition`: Handles the emission of named tagged unions as C `struct`s.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
+### 2.1 Tagged Union Emission
+Tagged unions are represented internally as either `TYPE_TAGGED_UNION` or `TYPE_UNION` with the `is_tagged` flag. To ensure C89 compatibility, they are always emitted as C `struct`s, never as C `union`s. This applies to both type definitions and variable declarations.
+
+The helper function `isTaggedUnion(Type*)` in `type_system.hpp` is used throughout the emitter to distinguish between bare unions (which use the `union` keyword) and tagged unions (which use the `struct` keyword).
+
+Example Zig:
+```zig
+const U = union(enum) { A: i32 };
+var u: U = undefined;
+```
+
+Generated C89:
+```c
+struct U {
+    enum U_Tag tag;
+    union {
+        int A;
+    } data;
+};
+
+struct U u;
+```
+
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 

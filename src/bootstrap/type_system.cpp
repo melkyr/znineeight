@@ -332,6 +332,8 @@ Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* pa
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
 
+    calculateTaggedUnionLayout(new_type);
+
     return new_type;
 }
 

@@ -1349,6 +1349,7 @@ The `parseUnionDeclaration` function is responsible for parsing union declaratio
 
 - It consumes the `union` and `{` tokens.
 - It determines if the union is **tagged** (either `union(enum)` or `union(TagType)`).
+- Tagged unions are represented in the AST by `ASTUnionDeclNode` with `is_tagged = true`. They are subsequently lowered to C `struct`s containing a tag and a data union.
 - It then enters a loop that continues as long as the next token is not `}`.
 - Inside the loop, it parses a single field:
     - If a colon follows the identifier, it parses the type expression normally.

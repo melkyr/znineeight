@@ -11,6 +11,16 @@ Below is a phased plan with pseudocode, test strategies, and what to watch for.
 
 ---
 
+### [COMPLETE] Task 0: Tagged Union Emission – Use struct Not union
+
+**Problem:** The compiler incorrectly used the `union` keyword in C variable declarations for tagged unions, which are internally emitted as C `struct`s, causing C89 compilation errors.
+
+**Fix:** Modified `C89Emitter::emitBaseType` and `CBackend` to use the `isTaggedUnion` helper and emit the `struct` keyword for tagged unions.
+
+**Files Impacted:** `type_system.hpp`, `codegen.cpp`, `cbackend.cpp`, `type_system.cpp`.
+
+---
+
 ### Task 1: Fix Anonymous Union Emission Bug
 
 **Goal:** Ensure that anonymous unions inside structs emit a valid C union body, not just `union /* anonymous */`.

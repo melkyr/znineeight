@@ -342,8 +342,8 @@ Bare unions represent a standard C union where all fields share the same memory 
 - **Size**: The maximum size of all payload fields, rounded up to the maximum alignment.
 - **Alignment**: The maximum alignment requirement among all payload fields.
 
-#### Tagged Unions (`TYPE_TAGGED_UNION`)
-Tagged unions (`union(enum)` or `union(TagType)`) are represented as a C `struct` containing a tag and a `union` of payloads.
+#### Tagged Unions (`TYPE_TAGGED_UNION` / `TYPE_UNION`)
+Tagged unions (`union(enum)` or `union(TagType)`) are represented as a C `struct` containing a tag and a `union` of payloads. In the RetroZig type system, they may be represented by the specific `TYPE_TAGGED_UNION` kind or by `TYPE_UNION` with the `is_tagged` flag set. The `isTaggedUnion(Type*)` helper function abstracts this distinction.
 
 **Syntactic Sugar (Naked Tags)**: In tagged unions, fields can be declared without an explicit type (e.g., `A,` instead of `A: void,`). The parser automatically treats these as carrying a `void` payload.
 
