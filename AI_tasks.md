@@ -2257,6 +2257,13 @@ Implementation steps (minimal):
     - **Runtime**: Added `__bootstrap_i32_from_u8` and improved `isSafeWidening` to support safe widening casts.
     - **Verification**: Verified via `issue_slice_return.zig` and the full test suite (Batches 1-62).
 
+242. [COMPLETE] **Task 9.18: Fix Member Access Resolution for Types and Modules**
+    - **Analysis**: Identified inconsistent unwrapping of `TYPE_TYPE` and `TYPE_PLACEHOLDER` in `visitMemberAccess` as the cause of failures when accessing union tags (e.g., `JsonValue.Null`).
+    - **Type Checker**: Enhanced `visitMemberAccess` and `visitIdentifier` to robustly unwrap meta-types and resolve placeholders.
+    - **Static Access**: Implemented logic to correctly identify static member access on type aliases and module-imported types.
+    - **Integration**: Fixed `@import` resolution in the integration test harness.
+    - **Verification**: Created Batch 67 covering cross-module tag access and type aliases. Verified no regressions in Batch 65.
+
 ---
 
 

@@ -801,6 +801,12 @@ private:
             }
         }
 
+        if (isTaggedUnion(type)) {
+            const char* name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
+            if (name) return "struct " + std::string(name);
+            return "struct /* anonymous tagged union */";
+        }
+
         if (type->kind == TYPE_STRUCT) {
             if (type->as.struct_details.name) {
                 return "struct " + std::string(type->as.struct_details.name);

@@ -1694,6 +1694,14 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
         return reportAndReturnUndefined(node->loc, ERR_UNDEFINED_VARIABLE, NULL);
     }
 
+    /* Store concrete type for type constants so visitMemberAccess can unwrap it. */
+    if (sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE && sym->details && sym->kind == SYMBOL_VARIABLE) {
+        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+        if (decl->initializer && decl->initializer->resolved_type) {
+            node->resolved_type = decl->initializer->resolved_type;
+        }
+    }
+
     node->as.identifier.symbol = sym;
 
     /* Resolve on demand if needed */
@@ -2822,10 +2830,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
         if (declared_type) {
-             char kbuf[16];
-             plat_i64_to_string(declared_type->kind, kbuf, sizeof(kbuf));
              existing_sym->symbol_type = declared_type;
-        } else {
         }
         existing_sym->details = node;
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
@@ -3276,6 +3281,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     DynamicArray<EnumMember>* members;
     size_t member_idx;
     Type* field_type;
+    bool is_type_access = false;
 
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
@@ -3285,40 +3291,41 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         base_type = resolvePlaceholder(base_type);
     }
 
-    /* If the base is a type constant (TYPE_TYPE), unwrap it. */
+    /* If the base is a type constant (TYPE_TYPE), unwrap it to get the concrete type. */
     if (base_type->kind == TYPE_TYPE) {
-        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
-            base_type = node->base->resolved_type;
-        } else if (node->base->type == NODE_IDENTIFIER) {
-            Symbol* sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
-            if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_TYPE && sym->details) {
-                ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                if (decl->initializer && decl->initializer->resolved_type) {
-                    base_type = decl->initializer->resolved_type;
+        is_type_access = true;
+
+        Type* unwrapped = node->base->resolved_type;
+        if (!unwrapped || unwrapped->kind == TYPE_TYPE) {
+            /* Try to find the concrete type through the symbol. */
+            if (node->base->type == NODE_IDENTIFIER) {
+                Symbol* sym = node->base->as.identifier.symbol;
+                if (!sym) sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
+                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
+                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                    if (decl->initializer) {
+                        unwrapped = decl->initializer->resolved_type;
+                    }
+                }
+            } else if (node->base->type == NODE_MEMBER_ACCESS) {
+                Symbol* sym = node->base->as.member_access->symbol;
+                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
+                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                    if (decl->initializer) {
+                        unwrapped = decl->initializer->resolved_type;
+                    }
                 }
             }
-        } else if (node->base->type == NODE_MEMBER_ACCESS) {
-            /* Handled recursively via node->base->resolved_type above */
-            base_type = node->base->resolved_type;
         }
 
-        if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
-            base_type = resolvePlaceholder(base_type);
+        if (unwrapped && unwrapped->kind == TYPE_PLACEHOLDER) {
+            unwrapped = resolvePlaceholder(unwrapped);
         }
 
-        /* If after resolution it is still TYPE_TYPE (e.g. from an @import),
-           we might need to look deeper into the symbol details. */
-        if (base_type && base_type->kind == TYPE_TYPE && node->base->type == NODE_MEMBER_ACCESS) {
-             Symbol* sym = node->base->as.member_access->symbol;
-             if (sym && sym->details) {
-                 ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                 if (decl->initializer && decl->initializer->resolved_type) {
-                     base_type = decl->initializer->resolved_type;
-                     if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
-                         base_type = resolvePlaceholder(base_type);
-                     }
-                 }
-             }
+        if (unwrapped && unwrapped->kind != TYPE_TYPE) {
+            base_type = unwrapped;
+        } else {
+            return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "Unable to unwrap type constant to concrete type");
         }
     }
 
@@ -3352,29 +3359,16 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 node->symbol = sym;
                 /* Ensure symbol is fully resolved. */
                 if (!sym->symbol_type && sym->details) {
+                    const char* saved_module = unit_.getCurrentModule();
+                    unit_.setCurrentModule(target_mod->name);
+                    TypeChecker target_checker(unit_);
+
                     if (sym->kind == SYMBOL_VARIABLE) {
-                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                        /* Visit the initializer to set its resolved_type. 
-                           We visit the initializer directly to avoid creating placeholders with NULL decl_node. */
-                        if (decl->initializer && !decl->initializer->resolved_type) {
-                            const char* saved_module = unit_.getCurrentModule();
-                            unit_.setCurrentModule(target_mod->name);
-                            TypeChecker target_checker(unit_);
-                            target_checker.visit(decl->initializer);
-                            unit_.setCurrentModule(saved_module);
-                        }
-                        /* If the initializer was resolved, set the symbol type. */
-                        if (decl->initializer && decl->initializer->resolved_type) {
-                            sym->symbol_type = (decl->initializer->resolved_type->kind == TYPE_TYPE) ?
-                                                get_g_type_type() : decl->initializer->resolved_type;
-                        }
+                        target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
                     } else if (sym->kind == SYMBOL_FUNCTION) {
-                        const char* saved_module = unit_.getCurrentModule();
-                        unit_.setCurrentModule(target_mod->name);
-                        TypeChecker target_checker(unit_);
                         target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
-                        unit_.setCurrentModule(saved_module);
                     }
+                    unit_.setCurrentModule(saved_module);
                 }
 
                 if (sym->symbol_type) {
@@ -3384,34 +3378,39 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                     }
 
                     /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
-                    if (result_type->kind == TYPE_TYPE && sym->details) {
+                    if (result_type->kind == TYPE_TYPE && sym->details && sym->kind == SYMBOL_VARIABLE) {
                         ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                        Type* unwrapped = NULL;
 
-                        /* Try initializer's resolved_type first (set by Fix #1). */
-                        if (decl->initializer && decl->initializer->resolved_type) {
-                            result_type = decl->initializer->resolved_type;
-                        }
-                        /* Fallback: visit the initializer to get the actual type. */
-                        else if (decl->initializer) {
+                        if (decl->initializer && decl->initializer->resolved_type && decl->initializer->resolved_type->kind != TYPE_TYPE) {
+                            unwrapped = decl->initializer->resolved_type;
+                        } else if (decl->initializer) {
                              const char* saved_module = unit_.getCurrentModule();
                              unit_.setCurrentModule(target_mod->name);
                              TypeChecker target_checker(unit_);
-                             Type* t = target_checker.visit(decl->initializer);
-                             if (t && t->kind == TYPE_TYPE && decl->initializer->resolved_type) {
-                                 result_type = decl->initializer->resolved_type;
-                             } else if (t) {
-                                 result_type = t;
+                             unwrapped = target_checker.visit(decl->initializer);
+                             if (unwrapped && unwrapped->kind == TYPE_TYPE && decl->initializer->resolved_type) {
+                                 unwrapped = decl->initializer->resolved_type;
                              }
                              unit_.setCurrentModule(saved_module);
                         }
 
-                        if (result_type && result_type->kind == TYPE_PLACEHOLDER) {
-                            result_type = resolvePlaceholder(result_type);
+                        if (unwrapped && unwrapped->kind != TYPE_TYPE) {
+                            if (unwrapped->kind == TYPE_PLACEHOLDER) {
+                                unwrapped = resolvePlaceholder(unwrapped);
+                            }
+
+                            const char* saved_module = unit_.getCurrentModule();
+                            unit_.setCurrentModule(target_mod->name);
+                            unwrapped = resolveAllPlaceholders(unwrapped);
+                            unit_.setCurrentModule(saved_module);
+
+                            parent->resolved_type = unwrapped;
+                            return get_g_type_type();
                         }
                     }
 
-                    /* Ensure all placeholders are resolved before returning to the importer. */
-                    if (result_type) {
+                    if (result_type && result_type->kind != TYPE_TYPE) {
                         const char* saved_module = unit_.getCurrentModule();
                         unit_.setCurrentModule(target_mod->name);
                         result_type = resolveAllPlaceholders(result_type);
@@ -3457,8 +3456,69 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* Fall through to error. */
     }
 
+    if (isTaggedUnion(base_type)) {
+        /* In Z98, member access on a tagged union type (not an instance)
+           resolves to its tag enum members. We detect 'type access' by
+           checking if the base expression is an identifier that resolved
+           directly to the union type (a type alias). */
+        bool is_static_access = is_type_access;
+        if (!is_static_access) {
+            if (node->base->type == NODE_IDENTIFIER) {
+                Symbol* sym = node->base->as.identifier.symbol;
+                if (sym && (sym->symbol_type == base_type || sym->symbol_type == get_g_type_type())) {
+                    is_static_access = true;
+                }
+            } else if (node->base->type == NODE_MEMBER_ACCESS) {
+                /* e.g., json.JsonValue */
+                if (node->base->resolved_type == base_type || (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE)) {
+                     /* Heuristic: if the base was a member access that resolved to a type, it's static. */
+                     is_static_access = true;
+                }
+            }
+        }
+
+        if (is_static_access) {
+            Type* tag_type = (base_type->kind == TYPE_TAGGED_UNION) ?
+                             base_type->as.tagged_union.tag_type : base_type->as.struct_details.tag_type;
+            if (tag_type && tag_type->kind == TYPE_ENUM) {
+                members = tag_type->as.enum_details.members;
+                found = false;
+                member_idx = 0;
+                if (members) {
+                    for (i = 0; i < members->length(); ++i) {
+                        if (identifiers_equal((*members)[i].name, node->field_name)) {
+                            found = true;
+                            member_idx = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (found) {
+                    /* Constant-fold to integer literal */
+                    parent->type = NODE_INTEGER_LITERAL;
+                    parent->as.integer_literal.value = (*members)[member_idx].value;
+                    parent->as.integer_literal.is_unsigned = true;
+                    parent->as.integer_literal.is_long = false;
+                    parent->as.integer_literal.resolved_type = tag_type;
+                    parent->as.integer_literal.original_name = (*members)[member_idx].name;
+                    parent->resolved_type = tag_type;
+                    return tag_type;
+                }
+
+                char msg_buffer[256];
+                char* current = msg_buffer;
+                size_t remaining = sizeof(msg_buffer);
+                safe_append(current, remaining, "union has no tag named '");
+                safe_append(current, remaining, node->field_name);
+                safe_append(current, remaining, "'");
+                return reportAndReturnUndefined(parent->loc, ERR_UNDEFINED_ENUM_MEMBER, msg_buffer);
+            }
+        }
+    }
+
     if (base_type->kind == TYPE_ENUM) {
-        /* Enum member access. */
+        /* Enum member access. Always static in Z98. */
         members = base_type->as.enum_details.members;
         found = false;
         member_idx = 0;
@@ -3484,7 +3544,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL */
         parent->type = NODE_INTEGER_LITERAL;
         parent->as.integer_literal.value = (*members)[member_idx].value;
-        parent->as.integer_literal.is_unsigned = false;
+        parent->as.integer_literal.is_unsigned = true;
         parent->as.integer_literal.is_long = false;
         parent->as.integer_literal.resolved_type = base_type;
         parent->as.integer_literal.original_name = (*members)[member_idx].name;

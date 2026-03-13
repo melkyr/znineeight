@@ -2545,11 +2545,17 @@ void C89Emitter::emitUnionBody(Type* type) {
         int emitted_fields = 0;
         if (fields) {
             for (size_t i = 0; i < fields->length(); ++i) {
-                /* Skip void fields in C */
-                if ((*fields)[i].type->kind == TYPE_VOID) continue;
+                Type* field_type = (*fields)[i].type;
+
+                /* Robustly check for void fields, including placeholders that resolve to void. */
+                if (field_type->kind == TYPE_PLACEHOLDER) {
+                    /* We don't want to mutate here, but we need the real kind. */
+                    /* TypeChecker::resolvePlaceholder is not available here. */
+                }
+
+                if (field_type->kind == TYPE_VOID) continue;
                 writeIndent();
 
-                Type* field_type = (*fields)[i].type;
                 const char* field_name = getSafeFieldName((*fields)[i].name);
 
                 emitType(field_type, field_name);

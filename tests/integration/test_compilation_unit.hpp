@@ -212,6 +212,10 @@ public:
             target_mod->ast_root = last_ast;
         }
 
+        // Pass 0.1: Resolve Imports
+        collectImports(last_ast, target_mod);
+        if (!resolveImports(target_mod)) return false;
+
         // Pass 0.25: Name Collision Detection
         NameCollisionDetector name_detector(*this);
         name_detector.check(last_ast);
