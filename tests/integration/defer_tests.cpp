@@ -84,7 +84,7 @@ TEST_FUNC(DeferIntegration_Break) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ { bar(); } break; } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ { bar(); } goto __loop_0_end; } }");
 }
 
 TEST_FUNC(DeferIntegration_LabeledBreak) {
@@ -113,7 +113,7 @@ TEST_FUNC(DeferIntegration_Continue) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ { bar(); } continue; } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ { bar(); } goto __loop_0_continue; } }");
 }
 
 TEST_FUNC(DeferIntegration_NestedContinue) {
@@ -129,7 +129,7 @@ TEST_FUNC(DeferIntegration_NestedContinue) {
         "}\n"
         "fn a() void {}\n"
         "fn b() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ { b(); } { a(); } continue; } } }");
+    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ { b(); } { a(); } goto __loop_0_continue; } } }");
 }
 
 TEST_FUNC(DeferIntegration_RejectReturn) {

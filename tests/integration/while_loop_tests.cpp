@@ -103,7 +103,7 @@ TEST_FUNC(WhileLoopIntegration_WithBreak) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { while (1) { break; } }");
+    return run_while_test(source, "foo", "void foo(void) { while (1) { goto __loop_0_end; } }");
 }
 
 TEST_FUNC(WhileLoopIntegration_WithContinue) {
@@ -115,7 +115,7 @@ TEST_FUNC(WhileLoopIntegration_WithContinue) {
         "        continue;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { int i = 0; while (i < 10) { i = i + 1; continue; } }");
+    return run_while_test(source, "foo", "void foo(void) { int i = 0; while (i < 10) { i = i + 1; goto __loop_0_continue; } }");
 }
 
 // --- Nesting and Scoping ---
@@ -158,7 +158,7 @@ TEST_FUNC(WhileLoopIntegration_ComplexCondition) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int a, int b) { while (a > 0 && b < 10) { break; } }");
+    return run_while_test(source, "foo", "void foo(int a, int b) { while (a > 0 && b < 10) { goto __loop_0_end; } }");
 }
 
 // --- Negative Tests ---
@@ -177,7 +177,7 @@ TEST_FUNC(WhileLoopIntegration_AllowBracelessWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) break;\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int b) { while (b) { break; } }");
+    return run_while_test(source, "foo", "void foo(int b) { while (b) { goto __loop_0_end; } }");
 }
 
 TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
