@@ -126,14 +126,22 @@ This unification reduces code duplication and ensures consistent behavior across
     ```
 - **While Loops**:
   - **Braceless Support**: Like `if`, braceless `while` bodies are normalized into blocks by the `ControlFlowLifter`.
-  - **Unlabeled**: Mapped to C `while (cond) { ... }`. Supports `while (cond) : (iter)` by emitting `iter` at the end of the loop body.
-  - **Labeled**: Mapped to a `goto`-based pattern to support multi-level jumps:
+  - **Loop Labeling Scheme**: Both `while` and `for` loops use a unified labeling scheme based on the loop's unique `label_id`.
+    - **Start**: `__loop_<id>_start`
+    - **Continue**: `__loop_<id>_continue`
+    - **End**: `__loop_<id>_end`
+  - **Unlabeled**: Plain loops without an iteration expression (`: (iter)`) and without a user label are emitted as standard C `while (cond) { ... }`.
+  - **Labeled or with Iteration Expression**: These loops are mapped to a `goto`-based pattern to support multi-level jumps and the Zig iteration step:
     ```c
-    __zig_label_L_0_start: ;
-    if (!(cond)) goto __zig_label_L_0_end;
-    { /* body */ }
-    goto __zig_label_L_0_start;
-    __zig_label_L_0_end: ;
+    __loop_0_start: ;
+    if (!(cond)) goto __loop_0_end;
+    {
+        /* body */
+    }
+    __loop_0_continue: ;
+    /* optional iteration expression */
+    goto __loop_0_start;
+    __loop_0_end: ;
     ```
 - **For Loops**: Translated to an equivalent `while` loop wrapped in a new block to handle capture variables and unique loop state.
   - **Braceless Support**: Braceless `for` bodies are normalized into blocks by the `ControlFlowLifter`.
@@ -163,8 +171,8 @@ This unification reduces code duplication and ensures consistent behavior across
     }
     ```
 - **Break/Continue**:
-  - **Unlabeled**: Mapped directly to C `break;` and `continue;`.
-  - **Labeled**: Mapped to `goto __zig_label_L_N_end;` and `goto __zig_label_L_N_start;` respectively.
+  - **Unlabeled**: Mapped directly to C `break;` and `continue;`, unless the loop requires labels (e.g., due to an iteration expression or being a `for` loop).
+  - **Labeled or requiring labels**: Mapped to `goto __loop_<id>_end;` for `break` and `goto __loop_<id>_continue;` (or `_start` if no iteration expr) for `continue`.
 - **Switch Statements**:
   - **Range Lowering Strategy**: Switch cases involving ranges (`start...end` or `start..end`) are expanded into individual C `case` labels.
     - Inclusive (`...`): All values from `start` to `end` (inclusive) get a label.
@@ -533,6 +541,13 @@ target.has_value = 0;
 
 ### Defer Interaction
 While `orelse` itself doesn't cause early returns (unlike `try`), the fallback expression (right side of `orelse`) can contain a `return` or `unreachable`. The emitter correctly handles these by executing any active `defer` statements before the `return` or emitting a panic for `unreachable`.
+
+### Defers and Loop Control Flow
+`defer` and `errdefer` statements interact with loop control flow (`break`, `continue`) as follows:
+- **Scope Exit**: When a `break` or `continue` is encountered, the emitter identifies all blocks being exited (from the current point up to the target loop).
+- **Execution Order**: Deferred statements for all these scopes are emitted in reverse order of their appearance (LIFO), innermost first.
+- **Jump**: After all relevant defers are emitted, the final `goto` to the loop's `_end` or `_continue` label is generated.
+- **Independence**: This mechanism relies on the `label_id` assigned by the `TypeChecker` and is independent of the specific C label naming scheme.
 
 ### 6.3 Anonymous Structs and Unions
 Zig allows defining anonymous structs and unions as types for fields (e.g., `data: union { a: i32, b: f32 }`). Standard C89 supports anonymous types if they are defined inline with the field declaration.

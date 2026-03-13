@@ -238,6 +238,10 @@ public:
                 }
                 return emitExpression(node->as.assignment->lvalue) + " = " + emitExpression(node->as.assignment->rvalue);
             }
+            case NODE_COMPOUND_ASSIGNMENT:
+                return emitExpression(node->as.compound_assignment->lvalue) + " " +
+                       binaryOpToString(node->as.compound_assignment->op) + "= " +
+                       emitExpression(node->as.compound_assignment->rvalue);
             case NODE_VAR_DECL: {
                 const Symbol* sym = node->as.var_decl->symbol;
                 if (!sym && symbol_table_) {
@@ -301,6 +305,7 @@ public:
         ss << "{ ";
         // Mock simplification of the complex for-to-while translation
         ss << getC89TypeName(get_g_type_usize()) << " __idx = 0; ";
+        ss << "__loop_" << node->label_id << "_start: ; ";
         ss << "while (__idx < /* len */) { ";
         if (node->item_name && plat_strcmp(node->item_name, "_") != 0) {
             Type* item_type = get_g_type_void();
@@ -319,7 +324,9 @@ public:
         } else {
             ss << emitExpression(node->body);
         }
-        ss << " __idx++; } }";
+        ss << " __loop_" << node->label_id << "_continue: ; ";
+        ss << "__idx++; goto __loop_" << node->label_id << "_start; } ";
+        ss << "__loop_" << node->label_id << "_end: ; }";
 
         return ss.str();
     }
@@ -372,11 +379,12 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        if (node->label) {
-            ss << "__zig_label_" << node->label << "_" << node->label_id << "_start: ; ";
-            ss << "if (!(" << emitExpression(node->condition) << ")) goto __zig_label_" << node->label << "_" << node->label_id << "_end; ";
+        bool has_continue_expr = (node->iter_expr != NULL);
+        if (node->label || has_continue_expr) {
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
         } else {
-            ss << "while (" << emitExpression(node->condition) << ") ";
+            ss << "while (" << (node->condition ? emitExpression(node->condition) : "1") << ") ";
         }
 
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
@@ -385,9 +393,13 @@ public:
             ss << emitExpression(node->body);
         }
 
-        if (node->label) {
-            ss << " goto __zig_label_" << node->label << "_" << node->label_id << "_start; ";
-            ss << "__zig_label_" << node->label << "_" << node->label_id << "_end: ;";
+        if (node->label || has_continue_expr) {
+            ss << " __loop_" << node->label_id << "_continue: ; ";
+            if (has_continue_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << "goto __loop_" << node->label_id << "_start; ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         }
 
         return ss.str();
@@ -417,8 +429,9 @@ public:
             if (!defers.empty()) ss << "/* defers for break */ " << defers;
         }
 
-        if (node->label) {
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_end;";
+        // Mock simplified: always use labeled break if ID is valid
+        if (node->target_label_id >= 0) {
+            ss << "goto __loop_" << node->target_label_id << "_end;";
         } else {
             ss << "break;";
         }
@@ -435,8 +448,12 @@ public:
             if (!defers.empty()) ss << "/* defers for continue */ " << defers;
         }
 
-        if (node->label) {
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_start;";
+        if (node->target_label_id >= 0) {
+            // Need to know if target loop has continue expr.
+            // Mock doesn't track this perfectly, so we'll heuristic it.
+            // For now, assume it might need _continue if it's not a plain while.
+            // Actually, real emitter now uses _continue for all labeled continues.
+            ss << "goto __loop_" << node->target_label_id << "_continue;";
         } else {
             ss << "continue;";
         }
@@ -926,11 +943,24 @@ private:
 
     const char* binaryOpToString(Zig0TokenType op) {
         switch (op) {
-            case TOKEN_PLUS: return "+";
-            case TOKEN_MINUS: return "-";
-            case TOKEN_STAR: return "*";
-            case TOKEN_SLASH: return "/";
-            case TOKEN_PERCENT: return "%";
+            case TOKEN_PLUS:
+            case TOKEN_PLUS_EQUAL:
+            case TOKEN_PLUSPERCENT:
+                return "+";
+            case TOKEN_MINUS:
+            case TOKEN_MINUS_EQUAL:
+            case TOKEN_MINUSPERCENT:
+                return "-";
+            case TOKEN_STAR:
+            case TOKEN_STAR_EQUAL:
+            case TOKEN_STARPERCENT:
+                return "*";
+            case TOKEN_SLASH:
+            case TOKEN_SLASH_EQUAL:
+                return "/";
+            case TOKEN_PERCENT:
+            case TOKEN_PERCENT_EQUAL:
+                return "%";
             case TOKEN_EQUAL_EQUAL: return "==";
             case TOKEN_BANG_EQUAL: return "!=";
             case TOKEN_LESS: return "<";
@@ -939,6 +969,21 @@ private:
             case TOKEN_GREATER_EQUAL: return ">=";
             case TOKEN_AND: return "&&";
             case TOKEN_OR: return "||";
+            case TOKEN_AMPERSAND:
+            case TOKEN_AMPERSAND_EQUAL:
+                return "&";
+            case TOKEN_PIPE:
+            case TOKEN_PIPE_EQUAL:
+                return "|";
+            case TOKEN_CARET:
+            case TOKEN_CARET_EQUAL:
+                return "^";
+            case TOKEN_LARROW2:
+            case TOKEN_LARROW2_EQUAL:
+                return "<<";
+            case TOKEN_RARROW2:
+            case TOKEN_RARROW2_EQUAL:
+                return ">>";
             default: return "??";
         }
     }

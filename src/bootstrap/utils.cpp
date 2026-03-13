@@ -56,6 +56,7 @@ bool isInternalCompilerIdentifier(const char* name) {
     if (plat_strncmp(name, "__return_", 9) == 0) return true;
     if (plat_strncmp(name, "__bootstrap_", 12) == 0) return true;
     if (plat_strncmp(name, "__zig_label_", 12) == 0) return true;
+    if (plat_strncmp(name, "__loop_", 7) == 0) return true;
     if (plat_strncmp(name, "__for_", 6) == 0) return true;
     if (plat_strncmp(name, "__make_slice_", 13) == 0) return true;
     if (plat_strncmp(name, "__implicit_ret", 14) == 0) return true;

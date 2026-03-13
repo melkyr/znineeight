@@ -886,6 +886,7 @@ The `parseWhileStatement` function is responsible for parsing a `while` loop. It
 - It consumes an optional label and colon, then the `while` token, followed by a parenthesized expression parsed by `parseExpression`.
 - It handles the optional continue expression ` : (expr)`.
 - It then parses a statement for the loop body using `parseStatement()`. Like `if`, this can be a block or a single statement, which is normalized into a `NODE_BLOCK_STMT` during the lifting pass.
+- **Normalization**: Braceless loop bodies (including `while-continue`) are normalized into blocks by the `ControlFlowLifter` before reaching the code generator.
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTDeferStmtNode`
@@ -989,6 +990,7 @@ The `parseForStatement` function is responsible for parsing a `for` loop. It adh
 - It checks for an optional comma followed by another identifier for the index capture variable.
 - It requires a closing `|` to end the capture list.
 - Finally, it parses a statement for the loop body using `parseStatement()`. Like `if`, this can be a block or a single statement, which is normalized during the lifting pass.
+- **Normalization**: Braceless loop bodies are normalized into blocks by the `ControlFlowLifter`.
 - Any deviation from this structure results in a fatal error with a specific message.
 
 ### `ASTReturnStmtNode`

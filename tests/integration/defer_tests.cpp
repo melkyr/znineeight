@@ -101,7 +101,7 @@ TEST_FUNC(DeferIntegration_LabeledBreak) {
         "fn a() void {}\n"
         "fn b() void {}";
     // Redundant a() at the end of outer block is acceptable as it is unreachable.
-    return run_defer_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { while (1) { /* defers for break */ { b(); } { a(); } goto __zig_label_outer_0_end; } { a(); } } goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { while (1) { /* defers for break */ { b(); } { a(); } goto __loop_0_end; } { a(); } } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_Continue) {
