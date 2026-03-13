@@ -59,7 +59,7 @@ TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
         "        continue :outer;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_continue; }  __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_continue; }  __loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
