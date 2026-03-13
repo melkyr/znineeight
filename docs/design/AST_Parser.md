@@ -887,6 +887,7 @@ The `parseWhileStatement` function is responsible for parsing a `while` loop. It
 - It handles the optional continue expression ` : (expr)`.
 - It then parses a statement for the loop body using `parseStatement()`. Like `if`, this can be a block or a single statement, which is normalized into a `NODE_BLOCK_STMT` during the lifting pass.
 - **Normalization**: Braceless loop bodies (including `while-continue`) are normalized into blocks by the `ControlFlowLifter` before reaching the code generator.
+- **Semicolon Sensitivity**: In the current implementation, braceless control flow in some contexts (like `switch` prongs) may require an explicit semicolon before a separator (e.g., `=> continue;,`).
 - Any deviation from this structure results in a fatal error.
 
 ### `ASTDeferStmtNode`

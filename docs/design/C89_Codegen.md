@@ -253,6 +253,8 @@ Tuple literals `.{ arg1, arg2 }` are supported primarily for `std.debug.print` l
 ### 4.6 Many-item Pointers ([*]T)
 Many-item pointers (e.g., `[*]u8`, `[*]const i32`) are supported in the bootstrap compiler. They represent pointers to zero or more items of type `T`, mapping directly to C's raw pointers (`T*`).
 
+- **Implicit Coercion**: String literals and arrays implicitly coerce to many-item pointers at function boundaries and assignments.
+
 #### Semantics
 - **Indexing**: `[*]T` supports indexing `ptr[i]`, returning a value of type `T`.
 - **Dereferencing**: `[*]T` supports the dereference operator `.*`, yielding the first element (equivalent to `ptr[0]`). Mapped to C `*ptr`.
@@ -581,6 +583,8 @@ struct S {
 
 ### 6.4 Tagged Unions
 Tagged unions (`TYPE_TAGGED_UNION`) are emitted as C `struct`s containing a `tag` field and a `data` union.
+
+**Known Bug**: The current code generator may incorrectly use the `union` keyword for local variable declarations of tagged union types, leading to C compilation errors. Tagged unions must always be declared using the `struct` keyword in C.
 
 #### Emission Strategy
 The `C89Emitter::emitTaggedUnionDefinition` handles the emission of named tagged unions.

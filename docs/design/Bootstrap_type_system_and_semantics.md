@@ -1584,3 +1584,13 @@ To ensure that types containing slices of themselves (e.g., `JsonValue` with `[]
 ### 24.2 For-Loop Iterator Stabilization
 A regression in the code generation for `for` loops was resolved by ensuring that the internal iterator pointer is emitted with the correct mutability.
 - **Internal Pointer Mutability**: In `C89Emitter::emitFor`, when an array is iterated, it is treated as a pointer. This pointer is now emitted as a mutable pointer (`is_const = false`) to ensure compatibility with various iteration patterns and C89 compiler expectations.
+
+## 25. Known Limitations & Stability Notes (Bootstrap Phase)
+
+As of the "Baptism of Fire" JSON parser test, the following limitations are known:
+
+- **Tagged Union Keyword Fix**: There is a known bug in the code generator where local variables of tagged union types may be incorrectly declared using the `union` keyword instead of `struct` in C.
+- **Recursive Slice Resolution**: Types that contain slices of themselves (e.g., `struct { v: []Self }`) may trigger "incomplete type" errors during field validation if the recursion is not immediately resolved.
+- **String-to-Slice Coercion**: Implicit coercion of string literals to `[]const u8` is currently unreliable when used as function arguments or in some multi-module contexts.
+- **Multi-Module Symbol Lookup**: The symbol resolution logic across modules via `@import` is sensitive to complex dependency cycles and may result in "undeclared identifier" errors during the code generation phase even if type checking passes.
+- **Constant Evaluation**: Character literals (e.g., `'0'`) are not currently recognized as compile-time constants for features like `switch` range bounds.
