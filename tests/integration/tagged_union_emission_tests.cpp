@@ -105,7 +105,7 @@ TEST_FUNC(TaggedUnionEmission_AnonymousField) {
     std::string actual = buffer;
     // Should contain the inline struct definition for field 'u'
     return actual.find("struct {\n") != std::string::npos &&
-           actual.find("int tag;") != std::string::npos &&
+           actual.find("enum /* anonymous */ tag;") != std::string::npos &&
            actual.find("union {\n") != std::string::npos;
 }
 

@@ -154,7 +154,7 @@ TEST_FUNC(Codegen_Global_AnonymousContainer_Error) {
     u32 file_id = unit.addSource("test.zig", "var s: struct { x: i32 } = .{ .x = 1 };");
 
     if (!unit.performTestPipeline(file_id)) {
-        return unit.hasErrorMatching("anonymous structs/enums not allowed in variable declarations");
+        return unit.hasErrorMatching("anonymous aggregates not allowed in variable declarations");
     }
     return false;
 }
