@@ -96,7 +96,7 @@ TEST_FUNC(StructIntegration_RejectAnonymousStruct) {
         return false;
     }
 
-    return unit.hasErrorMatching("anonymous structs");
+    return unit.hasErrorMatching("anonymous aggregates");
 }
 
 TEST_FUNC(StructIntegration_RejectStructMethods) {
