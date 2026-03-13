@@ -1476,19 +1476,13 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
     writeString(";\n");
 
-    char label_base[256];
-    char* lcur = label_base;
-    size_t lrem = sizeof(label_base);
-    safe_append(lcur, lrem, "__zig_label_");
-    safe_append(lcur, lrem, node->label ? node->label : "unnamed");
-    safe_append(lcur, lrem, "_");
-    char lid_buf[16];
-    plat_i64_to_string(node->label_id, lid_buf, sizeof(lid_buf));
-    safe_append(lcur, lrem, lid_buf);
+    const char* start_label = getLoopStartLabel(node->label_id);
+    const char* continue_label = getLoopContinueLabel(node->label_id);
+    const char* end_label = getLoopEndLabel(node->label_id);
 
     writeIndent();
-    writeString(label_base);
-    writeString("_start: ;\n");
+    writeString(start_label);
+    writeString(": ;\n");
 
         writeIndent();
         writeString("while (");
@@ -1566,8 +1560,8 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
             /* Continue label and Increment */
             writeIndent();
-            writeString(label_base);
-            writeString("_continue: ;\n");
+            writeString(continue_label);
+            writeString(": ;\n");
 
             writeIndent();
             writeString(idx_name);
@@ -1575,16 +1569,16 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
             writeIndent();
             writeString("goto ");
-            writeString(label_base);
-            writeString("_start;\n");
+            writeString(start_label);
+            writeString(";\n");
         }
 
         writeIndent();
         writeString("}\n");
 
         writeIndent();
-        writeString(label_base);
-        writeString("_end: ;\n");
+        writeString(end_label);
+        writeString(": ;\n");
     }
 
     writeIndent();
@@ -1609,19 +1603,13 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
     if (node->label || node->iter_expr) {
         loop_uses_labels_[node->label_id] = true;
-        char label_base[256];
-        char* cur = label_base;
-        size_t rem = sizeof(label_base);
-        safe_append(cur, rem, "__zig_label_");
-        safe_append(cur, rem, node->label ? node->label : "unnamed");
-        safe_append(cur, rem, "_");
-        char id_buf[16];
-        plat_i64_to_string(node->label_id, id_buf, sizeof(id_buf));
-        safe_append(cur, rem, id_buf);
+        const char* start_label = getLoopStartLabel(node->label_id);
+        const char* continue_label = getLoopContinueLabel(node->label_id);
+        const char* end_label = getLoopEndLabel(node->label_id);
 
         writeIndent();
-        writeString(label_base);
-        writeString("_start: ;\n");
+        writeString(start_label);
+        writeString(": ;\n");
 
         writeIndent();
         writeString("if (!(");
@@ -1631,8 +1619,8 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
             writeString("1");
         }
         writeString(")) goto ");
-        writeString(label_base);
-        writeString("_end;\n");
+        writeString(end_label);
+        writeString(";\n");
 
         if (node->body->type == NODE_BLOCK_STMT) {
             writeIndent();
@@ -1643,20 +1631,20 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         writeString("\n");
 
         writeIndent();
-        writeString(label_base);
-        writeString("_continue: ;\n");
+        writeString(continue_label);
+        writeString(": ;\n");
         if (node->iter_expr) {
             emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
         }
 
         writeIndent();
         writeString("goto ");
-        writeString(label_base);
-        writeString("_start;\n");
+        writeString(start_label);
+        writeString(";\n");
 
         writeIndent();
-        writeString(label_base);
-        writeString("_end: ;\n");
+        writeString(end_label);
+        writeString(": ;\n");
     } else {
         writeIndent();
         writeString("while (");
@@ -3175,6 +3163,36 @@ const char* C89Emitter::getMangledTypeName(Type* type) {
     return unit_.getStringInterner().intern(buf);
 }
 
+const char* C89Emitter::getLoopStartLabel(int id) {
+    char buf[64];
+    plat_strcpy(buf, "__loop_");
+    char id_buf[16];
+    plat_i64_to_string(id, id_buf, sizeof(id_buf));
+    plat_strcat(buf, id_buf);
+    plat_strcat(buf, "_start");
+    return unit_.getStringInterner().intern(buf);
+}
+
+const char* C89Emitter::getLoopContinueLabel(int id) {
+    char buf[64];
+    plat_strcpy(buf, "__loop_");
+    char id_buf[16];
+    plat_i64_to_string(id, id_buf, sizeof(id_buf));
+    plat_strcat(buf, id_buf);
+    plat_strcat(buf, "_continue");
+    return unit_.getStringInterner().intern(buf);
+}
+
+const char* C89Emitter::getLoopEndLabel(int id) {
+    char buf[64];
+    plat_strcpy(buf, "__loop_");
+    char id_buf[16];
+    plat_i64_to_string(id, id_buf, sizeof(id_buf));
+    plat_strcat(buf, id_buf);
+    plat_strcat(buf, "_end");
+    return unit_.getStringInterner().intern(buf);
+}
+
 void C89Emitter::emitEscapedByte(unsigned char c, bool is_char_literal) {
     switch (c) {
         case '\a': write("\\a", 2); return;
@@ -3396,17 +3414,9 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        char label_buf[256];
-        char* cur = label_buf;
-        size_t rem = sizeof(label_buf);
-        safe_append(cur, rem, "goto __zig_label_");
-        safe_append(cur, rem, node->label ? node->label : "unnamed");
-        safe_append(cur, rem, "_");
-        char id_buf[16];
-        plat_i64_to_string(target_id, id_buf, sizeof(id_buf));
-        safe_append(cur, rem, id_buf);
-        safe_append(cur, rem, "_end;\n");
-        writeString(label_buf);
+        writeString("goto ");
+        writeString(getLoopEndLabel(target_id));
+        writeString(";\n");
     } else {
         writeString("break;\n");
     }
@@ -3433,21 +3443,13 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        char label_buf[256];
-        char* cur = label_buf;
-        size_t rem = sizeof(label_buf);
-        safe_append(cur, rem, "goto __zig_label_");
-        safe_append(cur, rem, node->label ? node->label : "unnamed");
-        safe_append(cur, rem, "_");
-        char id_buf[16];
-        plat_i64_to_string(target_id, id_buf, sizeof(id_buf));
-        safe_append(cur, rem, id_buf);
+        writeString("goto ");
         if (has_continue_expr) {
-            safe_append(cur, rem, "_continue;\n");
+            writeString(getLoopContinueLabel(target_id));
         } else {
-            safe_append(cur, rem, "_start;\n");
+            writeString(getLoopStartLabel(target_id));
         }
-        writeString(label_buf);
+        writeString(";\n");
     } else {
         writeString("continue;\n");
     }

@@ -3,4 +3,4 @@
 
 /* Master Single Translation Unit (STU) file */
 
-#include "issue_nested_extern.c"
+#include "wcl_test.c"

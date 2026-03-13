@@ -372,9 +372,9 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        if (node->label) {
-            ss << "__zig_label_" << node->label << "_" << node->label_id << "_start: ; ";
-            ss << "if (!(" << emitExpression(node->condition) << ")) goto __zig_label_" << node->label << "_" << node->label_id << "_end; ";
+        if (node->label || node->iter_expr) {
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "if (!(" << emitExpression(node->condition) << ")) goto __loop_" << node->label_id << "_end; ";
         } else {
             ss << "while (" << emitExpression(node->condition) << ") ";
         }
@@ -385,9 +385,13 @@ public:
             ss << emitExpression(node->body);
         }
 
-        if (node->label) {
-            ss << " goto __zig_label_" << node->label << "_" << node->label_id << "_start; ";
-            ss << "__zig_label_" << node->label << "_" << node->label_id << "_end: ;";
+        if (node->label || node->iter_expr) {
+            ss << "__loop_" << node->label_id << "_continue: ; ";
+            if (node->iter_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << " goto __loop_" << node->label_id << "_start; ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         }
 
         return ss.str();
@@ -417,8 +421,9 @@ public:
             if (!defers.empty()) ss << "/* defers for break */ " << defers;
         }
 
-        if (node->label) {
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_end;";
+        // Always check if the loop uses labels (for simplicity in mock, just use goto if target_label_id is valid)
+        if (node->target_label_id >= 0) {
+            ss << "goto __loop_" << node->target_label_id << "_end;";
         } else {
             ss << "break;";
         }
@@ -435,8 +440,8 @@ public:
             if (!defers.empty()) ss << "/* defers for continue */ " << defers;
         }
 
-        if (node->label) {
-            ss << "goto __zig_label_" << node->label << "_" << node->target_label_id << "_start;";
+        if (node->target_label_id >= 0) {
+            ss << "goto __loop_" << node->target_label_id << "_continue;";
         } else {
             ss << "continue;";
         }

@@ -137,7 +137,7 @@ TEST_FUNC(BracelessControlFlow_ForBreak) {
     if (!unit.performTestPipeline(file_id)) return false;
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string actual = emitter.emitFnDecl(unit.extractFunctionDeclaration("foo"));
-    if (actual.find("{ if (item > 0) { break; } }") == std::string::npos) {
+    if (actual.find("{ if (item > 0) { goto __loop_0_end; } }") == std::string::npos) {
         printf("FAIL: Braceless for with if-break not wrapped correctly.\nActual: %s\n", actual.c_str());
         return false;
     }

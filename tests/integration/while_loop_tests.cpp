@@ -49,7 +49,7 @@ TEST_FUNC(WhileLoopIntegration_LabeledWhile) {
         "        break :outer;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { goto __zig_label_outer_0_end; }  goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+    return run_while_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_end; } __loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
@@ -59,7 +59,7 @@ TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
         "        continue :outer;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; { goto __zig_label_outer_0_start; }  goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+    return run_while_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_continue; } __loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
@@ -73,9 +73,9 @@ TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
         "}";
     // outer: id 0, inner: id 1
     return run_while_test(source, "foo",
-        "void foo(void) { __zig_label_outer_0_start: ; if (!(1)) goto __zig_label_outer_0_end; "
-        "{ __zig_label_inner_1_start: ; if (!(1)) goto __zig_label_inner_1_end; { goto __zig_label_outer_0_end; }  goto __zig_label_inner_1_start; __zig_label_inner_1_end: ; } "
-        " goto __zig_label_outer_0_start; __zig_label_outer_0_end: ; }");
+        "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; "
+        "{ __loop_1_start: ; if (!(1)) goto __loop_1_end; { goto __loop_0_end; } __loop_1_continue: ;  goto __loop_1_start; __loop_1_end: ; } "
+        "__loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_IntCondition) {

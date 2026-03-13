@@ -1176,4 +1176,7 @@ bool test_Codegen_AnonymousStruct_Nested();
 // Batch 62: Regression tests
 TEST_FUNC(IssueSegfaultReturn);
 
+// Batch 64: While Continue Labels
+TEST_FUNC(WhileContinueLabel);
+
 #endif // TEST_DECLARATIONS_HPP

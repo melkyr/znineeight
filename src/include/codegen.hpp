@@ -497,6 +497,10 @@ private:
     void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const ASTNode* rvalue);
     void emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type);
 
+    const char* getLoopStartLabel(int id);
+    const char* getLoopContinueLabel(int id);
+    const char* getLoopEndLabel(int id);
+
     class IndentScope {
     public:
         IndentScope(C89Emitter& emitter) : emitter_(emitter) { emitter_.indent(); }
