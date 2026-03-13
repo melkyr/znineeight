@@ -572,7 +572,6 @@ private:
     SourceLocation current_loc_;
 
     DynamicArray<int> loop_id_stack_;
-    bool loop_has_continue_expr_[1024];
     bool loop_uses_labels_[1024];
 
     // Prevent copying

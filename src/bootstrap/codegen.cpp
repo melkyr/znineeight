@@ -18,7 +18,6 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
-    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
@@ -33,7 +32,6 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       loop_id_stack_(unit.getArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
-    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
@@ -48,7 +46,6 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
-    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
@@ -100,7 +97,6 @@ void C89Emitter::emitPrologue() {
 void C89Emitter::beginFunction() {
     var_alloc_.reset();
     for_loop_counter_ = 0;
-    plat_memset(loop_has_continue_expr_, 0, sizeof(loop_has_continue_expr_));
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
     loop_id_stack_.clear();
 }
@@ -1398,7 +1394,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
 
     loop_id_stack_.append(node->label_id);
-    loop_has_continue_expr_[node->label_id] = true;
     loop_uses_labels_[node->label_id] = true;
 
     for_loop_counter_++;
@@ -1597,9 +1592,6 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     }
 
     loop_id_stack_.append(node->label_id);
-    if (node->iter_expr) {
-        loop_has_continue_expr_[node->label_id] = true;
-    }
 
     if (node->label || node->iter_expr) {
         loop_uses_labels_[node->label_id] = true;
@@ -3031,7 +3023,7 @@ const char* C89Emitter::getSafeFieldName(const char* name) {
 }
 
 const char* C89Emitter::getLoopLabel(int id, const char* suffix) {
-    static char buf[64];
+    char buf[64];
     char num_buf[16];
     plat_i64_to_string(id, num_buf, sizeof(num_buf));
     plat_strcpy(buf, "__loop_");
@@ -3428,20 +3420,14 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
         target_id = loop_id_stack_.back();
     }
 
-    bool has_continue_expr = false;
     bool uses_labels = false;
     if (target_id >= 0 && target_id < 1024) {
-        has_continue_expr = loop_has_continue_expr_[target_id];
         uses_labels = loop_uses_labels_[target_id];
     }
 
     if (node->label || uses_labels) {
         writeString("goto ");
-        if (has_continue_expr) {
-            writeString(getLoopContinueLabel(target_id));
-        } else {
-            writeString(getLoopStartLabel(target_id));
-        }
+        writeString(getLoopContinueLabel(target_id));
         writeString(";\n");
     } else {
         writeString("continue;\n");
