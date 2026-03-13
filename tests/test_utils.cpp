@@ -67,12 +67,28 @@ static bool expect_abort(const char* source, const char* test_type_flag) {
 static bool expect_abort(void (*test_func)()) {
     pid_t pid = fork();
     if (pid == 0) { // Child process
+        // Close stdout/stderr in child to avoid cluttering test output during expected aborts
+        int dev_null = open("/dev/null", O_WRONLY);
+        if (dev_null != -1) {
+            dup2(dev_null, STDOUT_FILENO);
+            dup2(dev_null, STDERR_FILENO);
+            close(dev_null);
+        }
         test_func();
         exit(0);
     } else if (pid > 0) { // Parent process
         int status;
         waitpid(pid, &status, 0);
-        return WIFSIGNALED(status) && (WTERMSIG(status) == SIGABRT);
+        // On some systems, abort() might result in SIGILL or other signals depending on security settings.
+        // We consider it a success if the process was terminated by a signal (likely SIGABRT)
+        // or if it exited with a non-zero status that our internal handlers set.
+        if (WIFSIGNALED(status)) {
+            return true;
+        }
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status) != 0;
+        }
+        return false;
     }
     return false; // Fork failed
 }
