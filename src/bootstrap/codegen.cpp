@@ -1195,10 +1195,14 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
     }
 }
 
-static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
+bool C89Emitter::evaluateSimpleConstant(const ASTNode* node, i64* out_value) const {
     if (!node) return false;
     if (node->type == NODE_INTEGER_LITERAL) {
         *out_value = (i64)node->as.integer_literal.value;
+        return true;
+    }
+    if (node->type == NODE_CHAR_LITERAL) {
+        *out_value = (i64)node->as.char_literal.value;
         return true;
     }
     if (node->type == NODE_BOOL_LITERAL) {
@@ -1214,6 +1218,16 @@ static bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) {
     }
     if (node->type == NODE_PAREN_EXPR) {
         return evaluateSimpleConstant(node->as.paren_expr.expr, out_value);
+    }
+    if (node->type == NODE_IDENTIFIER) {
+        SymbolTable& table = unit_.getSymbolTable(module_name_);
+        Symbol* sym = table.lookup(node->as.identifier.name);
+        if (sym && sym->kind == SYMBOL_VARIABLE && sym->details) {
+            ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+            if (decl->is_const && decl->initializer) {
+                return evaluateSimpleConstant(decl->initializer, out_value);
+            }
+        }
     }
     return false;
 }

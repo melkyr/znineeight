@@ -128,6 +128,7 @@ Memory is reclaimed by resetting or destroying the arena.
     - **Bounds**: Must be compile-time constants of the same type as the switch condition.
     - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
     - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
+    - **Character Literals**: Character literals (e.g., `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
     - **Limit**: To prevent excessive C code generation, each range is limited to 1000 individual case labels.
   - **Else**: An `else` prong is **mandatory** in all switch expressions.
   - **Grammar**:

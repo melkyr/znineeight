@@ -188,6 +188,7 @@ This unification reduces code duplication and ensures consistent behavior across
           writeString(":\n");
       }
       ```
+    - **Character Literals**: Character literals (e.g., `'a'...'z'`) in ranges are emitted as their integer ASCII values (e.g., `case 97:` through `case 122:`). Character literals are also supported in other constant evaluation contexts, resolved to their integer values.
     - **Limit**: Expansion is limited to 1000 labels per range to prevent excessive code bloat.
   - **Tagged Union Capture**: When switching on a tagged union, the emitter generates a block for each case that has a capture variable.
     ```c

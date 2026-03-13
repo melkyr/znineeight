@@ -522,6 +522,8 @@ When visiting expressions, the `TypeChecker` determines the resulting type of th
 
 -   **Identifiers:** The type of an identifier is determined by looking up its symbol in the `SymbolTable`. If the symbol is not found, an `ERR_UNDEFINED_VARIABLE` error is reported.
 
+- **Character Literals**: `TypeChecker::evaluateConstantExpression` now correctly handles `NODE_CHAR_LITERAL`. The character value is cast to `i64` and returned as a constant value, enabling the use of character ranges in `switch` statements and other constant contexts.
+
 -   **Binary Operations:**
     -   **Arithmetic (`+`, `-`, `*`, `/`, `%`):** Both operands must be of the same numeric type. The resulting type is the same as the operand types. Operations between different numeric types (e.g., `i32` and `f64`) are not allowed.
     -   **Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`):** Both operands must be of the same numeric type. The resulting type is always `bool`.
@@ -575,7 +577,7 @@ To clarify the current capabilities of the type checker and guide future develop
             -   `-2147483648` to `2147483647`: `i32`
             -   Larger values or with `l` suffix: `i64`
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
-    -   **Character Literals:** A character literal (e.g., `'a'`) is inferred as type `u8`.
+- **Character Literals**: A character literal (e.g., `'a'`) is inferred as type `u8`. Character literals are fully supported in constant expression evaluation (constant folding).
     -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters). It can be implicitly coerced to a slice (`[]const u8`) or a many-item pointer (`[*]const u8`).
     -   **Memory Overhead:** The validation of literal types is a stateless process within the `TypeChecker`. It is based on the value and syntax of the literal itself and does not require the creation of any new, persistent data structures or heap allocations, thus adhering to the project's strict memory constraints.
 

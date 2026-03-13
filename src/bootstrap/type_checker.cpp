@@ -5248,6 +5248,10 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
             *out_value = (i64)node->as.integer_literal.value;
             return true;
 
+        case NODE_CHAR_LITERAL:
+            *out_value = (i64)node->as.char_literal.value;
+            return true;
+
         case NODE_UNARY_OP: {
             if (node->as.unary_op.op == TOKEN_MINUS) {
                 i64 operand_value;

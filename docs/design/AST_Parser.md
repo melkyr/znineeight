@@ -395,10 +395,10 @@ Represents a single character literal.
     /**
      * @struct ASTCharLiteralNode
      * @brief Represents a character literal.
-     * @var ASTCharLiteralNode::value The character value.
+     * @var ASTCharLiteralNode::value The character value (Unicode codepoint).
      */
     struct ASTCharLiteralNode {
-        char value;
+        u32 value;
     };
     ```
 
