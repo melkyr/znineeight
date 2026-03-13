@@ -299,6 +299,11 @@ public:
     void emitTaggedUnionPayloadBody(Type* type);
 
     /**
+     * @brief Emits the full body of a tagged union (tag + payload union).
+     */
+    void emitTaggedUnionBody(Type* type);
+
+    /**
      * @brief Returns true if the expression is a C89 constant initializer.
      * @param node The expression node.
      */

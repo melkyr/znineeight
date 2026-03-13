@@ -1,20 +1,27 @@
-#include "test_declarations.hpp"
-#include "test_runner_main.hpp"
+#include <cstdio>
+#include "test_framework.hpp"
 
-TEST_FUNC(WhileContinue_Braceless);
-TEST_FUNC(WhileContinue_Labeled);
-TEST_FUNC(ForLoop_Continue);
-TEST_FUNC(Loop_Defer_Continue);
-TEST_FUNC(Nested_Loop_Labeled_Continue);
+// Tagged Union Emission Tests
+bool test_TaggedUnionEmission_Named();
+bool test_TaggedUnionEmission_AnonymousField();
+bool test_TaggedUnionEmission_Return();
+bool test_TaggedUnionEmission_Param();
+bool test_TaggedUnionEmission_VoidField();
+bool test_TaggedUnionEmission_NakedTag();
 
-int main(int argc, char* argv[]) {
-    bool (*tests[])() = {
-        test_WhileContinue_Braceless,
-        test_WhileContinue_Labeled,
-        test_ForLoop_Continue,
-        test_Loop_Defer_Continue,
-        test_Nested_Loop_Labeled_Continue
-    };
+int main() {
+    int passed = 0;
+    int total = 0;
 
-    return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
+    printf("Running Batch 65: Tagged Union Emission Tests\n");
+
+    total++; if (test_TaggedUnionEmission_Named()) passed++;
+    total++; if (test_TaggedUnionEmission_AnonymousField()) passed++;
+    total++; if (test_TaggedUnionEmission_Return()) passed++;
+    total++; if (test_TaggedUnionEmission_Param()) passed++;
+    total++; if (test_TaggedUnionEmission_VoidField()) passed++;
+    total++; if (test_TaggedUnionEmission_NakedTag()) passed++;
+
+    printf("Batch 65 Results: %d/%d passed\n", passed, total);
+    return (passed == total) ? 0 : 1;
 }

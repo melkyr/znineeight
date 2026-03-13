@@ -235,6 +235,7 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
 - **Tagged Unions**: `union(enum)` and switch captures are **supported**.
+- **Anonymous Tagged Unions**: Tagged unions defined inline (e.g., as struct fields) are supported for emission but restricted by the TypeChecker in variable declarations.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.

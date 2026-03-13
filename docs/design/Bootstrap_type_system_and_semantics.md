@@ -49,7 +49,8 @@ enum TypeKind {
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
     TYPE_TYPE,
-    TYPE_ANYTYPE
+    TYPE_ANYTYPE,
+    TYPE_TAGGED_UNION
 };
 ```
 
@@ -115,6 +116,8 @@ struct Type {
 
         struct StructDetails {
             DynamicArray<StructField>* fields;
+            bool is_tagged;
+            Type* tag_type;
         } struct_details;
 
         struct {
@@ -342,8 +345,8 @@ Bare unions represent a standard C union where all fields share the same memory 
 - **Size**: The maximum size of all payload fields, rounded up to the maximum alignment.
 - **Alignment**: The maximum alignment requirement among all payload fields.
 
-#### Tagged Unions (`TYPE_TAGGED_UNION`)
-Tagged unions (`union(enum)` or `union(TagType)`) are represented as a C `struct` containing a tag and a `union` of payloads.
+#### Tagged Unions
+Tagged unions (represented by `TYPE_TAGGED_UNION` or `TYPE_UNION` with the `is_tagged` flag) are emitted as a C `struct` containing a tag and a `union` of payloads. This dual representation exists for historical reasons; use the `isTaggedUnion(const Type*)` helper to detect them consistently.
 
 **Syntactic Sugar (Naked Tags)**: In tagged unions, fields can be declared without an explicit type (e.g., `A,` instead of `A: void,`). The parser automatically treats these as carrying a `void` payload.
 
