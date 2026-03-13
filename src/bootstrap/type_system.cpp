@@ -607,20 +607,22 @@ void refreshLayout(Type* t) {
 }
 
 void calculateTaggedUnionLayout(Type* type) {
-    if (type->kind != TYPE_TAGGED_UNION) return;
+    if (!isTaggedUnion(type)) return;
+
     /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
     size_t tag_align = 4;
     size_t tag_size = 4;
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
 
-    if (type->as.tagged_union.tag_type) {
-        tag_size = type->as.tagged_union.tag_type->size;
-        tag_align = type->as.tagged_union.tag_type->alignment;
+    if (tag_type) {
+        tag_size = tag_type->size;
+        tag_align = tag_type->alignment;
     }
 
     /* union part: max of field sizes and alignments */
     size_t union_align = 1;
     size_t union_size = 0;
-    DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+    DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
     if (fields) {
         for (size_t i = 0; i < fields->length(); ++i) {
             StructField& field = (*fields)[i];
@@ -648,6 +650,11 @@ void calculateTaggedUnionLayout(Type* type) {
 }
 
 void calculateStructLayout(Type* struct_type) {
+    if (isTaggedUnion(struct_type)) {
+        calculateTaggedUnionLayout(struct_type);
+        return;
+    }
+
     if (struct_type->kind == TYPE_UNION) {
         DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
         size_t max_size = 0;

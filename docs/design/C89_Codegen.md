@@ -33,6 +33,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitAccess`: Manages array, member, and slice access.
     - `emitControlFlow`: Reports errors for control-flow expressions that have not been correctly lifted into statements.
     - `emitTaggedUnionDefinition`: Handles the emission of named tagged unions as C `struct`s.
+    - `emitTaggedUnionBody`: Emits the `struct` body for a tagged union.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
 ### 2.1 Tagged Union Emission
@@ -40,6 +41,30 @@ Tagged unions are represented internally as either `TYPE_TAGGED_UNION` or `TYPE_
 
 The helper function `isTaggedUnion(Type*)` in `type_system.hpp` is used throughout the emitter to distinguish between bare unions (which use the `union` keyword) and tagged unions (which use the `struct` keyword).
 
+#### Anonymous Tagged Unions
+Anonymous tagged unions (e.g., inside a struct) are emitted as inlined C `struct`s.
+
+Example Zig:
+```zig
+const S = struct {
+    u: union(enum) { a: i32, b: f32 },
+};
+```
+
+Generated C89:
+```c
+struct S {
+    struct {
+        enum S_u_Tag tag;
+        union {
+            int a;
+            float b;
+        } data;
+    } u;
+};
+```
+
+#### Named Tagged Unions
 Example Zig:
 ```zig
 const U = union(enum) { A: i32 };

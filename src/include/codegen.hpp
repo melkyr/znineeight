@@ -294,6 +294,11 @@ public:
     void emitTaggedUnionDefinition(Type* type);
 
     /**
+     * @brief Emits the body of a tagged union (struct { tag; union { ... } data; }).
+     */
+    void emitTaggedUnionBody(Type* type);
+
+    /**
      * @brief Emits the body of a tagged union payload union.
      */
     void emitTaggedUnionPayloadBody(Type* type);

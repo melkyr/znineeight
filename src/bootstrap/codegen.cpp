@@ -321,22 +321,18 @@ void C89Emitter::emitBaseType(Type* type) {
             if (!type->c_name && type->as.tagged_union.name) {
                 type->c_name = getC89GlobalName(type->as.tagged_union.name);
             }
-            if (!type->c_name) {
-                error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Anonymous tagged unions are not supported in variable declarations");
-                plat_abort();
-            }
             writeString("struct ");
-            writeString(type->c_name);
+            if (type->c_name) {
+                writeString(type->c_name);
+            } else {
+                emitTaggedUnionBody(type);
+            }
             break;
         case TYPE_UNION:
             if (!type->c_name && type->as.struct_details.name) {
                 type->c_name = getC89GlobalName(type->as.struct_details.name);
             }
             if (isTaggedUnion(type)) {
-                if (!type->c_name) {
-                    error_handler_.report(ERR_UNSUPPORTED_FEATURE, current_loc_, "Anonymous tagged unions are not supported in variable declarations");
-                    plat_abort();
-                }
                 writeString("struct ");
             } else {
                 writeString("union ");
@@ -344,7 +340,11 @@ void C89Emitter::emitBaseType(Type* type) {
             if (type->c_name) {
                 writeString(type->c_name);
             } else {
-                emitUnionBody(type);
+                if (isTaggedUnion(type)) {
+                    emitTaggedUnionBody(type);
+                } else {
+                    emitUnionBody(type);
+                }
             }
             break;
         case TYPE_ENUM:
@@ -2576,12 +2576,12 @@ void C89Emitter::emitUnionBody(Type* type) {
 }
 
 void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
-    if (!type || type->kind != TYPE_TAGGED_UNION) return;
+    if (!isTaggedUnion(type)) return;
 
     writeString("{\n");
     {
         IndentScope union_indent(*this);
-        DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+        DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
         int emitted_fields = 0;
         if (fields) {
             for (size_t i = 0; i < fields->length(); ++i) {
@@ -2606,19 +2606,17 @@ void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
     writeString("}");
 }
 
-void C89Emitter::emitTaggedUnionDefinition(Type* type) {
-    if (!type || type->kind != TYPE_TAGGED_UNION) return;
+void C89Emitter::emitTaggedUnionBody(Type* type) {
+    if (!isTaggedUnion(type)) return;
 
-    writeIndent();
-    writeString("struct ");
-    writeString(type->c_name ? type->c_name : "/* unknown */");
-    writeString(" {\n");
+    writeString("{\n");
     {
         IndentScope struct_indent(*this);
 
         /* tag */
         writeIndent();
-        emitType(type->as.tagged_union.tag_type, "tag");
+        Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+        emitType(tag_type, "tag");
         writeString(";\n");
 
         /* union of payloads */
@@ -2628,13 +2626,24 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
         writeString(" data;\n");
     }
     writeIndent();
-    writeString("};\n\n");
+    writeString("}");
+}
+
+void C89Emitter::emitTaggedUnionDefinition(Type* type) {
+    if (!isTaggedUnion(type)) return;
+
+    writeIndent();
+    writeString("struct ");
+    writeString(type->c_name ? type->c_name : "/* unknown */");
+    writeString(" ");
+    emitTaggedUnionBody(type);
+    writeString(";\n\n");
 }
 
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
-    if (type->kind == TYPE_TAGGED_UNION) {
+    if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
     } else if (type->kind == TYPE_STRUCT) {
         writeIndent();
