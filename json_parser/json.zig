@@ -1,15 +1,28 @@
 const file = @import("file.zig");
 const arena_mod = @import("arena.zig");
 
-pub const JsonValue = union(enum) {
+pub const JsonValueTag = enum {
     Null,
-    Boolean: bool,
-    Number: f64,
-    String: []const u8,
-    Array: []JsonValue,
-    Object: []struct {
-        key: []const u8,
-        value: JsonValue,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object,
+};
+
+pub const JsonObjectEntry = struct {
+    key: []const u8,
+    value: *JsonValue,
+};
+
+pub const JsonValue = struct {
+    tag: JsonValueTag,
+    data: union {
+        boolean: bool,
+        number: f64,
+        string: []const u8,
+        array: []JsonValue,
+        object: []JsonObjectEntry,
     },
 };
 
@@ -33,7 +46,7 @@ fn parser_peek(self: *Parser) u8 {
     if (self.pos < self.input.len) {
         return self.input[self.pos];
     } else {
-        return 0;
+        return @intCast(u8, 0);
     }
 }
 
@@ -60,9 +73,10 @@ fn parser_expect(self: *Parser, c: u8) ParseError!void {
 }
 
 pub fn parseJson(arena_ptr: *void, input: []const u8) ParseError!JsonValue {
+    const zero: usize = 0;
     var p = Parser{
         .input = input,
-        .pos = 0,
+        .pos = zero,
         .arena = arena_ptr,
     };
     const result = try parseValue(&p);
@@ -74,15 +88,13 @@ pub fn parseJson(arena_ptr: *void, input: []const u8) ParseError!JsonValue {
 fn parseValue(p: *Parser) ParseError!JsonValue {
     parser_skipWhitespace(p);
     const ch = parser_peek(p);
-    return switch (ch) {
-        'n' => try parseNull(p),
-        't', 'f' => try parseBoolean(p),
-        '"' => try parseString(p),
-        '0'...'9', '-' => try parseNumber(p),
-        '[' => try parseArray(p),
-        '{' => try parseObject(p),
-        else => error.ExpectedValue,
-    };
+    if (ch == 'n') return try parseNull(p);
+    if (ch == 't' or ch == 'f') return try parseBoolean(p);
+    if (ch == '"') return try parseString(p);
+    if ((ch >= '0' and ch <= '9') or ch == '-') return try parseNumber(p);
+    if (ch == '[') return try parseArray(p);
+    if (ch == '{') return try parseObject(p);
+    return error.ExpectedValue;
 }
 
 fn sliceEqual(a: []const u8, b: []const u8) bool {
@@ -96,19 +108,32 @@ fn sliceEqual(a: []const u8, b: []const u8) bool {
 }
 
 fn parseNull(p: *Parser) ParseError!JsonValue {
-    if (p.input.len - p.pos < 4 or !sliceEqual(p.input[p.pos .. p.pos + 4], "null")) return error.InvalidSyntax;
+    const start = p.pos;
+    const null_str: []const u8 = "null";
+    if (p.input.len - start < 4 or !sliceEqual(p.input[start .. start + 4], null_str)) return error.InvalidSyntax;
     p.pos += 4;
-    return JsonValue.Null;
+    var val: JsonValue = undefined;
+    val.tag = JsonValueTag.Null;
+    return val;
 }
 
 fn parseBoolean(p: *Parser) ParseError!JsonValue {
-    if (p.input.len - p.pos >= 4 and sliceEqual(p.input[p.pos .. p.pos + 4], "true")) {
+    const start = p.pos;
+    const true_str: []const u8 = "true";
+    const false_str: []const u8 = "false";
+    if (p.input.len - start >= 4 and sliceEqual(p.input[start .. start + 4], true_str)) {
         p.pos += 4;
-        return JsonValue{ .Boolean = true };
+        var val: JsonValue = undefined;
+        val.tag = JsonValueTag.Boolean;
+        val.data.boolean = true;
+        return val;
     }
-    if (p.input.len - p.pos >= 5 and sliceEqual(p.input[p.pos .. p.pos + 5], "false")) {
+    if (p.input.len - start >= 5 and sliceEqual(p.input[start .. start + 5], false_str)) {
         p.pos += 5;
-        return JsonValue{ .Boolean = false };
+        var val: JsonValue = undefined;
+        val.tag = JsonValueTag.Boolean;
+        val.data.boolean = false;
+        return val;
     }
     return error.InvalidSyntax;
 }
@@ -126,7 +151,11 @@ fn parseString(p: *Parser) ParseError!JsonValue {
     if (p.pos >= p.input.len) return error.UnexpectedEnd;
     const slice = p.input[start..p.pos];
     try parser_expect(p, '"');
-    return JsonValue{ .String = slice };
+
+    var val: JsonValue = undefined;
+    val.tag = JsonValueTag.String;
+    val.data.string = slice;
+    return val;
 }
 
 fn parseNumber(p: *Parser) ParseError!JsonValue {
@@ -143,8 +172,12 @@ fn parseNumber(p: *Parser) ParseError!JsonValue {
         while (isDigit(parser_peek(p))) parser_advance(p);
     }
     const slice = p.input[start..p.pos];
-    const val = parseFloat(slice);
-    return JsonValue{ .Number = val };
+    const val_f = parseFloat(slice);
+
+    var val: JsonValue = undefined;
+    val.tag = JsonValueTag.Number;
+    val.data.number = val_f;
+    return val;
 }
 
 fn isDigit(c: u8) bool {
@@ -159,7 +192,9 @@ fn parseFloat(s: []const u8) f64 {
         i += 1;
     }
     buf[i] = 0;
-    return file.strtod(buf[0..].ptr, null);
+    const buf_ptr = @ptrCast([*]const u8, &buf);
+    const endptr_null: ?*[*]const u8 = null;
+    return file.strtod(buf_ptr, endptr_null);
 }
 
 fn parseArray(p: *Parser) ParseError!JsonValue {
@@ -182,10 +217,13 @@ fn parseArray(p: *Parser) ParseError!JsonValue {
         if (parser_peek(p) != ']') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved;
-    const arr = arena_mod.alloc(p.arena, JsonValue, count);
+
+    const bytes = arena_mod.alloc_bytes(p.arena, count * 32);
+    const arr = @ptrCast([*]JsonValue, bytes.ptr)[0..count];
+
     var idx: usize = 0;
     if (parser_peek(p) != ']') {
-        while (true) {
+        while (idx < count) {
             arr[idx] = try parseValue(p);
             idx += 1;
             parser_skipWhitespace(p);
@@ -198,7 +236,11 @@ fn parseArray(p: *Parser) ParseError!JsonValue {
         }
     }
     try parser_expect(p, ']');
-    return JsonValue{ .Array = arr };
+
+    var val: JsonValue = undefined;
+    val.tag = JsonValueTag.Array;
+    val.data.array = arr;
+    return val;
 }
 
 fn parseObject(p: *Parser) ParseError!JsonValue {
@@ -225,23 +267,27 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
         if (parser_peek(p) != '}') return error.ExpectedCommaOrEnd;
     }
     p.pos = saved;
-    const fields = arena_mod.alloc(p.arena, struct {
-        key: []const u8,
-        value: JsonValue,
-    }, count);
+
+    const bytes = arena_mod.alloc_bytes(p.arena, count * 16);
+    const fields = @ptrCast([*]JsonObjectEntry, bytes.ptr)[0..count];
+
     var idx: usize = 0;
     if (parser_peek(p) != '}') {
-        while (true) {
+        while (idx < count) {
             const keyVal = try parseString(p);
-            const key = switch (keyVal) {
-                .String => |s| s,
-                else => unreachable,
-            };
+            const key = keyVal.data.string;
+
             parser_skipWhitespace(p);
             try parser_expect(p, ':');
             const val = try parseValue(p);
+
+            const val_ptr_bytes = arena_mod.alloc_bytes(p.arena, 32);
+            const val_ptr = @ptrCast(*JsonValue, val_ptr_bytes.ptr);
+            val_ptr.tag = val.tag;
+            val_ptr.data = val.data;
+
             fields[idx].key = key;
-            fields[idx].value = val;
+            fields[idx].value = val_ptr;
             idx += 1;
             parser_skipWhitespace(p);
             if (parser_peek(p) == ',') {
@@ -253,5 +299,9 @@ fn parseObject(p: *Parser) ParseError!JsonValue {
         }
     }
     try parser_expect(p, '}');
-    return JsonValue{ .Object = fields };
+
+    var val: JsonValue = undefined;
+    val.tag = JsonValueTag.Object;
+    val.data.object = fields;
+    return val;
 }

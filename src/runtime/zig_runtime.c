@@ -143,12 +143,21 @@ void arena_free(void* ptr) {
     (void)ptr;
 }
 
-void __bootstrap_print(const unsigned char* s) {
+void __bootstrap_print(const char* s) {
     if (!s) return;
 #ifdef _WIN32
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)strlen((const char*)s), NULL, NULL);
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)strlen(s), NULL, NULL);
 #else
-    write(2, (const char*)s, strlen((const char*)s));
+    write(2, s, strlen(s));
+#endif
+}
+
+void __bootstrap_write(const unsigned char* s, usize len) {
+    if (!s || len == 0) return;
+#ifdef _WIN32
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)len, NULL, NULL);
+#else
+    write(2, s, (size_t)len);
 #endif
 }
 
@@ -157,15 +166,15 @@ void __bootstrap_panic(const char* msg, const char* file, int line) {
     int i = 0;
     unsigned int val;
 
-    __bootstrap_print((const unsigned char*)"PANIC: ");
-    __bootstrap_print((const unsigned char*)msg);
-    __bootstrap_print((const unsigned char*)" at ");
-    __bootstrap_print((const unsigned char*)file);
-    __bootstrap_print((const unsigned char*)":");
+    __bootstrap_print("PANIC: ");
+    __bootstrap_print(msg);
+    __bootstrap_print(" at ");
+    __bootstrap_print(file);
+    __bootstrap_print(":");
 
     val = (unsigned int)line;
     if (val == 0) {
-        __bootstrap_print((const unsigned char*)"0");
+        __bootstrap_print("0");
     } else {
         while (val > 0) {
             buf[i++] = '0' + (val % 10);
@@ -176,10 +185,10 @@ void __bootstrap_panic(const char* msg, const char* file, int line) {
             char s[2];
             s[0] = c;
             s[1] = '\0';
-            __bootstrap_print((const unsigned char*)s);
+            __bootstrap_print(s);
         }
     }
-    __bootstrap_print((const unsigned char*)"\n");
+    __bootstrap_print("\n");
     abort();
 }
 
@@ -189,14 +198,14 @@ void __bootstrap_print_int(i32 n) {
     unsigned int val;
 
     if (n < 0) {
-        __bootstrap_print((const unsigned char*)"-");
+        __bootstrap_print("-");
         val = (unsigned int)(-n);
     } else {
         val = (unsigned int)n;
     }
 
     if (val == 0) {
-        __bootstrap_print((const unsigned char*)"0");
+        __bootstrap_print("0");
         return;
     }
 
@@ -212,7 +221,7 @@ void __bootstrap_print_int(i32 n) {
         char s[2];
         s[0] = c;
         s[1] = '\0';
-        __bootstrap_print((const unsigned char*)s);
+        __bootstrap_print(s);
     }
 }
 

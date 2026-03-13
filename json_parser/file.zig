@@ -18,10 +18,9 @@ pub const FileError = error{
     TooLarge,
 };
 
-extern fn arena_alloc(arena: *void, size: usize) *void;
-
 pub fn readFile(arena_ptr: *void, path: []const u8) FileError![]u8 {
-    const f = fopen(path.ptr, "rb".ptr) orelse return error.OpenFailed;
+    const rb_str: [*]const u8 = "rb";
+    const f = fopen(path.ptr, rb_str) orelse return error.OpenFailed;
     defer { _ = fclose(f); }
 
     if (fseek(f, 0, SEEK_END) != 0) return error.SeekFailed;
@@ -30,10 +29,12 @@ pub fn readFile(arena_ptr: *void, path: []const u8) FileError![]u8 {
     if (fseek(f, 0, SEEK_SET) != 0) return error.SeekFailed;
 
     const usize_size = @intCast(usize, size);
-    const buffer = @ptrCast([*]u8, arena_alloc(arena_ptr, usize_size));
+    const buffer = @ptrCast([*]u8, arena_alloc_default(usize_size));
     const bytes_read = fread(buffer, 1, usize_size, f);
     if (bytes_read != usize_size) return error.ReadFailed;
     if (ferror(f) != 0) return error.ReadFailed;
 
     return buffer[0..usize_size];
 }
+
+extern fn arena_alloc_default(size: usize) *void;
