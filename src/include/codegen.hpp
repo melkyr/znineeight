@@ -485,6 +485,11 @@ private:
      */
     void emitPrintCall(const ASTFunctionCallNode* node);
 
+    const char* getLoopStartLabel(int id);
+    const char* getLoopContinueLabel(int id);
+    const char* getLoopEndLabel(int id);
+    const char* getLoopLabel(int id, const char* suffix);
+
     /**
      * @brief Emits logic to wrap a value into an error union.
      */
