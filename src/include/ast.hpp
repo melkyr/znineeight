@@ -299,10 +299,10 @@ struct ASTFloatLiteralNode {
 /**
  * @struct ASTCharLiteralNode
  * @brief Represents a character literal (e.g., `'z'`).
- * @var ASTCharLiteralNode::value The character value.
+ * @var ASTCharLiteralNode::value The character value (Unicode codepoint).
  */
 struct ASTCharLiteralNode {
-    char value;
+    u32 value;
 };
 
 /**

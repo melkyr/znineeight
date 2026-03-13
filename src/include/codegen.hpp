@@ -423,6 +423,11 @@ public:
      */
     void emitFloatLiteral(const ASTFloatLiteralNode* node);
 
+    /**
+     * @brief Evaluates a simple constant expression for codegen (e.g. for switch cases).
+     */
+    bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) const;
+
 private:
     /**
      * @brief Emits a literal expression (integer, float, string, char, bool, null, error).
