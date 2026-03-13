@@ -1,78 +1,64 @@
-# Test Suite Status Report - ControlFlowLifter Integration
+# Test Suite Status Report - ControlFlowLifter & Tagged Union Emission
 
 ## Summary
-The test suite is now ALL GREEN. Regressions in Batch 26 and Batch 46 have been successfully resolved.
-A minor bug in C89 emission for global variables with `undefined` initializers was identified and fixed.
+The test suite shows regressions in several integration tests due to recent architectural changes (unified loop labeling, lifter-based transformations, and error message updates). Example programs are fully functional and pass verification.
 
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
-| 1-62  | PASSED | None |
+| 1-13  | PASSED | None |
+| 14    | FAILED | 4/11 (WhileLoopIntegration_WithBreak, WithContinue, etc.) |
+| 15    | FAILED | 1/12 (StructIntegration_RejectStructMethods) |
+| 16-25 | PASSED | None |
+| 26    | FAILED | 1/27 (Codegen_Global_AnonymousContainer_Error) |
+| 27-38 | PASSED | None |
+| 39    | FAILED | 2/10 (DeferIntegration_Continue, DeferIntegration_NestedContinue) |
+| 40-63 | PASSED | None |
+| 64    | MISSING| (Number skipped in repository) |
+| 65    | FAILED | 1/6 (TaggedUnionEmission_AnonymousField) |
 
 ---
 
-## Detailed Analysis of Fixes and Verifications
+## Detailed Analysis of Regressions
 
-### 8. Global `undefined` Emission Fix [RESOLVED]
-**Resolution**:
-*   Fixed a bug in `C89Emitter::emitGlobalVarDecl` where global variables initialized with `undefined` were being emitted with an empty assignment (e.g., `static T var = ;`), which is invalid C syntax.
-*   The emitter now correctly skips the assignment for `NODE_UNDEFINED_LITERAL` in global declarations, allowing the C compiler to perform default zero-initialization (consistent with Zig's `undefined` semantics in global scope for most C compilers).
-*   Verified with `snippet1.zig`:
-    ```zig
-    var global_s: MyStruct = undefined;
-    ```
-    Now generates:
-    ```c
-    static struct z_snippet1_MyStruct z_snippet1_global_s;
-    ```
+### 1. Batches 14 & 39: Loop Labeling & `goto` Transition
+**Issue**: Newer versions of `ControlFlowLifter` and `C89Emitter` use a unified labeling scheme (`__loop_N_start`, `__loop_N_continue`, `__loop_N_end`) and `goto` statements for all loop control (including plain `break` and `continue`). This ensures correct behavior for complex loop increments and `defer` in loops.
+**Root Cause**: Integration tests in Batches 14 and 39 have hardcoded expectations for plain C `break;` and `continue;` statements.
+**Examples**:
+*   Expected: `while (1) { break; }`
+*   Actual:   `while (1) { goto __loop_0_end; }`
 
-### 9. Snippet Verifications (C89 + -m32)
-**Snippet 1: Struct Assignment via Pointer Dereference**
-*   **Code**: `ptr.* = MyStruct{ .a = 42 };`
-*   **Result**: PASSED.
-*   **Details**: The compiler correctly decomposes the struct initializer assignment into `(*ptr).a = 42;`. This is essential for C89 compatibility as C89 does not support braced initializers in assignments.
-*   **Target**: Verified with `gcc -std=c89 -pedantic -Wall`.
+### 2. Batch 15: `expect_parser_abort` Behavior
+**Issue**: `test_StructIntegration_RejectStructMethods` fails.
+**Root Cause**: The test correctly triggers a parser abort when it encounters a method inside a struct (which is unsupported). However, the test runner's `expect_parser_abort` logic (using `fork()` and `SIGABRT` detection) appears to be unreliable in the current environment.
 
-**Snippet 2: Error Union Return and Catch**
-*   **Code**: `const s = getStruct() catch return;`
-*   **Result**: PASSED.
-*   **Details**: Correctly lowered using a temporary `ErrorUnion` struct. The `catch return` logic correctly checks `is_error` and performs a function return on error, or extracts the payload on success.
-*   **Target**: Verified with `gcc -std=c89 -pedantic -Wall`.
+### 3. Batch 26: Error Message Mismatch
+**Issue**: `test_Codegen_Global_AnonymousContainer_Error` fails.
+**Root Cause**: String mismatch in the reported error.
+*   Expected hint: `"anonymous structs/enums not allowed in variable declarations"`
+*   Actual hint:   `"anonymous aggregates not allowed in variable declarations"` (as seen in `TypeChecker::visitVarDecl`).
 
-### 7. Milestone 9 Phase 4: Range-Based Switch Arms [IMPLEMENTED]
-**Resolution**:
-*   Implemented unified `validateSwitch` and `validateRange` in `TypeChecker` with constant folding and a 1000-case limit.
-*   Updated `ControlFlowLifter` to preserve `NODE_SWITCH_STMT` while transforming nested expressions.
-*   Enhanced `C89Emitter` to expand inclusive (`...`) and exclusive (`..`) ranges into individual `case` labels.
-*   Resolved regressions in Batch 43 by hardening `all_paths_return` to skip empty statements.
-*   **Verification**: All unit tests in Batch 60 pass.
+### 4. Batch 65: Anonymous Tagged Union Emission
+**Issue**: `test_TaggedUnionEmission_AnonymousField` fails.
+**Root Cause**: The test expects `int tag;` in the generated C struct, but the emitter now produces an anonymous enum member `enum /* anonymous */ tag;`.
 
-### 6. Batch 2: Parser Recursion Abort [RESOLVED]
-**Resolution**:
-*   Fixed `plat_abort()` on Windows to use exit code 3, which is the code expected by the test suite's `expect_abort` helper.
+---
 
-### 5. Task 1: Fix Anonymous Union Emission Bug [IMPLEMENTED]
-**Resolution**:
-*   Implemented `emitUnionBody` and `emitStructBody` helpers in `C89Emitter` to correctly inline union and struct bodies when used as anonymous field types.
+## Example Verification Results
+All examples in the `examples/` directory were compiled with the bootstrap compiler (`zig0`) and verified with `gcc -std=c89 -pedantic`.
 
-### 4. Milestone 7 Task 3: Error Union Return Coercion [IMPLEMENTED]
-**Resolution**:
-*   Modified `ControlFlowLifter` to correctly handle `return try someErrorUnion();`.
-*   Verified with Batch 55.
-
-### 1. Batch 26: `test_Codegen_Global_NonConstantInit_Error` [RESOLVED]
-**Resolution**: Restored the constant initializer check in `C89Emitter::emitGlobalVarDecl`.
-
-### 2. Batch 46: `test_Integration_Catch_Basic` [RESOLVED]
-**Resolution**:
-*   Fixed syntax error in generated C code for `TYPE_ERROR_SET` declarations.
-
-### 3. Task 1: Forward Declarations for Static Functions [IMPLEMENTED]
-**Resolution**:
-*   Mutually recursive static functions now compile without "implicit declaration" warnings/errors in C89 mode.
+| Example | Status | Output/Notes |
+|---------|--------|--------------|
+| hello   | PASSED | "Hello, RetroZig!" |
+| prime   | PASSED | Correctly identifies primes up to 20. |
+| fibonacci| PASSED | Correctly computes Fib(10) = 55. |
+| heapsort| PASSED | `135671112131520` |
+| quicksort| PASSED | Sorted arrays (ascending/descending). |
+| sort_strings| PASSED | Correctly sorts string array. |
+| func_ptr_return| PASSED | 10 + 5 = 15, 10 - 5 = 5. |
 
 ---
 
 ## Recommendations
-1.  **Maintain Prototype Emission**: The new prototype pass ensures that function definition order in Zig doesn't break C compilation.
-2.  **Regular Regression Testing**: Continue running the full suite (`./test.sh`) after any major lifter or emitter changes.
-3.  **32-bit Compatibility**: Ensure `zig_runtime.h` continues to support both 32-bit and 64-bit targets by using appropriate type definitions for `isize`/`usize`.
+1.  **Update Test Expectations**: Older integration tests should be updated to expect the unified `goto`-based loop control and the new anonymous tag emission format.
+2.  **Harmonize Error Messages**: Update either the `TypeChecker` or the test in Batch 26 to use a consistent error string for anonymous aggregates.
+3.  **Harden `expect_abort`**: Investigate why `SIGABRT` detection is unreliable for Batch 15.
