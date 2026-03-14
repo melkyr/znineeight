@@ -218,6 +218,9 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `*T`                    | `*U` (different types) | ✗           | Incompatible pointer base types.                                   |
 | `*T`                    | `[*]T`                 | ✗           | Cannot implicitly convert between single and many-item pointers.   |
 | `[*]T`                  | `*T`                   | ✗           | Cannot implicitly convert between many and single-item pointers.   |
+| `*[N]T`                 | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (const-correctness required).|
+| `*[N]T`                 | `*T`                   | ✓           | Backward compatibility (primarily for `u8`/`c_char` strings).      |
+| `*[N]T`                 | `[]T`                  | ✓           | Implicit coercion to slice (const-correctness required).           |
 | `[]T`                   | `[]const T`            | ✓           | Safe to add `const`.                                               |
 | `[]const T`             | `[]T`                  | ✗           | Unsafe to remove `const`.                                          |
 | `u8`                    | `c_char`               | ✓           | Implicit conversion allowed for C interop.                         |
@@ -578,7 +581,10 @@ To clarify the current capabilities of the type checker and guide future develop
             -   Larger values or with `l` suffix: `i64`
     -   **Floating-Point Literals:** All floating-point literals (e.g., `3.14`) are inferred as type `f64`.
 - **Character Literals**: A character literal (e.g., `'a'`) is inferred as type `u8`. Character literals are fully supported in constant expression evaluation (constant folding).
-    -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const u8` (a pointer to constant `u8` characters). It can be implicitly coerced to a slice (`[]const u8`) or a many-item pointer (`[*]const u8`).
+    -   **String Literals:** A string literal (e.g., `"hello"`) is inferred as type `*const [N]u8` (a pointer to a constant array of `N` characters, where `N` is the string length).
+        - **Coercion to Many-Item Pointers**: String literals implicitly coerce to `[*]const u8`.
+        - **Coercion to Slices**: String literals implicitly coerce to `[]const u8` (creating a synthetic slice with the correct length).
+        - **Backward Compatibility**: To support legacy code and internal runtime functions, `*const [N]u8` also implicitly coerces to `*const u8` and `*const c_char`.
     -   **Memory Overhead:** The validation of literal types is a stateless process within the `TypeChecker`. It is based on the value and syntax of the literal itself and does not require the creation of any new, persistent data structures or heap allocations, thus adhering to the project's strict memory constraints.
 
 ### Literal Type Mapping Table (Task 170)
@@ -764,7 +770,7 @@ The following table defines the allowed and rejected types in the bootstrap comp
 | `struct` | ✓ | `struct` | Supported with C89-compliant layout. |
 | `enum` | ✓ | `enum` | Supported, mapping to the backing integer type. |
 | `fn(...) T` | ✓ | `T (*)(...)` | Function pointers supported (unlimited params). |
-| `string_literal` | ✓ | `const char*` | Maps to `*const u8`, coerces to `[]const u8` (synthetic slice) or `[*]const u8`. |
+| `string_literal` | ✓ | `const char*` | Maps to `*const [N]u8`, coerces to `[]const u8`, `[*]const u8`, or `*const u8`. |
 | `!T` | ✓ | `struct` | **Supported.** Error unions map to C structs. |
 | `error { ... }` | ✓ | `int` | **Supported.** Error sets map to integer error codes. |
 

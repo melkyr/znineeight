@@ -191,6 +191,27 @@ public:
     }
 
     /**
+     * @brief Validates that a function call emits the expected C89 string.
+     */
+    bool validateFunctionCallEmission(const char* name, const std::string& expectedC89) {
+        const ASTNode* call_node = extractFunctionCall(name);
+        if (!call_node) {
+            printf("FAIL: Could not find function call for '%s'.\n", name);
+            return false;
+        }
+
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        std::string actual = emitter.emitExpression(call_node);
+
+        if (actual != expectedC89) {
+            printf("FAIL: Call emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @brief Performs the full compilation pipeline for a given file and stores the AST.
      * @param file_id The ID of the file to compile.
      * @return True if the pipeline finished without errors.

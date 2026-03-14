@@ -1652,10 +1652,13 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
+Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* node) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    /* String literals are pointers to constant characters. */
-    return createPointerType(unit_.getArena(), char_type, true, false, &unit_.getTypeInterner());
+    size_t len = plat_strlen(node->value);
+    /* Create array type [N]u8 */
+    Type* array_type = createArrayType(unit_.getArena(), char_type, (u64)len, &unit_.getTypeInterner());
+    /* Return pointer to array, const */
+    return createPointerType(unit_.getArena(), array_type, true, false, &unit_.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
@@ -4349,6 +4352,18 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         return false;
     }
 
+    /* Pointer to Array to Slice coercion (*[N]T -> []T) */
+    if (expected->kind == TYPE_SLICE && actual->kind == TYPE_POINTER &&
+        !actual->as.pointer.is_many && actual->as.pointer.base->kind == TYPE_ARRAY) {
+        Type* element_type = actual->as.pointer.base->as.array.element_type;
+        bool compatible = areTypesEqual(expected->as.slice.element_type, element_type) ||
+                         ((expected->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (expected->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (compatible) {
+            return expected->as.slice.is_const || !actual->as.pointer.is_const;
+        }
+    }
+
     /* Optional types coercions */
     if (expected->kind == TYPE_OPTIONAL) {
         Type* payload = expected->as.optional.payload;
@@ -4457,6 +4472,37 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
             /* For now, let's treat array to many-item pointer as always allowed */
             /* unless we have specific const tracking for arrays. */
             return true;
+        }
+    }
+
+    /* *[N]T -> [*]T (many-item pointer) or *T (single-item pointer) */
+    if (actual->kind == TYPE_POINTER && !actual->as.pointer.is_many &&
+        actual->as.pointer.base->kind == TYPE_ARRAY) {
+        Type* element_type = actual->as.pointer.base->as.array.element_type;
+
+        /* *[N]T -> [*]T (Implicit coercion to many-item pointer) */
+        if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many) {
+            if (areTypesEqual(expected->as.pointer.base, element_type)) {
+                /* Const correctness: *const [N]T -> [*]const T (OK), *const [N]T -> [*]T (Error) */
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
+            /* Backward compatibility for u8 and c_char */
+            if ((expected->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                (expected->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8)) {
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
+        }
+
+        /* *[N]T -> *T (Backward compatibility for single-item pointer) */
+        if (expected->kind == TYPE_POINTER && !expected->as.pointer.is_many) {
+            if (areTypesEqual(expected->as.pointer.base, element_type)) {
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
+            /* Backward compatibility for u8 and c_char */
+            if ((expected->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                (expected->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8)) {
+                return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+            }
         }
     }
 
@@ -4935,6 +4981,18 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         return false;
     }
 
+    /* Pointer to Array to Slice coercion (*[N]T -> []T) */
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
+        !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
+        Type* element_type = source_type->as.pointer.base->as.array.element_type;
+        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
+                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (compatible) {
+            return target_type->as.slice.is_const || !source_type->as.pointer.is_const;
+        }
+    }
+
     /* Slice to Slice assignment/coercion */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
         Type* e_elem = target_type->as.slice.element_type;
@@ -4964,6 +5022,32 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         source_type->kind == TYPE_ARRAY) {
         if (areTypesCompatible(target_type->as.pointer.base, source_type->as.array.element_type)) {
             return true;
+        }
+    }
+
+    /* *[N]T -> [*]T or *T coercion */
+    if (source_type->kind == TYPE_POINTER && !source_type->as.pointer.is_many &&
+        source_type->as.pointer.base->kind == TYPE_ARRAY) {
+        Type* element_type = source_type->as.pointer.base->as.array.element_type;
+
+        /* *[N]T -> [*]T (many-item pointer) */
+        if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many) {
+            bool compatible = areTypesEqual(target_type->as.pointer.base, element_type) ||
+                             ((target_type->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                              (target_type->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+            if (compatible) {
+                return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+            }
+        }
+
+        /* *[N]T -> *T (single-item pointer, backward compatibility) */
+        if (target_type->kind == TYPE_POINTER && !target_type->as.pointer.is_many) {
+            bool compatible = areTypesEqual(target_type->as.pointer.base, element_type) ||
+                             ((target_type->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                              (target_type->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+            if (compatible) {
+                return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+            }
         }
     }
 
@@ -5808,6 +5892,30 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             return;
         }
     }
+
+    /* Coercion 4: Pointer to Array -> Slice (*[N]T -> []T) */
+    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
+        !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
+        Type* element_type = source_type->as.pointer.base->as.array.element_type;
+        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
+                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (compatible && (target_type->as.slice.is_const || !source_type->as.pointer.is_const)) {
+            ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(slice_node, 0, sizeof(ASTNode));
+            slice_node->type = NODE_ARRAY_SLICE;
+            slice_node->loc = node->loc;
+            slice_node->as.array_slice = (ASTArraySliceNode*)unit_.getArena().alloc(sizeof(ASTArraySliceNode));
+            plat_memset(slice_node->as.array_slice, 0, sizeof(ASTArraySliceNode));
+            slice_node->as.array_slice->array = node;
+
+            /* visitArraySlice will handle the rest of the logic for *[N]T -> []T */
+            visitArraySlice(slice_node->as.array_slice);
+            slice_node->resolved_type = target_type;
+            *node_slot = slice_node;
+            return;
+        }
+    }
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
@@ -5833,6 +5941,24 @@ void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
         ASTNode* index0 = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
         ASTNode* access = createArrayAccess(expr, index0, expr->resolved_type->as.array.element_type, expr->loc);
         expr = createUnaryOp(access, TOKEN_AMPERSAND, target_type, expr->loc);
+    }
+    /* Coercion 3: Pointer to Array (*[N]T) -> Many-Item Pointer ([*]T) or Single-Item Pointer (*T) */
+    else if (target_type->kind == TYPE_POINTER &&
+             expr->resolved_type->kind == TYPE_POINTER &&
+             !expr->resolved_type->as.pointer.is_many &&
+             expr->resolved_type->as.pointer.base->kind == TYPE_ARRAY) {
+
+        if (expr->type == NODE_STRING_LITERAL) {
+            /* String literals are special: they are emitted as "string" which is already a pointer in C. */
+            expr->resolved_type = target_type;
+        } else {
+            /* For variables/expressions of type *[N]T, we decay to the first element: &(*ptr)[0] */
+            Type* element_type = expr->resolved_type->as.pointer.base->as.array.element_type;
+            ASTNode* deref = createUnaryOp(expr, TOKEN_STAR, expr->resolved_type->as.pointer.base, expr->loc);
+            ASTNode* index0 = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
+            ASTNode* access = createArrayAccess(deref, index0, element_type, expr->loc);
+            expr = createUnaryOp(access, TOKEN_AMPERSAND, target_type, expr->loc);
+        }
     }
 }
 
