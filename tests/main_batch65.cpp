@@ -15,12 +15,12 @@ int main() {
 
     printf("Running Batch 65: Tagged Union Emission Tests\n");
 
-    total++; if (test_TaggedUnionEmission_Named()) passed++;
-    total++; if (test_TaggedUnionEmission_AnonymousField()) passed++;
-    total++; if (test_TaggedUnionEmission_Return()) passed++;
-    total++; if (test_TaggedUnionEmission_Param()) passed++;
-    total++; if (test_TaggedUnionEmission_VoidField()) passed++;
-    total++; if (test_TaggedUnionEmission_NakedTag()) passed++;
+    total++; if (test_TaggedUnionEmission_Named()) passed++; else printf("FAILED: test_TaggedUnionEmission_Named\n");
+    total++; if (test_TaggedUnionEmission_AnonymousField()) passed++; else printf("FAILED: test_TaggedUnionEmission_AnonymousField\n");
+    total++; if (test_TaggedUnionEmission_Return()) passed++; else printf("FAILED: test_TaggedUnionEmission_Return\n");
+    total++; if (test_TaggedUnionEmission_Param()) passed++; else printf("FAILED: test_TaggedUnionEmission_Param\n");
+    total++; if (test_TaggedUnionEmission_VoidField()) passed++; else printf("FAILED: test_TaggedUnionEmission_VoidField\n");
+    total++; if (test_TaggedUnionEmission_NakedTag()) passed++; else printf("FAILED: test_TaggedUnionEmission_NakedTag\n");
 
     printf("Batch 65 Results: %d/%d passed\n", passed, total);
     return (passed == total) ? 0 : 1;

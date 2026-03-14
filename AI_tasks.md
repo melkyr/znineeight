@@ -2257,6 +2257,26 @@ Implementation steps (minimal):
     - **Runtime**: Added `__bootstrap_i32_from_u8` and improved `isSafeWidening` to support safe widening casts.
     - **Verification**: Verified via `issue_slice_return.zig` and the full test suite (Batches 1-62).
 
+242. [COMPLETE] **Task 9.18: Fix Member Access Resolution for Types and Modules**
+    - **Analysis**: Identified inconsistent unwrapping of `TYPE_TYPE` and `TYPE_PLACEHOLDER` in `visitMemberAccess` as the cause of failures when accessing union tags (e.g., `JsonValue.Null`).
+    - **Type Checker**: Enhanced `visitMemberAccess` and `visitIdentifier` to robustly unwrap meta-types and resolve placeholders.
+    - **Static Access**: Implemented logic to correctly identify static member access on type aliases and module-imported types.
+    - **Integration**: Fixed `@import` resolution in the integration test harness.
+    - **Verification**: Created Batch 67 covering cross-module tag access and type aliases. Verified no regressions in Batch 65.
+
+243. [COMPLETE] **Task 9.19: Fix Missing Slice Definitions for Nested Types**
+    - **Analysis**: Identified that `scanForSpecialTypes` only performed shallow AST node type checks, missing slices nested within pointers, structs, or function signatures, especially in private functions.
+    - **CBackend**: Implemented `scanType` for deep recursive traversal of types (pointers, arrays, slices, optionals, error unions, structs, unions, functions).
+    - **MetadataPass**: Updated `collectReachableTypes` to recursively traverse component types, ensuring nested special types are identified for public headers.
+    - **Verification**: Created Batch 66 with tests for private nested slices, struct field slices, and public signature nested slices. Verified full test suite pass.
+
+244. [COMPLETE] **Task 9.20: Implicit Coercion from String Literal to Many-Item Pointer**
+    - **Goal**: Allow passing string literals to extern functions expecting `[*]const u8` without `@ptrCast`.
+    - **Type System**: Updated `visitStringLiteral` to return `*const [N]u8`, preserving length info.
+    - **Coercion**: Added rules in `areTypesCompatible` and `IsTypeAssignableTo` for `*[N]T` to `[*]const T` and `*const T` (backward compatibility).
+    - **Codegen**: Updated `injectPtrAccessIfNeeded` to handle array pointer decay to many-item pointers using `&(*ptr)[0]` for variables.
+    - **Verification**: Created Batch 68 with tests for many-item pointer targets, slice targets, and backward compatibility. Updated documentation.
+
 ---
 
 

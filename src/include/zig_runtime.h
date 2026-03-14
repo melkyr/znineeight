@@ -75,6 +75,11 @@ void __bootstrap_print(const unsigned char* s);
  */
 void __bootstrap_print_int(i32 n);
 
+/**
+ * @brief Print bytes helper
+ */
+void __bootstrap_write(const unsigned char* s, usize len);
+
 /* Arena Allocator API */
 Arena* arena_create(usize initial_capacity);
 void* arena_alloc(Arena* a, usize size);

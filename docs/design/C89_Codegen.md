@@ -27,7 +27,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
 - **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
 - **Modular Dispatch**: Large emission functions are decomposed into focused helpers to improve legibility and maintainability. For example, `emitExpression` dispatches to:
-    - `emitLiteral`: Handles all numeric, string, char, bool, and null literals.
+    - `emitLiteral`: Handles all numeric, string, char, bool, and null literals. String literals are emitted as C-style string literals (e.g. `"hello"`), which are treated as pointer values by C compilers.
     - `emitUnaryOp` / `emitBinaryOp`: Handles operator logic.
     - `emitCast`: Centralizes `@intCast`, `@floatCast`, and `@ptrCast` logic.
     - `emitAccess`: Manages array, member, and slice access.
@@ -215,7 +215,7 @@ Slices (`[]T`) are emitted as C structs containing a pointer and a length.
 For each unique slice type encountered, the compiler generates a `typedef` and a static inline helper function for construction.
 - **Naming**: Slice structs are named using a mangling scheme: `Slice_` + mangled element type (e.g., `Slice_i32`, `Slice_Ptr_i32`).
 - **Visibility**: If a slice is used in a `pub` declaration, its `typedef` and helper are placed in the module's header (`.h`). Otherwise, they are in the implementation file (`.c`).
-- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. The `MetadataPreparationPass` pre-populates `module->header_types` to ensure all transitive dependencies are included. In source files (`.c`), a global cache is used to ensure each type is emitted only once per translation unit.
+- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. The `MetadataPreparationPass` pre-populates `module->header_types` by recursively scanning all reachable types from public symbols to ensure all transitive dependencies (including nested special types) are included. In source files (`.c`), the `CBackend` performs a deep recursive scan of all AST nodes and their associated types before emission. A global cache is used to ensure each type is emitted only once per translation unit.
 - **Const Qualifiers**: `const` is dropped in the emitted C code, so `[]const T` and `[]T` use the same C struct.
 
 #### Operations
@@ -314,15 +314,20 @@ Indirect calls through function pointer variables or complex expressions (e.g., 
 - **Nullability**: Function pointers can be assigned `null` (temporary bootstrap extension).
 
 #### Const Qualifiers
-To simplify code generation and avoid complex C declaration syntax (e.g., `int* const*`), the RetroZig bootstrap compiler **drops all `const` qualifiers** in the generated C code for pointers and variables.
+To simplify code generation and avoid complex C declaration syntax (e.g., `int* const*`), the RetroZig bootstrap compiler **drops most `const` qualifiers** in the generated C code for pointers and variables.
 - Zig `*const i32` -> C `int*`
 - Zig `*const *i32` -> C `int**`
 - Zig `const x: i32 = 42` -> C `int x = 42`
 
-This is safe because the Zig compiler frontend already enforces const-correctness during semantic analysis. The generated C code serves only as an intermediate representation where these qualifiers are not required for correctness.
+This is safe because the Zig compiler frontend already enforces const-correctness during semantic analysis. The generated C code serves only as an intermediate representation where these qualifiers are not required for correctness. Note: For pointer-to-array types (`*[N]T`), the emitter handles decay to many-item pointers by injecting `&(*ptr)[0]` as needed.
 
 #### Extern *void Handling
 Zig's `*void` (pointer to a zero-sized type) is consistently emitted as `void *` in C, especially in `extern` signatures. This ensures that declarations like `extern fn alloc(size: usize) *void` map correctly to `extern void* alloc(unsigned int size)`.
+
+#### Pointer to Array Decay
+When a variable of type `*[N]T` is assigned to a many-item pointer `[*]T`, the `TypeChecker` injects a decay expression.
+- **Variable Decay**: `ptr` of type `*[N]T` becomes `&(*ptr)[0]` in the generated C code, correctly decaying the array pointer to its first element.
+- **String Literal Decay**: String literals (now typed as `*const [N]u8`) are already pointer values in C, so they are passed directly without extra address-of operations.
 
 ### 4.11 Error Handling Support
 Error handling in the bootstrap compiler is implemented using a C89-compatible structure and a global error registry.

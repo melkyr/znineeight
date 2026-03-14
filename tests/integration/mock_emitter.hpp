@@ -679,6 +679,12 @@ public:
             return emitExpression(node->array) + ".ptr[" + emitExpression(node->index) + "]";
         }
 
+        // Handle pointer-to-array indexing: (*ptr)[index]
+        if (node->array->resolved_type && node->array->resolved_type->kind == TYPE_POINTER &&
+            node->array->resolved_type->as.pointer.base->kind == TYPE_ARRAY) {
+            return "(*" + emitExpression(node->array) + ")[" + emitExpression(node->index) + "]";
+        }
+
         return emitExpression(node->array) + "[" + emitExpression(node->index) + "]";
     }
 
@@ -799,6 +805,12 @@ private:
             if (type->kind == c89_type_map[i].zig_type_kind) {
                 return c89_type_map[i].c89_type_name;
             }
+        }
+
+        if (isTaggedUnion(type)) {
+            const char* name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
+            if (name) return "struct " + std::string(name);
+            return "struct /* anonymous tagged union */";
         }
 
         if (type->kind == TYPE_STRUCT) {
@@ -1017,6 +1029,7 @@ private:
             case TOKEN_BANG: return "!";
             case TOKEN_AMPERSAND: return "&";
             case TOKEN_DOT_ASTERISK: return "*";
+            case TOKEN_STAR: return "*";
             default: return "??";
         }
     }

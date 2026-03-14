@@ -1,18 +1,18 @@
-#include <cstdio>
-#include "test_framework.hpp"
+#include "test_declarations.hpp"
+#include "test_runner_main.hpp"
 
-bool test_CharLiteralRange_Basic();
-bool test_CharLiteral_ConstantVar();
+TEST_FUNC(SliceDefinition_PrivateFunction);
+TEST_FUNC(SliceDefinition_RecursiveType);
+TEST_FUNC(SliceDefinition_NestedType);
+TEST_FUNC(SliceDefinition_PublicSignatureNested);
 
-int main() {
-    int passed = 0;
-    int total = 0;
+int main(int argc, char* argv[]) {
+    bool (*tests[])() = {
+        test_SliceDefinition_PrivateFunction,
+        test_SliceDefinition_RecursiveType,
+        test_SliceDefinition_NestedType,
+        test_SliceDefinition_PublicSignatureNested
+    };
 
-    printf("Running Batch 66: Character Literal Range Tests\n");
-
-    total++; if (test_CharLiteralRange_Basic()) passed++;
-    total++; if (test_CharLiteral_ConstantVar()) passed++;
-
-    printf("Batch 66 Results: %d/%d passed\n", passed, total);
-    return (passed == total) ? 0 : 1;
+    return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));
 }
