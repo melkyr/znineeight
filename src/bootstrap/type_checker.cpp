@@ -1652,10 +1652,12 @@ Type* TypeChecker::visitCharLiteral(ASTNode* /*parent*/, ASTCharLiteralNode* /*n
     return resolvePrimitiveTypeName("u8");
 }
 
-Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* /*node*/) {
+Type* TypeChecker::visitStringLiteral(ASTNode* /*parent*/, ASTStringLiteralNode* node) {
     Type* char_type = resolvePrimitiveTypeName("u8");
-    /* String literals are pointers to constant characters. */
-    return createPointerType(unit_.getArena(), char_type, true, false, &unit_.getTypeInterner());
+    size_t len = plat_strlen(node->value);
+    /* String literals are pointers to constant arrays of u8. */
+    Type* array_type = createArrayType(unit_.getArena(), char_type, (u64)len, &unit_.getTypeInterner());
+    return createPointerType(unit_.getArena(), array_type, true, false, &unit_.getTypeInterner());
 }
 
 Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
@@ -4460,10 +4462,35 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
     }
 
+    /* Pointer to Array -> many-item pointer coercion (e.g. string literal to [*]const u8) */
+    if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many &&
+        actual->kind == TYPE_POINTER && !actual->as.pointer.is_many &&
+        actual->as.pointer.base->kind == TYPE_ARRAY) {
+
+        Type* actual_elem = actual->as.pointer.base->as.array.element_type;
+        Type* expected_base = expected->as.pointer.base;
+
+        if (areTypesCompatible(expected_base, actual_elem)) {
+            /* Const correctness: *[N]T -> [*]const T allowed, but *const [N]T -> [*]T not allowed */
+            if (!expected->as.pointer.is_const && actual->as.pointer.is_const)
+                return false;
+            return true;
+        }
+    }
+
     /* Pointer compatibility */
     if (actual->kind == TYPE_POINTER && expected->kind == TYPE_POINTER) {
         Type* actual_base = actual->as.pointer.base;
         Type* expected_base = expected->as.pointer.base;
+
+        /* Zig 0.10+ rule: *const [N]u8 -> [*]const u8 (handled above) */
+        /* But we also need *const [N]u8 -> *const u8 for existing Z98 tests/runtime */
+        if (!expected->as.pointer.is_many && !actual->as.pointer.is_many &&
+            actual_base->kind == TYPE_ARRAY &&
+            (actual_base->as.array.element_type->kind == TYPE_U8 || actual_base->as.array.element_type->kind == TYPE_C_CHAR) &&
+            (expected_base->kind == TYPE_U8 || expected_base->kind == TYPE_C_CHAR)) {
+            return expected->as.pointer.is_const || !actual->as.pointer.is_const;
+        }
 
         /* Allow T* -> void* (implicit) */
         if (expected_base->kind == TYPE_VOID && actual_base->kind != TYPE_VOID) {
@@ -4975,6 +5002,22 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         }
     }
 
+    /* Pointer to Array -> many-item pointer coercion (e.g. string literal to [*]const u8) */
+    if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+        source_type->kind == TYPE_POINTER && !source_type->as.pointer.is_many &&
+        source_type->as.pointer.base->kind == TYPE_ARRAY) {
+
+        Type* source_elem = source_type->as.pointer.base->as.array.element_type;
+        Type* target_base = target_type->as.pointer.base;
+
+        if (areTypesCompatible(target_base, source_elem)) {
+            /* Const correctness: *[N]T -> [*]const T allowed, but *const [N]T -> [*]T not allowed */
+            if (!target_type->as.pointer.is_const && source_type->as.pointer.is_const)
+                return false;
+            return true;
+        }
+    }
+
     /* Function Pointer assignment */
     if (target_type->kind == TYPE_FUNCTION_POINTER) {
         if (source_type->kind == TYPE_FUNCTION_POINTER || source_type->kind == TYPE_FUNCTION) {
@@ -5049,6 +5092,15 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
         /* Const correctness check */
         bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
+
+        /* Zig 0.10+ rule: *const [N]u8 -> [*]const u8 (handled above) */
+        /* But we also need *const [N]u8 -> *const u8 for existing Z98 tests/runtime */
+        if (!target_type->as.pointer.is_many && !source_type->as.pointer.is_many &&
+            src_base->kind == TYPE_ARRAY &&
+            (src_base->as.array.element_type->kind == TYPE_U8 || src_base->as.array.element_type->kind == TYPE_C_CHAR) &&
+            (tgt_base->kind == TYPE_U8 || tgt_base->kind == TYPE_C_CHAR)) {
+            if (const_compatible) return true;
+        }
 
         /* Base types must match */
         bool base_match = areTypesEqual(src_base, tgt_base);
@@ -5820,6 +5872,27 @@ void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
         /* areTypesCompatible already checked const-correctness and element compatibility */
         /* in IsTypeAssignableTo. We just need to inject the .ptr access. */
         expr = createMemberAccess(expr, "ptr", target_type, expr->loc);
+    }
+    /* Coercion 1.5: Pointer to Array -> Many-Item Pointer (e.g. string literal to [*]const u8) */
+    else if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
+             expr->resolved_type->kind == TYPE_POINTER && !expr->resolved_type->as.pointer.is_many) {
+
+        Type* base = expr->resolved_type->as.pointer.base;
+        if (base->kind == TYPE_PLACEHOLDER) base = resolvePlaceholder(base);
+
+        if (base->kind == TYPE_ARRAY) {
+            if (expr->type == NODE_STRING_LITERAL) {
+                /* String literals are already pointers in C, just update the type. */
+                expr->resolved_type = target_type;
+            } else {
+                /* For pointers to arrays, we need to decay to the first element: &(*ptr)[0] */
+                Type* elem_type = base->as.array.element_type;
+                ASTNode* deref = createUnaryOp(expr, TOKEN_STAR, base, expr->loc);
+                ASTNode* index0 = createIntegerLiteral(0, get_g_type_usize(), expr->loc);
+                ASTNode* access = createArrayAccess(deref, index0, elem_type, expr->loc);
+                expr = createUnaryOp(access, TOKEN_AMPERSAND, target_type, expr->loc);
+            }
+        }
     }
     /* Coercion 2: Array -> Many-Item Pointer */
     else if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&

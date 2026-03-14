@@ -48,7 +48,12 @@ TEST_FUNC(MultiError_Reporting) {
 
     for (size_t i = 0; i < errors.length(); ++i) {
         if (errors[i].code == ERR_TYPE_MISMATCH) {
-             if (errors[i].hint && strstr(errors[i].hint, "'*const u8' to 'i32'")) found_type_mismatch = true;
+             if (errors[i].hint && (strstr(errors[i].hint, "u8") != NULL && strstr(errors[i].hint, "i32") != NULL)) {
+                  /* Heuristic for string-to-int mismatch */
+                  if (strstr(errors[i].hint, "Incompatible assignment") != NULL) {
+                      found_type_mismatch = true;
+                  }
+             }
              if (errors[i].hint && strstr(errors[i].hint, "'i32' to '*i32'")) found_ptr_mismatch = true;
         }
         if (errors[i].code == ERR_UNDEFINED_VARIABLE) found_undefined_var = true;

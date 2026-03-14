@@ -68,6 +68,7 @@
 #include "integration/task3_try_return_tests.cpp"
 #include "integration/task9_3_optional_stabilization_tests.cpp"
 #include "integration/task9_9_union_capture_tests.cpp"
+#include "integration/task_9_3_test.cpp"
 #include "integration/task_9_8_verification_tests.cpp"
 #include "integration/unified_lifting_tests.cpp"
 #include "integration/union_naked_tag_tests.cpp"
