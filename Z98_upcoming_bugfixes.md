@@ -25,16 +25,17 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 2: `unreachable` Statement Emission
+### Phase 2: `unreachable` Statement Emission [RESOLVED]
 
 - **Issue**: `unreachable;` as a statement emits a comment instead of a panic call.
 - **Fix**:
-  - In `C89Emitter::emitStatement`, add a case for `NODE_UNREACHABLE` (or ensure that `NODE_EXPRESSION_STMT` with an unreachable expression correctly emits `__bootstrap_panic(...);`).
-  - The `emitExpression` already handles `NODE_UNREACHABLE` by generating a panic call; we just need to ensure the statement is terminated with a semicolon.
+  - Integrated `NODE_UNREACHABLE` into the `ControlFlowLifter` to ensure correct behavior when used as an expression (e.g., in `if` expressions).
+  - Enhanced `allPathsExit` to correctly identify `NODE_UNREACHABLE` and `NODE_VAR_DECL` with diverging initializers, enabling proper dead code elimination in the emitter.
+  - Implemented minimal `errdefer` support in `C89Emitter` to ensure that `unreachable` statements inside `errdefer` are not lost.
+  - Unified `unreachable` emission to always produce a `__bootstrap_panic` call.
 - **Verification**:
-  - Write a test function that contains `unreachable;` as a statement.
-  - Compile and verify that the generated C contains a call to `__bootstrap_panic`.
-- **Effort**: 0.5 day.
+  - New test batch `Batch 70` (`tests/integration/unreachable_tests.cpp`) verifies standalone statements, variable initializers, `defer`/`errdefer` blocks, and divergent `if` expressions.
+- **Outcome**: `unreachable` now consistently triggers a panic at runtime and enables better compile-time dead code elimination in generated C.
 
 ---
 

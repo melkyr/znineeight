@@ -76,6 +76,7 @@
 #include "integration/union_slice_lifting_tests.cpp"
 #include "integration/union_tag_access_tests.cpp"
 #include "integration/union_tests.cpp"
+#include "integration/unreachable_tests.cpp"
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
