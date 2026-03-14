@@ -1,59 +1,55 @@
-# Missing Features for JSON Parser
+# Comprehensive Findings: "Baptism of Fire" JSON Parser
 
-During the "baptism of fire" compilation of the JSON parser example, the following features were found to be missing or limited in the current RetroZig bootstrap compiler (Z98):
+The attempt to compile a non-trivial JSON parser in Z98 revealed significant architectural and implementation gaps in the RetroZig bootstrap compiler. While individual features (like tagged unions or ranges) pass isolated unit tests, they fail to work together in a complex, multi-module application.
 
-## 1. Tagged Unions (`union(enum)`)
-- **Status**: Not supported in Z98.
-- **Observation**: The parser fails with a syntax error when encountering `union(enum)`.
-- **Workaround**: Manually implement tagged unions using a `struct` containing an `enum` tag and a bare `union` for the data.
-- **Example of failure**:
-  ```zig
-  pub const JsonValue = union(enum) { ... }; // Syntax Error
-  ```
+## Peak Memory Usage
+- **Tiny Program**: ~18 KB
+- **JSON Parser (Full Run)**: ~524 KB
+- **Limit**: 16 MB (PASS)
 
-## 2. Switch Payload Capture
-- **Status**: Not supported in Z98.
-- **Observation**: The parser expects a block `{}` for switch arms and does not recognize the `|payload|` capture syntax.
-- **Workaround**: Use explicit member access after checking the tag in a manual tagged union.
-- **Example of failure**:
-  ```zig
-  switch (val) {
-      .Boolean => |b| { ... } // Syntax Error
-  }
-  ```
+## 1. Feature Status & Integration Gaps
 
-## 3. Braceless `if` and `while`
-- **Status**: Not supported in Z98.
-- **Observation**: The parser strictly requires `{}` for the bodies of `if`, `else`, `while`, etc.
-- **Example of failure**:
-  ```zig
-  if (cond) return err; // Syntax Error: Expected '{'
-  ```
+### Tagged Unions (`union(enum)`)
+- **Status**: Implemented but broken in integration.
+- **Problem**: The compiler correctly identifies tagged unions as `TYPE_UNION` (with `is_tagged=true`) and emits them as C `struct`s. However, the code generator consistently uses the `union` keyword for variable declarations of these types.
+- **Result**: `error: ‘z_repro_union_U’ defined as wrong kind of tag` (in C compiler).
+- **Workaround**: Manually implement tagged unions using a `struct` with an `enum` tag and a bare `union` data field.
 
-## 4. Range-based `switch` arms
-- **Status**: Uncertain/Limited.
-- **Observation**: While `NODE_RANGE` exists, the JSON parser example was downgraded to avoid complex switch logic to ensure first-pass success.
+### Switch Captures (`|capture|`)
+- **Status**: Implemented but unstable.
+- **Problem**: Captured symbols often fail to resolve in the prong body or trigger internal compiler errors when the condition type is not recognized as a tagged union due to placeholder resolution delays.
+- **Workaround**: Use manual tag checks and field access (e.g., `if (val.tag == .Foo) { const x = val.data.Foo; ... }`).
 
-## 5. String Literals as Slices in Comparisons
-- **Status**: Limited.
-- **Observation**: Expressions like `p.input[p.pos..][0..4] == "null"` are not reliably handled in the bootstrap phase.
-- **Workaround**: Use manual byte-by-byte comparison or explicit C-interop helpers.
+### Range-based Switch Arms (`0...9`)
+- **Status**: Implemented but restricted.
+- **Problem**: `switch` ranges using character literals (e.g., `'0'...'9'`) are rejected because `evaluateConstantExpression` lacks a case for `NODE_CHAR_LITERAL`.
+- **Workaround**: Use manual integer constants in ranges or `if-else` chains.
 
-## 6. `@ptrCast` and `[*]T` usage
-- **Status**: Sensitive.
-- **Observation**: The compiler is strict about pointer types. Using `[*]T` (many-item pointer) and explicit `@ptrCast` is often necessary when interacting with C-like buffers or slices.
+### Recursive Types
+- **Status**: Partially Supported.
+- **Problem**: Indirectly recursive types (e.g., `union { Array: []Self }`) trigger `field 'value' has incomplete type` because the layout calculation for slices/arrays requires the element size before the placeholder is fully mutated.
+- **Workaround**: Use single-item pointers (`*Self`) for recursion, as pointers have fixed sizes (4 bytes) regardless of target completeness.
 
-## 7. `defer` without blocks
-- **Status**: Not supported.
-- **Observation**: `defer _ = fclose(f);` failed; `defer { _ = fclose(f); }` is required.
+## 2. Stability & Coercion Bugs
 
-## 8. `comptime` parameters
-- **Status**: Syntactically recognized but limited in effect.
-- **Observation**: Generic-like behavior (e.g., `fn alloc(..., comptime T: type, ...)` ) is not fully realized in the bootstrap compiler's type system for custom functions.
-- **Workaround**: Use `usize` and manual `@ptrCast`.
+### String to Slice Coercion
+- **Problem**: Implicitly converting `"literal"` to `[]const u8` fails when passed as a function argument.
+- **Result**: `error: incompatible argument type ... expected '[]const u8', got '*const u8'`.
+- **Workaround**: Use manual slice construction or `@ptrCast` for C interop functions.
 
-## 9. Potential Struct/Union Layout Mismatches
-- **Status**: Investigating.
-- **Observation**: When returning structs containing unions by value, or when accessing them via pointers in the arena, the `tag` field or union data sometimes appears corrupted or misaligned in the generated C code.
-- **Impact**: This led to segmentation faults or incorrect logic branches in the JSON printer.
-- **Recommendation**: For bootstrap-critical code, keep aggregate types simple and avoid deep nesting of unions within structs if possible, or use explicit padding/alignment if the C compiler's behavior is known.
+### Array-to-Pointer Coercion
+- **Problem**: Passing a pointer to an array (`&buf`) where a many-item pointer (`[*]u8`) is expected fails during type checking or produces invalid C.
+- **Workaround**: Use `@ptrCast` to convert explicitly.
+
+### Multi-Module / @import Instability
+- **Problem**: Frequent `use of undeclared identifier` or `Function symbol not found` for symbols imported from other modules in complex dependency graphs.
+- **Root Cause**: Symbol table merging across multiple `CompilationUnit` passes appears to lose visibility or mangling information.
+
+### Braceless Control Flow Syntax
+- **Problem**: Semicolon requirements in braceless bodies are inconsistent. `=> continue,` triggers a syntax error while `=> continue;,` (or with braces) passes.
+
+## 3. Toolchain Limitations
+- **32-bit Compilation**: `gcc -m32` is the target for 1998-era software, but local verification is currently blocked by missing 32-bit system headers (e.g., `bits/libc-header-start.h`) in the modern Ubuntu environment.
+
+## Summary
+The compiler is currently in a "feature-complete but integration-failed" state for Z98. The Milestone 9 features exist in the codebase but are not robust enough for a production-level application like a JSON parser. Immediate focus should be on fixing the C89 keyword mismatch for tagged unions, adding character literal support to constant evaluation, and stabilizing cross-module symbol resolution.

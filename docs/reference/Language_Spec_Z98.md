@@ -35,6 +35,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
     - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
+        - **Note**: The bootstrap compiler currently has a known bug where it may incorrectly use the `union` keyword in C declarations for tagged unions (which are emitted as C `struct`s). In addition, switch captures (`|capture|`) and tag-based initialization may be unstable in complex multi-module applications.
 - **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 
 ### 1.4 Arrays and Slices
@@ -126,6 +127,7 @@ Memory is reclaimed by resetting or destroying the arena.
     - **Inclusive**: `start...end` (includes both `start` and `end`).
     - **Exclusive**: `start..end` (includes `start`, excludes `end`).
     - **Bounds**: Must be compile-time constants of the same type as the switch condition.
+    - **Note**: Character literals (e.g., `'0'...'9'`) are currently NOT supported as range bounds in the constant evaluation pass of the bootstrap compiler.
     - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
     - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
     - **Limit**: To prevent excessive C code generation, each range is limited to 1000 individual case labels.
@@ -144,6 +146,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Result Type**: Computed by merging the types of all non-divergent prongs. If all prongs diverge, the result type is `noreturn`.
   - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`.
   - **Value Blocks**: Switch prongs can use blocks that yield a value (e.g., `=> { var x = 5; x + 1 }`).
+  - **Note on Semicolons**: In the bootstrap compiler, braceless switch prongs ending in `continue` or `break` may require a trailing semicolon even before a comma (e.g., `=> continue;,`).
   - **Examples**:
     ```zig
     // Inclusive range on integer
@@ -241,6 +244,8 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}`).
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
+- **Recursive Types**: Defining a type that contains a slice of itself (e.g., `struct { v: []Self }`) is currently limited and may trigger "incomplete type" errors because layout calculation requires the element size before resolution is complete. **Workaround**: Use pointers (`*Self`) for recursion.
+- **Multi-Module Stability**: Symbol resolution across modules via `@import` is currently unstable for complex dependency graphs and may result in "Function symbol not found" or mangling mismatches during code generation.
 
 ## Type Coercions
 

@@ -68,7 +68,12 @@ void __bootstrap_panic(const char* msg, const char* file, int line);
 /**
  * @brief Print helper for std.debug.print
  */
-void __bootstrap_print(const unsigned char* s);
+void __bootstrap_print(const char* s);
+
+/**
+ * @brief Write bytes to stderr
+ */
+void __bootstrap_write(const unsigned char* s, usize len);
 
 /**
  * @brief Print integer helper
