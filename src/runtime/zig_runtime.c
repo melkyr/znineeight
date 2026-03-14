@@ -143,13 +143,18 @@ void arena_free(void* ptr) {
     (void)ptr;
 }
 
-void __bootstrap_print(const unsigned char* s) {
+void __bootstrap_write(const unsigned char* s, usize len) {
     if (!s) return;
 #ifdef _WIN32
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)strlen((const char*)s), NULL, NULL);
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)len, NULL, NULL);
 #else
-    write(2, (const char*)s, strlen((const char*)s));
+    write(2, (const char*)s, len);
 #endif
+}
+
+void __bootstrap_print(const unsigned char* s) {
+    if (!s) return;
+    __bootstrap_write(s, strlen((const char*)s));
 }
 
 void __bootstrap_panic(const char* msg, const char* file, int line) {

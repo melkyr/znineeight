@@ -643,7 +643,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
 *   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.
 *   **No Async/Await**: Asynchronous programming constructs (`async`, `await`, `suspend`, `resume`) are not supported.
-*   **Syntax**: All control flow blocks (`if`, `while`, `for`, `fn`) MUST use braces `{ ... }`.
+*   **Syntax**: Braceless `if`, `while`, and `for` bodies are supported by the parser but normalized to blocks during the lifting pass. Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
 *   **Immutability**: Loop captures (`for` loops) and function parameters are strictly immutable.
 
 ### 5.3 C89 Mapping Decisions
