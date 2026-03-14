@@ -3,6 +3,7 @@
 
 #include "zig_runtime.h"
 
+struct Arena;
 
 #ifndef ZIG_SLICE_Slice_u16
 #define ZIG_SLICE_Slice_u16

@@ -90,15 +90,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
                 ASTVarDeclNode* decl = node->as.var_decl;
                 if (decl->is_const && decl->initializer && decl->initializer->resolved_type) {
                     Type* t = decl->initializer->resolved_type;
-                    if (t->kind == TYPE_STRUCT) {
-                        emitter.writeString("struct ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    } else if (t->kind == TYPE_UNION) {
-                        emitter.writeString("union ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    }
+                    emitter.ensureForwardDeclaration(t);
                 }
             }
         }
@@ -310,28 +302,10 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.writeString("\n");
 
     /* Pass 0: Forward declarations of public aggregate types */
-    if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
-        DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                ASTVarDeclNode* decl = node->as.var_decl;
-                if (decl->is_const && decl->initializer && decl->initializer->resolved_type) {
-                    Type* t = decl->initializer->resolved_type;
-                    if (t->kind == TYPE_STRUCT) {
-                        emitter.writeString("struct ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    } else if (t->kind == TYPE_UNION) {
-                        emitter.writeString("union ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    }
-                }
-            }
-        }
-        emitter.writeString("\n");
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        emitter.ensureForwardDeclaration(module->header_types[i]);
     }
+    emitter.writeString("\n");
 
     // Scan public symbols for special types recursively before emitting definitions
     DynamicArray<Type*> visited_types(unit_.getArena());

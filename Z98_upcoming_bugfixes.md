@@ -15,15 +15,13 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 1: Tagged Union Forward Declaration Bug
+### Phase 1: Tagged Union Forward Declaration Bug [RESOLVED]
 
 - **Issue**: Tagged unions are forward‑declared as `union` instead of `struct` in headers, causing “wrong kind of tag” errors.
-- **Fix**: In `C89Emitter::ensureForwardDeclaration`, for tagged unions (both `TYPE_UNION` with `is_tagged` and `TYPE_TAGGED_UNION`), emit `struct` instead of `union`.
+- **Fix**: Implemented centralized `C89Emitter::ensureForwardDeclaration`. For tagged unions (both `TYPE_UNION` with `is_tagged` and `TYPE_TAGGED_UNION`), it correctly emits `struct` instead of `union`.
 - **Verification**:
-  - Write a minimal test that uses a tagged union across two modules and compile the generated C.
-  - Ensure the header contains `struct U;` (not `union U;`).
-  - Verify that the JSON parser no longer needs the manual `struct`‑based tagged union workaround.
-- **Effort**: 1 day.
+  - New test case `Phase1_TaggedUnion_ForwardDecl` in `tests/integration/phase1_tagged_union_verification.cpp` verifies correct keyword usage.
+  - Header files now use `struct` for tagged union forward declarations.
 
 ---
 

@@ -605,6 +605,7 @@ The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handl
       } data;
   };
   ```
+- **Forward Declarations**: Because tagged unions are lowered to C `struct`s, they **must** be forward-declared using the `struct` keyword in C, even if they are conceptually "unions" in Zig. The `C89Emitter::ensureForwardDeclaration` method handles this automatically by using the correct keyword based on `isTaggedUnion(type)`.
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
 - **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
 
