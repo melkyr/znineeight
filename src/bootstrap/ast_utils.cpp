@@ -811,6 +811,8 @@ bool allPathsExit(const ASTNode* node) {
         case NODE_CONTINUE_STMT:
         case NODE_UNREACHABLE:
             return true;
+        case NODE_VAR_DECL:
+            return node->as.var_decl && node->as.var_decl->initializer && allPathsExit(node->as.var_decl->initializer);
         case NODE_BLOCK_STMT: {
             const ASTBlockStmtNode& block = node->as.block_stmt;
             if (!block.statements) return false;
