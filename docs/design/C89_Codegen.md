@@ -215,7 +215,7 @@ Slices (`[]T`) are emitted as C structs containing a pointer and a length.
 For each unique slice type encountered, the compiler generates a `typedef` and a static inline helper function for construction.
 - **Naming**: Slice structs are named using a mangling scheme: `Slice_` + mangled element type (e.g., `Slice_i32`, `Slice_Ptr_i32`).
 - **Visibility**: If a slice is used in a `pub` declaration, its `typedef` and helper are placed in the module's header (`.h`). Otherwise, they are in the implementation file (`.c`).
-- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. The `MetadataPreparationPass` pre-populates `module->header_types` to ensure all transitive dependencies are included. In source files (`.c`), a global cache is used to ensure each type is emitted only once per translation unit.
+- **Caching Strategy**: To ensure that every header file is self-contained, types like slices, error unions, and optionals are emitted in every header that uses them. The `MetadataPreparationPass` pre-populates `module->header_types` by recursively scanning all reachable types from public symbols to ensure all transitive dependencies (including nested special types) are included. In source files (`.c`), the `CBackend` performs a deep recursive scan of all AST nodes and their associated types before emission. A global cache is used to ensure each type is emitted only once per translation unit.
 - **Const Qualifiers**: `const` is dropped in the emitted C code, so `[]const T` and `[]T` use the same C struct.
 
 #### Operations
