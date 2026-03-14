@@ -584,7 +584,7 @@ struct S {
 ### 6.4 Tagged Unions
 Tagged unions (`TYPE_TAGGED_UNION`) are emitted as C `struct`s containing a `tag` field and a `data` union.
 
-**Known Bug**: The current code generator may incorrectly use the `union` keyword for local variable declarations of tagged union types, leading to C compilation errors. Tagged unions must always be declared using the `struct` keyword in C.
+**Known Bug**: The current code generator may incorrectly use the `union` keyword for local variable declarations of tagged union types, leading to C compilation errors. Tagged unions must always be declared using the `struct` keyword in C. In addition, nested struct initializers (e.g., `s = .{ .inner = .{ ... } }`) assigned to complex l-values may produce invalid C syntax if not properly captured and decomposed.
 
 #### Emission Strategy
 The `C89Emitter::emitTaggedUnionDefinition` handles the emission of named tagged unions.

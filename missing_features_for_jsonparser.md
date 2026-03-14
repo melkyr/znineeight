@@ -7,44 +7,49 @@ The attempt to compile a non-trivial JSON parser in Z98 revealed significant arc
 - **JSON Parser (Full Run)**: ~524 KB
 - **Limit**: 16 MB (PASS)
 
-## 1. Tagged Union Critical Failures
-### C89 Keyword Mismatch
-- **Problem**: Tagged unions are correctly identified as `TYPE_UNION` (with `is_tagged=true`) and emitted as C `struct`s. However, the code generator consistently uses the `union` keyword for variable declarations of these types.
-- **Result**: `error: ‘z_repro_union_U’ defined as wrong kind of tag`.
-- **Workaround**: Downgrade to a manual `struct` + `enum` tag + `union` data field.
+## 1. Feature Status & Integration Gaps
 
-### Member Access Resolution
-- **Problem**: Accessing union tags (e.g., `JsonValue.Null`) often fails during type checking with `member access '.' only allowed on structs, unions, enums...`.
-- **Root Cause**: Inconsistent unwrapping of `TYPE_TYPE` and `TYPE_PLACEHOLDER` in `visitMemberAccess`.
-- **Workaround**: Use explicit constant lookups or fully qualified names where necessary.
+### Tagged Unions (`union(enum)`)
+- **Status**: Implemented but broken in integration.
+- **Problem**: The compiler correctly identifies tagged unions as `TYPE_UNION` (with `is_tagged=true`) and emits them as C `struct`s. However, the code generator consistently uses the `union` keyword for variable declarations of these types.
+- **Result**: `error: ‘z_repro_union_U’ defined as wrong kind of tag` (in C compiler).
+- **Workaround**: Manually implement tagged unions using a `struct` with an `enum` tag and a bare `union` data field.
 
-## 2. Constant Evaluation Limitations
-### Character Literals in Ranges
-- **Problem**: `switch` ranges using character literals (e.g., `'0'...'9'`) are rejected.
-- **Result**: `error: Range bounds must be compile-time constants`.
-- **Root Cause**: `TypeChecker::evaluateConstantExpression` lacks a case for `NODE_CHAR_LITERAL`.
-- **Workaround**: Use `if-else` chains or manual integer constants in `switch` prongs.
+### Switch Captures (`|capture|`)
+- **Status**: Implemented but unstable.
+- **Problem**: Captured symbols often fail to resolve in the prong body or trigger internal compiler errors when the condition type is not recognized as a tagged union due to placeholder resolution delays.
+- **Workaround**: Use manual tag checks and field access (e.g., `if (val.tag == .Foo) { const x = val.data.Foo; ... }`).
 
-## 3. Slice and Coercion Bugs
+### Range-based Switch Arms (`0...9`)
+- **Status**: Implemented but restricted.
+- **Problem**: `switch` ranges using character literals (e.g., `'0'...'9'`) are rejected because `evaluateConstantExpression` lacks a case for `NODE_CHAR_LITERAL`.
+- **Workaround**: Use manual integer constants in ranges or `if-else` chains.
+
+### Recursive Types
+- **Status**: Partially Supported.
+- **Problem**: Indirectly recursive types (e.g., `union { Array: []Self }`) trigger `field 'value' has incomplete type` because the layout calculation for slices/arrays requires the element size before the placeholder is fully mutated.
+- **Workaround**: Use single-item pointers (`*Self`) for recursion, as pointers have fixed sizes (4 bytes) regardless of target completeness.
+
+## 2. Stability & Coercion Bugs
+
 ### String to Slice Coercion
 - **Problem**: Implicitly converting `"literal"` to `[]const u8` fails when passed as a function argument.
 - **Result**: `error: incompatible argument type ... expected '[]const u8', got '*const u8'`.
 - **Workaround**: Use manual slice construction or `@ptrCast` for C interop functions.
 
-### Missing Slice Definitions
-- **Problem**: When a slice is used in a private function, the `typedef struct Slice_...` and its `__make_slice_...` helper are often missing from the generated `.c` file.
-- **Workaround**: Ensure the slice type is used in a public signature or as a member of a public struct to force emission.
+### Array-to-Pointer Coercion
+- **Problem**: Passing a pointer to an array (`&buf`) where a many-item pointer (`[*]u8`) is expected fails during type checking or produces invalid C.
+- **Workaround**: Use `@ptrCast` to convert explicitly.
 
-## 4. Multi-Module / @import Instability
-### Cross-Module Symbols
-- **Problem**: Frequent `use of undeclared identifier` for symbols imported from other modules.
-- **Workaround**: Consolidate logic into fewer files or use `extern` declarations to bridge gaps where `@import` fails.
+### Multi-Module / @import Instability
+- **Problem**: Frequent `use of undeclared identifier` or `Function symbol not found` for symbols imported from other modules in complex dependency graphs.
+- **Root Cause**: Symbol table merging across multiple `CompilationUnit` passes appears to lose visibility or mangling information.
 
-## 5. Recursive Type Gaps
-### Incomplete Self-Reference
-- **Problem**: Types like `struct { v: []Self }` fail with `field has incomplete type`.
-- **Root Cause**: The layout calculation for slices/arrays triggers recursive resolution that the placeholder system cannot always satisfy.
-- **Workaround**: Use single-item pointers (`*Self`) for recursion, as pointers have fixed sizes regardless of target completion.
+### Braceless Control Flow Syntax
+- **Problem**: Semicolon requirements in braceless bodies are inconsistent. `=> continue,` triggers a syntax error while `=> continue;,` (or with braces) passes.
+
+## 3. Toolchain Limitations
+- **32-bit Compilation**: `gcc -m32` is the target for 1998-era software, but local verification is currently blocked by missing 32-bit system headers (e.g., `bits/libc-header-start.h`) in the modern Ubuntu environment.
 
 ## Summary
-The compiler is currently in a "feature-complete but integration-failed" state for Z98. The Milestone 9 features exist in the codebase but are not robust enough for a production-level application like a JSON parser. Immediate focus should be on fixing the C89 keyword mismatch for tagged unions and handling character literals in constant evaluation.
+The compiler is currently in a "feature-complete but integration-failed" state for Z98. The Milestone 9 features exist in the codebase but are not robust enough for a production-level application like a JSON parser. Immediate focus should be on fixing the C89 keyword mismatch for tagged unions, adding character literal support to constant evaluation, and stabilizing cross-module symbol resolution.

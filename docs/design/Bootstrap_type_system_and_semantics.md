@@ -1589,8 +1589,8 @@ A regression in the code generation for `for` loops was resolved by ensuring tha
 
 As of the "Baptism of Fire" JSON parser test, the following limitations are known:
 
-- **Tagged Union Keyword Fix**: There is a known bug in the code generator where local variables of tagged union types may be incorrectly declared using the `union` keyword instead of `struct` in C.
-- **Recursive Slice Resolution**: Types that contain slices of themselves (e.g., `struct { v: []Self }`) may trigger "incomplete type" errors during field validation if the recursion is not immediately resolved.
-- **String-to-Slice Coercion**: Implicit coercion of string literals to `[]const u8` is currently unreliable when used as function arguments or in some multi-module contexts.
-- **Multi-Module Symbol Lookup**: The symbol resolution logic across modules via `@import` is sensitive to complex dependency cycles and may result in "undeclared identifier" errors during the code generation phase even if type checking passes.
-- **Constant Evaluation**: Character literals (e.g., `'0'`) are not currently recognized as compile-time constants for features like `switch` range bounds.
+- **Tagged Union Keyword Fix**: There is a known bug in the code generator where local variables of tagged union types may be incorrectly declared using the `union` keyword instead of `struct` in C. Tag and initialization resolution via `.` and `{}` may also be unstable.
+- **Recursive Slice Resolution**: Types that contain slices of themselves (e.g., `struct { v: []Self }`) may trigger "incomplete type" errors during field validation because the layout calculation requires element size before the placeholder is mutated. **Workaround**: Use pointers (`*Self`) for recursion.
+- **String-to-Slice Coercion**: Implicit coercion of string literals to `[]const u8` is currently unreliable when used as function arguments or in some multi-module contexts. **Workaround**: Use `@ptrCast` or manual slice construction.
+- **Multi-Module Symbol Lookup**: The symbol resolution logic across modules via `@import` is sensitive to complex dependency cycles and may result in "Function symbol not found" or "undeclared identifier" errors during the code generation phase.
+- **Constant Evaluation**: Character literals (e.g., `'0'`) are not currently handled by `evaluateConstantExpression`, preventing their use as `switch` range bounds.
