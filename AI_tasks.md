@@ -2264,6 +2264,12 @@ Implementation steps (minimal):
     - **Integration**: Fixed `@import` resolution in the integration test harness.
     - **Verification**: Created Batch 67 covering cross-module tag access and type aliases. Verified no regressions in Batch 65.
 
+243. [COMPLETE] **Task 9.19: Fix Missing Slice Definitions for Nested Types**
+    - **Analysis**: Identified that `scanForSpecialTypes` only performed shallow AST node type checks, missing slices nested within pointers, structs, or function signatures, especially in private functions.
+    - **CBackend**: Implemented `scanType` for deep recursive traversal of types (pointers, arrays, slices, optionals, error unions, structs, unions, functions).
+    - **MetadataPass**: Updated `collectReachableTypes` to recursively traverse component types, ensuring nested special types are identified for public headers.
+    - **Verification**: Created Batch 66 with tests for private nested slices, struct field slices, and public signature nested slices. Verified full test suite pass.
+
 ---
 
 

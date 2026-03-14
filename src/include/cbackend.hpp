@@ -71,7 +71,12 @@ private:
     /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
      */
-    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds = 7);
+    void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds, DynamicArray<Type*>& visited);
+
+    /**
+     * @brief Recursively scans a type for special types and ensures they are buffered in the emitter.
+     */
+    void scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray<Type*>& visited);
 
     enum SpecialTypeScanKind {
         SCAN_SLICES = 1,

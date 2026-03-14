@@ -92,18 +92,20 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
     for (size_t i = 0; i < visited.length(); ++i) {
         if (visited[i] == type) return;
     }
+
+    // Add to visited BEFORE recursing to prevent infinite recursion on recursive types
     visited.append(type);
 
     // Recursively visit component types FIRST (Post-order traversal)
     switch (type->kind) {
         case TYPE_POINTER:
-            // Pointers only need forward declaration of base type, so they don't force ordering.
+            collectReachableTypes(mod, type->as.pointer.base, visited);
             break;
         case TYPE_ARRAY:
             collectReachableTypes(mod, type->as.array.element_type, visited);
             break;
         case TYPE_SLICE:
-            // Slices only contain a pointer to the element type, so they don't force ordering.
+            collectReachableTypes(mod, type->as.slice.element_type, visited);
             break;
         case TYPE_OPTIONAL:
             collectReachableTypes(mod, type->as.optional.payload, visited);
@@ -132,9 +134,19 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             break;
         case TYPE_STRUCT:
         case TYPE_UNION:
+            if (type->as.struct_details.tag_type) {
+                collectReachableTypes(mod, type->as.struct_details.tag_type, visited);
+            }
             if (type->as.struct_details.fields) {
                 for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
                     collectReachableTypes(mod, (*type->as.struct_details.fields)[i].type, visited);
+                }
+            }
+            break;
+        case TYPE_TUPLE:
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    collectReachableTypes(mod, (*type->as.tuple.elements)[i], visited);
                 }
             }
             break;

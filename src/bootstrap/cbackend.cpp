@@ -124,16 +124,22 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     // Pass 1.5: Special types (slices, error unions, optionals)
     // These are emitted AFTER structs because they might depend on them (recursive types).
+    DynamicArray<Type*> visited_types(unit_.getArena());
     for (size_t i = 0; i < stmts->length(); ++i) {
-        scanForSpecialTypes((*stmts)[i], emitter, SCAN_SLICES);
+        visited_types.clear();
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_SLICES, visited_types);
     }
     emitter.emitBufferedSlices();
+
     for (size_t i = 0; i < stmts->length(); ++i) {
-        scanForSpecialTypes((*stmts)[i], emitter, SCAN_ERROR_UNIONS);
+        visited_types.clear();
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_ERROR_UNIONS, visited_types);
     }
     emitter.emitBufferedErrorUnions();
+
     for (size_t i = 0; i < stmts->length(); ++i) {
-        scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS);
+        visited_types.clear();
+        scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS, visited_types);
     }
     emitter.emitBufferedOptionals();
 
@@ -327,6 +333,15 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
         emitter.writeString("\n");
     }
 
+    // Scan public symbols for special types recursively before emitting definitions
+    DynamicArray<Type*> visited_types(unit_.getArena());
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        scanType(module->header_types[i], emitter, SCAN_ALL, visited_types);
+    }
+    emitter.emitBufferedSlices();
+    emitter.emitBufferedErrorUnions();
+    emitter.emitBufferedOptionals();
+
     // Use pre-computed header types in dependency order
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
@@ -382,149 +397,231 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     return true;
 }
 
-void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds) {
+void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray<Type*>& visited) {
+    if (!type) return;
+
+    // Check if already visited
+    for (size_t i = 0; i < visited.length(); ++i) {
+        if (visited[i] == type) return;
+    }
+    visited.append(type);
+
+    // Process current type
+    if ((kinds & SCAN_SLICES) && type->kind == TYPE_SLICE) {
+        emitter.ensureSliceType(type);
+    } else if ((kinds & SCAN_ERROR_UNIONS) && type->kind == TYPE_ERROR_UNION) {
+        emitter.ensureErrorUnionType(type);
+    } else if ((kinds & SCAN_OPTIONALS) && type->kind == TYPE_OPTIONAL) {
+        emitter.ensureOptionalType(type);
+    }
+
+    // Recurse based on kind
+    switch (type->kind) {
+        case TYPE_POINTER:
+            scanType(type->as.pointer.base, emitter, kinds, visited);
+            break;
+        case TYPE_ARRAY:
+            scanType(type->as.array.element_type, emitter, kinds, visited);
+            break;
+        case TYPE_SLICE:
+            scanType(type->as.slice.element_type, emitter, kinds, visited);
+            break;
+        case TYPE_OPTIONAL:
+            scanType(type->as.optional.payload, emitter, kinds, visited);
+            break;
+        case TYPE_ERROR_UNION:
+            scanType(type->as.error_union.payload, emitter, kinds, visited);
+            if (type->as.error_union.error_set) {
+                scanType(type->as.error_union.error_set, emitter, kinds, visited);
+            }
+            break;
+        case TYPE_FUNCTION:
+            if (type->as.function.params) {
+                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
+                    scanType((*type->as.function.params)[i], emitter, kinds, visited);
+                }
+            }
+            scanType(type->as.function.return_type, emitter, kinds, visited);
+            break;
+        case TYPE_FUNCTION_POINTER:
+            if (type->as.function_pointer.param_types) {
+                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
+                    scanType((*type->as.function_pointer.param_types)[i], emitter, kinds, visited);
+                }
+            }
+            scanType(type->as.function_pointer.return_type, emitter, kinds, visited);
+            break;
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            if (type->as.struct_details.tag_type) {
+                scanType(type->as.struct_details.tag_type, emitter, kinds, visited);
+            }
+            if (type->as.struct_details.fields) {
+                for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
+                    scanType((*type->as.struct_details.fields)[i].type, emitter, kinds, visited);
+                }
+            }
+            break;
+        case TYPE_TAGGED_UNION:
+            if (type->as.tagged_union.tag_type) {
+                scanType(type->as.tagged_union.tag_type, emitter, kinds, visited);
+            }
+            if (type->as.tagged_union.payload_fields) {
+                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
+                    scanType((*type->as.tagged_union.payload_fields)[i].type, emitter, kinds, visited);
+                }
+            }
+            break;
+        case TYPE_TUPLE:
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    scanType((*type->as.tuple.elements)[i], emitter, kinds, visited);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds, DynamicArray<Type*>& visited) {
     if (!node) return;
 
     if (node->resolved_type) {
-        Type* t = node->resolved_type;
-        if ((kinds & SCAN_SLICES) && t->kind == TYPE_SLICE) {
-            emitter.ensureSliceType(t);
-        } else if ((kinds & SCAN_ERROR_UNIONS) && t->kind == TYPE_ERROR_UNION) {
-            emitter.ensureErrorUnionType(t);
-        } else if ((kinds & SCAN_OPTIONALS) && t->kind == TYPE_OPTIONAL) {
-            emitter.ensureOptionalType(t);
-        }
+        scanType(node->resolved_type, emitter, kinds, visited);
     }
 
     // Recursively check types in declarations
     if (node->type == NODE_VAR_DECL) {
-        if (node->as.var_decl->type) scanForSpecialTypes(node->as.var_decl->type, emitter, kinds);
-        if (node->as.var_decl->initializer) scanForSpecialTypes(node->as.var_decl->initializer, emitter, kinds);
+        if (node->as.var_decl->type) scanForSpecialTypes(node->as.var_decl->type, emitter, kinds, visited);
+        if (node->as.var_decl->initializer) scanForSpecialTypes(node->as.var_decl->initializer, emitter, kinds, visited);
     } else if (node->type == NODE_STRUCT_DECL) {
         if (node->as.struct_decl->fields) {
             for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
-                scanForSpecialTypes((*node->as.struct_decl->fields)[i], emitter, kinds);
+                scanForSpecialTypes((*node->as.struct_decl->fields)[i], emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_UNION_DECL) {
         if (node->as.union_decl->fields) {
             for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
-                scanForSpecialTypes((*node->as.union_decl->fields)[i], emitter, kinds);
+                scanForSpecialTypes((*node->as.union_decl->fields)[i], emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_STRUCT_FIELD) {
-        if (node->as.struct_field->type) scanForSpecialTypes(node->as.struct_field->type, emitter, kinds);
+        if (node->as.struct_field->type) scanForSpecialTypes(node->as.struct_field->type, emitter, kinds, visited);
     } else if (node->type == NODE_FN_DECL) {
         ASTFnDeclNode* fn = node->as.fn_decl;
         if (fn->params) {
             for (size_t i = 0; i < fn->params->length(); ++i) {
-                scanForSpecialTypes((*fn->params)[i], emitter, kinds);
+                scanForSpecialTypes((*fn->params)[i], emitter, kinds, visited);
             }
         }
-        if (fn->return_type) scanForSpecialTypes(fn->return_type, emitter, kinds);
-        if (fn->body) scanForSpecialTypes(fn->body, emitter, kinds);
+        if (fn->return_type) scanForSpecialTypes(fn->return_type, emitter, kinds, visited);
+        if (fn->body) scanForSpecialTypes(fn->body, emitter, kinds, visited);
+    } else if (node->type == NODE_PARAM_DECL) {
+        if (node->as.param_decl.type) scanForSpecialTypes(node->as.param_decl.type, emitter, kinds, visited);
     } else if (node->type == NODE_BLOCK_STMT) {
         if (node->as.block_stmt.statements) {
             for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-                scanForSpecialTypes((*node->as.block_stmt.statements)[i], emitter, kinds);
+                scanForSpecialTypes((*node->as.block_stmt.statements)[i], emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_PAREN_EXPR) {
-        scanForSpecialTypes(node->as.paren_expr.expr, emitter, kinds);
+        scanForSpecialTypes(node->as.paren_expr.expr, emitter, kinds, visited);
     } else if (node->type == NODE_TUPLE_LITERAL) {
         if (node->as.tuple_literal->elements) {
             for (size_t i = 0; i < node->as.tuple_literal->elements->length(); ++i) {
-                scanForSpecialTypes((*node->as.tuple_literal->elements)[i], emitter, kinds);
+                scanForSpecialTypes((*node->as.tuple_literal->elements)[i], emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_PTR_CAST) {
-        scanForSpecialTypes(node->as.ptr_cast->target_type, emitter, kinds);
-        scanForSpecialTypes(node->as.ptr_cast->expr, emitter, kinds);
+        scanForSpecialTypes(node->as.ptr_cast->target_type, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.ptr_cast->expr, emitter, kinds, visited);
     } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST) {
-        scanForSpecialTypes(node->as.numeric_cast->target_type, emitter, kinds);
-        scanForSpecialTypes(node->as.numeric_cast->expr, emitter, kinds);
+        scanForSpecialTypes(node->as.numeric_cast->target_type, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.numeric_cast->expr, emitter, kinds, visited);
     } else if (node->type == NODE_OFFSET_OF) {
-        scanForSpecialTypes(node->as.offset_of->type_expr, emitter, kinds);
+        scanForSpecialTypes(node->as.offset_of->type_expr, emitter, kinds, visited);
     } else if (node->type == NODE_COMPTIME_BLOCK) {
-        scanForSpecialTypes(node->as.comptime_block.expression, emitter, kinds);
+        scanForSpecialTypes(node->as.comptime_block.expression, emitter, kinds, visited);
     } else if (node->type == NODE_IF_STMT) {
-        scanForSpecialTypes(node->as.if_stmt->condition, emitter, kinds);
-        scanForSpecialTypes(node->as.if_stmt->then_block, emitter, kinds);
-        if (node->as.if_stmt->else_block) scanForSpecialTypes(node->as.if_stmt->else_block, emitter, kinds);
+        scanForSpecialTypes(node->as.if_stmt->condition, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.if_stmt->then_block, emitter, kinds, visited);
+        if (node->as.if_stmt->else_block) scanForSpecialTypes(node->as.if_stmt->else_block, emitter, kinds, visited);
     } else if (node->type == NODE_WHILE_STMT) {
-        scanForSpecialTypes(node->as.while_stmt->condition, emitter, kinds);
-        scanForSpecialTypes(node->as.while_stmt->body, emitter, kinds);
+        scanForSpecialTypes(node->as.while_stmt->condition, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.while_stmt->body, emitter, kinds, visited);
     } else if (node->type == NODE_FOR_STMT) {
-        scanForSpecialTypes(node->as.for_stmt->iterable_expr, emitter, kinds);
-        scanForSpecialTypes(node->as.for_stmt->body, emitter, kinds);
+        scanForSpecialTypes(node->as.for_stmt->iterable_expr, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.for_stmt->body, emitter, kinds, visited);
     } else if (node->type == NODE_RETURN_STMT) {
-        if (node->as.return_stmt.expression) scanForSpecialTypes(node->as.return_stmt.expression, emitter, kinds);
+        if (node->as.return_stmt.expression) scanForSpecialTypes(node->as.return_stmt.expression, emitter, kinds, visited);
     } else if (node->type == NODE_ASSIGNMENT) {
-        scanForSpecialTypes(node->as.assignment->lvalue, emitter, kinds);
-        scanForSpecialTypes(node->as.assignment->rvalue, emitter, kinds);
+        scanForSpecialTypes(node->as.assignment->lvalue, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.assignment->rvalue, emitter, kinds, visited);
     } else if (node->type == NODE_COMPOUND_ASSIGNMENT) {
-        scanForSpecialTypes(node->as.compound_assignment->lvalue, emitter, kinds);
-        scanForSpecialTypes(node->as.compound_assignment->rvalue, emitter, kinds);
+        scanForSpecialTypes(node->as.compound_assignment->lvalue, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.compound_assignment->rvalue, emitter, kinds, visited);
     } else if (node->type == NODE_RANGE) {
         if (node->as.range) {
-            scanForSpecialTypes(node->as.range->start, emitter, kinds);
-            scanForSpecialTypes(node->as.range->end, emitter, kinds);
+            scanForSpecialTypes(node->as.range->start, emitter, kinds, visited);
+            scanForSpecialTypes(node->as.range->end, emitter, kinds, visited);
         }
     } else if (node->type == NODE_BINARY_OP) {
-        scanForSpecialTypes(node->as.binary_op->left, emitter, kinds);
-        scanForSpecialTypes(node->as.binary_op->right, emitter, kinds);
+        scanForSpecialTypes(node->as.binary_op->left, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.binary_op->right, emitter, kinds, visited);
     } else if (node->type == NODE_UNARY_OP) {
-        scanForSpecialTypes(node->as.unary_op.operand, emitter, kinds);
+        scanForSpecialTypes(node->as.unary_op.operand, emitter, kinds, visited);
     } else if (node->type == NODE_FUNCTION_CALL) {
-        scanForSpecialTypes(node->as.function_call->callee, emitter, kinds);
+        scanForSpecialTypes(node->as.function_call->callee, emitter, kinds, visited);
         if (node->as.function_call->args) {
             for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
-                scanForSpecialTypes((*node->as.function_call->args)[i], emitter, kinds);
+                scanForSpecialTypes((*node->as.function_call->args)[i], emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_ARRAY_ACCESS) {
-        scanForSpecialTypes(node->as.array_access->array, emitter, kinds);
-        scanForSpecialTypes(node->as.array_access->index, emitter, kinds);
+        scanForSpecialTypes(node->as.array_access->array, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.array_access->index, emitter, kinds, visited);
     } else if (node->type == NODE_MEMBER_ACCESS) {
-        scanForSpecialTypes(node->as.member_access->base, emitter, kinds);
+        scanForSpecialTypes(node->as.member_access->base, emitter, kinds, visited);
     } else if (node->type == NODE_STRUCT_INITIALIZER) {
-        if (node->as.struct_initializer->type_expr) scanForSpecialTypes(node->as.struct_initializer->type_expr, emitter, kinds);
+        if (node->as.struct_initializer->type_expr) scanForSpecialTypes(node->as.struct_initializer->type_expr, emitter, kinds, visited);
         if (node->as.struct_initializer->fields) {
             for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
-                scanForSpecialTypes((*node->as.struct_initializer->fields)[i]->value, emitter, kinds);
+                scanForSpecialTypes((*node->as.struct_initializer->fields)[i]->value, emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_ARRAY_SLICE) {
-        scanForSpecialTypes(node->as.array_slice->array, emitter, kinds);
-        if (node->as.array_slice->start) scanForSpecialTypes(node->as.array_slice->start, emitter, kinds);
-        if (node->as.array_slice->end) scanForSpecialTypes(node->as.array_slice->end, emitter, kinds);
-        if (node->as.array_slice->base_ptr) scanForSpecialTypes(node->as.array_slice->base_ptr, emitter, kinds);
-        if (node->as.array_slice->len) scanForSpecialTypes(node->as.array_slice->len, emitter, kinds);
+        scanForSpecialTypes(node->as.array_slice->array, emitter, kinds, visited);
+        if (node->as.array_slice->start) scanForSpecialTypes(node->as.array_slice->start, emitter, kinds, visited);
+        if (node->as.array_slice->end) scanForSpecialTypes(node->as.array_slice->end, emitter, kinds, visited);
+        if (node->as.array_slice->base_ptr) scanForSpecialTypes(node->as.array_slice->base_ptr, emitter, kinds, visited);
+        if (node->as.array_slice->len) scanForSpecialTypes(node->as.array_slice->len, emitter, kinds, visited);
     } else if (node->type == NODE_TRY_EXPR) {
-        scanForSpecialTypes(node->as.try_expr.expression, emitter, kinds);
+        scanForSpecialTypes(node->as.try_expr.expression, emitter, kinds, visited);
     } else if (node->type == NODE_CATCH_EXPR) {
-        scanForSpecialTypes(node->as.catch_expr->payload, emitter, kinds);
-        scanForSpecialTypes(node->as.catch_expr->else_expr, emitter, kinds);
+        scanForSpecialTypes(node->as.catch_expr->payload, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.catch_expr->else_expr, emitter, kinds, visited);
     } else if (node->type == NODE_SWITCH_EXPR) {
-        scanForSpecialTypes(node->as.switch_expr->expression, emitter, kinds);
+        scanForSpecialTypes(node->as.switch_expr->expression, emitter, kinds, visited);
         if (node->as.switch_expr->prongs) {
             for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
                 ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
                 if (prong->items) {
                     for (size_t j = 0; j < prong->items->length(); ++j) {
-                        scanForSpecialTypes((*prong->items)[j], emitter, kinds);
+                        scanForSpecialTypes((*prong->items)[j], emitter, kinds, visited);
                     }
                 }
-                scanForSpecialTypes(prong->body, emitter, kinds);
+                scanForSpecialTypes(prong->body, emitter, kinds, visited);
             }
         }
     } else if (node->type == NODE_IF_EXPR) {
-        scanForSpecialTypes(node->as.if_expr->condition, emitter, kinds);
-        scanForSpecialTypes(node->as.if_expr->then_expr, emitter, kinds);
-        scanForSpecialTypes(node->as.if_expr->else_expr, emitter, kinds);
+        scanForSpecialTypes(node->as.if_expr->condition, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.if_expr->then_expr, emitter, kinds, visited);
+        scanForSpecialTypes(node->as.if_expr->else_expr, emitter, kinds, visited);
     } else if (node->type == NODE_DEFER_STMT) {
-        scanForSpecialTypes(node->as.defer_stmt.statement, emitter, kinds);
+        scanForSpecialTypes(node->as.defer_stmt.statement, emitter, kinds, visited);
     } else if (node->type == NODE_ERRDEFER_STMT) {
-        scanForSpecialTypes(node->as.errdefer_stmt.statement, emitter, kinds);
+        scanForSpecialTypes(node->as.errdefer_stmt.statement, emitter, kinds, visited);
     }
 }
