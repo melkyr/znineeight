@@ -1595,3 +1595,13 @@ To ensure that types containing slices of themselves (e.g., `JsonValue` with `[]
 ### 24.2 For-Loop Iterator Stabilization
 A regression in the code generation for `for` loops was resolved by ensuring that the internal iterator pointer is emitted with the correct mutability.
 - **Internal Pointer Mutability**: In `C89Emitter::emitFor`, when an array is iterated, it is treated as a pointer. This pointer is now emitted as a mutable pointer (`is_const = false`) to ensure compatibility with various iteration patterns and C89 compiler expectations.
+
+## 25. JSON Parser "Baptism of Fire" Findings
+
+The following issues were identified during the attempt to compile a comprehensive JSON parser example:
+
+- **Tagged Union Forward Declaration Bug**: Tagged unions are correctly emitted as C `structs` in their definitions, but the `CBackend` incorrectly forward-declares them using the `union` keyword in generated headers.
+- **Unreachable Statement Emission**: The `unreachable` keyword results in an "unimplemented statement" comment in C89, rather than a panic or `abort()`.
+- **Braceless Switch Prongs**: Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
+- **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
+- **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.

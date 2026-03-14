@@ -30,6 +30,10 @@ We are implementing multi-module support and `@import` resolution, moving toward
 9. **Initializer Decomposition**: Decomposes struct/union initializers into field-by-field assignments for complex C89 l-values (array elements, member access, pointer dereferences).
 10. **Union Naked Tags**: Syntactic sugar in tagged unions allowing fields without explicit types (implicitly `: void`).
 
+### Compiler Architecture Assumptions (Target ABI)
+- **32-bit Core**: The bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment).
+- **Host Mismatch**: Compiling generated C code on a 64-bit host without `-m32` will result in memory corruption due to ABI mismatch. Always use `-m32` for verification if possible.
+
 ### Initializer Decomposition Responsibilities
 - **C89Emitter**: Implements `captureExpression` to safely stringify l-values and `emitInitializerAssignments` to perform the decomposition. Corrects precedence for pointer dereferences (e.g., `(*ptr).field`).
 
