@@ -916,8 +916,14 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 emitStatement(stmt);
                 if (allPathsExit(stmt)) {
@@ -985,8 +991,14 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 /* Check if it's the last expression in the block */
                 if (i == node->statements->length() - 1 && target_var &&
@@ -1058,6 +1070,10 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_DEFER_STMT:
             writeIndent();
             writeString("/* defer */\n");
+            break;
+        case NODE_ERRDEFER_STMT:
+            writeIndent();
+            writeString("/* errdefer */\n");
             break;
         case NODE_EXPRESSION_STMT: {
             ASTNode* expr = node->as.expression_stmt.expression;
