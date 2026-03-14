@@ -2270,6 +2270,13 @@ Implementation steps (minimal):
     - **MetadataPass**: Updated `collectReachableTypes` to recursively traverse component types, ensuring nested special types are identified for public headers.
     - **Verification**: Created Batch 66 with tests for private nested slices, struct field slices, and public signature nested slices. Verified full test suite pass.
 
+244. [COMPLETE] **Task 9.20: Implicit Coercion from String Literal to Many-Item Pointer**
+    - **Goal**: Allow passing string literals to extern functions expecting `[*]const u8` without `@ptrCast`.
+    - **Type System**: Updated `visitStringLiteral` to return `*const [N]u8`, preserving length info.
+    - **Coercion**: Added rules in `areTypesCompatible` and `IsTypeAssignableTo` for `*[N]T` to `[*]const T` and `*const T` (backward compatibility).
+    - **Codegen**: Updated `injectPtrAccessIfNeeded` to handle array pointer decay to many-item pointers using `&(*ptr)[0]` for variables.
+    - **Verification**: Created Batch 68 with tests for many-item pointer targets, slice targets, and backward compatibility. Updated documentation.
+
 ---
 
 

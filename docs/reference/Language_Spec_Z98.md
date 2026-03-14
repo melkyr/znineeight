@@ -53,7 +53,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
   - `slice.len` returns a `usize`.
 - **Coercion**:
   - Fixed-size arrays `[N]T` can be implicitly coerced to slices `[]T`.
-  - String literals (e.g., `"hello"`) can be implicitly coerced to constant byte slices (`[]const u8`).
+  - String literals (e.g., `"hello"`) are typed as `*const [N]u8` and can be implicitly coerced to constant byte slices (`[]const u8`), many-item pointers (`[*]const u8`), or legacy single-item pointers (`*const u8`).
 
 ### 1.5 Error Handling Types
 - **Error Sets**: `const MyErrors = error { Foo, Bar };`
@@ -257,7 +257,7 @@ In specific contexts where a pointer is expected, the compiler provides implicit
 **Coercion Rules:**
 - **Slice to Pointer**: A slice `[]T` is coerced to `[*]T` by accessing its `.ptr` field.
 - **Array to Pointer**: A fixed-size array `[N]T` is coerced to `[*]T` by taking the address of its first element (`&arr[0]`).
-- **String Literal to Pointer**: A string literal is already a single-item pointer to constant bytes (`*const [N]u8`), and can be coerced to a many-item pointer (`[*]const u8`).
+- **String Literal to Pointer**: A string literal is typed as a pointer to a constant array of bytes (`*const [N]u8`), and can be implicitly coerced to a many-item pointer (`[*]const u8`) or a legacy single-item pointer (`*const u8`).
 
 **Const Correctness:**
 Coercions are only allowed if they do not discard const qualifiers.
