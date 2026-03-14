@@ -200,6 +200,9 @@ This unification reduces code duplication and ensures consistent behavior across
     - **Void Handling**: If the captured field has type `void`, the C variable declaration and assignment are skipped to comply with C89 rules.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
+- **Unreachable Expression**: `unreachable` is mapped to a call to `__bootstrap_panic("reached unreachable", __FILE__, __LINE__)`.
+  - **Lifting**: When used as an expression (e.g., in a branch of an `if` expression), `unreachable` is integrated into the `ControlFlowLifter`. It is emitted as a panic call in the corresponding branch of the generated C statement, ensuring that dead code following the expression is correctly skipped.
+  - **Divergence**: The `allPathsExit` helper recognizes `unreachable` as a diverging node. The emitter uses this information to stop generating subsequent statements in a block after an `unreachable` is encountered.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - **Braceless Support**: Braceless `defer stmt;` is normalized into a block-wrapped defer by the `ControlFlowLifter`.
@@ -207,6 +210,9 @@ This unification reduces code duplication and ensures consistent behavior across
   - `defer` statements are added to the current scope on the stack.
   - At the natural end of a block, all defers in that scope are emitted in reverse order.
   - For `return`, `break`, and `continue`, the emitter identifies all scopes being exited and emits their deferred actions in order (from innermost outward) before emitting the jump or return.
+- **ErrDefer Statements**: Currently implemented as a minimal placeholder.
+  - **Behavior**: `errdefer` statements are collected into the defer stack and emitted at scope exit, similar to regular `defer`. Full support for error-only execution is deferred to a future milestone.
+  - **Nested Logic**: This minimal implementation ensures that nested statements within an `errdefer`, such as `unreachable`, are preserved and correctly emitted as panic calls during unwinding.
 
 ### 4.4 Slice Support
 Slices (`[]T`) are emitted as C structs containing a pointer and a length.
