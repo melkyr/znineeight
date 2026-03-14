@@ -1,231 +1,143 @@
-## Final Fixes for `zig1` – Phased Plan with Pseudocode
+## Phased Plan to Resolve JSON Parser Issues
 
-Based on your analysis, the only compiler changes absolutely necessary to compile `zig1` are:
-
-1. **Anonymous Union Emission Bug** – a code generator bug that must be fixed.
-2. **Standard Library Conflicts** – resolved by introducing `c_char` and removing the problematic `#include`.
-3. **Optional Pointer ABI** – if `zig1` uses `?*T` in `extern` signatures, we need to map them to raw pointers.
-4. **Recursive Type Layout** – already worked around; no compiler change needed.
-
-Below is a phased plan with pseudocode, test strategies, and what to watch for.
+The following phased plan prioritises critical code generation bugs and type system gaps that currently prevent the JSON parser from compiling without workarounds. Each phase is self‑contained and should be verified with integration tests.
 
 ---
 
-### Task 1: Fix Anonymous Union Emission Bug
+### Phase 0: Baseline & ABI Documentation
 
-**Goal:** Ensure that anonymous unions inside structs emit a valid C union body, not just `union /* anonymous */`.
-
-**Impacted files:** `codegen.cpp` (emitter), `ast.hpp` (union node fields already exist).
-
-**Pseudocode for `C89Emitter::emitTypeDefinition` (handling union nodes):**
-
-```cpp
-void C89Emitter::emitUnionDefinition(ASTUnionDeclNode* node, const char* field_name) {
-    // node is an anonymous union (node->name == NULL)
-    writeIndent();
-    writeString("union {");
-    indent();
-
-    // Emit each field
-    for (size_t i = 0; i < node->fields->length(); ++i) {
-        ASTNode* field_node = (*node->fields)[i];
-        ASTStructFieldNode* field = field_node->as.struct_field;
-
-        writeIndent();
-        emitType(field->type->resolved_type, field->name);
-        writeString(";\n");
-    }
-
-    dedent();
-    writeIndent();
-    writeString("} ");
-    writeString(field_name);
-    writeString(";\n");
-}
-```
-
-In `emitStructDefinition`, when processing a field whose type is an anonymous union, call `emitUnionDefinition` instead of the usual type emission:
-
-```cpp
-// Inside loop over struct fields
-if (field_node->type == NODE_UNION_DECL && field_node->as.union_decl->name == NULL) {
-    emitUnionDefinition(field_node->as.union_decl, field_name);
-} else {
-    // normal field emission
-    emitType(field_type, field_name);
-    writeString(";\n");
-}
-```
-
-**What to watch for:**
-- Ensure that nested anonymous unions are handled correctly (the function recurses via `emitUnionDefinition` on the nested union's fields).
-- If the union itself has a name, it should be emitted normally (with the union tag). The condition `name == NULL` distinguishes anonymous.
-- Test with a struct containing an anonymous union inside another anonymous union.
-
-**Test:**
-Create a Zig file `anon_union_test.zig`:
-```zig
-const S = struct {
-    data: union {
-        int: i32,
-        float: f64,
-    },
-    tag: i32,
-};
-export fn test() void {
-    var s: S = undefined;
-    s.data.int = 42;
-}
-```
-Compile and inspect the generated C. It should contain:
-```c
-struct S {
-    union {
-        int int;
-        double float;
-    } data;
-    int tag;
-};
-```
-Also test with a union inside a struct that is itself inside another struct.
+- **Goal**: Establish a clear understanding of the target platform.
+- **Actions**:
+  1. Add a prominent note to `README.md` and `docs/design/COMPATIBILITY.md` that the compiler is hardcoded for **32‑bit** targets (pointers 4 bytes, `size_t` 4 bytes, slice struct 8 bytes).
+  2. Instruct users to compile generated C with `-m32` (or use a 32‑bit C compiler).
+  3. (Optional) Add a compile‑time check in `zig0` that detects if the host is 64‑bit and prints a warning: “Generated C must be compiled with -m32”.
+- **Outcome**: Users are aware of the 32‑bit requirement, avoiding runtime corruption.
 
 ---
 
-### Task 2: Introduce `c_char` and Resolve Standard Library Conflicts
+### Phase 1: Tagged Union Forward Declaration Bug
 
-**Goal:** Provide a distinct type for C's `char`, allowing extern function signatures to match the C library exactly. Also remove the problematic `#include <stdio.h>` from `zig_runtime.h`.
-
-#### Subtask 2.1: Add `c_char` to the type system
-
-**Impacted files:** `type_system.hpp`, `type_system.cpp`, `lexer.hpp`, `parser.cpp`, `c89_type_mapping.hpp`, `codegen.cpp`.
-
-**Steps:**
-- Add `TYPE_C_CHAR` to `TypeKind` enum.
-- In `resolvePrimitiveTypeName`, map `"c_char"` to `TYPE_C_CHAR`.
-- In `emitBaseType`, emit `"char"` for `TYPE_C_CHAR`.
-- Set size=1, alignment=1 (same as `u8`).
-- Update the type checker to allow conversions between `u8` and `c_char` (optional, but we can keep them distinct; the user must use explicit casts).
-
-**Pseudocode for `type_system.cpp`:**
-```cpp
-Type* createCCharType(ArenaAllocator* arena) {
-    Type* t = (Type*)arena->alloc(sizeof(Type));
-    t->kind = TYPE_C_CHAR;
-    t->size = 1;
-    t->alignment = 1;
-    return t;
-}
-```
-
-**What to watch for:**
-- Ensure that `c_char` is not confused with `u8` in the type checker; they are distinct, so no implicit conversion unless we add a rule.
-- In the JSON parser, we will update `file.zig` to use `c_char` for string parameters.
-
-#### Subtask 2.2: Update `zig_runtime.h` to be minimal
-
-- Remove `#include <stdio.h>`.
-- If any runtime helper needs `fputs` (e.g., `__bootstrap_print`), move its implementation to a separate `.c` file that includes `<stdio.h>`, or provide a version that uses Win32 API. For simplicity, we can keep the helper in a separate file and let the user link it. However, to avoid breaking existing code, we can keep the include but also provide a way to suppress it. Since this is a one-time change for `zig1`, we can simply remove the include and update the JSON parser's build to include `<stdio.h>` manually if needed.
-
-**Recommended:** Remove the include and document that the user must include `<stdio.h>` in their own C file if they use functions like `fopen`. For the runtime helpers, we can implement `__bootstrap_print` using `WriteFile` on Windows and `write` on POSIX, avoiding `stdio.h`. That's more portable and keeps the header independent.
-
-**Implementation for `__bootstrap_print` (in `zig_runtime.c`):**
-```c
-#ifdef _WIN32
-#include <windows.h>
-void __bootstrap_print(const char* s) {
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, strlen(s), NULL, NULL);
-}
-#else
-#include <unistd.h>
-void __bootstrap_print(const char* s) {
-    write(2, s, strlen(s));
-}
-#endif
-```
-
-Then remove `#include <stdio.h>` from `zig_runtime.h`.
-
-**Testing:** Recompile the JSON parser after making these changes. Ensure that `__bootstrap_print` works and that there are no conflicts with `fopen` declarations.
+- **Issue**: Tagged unions are forward‑declared as `union` instead of `struct` in headers, causing “wrong kind of tag” errors.
+- **Fix**: In `C89Emitter::ensureForwardDeclaration`, for tagged unions (both `TYPE_UNION` with `is_tagged` and `TYPE_TAGGED_UNION`), emit `struct` instead of `union`.
+- **Verification**:
+  - Write a minimal test that uses a tagged union across two modules and compile the generated C.
+  - Ensure the header contains `struct U;` (not `union U;`).
+  - Verify that the JSON parser no longer needs the manual `struct`‑based tagged union workaround.
+- **Effort**: 1 day.
 
 ---
 
-### Task 3: Optional Pointer ABI for Extern Functions [DONE]
+### Phase 2: `unreachable` Statement Emission
 
-**Goal:** Make `?*T` in `extern` function signatures map to raw pointer `T*` in C, preserving ABI compatibility.
-
-**Impacted files:** `type_checker.cpp`, `codegen.cpp`.
-
-**Strategy:** During type checking of `extern` functions, transform any optional pointer type to a raw pointer type. Store the transformed type in the symbol. During code generation, use the transformed type for the prototype.
-
-**Pseudocode for `TypeChecker::visitFnDecl` when `node->is_extern` is true:**
-
-```cpp
-Type* original_ret = visit(node->return_type);
-Type* new_ret = transformExternType(original_ret);
-// Similarly for parameters
-for each param in node->params {
-    Type* orig = param->type->resolved_type;
-    Type* new = transformExternType(orig);
-    // Store new type in param->type->resolved_type? But we must not modify the original AST node because it's shared.
-    // Instead, create a new list of transformed types and store them in a separate structure.
-}
-```
-
-Define `transformExternType`:
-
-```cpp
-Type* transformExternType(Type* t) {
-    if (t->kind == TYPE_OPTIONAL && t->as.optional.payload->kind == TYPE_POINTER) {
-        // Return a plain pointer with same constness and many-item flag
-        return createPointerType(
-            arena_,
-            t->as.optional.payload->as.pointer.base,
-            t->as.optional.payload->as.pointer.is_const,
-            t->as.optional.payload->as.pointer.is_many,
-            &unit_.getTypeInterner()
-        );
-    }
-    return t;
-}
-```
-
-We need a way to attach the transformed types to the function symbol. We can store a separate function type for the C prototype. For simplicity, we can create a new function type with transformed parameter and return types and store it in `sym->c_prototype_type`. In code generation, if that exists, use it; otherwise use the normal type.
-
-**In `codegen.cpp`, `emitFnProto` for `extern` functions:**
-```cpp
-if (sym->c_prototype_type) {
-    emitTypePrefix(sym->c_prototype_type->as.function.return_type);
-    // ... emit parameters using the transformed types from sym->c_prototype_type
-} else {
-    // normal path
-}
-```
-
-**What to watch for:**
-- Only transform for `extern` functions; internal functions should keep the original optional representation.
-- Ensure that const‑correctness is preserved (e.g., `?*const T` becomes `const T*`).
-- If the optional is a pointer to a many‑item pointer (`?[*]T`), it should become `T*` (since `[*]T` is already a pointer). So we need to strip both optional and many‑item if needed? Actually `?[*]T` is a pointer to many‑item; after transformation we get `[*]T`, which is a pointer. That's fine.
-
-**Testing:**
-Create a test with an `extern` function returning `?*void` and another with a parameter of type `?*const i32`. Compile and verify the generated C uses `void*` and `const int*`.
+- **Issue**: `unreachable;` as a statement emits a comment instead of a panic call.
+- **Fix**:
+  - In `C89Emitter::emitStatement`, add a case for `NODE_UNREACHABLE` (or ensure that `NODE_EXPRESSION_STMT` with an unreachable expression correctly emits `__bootstrap_panic(...);`).
+  - The `emitExpression` already handles `NODE_UNREACHABLE` by generating a panic call; we just need to ensure the statement is terminated with a semicolon.
+- **Verification**:
+  - Write a test function that contains `unreachable;` as a statement.
+  - Compile and verify that the generated C contains a call to `__bootstrap_panic`.
+- **Effort**: 0.5 day.
 
 ---
 
-### Task 4: Documentation Updates
+### Phase 3: Header Dependency Cycle with Error Unions
 
-Update the following documents to reflect the new features and workarounds:
-
-- `docs/design/C89_Codegen.md` – describe anonymous union emission, `c_char` mapping, and optional pointer transformation for externs.
-- `docs/reference/Language_Spec_Z98.md` – document `c_char` and the rule that `?*T` in externs becomes raw pointer.
-- `Z98_upcoming_bugfixes.md` – mark issues as resolved.
+- **Issue**: When a function returns an error union containing a recursive struct by value, the header emits the error union typedef before the struct definition, causing “incomplete type” errors.
+- **Root cause**: Header generation emits all special types (error unions, slices, optionals) immediately, without ensuring that all dependent structs are defined first.
+- **Fix**:
+  - In `CBackend::generateModule`, after scanning for special types, first emit **all struct/union/enum definitions** (these may depend on each other via pointers, which are fine), **then** emit error unions, slices, and optionals.
+  - This mirrors the order already used for `.c` files.
+- **Verification**:
+  - Create a test with a recursive struct and a function returning `!RecursiveStruct` by value.
+  - Inspect the header: the struct definition must appear before the error union typedef.
+  - Ensure the JSON parser’s `readFile` (which returns `FileError![]u8`) no longer triggers the cycle.
+- **Effort**: 1 day.
 
 ---
 
-## Summary of What to Test
+### Phase 4: Recursive Type Completeness (Slices of Self)
 
-| Task | Test Cases |
-|------|------------|
-| Anonymous Union | Struct with anonymous union field, nested anonymous unions, union inside struct inside union. |
-| `c_char` | Extern function using `c_char` for string parameters, e.g., `fopen`. Also test that `u8` and `c_char` are distinct (cannot be assigned without cast). |
-| Optional Pointer ABI | Extern function returning `?*void`, taking `?*const i32` parameter. Verify C prototype and that call site passes a raw pointer. |
-| Runtime Header | After removing `#include <stdio.h>`, compile a program that uses `__bootstrap_print` and verify it links and works. |
+- **Issue**: Types containing slices of themselves (e.g., `Node = struct { children: []Node }`) sometimes fail with “incomplete type” errors during layout calculation.
+- **Current status**: Basic recursion already works, but the issue may appear in more complex scenarios (e.g., inside unions, or across modules). We need to ensure that the placeholder system correctly handles slices.
+- **Fix**:
+  - Audit `visitArrayType` for slices: ensure that it does **not** check completeness of the element type when creating a slice type.
+  - In `createSliceType`, do **not** require the element type to be complete.
+  - Verify that `isTypeComplete` for `TYPE_SLICE` always returns `true` (already does).
+  - Ensure that when a slice is used, any operation that needs the element type (e.g., indexing) calls `resolvePlaceholder` on the element type first.
+- **Verification**:
+  - Expand existing tests to cover:
+    - Struct containing a slice of itself.
+    - Two mutually recursive structs each containing a slice of the other.
+    - Slice of self inside a union.
+    - Cross‑module recursive slices.
+  - Run these tests and confirm they compile and run.
+- **Effort**: 2 days.
+
+---
+
+### Phase 5: Strict Assignment Compatibility (i32 → usize Coercion)
+
+- **Issue**: Integer literals (`0`) do not implicitly coerce to `usize` in assignments or struct initializers.
+- **Fix**:
+  - In `TypeChecker::canLiteralFitInType`, add cases for `TYPE_USIZE` and `TYPE_ISIZE` that check the value against 32‑bit range.
+  - In `IsTypeAssignableTo`, allow integer literals to coerce to `usize`/`isize` if the value fits.
+- **Verification**:
+  - Write a test that assigns `0` to a `usize` variable and uses it in a struct initializer.
+  - Ensure no type mismatch error occurs.
+- **Effort**: 0.5 day.
+
+---
+
+### Phase 6: Braceless Switch Prong Semicolon Requirement
+
+- **Issue**: When a switch prong body is a statement (e.g., `return`), a semicolon is required before the comma, which deviates from Zig’s grammar.
+- **Fix**: Audit `parseSwitchProng` in the parser. The grammar should allow a statement (which already includes a trailing semicolon) and then a comma. The current code may be expecting a semicolon after the statement even though the statement already provides one. Likely a simple parser adjustment.
+- **Verification**:
+  - Write a test with a switch where a prong body is `return try foo();` without an extra semicolon.
+  - Ensure it parses correctly.
+- **Effort**: 0.5 day.
+
+---
+
+### Phase 7: Incomplete Type Definition Order (Structs Referring to Unions)
+
+- **Issue**: Even with pointers, if a struct refers back to a union that is still being defined, header emission order can cause issues.
+- **Root cause**: Similar to Phase 3, but with structs referring to unions (or vice‑versa). This should be addressed by the same fix (emit structs first, then unions, then other types). However, if a union contains a pointer to a struct, and that struct is defined later, forward declarations may be needed.
+- **Fix**:
+  - Ensure that during header generation, we emit forward declarations for all structs/unions before emitting any definitions that reference them.
+  - The current `ensureForwardDeclaration` already does this for structs/unions. However, we must ensure it is called for **all** types that will be referenced, including those inside error unions etc.
+  - In Phase 3, we already emit struct definitions first. That should solve this issue. After Phase 3, re‑evaluate.
+- **Verification**: If any test still fails after Phase 3, investigate and add specific forward declarations.
+- **Effort**: 1 day (contingent).
+
+---
+
+### Phase 8: Documentation and Release
+
+- **Goal**: Update all relevant documentation to reflect the fixes and the 32‑bit requirement.
+- **Actions**:
+  - Update `docs/design/C89_Codegen.md` with details on tagged union emission, `unreachable` handling, and header order.
+  - Update `docs/design/Bootstrap_type_system_and_semantics.md` with notes on recursive slices and integer literal coercions.
+  - Update `README.md` with the 32‑bit requirement and how to use `-m32`.
+  - Update `Z98_upcoming_bugfixes.md` to mark these issues as resolved.
+- **Outcome**: Comprehensive documentation for future developers.
+
+---
+
+## Summary of Phases
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 0 | 32‑bit ABI documentation | 0.5 day |
+| 1 | Tagged union forward declaration | 1 day |
+| 2 | `unreachable` emission | 0.5 day |
+| 3 | Error union header order | 1 day |
+| 4 | Recursive slice completeness | 2 days |
+| 5 | i32 → usize coercion | 0.5 day |
+| 6 | Braceless switch semicolon | 0.5 day |
+| 7 | Incomplete type order (contingent) | 1 day |
+| 8 | Documentation | 1 day |
+
+**Total** ≈ 7–8 days of focused work.
+
+After completing these phases, the JSON parser should compile without any of the workarounds listed, and the compiler will be robust enough to tackle `zig1`. Each phase can be implemented and tested independently, and the fixes are isolated.
