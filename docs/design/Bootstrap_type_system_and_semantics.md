@@ -1013,6 +1013,21 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 - **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed. The `TypeChecker` switches its internal context (defining module) to the target module to ensure that identifiers within that module are correctly resolved.
 - **Enum Member Access**: Qualified access to enum members (e.g., `mod.Enum.Member`) is supported and follows the same on-demand resolution rules.
 
+### Type Alias Unwrapping (Phase 9a)
+
+The `TypeChecker` supports unwrapping multiple levels of type aliases to facilitate member access on tagged unions, enums, and error sets. This is primarily handled by the `resolveTypeConstant(Symbol* sym)` helper method.
+
+1. **Unwrapping Logic**: When a symbol's type is `TYPE_TYPE` (indicating a constant holding a type), the compiler follows the chain of initializers until it reaches a concrete aggregate type (struct, union, enum, or error set).
+2. **Contexts**: Unwrapping applies to:
+   - **Local Aliases**: `const MyType = struct { ... }; const Alias = MyType; Alias.Member`.
+   - **Module-qualified Aliases**: `const json = @import("json.zig"); json.JsonValue.Null`.
+3. **Member Resolution and Constant Folding**: After unwrapping, the compiler performs member-specific logic:
+   - **Tagged Unions**: Resolves to the tag enum value and constant-folds the access to an integer literal.
+   - **Enums**: Constant-folds the access to the member's integer value.
+   - **Error Sets**: Constant-folds the access to the error tag's global integer ID.
+
+This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
+
 ### `resolvePrimitiveTypeName`
 
 A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduced. Its responsibilities are:

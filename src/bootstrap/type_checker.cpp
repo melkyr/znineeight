@@ -3333,8 +3333,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     DynamicArray<const char*>* tags;
     bool found;
     size_t i;
-    DynamicArray<EnumMember>* members;
-    size_t member_idx;
     Type* field_type;
     bool is_type_access = false;
 
@@ -3353,23 +3351,16 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         Type* unwrapped = node->base->resolved_type;
         if (!unwrapped || unwrapped->kind == TYPE_TYPE) {
             /* Try to find the concrete type through the symbol. */
+            Symbol* sym = NULL;
             if (node->base->type == NODE_IDENTIFIER) {
-                Symbol* sym = node->base->as.identifier.symbol;
+                sym = node->base->as.identifier.symbol;
                 if (!sym) sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
-                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                    if (decl->initializer) {
-                        unwrapped = decl->initializer->resolved_type;
-                    }
-                }
             } else if (node->base->type == NODE_MEMBER_ACCESS) {
-                Symbol* sym = node->base->as.member_access->symbol;
-                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                    if (decl->initializer) {
-                        unwrapped = decl->initializer->resolved_type;
-                    }
-                }
+                sym = node->base->as.member_access->symbol;
+            }
+
+            if (sym) {
+                unwrapped = resolveTypeConstant(sym);
             }
         }
 
@@ -3433,28 +3424,10 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                     }
 
                     /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
-                    if (result_type->kind == TYPE_TYPE && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                        Type* unwrapped = NULL;
-
-                        if (decl->initializer && decl->initializer->resolved_type && decl->initializer->resolved_type->kind != TYPE_TYPE) {
-                            unwrapped = decl->initializer->resolved_type;
-                        } else if (decl->initializer) {
-                             const char* saved_module = unit_.getCurrentModule();
-                             unit_.setCurrentModule(target_mod->name);
-                             TypeChecker target_checker(unit_);
-                             unwrapped = target_checker.visit(decl->initializer);
-                             if (unwrapped && unwrapped->kind == TYPE_TYPE && decl->initializer->resolved_type) {
-                                 unwrapped = decl->initializer->resolved_type;
-                             }
-                             unit_.setCurrentModule(saved_module);
-                        }
+                    if (result_type->kind == TYPE_TYPE) {
+                        Type* unwrapped = resolveTypeConstant(sym);
 
                         if (unwrapped && unwrapped->kind != TYPE_TYPE) {
-                            if (unwrapped->kind == TYPE_PLACEHOLDER) {
-                                unwrapped = resolvePlaceholder(unwrapped);
-                            }
-
                             const char* saved_module = unit_.getCurrentModule();
                             unit_.setCurrentModule(target_mod->name);
                             unwrapped = resolveAllPlaceholders(unwrapped);
@@ -3495,18 +3468,33 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (base_type->kind == TYPE_ERROR_SET) {
         /* Error set tag access: ErrorSetName.TagName */
-        tags = base_type->as.error_set.tags;
-        found = false;
-        if (tags) {
-            for (i = 0; i < tags->length(); ++i) {
-                if (identifiers_equal((*tags)[i], node->field_name)) {
-                    found = true;
-                    break;
+        if (is_type_access) {
+            i64 error_val = findErrorTagValue(base_type, node->field_name);
+            if (error_val != -1) {
+                /* Constant-fold to integer literal (error tag value) */
+                parent->type = NODE_INTEGER_LITERAL;
+                parent->as.integer_literal.value = (u64)error_val;
+                parent->as.integer_literal.is_unsigned = true;
+                parent->as.integer_literal.is_long = false;
+                parent->as.integer_literal.resolved_type = base_type;
+                parent->as.integer_literal.original_name = node->field_name;
+                parent->resolved_type = base_type;
+                return base_type;
+            }
+        } else {
+            tags = base_type->as.error_set.tags;
+            found = false;
+            if (tags) {
+                for (i = 0; i < tags->length(); ++i) {
+                    if (identifiers_equal((*tags)[i], node->field_name)) {
+                        found = true;
+                        break;
+                    }
                 }
             }
-        }
-        if (found) {
-            return base_type;
+            if (found) {
+                return base_type;
+            }
         }
         /* Fall through to error. */
     }
@@ -3533,30 +3521,18 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         }
 
         if (is_static_access) {
-            Type* tag_type = (base_type->kind == TYPE_TAGGED_UNION) ?
-                             base_type->as.tagged_union.tag_type : base_type->as.struct_details.tag_type;
+            Type* tag_type = getTagType(base_type);
             if (tag_type && tag_type->kind == TYPE_ENUM) {
-                members = tag_type->as.enum_details.members;
-                found = false;
-                member_idx = 0;
-                if (members) {
-                    for (i = 0; i < members->length(); ++i) {
-                        if (identifiers_equal((*members)[i].name, node->field_name)) {
-                            found = true;
-                            member_idx = i;
-                            break;
-                        }
-                    }
-                }
+                i64 tag_val = findEnumMemberValue(tag_type, node->field_name);
 
-                if (found) {
+                if (tag_val != -1) {
                     /* Constant-fold to integer literal */
                     parent->type = NODE_INTEGER_LITERAL;
-                    parent->as.integer_literal.value = (*members)[member_idx].value;
+                    parent->as.integer_literal.value = (u64)tag_val;
                     parent->as.integer_literal.is_unsigned = true;
                     parent->as.integer_literal.is_long = false;
                     parent->as.integer_literal.resolved_type = tag_type;
-                    parent->as.integer_literal.original_name = (*members)[member_idx].name;
+                    parent->as.integer_literal.original_name = node->field_name;
                     parent->resolved_type = tag_type;
                     return tag_type;
                 }
@@ -3574,18 +3550,9 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (base_type->kind == TYPE_ENUM) {
         /* Enum member access. Always static in Z98. */
-        members = base_type->as.enum_details.members;
-        found = false;
-        member_idx = 0;
-        for (i = 0; i < members->length(); ++i) {
-            if (identifiers_equal((*members)[i].name, node->field_name)) {
-                found = true;
-                member_idx = i;
-                break;
-            }
-        }
+        i64 enum_val = findEnumMemberValue(base_type, node->field_name);
 
-        if (!found) {
+        if (enum_val == -1) {
             char msg_buffer[256];
             char* current = msg_buffer;
             size_t remaining = sizeof(msg_buffer);
@@ -3598,11 +3565,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* --- ENUM CONSTANT FOLDING --- */
         /* Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL */
         parent->type = NODE_INTEGER_LITERAL;
-        parent->as.integer_literal.value = (*members)[member_idx].value;
+        parent->as.integer_literal.value = (u64)enum_val;
         parent->as.integer_literal.is_unsigned = true;
         parent->as.integer_literal.is_long = false;
         parent->as.integer_literal.resolved_type = base_type;
-        parent->as.integer_literal.original_name = (*members)[member_idx].name;
+        parent->as.integer_literal.original_name = node->field_name;
         parent->resolved_type = base_type;
 
         return base_type; /* Result type is the enum type itself */
@@ -6120,4 +6087,60 @@ ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, Zig0TokenType op, Type* ty
     node->as.unary_op.op = op;
     node->resolved_type = type;
     return node;
+}
+
+Type* TypeChecker::resolveTypeConstant(Symbol* sym) {
+    if (!sym) return NULL;
+    Type* t = sym->symbol_type;
+    int depth = 0;
+    const int MAX_DEPTH = 64;
+    while (t && t->kind == TYPE_TYPE && sym->kind == SYMBOL_VARIABLE && sym->details) {
+        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+        if (!decl->initializer) break;
+
+        if (decl->initializer->resolved_type && decl->initializer->resolved_type->kind != TYPE_TYPE) {
+            t = decl->initializer->resolved_type;
+        } else {
+            t = visit(decl->initializer);
+            if (t && t->kind == TYPE_TYPE && decl->initializer->resolved_type) {
+                t = decl->initializer->resolved_type;
+            }
+        }
+
+        if (!t) break;
+        if (t->kind == TYPE_PLACEHOLDER) t = resolvePlaceholder(t);
+
+        if (t->kind == TYPE_TYPE && decl->initializer->type == NODE_IDENTIFIER) {
+            sym = unit_.getSymbolTable().lookup(decl->initializer->as.identifier.name);
+            if (!sym) break;
+            t = sym->symbol_type;
+        } else {
+            break;
+        }
+        if (++depth > MAX_DEPTH) break;
+    }
+    return t;
+}
+
+Type* TypeChecker::getTagType(Type* tu) {
+    if (!tu) return NULL;
+    if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
+    if (isTaggedUnion(tu)) return tu->as.struct_details.tag_type;
+    return NULL;
+}
+
+i64 TypeChecker::findEnumMemberValue(Type* enum_type, const char* name) {
+    if (!enum_type || enum_type->kind != TYPE_ENUM) return -1;
+    DynamicArray<EnumMember>* members = enum_type->as.enum_details.members;
+    if (!members) return -1;
+    for (size_t i = 0; i < members->length(); ++i) {
+        if (plat_strcmp((*members)[i].name, name) == 0)
+            return (*members)[i].value;
+    }
+    return -1;
+}
+
+i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
+    if (!error_set || error_set->kind != TYPE_ERROR_SET) return -1;
+    return (i64)unit_.getGlobalErrorRegistry().getOrAddTag(name);
 }

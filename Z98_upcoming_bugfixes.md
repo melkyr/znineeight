@@ -235,13 +235,19 @@ if (is_expr && prong_type == get_g_type_undefined()) {
 
 After this, all prongs will have the same union type, and the unification will succeed. We must also ensure that the `coerceNode` for the field value happens early enough (it does here).
 
-#### Additional Changes
-- In `validateSwitch`, after processing all prongs, we already call `coerceNode` on each prong body with the common type. This will be redundant but harmless.
-- Ensure that the switch expression's result type is set correctly to the union type.
+### Phase 7: Incomplete Type Definition Order (Structs Referring to Unions) [RESOLVED]
 
-#### What to Watch For
-- This inference only works if the switch condition is a tagged union and the prong bodies are anonymous initializers with a single field whose name matches a tag. That's exactly the pattern in the JSON parser. For other cases (e.g., integer switches), the existing logic already works.
-- We must be careful not to interfere with prongs that have captures. In the example, each prong has a capture `|a|`, and the body is `MyUnion{ .A = a }`. That's not an anonymous initializer; it's an explicit constructor with the type name. So our inference may not apply there. Wait, the example given uses `MyUnion{ .A = a }`, which is a named initializer (with `type_expr`). That is not anonymous; it has a type. So `visit` should already return that type (the union). Why does it fail? Possibly because `visitStructInitializer` for a named initializer returns the type, but the type might be `TYPE_TYPE` if `MyUnion` is a type constant? That's a different issue. Let's examine the example:
+- **Issue**: Even with pointers, if a struct refers back to a union that is still being defined, header emission order can cause issues.
+- **Root cause**: Similar to Phase 3, but with structs referring to unions (or vice‑versa). Mutual recursion via pointers was previously blocked by strict TypeChecker completeness checks.
+- **Fix**:
+  - Relaxed `TypeChecker` to allow incomplete types in fields if they are reached through a pointer indirection.
+  - Implemented explicit value-dependency cycle detection in the `TypeChecker`.
+  - Enhanced `MetadataPreparationPass` to perform a two-phase traversal: value dependencies are visited first to establish a topological definition order, while pointer/function dependencies are found for forward declarations.
+  - Updated `CBackend` to emit forward declarations for all aggregate types defined in the module at the top of the header.
+- **Verification**:
+  - Created Batch 73 (`tests/integration/phase7_tests.cpp`) verifying valid pointer recursion, invalid value cycles, and correct topological ordering for both structs and tagged unions.
+  - Verified full test suite passes.
+- **Outcome**: Mutually recursive types via pointers are now fully supported and correctly emitted in C89 headers.
 
 ```zig
 return switch (u) {
@@ -267,26 +273,31 @@ Nevertheless, we should still add the inference for anonymous initializers as a 
 
 ## Summary of Phases
 
-| Phase | Bug | Complexity | Key Changes |
-|-------|-----|------------|-------------|
-| 9a | Meta‑type unwrapping (Bug 3) | Easy | Enhance `visitMemberAccess` to unwrap type constants and constant‑fold tags. |
-| 9b | Tagged union initialization (Bug 1) | Medium | Add coercion rule in `coerceNode` for anonymous struct initializers to tagged unions. |
-| 9c | Switch expression type inference (Bug 2) | Medium | Improve `validateSwitch` to infer union type from condition for anonymous initializers; relies on 9a and 9b. |
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 0 | 32‑bit ABI documentation | 0.5 day |
+| 1 | Tagged union forward declaration | 1 day |
+| 2 | `unreachable` emission | 0.5 day |
+| 3 | Error union header order | 1 day |
+| 4 | Recursive slice completeness | 2 days |
+| 5 | i32 → usize coercion | 0.5 day |
+| 6 | Braceless switch semicolon | 0.5 day |
+| 7 | Incomplete type order (contingent) | 1 day |
+| 8 | Documentation | 1 day |
 
-## Testing Strategy
+**Total** ≈ 7–8 days of focused work.
 
-For each phase, add test cases to `tests/integration/phase9_tests.cpp` (or extend existing files) covering:
-
-- **Bug 3**: Accessing a tag via module‑qualified name and via type alias, both in expression contexts and as switch cases.
-- **Bug 1**: Returning an anonymous initializer from a function that returns a tagged union; assigning to a variable of tagged union type; using in a struct field initializer.
-- **Bug 2**: Switch expression with prongs returning both named and anonymous initializers; ensure type unification and correct code generation.
-
-Compile the generated C with `gcc -std=c89 -m32` and MSVC 6.0 (if available) to verify no regressions.
-
-## Compatibility with MSVC 6.0
-
-All changes are in the compiler's frontend and do not affect the generated C code's syntax. The generated code already uses MSVC‑compatible constructs (e.g., `__int64` for i64). The new coercion logic does not introduce any new C features. The only potential issue is identifier length, but we already mangle names to ≤31 characters. The new helper functions and data structures use arena allocation and `plat_*` functions, which are safe.
+After completing these phases, the JSON parser should compile without any of the workarounds listed, and the compiler will be robust enough to tackle `zig1`. Each phase can be implemented and tested independently, and the fixes are isolated.
 
 ---
 
-Let me know if you need further elaboration on any part of the plan.
+### Phase 9a: Fix Meta-type Unwrapping (Bug 3) [RESOLVED]
+
+- **Issue**: Accessing members of a type alias (e.g., Alias.Member) or module-qualified type (e.g., mod.Type.Member) fails because the symbol has type TYPE_TYPE and isn't correctly unwrapped to the underlying aggregate type.
+- **Fix**:
+  - Implemented `TypeChecker::resolveTypeConstant(Symbol* sym)` to follow type alias chains.
+  - Updated `visitMemberAccess` to use this helper for unwrapping TYPE_TYPE symbols.
+  - Enabled constant folding for tagged union tags, enum members, and error tags when accessed through aliases.
+- **Verification**:
+  - New test batch `Batch 9a` (`tests/integration/phase9a_unwrapping_tests.cpp`) verifies module-qualified access, local aliases, recursive aliases, and error set aliases.
+- **Outcome**: Meta-type unwrapping now works consistently for all static member accesses, resolving a critical blocker for the JSON parser.
