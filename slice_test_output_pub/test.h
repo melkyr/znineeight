@@ -5,6 +5,8 @@
 
 struct Arena;
 
+struct Arena; /* opaque */
+
 #ifndef ZIG_SLICE_Slice_u16
 #define ZIG_SLICE_Slice_u16
 typedef struct { unsigned short* ptr; usize len; } Slice_u16;
@@ -15,8 +17,6 @@ static RETR_UNUSED_FUNC Slice_u16 __make_slice_u16(unsigned short* ptr, usize le
     return s;
 }
 #endif
-
-struct Arena; /* opaque */
 
 
 void public_func(Slice_u16*);

@@ -10,7 +10,9 @@ The `CBackend` is the orchestration layer for code generation. It manages the cr
 - **Module Iteration**: Iterates over all compiled modules in a `CompilationUnit`.
 - **File Management**: Creates `.c` and `.h` files for each module.
 - **Metadata-Driven Emission**: Leverages the `MetadataPreparationPass` to emit headers that are guaranteed to be self-contained and free of "unknown type name" errors.
-- **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies. Struct, union, and enum definitions are emitted before dependent types like slices, error unions, and optionals to support recursive types.
+- **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies.
+    - In source files (`.c`), named aggregate definitions are emitted first, followed by special types (slices, error unions, optionals), then globals and functions.
+    - In header files (`.h`), named aggregates are emitted in topological dependency order (provided by `module->header_types`). Special types are emitted lazily after the structs they depend on are fully defined, preventing "incomplete type" errors in recursive scenarios.
 - **Orchestration**: Uses `C89Emitter` to write code to these files.
 - **Interface Generation**: Generates public header files (`.h`) containing declarations for symbols marked as `pub` in Zig.
 - **Implementation Generation**: Generates C source files (`.c`) containing all definitions, with non-`pub` symbols marked as `static`.
@@ -90,7 +92,18 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 1. **`foo.c`**: Contains the full implementation. Includes `zig_runtime.h`. Private symbols are `static`.
 2. **`foo.h`**: Contains the public interface. Only includes declarations for `pub` symbols. Uses standard header guards.
 
-### 4.2 Two-Pass Block Emission
+### 4.2 Type Emission Order in Headers
+To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers:
+1. **Forward Declarations**: All public structs, unions, and tagged unions are forward-declared first (e.g., `struct Node;`). This allows pointers to these types to be used in any subsequent definition.
+2. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions are emitted in topological dependency order.
+3. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
+    - During the emission of a named aggregate (Step 2), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
+    - Because Step 2 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.
+4. **Globals and Prototypes**: Finally, external variables and function prototypes are emitted. Any special types used in their signatures that weren't already emitted are triggered and defined here.
+
+This strategy ensures that a recursive struct returned by value in an error union (e.g., `pub fn foo() !Node`) correctly results in `struct Node` being defined before `ErrorUnion_Node`.
+
+### 4.3 Two-Pass Block Emission
 C89 requires all local variable declarations to appear at the beginning of a block, before any executable statements. To support Zig's flexible declaration placement, the `C89Emitter::emitBlock` method employs a two-pass strategy:
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.

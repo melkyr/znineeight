@@ -6,6 +6,8 @@
 struct Arena;
 struct Node;
 
+struct Arena; /* opaque */
+
 #ifndef ZIG_OPTIONAL_Optional_Ptr_Node
 #define ZIG_OPTIONAL_Optional_Ptr_Node
 typedef struct {
@@ -24,8 +26,6 @@ static RETR_UNUSED_FUNC Slice_u8 __make_slice_u8(unsigned char* ptr, usize len) 
     return s;
 }
 #endif
-
-struct Arena; /* opaque */
 
 struct Node {
     Optional_Ptr_Node next;

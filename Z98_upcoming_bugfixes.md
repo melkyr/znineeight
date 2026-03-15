@@ -39,18 +39,19 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 3: Header Dependency Cycle with Error Unions
+### Phase 3: Header Dependency Cycle with Error Unions [RESOLVED]
 
 - **Issue**: When a function returns an error union containing a recursive struct by value, the header emits the error union typedef before the struct definition, causing “incomplete type” errors.
-- **Root cause**: Header generation emits all special types (error unions, slices, optionals) immediately, without ensuring that all dependent structs are defined first.
+- **Root cause**: Header generation emitted all special types (error unions, slices, optionals) immediately at the top of the file, without ensuring that all dependent structs were defined first.
 - **Fix**:
-  - In `CBackend::generateModule`, after scanning for special types, first emit **all struct/union/enum definitions** (these may depend on each other via pointers, which are fine), **then** emit error unions, slices, and optionals.
-  - This mirrors the order already used for `.c` files.
+  - In `CBackend::generateHeaderFile`, the early scanning and emission of special types was removed.
+  - Emission of special types is now handled lazily during the main type definition loop and subsequent prototype/global emission.
+  - `emitter.emitBufferedTypeDefinitions()` is called after each named type definition to ensure any special types it depends on (like slices of itself) are emitted immediately after the struct is defined.
 - **Verification**:
-  - Create a test with a recursive struct and a function returning `!RecursiveStruct` by value.
-  - Inspect the header: the struct definition must appear before the error union typedef.
-  - Ensure the JSON parser’s `readFile` (which returns `FileError![]u8`) no longer triggers the cycle.
-- **Effort**: 1 day.
+  - Created an integration test `Phase3_ErrorUnionRecursion` in `tests/integration/phase3_error_union_recursion.cpp`.
+  - Verified that `struct Node` is defined before `ErrorUnion_Node` in the generated header.
+  - Confirmed the fix with `gcc -std=c89 -pedantic`.
+- **Outcome**: Special types now correctly follow the topological order of the named types they depend on in headers.
 
 ---
 
