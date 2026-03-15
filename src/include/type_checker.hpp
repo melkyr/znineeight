@@ -118,6 +118,11 @@ private:
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
+
+    Type* resolveTypeConstant(Symbol* sym);
+    Type* getTagType(Type* tu);
+    i64 findEnumMemberValue(Type* enum_type, const char* name);
+    i64 findErrorTagValue(Type* error_set, const char* name);
 public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
