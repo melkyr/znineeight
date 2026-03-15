@@ -94,8 +94,8 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 
 ### 4.2 Type Emission Order in Headers
 To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers:
-1. **Forward Declarations**: All public structs, unions, and tagged unions are forward-declared first (e.g., `struct Node;`). This allows pointers to these types to be used in any subsequent definition.
-2. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions are emitted in topological dependency order.
+1. **Forward Declarations**: All aggregate types (structs, unions, and tagged unions) that are defined in the current module are forward-declared first (e.g., `struct Node;`). This allows pointers to these types to be used in any subsequent definition within the same header or other headers.
+2. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions defined in the current module are emitted in topological dependency order. This order respects **value dependencies** (e.g., if `A` contains `B` by value, `B` is defined before `A`).
 3. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
     - During the emission of a named aggregate (Step 2), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
     - Because Step 2 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.

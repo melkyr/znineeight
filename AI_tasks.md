@@ -2277,6 +2277,12 @@ Implementation steps (minimal):
     - **Codegen**: Updated `injectPtrAccessIfNeeded` to handle array pointer decay to many-item pointers using `&(*ptr)[0]` for variables.
     - **Verification**: Created Batch 68 with tests for many-item pointer targets, slice targets, and backward compatibility. Updated documentation.
 
+245. [COMPLETE] **Task 9.21: Support Mutual Recursion via Pointers (Phase 7)**
+    - **Type Checker**: Relaxed completeness checks for fields that are pointer indirections to the current aggregate. Implemented explicit value-dependency cycle detection with descriptive errors.
+    - **Metadata Pass**: Enhanced `collectReachableTypes` with a two-phase traversal (value dependencies first, then pointers/functions) to enable topological sorting for definitions while discovering all types for forward declarations.
+    - **CBackend**: Updated `generateHeaderFile` to emit forward declarations for all aggregates defined in the current module.
+    - **Verification**: Created Batch 73 integration tests covering valid pointer recursion, invalid value cycles, and definition ordering for structs and tagged unions.
+
 ---
 
 

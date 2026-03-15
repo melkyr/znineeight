@@ -88,33 +88,103 @@ void MetadataPreparationPass::run() {
 void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, DynamicArray<Type*>& visited) {
     if (!type) return;
 
-    // Check if already visited
+    // Check if already visited in this traversal
     for (size_t i = 0; i < visited.length(); ++i) {
         if (visited[i] == type) return;
     }
 
-    // Add to visited BEFORE recursing to prevent infinite recursion on recursive types
     visited.append(type);
 
-    // Recursively visit component types FIRST (Post-order traversal)
+    // 1. Recurse into VALUE dependencies FIRST.
+    // This ensures that if A depends on B by value, B is added to header_types before A.
+    // IMPORTANT: Even if B is defined in another module, we must visit it to discover
+    // its transitive dependencies (like special types) that might need to be emitted here.
     switch (type->kind) {
-        case TYPE_POINTER:
-            collectReachableTypes(mod, type->as.pointer.base, visited);
-            break;
         case TYPE_ARRAY:
             collectReachableTypes(mod, type->as.array.element_type, visited);
             break;
-        case TYPE_SLICE:
-            collectReachableTypes(mod, type->as.slice.element_type, visited);
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            if (type->as.struct_details.tag_type) {
+                collectReachableTypes(mod, type->as.struct_details.tag_type, visited);
+            }
+            if (type->as.struct_details.fields) {
+                for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
+                    collectReachableTypes(mod, (*type->as.struct_details.fields)[i].type, visited);
+                }
+            }
             break;
-        case TYPE_OPTIONAL:
-            collectReachableTypes(mod, type->as.optional.payload, visited);
+        case TYPE_TAGGED_UNION:
+            if (type->as.tagged_union.tag_type) {
+                collectReachableTypes(mod, type->as.tagged_union.tag_type, visited);
+            }
+            if (type->as.tagged_union.payload_fields) {
+                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
+                    collectReachableTypes(mod, (*type->as.tagged_union.payload_fields)[i].type, visited);
+                }
+            }
             break;
         case TYPE_ERROR_UNION:
             collectReachableTypes(mod, type->as.error_union.payload, visited);
             if (type->as.error_union.error_set) {
                 collectReachableTypes(mod, type->as.error_union.error_set, visited);
             }
+            break;
+        case TYPE_OPTIONAL:
+            collectReachableTypes(mod, type->as.optional.payload, visited);
+            break;
+        case TYPE_TUPLE:
+            if (type->as.tuple.elements) {
+                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
+                    collectReachableTypes(mod, (*type->as.tuple.elements)[i], visited);
+                }
+            }
+            break;
+        case TYPE_ENUM:
+            collectReachableTypes(mod, type->as.enum_details.backing_type, visited);
+            break;
+        default:
+            break;
+    }
+
+    // 2. Add ourselves to header_types if we belong in this module's header.
+    if (isHeaderType(type)) {
+        bool belongs_here = false;
+        if (!type->owner_module || type->owner_module == mod) {
+            belongs_here = true;
+        } else if (type->kind == TYPE_SLICE || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ERROR_UNION) {
+            /* Special types are added to every header that uses them to ensure self-containment. */
+            belongs_here = true;
+        } else {
+             /* If it's a named aggregate from another module, it's NOT belongs_here.
+                HOWEVER, we still need to add it if it's reachable from this module's public symbols.
+                Wait, if it's from another module, mod->header_types should NOT contain it.
+                But existing tests like MetadataPreparation_TransitiveHeaders expect Outer to be in header_types.
+                If Outer is defined in lib.zig, it should be in lib_mod->header_types. */
+        }
+
+        if (belongs_here) {
+            bool already_in = false;
+            for (size_t i = 0; i < mod->header_types.length(); ++i) {
+                if (mod->header_types[i] == type) {
+                    already_in = true;
+                    break;
+                }
+            }
+            if (!already_in) {
+                mod->header_types.append(type);
+            }
+        }
+    }
+
+    // 3. Finally, recurse into POINTER and FUNCTION dependencies.
+    // These do NOT force a definition order, but we must find them so they get forward declared.
+    switch (type->kind) {
+        case TYPE_POINTER:
+            collectReachableTypes(mod, type->as.pointer.base, visited);
+            break;
+        case TYPE_SLICE:
+            collectReachableTypes(mod, type->as.slice.element_type, visited);
             break;
         case TYPE_FUNCTION:
             if (type->as.function.params) {
@@ -132,53 +202,8 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             }
             collectReachableTypes(mod, type->as.function_pointer.return_type, visited);
             break;
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-            if (type->as.struct_details.tag_type) {
-                collectReachableTypes(mod, type->as.struct_details.tag_type, visited);
-            }
-            if (type->as.struct_details.fields) {
-                for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.struct_details.fields)[i].type, visited);
-                }
-            }
-            break;
-        case TYPE_TUPLE:
-            if (type->as.tuple.elements) {
-                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.tuple.elements)[i], visited);
-                }
-            }
-            break;
-        case TYPE_TAGGED_UNION:
-            if (type->as.tagged_union.tag_type) {
-                collectReachableTypes(mod, type->as.tagged_union.tag_type, visited);
-            }
-            if (type->as.tagged_union.payload_fields) {
-                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.tagged_union.payload_fields)[i].type, visited);
-                }
-            }
-            break;
-        case TYPE_ENUM:
-            collectReachableTypes(mod, type->as.enum_details.backing_type, visited);
-            break;
         default:
             break;
-    }
-
-    // Add to header types list AFTER its dependencies
-    if (isHeaderType(type)) {
-        bool already_in = false;
-        for (size_t i = 0; i < mod->header_types.length(); ++i) {
-            if (mod->header_types[i] == type) {
-                already_in = true;
-                break;
-            }
-        }
-        if (!already_in) {
-            mod->header_types.append(type);
-        }
     }
 }
 

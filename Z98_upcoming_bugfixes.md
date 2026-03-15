@@ -104,16 +104,19 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 7: Incomplete Type Definition Order (Structs Referring to Unions)
+### Phase 7: Incomplete Type Definition Order (Structs Referring to Unions) [RESOLVED]
 
 - **Issue**: Even with pointers, if a struct refers back to a union that is still being defined, header emission order can cause issues.
-- **Root cause**: Similar to Phase 3, but with structs referring to unions (or vice‑versa). This should be addressed by the same fix (emit structs first, then unions, then other types). However, if a union contains a pointer to a struct, and that struct is defined later, forward declarations may be needed.
+- **Root cause**: Similar to Phase 3, but with structs referring to unions (or vice‑versa). Mutual recursion via pointers was previously blocked by strict TypeChecker completeness checks.
 - **Fix**:
-  - Ensure that during header generation, we emit forward declarations for all structs/unions before emitting any definitions that reference them.
-  - The current `ensureForwardDeclaration` already does this for structs/unions. However, we must ensure it is called for **all** types that will be referenced, including those inside error unions etc.
-  - In Phase 3, we already emit struct definitions first. That should solve this issue. After Phase 3, re‑evaluate.
-- **Verification**: If any test still fails after Phase 3, investigate and add specific forward declarations.
-- **Effort**: 1 day (contingent).
+  - Relaxed `TypeChecker` to allow incomplete types in fields if they are reached through a pointer indirection.
+  - Implemented explicit value-dependency cycle detection in the `TypeChecker`.
+  - Enhanced `MetadataPreparationPass` to perform a two-phase traversal: value dependencies are visited first to establish a topological definition order, while pointer/function dependencies are found for forward declarations.
+  - Updated `CBackend` to emit forward declarations for all aggregate types defined in the module at the top of the header.
+- **Verification**:
+  - Created Batch 73 (`tests/integration/phase7_tests.cpp`) verifying valid pointer recursion, invalid value cycles, and correct topological ordering for both structs and tagged unions.
+  - Verified full test suite passes.
+- **Outcome**: Mutually recursive types via pointers are now fully supported and correctly emitted in C89 headers.
 
 ---
 

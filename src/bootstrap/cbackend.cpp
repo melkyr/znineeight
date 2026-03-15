@@ -301,9 +301,14 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     }
     emitter.writeString("\n");
 
-    /* Pass 0: Forward declarations of public aggregate types */
+    /* Pass 0: Forward declarations of aggregate types */
+    /* We emit forward declarations for all aggregates used in the header,
+       but ONLY if they are defined in this module. Imports handle the rest. */
     for (size_t i = 0; i < module->header_types.length(); ++i) {
-        emitter.ensureForwardDeclaration(module->header_types[i]);
+        Type* t = module->header_types[i];
+        if (t->owner_module == module && t->kind != TYPE_ENUM) {
+            emitter.ensureForwardDeclaration(t);
+        }
     }
     emitter.writeString("\n");
 

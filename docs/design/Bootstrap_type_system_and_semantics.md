@@ -373,6 +373,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 5. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
 6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
 7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
+8. **Relaxed Completeness for Pointer Recursion**: In `visitStructDecl` and `visitUnionDecl`, field types are allowed to be incomplete if they are reached through at least one pointer indirection (e.g., `*Node`, `?*Node`, `**Node`).
+9. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
