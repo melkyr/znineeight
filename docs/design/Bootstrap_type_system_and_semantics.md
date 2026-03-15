@@ -1587,10 +1587,16 @@ As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened 
 ## 24. Recursive Slices and For-Loop Stabilization (Task 9.6)
 
 ### 24.1 Recursive Slice Handling
-To ensure that types containing slices of themselves (e.g., `JsonValue` with `[]JsonValue`) resolve correctly during mutual resolution, the `TypeChecker` has been hardened to aggressively resolve placeholders.
+To ensure that types containing slices of themselves (e.g., `Node = struct { children: []Node }`) resolve correctly during layout calculation and usage, the bootstrap compiler employs several strategies:
 
-- **On-Demand Element Resolution**: In `visitArrayAccess` and `visitArraySlice`, the element type of the base (array, slice, or pointer) is explicitly checked for `TYPE_PLACEHOLDER` and resolved via `resolvePlaceholder` before any size-dependent or field-dependent operations are performed.
-- **Mutual Resolution Stability**: By forcing resolution during access, the compiler ensures that the in-place mutation of placeholders is reflected in all dependent slice types, even across module boundaries.
+1.  **Fixed Slice Layout**: `TYPE_SLICE` always returns `true` for `isTypeComplete` because its size (8 bytes) and alignment (4 bytes) are constant for the 32-bit target, regardless of the element type. This prevents "incomplete type" errors when a slice is used as a field in the type it refers to.
+2.  **Completeness Deferral**: `visitArrayType` and `createSliceType` do not require the element type to be complete when creating a slice type. They correctly handle elements that are `TYPE_PLACEHOLDER`.
+3.  **On-Demand Element Resolution**: The `TypeChecker` aggressively resolves placeholders when performing operations on slice elements.
+    -   **Member Access**: Accessing `.ptr` of a slice via `visitMemberAccess` resolves the element type to ensure the resulting pointer type is accurate.
+    -   **Indexing**: `visitArrayAccess` resolves the element type before returning it as the expression type.
+    -   **Iteration**: `visitForStmt` resolves the item type derived from the slice's element type.
+    -   **Compatibility**: `areTypesCompatible` and `coerceNode` resolve element types during array-to-slice, pointer-to-array-to-slice, and slice-to-slice conversions.
+4.  **Mutual and Cross-Module Resolution**: The combination of pre-registered placeholders and on-demand resolution ensures that recursive slices work correctly within a single module, across mutually recursive modules, and inside tagged unions.
 
 ### 24.2 For-Loop Iterator Stabilization
 A regression in the code generation for `for` loops was resolved by ensuring that the internal iterator pointer is emitted with the correct mutability.

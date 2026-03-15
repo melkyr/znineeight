@@ -55,23 +55,25 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 4: Recursive Type Completeness (Slices of Self)
+### Phase 4: Recursive Type Completeness (Slices of Self) [RESOLVED]
 
 - **Issue**: Types containing slices of themselves (e.g., `Node = struct { children: []Node }`) sometimes fail with “incomplete type” errors during layout calculation.
-- **Current status**: Basic recursion already works, but the issue may appear in more complex scenarios (e.g., inside unions, or across modules). We need to ensure that the placeholder system correctly handles slices.
 - **Fix**:
-  - Audit `visitArrayType` for slices: ensure that it does **not** check completeness of the element type when creating a slice type.
-  - In `createSliceType`, do **not** require the element type to be complete.
-  - Verify that `isTypeComplete` for `TYPE_SLICE` always returns `true` (already does).
-  - Ensure that when a slice is used, any operation that needs the element type (e.g., indexing) calls `resolvePlaceholder` on the element type first.
+  - Confirmed that `isTypeComplete` already returns `true` for `TYPE_SLICE` (since size/align are fixed 8/4).
+  - Audited `visitArrayType` and `createSliceType` to ensure element completeness is NOT required during slice creation.
+  - Hardened `TypeChecker` to aggressively resolve placeholders during all slice-related operations:
+    - Indexing (`visitArrayAccess`)
+    - Iteration (`visitForStmt`)
+    - Member access (`visitMemberAccess` for `.ptr`)
+    - Compatibility and Coercion (`areTypesCompatible`, `coerceNode`, `needsStringLiteralCoercion`)
 - **Verification**:
-  - Expand existing tests to cover:
+  - Expanded `Batch 50` (`tests/integration/recursive_slice_tests.cpp`) to cover:
     - Struct containing a slice of itself.
-    - Two mutually recursive structs each containing a slice of the other.
-    - Slice of self inside a union.
-    - Cross‑module recursive slices.
-  - Run these tests and confirm they compile and run.
-- **Effort**: 2 days.
+    - Mutually recursive structs via slices.
+    - Slice of self inside a tagged union.
+    - Cross-module recursive slices (mutually recursive modules).
+  - All tests pass and verify that placeholders are correctly resolved on-demand.
+- **Outcome**: Recursive slices are now robust across single-module, multi-module, and union contexts.
 
 ---
 
