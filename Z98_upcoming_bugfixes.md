@@ -90,14 +90,17 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 6: Braceless Switch Prong Semicolon Requirement
+### Phase 6: Braceless Switch Prong Semicolon Requirement [RESOLVED]
 
 - **Issue**: When a switch prong body is a statement (e.g., `return`), a semicolon is required before the comma, which deviates from Zig’s grammar.
-- **Fix**: Audit `parseSwitchProng` in the parser. The grammar should allow a statement (which already includes a trailing semicolon) and then a comma. The current code may be expecting a semicolon after the statement even though the statement already provides one. Likely a simple parser adjustment.
+- **Fix**: Refactored switch prong parsing into `Parser::parseSwitchProng`. Prong bodies are now parsed as expressions using `parseExpression()`, which naturally handles `return`, `break`, and `continue` without requiring a semicolon. Implemented Zig-style comma rules: comma is required after non-block expressions (unless it's the last prong) and optional after blocks.
 - **Verification**:
-  - Write a test with a switch where a prong body is `return try foo();` without an extra semicolon.
-  - Ensure it parses correctly.
-- **Effort**: 0.5 day.
+  - New test batch `Batch 72` (`tests/integration/switch_prong_tests.cpp`) verifies:
+    - `return 1,` without semicolon.
+    - Optional comma after blocks.
+    - Required comma for non-last expression prongs.
+    - Rejection of variable declarations in prongs (requiring blocks instead).
+- **Outcome**: Switch prong syntax now fully aligns with Zig's grammar.
 
 ---
 

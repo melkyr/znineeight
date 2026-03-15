@@ -20,6 +20,7 @@
 #include "ast_lifter.hpp"
 #include "test_debug_config.hpp"
 #include <cstring>
+#include <cstdio>
 
 /**
  * @class TestCompilationUnit
