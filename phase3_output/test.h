@@ -4,7 +4,6 @@
 #include "zig_runtime.h"
 
 struct Node;
-struct Arena;
 
 #ifndef ZIG_OPTIONAL_Optional_Ptr_Node
 #define ZIG_OPTIONAL_Optional_Ptr_Node

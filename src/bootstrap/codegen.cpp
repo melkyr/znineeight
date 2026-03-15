@@ -1840,24 +1840,29 @@ void C89Emitter::ensureForwardDeclaration(Type* type) {
     if (!type) return;
 
     const char* keyword = NULL;
-    const char* zig_name = NULL;
 
     if (type->kind == TYPE_STRUCT) {
         keyword = "struct";
-        zig_name = type->as.struct_details.name;
     } else if (isTaggedUnion(type)) {
         keyword = "struct";
-        zig_name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
     } else if (type->kind == TYPE_UNION) {
         keyword = "union";
-        zig_name = type->as.struct_details.name;
     } else {
         /* Enums and other types cannot be forward-declared in C89 */
         return;
     }
 
-    if (!zig_name) return;
-    const char* mangled_name = getC89GlobalName(zig_name);
+    const char* mangled_name = type->c_name;
+    if (!mangled_name) {
+        const char* zig_name = NULL;
+        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+            zig_name = type->as.struct_details.name;
+        } else if (type->kind == TYPE_TAGGED_UNION) {
+            zig_name = type->as.tagged_union.name;
+        }
+        if (!zig_name) return;
+        mangled_name = getC89GlobalName(zig_name);
+    }
 
     /* Avoid duplicate forward declarations */
     for (size_t i = 0; i < emitted_forward_decls_.length(); ++i) {

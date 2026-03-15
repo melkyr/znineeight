@@ -254,6 +254,7 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
+    new_type->owner_module = NULL;
     return new_type;
 }
 
@@ -267,6 +268,7 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
     new_type->as.struct_details.fields = fields;
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
+    new_type->owner_module = NULL;
 
     if (is_tagged) {
         // Tagged union: struct { tag_type tag; union { fields } data; }
@@ -331,6 +333,7 @@ Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* pa
     new_type->as.tagged_union.name = name;
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
+    new_type->owner_module = NULL;
 
     return new_type;
 }
@@ -718,6 +721,7 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
     new_type->as.enum_details.members = members;
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
+    new_type->owner_module = NULL;
     return new_type;
 }
 

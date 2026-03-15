@@ -107,6 +107,7 @@ private:
     Type* checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, Zig0TokenType op);
     Type* checkPointerArithmetic(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc);
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
+    bool isPointerIndirectionTo(Type* type, Type* target);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
