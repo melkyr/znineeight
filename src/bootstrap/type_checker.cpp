@@ -1347,7 +1347,9 @@ bool TypeChecker::needsStringLiteralCoercion(ASTNode* src, Type* target) {
     if (!src || !target) return false;
     if (src->type != NODE_STRING_LITERAL) return false;
     if (target->kind != TYPE_SLICE) return false;
-    if (target->as.slice.element_type->kind != TYPE_U8 && target->as.slice.element_type->kind != TYPE_C_CHAR) return false;
+    Type* elem = target->as.slice.element_type;
+    if (elem && elem->kind == TYPE_PLACEHOLDER) elem = resolvePlaceholder(elem);
+    if (elem->kind != TYPE_U8 && elem->kind != TYPE_C_CHAR) return false;
     if (target->as.slice.is_const != true) return false;
     return true;
 }
@@ -4345,7 +4347,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     /* Array to Slice coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
         Type* e_elem = expected->as.slice.element_type;
+        if (e_elem && e_elem->kind == TYPE_PLACEHOLDER) e_elem = resolvePlaceholder(e_elem);
         Type* a_elem = actual->as.array.element_type;
+        if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
+
         if (areTypesEqual(e_elem, a_elem)) return true;
         if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
             (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
@@ -4356,9 +4361,13 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_POINTER &&
         !actual->as.pointer.is_many && actual->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = actual->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(expected->as.slice.element_type, element_type) ||
-                         ((expected->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (expected->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* expected_elem = expected->as.slice.element_type;
+        if (expected_elem && expected_elem->kind == TYPE_PLACEHOLDER) expected_elem = resolvePlaceholder(expected_elem);
+
+        bool compatible = areTypesEqual(expected_elem, element_type) ||
+                         ((expected_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (expected_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
             return expected->as.slice.is_const || !actual->as.pointer.is_const;
         }
@@ -4395,7 +4404,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     /* Slice to Slice assignment/coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_SLICE) {
         Type* e_elem = expected->as.slice.element_type;
+        if (e_elem && e_elem->kind == TYPE_PLACEHOLDER) e_elem = resolvePlaceholder(e_elem);
         Type* a_elem = actual->as.slice.element_type;
+        if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
+
         bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
                                ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
                                 (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
@@ -4985,9 +4997,13 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
         !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = source_type->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
-                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+
+        bool compatible = areTypesEqual(target_elem, element_type) ||
+                         ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
             return target_type->as.slice.is_const || !source_type->as.pointer.is_const;
         }
@@ -5860,7 +5876,12 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
 
     /* Coercion 1: Array -> Slice */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
-        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type)) {
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+        Type* source_elem = source_type->as.array.element_type;
+        if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
+
+        if (areTypesEqual(target_elem, source_elem)) {
             ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));
             slice_node->type = NODE_ARRAY_SLICE;
@@ -5884,7 +5905,12 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
 
     /* Coercion 3: Slice -> Slice (const conversion) */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
-        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+        Type* source_elem = source_type->as.slice.element_type;
+        if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
+
+        if (areTypesEqual(target_elem, source_elem)) {
             /* If elements match, we just update the type to the target type (e.g. adding const).
                Since slices are passed by value and have identical C representation,
                a simple type change is sufficient. */
@@ -5897,9 +5923,13 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
         !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = source_type->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
-                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+
+        bool compatible = areTypesEqual(target_elem, element_type) ||
+                         ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible && (target_type->as.slice.is_const || !source_type->as.pointer.is_const)) {
             ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));

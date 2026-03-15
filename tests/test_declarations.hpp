@@ -1129,6 +1129,9 @@ TEST_FUNC(MultiError_Reporting);
 // Batch 50: Recursive Slices
 TEST_FUNC(RecursiveSlice_MultiModule);
 TEST_FUNC(RecursiveSlice_SelfReference);
+TEST_FUNC(RecursiveSlice_MutuallyRecursive);
+TEST_FUNC(RecursiveSlice_CrossModuleMutual);
+TEST_FUNC(RecursiveSlice_InsideUnion);
 
 // Task 9.9: Tagged Union Captures
 TEST_FUNC(UnionCapture_ForwardDeclaredStruct);
