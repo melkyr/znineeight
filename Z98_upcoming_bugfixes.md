@@ -149,3 +149,16 @@ The following phased plan prioritises critical code generation bugs and type sys
 **Total** ≈ 7–8 days of focused work.
 
 After completing these phases, the JSON parser should compile without any of the workarounds listed, and the compiler will be robust enough to tackle `zig1`. Each phase can be implemented and tested independently, and the fixes are isolated.
+
+---
+
+### Phase 9a: Fix Meta-type Unwrapping (Bug 3) [RESOLVED]
+
+- **Issue**: Accessing members of a type alias (e.g., Alias.Member) or module-qualified type (e.g., mod.Type.Member) fails because the symbol has type TYPE_TYPE and isn't correctly unwrapped to the underlying aggregate type.
+- **Fix**:
+  - Implemented `TypeChecker::resolveTypeConstant(Symbol* sym)` to follow type alias chains.
+  - Updated `visitMemberAccess` to use this helper for unwrapping TYPE_TYPE symbols.
+  - Enabled constant folding for tagged union tags, enum members, and error tags when accessed through aliases.
+- **Verification**:
+  - New test batch `Batch 9a` (`tests/integration/phase9a_unwrapping_tests.cpp`) verifies module-qualified access, local aliases, recursive aliases, and error set aliases.
+- **Outcome**: Meta-type unwrapping now works consistently for all static member accesses, resolving a critical blocker for the JSON parser.
