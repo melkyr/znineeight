@@ -307,16 +307,9 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     }
     emitter.writeString("\n");
 
-    // Scan public symbols for special types recursively before emitting definitions
-    DynamicArray<Type*> visited_types(unit_.getArena());
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        scanType(module->header_types[i], emitter, SCAN_ALL, visited_types);
-    }
-    emitter.emitBufferedSlices();
-    emitter.emitBufferedErrorUnions();
-    emitter.emitBufferedOptionals();
-
-    // Use pre-computed header types in dependency order
+    // Use pre-computed header types in dependency order.
+    // Special types (slices, error unions, optionals) are included in header_types
+    // and will be emitted via ensure... calls during this loop.
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
@@ -365,6 +358,10 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             }
         }
     }
+
+    // Final flush of any buffered special types (slices, error unions, optionals)
+    // that might have been triggered by function prototypes or global variables.
+    emitter.emitBufferedTypeDefinitions();
 
     emitter.writeString("\n#endif\n");
     emitter.close();

@@ -1176,4 +1176,7 @@ bool test_Codegen_AnonymousStruct_Nested();
 // Batch 62: Regression tests
 TEST_FUNC(IssueSegfaultReturn);
 
+// Phase 3: Header Dependency Cycle
+TEST_FUNC(Phase3_ErrorUnionRecursion);
+
 #endif // TEST_DECLARATIONS_HPP
