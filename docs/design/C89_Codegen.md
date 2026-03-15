@@ -10,7 +10,9 @@ The `CBackend` is the orchestration layer for code generation. It manages the cr
 - **Module Iteration**: Iterates over all compiled modules in a `CompilationUnit`.
 - **File Management**: Creates `.c` and `.h` files for each module.
 - **Metadata-Driven Emission**: Leverages the `MetadataPreparationPass` to emit headers that are guaranteed to be self-contained and free of "unknown type name" errors.
-- **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies. Struct, union, and enum definitions are emitted before dependent types like slices, error unions, and optionals to support recursive types.
+- **Ordered Emission**: Ensures that C types are defined in an order that respects dependencies.
+    - In source files (`.c`), named aggregate definitions are emitted first, followed by special types (slices, error unions, optionals), then globals and functions.
+    - In header files (`.h`), named aggregates are emitted in topological dependency order (provided by `module->header_types`). Special types are emitted lazily after the structs they depend on are fully defined, preventing "incomplete type" errors in recursive scenarios.
 - **Orchestration**: Uses `C89Emitter` to write code to these files.
 - **Interface Generation**: Generates public header files (`.h`) containing declarations for symbols marked as `pub` in Zig.
 - **Implementation Generation**: Generates C source files (`.c`) containing all definitions, with non-`pub` symbols marked as `static`.
@@ -90,7 +92,18 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 1. **`foo.c`**: Contains the full implementation. Includes `zig_runtime.h`. Private symbols are `static`.
 2. **`foo.h`**: Contains the public interface. Only includes declarations for `pub` symbols. Uses standard header guards.
 
-### 4.2 Two-Pass Block Emission
+### 4.2 Type Emission Order in Headers
+To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers:
+1. **Forward Declarations**: All public structs, unions, and tagged unions are forward-declared first (e.g., `struct Node;`). This allows pointers to these types to be used in any subsequent definition.
+2. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions are emitted in topological dependency order.
+3. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
+    - During the emission of a named aggregate (Step 2), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
+    - Because Step 2 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.
+4. **Globals and Prototypes**: Finally, external variables and function prototypes are emitted. Any special types used in their signatures that weren't already emitted are triggered and defined here.
+
+This strategy ensures that a recursive struct returned by value in an error union (e.g., `pub fn foo() !Node`) correctly results in `struct Node` being defined before `ErrorUnion_Node`.
+
+### 4.3 Two-Pass Block Emission
 C89 requires all local variable declarations to appear at the beginning of a block, before any executable statements. To support Zig's flexible declaration placement, the `C89Emitter::emitBlock` method employs a two-pass strategy:
 1. **Pass 1 (Declarations)**: Scans the block for all `NODE_VAR_DECL` nodes and emits their C declarations (e.g., `int x;`). Initializers are NOT emitted in this pass.
 2. **Pass 2 (Statements)**: Emits all nodes in order. Variable declarations with initializers are converted into assignment statements (e.g., `x = 42;`) using the unified assignment logic.
@@ -200,6 +213,9 @@ This unification reduces code duplication and ensures consistent behavior across
     - **Void Handling**: If the captured field has type `void`, the C variable declaration and assignment are skipped to comply with C89 rules.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
+- **Unreachable Expression**: `unreachable` is mapped to a call to `__bootstrap_panic("reached unreachable", __FILE__, __LINE__)`.
+  - **Lifting**: When used as an expression (e.g., in a branch of an `if` expression), `unreachable` is integrated into the `ControlFlowLifter`. It is emitted as a panic call in the corresponding branch of the generated C statement, ensuring that dead code following the expression is correctly skipped.
+  - **Divergence**: The `allPathsExit` helper recognizes `unreachable` as a diverging node. The emitter uses this information to stop generating subsequent statements in a block after an `unreachable` is encountered.
 - **Extern Functions and Variables**: Symbols marked as `extern` (including runtime intrinsics like `arena_alloc`) bypass the standard name mangling and use their original Zig name in the generated C code. This ensures compatibility with standard C libraries and the compiler's own runtime.
 - **Defer Statements**: Implemented using a compile-time stack of deferred actions.
   - **Braceless Support**: Braceless `defer stmt;` is normalized into a block-wrapped defer by the `ControlFlowLifter`.
@@ -207,6 +223,9 @@ This unification reduces code duplication and ensures consistent behavior across
   - `defer` statements are added to the current scope on the stack.
   - At the natural end of a block, all defers in that scope are emitted in reverse order.
   - For `return`, `break`, and `continue`, the emitter identifies all scopes being exited and emits their deferred actions in order (from innermost outward) before emitting the jump or return.
+- **ErrDefer Statements**: Currently implemented as a minimal placeholder.
+  - **Behavior**: `errdefer` statements are collected into the defer stack and emitted at scope exit, similar to regular `defer`. Full support for error-only execution is deferred to a future milestone.
+  - **Nested Logic**: This minimal implementation ensures that nested statements within an `errdefer`, such as `unreachable`, are preserved and correctly emitted as panic calls during unwinding.
 
 ### 4.4 Slice Support
 Slices (`[]T`) are emitted as C structs containing a pointer and a length.
@@ -605,6 +624,7 @@ The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handl
       } data;
   };
   ```
+- **Forward Declarations**: Because tagged unions are lowered to C `struct`s, they **must** be forward-declared using the `struct` keyword in C, even if they are conceptually "unions" in Zig. The `C89Emitter::ensureForwardDeclaration` method handles this automatically by using the correct keyword based on `isTaggedUnion(type)`.
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
 - **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
 

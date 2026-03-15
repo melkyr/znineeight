@@ -543,5 +543,8 @@ To avoid collisions across multiple files, all global symbols (functions, variab
 
 The `C89Emitter` ensures that references to symbols from imported modules use these mangled names. For example, a call to `utils.add()` in `main.zig` will be emitted as `z_utils_add()` in `main.c`.
 
-### 16.4 Extern Linkage
+### 16.4 Emission Order
+To support recursive types and avoid "incomplete type" errors in C89, headers emit named aggregates (structs, unions, enums) in topological dependency order. Special types (slices, error unions, optionals) that depend on these aggregates are emitted lazily after the underlying types are fully defined. This ensures that any struct used by value (e.g., as a payload in an error union) is a complete type at the point of the error union's definition.
+
+### 16.5 Extern Linkage
 Symbols marked as `extern` (e.g., `extern fn __bootstrap_print(...)`) skip the module-based name mangling. This allows Zig code to interface directly with existing C symbols or runtime helpers defined in `zig_runtime.h`.

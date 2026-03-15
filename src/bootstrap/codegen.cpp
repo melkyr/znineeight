@@ -12,7 +12,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -25,7 +25,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -40,7 +40,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -916,8 +916,14 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 emitStatement(stmt);
                 if (allPathsExit(stmt)) {
@@ -985,8 +991,14 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 /* Check if it's the last expression in the block */
                 if (i == node->statements->length() - 1 && target_var &&
@@ -1058,6 +1070,10 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_DEFER_STMT:
             writeIndent();
             writeString("/* defer */\n");
+            break;
+        case NODE_ERRDEFER_STMT:
+            writeIndent();
+            writeString("/* errdefer */\n");
             break;
         case NODE_EXPRESSION_STMT: {
             ASTNode* expr = node->as.expression_stmt.expression;
@@ -1818,6 +1834,42 @@ void C89Emitter::close() {
         plat_close_file(output_file_);
         output_file_ = PLAT_INVALID_FILE;
     }
+}
+
+void C89Emitter::ensureForwardDeclaration(Type* type) {
+    if (!type) return;
+
+    const char* keyword = NULL;
+    const char* zig_name = NULL;
+
+    if (type->kind == TYPE_STRUCT) {
+        keyword = "struct";
+        zig_name = type->as.struct_details.name;
+    } else if (isTaggedUnion(type)) {
+        keyword = "struct";
+        zig_name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
+    } else if (type->kind == TYPE_UNION) {
+        keyword = "union";
+        zig_name = type->as.struct_details.name;
+    } else {
+        /* Enums and other types cannot be forward-declared in C89 */
+        return;
+    }
+
+    if (!zig_name) return;
+    const char* mangled_name = getC89GlobalName(zig_name);
+
+    /* Avoid duplicate forward declarations */
+    for (size_t i = 0; i < emitted_forward_decls_.length(); ++i) {
+        if (plat_strcmp(emitted_forward_decls_[i], mangled_name) == 0) return;
+    }
+    emitted_forward_decls_.append(mangled_name);
+
+    writeIndent();
+    writeString(keyword);
+    writeString(" ");
+    writeString(mangled_name);
+    writeString(";\n");
 }
 
 void C89Emitter::emitExpression(const ASTNode* node) {

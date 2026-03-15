@@ -15,43 +15,43 @@ The following phased plan prioritises critical code generation bugs and type sys
 
 ---
 
-### Phase 1: Tagged Union Forward Declaration Bug
+### Phase 1: Tagged Union Forward Declaration Bug [RESOLVED]
 
 - **Issue**: Tagged unions are forward‑declared as `union` instead of `struct` in headers, causing “wrong kind of tag” errors.
-- **Fix**: In `C89Emitter::ensureForwardDeclaration`, for tagged unions (both `TYPE_UNION` with `is_tagged` and `TYPE_TAGGED_UNION`), emit `struct` instead of `union`.
+- **Fix**: Implemented centralized `C89Emitter::ensureForwardDeclaration`. For tagged unions (both `TYPE_UNION` with `is_tagged` and `TYPE_TAGGED_UNION`), it correctly emits `struct` instead of `union`.
 - **Verification**:
-  - Write a minimal test that uses a tagged union across two modules and compile the generated C.
-  - Ensure the header contains `struct U;` (not `union U;`).
-  - Verify that the JSON parser no longer needs the manual `struct`‑based tagged union workaround.
-- **Effort**: 1 day.
+  - New test case `Phase1_TaggedUnion_ForwardDecl` in `tests/integration/phase1_tagged_union_verification.cpp` verifies correct keyword usage.
+  - Header files now use `struct` for tagged union forward declarations.
 
 ---
 
-### Phase 2: `unreachable` Statement Emission
+### Phase 2: `unreachable` Statement Emission [RESOLVED]
 
 - **Issue**: `unreachable;` as a statement emits a comment instead of a panic call.
 - **Fix**:
-  - In `C89Emitter::emitStatement`, add a case for `NODE_UNREACHABLE` (or ensure that `NODE_EXPRESSION_STMT` with an unreachable expression correctly emits `__bootstrap_panic(...);`).
-  - The `emitExpression` already handles `NODE_UNREACHABLE` by generating a panic call; we just need to ensure the statement is terminated with a semicolon.
+  - Integrated `NODE_UNREACHABLE` into the `ControlFlowLifter` to ensure correct behavior when used as an expression (e.g., in `if` expressions).
+  - Enhanced `allPathsExit` to correctly identify `NODE_UNREACHABLE` and `NODE_VAR_DECL` with diverging initializers, enabling proper dead code elimination in the emitter.
+  - Implemented minimal `errdefer` support in `C89Emitter` to ensure that `unreachable` statements inside `errdefer` are not lost.
+  - Unified `unreachable` emission to always produce a `__bootstrap_panic` call.
 - **Verification**:
-  - Write a test function that contains `unreachable;` as a statement.
-  - Compile and verify that the generated C contains a call to `__bootstrap_panic`.
-- **Effort**: 0.5 day.
+  - New test batch `Batch 70` (`tests/integration/unreachable_tests.cpp`) verifies standalone statements, variable initializers, `defer`/`errdefer` blocks, and divergent `if` expressions.
+- **Outcome**: `unreachable` now consistently triggers a panic at runtime and enables better compile-time dead code elimination in generated C.
 
 ---
 
-### Phase 3: Header Dependency Cycle with Error Unions
+### Phase 3: Header Dependency Cycle with Error Unions [RESOLVED]
 
 - **Issue**: When a function returns an error union containing a recursive struct by value, the header emits the error union typedef before the struct definition, causing “incomplete type” errors.
-- **Root cause**: Header generation emits all special types (error unions, slices, optionals) immediately, without ensuring that all dependent structs are defined first.
+- **Root cause**: Header generation emitted all special types (error unions, slices, optionals) immediately at the top of the file, without ensuring that all dependent structs were defined first.
 - **Fix**:
-  - In `CBackend::generateModule`, after scanning for special types, first emit **all struct/union/enum definitions** (these may depend on each other via pointers, which are fine), **then** emit error unions, slices, and optionals.
-  - This mirrors the order already used for `.c` files.
+  - In `CBackend::generateHeaderFile`, the early scanning and emission of special types was removed.
+  - Emission of special types is now handled lazily during the main type definition loop and subsequent prototype/global emission.
+  - `emitter.emitBufferedTypeDefinitions()` is called after each named type definition to ensure any special types it depends on (like slices of itself) are emitted immediately after the struct is defined.
 - **Verification**:
-  - Create a test with a recursive struct and a function returning `!RecursiveStruct` by value.
-  - Inspect the header: the struct definition must appear before the error union typedef.
-  - Ensure the JSON parser’s `readFile` (which returns `FileError![]u8`) no longer triggers the cycle.
-- **Effort**: 1 day.
+  - Created an integration test `Phase3_ErrorUnionRecursion` in `tests/integration/phase3_error_union_recursion.cpp`.
+  - Verified that `struct Node` is defined before `ErrorUnion_Node` in the generated header.
+  - Confirmed the fix with `gcc -std=c89 -pedantic`.
+- **Outcome**: Special types now correctly follow the topological order of the named types they depend on in headers.
 
 ---
 

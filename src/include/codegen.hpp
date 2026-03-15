@@ -321,6 +321,11 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Ensures a type is forward-declared.
+     */
+    void ensureForwardDeclaration(Type* type);
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
@@ -566,6 +571,7 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> emitted_forward_decls_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
