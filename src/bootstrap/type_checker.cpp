@@ -162,6 +162,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+                placeholder->owner_module = placeholder->as.placeholder.module;
                 placeholder->as.placeholder.dependents = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
@@ -2220,6 +2221,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
+            placeholder->owner_module = resolved->owner_module;
             if (resolved->c_name) {
                 placeholder->c_name = resolved->c_name;
             }
@@ -2620,6 +2622,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.name = node->name;
         placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
         placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+        placeholder->owner_module = placeholder->as.placeholder.module;
         placeholder->as.placeholder.dependents = NULL;
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
@@ -3087,7 +3090,11 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     size_t j;
     void* mem;
     DynamicArray<StructField>* fields;
-    Type* struct_type;
+    Type* struct_type = NULL;
+    Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+    Symbol* self_sym = struct_name ? unit_.getSymbolTable().lookupInCurrentScope(struct_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+
     if (!node->fields) return get_g_type_undefined();
 
     /* 1. Check for duplicate field names. */
@@ -3116,15 +3123,32 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
-        if (!isTypeComplete(field_type)) {
+        bool is_recursive_pointer = false;
+        if (self_placeholder && isPointerIndirectionTo(field_type, self_placeholder)) {
+            is_recursive_pointer = true;
+        }
+
+        if (!is_recursive_pointer && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_data->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
+
+             char msg[512];
+             char* current = msg;
+             size_t remaining = sizeof(msg);
+
+             if (field_type->is_resolving) {
+                 safe_append(current, remaining, "cycle detected: type '");
+                 safe_append(current, remaining, struct_name ? struct_name : "(anonymous)");
+                 safe_append(current, remaining, "' depends on itself by value through field '");
+                 safe_append(current, remaining, field_data->name);
+                 safe_append(current, remaining, "'");
+             } else {
+                 safe_append(current, remaining, "field '");
+                 safe_append(current, remaining, field_data->name);
+                 safe_append(current, remaining, "' has incomplete type '");
+                 safe_append(current, remaining, type_str);
+                 safe_append(current, remaining, "'");
+             }
              return reportAndReturnUndefined(field_data->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
@@ -3139,6 +3163,9 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
     /* 3. Create struct type and calculate layout. */
     struct_type = createStructType(unit_.getArena(), fields, struct_name);
+
+    struct_type->owner_module = current_mod;
+
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -3164,7 +3191,10 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     DynamicArray<EnumMember>* members;
     char* enum_name;
     size_t len;
-    Type* union_type;
+    Type* union_type = NULL;
+    Symbol* self_sym = union_name ? unit_.getSymbolTable().lookupInCurrentScope(union_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+
     if (!node->fields) return get_g_type_undefined();
 
     tag_type = NULL;
@@ -3210,15 +3240,32 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             return reportAndReturnUndefined(field_node->type->loc, ERR_NON_C89_FEATURE, "Union field type is not C89-compatible");
         }
 
-        if (field_type && !isTypeComplete(field_type)) {
+        bool is_recursive_pointer = false;
+        if (self_placeholder && isPointerIndirectionTo(field_type, self_placeholder)) {
+            is_recursive_pointer = true;
+        }
+
+        if (field_type && !is_recursive_pointer && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_node->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
+
+             char msg[512];
+             char* current = msg;
+             size_t remaining = sizeof(msg);
+
+             if (field_type->is_resolving) {
+                 safe_append(current, remaining, "cycle detected: type '");
+                 safe_append(current, remaining, union_name ? union_name : "(anonymous)");
+                 safe_append(current, remaining, "' depends on itself by value through field '");
+                 safe_append(current, remaining, field_node->name);
+                 safe_append(current, remaining, "'");
+             } else {
+                 safe_append(current, remaining, "field '");
+                 safe_append(current, remaining, field_node->name);
+                 safe_append(current, remaining, "' has incomplete type '");
+                 safe_append(current, remaining, type_str);
+                 safe_append(current, remaining, "'");
+             }
              return reportAndReturnUndefined(field_node->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
@@ -3265,6 +3312,9 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     }
 
     union_type = createUnionType(unit_.getArena(), fields, union_name, node->is_tagged, tag_type);
+
+    union_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+
     if (union_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(union_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -3842,6 +3892,8 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 
     /* 4. Create and return the new enum type. */
     Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
+    enum_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+
     if (enum_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(enum_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -4781,6 +4833,36 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
         }
         case TYPE_ERROR_SET: return true; /* Error tags are usually small integers */
         default:       return false;
+    }
+}
+
+bool TypeChecker::isPointerIndirectionTo(Type* type, Type* target) {
+    if (!type) return false;
+    if (type == target) return false; // Found the target but NOT through a pointer yet
+
+    switch (type->kind) {
+        case TYPE_POINTER: {
+            Type* base = type->as.pointer.base;
+            if (base->kind == TYPE_PLACEHOLDER) base = resolvePlaceholder(base);
+            if (base == target) return true;
+            return isPointerIndirectionTo(base, target);
+        }
+        case TYPE_ARRAY:
+            return isPointerIndirectionTo(type->as.array.element_type, target);
+        case TYPE_SLICE:
+            // Slices are pointers conceptually in Zig, so target being incomplete is OK
+            {
+                Type* elem = type->as.slice.element_type;
+                if (elem->kind == TYPE_PLACEHOLDER) elem = resolvePlaceholder(elem);
+                if (elem == target) return true;
+                return isPointerIndirectionTo(elem, target);
+            }
+        case TYPE_OPTIONAL:
+            return isPointerIndirectionTo(type->as.optional.payload, target);
+        case TYPE_ERROR_UNION:
+            return isPointerIndirectionTo(type->as.error_union.payload, target);
+        default:
+            return false;
     }
 }
 

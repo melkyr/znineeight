@@ -3,7 +3,6 @@
 
 #include "zig_runtime.h"
 
-struct Arena;
 struct Node;
 
 struct Arena; /* opaque */
