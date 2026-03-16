@@ -114,12 +114,25 @@ struct TypeChecker::ResolutionDepthGuard {
     }
 };
 
+struct TypeChecker::ExpectedTypeGuard {
+    TypeChecker& tc;
+
+    ExpectedTypeGuard(TypeChecker& tc_arg, Type* type) : tc(tc_arg) {
+        tc.pushExpectedType(type);
+    }
+
+    ~ExpectedTypeGuard() {
+        tc.popExpectedType();
+    }
+};
+
 
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
     : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
       current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0), in_defer_(false),
+      expected_type_stack_(unit_arg.getArena()),
       label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()),
       current_fn_labels_start_(0), next_label_id_(0) {
 }
@@ -1130,12 +1143,18 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     for (i = 0; i < actual_args; ++i) {
         arg_node = (*node->args)[i];
         if (!arg_node) return get_g_type_undefined();
-        arg_type = visit(arg_node);
 
-        if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+        if (i < expected_args) {
+            param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
+            ExpectedTypeGuard guard(*this, param_type);
+            arg_type = visit(arg_node);
+        } else {
+            arg_type = visit(arg_node);
+        }
+
+        if (!arg_type) return get_g_type_undefined();
 
         if (i >= expected_args) continue;
-        param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         /* Special handling for integer literal promotion in function calls */
         promoted = tryPromoteLiteral(arg_node, param_type);
@@ -1196,8 +1215,11 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     /* Step 2: Resolve the type of the right-hand side. */
     if (!node->rvalue) return get_g_type_undefined();
-    rvalue_type = visit(node->rvalue);
-    if (!rvalue_type || is_type_undefined(rvalue_type)) return get_g_type_undefined();
+    {
+        ExpectedTypeGuard guard(*this, lvalue_type);
+        rvalue_type = visit(node->rvalue);
+    }
+    if (!rvalue_type) return get_g_type_undefined();
 
     /* Special handling for integer literal promotion in assignment. */
     promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
@@ -1737,10 +1759,21 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     unit_.getSymbolTable().enterScope();
     last_type = get_g_type_void();
     if (node->statements) {
-        for (i = 0; i < node->statements->length(); ++i) {
+        size_t len = node->statements->length();
+        for (i = 0; i < len; ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (!stmt) continue;
-            Type* res = visit(stmt);
+
+            Type* res;
+            if (i == len - 1) {
+                /* Last statement naturally sees the expected type from outer context */
+                res = visit(stmt);
+            } else {
+                /* Intermediate statements should not see the outer expected type */
+                ExpectedTypeGuard guard(*this, NULL);
+                res = visit(stmt);
+            }
+
             if (res && is_type_undefined(res)) {
                 any_error = true;
             } else if (res) {
@@ -1839,6 +1872,7 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if expression condition must be a bool, integer, pointer, or optional");
     }
 
+    Type* expected = peekExpectedType();
     Type* then_type = NULL;
     if (node->capture_name) {
         if (!is_optional) {
@@ -1859,16 +1893,26 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         node->capture_sym = sym;
 
         if (!node->then_expr) return get_g_type_undefined();
-        then_type = visit(node->then_expr);
+        {
+            ExpectedTypeGuard guard(*this, expected);
+            then_type = visit(node->then_expr);
+        }
         unit_.getSymbolTable().exitScope();
     } else {
         if (!node->then_expr) return get_g_type_undefined();
-        then_type = visit(node->then_expr);
+        {
+            ExpectedTypeGuard guard(*this, expected);
+            then_type = visit(node->then_expr);
+        }
     }
     if (!then_type || is_type_undefined(then_type)) return get_g_type_undefined();
 
     if (!node->else_expr) return get_g_type_undefined();
-    Type* else_type = visit(node->else_expr);
+    Type* else_type = NULL;
+    {
+        ExpectedTypeGuard guard(*this, expected);
+        else_type = visit(node->else_expr);
+    }
     if (!else_type || is_type_undefined(else_type)) return get_g_type_undefined();
 
     if (then_type->kind == TYPE_NORETURN) return else_type;
@@ -1971,8 +2015,9 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
 
     Type* return_type = NULL;
     if (node->expression) {
+        ExpectedTypeGuard guard(*this, current_fn_return_type_);
         return_type = visit(node->expression);
-        if (!return_type || is_type_undefined(return_type)) return get_g_type_undefined();
+        if (!return_type) return get_g_type_undefined();
     } else {
         return_type = get_g_type_void();
     }
@@ -2363,7 +2408,7 @@ bool TypeChecker::validateRange(ASTRangeNode* range, Type* cond_type) {
     return true;
 }
 
-bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc) {
+bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc, Type* expected_type) {
     Type* cond_type = visit(cond);
     if (!cond_type || is_type_undefined(cond_type)) return false;
 
@@ -2455,8 +2500,8 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
                     item_expr->resolved_type = tag_type;
                 } else {
                     if (prong->capture_name) {
-                        /* Check for tag requirement before visiting. Must be a member access for captures. */
-                        if (item_expr->type != NODE_MEMBER_ACCESS) {
+                        /* Check for tag requirement before visiting. Must be a member access (or folded tag) for captures. */
+                        if (item_expr->type != NODE_MEMBER_ACCESS && item_expr->type != NODE_INTEGER_LITERAL) {
                              unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture requires a tag name case item");
                              return false;
                         }
@@ -2491,7 +2536,13 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 
         if (prong->capture_name) {
             ASTNode* item_expr = (*prong->items)[0];
-            const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
+            const char* field_name = NULL;
+            if (item_expr->type == NODE_INTEGER_LITERAL) {
+                field_name = item_expr->as.integer_literal.original_name;
+            } else if (item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                field_name = item_expr->as.member_access->field_name;
+            }
+
             if (!field_name) {
                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture requires a tag name case item");
                 return false;
@@ -2513,42 +2564,52 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
             prong->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(prong->capture_name);
         }
 
-        Type* prong_type = visit(prong->body);
+        Type* prong_type = NULL;
+        {
+            ExpectedTypeGuard guard(*this, expected_type);
+            prong_type = visit(prong->body);
 
-        /* Attempt to infer from condition if it's a tagged union and body is an anonymous initializer */
-        if (is_expr && is_type_undefined(prong_type) && is_tagged_union) {
-            if (prong->body->type == NODE_STRUCT_INITIALIZER && prong->body->as.struct_initializer->type_expr == NULL) {
-                if (prong->body->as.struct_initializer->fields->length() == 1) {
-                    const char* tag_name = (*prong->body->as.struct_initializer->fields)[0]->field_name;
-                    if (findTaggedUnionPayload(cond_type, tag_name)) {
-                        coerceNode(&prong->body, cond_type);
-                        prong_type = prong->body->resolved_type;
-                    }
-                }
+            /* If we have an expected type, try to coerce now to resolve anonymous initializers early.
+               This must happen while the capture scope (if any) is still active. */
+            if (is_expr && expected_type && is_type_undefined(prong_type)) {
+                coerceNode(&prong->body, expected_type);
+                prong_type = prong->body->resolved_type;
             }
         }
 
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
-        if (!prong_type || is_type_undefined(prong_type)) return false;
 
         if (is_expr) {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
+
             if (prong_type->kind != TYPE_NORETURN) {
-                if (!common_type) {
-                    common_type = prong_type;
-                    has_non_noreturn = true;
-                } else if (!areTypesEqual(common_type, prong_type)) {
-                    if (areTypesCompatible(common_type, prong_type)) {
-                        /* common_type is OK */
-                    } else if (areTypesCompatible(prong_type, common_type)) {
-                        common_type = prong_type;
-                    } else {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                has_non_noreturn = true;
+
+                if (expected_type) {
+                    if (!IsTypeAssignableTo(prong_type, expected_type, prong->body->loc, prong->body)) {
                         return false;
+                    }
+                    /* In expected type mode, we just verify compatibility. Unification is bypassed. */
+                } else {
+                    /* Traditional unification */
+                    if (!common_type) {
+                        common_type = prong_type;
+                    } else if (!areTypesEqual(common_type, prong_type)) {
+                        if (areTypesCompatible(common_type, prong_type)) {
+                            /* common_type is OK */
+                        } else if (areTypesCompatible(prong_type, common_type)) {
+                            common_type = prong_type;
+                        } else {
+                            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                            return false;
+                        }
                     }
                 }
             }
+        } else {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
         }
     }
 
@@ -2560,6 +2621,12 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
     if (is_expr) {
         if (!has_non_noreturn) {
             result_type = get_g_type_noreturn();
+        } else if (expected_type) {
+            result_type = expected_type;
+            /* Perform final coercion to the expected type for all prongs */
+            for (size_t i = 0; i < prongs->length(); ++i) {
+                coerceNode(&(*prongs)[i]->body, expected_type);
+            }
         } else {
             result_type = common_type;
             if (common_type->kind == TYPE_SLICE) {
@@ -2576,8 +2643,9 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 }
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
+    Type* expected_type = peekExpectedType();
     Type* result_type = NULL;
-    if (validateSwitch(node->expression, node->prongs, true, result_type, node->expression->loc)) {
+    if (validateSwitch(node->expression, node->prongs, true, result_type, node->expression->loc, expected_type)) {
         return result_type;
     }
     return get_g_type_undefined();
@@ -2783,7 +2851,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 initializer_type = reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, "anonymous struct initializer requires a declared struct or array type");
             }
         } else {
-            initializer_type = visit(node->initializer);
+            if (declared_type) {
+                ExpectedTypeGuard guard(*this, declared_type);
+                initializer_type = visit(node->initializer);
+            } else {
+                initializer_type = visit(node->initializer);
+            }
             if (!initializer_type) return get_g_type_undefined();
             if (is_type_undefined(initializer_type)) {
                 /* If it's the literal 'undefined', it's not an error. */
@@ -3612,7 +3685,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION)) return false;
+    if (!struct_type) return false;
+    if (struct_type->kind == TYPE_PLACEHOLDER) {
+        struct_type = resolvePlaceholder(struct_type);
+    }
+    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION) return false;
 
     DynamicArray<StructField>* fields = (struct_type->kind == TYPE_TAGGED_UNION) ?
                                         struct_type->as.tagged_union.payload_fields :
@@ -3689,18 +3766,27 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             continue; // Valid naked tag
         }
 
+        /* Handle explicit empty initializer for void payload: .Tag = {} */
+        if (field_type->kind == TYPE_VOID && init->value->type == NODE_TUPLE_LITERAL && init->value->as.tuple_literal->elements->length() == 0) {
+            init->value->resolved_type = get_g_type_void();
+            continue;
+        }
+
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
 
         if (field_type->kind == TYPE_VOID) {
-            char msg[256];
-            char* curr = msg;
-            size_t rem = sizeof(msg);
-            safe_append(curr, rem, "Tag '");
-            safe_append(curr, rem, init->field_name);
-            safe_append(curr, rem, "' has void payload, but initializer provides a value");
-            reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
-            return false;
+            if (val_type->kind != TYPE_VOID) {
+                char msg[256];
+                char* curr = msg;
+                size_t rem = sizeof(msg);
+                safe_append(curr, rem, "Tag '");
+                safe_append(curr, rem, init->field_name);
+                safe_append(curr, rem, "' has void payload, but initializer provides a non-void value");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+                return false;
+            }
+            continue;
         }
 
         /* Consistent Coercion Handling */
@@ -5032,6 +5118,8 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 }
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc, ASTNode* source_node) {
+    if (!source_type || !target_type) return false;
+
     if (source_node && needsStringLiteralCoercion(source_node, target_type)) {
         return true;
     }
@@ -5946,22 +6034,42 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
 }
 
 void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
+    static int recursion_depth = 0;
+    const int MAX_RECURSION_DEPTH = 64;
+
     if (!node_slot || !*node_slot || !target_type) return;
+
+    if (++recursion_depth > MAX_RECURSION_DEPTH) {
+        /* Silently stop recursion to avoid stack overflow. Error will likely be caught by caller or later pass. */
+        --recursion_depth;
+        return;
+    }
+
     if (target_type->kind == TYPE_PLACEHOLDER) {
         target_type = resolvePlaceholder(target_type);
     }
     ASTNode* node = *node_slot;
     Type* source_type = node->resolved_type;
     if (!source_type) source_type = visit(node);
-    if (!source_type || is_type_undefined(source_type)) return;
 
-    if (source_type == target_type) return;
+    bool is_anonymous_init = (node->type == NODE_STRUCT_INITIALIZER && node->as.struct_initializer->type_expr == NULL);
+    bool is_switch_expr = (node->type == NODE_SWITCH_EXPR);
+    bool is_if_expr = (node->type == NODE_IF_EXPR);
+
+    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr) return;
+
+    if (source_type == target_type && !is_anonymous_init) return;
 
     // New: Anonymous struct initializer to tagged union
-    if (node->type == NODE_STRUCT_INITIALIZER && node->as.struct_initializer->type_expr == NULL) {
-        if (isTaggedUnion(target_type)) {
-            checkStructInitializerFields(node->as.struct_initializer, target_type, node->loc);
-            node->resolved_type = target_type;
+    if (is_anonymous_init) {
+        if (isTaggedUnion(target_type) || target_type->kind == TYPE_STRUCT || target_type->kind == TYPE_ARRAY) {
+            if (target_type->kind == TYPE_ARRAY) {
+                node->resolved_type = target_type;
+            } else {
+                if (checkStructInitializerFields(node->as.struct_initializer, target_type, node->loc)) {
+                    node->resolved_type = target_type;
+                }
+            }
             return;
         }
     }
@@ -5985,7 +6093,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     }
 
     /* Coercion 1: Array -> Slice */
-    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
+    if (target_type->kind == TYPE_SLICE && source_type && source_type->kind == TYPE_ARRAY) {
         Type* target_elem = target_type->as.slice.element_type;
         if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
         Type* source_elem = source_type->as.array.element_type;
@@ -6053,9 +6161,11 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             visitArraySlice(slice_node->as.array_slice);
             slice_node->resolved_type = target_type;
             *node_slot = slice_node;
+            --recursion_depth;
             return;
         }
     }
+    --recursion_depth;
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {

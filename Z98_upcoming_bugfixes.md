@@ -174,7 +174,7 @@ Type* TypeChecker::findTaggedUnionPayload(Type* union_type, const char* tag) {
 
 ---
 
-### Phase 9c: Fix Switch Expression Type Inference (Bug 2)
+### Phase 9c: Fix Switch Expression Type Inference (Bug 2) [RESOLVED]
 
 #### Problem
 A switch expression returning a tagged union fails to unify prongs, even when each prong returns a struct initializer of the same union type. The error is "Switch prong type does not match previous prongs". The type checker sees each prong body as a different struct initializer node, and when computing the common type, it doesn't realize they both represent the same union type.
@@ -262,12 +262,20 @@ Thus, the switch unification may start working after Bug 3 and Bug 1 are fixed. 
 
 However, there is another scenario: when the prong bodies are anonymous initializers (without `MyUnion{...}`), e.g., `.{ .A = a }`. That would still need our inference. But the JSON parser example uses the named form. So perhaps Bug 2 is actually a manifestation of Bug 3. Let's double-check: The error message "Switch prong type does not match previous prongs" suggests that the types were different. If both prongs returned the same union type, they'd be equal. So likely the types were not equal because of the TYPE_TYPE issue. Therefore, after fixing Bug 3, Bug 2 may be resolved.
 
-Nevertheless, we should still add the inference for anonymous initializers as a fallback, because it's a common pattern and improves robustness.
+#### Fix
+- Implemented **Expected Type Propagation** using a stack-based mechanism in the `TypeChecker`.
+- Updated `visitReturnStmt`, `visitAssignment`, `visitVarDecl`, and `visitFunctionCall` to push the expected type context.
+- Enhanced `validateSwitch` and `coerceNode` to use the expected type for resolving anonymous initializers in switch prongs.
+- Enabled recursive downward inference for nested anonymous structures.
+- Added special support for `void` payloads (naked tags, empty tuples, and void-typed expressions).
+- Enforced mandatory `else` prongs for switch expressions.
 
-#### Plan for Phase 9c
-1. Apply Bug 3 fix first.
-2. Then, in `validateSwitch`, enhance the handling of undefined prong types for tagged union switches, as described above.
-3. Add a test case with anonymous initializers to ensure it works.
+#### Verification
+- New test batch `Batch 9c` (`tests/main_batch9c.cpp`) provides 13 tests covering return/assignment/argument context, nesting, void payloads, and error cases.
+- Verified all integration tests pass (including Batch 9b/9c).
+
+#### Outcome
+Switch expressions can now correctly unify prongs returning anonymous initializers by inferring their type from the surrounding context, fully resolving Bug 2.
 
 ---
 

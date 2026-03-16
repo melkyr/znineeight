@@ -76,6 +76,11 @@ public:
 };
 ```
 * **Usage:** AST Nodes, Types, and Symbols are allocated here. A transient `token_arena` is used during parsing and reset immediately after to free memory early.
+
+#### 3.1.1.2 Expected Type Stack
+* **Concept:** A stack-based mechanism in the `TypeChecker` used for downward type inference.
+* **Implementation:** `DynamicArray<Type*>` allocated from the `CompilationUnit` arena.
+* **Management:** Uses RAII `ExpectedTypeGuard` to ensure balanced push/pop operations during AST traversal.
 * **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 

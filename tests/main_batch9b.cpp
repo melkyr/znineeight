@@ -78,6 +78,7 @@ TEST_FUNC(TaggedUnionInit_SwitchInference) {
         "    return switch (u) {\n"
         "        .A => |a| .{ .A = a },\n"
         "        .B => |b| .{ .B = b },\n"
+        "        else => .{ .A = 0 },\n"
         "    };\n"
         "}\n";
 
