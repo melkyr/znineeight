@@ -51,7 +51,7 @@ public:
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchStmt(ASTSwitchStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
-    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc);
+    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc, Type* expected_type = NULL);
     bool validateRange(ASTRangeNode* range, Type* cond_type);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
@@ -161,6 +161,7 @@ private:
     struct VisitDepthGuard;
     struct ResolutionDepthGuard;
     struct DeferFlagGuard;
+    struct ExpectedTypeGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
@@ -169,6 +170,15 @@ private:
     friend struct VisitDepthGuard;
     friend struct ResolutionDepthGuard;
     friend struct DeferFlagGuard;
+    friend struct ExpectedTypeGuard;
+
+    DynamicArray<Type*> expected_type_stack_;
+    void pushExpectedType(Type* type) { expected_type_stack_.append(type); }
+    Type* peekExpectedType() {
+        if (expected_type_stack_.length() == 0) return NULL;
+        return expected_type_stack_.back();
+    }
+    void popExpectedType() { expected_type_stack_.pop_back(); }
 
     DynamicArray<LoopLabel> label_stack_;
     DynamicArray<const char*> function_labels_;

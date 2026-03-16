@@ -1034,6 +1034,27 @@ The `TypeChecker` supports unwrapping multiple levels of type aliases to facilit
 
 This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
 
+## 7. Expected Type Propagation (Downward Inference)
+
+The type checker implements a downward type inference mechanism through an **Expected Type Stack**. This allows the compiler to propagate type information from the surrounding context into expressions that might otherwise have an ambiguous or undefined type (e.g., anonymous struct initializers or switch expressions).
+
+### How It Works
+1.  **Push**: When entering a context where a specific type is expected (e.g., the right-hand side of an assignment, a return statement, or a function argument), the expected type is pushed onto `expected_type_stack_`.
+2.  **Peek**: Child expressions can call `peekExpectedType()` to see what type is expected of them. This is primarily used by `coerceNode` to resolve anonymous initializers.
+3.  **Pop**: After visiting the child expression, the type is popped from the stack, typically using the RAII-based `ExpectedTypeGuard`.
+
+### Supported Contexts
+-   **Return Statements**: Pushes the current function's return type.
+-   **Assignments**: Pushes the type of the left-hand side.
+-   **Variable Declarations**: Pushes the declared type for the initializer.
+-   **Function Calls**: Pushes the corresponding parameter type for each argument.
+-   **If Expressions**: Propagates the outer expected type to both branches.
+-   **Block Expressions**: Propagates the outer expected type to the final statement of the block.
+-   **Switch Expressions**: Propagates the outer expected type to all prongs.
+
+### Coercion Integration
+The `coerceNode` method has been enhanced to use the expected type when encountering an anonymous struct initializer (`.{ .field = value }`). If an expected type (like a tagged union) is available, `coerceNode` validates the initializer against that type and sets its `resolved_type`, enabling seamless downward inference.
+
 ### `resolvePrimitiveTypeName`
 
 A new function, `resolvePrimitiveTypeName(const char* name)`, has been introduced. Its responsibilities are:
