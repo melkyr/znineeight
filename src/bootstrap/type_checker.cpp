@@ -6055,8 +6055,9 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     bool is_anonymous_init = (node->type == NODE_STRUCT_INITIALIZER && node->as.struct_initializer->type_expr == NULL);
     bool is_switch_expr = (node->type == NODE_SWITCH_EXPR);
     bool is_if_expr = (node->type == NODE_IF_EXPR);
+    bool is_naked_tag = (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL);
 
-    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr) {
+    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr && !is_naked_tag) {
         --recursion_depth;
         return;
     }
@@ -6075,6 +6076,36 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
                 if (checkStructInitializerFields(node->as.struct_initializer, target_type, node->loc)) {
                     node->resolved_type = target_type;
                 }
+            }
+            return;
+        }
+    }
+
+    // New: Naked tag (.A) to tagged union
+    if (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL) {
+        if (isTaggedUnion(target_type)) {
+            // Transform .Tag into .{ .Tag } (struct initializer with no value)
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+            
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+            
+            ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(field, 0, sizeof(ASTNamedInitializer));
+            field->field_name = node->as.member_access->field_name;
+            field->value = NULL; // Naked tag
+            field->loc = node->loc;
+            
+            init_node->as.struct_initializer->fields->append(field);
+            
+            if (checkStructInitializerFields(init_node->as.struct_initializer, target_type, node->loc)) {
+                init_node->resolved_type = target_type;
+                *node_slot = init_node;
             }
             return;
         }
