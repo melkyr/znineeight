@@ -389,6 +389,7 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
     - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
     - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
 - **Tagged Union support**: Full support for `union(enum)` and switch captures (`|val|`).
+- **Switch Requirements**: Switch expressions MUST have an `else` prong for exhaustive coverage (mandatory in bootstrap). Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
@@ -885,7 +886,7 @@ These features are initially resolved by the `TypeChecker` (Pass 0) to allow for
 
 For detailed validation rules that will be enforced in Milestone 5 (when rejection is replaced by translation), see `error_handling_validation_rules.md`.
 
-To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T` and implicit (but unsafe) unwrapping of `!T` to `T` during Pass 0.
+To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T`. Implicit unwrapping (assigning `!T` to `T`) is strictly prohibited and must be handled explicitly via `try` or `catch`.
 
 ### Error Type Elimination (Task 150)
 
@@ -1652,6 +1653,6 @@ The following issues were identified during the attempt to compile a comprehensi
 
 - **Tagged Union Forward Declaration Bug**: Tagged unions are correctly emitted as C `structs` in their definitions, but the `CBackend` incorrectly forward-declares them using the `union` keyword in generated headers.
 - **Unreachable Statement Emission**: The `unreachable` keyword results in an "unimplemented statement" comment in C89, rather than a panic or `abort()`.
-- **Braceless Switch Prongs**: Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
+- **Switch Prong Commas**: Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong before the closing brace.
 - **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
 - **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.

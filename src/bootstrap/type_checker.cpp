@@ -4599,12 +4599,6 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
             return true;
         }
     }
-    if (actual->kind == TYPE_ERROR_UNION) {
-        /* !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass) */
-        if (areTypesCompatible(expected, actual->as.error_union.payload)) {
-            return true;
-        }
-    }
 
     /* Function Pointer compatibility */
     if (expected->kind == TYPE_FUNCTION_POINTER) {

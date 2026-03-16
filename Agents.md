@@ -29,6 +29,8 @@ We are implementing multi-module support and `@import` resolution, moving toward
 8. **Range Support**: Inclusive (`...`) and exclusive (`..`) ranges in `switch` and `for`. Expanded to `case` labels in C89.
 9. **Initializer Decomposition**: Decomposes struct/union initializers into field-by-field assignments for complex C89 l-values (array elements, member access, pointer dereferences).
 10. **Union Naked Tags**: Syntactic sugar in tagged unions allowing fields without explicit types (implicitly `: void`).
+11. **Strict Type Checking**: Disallows implicit unwrapping of Error Unions (`!T` to `T`). Wrapping (`T` to `!T`) remains implicit.
+12. **Mandatory Switch Commas**: Every switch prong (even those with block bodies) requires a comma unless it's the last prong before the closing brace.
 
 ### Compiler Architecture Assumptions (Target ABI)
 - **32-bit Core**: The bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment).

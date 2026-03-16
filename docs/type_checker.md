@@ -28,3 +28,11 @@ The type checker robustly handles Zig's tagged union captures in switch statemen
 - **Capture Typing**: In `visitSwitchExpr`, the type of the capture variable (`|payload|`) is derived from the corresponding field of the tagged union.
 - **Placeholder Handling**: If a union field type is a placeholder, it is resolved before creating the capture symbol.
 - **Defensive Validation**: Ensures that switch prongs with captures are only used with a single tag case item, preventing ambiguity.
+
+## Strict Error Union Rules
+The compiler enforces strict rules for error union compatibility to match Zig's safety guarantees.
+
+### Implicit Unwrapping Prohibited
+- **Implicit wrapping** (`T` -> `!T`) is allowed for convenience.
+- **Implicit unwrapping** (`!T` -> `T`) is **strictly prohibited**. Attempting to assign or compare an error union directly with its payload type results in a type mismatch error.
+- **Explicit unwrapping** via `try` or `catch` is required.

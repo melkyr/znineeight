@@ -897,7 +897,7 @@ void* Parser::parseSwitchProng(ParseContext ctx) {
     if (body == NULL) error("Cases without corresponding body expression");
 
     bool has_comma = match(TOKEN_COMMA);
-    if (!has_comma && body->type != NODE_BLOCK_STMT && peek().type != TOKEN_RBRACE) {
+    if (!has_comma && peek().type != TOKEN_RBRACE) {
         error("Expected ',' after switch prong body");
     }
 

@@ -5,13 +5,13 @@ This document records the issues, bugs, and limitations discovered while attempt
 ## 1. Syntax & Parser Constraints
 
 ### Braceless Switch Prongs Semicolon Requirement
-- **Status**: Required.
-- **Observation**: When using the `=>` syntax in a switch without braces, a semicolon is required before the comma if the body is a statement (like `return`).
-- **Example**:
+- **Status**: **RESOLVED**.
+- **Observation**: Previously, a semicolon was required before the comma. Following the Phase 6 and Milestone 9 updates, switch prong bodies are parsed as expressions, eliminating the semicolon requirement.
+- **Correct Syntax**:
   ```zig
   switch (ch) {
-      'n' => return try parseNull(p);, // Semicolon required here
-      else => return error.ExpectedValue;,
+      'n' => return try parseNull(p), // No semicolon before comma
+      else => return error.ExpectedValue,
   }
   ```
 
@@ -19,7 +19,8 @@ This document records the issues, bugs, and limitations discovered while attempt
 - **Status**: Supported, but normalized to blocks in the lifter.
 
 ### Switch Capture Limitations
-- **Status**: Supported for tagged unions, but the syntax is sensitive. Braces are recommended for complex bodies.
+- **Status**: Supported for tagged unions.
+- **Requirement**: Every prong (including those with block bodies or captures) must be followed by a comma unless it's the final prong.
 
 ## 2. Type System & Semantic Analysis
 

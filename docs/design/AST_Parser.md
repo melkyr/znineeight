@@ -633,7 +633,7 @@ The `parseSwitchExpression` function handles the `switch` expression. It adheres
 - It then enters a loop to parse one or more "prongs".
 - For each prong, it checks for the `else` keyword. If not present, it parses a comma-separated list of one or more case expressions.
 - It then requires a `=>` token, followed by the body of the prong, which is parsed as a full expression.
-- The loop continues as long as there are commas separating the prongs.
+- **Mandatory Comma**: After every prong body, a comma is mandatory unless the prong is immediately followed by the closing brace `}`. This applies even to prongs with block bodies.
 - Finally, it expects a closing brace.
 - It enforces several error conditions, such as a missing `=>`, a duplicate `else` prong, or an empty switch body.
 

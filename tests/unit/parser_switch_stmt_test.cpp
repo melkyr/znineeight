@@ -55,7 +55,7 @@ TEST_FUNC(Parser_Switch_InclusiveRange) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    ParserTestContext ctx("switch (x) { 1...10 => {}, else => {} }", arena, interner);
+    ParserTestContext ctx("switch (x) { 1...10 => {}, else => {}, }", arena, interner);
     Parser* parser = ctx.getParser();
 
     ASTNode* node = parser->parseStatement();
@@ -79,7 +79,7 @@ TEST_FUNC(Parser_Switch_ExclusiveRange) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    ParserTestContext ctx("switch (x) { 1..10 => {}, else => {} }", arena, interner);
+    ParserTestContext ctx("switch (x) { 1..10 => {}, else => {}, }", arena, interner);
     Parser* parser = ctx.getParser();
 
     ASTNode* node = parser->parseStatement();
@@ -102,7 +102,7 @@ TEST_FUNC(Parser_Switch_MixedItems) {
     ArenaAllocator arena(262144);
     ArenaLifetimeGuard guard(arena);
     StringInterner interner(arena);
-    ParserTestContext ctx("switch (x) { 1, 3...5, 10 => {}, else => {} }", arena, interner);
+    ParserTestContext ctx("switch (x) { 1, 3...5, 10 => {}, else => {}, }", arena, interner);
     Parser* parser = ctx.getParser();
 
     ASTNode* node = parser->parseStatement();
