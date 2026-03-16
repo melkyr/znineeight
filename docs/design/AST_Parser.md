@@ -1356,6 +1356,11 @@ The `parseUnionDeclaration` function is responsible for parsing union declaratio
     - If a colon follows the identifier, it parses the type expression normally.
     - If the union is **tagged** and no colon follows the identifier (a "naked tag"), the parser automatically generates a `void` type node.
     - Naked tags are strictly rejected in untagged (bare) unions and structs.
+
+#### Parsing Logic (`parseStructInitializer` and `parseAnonymousLiteral`)
+These functions handle both named and anonymous struct initializers:
+- They support the `.{ .field = value }` and `Type { .field = value }` syntax.
+- **Naked Tags in Initializers**: They support fields without values (e.g., `.{ .Tag }`). If the `=` token is omitted after the field name, the initializer is stored with a `NULL` value, which is validated by the `TypeChecker` for `void` payloads in tagged unions.
 - It constructs an `ASTStructFieldNode` for each field, which is then wrapped in an `ASTNode` of type `NODE_STRUCT_FIELD`. This `ASTNode` is then appended to the `DynamicArray` in the `ASTUnionDeclNode`.
 - The loop correctly handles an optional trailing comma.
 - It correctly handles empty unions (`{}`).

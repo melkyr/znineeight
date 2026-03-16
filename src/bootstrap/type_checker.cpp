@@ -1968,6 +1968,7 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         return reportAndReturnUndefined(node->expression ? node->expression->loc : parent->loc, ERR_RETURN_INSIDE_DEFER, NULL);
     }
 
+
     Type* return_type = NULL;
     if (node->expression) {
         return_type = visit(node->expression);
@@ -2513,6 +2514,20 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
         }
 
         Type* prong_type = visit(prong->body);
+
+        /* Attempt to infer from condition if it's a tagged union and body is an anonymous initializer */
+        if (is_expr && is_type_undefined(prong_type) && is_tagged_union) {
+            if (prong->body->type == NODE_STRUCT_INITIALIZER && prong->body->as.struct_initializer->type_expr == NULL) {
+                if (prong->body->as.struct_initializer->fields->length() == 1) {
+                    const char* tag_name = (*prong->body->as.struct_initializer->fields)[0]->field_name;
+                    if (findTaggedUnionPayload(cond_type, tag_name)) {
+                        coerceNode(&prong->body, cond_type);
+                        prong_type = prong->body->resolved_type;
+                    }
+                }
+            }
+        }
+
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
@@ -2748,9 +2763,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
         /* Special case for anonymous struct/array initializers */
         if (node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
-            if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY)) {
+            if (declared_type && declared_type->kind == TYPE_PLACEHOLDER) {
+                declared_type = resolvePlaceholder(declared_type);
+            }
+            if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY || isTaggedUnion(declared_type))) {
                 node->initializer->resolved_type = declared_type;
-                if (declared_type->kind == TYPE_STRUCT) {
+                if (declared_type->kind == TYPE_STRUCT || isTaggedUnion(declared_type)) {
                     if (checkStructInitializerFields(node->initializer->as.struct_initializer, declared_type, node->initializer->loc)) {
                         initializer_type = declared_type;
                     } else {
@@ -3594,9 +3612,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION)) return false;
+    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION)) return false;
 
-    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    DynamicArray<StructField>* fields = (struct_type->kind == TYPE_TAGGED_UNION) ?
+                                        struct_type->as.tagged_union.payload_fields :
+                                        struct_type->as.struct_details.fields;
 
     /* 1. Check for missing fields (only for structs) */
     if (struct_type->kind == TYPE_STRUCT) {
@@ -3621,9 +3641,12 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             }
         }
     } else {
-        /* For unions, exactly one field must be initialized. */
+        /* For unions and tagged unions, exactly one field must be initialized. */
         if (node->fields->length() != 1) {
-            reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "union initializer must have exactly one field");
+            const char* msg = (struct_type->kind == TYPE_TAGGED_UNION) ?
+                              "tagged union initializer must have exactly one field" :
+                              "union initializer must have exactly one field";
+            reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg);
             return false;
         }
     }
@@ -3651,8 +3674,34 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
         }
 
         /* 2. Type check initializer values */
+        if (init->value == NULL) {
+            /* Naked tag: valid only if payload is void */
+            if (field_type->kind != TYPE_VOID) {
+                char msg[256];
+                char* curr = msg;
+                size_t rem = sizeof(msg);
+                safe_append(curr, rem, "Tag '");
+                safe_append(curr, rem, init->field_name);
+                safe_append(curr, rem, "' requires a value, but none provided (naked tag only allowed for void payload)");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+                return false;
+            }
+            continue; // Valid naked tag
+        }
+
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
+
+        if (field_type->kind == TYPE_VOID) {
+            char msg[256];
+            char* curr = msg;
+            size_t rem = sizeof(msg);
+            safe_append(curr, rem, "Tag '");
+            safe_append(curr, rem, init->field_name);
+            safe_append(curr, rem, "' has void payload, but initializer provides a value");
+            reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+            return false;
+        }
 
         /* Consistent Coercion Handling */
         coerceNode(&init->value, field_type);
@@ -3730,7 +3779,7 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             return reportAndReturnUndefined(node->type_expr->loc, ERR_TYPE_MISMATCH, "expected struct, union or array type for initialization");
         }
 
-        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION) {
+        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION || struct_type->kind == TYPE_TAGGED_UNION) {
             if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
                 return struct_type;
             }
@@ -5898,12 +5947,24 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
 
 void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     if (!node_slot || !*node_slot || !target_type) return;
+    if (target_type->kind == TYPE_PLACEHOLDER) {
+        target_type = resolvePlaceholder(target_type);
+    }
     ASTNode* node = *node_slot;
     Type* source_type = node->resolved_type;
     if (!source_type) source_type = visit(node);
     if (!source_type || is_type_undefined(source_type)) return;
 
     if (source_type == target_type) return;
+
+    // New: Anonymous struct initializer to tagged union
+    if (node->type == NODE_STRUCT_INITIALIZER && node->as.struct_initializer->type_expr == NULL) {
+        if (isTaggedUnion(target_type)) {
+            checkStructInitializerFields(node->as.struct_initializer, target_type, node->loc);
+            node->resolved_type = target_type;
+            return;
+        }
+    }
 
     /* Handle recursion for control-flow expressions (distributive property) */
     if (node->type == NODE_IF_EXPR) {
@@ -6143,4 +6204,17 @@ i64 TypeChecker::findEnumMemberValue(Type* enum_type, const char* name) {
 i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
     if (!error_set || error_set->kind != TYPE_ERROR_SET) return -1;
     return (i64)unit_.getGlobalErrorRegistry().getOrAddTag(name);
+}
+
+Type* TypeChecker::findTaggedUnionPayload(Type* union_type, const char* tag) {
+    if (!union_type || !isTaggedUnion(union_type)) return NULL;
+    DynamicArray<StructField>* fields = (union_type->kind == TYPE_TAGGED_UNION) ?
+                                        union_type->as.tagged_union.payload_fields :
+                                        union_type->as.struct_details.fields;
+    if (!fields) return NULL;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        if (plat_strcmp((*fields)[i].name, tag) == 0)
+            return (*fields)[i].type;
+    }
+    return NULL;
 }
