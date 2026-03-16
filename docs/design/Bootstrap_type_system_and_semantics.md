@@ -1650,8 +1650,9 @@ A regression in the code generation for `for` loops was resolved by ensuring tha
 
 The following issues were identified during the attempt to compile a comprehensive JSON parser example:
 
-- **Tagged Union Forward Declaration Bug**: Tagged unions are correctly emitted as C `structs` in their definitions, but the `CBackend` incorrectly forward-declares them using the `union` keyword in generated headers.
-- **Unreachable Statement Emission**: The `unreachable` keyword results in an "unimplemented statement" comment in C89, rather than a panic or `abort()`.
-- **Braceless Switch Prongs**: Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
-- **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
-- **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.
+- **Tagged Union Forward Declaration Bug**: **RESOLVED**. Forward declarations now use the `struct` keyword correctly.
+- **Unreachable Statement Emission**: **RESOLVED**. `unreachable` now emits a panic call.
+- **Braceless Switch Prongs**: **RESOLVED**. Bodies are parsed as expressions, eliminating the semicolon requirement.
+- **Header Dependency Cycles**: **RESOLVED** (Task 9.13). Definitions are now emitted in topological order.
+- **Recursive Value Cycles**: **LIMITATION**. Types containing slices of themselves (e.g., `Array: []JsonValue` inside `JsonValue`) fail layout calculation if used during their own definition. Workaround: use pointers (`value: *JsonValue`).
+- **ABI Mismatch**: **CORE LIMITATION**. The compiler assumes a 32-bit target. Running generated C code in a 64-bit environment without `-m32` leads to memory corruption due to layout differences (e.g., union field shifts).

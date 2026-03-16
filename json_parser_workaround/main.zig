@@ -19,35 +19,48 @@ fn printIndent(level: usize) void {
     }
 }
 
-fn printValue(val: json.JsonValue, level: usize) void {
-    __bootstrap_print("DEBUG: val.tag=");
-    __bootstrap_print_int(@enumToInt(val.tag));
-    __bootstrap_print("\n");
+// WORKAROUND: Pass by pointer and manual field copy to avoid 64-bit ABI layout mismatches
+// when running on a 64-bit host. The bootstrap compiler assumes 32-bit.
+fn printValue(val_arg: json.JsonValue, level: usize) void {
+    // Copy locally to ensure we use the layout the compiler expects
+    const tag = val_arg.tag;
+    const data = val_arg.data;
+    var val: json.JsonValue = undefined;
+    val.tag = tag;
+    val.data = data;
+
     if (val.tag == json.JsonValueTag.Null) {
         __bootstrap_print("null");
     } else if (val.tag == json.JsonValueTag.Boolean) {
-        __bootstrap_print("DEBUG: boolean=");
-        if (val.data.Boolean) {
+        if (val.data.boolean) {
             __bootstrap_print("true");
         } else {
             __bootstrap_print("false");
         }
     } else if (val.tag == json.JsonValueTag.Number) {
+        // Simple placeholder for numbers as f64 printing is not in runtime
         __bootstrap_print("<number>");
     } else if (val.tag == json.JsonValueTag.String) {
-        const s = val.data.String;
+        const s = val.data.string;
         __bootstrap_print("\"");
         printSlice(s);
         __bootstrap_print("\"");
     } else if (val.tag == json.JsonValueTag.Array) {
-        const arr = val.data.Array;
+        const arr = val.data.array;
         __bootstrap_print("[");
         if (arr.len > 0) {
             __bootstrap_print("\n");
             var i: usize = 0;
             while (i < arr.len) {
                 printIndent(level + 1);
-                printValue(arr[i], level + 1);
+
+                // WORKAROUND: manual copy from array element
+                const v = arr[i];
+                var v_copy: json.JsonValue = undefined;
+                v_copy.tag = v.tag;
+                v_copy.data = v.data;
+
+                printValue(v_copy, level + 1);
                 if (i < arr.len - 1) __bootstrap_print(",");
                 __bootstrap_print("\n");
                 i += 1;
@@ -56,7 +69,7 @@ fn printValue(val: json.JsonValue, level: usize) void {
         }
         __bootstrap_print("]");
     } else if (val.tag == json.JsonValueTag.Object) {
-        const obj = val.data.Object;
+        const obj = val.data.object;
         __bootstrap_print("{");
         if (obj.len > 0) {
             __bootstrap_print("\n");
@@ -66,8 +79,17 @@ fn printValue(val: json.JsonValue, level: usize) void {
                 __bootstrap_print("\"");
                 printSlice(obj[i].key);
                 __bootstrap_print("\": ");
+
                 const next_val_ptr = obj[i].value;
-                printValue(next_val_ptr.*, level + 1);
+                // WORKAROUND: manual field-by-field copy to avoid pointer deref layout issues on 64-bit
+                const tag_val = next_val_ptr.tag;
+                const data_val = next_val_ptr.data;
+                var next_val: json.JsonValue = undefined;
+                next_val.tag = tag_val;
+                next_val.data = data_val;
+
+                printValue(next_val, level + 1);
+
                 if (i < obj.len - 1) __bootstrap_print(",");
                 __bootstrap_print("\n");
                 i += 1;
@@ -79,23 +101,28 @@ fn printValue(val: json.JsonValue, level: usize) void {
 }
 
 pub fn main() void {
-    const v: json.JsonValue = undefined;
-    _ = v;
     const arena = &zig_default_arena;
-    __bootstrap_print("Starting main\n");
     const content = file.readFile(arena, "test.json") catch |err| {
         __bootstrap_print("Error reading file: ");
         __bootstrap_print_int(@enumToInt(err));
         __bootstrap_print("\n");
         return;
     };
-    __bootstrap_print("Parsed JSON successfully\n");
-    const parsed = json.parseJson(arena, content) catch |err| {
+
+    const parsed_res = json.parseJson(arena, content) catch |err| {
         __bootstrap_print("Parse error: ");
         __bootstrap_print_int(@enumToInt(err));
         __bootstrap_print("\n");
         return;
     };
-    printValue(parsed.*, 0);
+
+    // WORKAROUND: Root copy
+    const root_tag = parsed_res.tag;
+    const root_data = parsed_res.data;
+    var root_val: json.JsonValue = undefined;
+    root_val.tag = root_tag;
+    root_val.data = root_data;
+
+    printValue(root_val, 0);
     __bootstrap_print("\n");
 }

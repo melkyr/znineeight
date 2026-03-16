@@ -23,6 +23,9 @@ pub const FileError = error{
 extern fn arena_alloc_default(size: usize) *void;
 
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
+    _ = arena;
+    // We assume path is null-terminated or we use .ptr if we know it's a literal/from C.
+    // For this example, we'll use @ptrCast to [*]const c_char.
     const f = fopen(@ptrCast([*]const c_char, path.ptr), "rb") orelse return error.OpenFailed;
     defer { _ = fclose(f); }
 

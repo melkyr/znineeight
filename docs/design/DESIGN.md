@@ -29,6 +29,8 @@ The bootstrap compiler assumes a **32-bit little-endian** platform with the foll
 
 This matches the target Win32/x86 environment of the late 90s.
 
+**CRITICAL NOTE**: Compiling and running the generated C89 code on a 64-bit host without the `-m32` flag will result in **memory corruption and segmentation faults**. This is due to the ABI mismatch between the compiler's 32-bit assumptions and the 64-bit environment's layout (especially in unions and pointer sizes). Always use a 32-bit toolchain or `-m32` for verification.
+
 * **Language Standard:** C++98 (max) for bootstrap; limited C++ STL usage due to fragmentation
 * **Memory Limit:** < 16MB peak usage **strictly enforced**. The `ArenaAllocator` will abort the compiler if peak usage exceeds this limit to ensure reliability on legacy hardware. No smart pointers or heavy templates.
 * **Dependencies:** Win32 API (`kernel32.dll`) only for Windows target. POSIX/Standard C for Linux development.
