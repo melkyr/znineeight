@@ -2536,7 +2536,13 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 
         if (prong->capture_name) {
             ASTNode* item_expr = (*prong->items)[0];
-            const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
+            const char* field_name = NULL;
+            if (item_expr->type == NODE_INTEGER_LITERAL) {
+                field_name = item_expr->as.integer_literal.original_name;
+            } else if (item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                field_name = item_expr->as.member_access->field_name;
+            }
+
             if (!field_name) {
                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture requires a tag name case item");
                 return false;
@@ -2562,42 +2568,48 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
         {
             ExpectedTypeGuard guard(*this, expected_type);
             prong_type = visit(prong->body);
-        }
 
-        /* Attempt to infer from condition if it's a tagged union and body is an anonymous initializer */
-        if (is_expr && is_type_undefined(prong_type) && is_tagged_union) {
-            if (prong->body->type == NODE_STRUCT_INITIALIZER && prong->body->as.struct_initializer->type_expr == NULL) {
-                if (prong->body->as.struct_initializer->fields->length() == 1) {
-                    const char* tag_name = (*prong->body->as.struct_initializer->fields)[0]->field_name;
-                    if (findTaggedUnionPayload(cond_type, tag_name)) {
-                        coerceNode(&prong->body, cond_type);
-                        prong_type = prong->body->resolved_type;
-                    }
-                }
+            /* If we have an expected type, try to coerce now to resolve anonymous initializers early.
+               This must happen while the capture scope (if any) is still active. */
+            if (is_expr && expected_type && is_type_undefined(prong_type)) {
+                coerceNode(&prong->body, expected_type);
+                prong_type = prong->body->resolved_type;
             }
         }
 
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
-        if (!prong_type || is_type_undefined(prong_type)) return false;
 
         if (is_expr) {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
+
             if (prong_type->kind != TYPE_NORETURN) {
-                if (!common_type) {
-                    common_type = prong_type;
-                    has_non_noreturn = true;
-                } else if (!areTypesEqual(common_type, prong_type)) {
-                    if (areTypesCompatible(common_type, prong_type)) {
-                        /* common_type is OK */
-                    } else if (areTypesCompatible(prong_type, common_type)) {
-                        common_type = prong_type;
-                    } else {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                has_non_noreturn = true;
+
+                if (expected_type) {
+                    if (!IsTypeAssignableTo(prong_type, expected_type, prong->body->loc, prong->body)) {
                         return false;
+                    }
+                    /* In expected type mode, we just verify compatibility. Unification is bypassed. */
+                } else {
+                    /* Traditional unification */
+                    if (!common_type) {
+                        common_type = prong_type;
+                    } else if (!areTypesEqual(common_type, prong_type)) {
+                        if (areTypesCompatible(common_type, prong_type)) {
+                            /* common_type is OK */
+                        } else if (areTypesCompatible(prong_type, common_type)) {
+                            common_type = prong_type;
+                        } else {
+                            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                            return false;
+                        }
                     }
                 }
             }
+        } else {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
         }
     }
 
@@ -2609,6 +2621,12 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
     if (is_expr) {
         if (!has_non_noreturn) {
             result_type = get_g_type_noreturn();
+        } else if (expected_type) {
+            result_type = expected_type;
+            /* Perform final coercion to the expected type for all prongs */
+            for (size_t i = 0; i < prongs->length(); ++i) {
+                coerceNode(&(*prongs)[i]->body, expected_type);
+            }
         } else {
             result_type = common_type;
             if (common_type->kind == TYPE_SLICE) {
@@ -3667,7 +3685,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION)) return false;
+    if (!struct_type) return false;
+    if (struct_type->kind == TYPE_PLACEHOLDER) {
+        struct_type = resolvePlaceholder(struct_type);
+    }
+    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION) return false;
 
     DynamicArray<StructField>* fields = (struct_type->kind == TYPE_TAGGED_UNION) ?
                                         struct_type->as.tagged_union.payload_fields :
@@ -3744,18 +3766,27 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             continue; // Valid naked tag
         }
 
+        /* Handle explicit empty initializer for void payload: .Tag = {} */
+        if (field_type->kind == TYPE_VOID && init->value->type == NODE_TUPLE_LITERAL && init->value->as.tuple_literal->elements->length() == 0) {
+            init->value->resolved_type = get_g_type_void();
+            continue;
+        }
+
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
 
         if (field_type->kind == TYPE_VOID) {
-            char msg[256];
-            char* curr = msg;
-            size_t rem = sizeof(msg);
-            safe_append(curr, rem, "Tag '");
-            safe_append(curr, rem, init->field_name);
-            safe_append(curr, rem, "' has void payload, but initializer provides a value");
-            reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
-            return false;
+            if (val_type->kind != TYPE_VOID) {
+                char msg[256];
+                char* curr = msg;
+                size_t rem = sizeof(msg);
+                safe_append(curr, rem, "Tag '");
+                safe_append(curr, rem, init->field_name);
+                safe_append(curr, rem, "' has void payload, but initializer provides a non-void value");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+                return false;
+            }
+            continue;
         }
 
         /* Consistent Coercion Handling */
@@ -6003,7 +6034,17 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
 }
 
 void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
+    static int recursion_depth = 0;
+    const int MAX_RECURSION_DEPTH = 64;
+
     if (!node_slot || !*node_slot || !target_type) return;
+
+    if (++recursion_depth > MAX_RECURSION_DEPTH) {
+        /* Silently stop recursion to avoid stack overflow. Error will likely be caught by caller or later pass. */
+        --recursion_depth;
+        return;
+    }
+
     if (target_type->kind == TYPE_PLACEHOLDER) {
         target_type = resolvePlaceholder(target_type);
     }
@@ -6052,7 +6093,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     }
 
     /* Coercion 1: Array -> Slice */
-    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
+    if (target_type->kind == TYPE_SLICE && source_type && source_type->kind == TYPE_ARRAY) {
         Type* target_elem = target_type->as.slice.element_type;
         if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
         Type* source_elem = source_type->as.array.element_type;
@@ -6120,9 +6161,11 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             visitArraySlice(slice_node->as.array_slice);
             slice_node->resolved_type = target_type;
             *node_slot = slice_node;
+            --recursion_depth;
             return;
         }
     }
+    --recursion_depth;
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
