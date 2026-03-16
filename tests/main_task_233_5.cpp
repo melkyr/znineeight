@@ -5,6 +5,7 @@ extern bool test_ASTLifter_ComplexLvalue_Array();
 extern bool test_ASTLifter_EvaluationOrder();
 extern bool test_ASTLifter_CompoundAssignment_Complex();
 
+#ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
         test_ASTLifter_ComplexLvalue_Member,
@@ -14,3 +15,4 @@ int main(int argc, char* argv[]) {
     };
     return run_batch(argc, argv, tests, 4);
 }
+#endif
