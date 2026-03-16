@@ -113,7 +113,8 @@ TEST_FUNC(TypeChecker_StringLiteral) {
     ASSERT_TRUE(type != NULL);
     ASSERT_EQ(type->kind, TYPE_POINTER);
     ASSERT_TRUE(type->as.pointer.is_const);
-    ASSERT_EQ(type->as.pointer.base->kind, TYPE_U8);
+    ASSERT_EQ(type->as.pointer.base->kind, TYPE_ARRAY);
+    ASSERT_EQ(type->as.pointer.base->as.array.element_type->kind, TYPE_U8);
 
     return true;
 }
