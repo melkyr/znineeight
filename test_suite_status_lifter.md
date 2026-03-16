@@ -1,27 +1,33 @@
-# Test Suite Status Report - ControlFlowLifter & Tagged Union Emission
+# Test Suite Status Report - Infrastructure Fix & Regression Report
 
 ## Summary
-The test suite is now **ALL GREEN**. Regressions in Batches 14, 15, 26, 39, 65, and 67 have been resolved. All 66 active test batches (1-67, skipping 64) pass successfully. Example programs, including `quicksort`, are fully functional.
+The test suite infrastructure has been fixed to resolve linker errors caused by multiple `main` definitions. A full run of all 75 test batches has been performed.
+
+**Current Status**: Most batches are **PASSED**, with regressions identified in **Batch 3** and **Batch 48**.
 
 | Batch | Status | Failing Tests |
 |-------|--------|---------------|
-| 1-63  | PASSED | None |
+| 1-2   | PASSED | None |
+| 3     | FAILED | test_TypeChecker_StringLiteralInference, test_TypeCheckerStringLiteralType, test_TypeChecker_StringLiteral, test_TypeChecker_VarDecl_Multiple_Errors, test_TypeChecker_VarDecl_Invalid_Mismatch |
+| 4-47  | PASSED | None |
+| 48    | FAILED | test_CrossModule_EnumAccess |
+| 49-63 | PASSED | None |
 | 64    | MISSING| (Number skipped in repository) |
-| 65-67 | PASSED | None |
+| 65-73 | PASSED | None |
+| 9a-9c | PASSED | None |
 
 ---
 
 ## Detailed Analysis of Regressions
 
-All identified regressions have been resolved.
+### 1. Batch 3: Type Checker String/Char Literal Regressions
+**Issue**: Several tests related to string literal type inference are failing.
+- `test_TypeCheckerStringLiteralType`: Expected `TYPE_U8` (6) as pointer base but got `TYPE_ARRAY` (18). This indicates that string literals are now correctly typed as pointers to arrays (e.g., `*const [N]u8`) rather than simple pointers to u8 (`*const u8`), but the older tests still expect the simpler type.
+- `test_TypeChecker_VarDecl_Invalid_Mismatch` & `test_TypeChecker_VarDecl_Multiple_Errors`: The error hint mismatch. Expected hint "Incompatible assignment: '*const u8' to 'i32'" but got "Incompatible assignment: '*const [5]u8' to 'i32'".
 
-### 1. Batch 15: `test_StructIntegration_RejectAnonymousStruct`
-**Issue**: The test was failing because it expected the error message "anonymous structs", but the compiler was reporting "anonymous aggregates not allowed in variable declarations" following recent type system improvements.
-**Resolution**: Updated the test expectation in `tests/integration/struct_tests.cpp` to match the new, more accurate error message.
-
-### 2. Batch 15: `expect_parser_abort` Robustness
-**Issue**: `test_StructIntegration_RejectStructMethods` was failing due to unreliable `SIGABRT` detection in some environments.
-**Resolution**: Updated `expect_abort` in `tests/test_utils.cpp` to consider any signal termination or non-zero exit status as a successful abort.
+### 2. Batch 48: Cross-Module Enum Access
+**Issue**: `test_CrossModule_EnumAccess` is failing.
+- **Analysis**: The test attempts to import `json.zig` but cannot find it in the expected path during the test execution, or there is a symbol resolution issue when crossing module boundaries for enums.
 
 ---
 
@@ -34,11 +40,12 @@ All examples in the `examples/` directory were compiled with the bootstrap compi
 | prime   | PASSED | Correctly identifies primes up to 20. |
 | fibonacci| PASSED | Correctly computes Fib(10) = 55. |
 | heapsort| PASSED | `135671112131520` |
-| quicksort| PASSED | Sorted arrays (ascending/descending). (Verified) |
+| quicksort| PASSED | Sorted arrays (ascending/descending). |
 | sort_strings| PASSED | Correctly sorts string array. |
 | func_ptr_return| PASSED | 10 + 5 = 15, 10 - 5 = 5. |
 
 ---
 
-## Recommendations
-1.  **Continuous Monitoring**: Ensure new features maintain compatibility with unified labeling, tagged union emission patterns, and improved error reporting.
+## Infrastructure Fixes
+1. Added `#ifndef RETROZIG_TEST` guards to `tests/debug_emission.cpp` and `tests/main_task_233_5.cpp` to prevent multiple `main` definition errors during batch runner compilation.
+2. Verified `test.sh` successfully generates and compiles all 75 batch runners.
