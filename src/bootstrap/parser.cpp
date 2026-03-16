@@ -967,8 +967,11 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
             match(TOKEN_DOT);
             Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct initializer");
             field_name_str = field_name_token.value.identifier;
-            expect(TOKEN_EQUAL, "Expected '=' after field name in struct initializer");
-            value = parseExpression();
+            if (match(TOKEN_EQUAL)) {
+                value = parseExpression();
+            } else {
+                value = NULL;
+            }
             loc = field_name_token.location;
         } else {
             // Positional initializer (mostly for arrays)
@@ -1027,8 +1030,10 @@ ASTNode* Parser::parseAnonymousLiteral() {
         while (peek().type != TOKEN_RBRACE && !is_at_end()) {
             expect(TOKEN_DOT, "Expected '.' before field name in anonymous struct initializer");
             Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name");
-            expect(TOKEN_EQUAL, "Expected '=' after field name");
-            ASTNode* value = parseExpression();
+            ASTNode* value = NULL;
+            if (match(TOKEN_EQUAL)) {
+                value = parseExpression();
+            }
 
             ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
             if (!named_init) error("Out of memory");

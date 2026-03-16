@@ -334,10 +334,16 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
-    -   The type being initialized is a struct.
-    -   All fields defined in the struct are initialized exactly once.
+    -   The type being initialized is a struct, union, or tagged union.
+    -   For structs, all fields defined in the struct are initialized exactly once.
+    -   For unions and tagged unions, exactly one field must be initialized.
     -   No extra fields are provided in the initializer.
     -   Each initializer expression's type is compatible with the corresponding field's type.
+    -   **Naked Tags**: In tagged union initializers, a field can be initialized without a value (e.g., `.{ .Tag }`). This is only valid if the corresponding field in the union has the `void` type.
+
+3.  **Anonymous Initializers**: Anonymous struct initializers (`.{ .field = value }`) are permitted when the context type is a struct, array, or tagged union.
+    -   The `TypeChecker` uses `coerceNode` to resolve the type of the anonymous initializer based on the target type.
+    -   For tagged unions, it validates that exactly one field is present and that it matches a valid tag and payload type.
 
 ### Union and Tagged Union Type Declarations
 
