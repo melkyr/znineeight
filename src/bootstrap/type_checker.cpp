@@ -6056,9 +6056,15 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     bool is_switch_expr = (node->type == NODE_SWITCH_EXPR);
     bool is_if_expr = (node->type == NODE_IF_EXPR);
 
-    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr) return;
+    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr) {
+        --recursion_depth;
+        return;
+    }
 
-    if (source_type == target_type && !is_anonymous_init) return;
+    if (source_type == target_type && !is_anonymous_init) {
+        --recursion_depth;
+        return;
+    }
 
     // New: Anonymous struct initializer to tagged union
     if (is_anonymous_init) {
@@ -6079,6 +6085,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         coerceNode(&node->as.if_expr->then_expr, target_type);
         coerceNode(&node->as.if_expr->else_expr, target_type);
         node->resolved_type = target_type;
+        --recursion_depth;
         return;
     }
 
@@ -6089,6 +6096,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             }
         }
         node->resolved_type = target_type;
+        --recursion_depth;
         return;
     }
 
