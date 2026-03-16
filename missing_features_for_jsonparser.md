@@ -5,71 +5,67 @@ This document records the issues, bugs, and limitations discovered while attempt
 ## 1. Syntax & Parser Constraints
 
 ### Braceless Switch Prongs Semicolon Requirement
-- **Status**: **RESOLVED**.
-- **Observation**: Previously, a semicolon was required before the comma. Following the Phase 6 and Milestone 9 updates, switch prong bodies are parsed as expressions, eliminating the semicolon requirement.
-- **Correct Syntax**:
-  ```zig
-  switch (ch) {
-      'n' => return try parseNull(p), // No semicolon before comma
-      else => return error.ExpectedValue,
-  }
-  ```
+- **Status**: **RESOLVED** (Phase 6 Fix).
+- **Observation**: Switch prong bodies are now parsed using `parseExpression()`. This eliminates the semicolon requirement before the comma. Zig-style comma rules are enforced: mandatory for non-block prongs unless it is the final prong.
 
 ### Braceless `if`/`while` bodies
 - **Status**: Supported, but normalized to blocks in the lifter.
 
 ### Switch Capture Limitations
 - **Status**: Supported for tagged unions.
-- **Requirement**: Every prong (including those with block bodies or captures) must be followed by a comma unless it's the final prong.
+- **Observation**: Capture requires a tag name case item (e.g., `.String => |s|`).
 
 ## 2. Type System & Semantic Analysis
 
-### Recursive Type Completeness
-- **Status**: Pointers required.
-- **Observation**: Types containing slices of themselves (e.g., `Array: []JsonValue` inside `JsonValue`) often result in "incomplete type" errors during layout calculation.
-- **Workaround**: Use pointers for recursion (e.g., `value: *JsonValue`).
+### Recursive Type Completeness (Value Cycles)
+- **Status**: **LIMITATION IDENTIFIED**.
+- **Observation**: Types containing slices of themselves (e.g., `Array: []JsonValue` inside `JsonValue`) result in "incomplete type" errors during layout calculation because the compiler attempts to calculate the size of the slice which depends on the element type.
+- **Workaround**: Use pointers for recursion (e.g., `value: *JsonValue`). Slices of a type can be used once the type is complete, but not during its own definition.
+
+### Comptime Type Parameters and @sizeOf
+- **Status**: **LIMITATION IDENTIFIED**.
+- **Observation**: Functions using `comptime T: type` (e.g., `alloc(arena, T, count)`) fail when calling `@sizeOf(T)` if `T` is treated as an incomplete type parameter. The bootstrap compiler's generic support is limited.
+- **Workaround**: Use byte-oriented allocators and `@ptrCast` at the call site, or specialized functions.
+
+### Anonymous Initializer Contextual Inference
+- **Status**: **IMPROVED** (Phase 9c).
+- **Observation**: Returning `.Null` or `.{ .Boolean = true }` directly in switch prongs or function returns sometimes fails type matching if the expected type isn't propagated correctly through all layers (especially through `try` or complex expressions).
+- **Workaround**: Explicitly type the initializer (e.g., `JsonValue.Null`) or use a temporary variable with an explicit type.
 
 ### Strict Assignment Compatibility
 - **Status**: Enforced.
 - **Observation**: The compiler is very strict about identical types in assignments and struct initializers. `i32` literals do not always implicitly coerce to `usize` in these contexts.
-- **Workaround**: Use explicit types or ensured literals (e.g., `const zero: usize = 0;`).
-
-### If Expression Branch Consistency
-- **Status**: Enforced.
-- **Observation**: Branches of an `if` expression must have exactly the same type. No implicit widening between branches.
+- **Workaround**: Use explicit `@intCast(usize, ...)` or ensure literals are compatible.
 
 ## 3. Code Generation Bugs & Gaps
 
-### Tagged Union Forward Declaration Bug
+### Expression-as-Statement Emission
+- **Status**: **RESOLVED** (Post-Baptism Fix).
+- **Observation**: Previously, expression nodes (like `return try ...` or simple binary ops) used directly as statements in contexts like `switch` prongs were incorrectly handled, leading to "Unimplemented statement type" comments in the C output.
+- **Fix**: Updated `C89Emitter::emitStatement` to treat standard expression nodes as valid expression-statements, ensuring they are emitted followed by a semicolon.
+
+### `break`/`continue` Ambiguity in `switch`
 - **Status**: **BUG IDENTIFIED**.
-- **Observation**: Tagged unions are correctly identified as C `structs` in their definitions (Pass 1), but the `CBackend` incorrectly forward-declares them using the `union` keyword in the generated `.h` files (Pass 0).
-- **Impact**: Causes `gcc` error: "defined as wrong kind of tag".
-- **Workaround**: Manually implement tagged unions using a `struct` with an `enum` tag and a bare `union` for data.
+- **Observation**: Using `break` inside a `switch` that is itself inside a `while` loop emits a C `break`. In C, this only breaks the `switch`, whereas in Zig it should break the `while`. This leads to infinite loops.
+- **Workaround**: Use `return` or labeled breaks if available, or ensure the compiler always uses `goto` for breaks targeting loops.
+
+### Tagged Union Forward Declaration Bug
+- **Status**: **RESOLVED**.
+- **Observation**: Forward declarations for tagged unions are now correctly emitted using the `struct` keyword in C headers and sources.
 
 ### `unreachable` Statement Missing Emission
-- **Status**: **GAP IDENTIFIED**.
-- **Observation**: The `unreachable` expression is recognized by the parser but results in `/* Unimplemented statement type 4 */` in the generated C code when used as a statement.
-
-### Header Dependency Cycle with Error Unions
-- **Status**: **LIMITATION IDENTIFIED**.
-- **Observation**: When a function returns a recursive struct by value in an error union (e.g., `fn foo() !RecursiveStruct`), the generated header emits the `ErrorUnion_RecursiveStruct` definition *before* the `struct RecursiveStruct` definition. In C89, a struct member must be a complete type, so this fails.
-- **Workaround**: Return a pointer instead (e.g., `fn foo() !*RecursiveStruct`).
+- **Status**: **RESOLVED**.
+- **Observation**: `unreachable` statements now correctly emit a `__bootstrap_panic` call.
 
 ### 32-bit vs 64-bit ABI Mismatch
 - **Status**: **CORE LIMITATION**.
 - **Observation**: The RetroZig bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment). When generating C code for a 64-bit host, `@sizeOf` values and struct layouts mismatch the 64-bit C compiler's expectations.
-- **Impact**: Severe memory corruption and incorrect behavior at runtime when compiled as 64-bit.
-- **Recommendation**: Always compile the generated C code with `-m32` or on a native 32-bit platform. If `-m32` is unavailable, the bootstrap compiler's `type_system.cpp` must be updated to 64-bit assumptions.
-
-### Incomplete Type definition order
-- **Status**: Investigating.
-- **Observation**: Even with pointers, if a struct refers back to a union that is still being defined, order of emission in the header can cause issues if not forward-declared correctly.
+- **Impact**: Severe memory corruption (segmentation faults) when accessing fields of structs/unions via pointers in 64-bit binaries.
+- **Recommendation**: Always compile the generated C code with `-m32` or on a native 32-bit platform.
 
 ## 4. Successful Features Verified
-- **@import**: Works across multiple files.
-- **Error Unions**: `FileError![]u8` works correctly with `try` and `catch`.
-- **Extern C Interop**: `fopen`, `fread`, etc., are correctly called with `@ptrCast`.
-- **Slices**: `.len` and `.ptr` properties work.
-- **Many-item Pointers**: `[*]u8` works for C string interop.
-- **AST Lifting**: Complex `catch` expressions in `main.zig` were correctly lifted into temporary-variable-based statements.
-- **Single Translation Unit (STU)**: The generated `main.c` correctly includes all module files for a unified compilation.
+- **Multi-file Modular Programs**: `@import` works across multiple files and correctly links the STU.
+- **Modern Control Flow**: `switch` with ranges and tagged union captures are fully functional.
+- **Error Handling**: `try` and `catch` correctly propagate and handle errors.
+- **Braceless Syntax**: `if`, `while`, and `defer` can be used without braces for single statements.
+- **C Interop**: Pointer casts and extern function calls are working as intended.
