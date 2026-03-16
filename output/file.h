@@ -12,6 +12,8 @@ typedef struct {
 } Optional_Ptr_void;
 #endif
 
+struct z_file_Arena; /* opaque */
+
 #ifndef ZIG_SLICE_Slice_u8
 #define ZIG_SLICE_Slice_u8
 typedef struct { unsigned char* ptr; usize len; } Slice_u8;
@@ -41,8 +43,6 @@ typedef struct {
     int has_value;
 } Optional_Ptr_c_char;
 #endif
-
-struct z_file_Arena; /* opaque */
 
 extern /* unsupported type */ z_file_File;
 extern int z_file_FileError;

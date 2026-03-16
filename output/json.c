@@ -44,10 +44,10 @@ typedef struct {
 } ErrorUnion_z_json_JsonValue;
 #endif
 
-static unsigned char z_json_peek(struct z_json_Parser*);
-static void z_json_advance(struct z_json_Parser*);
-static void z_json_skipWhitespace(struct z_json_Parser*);
-static ErrorUnion_void z_json_expect(struct z_json_Parser*, unsigned char);
+static unsigned char z_json_parser_peek(struct z_json_Parser*);
+static void z_json_parser_advance(struct z_json_Parser*);
+static void z_json_parser_skipWhitespace(struct z_json_Parser*);
+static ErrorUnion_void z_json_parser_expect(struct z_json_Parser*, unsigned char);
 static ErrorUnion_z_json_JsonValue z_json_parseValue(struct z_json_Parser*);
 static ErrorUnion_z_json_JsonValue z_json_parseNull(struct z_json_Parser*);
 static ErrorUnion_z_json_JsonValue z_json_parseBoolean(struct z_json_Parser*);
@@ -58,9 +58,9 @@ static double z_json_parseFloat(Slice_u8);
 static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser*);
 static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser*);
 
-static unsigned char z_json_peek(struct z_json_Parser* p) {
-    if (p->pos < p->input.len) {
-        return p->input.ptr[p->pos];
+static unsigned char z_json_parser_peek(struct z_json_Parser* self) {
+    if (self->pos < self->input.len) {
+        return self->input.ptr[self->pos];
     } else {
         unsigned char z_json_nul;
         z_json_nul = 0;
@@ -68,18 +68,18 @@ static unsigned char z_json_peek(struct z_json_Parser* p) {
     }
 }
 
-static void z_json_advance(struct z_json_Parser* p) {
-    if (p->pos < p->input.len) {
-        p->pos += 1;
+static void z_json_parser_advance(struct z_json_Parser* self) {
+    if (self->pos < self->input.len) {
+        self->pos += 1;
     }
 }
 
-static void z_json_skipWhitespace(struct z_json_Parser* p) {
-    while (p->pos < p->input.len) {
+static void z_json_parser_skipWhitespace(struct z_json_Parser* self) {
+    while (self->pos < self->input.len) {
         unsigned char z_json_ch;
-        z_json_ch = p->input.ptr[p->pos];
+        z_json_ch = self->input.ptr[self->pos];
         if (z_json_ch == ' ' || z_json_ch == '\t' || z_json_ch == '\n' || z_json_ch == '\r') {
-            p->pos += 1;
+            self->pos += 1;
         } else {
             /* defers for break */
             break;
@@ -87,8 +87,8 @@ static void z_json_skipWhitespace(struct z_json_Parser* p) {
     }
 }
 
-static ErrorUnion_void z_json_expect(struct z_json_Parser* p, unsigned char c) {
-    if (z_json_peek(p) != c) {
+static ErrorUnion_void z_json_parser_expect(struct z_json_Parser* self, unsigned char c) {
+    if (z_json_parser_peek(self) != c) {
         {
             ErrorUnion_void __return_val;
             __return_val.err = ERROR_ExpectedValue;
@@ -96,25 +96,24 @@ static ErrorUnion_void z_json_expect(struct z_json_Parser* p, unsigned char c) {
             return __return_val;
         }
     }
-    z_json_advance(p);
+    z_json_parser_advance(self);
     {
         ErrorUnion_void __implicit_ret = {0};
         return __implicit_ret;
     }
 }
 
-ErrorUnion_Ptr_z_json_JsonValue z_json_parseJson(void * arena_ptr, Slice_u8 input) {
+ErrorUnion_Ptr_z_json_JsonValue z_json_parseJson(void * arena, Slice_u8 input) {
     usize z_json_zero;
     struct z_json_Parser z_json_p;
     struct z_json_JsonValue __tmp_try_5_41;
     ErrorUnion_z_json_JsonValue __tmp_try_res_5_42;
     struct z_json_JsonValue z_json_result;
-    void * z_json_res_ptr_bytes;
     struct z_json_JsonValue* z_json_res_ptr;
     z_json_zero = 0;
     z_json_p.input = input;
     z_json_p.pos = z_json_zero;
-    z_json_p.arena = arena_ptr;
+    z_json_p.arena = arena;
     __tmp_try_res_5_42 = z_json_parseValue(&z_json_p);
     if (__tmp_try_res_5_42.is_error) {
         {
@@ -125,7 +124,7 @@ ErrorUnion_Ptr_z_json_JsonValue z_json_parseJson(void * arena_ptr, Slice_u8 inpu
     }
     __tmp_try_5_41 = __tmp_try_res_5_42.data.payload;
     z_json_result = __tmp_try_5_41;
-    z_json_skipWhitespace(&z_json_p);
+    z_json_parser_skipWhitespace(&z_json_p);
     if (z_json_p.pos < z_json_p.input.len) {
         {
             ErrorUnion_Ptr_z_json_JsonValue __return_val;
@@ -134,9 +133,9 @@ ErrorUnion_Ptr_z_json_JsonValue z_json_parseJson(void * arena_ptr, Slice_u8 inpu
             return __return_val;
         }
     }
-    z_json_res_ptr_bytes = arena_alloc_default(16);
-    z_json_res_ptr = (struct z_json_JsonValue*)z_json_res_ptr_bytes;
-    *z_json_res_ptr = z_json_result;
+    z_json_res_ptr = (struct z_json_JsonValue*)arena_alloc_default(16);
+    z_json_res_ptr->tag = z_json_result.tag;
+    z_json_res_ptr->data = z_json_result.data;
     {
         ErrorUnion_Ptr_z_json_JsonValue __return_val;
         __return_val.data.payload = z_json_res_ptr;
@@ -147,93 +146,114 @@ ErrorUnion_Ptr_z_json_JsonValue z_json_parseJson(void * arena_ptr, Slice_u8 inpu
 
 static ErrorUnion_z_json_JsonValue z_json_parseValue(struct z_json_Parser* p) {
     unsigned char z_json_ch;
-    z_json_skipWhitespace(p);
-    z_json_ch = z_json_peek(p);
-    if (z_json_ch == 'n') {
-        ErrorUnion_z_json_JsonValue __tmp_try_7_29;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_7_30;
-        __tmp_try_res_7_30 = z_json_parseNull(p);
-        if (__tmp_try_res_7_30.is_error) {
-            __tmp_try_7_29.is_error = 1;
-            __tmp_try_7_29.data.err = __tmp_try_res_7_30.data.err;
-        } else {
-            __tmp_try_7_29.is_error = 0;
-            __tmp_try_7_29.data.payload = __tmp_try_res_7_30.data.payload;
-        }
-        return __tmp_try_7_29;
-    } else     if (z_json_ch == 't' || z_json_ch == 'f') {
-        ErrorUnion_z_json_JsonValue __tmp_try_8_31;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_8_32;
-        __tmp_try_res_8_32 = z_json_parseBoolean(p);
-        if (__tmp_try_res_8_32.is_error) {
-            __tmp_try_8_31.is_error = 1;
-            __tmp_try_8_31.data.err = __tmp_try_res_8_32.data.err;
-        } else {
-            __tmp_try_8_31.is_error = 0;
-            __tmp_try_8_31.data.payload = __tmp_try_res_8_32.data.payload;
-        }
-        return __tmp_try_8_31;
-    } else     if (z_json_ch == '"') {
-        ErrorUnion_z_json_JsonValue __tmp_try_9_33;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_9_34;
-        __tmp_try_res_9_34 = z_json_parseString(p);
-        if (__tmp_try_res_9_34.is_error) {
-            __tmp_try_9_33.is_error = 1;
-            __tmp_try_9_33.data.err = __tmp_try_res_9_34.data.err;
-        } else {
-            __tmp_try_9_33.is_error = 0;
-            __tmp_try_9_33.data.payload = __tmp_try_res_9_34.data.payload;
-        }
-        return __tmp_try_9_33;
-    } else     if ((z_json_ch >= '0' && z_json_ch <= '9') || z_json_ch == '-') {
-        ErrorUnion_z_json_JsonValue __tmp_try_10_35;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_10_36;
-        __tmp_try_res_10_36 = z_json_parseNumber(p);
-        if (__tmp_try_res_10_36.is_error) {
-            __tmp_try_10_35.is_error = 1;
-            __tmp_try_10_35.data.err = __tmp_try_res_10_36.data.err;
-        } else {
-            __tmp_try_10_35.is_error = 0;
-            __tmp_try_10_35.data.payload = __tmp_try_res_10_36.data.payload;
-        }
-        return __tmp_try_10_35;
-    } else     if (z_json_ch == '[') {
-        ErrorUnion_z_json_JsonValue __tmp_try_11_37;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_11_38;
-        __tmp_try_res_11_38 = z_json_parseArray(p);
-        if (__tmp_try_res_11_38.is_error) {
-            __tmp_try_11_37.is_error = 1;
-            __tmp_try_11_37.data.err = __tmp_try_res_11_38.data.err;
-        } else {
-            __tmp_try_11_37.is_error = 0;
-            __tmp_try_11_37.data.payload = __tmp_try_res_11_38.data.payload;
-        }
-        return __tmp_try_11_37;
-    } else     if (z_json_ch == '{') {
-        ErrorUnion_z_json_JsonValue __tmp_try_12_39;
-        ErrorUnion_z_json_JsonValue __tmp_try_res_12_40;
-        __tmp_try_res_12_40 = z_json_parseObject(p);
-        if (__tmp_try_res_12_40.is_error) {
-            __tmp_try_12_39.is_error = 1;
-            __tmp_try_12_39.data.err = __tmp_try_res_12_40.data.err;
-        } else {
-            __tmp_try_12_39.is_error = 0;
-            __tmp_try_12_39.data.payload = __tmp_try_res_12_40.data.payload;
-        }
-        return __tmp_try_12_39;
-    } else {
-        {
-            ErrorUnion_z_json_JsonValue __return_val;
-            __return_val.data.err = ERROR_ExpectedValue;
-            __return_val.is_error = 1;
-            return __return_val;
-        }
+    z_json_parser_skipWhitespace(p);
+    z_json_ch = z_json_parser_peek(p);
+    switch (z_json_ch) {
+        case 'n':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_29;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_30;
+                __tmp_try_res_7_30 = z_json_parseNull(p);
+                if (__tmp_try_res_7_30.is_error) {
+                    __tmp_try_7_29.is_error = 1;
+                    __tmp_try_7_29.data.err = __tmp_try_res_7_30.data.err;
+                } else {
+                    __tmp_try_7_29.is_error = 0;
+                    __tmp_try_7_29.data.payload = __tmp_try_res_7_30.data.payload;
+                }
+                return __tmp_try_7_29;
+            }            break;
+        case 't':
+        case 'f':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_31;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_32;
+                __tmp_try_res_7_32 = z_json_parseBoolean(p);
+                if (__tmp_try_res_7_32.is_error) {
+                    __tmp_try_7_31.is_error = 1;
+                    __tmp_try_7_31.data.err = __tmp_try_res_7_32.data.err;
+                } else {
+                    __tmp_try_7_31.is_error = 0;
+                    __tmp_try_7_31.data.payload = __tmp_try_res_7_32.data.payload;
+                }
+                return __tmp_try_7_31;
+            }            break;
+        case '"':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_33;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_34;
+                __tmp_try_res_7_34 = z_json_parseString(p);
+                if (__tmp_try_res_7_34.is_error) {
+                    __tmp_try_7_33.is_error = 1;
+                    __tmp_try_7_33.data.err = __tmp_try_res_7_34.data.err;
+                } else {
+                    __tmp_try_7_33.is_error = 0;
+                    __tmp_try_7_33.data.payload = __tmp_try_res_7_34.data.payload;
+                }
+                return __tmp_try_7_33;
+            }            break;
+        case 48:
+        case 49:
+        case 50:
+        case 51:
+        case 52:
+        case 53:
+        case 54:
+        case 55:
+        case 56:
+        case 57:
+        case '-':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_35;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_36;
+                __tmp_try_res_7_36 = z_json_parseNumber(p);
+                if (__tmp_try_res_7_36.is_error) {
+                    __tmp_try_7_35.is_error = 1;
+                    __tmp_try_7_35.data.err = __tmp_try_res_7_36.data.err;
+                } else {
+                    __tmp_try_7_35.is_error = 0;
+                    __tmp_try_7_35.data.payload = __tmp_try_res_7_36.data.payload;
+                }
+                return __tmp_try_7_35;
+            }            break;
+        case '[':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_37;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_38;
+                __tmp_try_res_7_38 = z_json_parseArray(p);
+                if (__tmp_try_res_7_38.is_error) {
+                    __tmp_try_7_37.is_error = 1;
+                    __tmp_try_7_37.data.err = __tmp_try_res_7_38.data.err;
+                } else {
+                    __tmp_try_7_37.is_error = 0;
+                    __tmp_try_7_37.data.payload = __tmp_try_res_7_38.data.payload;
+                }
+                return __tmp_try_7_37;
+            }            break;
+        case '{':
+{
+                ErrorUnion_z_json_JsonValue __tmp_try_7_39;
+                ErrorUnion_z_json_JsonValue __tmp_try_res_7_40;
+                __tmp_try_res_7_40 = z_json_parseObject(p);
+                if (__tmp_try_res_7_40.is_error) {
+                    __tmp_try_7_39.is_error = 1;
+                    __tmp_try_7_39.data.err = __tmp_try_res_7_40.data.err;
+                } else {
+                    __tmp_try_7_39.is_error = 0;
+                    __tmp_try_7_39.data.payload = __tmp_try_res_7_40.data.payload;
+                }
+                return __tmp_try_7_39;
+            }            break;
+        default:
+{
+                {
+                    ErrorUnion_z_json_JsonValue __return_val;
+                    __return_val.data.err = ERROR_ExpectedValue;
+                    __return_val.is_error = 1;
+                    return __return_val;
+                }
+            }            break;
     }
-
-
-
-
-
 }
 
 static ErrorUnion_z_json_JsonValue z_json_parseNull(struct z_json_Parser* p) {
@@ -269,7 +289,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseBoolean(struct z_json_Parser* p) 
         struct z_json_JsonValue z_json_val;
         p->pos += 4;
         z_json_val.tag = z_json_JsonValueTag_Boolean;
-        z_json_val.data.Boolean = 1;
+        z_json_val.data.boolean = 1;
         {
             ErrorUnion_z_json_JsonValue __return_val;
             __return_val.data.payload = z_json_val;
@@ -281,7 +301,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseBoolean(struct z_json_Parser* p) 
         struct z_json_JsonValue z_json_val_1;
         p->pos += 5;
         z_json_val_1.tag = z_json_JsonValueTag_Boolean;
-        z_json_val_1.data.Boolean = 0;
+        z_json_val_1.data.boolean = 0;
         {
             ErrorUnion_z_json_JsonValue __return_val;
             __return_val.data.payload = z_json_val_1;
@@ -303,7 +323,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseString(struct z_json_Parser* p) {
     Slice_u8 z_json_slice;
     ErrorUnion_void __tmp_try_res_5_26;
     struct z_json_JsonValue z_json_val;
-    __tmp_try_res_5_28 = z_json_expect(p, '"');
+    __tmp_try_res_5_28 = z_json_parser_expect(p, '"');
     if (__tmp_try_res_5_28.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -332,7 +352,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseString(struct z_json_Parser* p) {
         }
     }
     z_json_slice = __make_slice_u8(p->input.ptr + z_json_start, p->pos - z_json_start);
-    __tmp_try_res_5_26 = z_json_expect(p, '"');
+    __tmp_try_res_5_26 = z_json_parser_expect(p, '"');
     if (__tmp_try_res_5_26.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -342,7 +362,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseString(struct z_json_Parser* p) {
     }
     0;
     z_json_val.tag = z_json_JsonValueTag_String;
-    z_json_val.data.String = z_json_slice;
+    z_json_val.data.string = z_json_slice;
     {
         ErrorUnion_z_json_JsonValue __return_val;
         __return_val.data.payload = z_json_val;
@@ -354,37 +374,37 @@ static ErrorUnion_z_json_JsonValue z_json_parseString(struct z_json_Parser* p) {
 static ErrorUnion_z_json_JsonValue z_json_parseNumber(struct z_json_Parser* p) {
     usize z_json_start;
     Slice_u8 z_json_slice;
-    double z_json_val;
-    struct z_json_JsonValue z_json_res;
+    double z_json_val_num;
+    struct z_json_JsonValue z_json_val;
     z_json_start = p->pos;
-    if (z_json_peek(p) == '-') {
-        z_json_advance(p);
+    if (z_json_parser_peek(p) == '-') {
+        z_json_parser_advance(p);
     }
-    while (z_json_isDigit(z_json_peek(p))) {
-        z_json_advance(p);
+    while (z_json_isDigit(z_json_parser_peek(p))) {
+        z_json_parser_advance(p);
     }
-    if (z_json_peek(p) == '.') {
-        z_json_advance(p);
-        while (z_json_isDigit(z_json_peek(p))) {
-            z_json_advance(p);
+    if (z_json_parser_peek(p) == '.') {
+        z_json_parser_advance(p);
+        while (z_json_isDigit(z_json_parser_peek(p))) {
+            z_json_parser_advance(p);
         }
     }
-    if (z_json_peek(p) == 'e' || z_json_peek(p) == 'E') {
-        z_json_advance(p);
-        if (z_json_peek(p) == '+' || z_json_peek(p) == '-') {
-            z_json_advance(p);
+    if (z_json_parser_peek(p) == 'e' || z_json_parser_peek(p) == 'E') {
+        z_json_parser_advance(p);
+        if (z_json_parser_peek(p) == '+' || z_json_parser_peek(p) == '-') {
+            z_json_parser_advance(p);
         }
-        while (z_json_isDigit(z_json_peek(p))) {
-            z_json_advance(p);
+        while (z_json_isDigit(z_json_parser_peek(p))) {
+            z_json_parser_advance(p);
         }
     }
     z_json_slice = __make_slice_u8(p->input.ptr + z_json_start, p->pos - z_json_start);
-    z_json_val = z_json_parseFloat(z_json_slice);
-    z_json_res.tag = z_json_JsonValueTag_Number;
-    z_json_res.data.Number = z_json_val;
+    z_json_val_num = z_json_parseFloat(z_json_slice);
+    z_json_val.tag = z_json_JsonValueTag_Number;
+    z_json_val.data.number = z_json_val_num;
     {
         ErrorUnion_z_json_JsonValue __return_val;
-        __return_val.data.payload = z_json_res;
+        __return_val.data.payload = z_json_val;
         __return_val.is_error = 0;
         return __return_val;
     }
@@ -414,12 +434,11 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
     ErrorUnion_void __tmp_try_res_5_24;
     usize z_json_count;
     usize z_json_saved_pos;
-    void * z_json_arr_bytes;
     Slice_z_json_JsonValue z_json_arr;
     usize z_json_idx;
     ErrorUnion_void __tmp_try_res_5_18;
-    struct z_json_JsonValue z_json_res;
-    __tmp_try_res_5_24 = z_json_expect(p, '[');
+    struct z_json_JsonValue z_json_val;
+    __tmp_try_res_5_24 = z_json_parser_expect(p, '[');
     if (__tmp_try_res_5_24.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -428,10 +447,10 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
         }
     }
     0;
-    z_json_skipWhitespace(p);
+    z_json_parser_skipWhitespace(p);
     z_json_count = 0;
     z_json_saved_pos = p->pos;
-    if (z_json_peek(p) != ']') {
+    if (z_json_parser_peek(p) != ']') {
         while (1) {
             struct z_json_JsonValue __tmp_try_10_21;
             ErrorUnion_z_json_JsonValue __tmp_try_res_10_22;
@@ -442,17 +461,17 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
             __tmp_try_10_21 = __tmp_try_res_10_22.data.payload;
             (void)(__tmp_try_10_21);
             z_json_count += 1;
-            z_json_skipWhitespace(p);
-            if (z_json_peek(p) == ',') {
-                z_json_advance(p);
-                z_json_skipWhitespace(p);
+            z_json_parser_skipWhitespace(p);
+            if (z_json_parser_peek(p) == ',') {
+                z_json_parser_advance(p);
+                z_json_parser_skipWhitespace(p);
                 /* defers for continue */
                 continue;
             }
             /* defers for break */
             break;
         }
-        if (z_json_peek(p) != ']') {
+        if (z_json_parser_peek(p) != ']') {
             {
                 ErrorUnion_z_json_JsonValue __return_val;
                 __return_val.data.err = ERROR_ExpectedCommaOrEnd;
@@ -462,24 +481,26 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
         }
     }
     p->pos = z_json_saved_pos;
-    z_json_arr_bytes = arena_alloc_default(z_json_count * 16);
-    z_json_arr = __make_slice_z_json_JsonValue((struct z_json_JsonValue*)z_json_arr_bytes + 0, z_json_count - 0);
+    z_json_arr = __make_slice_z_json_JsonValue((struct z_json_JsonValue*)arena_alloc_default(z_json_count * 16) + 0, z_json_count - 0);
     z_json_idx = 0;
-    if (z_json_peek(p) != ']') {
+    if (z_json_parser_peek(p) != ']') {
         while (z_json_idx < z_json_count) {
-            struct z_json_JsonValue __tmp_try_10_19;
-            ErrorUnion_z_json_JsonValue __tmp_try_res_10_20;
-            __tmp_try_res_10_20 = z_json_parseValue(p);
-            if (__tmp_try_res_10_20.is_error) {
-                return __tmp_try_res_10_20;
+            struct z_json_JsonValue __tmp_try_9_19;
+            ErrorUnion_z_json_JsonValue __tmp_try_res_9_20;
+            struct z_json_JsonValue z_json_val_1;
+            __tmp_try_res_9_20 = z_json_parseValue(p);
+            if (__tmp_try_res_9_20.is_error) {
+                return __tmp_try_res_9_20;
             }
-            __tmp_try_10_19 = __tmp_try_res_10_20.data.payload;
-            z_json_arr.ptr[z_json_idx] = __tmp_try_10_19;
+            __tmp_try_9_19 = __tmp_try_res_9_20.data.payload;
+            z_json_val_1 = __tmp_try_9_19;
+            z_json_arr.ptr[z_json_idx].tag = z_json_val_1.tag;
+            z_json_arr.ptr[z_json_idx].data = z_json_val_1.data;
             z_json_idx += 1;
-            z_json_skipWhitespace(p);
-            if (z_json_peek(p) == ',') {
-                z_json_advance(p);
-                z_json_skipWhitespace(p);
+            z_json_parser_skipWhitespace(p);
+            if (z_json_parser_peek(p) == ',') {
+                z_json_parser_advance(p);
+                z_json_parser_skipWhitespace(p);
                 /* defers for continue */
                 continue;
             }
@@ -487,7 +508,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
             break;
         }
     }
-    __tmp_try_res_5_18 = z_json_expect(p, ']');
+    __tmp_try_res_5_18 = z_json_parser_expect(p, ']');
     if (__tmp_try_res_5_18.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -496,11 +517,11 @@ static ErrorUnion_z_json_JsonValue z_json_parseArray(struct z_json_Parser* p) {
         }
     }
     0;
-    z_json_res.tag = z_json_JsonValueTag_Array;
-    z_json_res.data.Array = z_json_arr;
+    z_json_val.tag = z_json_JsonValueTag_Array;
+    z_json_val.data.array = z_json_arr;
     {
         ErrorUnion_z_json_JsonValue __return_val;
-        __return_val.data.payload = z_json_res;
+        __return_val.data.payload = z_json_val;
         __return_val.is_error = 0;
         return __return_val;
     }
@@ -510,12 +531,11 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
     ErrorUnion_void __tmp_try_res_5_16;
     usize z_json_count;
     usize z_json_saved_pos;
-    void * z_json_fields_bytes;
-    Slice_z_json_JsonProperty z_json_fields;
+    Slice_z_json_JsonObjectEntry z_json_fields;
     usize z_json_idx;
     ErrorUnion_void __tmp_try_res_5_2;
-    struct z_json_JsonValue z_json_res;
-    __tmp_try_res_5_16 = z_json_expect(p, '{');
+    struct z_json_JsonValue z_json_val;
+    __tmp_try_res_5_16 = z_json_parser_expect(p, '{');
     if (__tmp_try_res_5_16.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -524,10 +544,10 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
         }
     }
     0;
-    z_json_skipWhitespace(p);
+    z_json_parser_skipWhitespace(p);
     z_json_count = 0;
     z_json_saved_pos = p->pos;
-    if (z_json_peek(p) != '}') {
+    if (z_json_parser_peek(p) != '}') {
         while (1) {
             struct z_json_JsonValue __tmp_try_9_13;
             ErrorUnion_z_json_JsonValue __tmp_try_res_9_14;
@@ -542,8 +562,8 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
             __tmp_try_9_13 = __tmp_try_res_9_14.data.payload;
             z_json_keyVal = __tmp_try_9_13;
             (void)(z_json_keyVal);
-            z_json_skipWhitespace(p);
-            __tmp_try_res_9_12 = z_json_expect(p, ':');
+            z_json_parser_skipWhitespace(p);
+            __tmp_try_res_9_12 = z_json_parser_expect(p, ':');
             if (__tmp_try_res_9_12.is_error) {
                 {
                     ErrorUnion_z_json_JsonValue __return_val;
@@ -559,17 +579,17 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
             __tmp_try_10_9 = __tmp_try_res_10_10.data.payload;
             (void)(__tmp_try_10_9);
             z_json_count += 1;
-            z_json_skipWhitespace(p);
-            if (z_json_peek(p) == ',') {
-                z_json_advance(p);
-                z_json_skipWhitespace(p);
+            z_json_parser_skipWhitespace(p);
+            if (z_json_parser_peek(p) == ',') {
+                z_json_parser_advance(p);
+                z_json_parser_skipWhitespace(p);
                 /* defers for continue */
                 continue;
             }
             /* defers for break */
             break;
         }
-        if (z_json_peek(p) != '}') {
+        if (z_json_parser_peek(p) != '}') {
             {
                 ErrorUnion_z_json_JsonValue __return_val;
                 __return_val.data.err = ERROR_ExpectedCommaOrEnd;
@@ -579,10 +599,9 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
         }
     }
     p->pos = z_json_saved_pos;
-    z_json_fields_bytes = arena_alloc_default(z_json_count * 12);
-    z_json_fields = __make_slice_z_json_JsonProperty((struct z_json_JsonProperty*)z_json_fields_bytes + 0, z_json_count - 0);
+    z_json_fields = __make_slice_z_json_JsonObjectEntry((struct z_json_JsonObjectEntry*)arena_alloc_default(z_json_count * 12) + 0, z_json_count - 0);
     z_json_idx = 0;
-    if (z_json_peek(p) != '}') {
+    if (z_json_parser_peek(p) != '}') {
         while (z_json_idx < z_json_count) {
             struct z_json_JsonValue __tmp_try_9_7;
             ErrorUnion_z_json_JsonValue __tmp_try_res_9_8;
@@ -591,8 +610,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
             ErrorUnion_void __tmp_try_res_9_6;
             struct z_json_JsonValue __tmp_try_9_3;
             ErrorUnion_z_json_JsonValue __tmp_try_res_9_4;
-            struct z_json_JsonValue z_json_val;
-            void * z_json_val_ptr_bytes;
+            struct z_json_JsonValue z_json_val_inner;
             struct z_json_JsonValue* z_json_val_ptr;
             __tmp_try_res_9_8 = z_json_parseString(p);
             if (__tmp_try_res_9_8.is_error) {
@@ -600,17 +618,9 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
             }
             __tmp_try_9_7 = __tmp_try_res_9_8.data.payload;
             z_json_keyVal_1 = __tmp_try_9_7;
-            if (z_json_keyVal_1.tag != z_json_JsonValueTag_String) {
-                {
-                    ErrorUnion_z_json_JsonValue __return_val;
-                    __return_val.data.err = ERROR_InvalidSyntax;
-                    __return_val.is_error = 1;
-                    return __return_val;
-                }
-            }
-            z_json_key = z_json_keyVal_1.data.String;
-            z_json_skipWhitespace(p);
-            __tmp_try_res_9_6 = z_json_expect(p, ':');
+            z_json_key = z_json_keyVal_1.data.string;
+            z_json_parser_skipWhitespace(p);
+            __tmp_try_res_9_6 = z_json_parser_expect(p, ':');
             if (__tmp_try_res_9_6.is_error) {
                 {
                     ErrorUnion_z_json_JsonValue __return_val;
@@ -624,18 +634,17 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
                 return __tmp_try_res_9_4;
             }
             __tmp_try_9_3 = __tmp_try_res_9_4.data.payload;
-            z_json_val = __tmp_try_9_3;
-            z_json_val_ptr_bytes = arena_alloc_default(16);
-            z_json_val_ptr = (struct z_json_JsonValue*)z_json_val_ptr_bytes;
-            z_json_val_ptr->tag = z_json_val.tag;
-            z_json_val_ptr->data = z_json_val.data;
+            z_json_val_inner = __tmp_try_9_3;
+            z_json_val_ptr = (struct z_json_JsonValue*)arena_alloc_default(16);
+            z_json_val_ptr->tag = z_json_val_inner.tag;
+            z_json_val_ptr->data = z_json_val_inner.data;
             z_json_fields.ptr[z_json_idx].key = z_json_key;
             z_json_fields.ptr[z_json_idx].value = z_json_val_ptr;
             z_json_idx += 1;
-            z_json_skipWhitespace(p);
-            if (z_json_peek(p) == ',') {
-                z_json_advance(p);
-                z_json_skipWhitespace(p);
+            z_json_parser_skipWhitespace(p);
+            if (z_json_parser_peek(p) == ',') {
+                z_json_parser_advance(p);
+                z_json_parser_skipWhitespace(p);
                 /* defers for continue */
                 continue;
             }
@@ -643,7 +652,7 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
             break;
         }
     }
-    __tmp_try_res_5_2 = z_json_expect(p, '}');
+    __tmp_try_res_5_2 = z_json_parser_expect(p, '}');
     if (__tmp_try_res_5_2.is_error) {
         {
             ErrorUnion_z_json_JsonValue __return_val;
@@ -652,11 +661,11 @@ static ErrorUnion_z_json_JsonValue z_json_parseObject(struct z_json_Parser* p) {
         }
     }
     0;
-    z_json_res.tag = z_json_JsonValueTag_Object;
-    z_json_res.data.Object = z_json_fields;
+    z_json_val.tag = z_json_JsonValueTag_Object;
+    z_json_val.data.object = z_json_fields;
     {
         ErrorUnion_z_json_JsonValue __return_val;
-        __return_val.data.payload = z_json_res;
+        __return_val.data.payload = z_json_val;
         __return_val.is_error = 0;
         return __return_val;
     }

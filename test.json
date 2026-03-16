@@ -1,1 +1,1 @@
-{"a": true}
+{"bool": true, "null": null, "string": "hello", "array": [1, 2, 3]}

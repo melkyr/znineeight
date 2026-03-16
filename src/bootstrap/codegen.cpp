@@ -1110,6 +1110,32 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitAssignmentWithLifting(NULL, node->as.assignment->lvalue, node->as.assignment->rvalue);
             break;
         }
+        case NODE_COMPOUND_ASSIGNMENT:
+        case NODE_FUNCTION_CALL:
+        case NODE_UNARY_OP:
+        case NODE_BINARY_OP:
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+        case NODE_ARRAY_SLICE:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR:
+        case NODE_IDENTIFIER:
+        case NODE_PAREN_EXPR:
+        case NODE_BOOL_LITERAL:
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_CHAR_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_ERROR_LITERAL:
+        case NODE_NULL_LITERAL:
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
+            break;
         case NODE_EMPTY_STMT:
             writeIndent();
             writeString(";\n");

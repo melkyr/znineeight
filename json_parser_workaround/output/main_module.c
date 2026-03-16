@@ -41,11 +41,11 @@ static RETR_UNUSED_FUNC Slice_z_json_JsonValue __make_slice_z_json_JsonValue(str
 }
 #endif
 
-#ifndef ZIG_SLICE_Slice_z_json_JsonProperty
-#define ZIG_SLICE_Slice_z_json_JsonProperty
-typedef struct { struct z_json_JsonProperty* ptr; usize len; } Slice_z_json_JsonProperty;
-static RETR_UNUSED_FUNC Slice_z_json_JsonProperty __make_slice_z_json_JsonProperty(struct z_json_JsonProperty* ptr, usize len) {
-    Slice_z_json_JsonProperty s;
+#ifndef ZIG_SLICE_Slice_z_json_JsonObjectEntry
+#define ZIG_SLICE_Slice_z_json_JsonObjectEntry
+typedef struct { struct z_json_JsonObjectEntry* ptr; usize len; } Slice_z_json_JsonObjectEntry;
+static RETR_UNUSED_FUNC Slice_z_json_JsonObjectEntry __make_slice_z_json_JsonObjectEntry(struct z_json_JsonObjectEntry* ptr, usize len) {
+    Slice_z_json_JsonObjectEntry s;
     s.ptr = ptr;
     s.len = len;
     return s;
@@ -75,106 +75,102 @@ typedef struct {
 #endif
 
 extern struct Arena* zig_default_arena;
-static void printSlice(Slice_u8);
-void __bootstrap_write(unsigned char const*, usize);
 static void printIndent(usize);
-static void printValue(struct z_json_JsonValue, usize);
+static void printValue(struct z_json_JsonValue*, usize);
 
 void __bootstrap_print(unsigned char const* s);
 
 void __bootstrap_print_int(int i);
 
-static void printSlice(Slice_u8 s) {
-    __bootstrap_write(s.ptr, s.len);
-}
-
-extern void __bootstrap_write(unsigned char const* s, usize len);
-
 static void printIndent(usize level) {
     usize i;
     i = 0;
-    while (i < level) {
+    __loop_0_start: ;
+    if (!(i < level)) goto __loop_0_end;
+    {
         __bootstrap_print("  ");
-        i += 1;
     }
+    __loop_0_continue: ;
+    (void)(i += 1);
+    goto __loop_0_start;
+    __loop_0_end: ;
 }
 
-static void printValue(struct z_json_JsonValue val, usize level) {
-    __bootstrap_print("DEBUG: val.tag=");
-    __bootstrap_print_int((int)val.tag);
-    __bootstrap_print("\n");
-    if (val.tag == z_json_JsonValueTag_Null) {
-        __bootstrap_print("null");
-    } else     if (val.tag == z_json_JsonValueTag_Boolean) {
-        __bootstrap_print("DEBUG: boolean=");
-        if (val.data.Boolean) {
-            __bootstrap_print("true");
-        } else {
-            __bootstrap_print("false");
-        }
-    } else     if (val.tag == z_json_JsonValueTag_Number) {
-        __bootstrap_print("<number>");
-    } else     if (val.tag == z_json_JsonValueTag_String) {
-        Slice_u8 s;
-        s = val.data.String;
-        __bootstrap_print("\"");
-        printSlice(s);
-        __bootstrap_print("\"");
-    } else     if (val.tag == z_json_JsonValueTag_Array) {
-        Slice_z_json_JsonValue arr;
-        arr = val.data.Array;
-        __bootstrap_print("[");
-        if (arr.len > 0) {
-            usize i;
-            __bootstrap_print("\n");
-            i = 0;
-            while (i < arr.len) {
-                printIndent(level + 1);
-                printValue(arr.ptr[i], level + 1);
-                if (i < arr.len - 1) {
-                    __bootstrap_print(",");
+static void printValue(struct z_json_JsonValue* val, usize level) {
+    switch (val->tag) {
+        case z_json_JsonValueTag_Null:
+{
+                __bootstrap_print("null");
+            }            break;
+        case z_json_JsonValueTag_Boolean:
+{
+                if (val->data.boolean) {
+                    __bootstrap_print("true");
+                } else {
+                    __bootstrap_print("false");
                 }
-                __bootstrap_print("\n");
-                i += 1;
-            }
-            printIndent(level);
-        }
-        __bootstrap_print("]");
-    } else     if (val.tag == z_json_JsonValueTag_Object) {
-        Slice_z_json_JsonProperty obj;
-        obj = val.data.Object;
-        __bootstrap_print("{");
-        if (obj.len > 0) {
-            usize i_1;
-            __bootstrap_print("\n");
-            i_1 = 0;
-            while (i_1 < obj.len) {
-                struct z_json_JsonValue* next_val_ptr;
-                printIndent(level + 1);
+            }            break;
+        case z_json_JsonValueTag_Number:
+{
+                __bootstrap_print("number");
+            }            break;
+        case z_json_JsonValueTag_String:
+{
                 __bootstrap_print("\"");
-                printSlice(obj.ptr[i_1].key);
-                __bootstrap_print("\": ");
-                next_val_ptr = obj.ptr[i_1].value;
-                printValue(*next_val_ptr, level + 1);
-                if (i_1 < obj.len - 1) {
-                    __bootstrap_print(",");
+                __bootstrap_print(val->data.string.ptr);
+                __bootstrap_print("\"");
+            }            break;
+        case z_json_JsonValueTag_Array:
+{
+                Slice_z_json_JsonValue arr;
+                arr = val->data.array;
+                __bootstrap_print("[");
+                if (arr.len > 0) {
+                    usize i;
+                    __bootstrap_print("\n");
+                    i = 0;
+                    while (i < arr.len) {
+                        printIndent(level + 1);
+                        printValue(&arr.ptr[i], level + 1);
+                        if (i < arr.len - 1) {
+                            __bootstrap_print(",");
+                        }
+                        __bootstrap_print("\n");
+                        i += 1;
+                    }
+                    printIndent(level);
                 }
-                __bootstrap_print("\n");
-                i_1 += 1;
-            }
-            printIndent(level);
-        }
-        __bootstrap_print("}");
+                __bootstrap_print("]");
+            }            break;
+        case z_json_JsonValueTag_Object:
+{
+                Slice_z_json_JsonObjectEntry obj;
+                obj = val->data.object;
+                __bootstrap_print("{");
+                if (obj.len > 0) {
+                    usize i_1;
+                    __bootstrap_print("\n");
+                    i_1 = 0;
+                    while (i_1 < obj.len) {
+                        printIndent(level + 1);
+                        __bootstrap_print("\"");
+                        __bootstrap_print(obj.ptr[i_1].key.ptr);
+                        __bootstrap_print("\": ");
+                        printValue(obj.ptr[i_1].value, level + 1);
+                        if (i_1 < obj.len - 1) {
+                            __bootstrap_print(",");
+                        }
+                        __bootstrap_print("\n");
+                        i_1 += 1;
+                    }
+                    printIndent(level);
+                }
+                __bootstrap_print("}");
+            }            break;
     }
-
-
-
-
-
 }
 
 int main(int argc, char* argv[]) {
-    struct z_json_JsonValue v;
     struct Arena** arena;
     Slice_u8 __tmp_catch_5_3;
     ErrorUnion_Slice_u8 __tmp_catch_res_5_4;
@@ -182,9 +178,7 @@ int main(int argc, char* argv[]) {
     struct z_json_JsonValue* __tmp_catch_5_1;
     ErrorUnion_Ptr_z_json_JsonValue __tmp_catch_res_5_2;
     struct z_json_JsonValue* parsed;
-    (void)(v);
     arena = &zig_default_arena;
-    __bootstrap_print("Starting main\n");
     __tmp_catch_res_5_4 = z_file_readFile(arena, __make_slice_u8("test.json", 9));
     if (__tmp_catch_res_5_4.is_error) {
         int err;
@@ -199,7 +193,6 @@ int main(int argc, char* argv[]) {
         __tmp_catch_5_3 = __tmp_catch_res_5_4.data.payload;
     }
     content = __tmp_catch_5_3;
-    __bootstrap_print("Parsed JSON successfully\n");
     __tmp_catch_res_5_2 = z_json_parseJson(arena, content);
     if (__tmp_catch_res_5_2.is_error) {
         int err_1;
@@ -214,7 +207,7 @@ int main(int argc, char* argv[]) {
         __tmp_catch_5_1 = __tmp_catch_res_5_2.data.payload;
     }
     parsed = __tmp_catch_5_1;
-    printValue(*parsed, 0);
+    printValue(parsed, 0);
     __bootstrap_print("\n");
     return 0;
 }
