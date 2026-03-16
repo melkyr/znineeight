@@ -12,7 +12,7 @@ TEST_FUNC(RangeSwitch_InclusiveBasic) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { 1...3 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 1...3 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
 
     Parser* parser = unit.createParser(file_id);
@@ -39,7 +39,7 @@ TEST_FUNC(RangeSwitch_ExclusiveBasic) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { 1..3 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 1..3 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -53,7 +53,7 @@ TEST_FUNC(RangeSwitch_MixedItems) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { 1, 3...5, 10 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 1, 3...5, 10 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -67,7 +67,7 @@ TEST_FUNC(RangeSwitch_ErrorNonConstant) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32, y: i32) void { switch (x) { 1...y => {}, else => {} } }";
+    const char* source = "fn foo(x: i32, y: i32) void { switch (x) { 1...y => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -82,7 +82,7 @@ TEST_FUNC(RangeSwitch_ErrorTooLarge) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { 1...2000 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 1...2000 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -97,7 +97,7 @@ TEST_FUNC(RangeSwitch_ErrorEmpty) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { 5...3 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 5...3 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -173,7 +173,7 @@ TEST_FUNC(RangeSwitch_NegativeValues) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    const char* source = "fn foo(x: i32) void { switch (x) { -5...5 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { -5...5 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();
@@ -188,7 +188,7 @@ TEST_FUNC(RangeSwitch_ExclusiveEmpty) {
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
     /* 1..1 is an empty range, which is rejected by validateRange */
-    const char* source = "fn foo(x: i32) void { switch (x) { 1..1 => {}, else => {} } }";
+    const char* source = "fn foo(x: i32) void { switch (x) { 1..1 => {}, else => {}, } }";
     u32 file_id = unit.addSource("test.zig", source);
     Parser* parser = unit.createParser(file_id);
     ASTNode* root = parser->parse();

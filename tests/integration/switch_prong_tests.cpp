@@ -35,13 +35,13 @@ TEST_FUNC(SwitchProng_ReturnNoSemicolon) {
     return run_switch_prong_test(source, "foo", "int foo(int x) { switch (x) { case 1: { return 1; } break; default: { return 0; } break; } }");
 }
 
-TEST_FUNC(SwitchProng_BlockOptionalComma) {
+TEST_FUNC(SwitchProng_BlockMandatoryComma) {
     const char* source =
         "fn foo(x: i32) i32 {\n"
         "    switch (x) {\n"
         "        1 => {\n"
         "            return 1;\n"
-        "        }\n"
+        "        },\n"
         "        else => return 0,\n"
         "    }\n"
         "}";
