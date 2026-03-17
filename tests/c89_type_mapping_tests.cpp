@@ -65,6 +65,7 @@ TEST_FUNC(C89TypeMapping_Validation) {
 
     // Function types are not C89 compatible in this context
     Type func_type;
+    plat_memset(&func_type, 0, sizeof(Type));
     func_type.kind = TYPE_FUNCTION;
     ASSERT_FALSE(is_c89_compatible(&func_type));
 
@@ -77,6 +78,7 @@ TEST_FUNC(C89TypeMapping_Validation) {
 
     // Function pointers ARE now compatible
     Type fp_type;
+    plat_memset(&fp_type, 0, sizeof(Type));
     fp_type.kind = TYPE_FUNCTION_POINTER;
     fp_type.as.function_pointer.param_types = (DynamicArray<Type*>*)arena.alloc(sizeof(DynamicArray<Type*>));
     new (fp_type.as.function_pointer.param_types) DynamicArray<Type*>(arena);

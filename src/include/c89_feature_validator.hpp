@@ -3,6 +3,7 @@
 
 #include "ast.hpp"
 #include "compilation_unit.hpp"
+#include "utils.hpp"
 
 /**
  * @class C89FeatureValidator
@@ -43,6 +44,7 @@ private:
     bool in_catch_chain_;
     int current_nesting_depth_;
     ASTNode* current_parent_;
+    DynamicArray<ASTNode*> parent_stack_;
 
     /**
      * @brief Reports a non-fatal C89 feature violation.

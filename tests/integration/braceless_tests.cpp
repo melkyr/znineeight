@@ -84,7 +84,7 @@ TEST_FUNC(BracelessControlFlow_ErrDefer) {
         "    if (b) return error.Fail;\n"
         "}";
     // Lifter now wraps errdefer.
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { struct ErrorUnion_void __return_val; __return_val.err = ERROR_Fail; __return_val.is_error = 1; return __return_val; } } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { struct ErrorUnion_void __return_val; __return_val.is_error = 1; __return_val.err = ERROR_Fail; return __return_val; } } }");
 }
 
 TEST_FUNC(BracelessControlFlow_Defer) {
@@ -151,7 +151,7 @@ TEST_FUNC(BracelessControlFlow_CombinedDefers) {
         "    defer cleanup();\n"
         "    errdefer cleanup();\n"
         "}";
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* unsupported node type */ { cleanup(); } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* unsupported node type */ { { cleanup(); } { struct ErrorUnion_void __implicit_ret = {0}; return __implicit_ret; } } }");
 }
 
 TEST_FUNC(BracelessControlFlow_InsideLifted) {

@@ -3369,17 +3369,21 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".data.err = ");
+            emitExpression(rvalue);
+            writeString(";\n");
         } else {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".err = ");
+            emitExpression(rvalue);
+            writeString(";\n");
         }
-        emitExpression(rvalue);
-        writeString(";\n");
-        writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 1;\n");
     } else {
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             char payload_lval[512];
@@ -3411,17 +3415,21 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".data.err = ");
+            if (source_expr) writeString(source_expr); else writeString("0");
+            writeString(";\n");
         } else {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".err = ");
+            if (source_expr) writeString(source_expr); else writeString("0");
+            writeString(";\n");
         }
-        if (source_expr) writeString(source_expr); else writeString("0");
-        writeString(";\n");
-        writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 1;\n");
     } else {
         writeIndent();
         writeString(lval_buf);

@@ -9,7 +9,7 @@
 C89FeatureValidator::C89FeatureValidator(CompilationUnit& unit)
     : unit(unit), error_found_(false), try_expression_depth_(0),
       catch_chain_index_(0), catch_chain_total_(0), in_catch_chain_(false),
-      current_nesting_depth_(0), current_parent_(NULL) {}
+      current_nesting_depth_(0), current_parent_(NULL), parent_stack_(unit.getArena()) {}
 
 bool C89FeatureValidator::validate(ASTNode* node) {
     visit(node);
@@ -58,6 +58,8 @@ void C89FeatureValidator::visit(ASTNode* node) {
     }
 
     ASTNode* prev_parent = current_parent_;
+    current_parent_ = (parent_stack_.length() > 0) ? parent_stack_.back() : NULL;
+    parent_stack_.append(node);
 
     switch (node->type) {
         case NODE_ARRAY_TYPE:
@@ -96,23 +98,18 @@ void C89FeatureValidator::visit(ASTNode* node) {
 
         // --- Recursive traversal for other node types ---
         case NODE_BINARY_OP:
-            current_parent_ = node;
             if (node->as.binary_op) {
                 visit(node->as.binary_op->left);
                 visit(node->as.binary_op->right);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_UNARY_OP:
-            current_parent_ = node;
             visit(node->as.unary_op.operand);
-            current_parent_ = prev_parent;
             break;
         case NODE_BLOCK_STMT:
             visitBlockStmt(node);
             break;
         case NODE_IF_STMT:
-            current_parent_ = node;
             if (node->as.if_stmt) {
                 visit(node->as.if_stmt->condition);
                 visit(node->as.if_stmt->then_block);
@@ -120,50 +117,40 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     visit(node->as.if_stmt->else_block);
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_WHILE_STMT:
-            current_parent_ = node;
             visit(node->as.while_stmt->condition);
             visit(node->as.while_stmt->body);
-            current_parent_ = prev_parent;
             break;
         case NODE_IF_EXPR:
-            current_parent_ = node;
             if (node->as.if_expr) {
                 visit(node->as.if_expr->condition);
                 visit(node->as.if_expr->then_expr);
                 visit(node->as.if_expr->else_expr);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_RANGE:
-            current_parent_ = node;
             if (node->as.range) {
                 visit(node->as.range->start);
                 visit(node->as.range->end);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_BREAK_STMT:
         case NODE_CONTINUE_STMT:
             // Allowed in standard C89
             break;
         case NODE_DEFER_STMT:
-            current_parent_ = node;
             visit(node->as.defer_stmt.statement);
-            current_parent_ = prev_parent;
             break;
         case NODE_PARAM_DECL:
-            current_parent_ = node;
             if (node->as.param_decl.is_comptime) {
                 reportNonC89Feature(node->loc, "comptime parameters are not supported in C89 mode");
             }
             if (node->as.param_decl.is_anytype) {
                 bool is_exception = false;
-                if (prev_parent && prev_parent->type == NODE_FN_DECL &&
-                    prev_parent->as.fn_decl->name &&
-                    plat_strcmp(prev_parent->as.fn_decl->name, "print") == 0) {
+                if (current_parent_ && current_parent_->type == NODE_FN_DECL &&
+                    current_parent_->as.fn_decl->name &&
+                    plat_strcmp(current_parent_->as.fn_decl->name, "print") == 0) {
                     is_exception = true;
                 }
                 if (!is_exception) {
@@ -174,17 +161,13 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 reportNonC89Feature(node->loc, "type parameters are not supported in C89 mode");
             }
             visit(node->as.param_decl.type);
-            current_parent_ = prev_parent;
             break;
         case NODE_MEMBER_ACCESS:
-            current_parent_ = node;
             if (node->as.member_access) {
                 visit(node->as.member_access->base);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_STRUCT_INITIALIZER:
-            current_parent_ = node;
             if (node->as.struct_initializer) {
                 visit(node->as.struct_initializer->type_expr);
                 if (node->as.struct_initializer->fields) {
@@ -193,88 +176,68 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     }
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_ACCESS:
-            current_parent_ = node;
             if (node->as.array_access) {
                 visit(node->as.array_access->array);
                 visit(node->as.array_access->index);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ARRAY_SLICE:
             // Slices are now supported as a language extension for bootstrap
-            current_parent_ = node;
             if (node->as.array_slice) {
                 visit(node->as.array_slice->array);
                 if (node->as.array_slice->start) visit(node->as.array_slice->start);
                 if (node->as.array_slice->end) visit(node->as.array_slice->end);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ERRDEFER_STMT:
             unit.getErrDeferCatalogue().addErrDefer(node->loc);
-            current_parent_ = node;
             visit(node->as.errdefer_stmt.statement);
-            current_parent_ = prev_parent;
             break;
         case NODE_RETURN_STMT:
-            current_parent_ = node;
             if (node->as.return_stmt.expression) {
                 visit(node->as.return_stmt.expression);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_VAR_DECL:
-            current_parent_ = node;
             if (node->as.var_decl) {
                 visit(node->as.var_decl->type);
                 if (node->as.var_decl->initializer) {
                     visit(node->as.var_decl->initializer);
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ASSIGNMENT:
-            current_parent_ = node;
             if (node->as.assignment) {
                 visit(node->as.assignment->lvalue);
                 visit(node->as.assignment->rvalue);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_COMPOUND_ASSIGNMENT:
-            current_parent_ = node;
             if (node->as.compound_assignment) {
                 visit(node->as.compound_assignment->lvalue);
                 visit(node->as.compound_assignment->rvalue);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_FN_DECL:
             visitFnDecl(node);
             break;
         case NODE_STRUCT_DECL:
-            current_parent_ = node;
             if (node->as.struct_decl && node->as.struct_decl->fields) {
                 for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
                     visit((*node->as.struct_decl->fields)[i]);
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_UNION_DECL:
-            current_parent_ = node;
             if (node->as.union_decl && node->as.union_decl->fields) {
                 for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
                     visit((*node->as.union_decl->fields)[i]);
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ENUM_DECL:
-            current_parent_ = node;
             if (node->as.enum_decl) {
                 if (node->as.enum_decl->backing_type) {
                     visit(node->as.enum_decl->backing_type);
@@ -285,41 +248,29 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     }
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_STRUCT_FIELD:
-            current_parent_ = node;
             visit(node->as.struct_field->type);
-            current_parent_ = prev_parent;
             break;
         case NODE_POINTER_TYPE:
-            current_parent_ = node;
             visit(node->as.pointer_type.base);
-            current_parent_ = prev_parent;
             break;
         case NODE_EXPRESSION_STMT:
-            current_parent_ = node;
             visit(node->as.expression_stmt.expression);
-            current_parent_ = prev_parent;
             break;
         case NODE_FOR_STMT:
-            current_parent_ = node;
             if (node->as.for_stmt) {
                 visit(node->as.for_stmt->iterable_expr);
                 visit(node->as.for_stmt->body);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_PTR_CAST:
-            current_parent_ = node;
             if (node->as.ptr_cast) {
                 visit(node->as.ptr_cast->target_type);
                 visit(node->as.ptr_cast->expr);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_SWITCH_EXPR:
-            current_parent_ = node;
             if (node->as.switch_expr) {
                 visit(node->as.switch_expr->expression);
                 if (node->as.switch_expr->prongs) {
@@ -336,18 +287,14 @@ void C89FeatureValidator::visit(ASTNode* node) {
                     }
                 }
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_COMPTIME_BLOCK:
-            current_parent_ = node;
             visit(node->as.comptime_block.expression);
-            current_parent_ = prev_parent;
             break;
         case NODE_PAREN_EXPR:
             visit(node->as.paren_expr.expr);
             break;
         case NODE_FUNCTION_TYPE:
-            current_parent_ = node;
             if (node->as.function_type) {
                 if (node->as.function_type->params) {
                     for (size_t i = 0; i < node->as.function_type->params->length(); ++i) {
@@ -356,19 +303,14 @@ void C89FeatureValidator::visit(ASTNode* node) {
                 }
                 visit(node->as.function_type->return_type);
             }
-            current_parent_ = prev_parent;
             break;
         case NODE_ASYNC_EXPR:
             reportNonC89Feature(node->loc, "Async expressions are not supported in C89 mode");
-            current_parent_ = node;
             visit(node->as.async_expr.expression);
-            current_parent_ = prev_parent;
             break;
         case NODE_AWAIT_EXPR:
             reportNonC89Feature(node->loc, "Await expressions are not supported in C89 mode");
-            current_parent_ = node;
             visit(node->as.await_expr.expression);
-            current_parent_ = prev_parent;
             break;
         case NODE_TYPE_NAME:
             if (plat_strcmp(node->as.type_name.name, "anyerror") == 0) {
@@ -396,33 +338,27 @@ void C89FeatureValidator::visit(ASTNode* node) {
             // No action needed for literals, identifiers, etc.
             break;
     }
+
+    parent_stack_.pop_back();
+    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitArrayType(ASTNode* node) {
     // Slices ([]T) are now supported as a language extension for bootstrap
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(node->as.array_type.element_type);
-    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitErrorUnionType(ASTNode* node) {
     // Error union types are now supported as a language extension for bootstrap
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     if (node->as.error_union_type->error_set) {
         visit(node->as.error_union_type->error_set);
     }
     visit(node->as.error_union_type->payload_type);
-    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitOptionalType(ASTNode* node) {
     // Optional types are now supported as a language extension for bootstrap
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(node->as.optional_type->payload_type);
-    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitTryExpr(ASTNode* node) {
@@ -464,10 +400,7 @@ void C89FeatureValidator::visitTryExpr(ASTNode* node) {
 
     // Recursive visit with depth tracking
     try_expression_depth_++;
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(node->as.try_expr.expression);
-    current_parent_ = prev_parent;
     try_expression_depth_--;
 }
 
@@ -493,10 +426,7 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     // Visit payload (the expression that might fail)
     bool prev_in_chain = in_catch_chain_;
     in_catch_chain_ = false; // Payload is not part of THIS chain nesting
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(payload);
-    current_parent_ = prev_parent;
     in_catch_chain_ = prev_in_chain;
 
     // Now log THIS catch expression
@@ -537,9 +467,7 @@ void C89FeatureValidator::visitCatchExpr(ASTNode* node) {
     }
 
     // Visit else_expr (handler or next catch in chain)
-    current_parent_ = node;
     visit(else_expr);
-    current_parent_ = prev_parent;
 
     if (is_outermost) {
         in_catch_chain_ = false;
@@ -563,11 +491,8 @@ void C89FeatureValidator::visitOrelseExpr(ASTNode* node) {
         result_type
     );
 
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(orelse->payload);
     visit(orelse->else_expr);
-    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitErrorSetDefinition(ASTNode* node) {
@@ -577,11 +502,8 @@ void C89FeatureValidator::visitErrorSetDefinition(ASTNode* node) {
 
 void C89FeatureValidator::visitErrorSetMerge(ASTNode* node) {
     // Error set merging is now supported (handled as a type)
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     visit(node->as.error_set_merge->left);
     visit(node->as.error_set_merge->right);
-    current_parent_ = prev_parent;
 }
 
 void C89FeatureValidator::visitImportStmt(ASTNode* node) {
@@ -592,7 +514,6 @@ void C89FeatureValidator::visitImportStmt(ASTNode* node) {
 void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     if (!node || node->type != NODE_FUNCTION_CALL || !node->as.function_call) return;
     ASTFunctionCallNode* call = node->as.function_call;
-    ASTNode* prev_parent = current_parent_;
 
     // Handle built-ins (Task 168/186)
     if (call->callee->type == NODE_IDENTIFIER) {
@@ -658,47 +579,46 @@ void C89FeatureValidator::visitFunctionCall(ASTNode* node) {
     }
 
     // Continue traversal
-    current_parent_ = node;
     visit(call->callee);
     if (call->args) {
         for (size_t i = 0; i < call->args->length(); ++i) {
             visit((*call->args)[i]);
         }
     }
-    current_parent_ = prev_parent;
 }
 
 const char* C89FeatureValidator::getExpressionContext(ASTNode* node) {
     RETR_UNUSED(node);
-    if (!current_parent_) return "expression";
-
-    ASTNode* p = current_parent_;
-    while (p && p->type == NODE_PAREN_EXPR) {
-         // This is tricky because we don't have the parent of the parent here easily
-         // and we are not tracking the stack of parents in a way that allows easy traversal.
-         // But the current_parent_ is updated in visit().
-         // Actually, visit() updates current_parent_ before recursing.
-         break; 
+    
+    // Search up the parent stack to find the first non-transparent node.
+    // Transparent nodes include NODE_PAREN_EXPR and potentially others that don't
+    // change the semantic context of their child expression.
+    
+    if (parent_stack_.length() < 2) {
+        return "expression";
     }
 
-    switch (current_parent_->type) {
-        case NODE_RETURN_STMT: return "return";
-        case NODE_PAREN_EXPR: {
-             // Heuristic: if parent is paren, check its context if we can.
-             // But we don't have the grand-parent here.
-             // Let's look at the parent_stack_ if we had one.
-             // C89FeatureValidator doesn't have a parent stack, only current_parent_.
-             return "expression";
+    for (int i = (int)parent_stack_.length() - 2; i >= 0; --i) {
+        ASTNode* p = parent_stack_[i];
+        if (p->type == NODE_PAREN_EXPR || p->type == NODE_EXPRESSION_STMT) continue;
+        
+        switch (p->type) {
+            case NODE_RETURN_STMT: return "return";
+            case NODE_ASSIGNMENT: return "assignment";
+            case NODE_VAR_DECL: return "variable_decl";
+            case NODE_FUNCTION_CALL: return "call_argument";
+            case NODE_IF_STMT: return "conditional";
+            case NODE_WHILE_STMT: return "conditional";
+            case NODE_IF_EXPR: return "conditional";
+            case NODE_SWITCH_EXPR: return "conditional";
+            case NODE_TRY_EXPR: return "nested_try";
+            case NODE_BINARY_OP: return "binary_op";
+            case NODE_BLOCK_STMT: return "expression";
+            default: continue;
         }
-        case NODE_ASSIGNMENT: return "assignment";
-        case NODE_VAR_DECL: return "variable_decl";
-        case NODE_FUNCTION_CALL: return "call_argument";
-        case NODE_IF_STMT: return "conditional";
-        case NODE_TRY_EXPR: return "nested_try";
-        case NODE_WHILE_STMT: return "conditional";
-        case NODE_BINARY_OP: return "binary_op";
-        default: return "expression";
     }
+
+    return "expression";
 }
 
 void C89FeatureValidator::visitFnDecl(ASTNode* node) {
@@ -745,8 +665,6 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
 
 
     // Continue traversal
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     if (fn->params) {
         for (size_t i = 0; i < fn->params->length(); ++i) {
             visit((*fn->params)[i]);
@@ -756,7 +674,6 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
         visit(fn->return_type);
     }
     visit(fn->body);
-    current_parent_ = prev_parent;
 
     unit.getExtractionAnalysisCatalogue().exitFunction();
 }
@@ -764,14 +681,11 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
 void C89FeatureValidator::visitBlockStmt(ASTNode* node) {
     unit.getExtractionAnalysisCatalogue().enterBlock();
 
-    ASTNode* prev_parent = current_parent_;
-    current_parent_ = node;
     if (node->as.block_stmt.statements) {
         for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
             visit((*node->as.block_stmt.statements)[i]);
         }
     }
-    current_parent_ = prev_parent;
 
     unit.getExtractionAnalysisCatalogue().exitBlock();
 }

@@ -179,20 +179,20 @@ public:
                                     node->as.return_stmt.expression->resolved_type : get_g_type_void();
                 bool needs_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
                                        source_type && source_type->kind != TYPE_ERROR_UNION);
+                bool is_struct_init = (node->as.return_stmt.expression && node->as.return_stmt.expression->type == NODE_STRUCT_INITIALIZER);
 
                 // Mock logic updated: return statement ALWAYS uses structured initialization if it needs wrapping OR has defers.
                 // This matches the current C89Emitter's more conservative return generation.
-                if (has_defers || needs_wrapping) {
+                if (has_defers || needs_wrapping || is_struct_init) {
                     ss << "{ ";
                     if (current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
                         ss << getC89TypeName(current_fn_ret_type_) << " __return_val; ";
                         if (needs_wrapping) {
                             if (node->as.return_stmt.expression && source_type->kind == TYPE_ERROR_SET) {
+                                ss << "__return_val.is_error = 1; ";
                                 if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
-                                    ss << "__return_val.is_error = 1; ";
                                     ss << "__return_val.data.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
                                 } else {
-                                    ss << "__return_val.is_error = 1; ";
                                     ss << "__return_val.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
                                 }
                             } else if (node->as.return_stmt.expression) {
@@ -203,6 +203,12 @@ public:
                             } else {
                                 // return; in a !void function
                                 ss << "__return_val.is_error = 0; ";
+                            }
+                        } else if (is_struct_init) {
+                            const ASTStructInitializerNode* init = node->as.return_stmt.expression->as.struct_initializer;
+                            for (size_t i = 0; i < init->fields->length(); ++i) {
+                                ASTNamedInitializer* f = (*init->fields)[i];
+                                ss << "__return_val." << f->field_name << " = " << emitExpression(f->value) << "; ";
                             }
                         } else if (node->as.return_stmt.expression) {
                             ss << "__return_val = " << emitExpression(node->as.return_stmt.expression) << "; ";
@@ -487,6 +493,8 @@ public:
                 ASTNode* stmt = (*block->statements)[i];
                 if (stmt->type == NODE_DEFER_STMT) {
                     defer_stack_[scope_idx].defers.push_back(&stmt->as.defer_stmt);
+                } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                    defer_stack_[scope_idx].defers.push_back((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
                 } else {
                     ss << emitExpression(stmt) << " ";
                     if (allPathsExit(stmt)) {
@@ -501,6 +509,14 @@ public:
         if (!exits) {
             for (int i = (int)defer_stack_[scope_idx].defers.size() - 1; i >= 0; --i) {
                 ss << emitExpression(defer_stack_[scope_idx].defers[i]->statement) << " ";
+            }
+
+            /* Implicit return for Error!void */
+            if (label_id == -1 && defer_stack_.size() == 1) {
+                if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
+                    current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
+                    ss << "{ struct " << getMangledTypeName(current_fn_ret_type_) << " __implicit_ret = {0}; return __implicit_ret; } ";
+                }
             }
         }
 
