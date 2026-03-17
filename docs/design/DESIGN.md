@@ -596,6 +596,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   Multi-level pointers: Supported (e.g., `***i32`).
     *   Pointer Arithmetic: Requires unsigned integer offsets (`usize`, `u32`, etc.). Subtraction `ptr1 - ptr2` yields `isize`.
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
+    *   **Property**: `.len` property returns `usize` (compile-time constant).
 *   **Slices**: `[]T` and `[]const T`. Supported for dynamic arrays and string parameters.
     *   **Indexing**: `slice[i]`.
     *   **Property**: `.len` property returns `usize`.

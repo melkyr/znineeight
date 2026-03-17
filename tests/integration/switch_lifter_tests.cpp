@@ -34,9 +34,6 @@ TEST_FUNC(SwitchLifter_NestedControlFlow) {
     const ASTFnDeclNode* fn = unit.extractFunctionDeclaration("foo");
     if (!fn) return false;
 
-    // Verify that the nested 'if' expression was lifted into the switch prong's body.
-    // The switch statement should contain an if statement in its first prong.
-
     ASTSwitchStmtNode* sw = NULL;
     ASTBlockStmtNode* body = &fn->body->as.block_stmt;
     for (size_t i = 0; i < body->statements->length(); ++i) {
