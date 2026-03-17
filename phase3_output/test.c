@@ -4,6 +4,7 @@
 #include "test.h"
 
 
+struct Node;
 ErrorUnion_Node get_node(void) {
     {
         ErrorUnion_Node __return_val;

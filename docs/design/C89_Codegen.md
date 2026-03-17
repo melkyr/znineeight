@@ -144,8 +144,8 @@ This unification reduces code duplication and ensures consistent behavior across
     - **Start**: `__loop_<id>_start`
     - **Continue**: `__loop_<id>_continue`
     - **End**: `__loop_<id>_end`
-  - **Unlabeled**: Plain loops without an iteration expression (`: (iter)`) and without a user label are emitted as standard C `while (cond) { ... }`.
-  - **Labeled or with Iteration Expression**: These loops are mapped to a `goto`-based pattern to support multi-level jumps and the Zig iteration step:
+  - **Unlabeled**: Plain loops without an iteration expression (`: (iter)`) and without a user label were previously emitted as standard C `while (cond) { ... }`. However, to ensure correct `break`/`continue` semantics when nested inside `switch` statements, all `while` loops now use the labeled `goto` pattern.
+  - **Labeled or with Iteration Expression**: These loops (and now all `while` loops) are mapped to a `goto`-based pattern to support multi-level jumps and the Zig iteration step:
     ```c
     __loop_0_start: ;
     if (!(cond)) goto __loop_0_end;
