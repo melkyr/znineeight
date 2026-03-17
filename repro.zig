@@ -1,0 +1,1 @@
+const Node = struct { children: []Node }; pub fn main() void { var n: Node = undefined; _ = n; }
