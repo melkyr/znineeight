@@ -6339,6 +6339,51 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             return;
         } else {
             /* T -> !T: { .is_error = 0, .data = { .payload = coerced_source } } */
+            if (payload->kind == TYPE_VOID) {
+                // If payload is void, we don't need to coerce the source to it (source should already be void)
+                // but we might need to preserve side effects if the source is not void.
+
+                ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(init_node, 0, sizeof(ASTNode));
+                init_node->type = NODE_STRUCT_INITIALIZER;
+                init_node->loc = node->loc;
+                init_node->resolved_type = target_type;
+                init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+                void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+                is_error_field->field_name = "is_error";
+                is_error_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+                is_error_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(is_error_field);
+
+                // Check for side effects: anything that isn't a simple literal or identifier
+                bool has_side_effects = (node->type != NODE_INTEGER_LITERAL && node->type != NODE_FLOAT_LITERAL &&
+                                         node->type != NODE_BOOL_LITERAL && node->type != NODE_NULL_LITERAL &&
+                                         node->type != NODE_STRING_LITERAL && node->type != NODE_IDENTIFIER &&
+                                         node->type != NODE_EMPTY_STMT);
+
+                if (has_side_effects) {
+                    ASTNode* block_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                    plat_memset(block_node, 0, sizeof(ASTNode));
+                    block_node->type = NODE_BLOCK_STMT;
+                    block_node->loc = node->loc;
+                    block_node->resolved_type = target_type;
+                    void* stmts_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNode*>));
+                    block_node->as.block_stmt.statements = new (stmts_mem) DynamicArray<ASTNode*>(unit_.getArena());
+                    block_node->as.block_stmt.statements->append(node);
+                    block_node->as.block_stmt.statements->append(init_node);
+                    *node_slot = block_node;
+                } else {
+                    *node_slot = init_node;
+                }
+                --recursion_depth;
+                return;
+            }
+
             coerceNode(node_slot, payload);
             node = *node_slot; // Update node after potential replacement
 

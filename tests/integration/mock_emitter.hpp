@@ -224,6 +224,10 @@ public:
                 }
                 return ss.str();
             }
+            case NODE_EMPTY_STMT:
+                return ";";
+            case NODE_ERRDEFER_STMT:
+                return "/* errdefer */ " + emitExpression(node->as.errdefer_stmt.statement);
             case NODE_EXPRESSION_STMT: {
                 std::string expr = emitExpression(node->as.expression_stmt.expression);
                 if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
@@ -265,8 +269,11 @@ public:
                 }
                 return "/* var " + std::string(node->as.var_decl->name) + " */";
             }
-            default:
-                return "/* unsupported node type */";
+            default: {
+                char buf[64];
+                sprintf(buf, "/* unsupported node type %d */", node->type);
+                return buf;
+            }
         }
     }
 
@@ -494,6 +501,7 @@ public:
                 if (stmt->type == NODE_DEFER_STMT) {
                     defer_stack_[scope_idx].defers.push_back(&stmt->as.defer_stmt);
                 } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                    ss << emitExpression(stmt) << " ";
                     defer_stack_[scope_idx].defers.push_back((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
                 } else {
                     ss << emitExpression(stmt) << " ";
@@ -515,7 +523,7 @@ public:
             if (label_id == -1 && defer_stack_.size() == 1) {
                 if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
                     current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
-                    ss << "{ struct " << getMangledTypeName(current_fn_ret_type_) << " __implicit_ret = {0}; return __implicit_ret; } ";
+                    ss << "{ struct " << getMangledTypeName(current_fn_ret_type_) << " __implicit_ret = {.is_error = 0}; return __implicit_ret; } ";
                 }
             }
         }
@@ -629,6 +637,10 @@ public:
              if (node->fields) {
                  for (size_t i = 0; i < node->fields->length(); ++i) {
                      if (i > 0) ss << ", ";
+                     const char* field_name = (*node->fields)[i]->field_name;
+                     if (field_name) {
+                         ss << "." << field_name << " = ";
+                     }
                      ss << emitExpression((*node->fields)[i]->value);
                  }
              }
