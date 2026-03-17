@@ -5142,12 +5142,12 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     /* Error Union assignment */
     if (target_type->kind == TYPE_ERROR_UNION) {
-        /* T -> !T (success wrapping) */
-        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
-            return true;
-        }
         /* error.Tag -> !T (error wrapping) */
         if (source_type->kind == TYPE_ERROR_SET) {
+            return true;
+        }
+        /* T -> !T (success wrapping) */
+        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
             return true;
         }
     }
@@ -6198,6 +6198,202 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             return;
         }
     }
+
+    /* Coercion 5: Optional Wrapping (T -> ?T) */
+    if (target_type->kind == TYPE_OPTIONAL && source_type->kind != TYPE_OPTIONAL) {
+        if (source_type->kind == TYPE_NORETURN) {
+            --recursion_depth;
+            return;
+        }
+
+        Type* payload = target_type->as.optional.payload;
+        if (payload->kind == TYPE_PLACEHOLDER) payload = resolvePlaceholder(payload);
+
+        if (source_type->kind == TYPE_NULL) {
+            /* null -> ?T: { .has_value = 0 } */
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* has_value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(has_value_field, 0, sizeof(ASTNamedInitializer));
+            has_value_field->field_name = "has_value";
+            has_value_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+            has_value_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(has_value_field);
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        } else {
+            /* T -> ?T: { .has_value = 1, .value = coerced_source } */
+            coerceNode(node_slot, payload);
+            node = *node_slot; // Update node after potential replacement
+
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* has_value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(has_value_field, 0, sizeof(ASTNamedInitializer));
+            has_value_field->field_name = "has_value";
+            has_value_field->value = createIntegerLiteral(1, get_g_type_bool(), node->loc);
+            has_value_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(has_value_field);
+
+            if (payload->kind != TYPE_VOID) {
+                ASTNamedInitializer* value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(value_field, 0, sizeof(ASTNamedInitializer));
+                value_field->field_name = "value";
+                value_field->value = node;
+                value_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(value_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        }
+    }
+
+    /* Coercion 6: Error Union Wrapping (T -> !T) */
+    if (target_type->kind == TYPE_ERROR_UNION && source_type->kind != TYPE_ERROR_UNION) {
+        if (source_type->kind == TYPE_NORETURN) {
+            --recursion_depth;
+            return;
+        }
+
+        Type* payload = target_type->as.error_union.payload;
+        if (payload->kind == TYPE_PLACEHOLDER) payload = resolvePlaceholder(payload);
+
+        if (source_type->kind == TYPE_ERROR_SET) {
+            /* error.Tag -> !T: { .is_error = 1, .data = { .err = tag } } (or .err if void) */
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+            is_error_field->field_name = "is_error";
+            is_error_field->value = createIntegerLiteral(1, get_g_type_bool(), node->loc);
+            is_error_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(is_error_field);
+
+            if (payload->kind != TYPE_VOID) {
+                ASTNode* data_init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(data_init_node, 0, sizeof(ASTNode));
+                data_init_node->type = NODE_STRUCT_INITIALIZER;
+                data_init_node->loc = node->loc;
+                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* data_fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                data_init_node->as.struct_initializer->fields = new (data_fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* err_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(err_field, 0, sizeof(ASTNamedInitializer));
+                err_field->field_name = "err";
+                err_field->value = node;
+                err_field->loc = node->loc;
+                data_init_node->as.struct_initializer->fields->append(err_field);
+
+                ASTNamedInitializer* data_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(data_field, 0, sizeof(ASTNamedInitializer));
+                data_field->field_name = "data";
+                data_field->value = data_init_node;
+                data_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(data_field);
+            } else {
+                ASTNamedInitializer* err_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(err_field, 0, sizeof(ASTNamedInitializer));
+                err_field->field_name = "err";
+                err_field->value = node;
+                err_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(err_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        } else {
+            /* T -> !T: { .is_error = 0, .data = { .payload = coerced_source } } */
+            coerceNode(node_slot, payload);
+            node = *node_slot; // Update node after potential replacement
+
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+            is_error_field->field_name = "is_error";
+            is_error_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+            is_error_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(is_error_field);
+
+            if (payload->kind != TYPE_VOID) {
+                /* Build .data = { .payload = node } */
+                ASTNode* data_init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(data_init_node, 0, sizeof(ASTNode));
+                data_init_node->type = NODE_STRUCT_INITIALIZER;
+                data_init_node->loc = node->loc;
+                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* data_fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                data_init_node->as.struct_initializer->fields = new (data_fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* payload_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(payload_field, 0, sizeof(ASTNamedInitializer));
+                payload_field->field_name = "payload";
+                payload_field->value = node;
+                payload_field->loc = node->loc;
+                data_init_node->as.struct_initializer->fields->append(payload_field);
+
+                ASTNamedInitializer* data_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(data_field, 0, sizeof(ASTNamedInitializer));
+                data_field->field_name = "data";
+                data_field->value = data_init_node;
+                data_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(data_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        }
+    }
+
     --recursion_depth;
 }
 

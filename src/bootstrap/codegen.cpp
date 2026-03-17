@@ -417,8 +417,8 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
-        if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
+        if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
             /* Handle ErrorUnion and Optional special structures */
             const ASTStructInitializerNode* init = init_node->as.struct_initializer;
             for (size_t j = 0; j < init->fields->length(); ++j) {

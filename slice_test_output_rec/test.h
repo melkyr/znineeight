@@ -3,10 +3,10 @@
 
 #include "zig_runtime.h"
 
-struct Node;
 
 struct Arena; /* opaque */
 
+struct Node;
 #ifndef ZIG_OPTIONAL_Optional_Ptr_Node
 #define ZIG_OPTIONAL_Optional_Ptr_Node
 typedef struct {
