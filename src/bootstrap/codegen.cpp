@@ -2678,6 +2678,8 @@ void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
 void C89Emitter::emitTaggedUnionDefinition(Type* type) {
     if (!isTaggedUnion(type)) return;
 
+    ensureForwardDeclaration(type);
+
     writeIndent();
     writeString("struct ");
     writeString(type->c_name ? type->c_name : "/* unknown */");
@@ -2688,6 +2690,8 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
 
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
+
+    ensureForwardDeclaration(type);
 
     if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
