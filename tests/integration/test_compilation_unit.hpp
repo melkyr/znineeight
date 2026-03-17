@@ -192,6 +192,33 @@ public:
     }
 
     /**
+     * @brief Validates that a function declaration (signature + body) emits a C89 string containing the given substring.
+     */
+    bool validateFunctionEmissionSubstring(const char* name, const std::string& substring) {
+        const ASTFnDeclNode* fn = extractFunctionDeclaration(name);
+        if (!fn) {
+            printf("FAIL: Could not find function declaration for '%s'.\n", name);
+            return false;
+        }
+
+        Symbol* sym = getSymbolTable().findInAnyScope(name);
+        if (!sym) {
+            printf("FAIL: Could not find symbol for function '%s'.\n", name);
+            return false;
+        }
+
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        std::string actual = emitter.emitFunctionDeclaration(fn, sym);
+
+        if (actual.find(substring) == std::string::npos) {
+            printf("FAIL: Emission substring match failed for function '%s'.\nExpected to find: %s\nActual emission: %s\n", name, substring.c_str(), actual.c_str());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @brief Validates that a function call emits the expected C89 string.
      */
     bool validateFunctionCallEmission(const char* name, const std::string& expectedC89) {

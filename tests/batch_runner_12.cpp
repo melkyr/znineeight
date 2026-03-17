@@ -84,6 +84,7 @@
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "integration/while_switch_control_flow.cpp"
 #include "test_bootstrap_types.cpp"
 #include "test_msvc_types.cpp"
 #include "main_batch12.cpp"

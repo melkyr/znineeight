@@ -84,4 +84,5 @@
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "integration/while_switch_control_flow.cpp"
 #include "main_batch13.cpp"

@@ -608,6 +608,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Control Flow**:
     *   `if (cond) { ... } else { ... }` (Braced blocks required).
     *   `while (cond) { ... }` (Supports `break` and `continue`).
+        *   **Implementation**: All loops (including simple `while` loops) use explicit labels and `goto` for control flow to ensure correct `break`/`continue` semantics when nested inside `switch` statements.
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).

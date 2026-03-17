@@ -84,6 +84,7 @@
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "integration/while_switch_control_flow.cpp"
 #include "test_fn_pointer_codegen.cpp"
 #include "test_type_checker_fn_pointer.cpp"
 #include "test_type_system_fn_pointer.cpp"

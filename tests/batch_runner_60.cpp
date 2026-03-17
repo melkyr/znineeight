@@ -84,6 +84,7 @@
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "integration/while_switch_control_flow.cpp"
 #include "unit/ast_clone_test.cpp"
 #include "unit/ast_traversal_test.cpp"
 #include "unit/parser_switch_stmt_test.cpp"

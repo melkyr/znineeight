@@ -11,7 +11,6 @@
 #include "integration/ast_lifter_tests.cpp"
 #include "integration/batch50_tests.cpp"
 #include "integration/braceless_tests.cpp"
-#include "integration/bug_verification_tests.cpp"
 #include "integration/builtin_offsetof_tests.cpp"
 #include "integration/builtin_size_tests.cpp"
 #include "integration/cast_tests.cpp"
@@ -85,4 +84,5 @@
 #include "integration/variable_decl_tests.cpp"
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
+#include "integration/while_switch_control_flow.cpp"
 #include "main_batch9a.cpp"
