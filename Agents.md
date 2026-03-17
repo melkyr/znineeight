@@ -34,7 +34,11 @@ We are implementing multi-module support and `@import` resolution, moving toward
 
 ### Compiler Architecture Assumptions (Target ABI)
 - **32-bit Core**: The bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment).
-- **Host Mismatch**: Compiling generated C code on a 64-bit host without `-m32` will result in memory corruption due to ABI mismatch. Always use `-m32` for verification if possible.
+- **Host Mismatch**: Compiling generated C code on a 64-bit host without `-m32` will result in memory corruption due to ABI mismatch. Always use `-m32` for verification if possible. Note: Environment limitations may prevent full execution of `-m32` binaries; rely on static analysis and emission verification in those cases.
+
+### aggregate handling and recursion
+- **Value Cycles**: Direct recursion (struct containing itself) is rejected. Use pointers (`*T`) or slices (`[]T`) for recursion.
+- **Methods**: Functions inside structs/unions are not supported in Z98. Use standalone functions taking a struct pointer.
 
 ### Initializer Decomposition Responsibilities
 - **C89Emitter**: Implements `captureExpression` to safely stringify l-values and `emitInitializerAssignments` to perform the decomposition. Corrects precedence for pointer dereferences (e.g., `(*ptr).field`).
