@@ -3,17 +3,21 @@
 
 #include "test.h"
 
-
 struct S;
+
+struct S {
+    Slice_f32 s;
+};
+
 #ifndef ZIG_SLICE_Slice_f32
 #define ZIG_SLICE_Slice_f32
-typedef struct { float* ptr; usize len; } Slice_f32;
-static RETR_UNUSED_FUNC Slice_f32 __make_slice_f32(float* ptr, usize len) {
-    Slice_f32 s;
-    s.ptr = ptr;
-    s.len = len;
-    return s;
-}
+    typedef struct { float* ptr; usize len; } Slice_f32;
+    static RETR_UNUSED_FUNC Slice_f32 __make_slice_f32(float* ptr, usize len) {
+        Slice_f32 s;
+        s.ptr = ptr;
+        s.len = len;
+        return s;
+    }
 #endif
 
 #ifndef ZIG_SLICE_Slice_i32
@@ -26,10 +30,6 @@ static RETR_UNUSED_FUNC Slice_i32 __make_slice_i32(int* ptr, usize len) {
     return s;
 }
 #endif
-
-struct S {
-    Slice_f32 s;
-};
 
 static void private(Slice_i32*, struct S);
 
