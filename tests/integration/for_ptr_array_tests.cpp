@@ -23,6 +23,7 @@ TEST_FUNC(Codegen_ForPtrToArray) {
 
     u32 file_id = unit.addSource("test.zig", source);
     if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Pipeline execution failed for:\n%s\n", source);
         unit.getErrorHandler().printErrors();
         return false;
     }

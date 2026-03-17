@@ -3486,6 +3486,20 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* Fall through for error reporting if not "len" or "ptr" */
     }
 
+    /* Array built-in properties */
+    if (base_type->kind == TYPE_ARRAY) {
+        if (plat_strcmp(node->field_name, "len") == 0) {
+            /* Transform into integer literal (comptime constant) */
+            parent->type = NODE_INTEGER_LITERAL;
+            parent->as.integer_literal.value = base_type->as.array.size;
+            parent->as.integer_literal.is_unsigned = true;
+            parent->as.integer_literal.is_long = false;
+            parent->as.integer_literal.resolved_type = get_g_type_usize();
+            parent->resolved_type = get_g_type_usize();
+            return get_g_type_usize();
+        }
+    }
+
     /* Module member access. */
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
@@ -4092,6 +4106,7 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     }
 
     /* 2. Ensure size is a constant integer literal */
+    visit(node->size);
     if (node->size->type != NODE_INTEGER_LITERAL) {
         return reportAndReturnUndefined(node->size->loc, ERR_TYPE_MISMATCH, "Array size must be a constant integer literal");
     }
