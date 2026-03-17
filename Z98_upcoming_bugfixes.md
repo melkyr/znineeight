@@ -36,30 +36,19 @@ if (!has_comma && peek().type != TOKEN_RBRACE) {
 
 ---
 
-## 3. Lifter: Missing Parent in Recursive Transform for Switch Prongs  
+## 3. [RESOLVED] Lifter: Missing Parent in Recursive Transform for Switch Prongs
 **File:** `ast_lifter.cpp` – `lowerSwitchExpr`  
 When transforming a prong body, `transformNode` is called with `NULL` as the parent. This breaks the parent‑stack mechanism, preventing nested control‑flow expressions (like an `if` inside a switch prong) from being correctly lifted.  
 
-**Fix:** Pass the newly created switch statement node as the parent:  
-```cpp
-transformNode(&new_prong->body, switch_stmt_node);  // store switch_stmt_node earlier
-```
+**Fix:** Passed the newly created switch statement node as the parent.
 
 ---
 
-## 4. Codegen: For Loop Over Pointer‑to‑Array Uses Wrong Length  
+## 4. [RESOLVED] Codegen: For Loop Over Pointer‑to‑Array Uses Wrong Length
 **File:** `codegen.cpp` – `emitFor`  
-When the iterable expression is a pointer to an array (e.g., `ptr: *[5]u8`), the emitted length is `"0 /* Unknown length */"` because only `TYPE_ARRAY` is handled.  
+When the iterable expression is a pointer to an array (e.g., `ptr: *[5]u8`), the emitted length was `"0 /* Unknown length */"` because only `TYPE_ARRAY` was handled.
 
-**Fix:** Add a branch for `TYPE_POINTER` whose base is an array:  
-```cpp
-} else if (iterable_type && iterable_type->kind == TYPE_POINTER &&
-           iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
-    char size_buf[32];
-    plat_u64_to_string(iterable_type->as.pointer.base->as.array.size, size_buf, sizeof(size_buf));
-    writeString(size_buf);
-}
-```
+**Fix:** Added a branch for `TYPE_POINTER` whose base is an array.
 
 ---
 
@@ -108,11 +97,11 @@ The code correctly emits defers up to the target label. However, it always emits
 
 ---
 
-## 10. Codegen: String Literal Length Limits (MSVC 6.0)  
+## 10. [RESOLVED] Codegen: String Literal Length Limits (MSVC 6.0)
 **File:** `codegen.cpp` – `emitStringLiteral`  
-MSVC 6.0 has a limit of 2048 characters for string literals. The current emitter does not split long strings.  
+MSVC 6.0 has a limit of 2048 characters for string literals. The emitter now automatically splits long strings.
 
-**Improvement:** If a string literal exceeds a threshold (e.g., 1024), split it into multiple concatenated literals:  
+**Improvement:** If a string literal exceeds 1024 characters, it is split into multiple concatenated literals:
 ```c
 "part1" "part2"
 ```

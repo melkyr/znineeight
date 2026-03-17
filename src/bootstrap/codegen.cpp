@@ -16,6 +16,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -29,6 +30,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
@@ -44,6 +46,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -1510,6 +1513,11 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
             char size_buf[32];
             plat_u64_to_string(iterable_type->as.array.size, size_buf, sizeof(size_buf));
             writeString(size_buf);
+        } else if (iterable_type && iterable_type->kind == TYPE_POINTER &&
+                   iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
+            char size_buf[32];
+            plat_u64_to_string(iterable_type->as.pointer.base->as.array.size, size_buf, sizeof(size_buf));
+            writeString(size_buf);
         } else if (iterable_type && iterable_type->kind == TYPE_SLICE) {
             writeString(iter_name);
             writeString(".len");
@@ -2883,12 +2891,18 @@ void C89Emitter::emitFloatLiteral(const ASTFloatLiteralNode* node) {
 void C89Emitter::emitStringLiteral(const ASTStringLiteralNode* node) {
     if (!node || !node->value) return;
 
-    /* TODO: Split long strings if needed for MSVC 6.0 */
+    size_t chunk_chars = 0;
+
     write("\"", 1);
     const char* p = node->value;
     while (*p) {
+        if (chunk_chars >= max_string_literal_chunk_) {
+            write("\" \"", 3);
+            chunk_chars = 0;
+        }
         emitEscapedByte((unsigned char)*p, false);
         p++;
+        chunk_chars++;
     }
     write("\"", 1);
 }

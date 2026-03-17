@@ -404,6 +404,11 @@ public:
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
 
     /**
+     * @brief Sets the maximum chunk size for string literal splitting.
+     */
+    void setMaxStringLiteralChunk(size_t size) { max_string_literal_chunk_ = size; }
+
+    /**
      * @brief Emits any buffered type definitions (slices, error unions).
      */
     void emitBufferedTypeDefinitions();
@@ -586,6 +591,7 @@ private:
     char last_char_;
     int for_loop_counter_;
     SourceLocation current_loc_;
+    size_t max_string_literal_chunk_;
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];

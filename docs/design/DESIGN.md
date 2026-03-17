@@ -656,7 +656,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **Boolean**: Mapped to `int` (1 for true, 0 for false).
 *   **Integer 64-bit**: Mapped to `__int64` (and `unsigned __int64`) for MSVC 6.0 compatibility. Literals use MSVC-specific suffixes `i64` and `ui64` (see `docs/reference/c89_emission.md`).
 *   **Null**: Mapped to `((void*)0)`.
-*   **Strings**: String literals are mapped to `const char*`.
+*   **Strings**: String literals are mapped to `const char*`. For MSVC 6.0 compatibility, literals exceeding 1024 characters are automatically split into concatenated chunks (`"..." "..."`) by the emitter.
 *   **Name Mangling**:
     *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.

@@ -886,6 +886,8 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
     void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
     DynamicArray<ASTSwitchStmtProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
 
+    ASTNode* switch_stmt_node = createSwitchStmt(sw_expr->expression, prongs, loc);
+
     for (size_t i = 0; i < sw_expr->prongs->length(); ++i) {
         ASTSwitchProngNode* orig_prong = (*sw_expr->prongs)[i];
         ASTSwitchStmtProngNode* new_prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
@@ -914,7 +916,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
             new_prong->body = block_node;
         }
 
-        transformNode(&new_prong->body, NULL);
+        transformNode(&new_prong->body, switch_stmt_node);
 
         if (new_prong->capture_name && new_prong->capture_sym) {
             Symbol* new_sym = (Symbol*)arena_->alloc(sizeof(Symbol));
@@ -929,7 +931,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
         prongs->append(new_prong);
     }
 
-    return createSwitchStmt(sw_expr->expression, prongs, loc);
+    return switch_stmt_node;
 }
 
 void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping) {
