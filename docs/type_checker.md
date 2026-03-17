@@ -29,10 +29,17 @@ The type checker robustly handles Zig's tagged union captures in switch statemen
 - **Placeholder Handling**: If a union field type is a placeholder, it is resolved before creating the capture symbol.
 - **Defensive Validation**: Ensures that switch prongs with captures are only used with a single tag case item, preventing ambiguity.
 
-## Strict Error Union Rules
-The compiler enforces strict rules for error union compatibility to match Zig's safety guarantees.
+## Strict Error Union and Optional Rules
+The compiler enforces strict rules for error union and optional compatibility to match Zig's safety guarantees.
 
 ### Implicit Unwrapping Prohibited
-- **Implicit wrapping** (`T` -> `!T`) is allowed for convenience.
-- **Implicit unwrapping** (`!T` -> `T`) is **strictly prohibited**. Attempting to assign or compare an error union directly with its payload type results in a type mismatch error.
-- **Explicit unwrapping** via `try` or `catch` is required.
+- **Implicit wrapping** (`T` -> `!T`, `T` -> `?T`) is allowed for convenience.
+- **Implicit unwrapping** (`!T` -> `T`, `?T` -> `T`) is **strictly prohibited**. Attempting to assign or compare a wrapped type directly with its payload type results in a type mismatch error.
+- **Explicit unwrapping** via `try`, `catch`, `orelse`, or capture is required.
+
+### AST-Level Wrapping
+To support C89's lack of native error unions and optionals, the `TypeChecker::coerceNode` function performs AST transformations to wrap plain values into their target types.
+- **Error Unions**: Transformed into a `NODE_STRUCT_INITIALIZER` representing a success result (`.is_error = 0`, `.data.payload = value`).
+- **Optionals**: Transformed into a `NODE_STRUCT_INITIALIZER` representing a present value (`.has_value = 1`, `.value = value`) or a missing value (`.has_value = 0` for `null`).
+- **Recursion**: Coercion is applied recursively, supporting nested wrapping (e.g., `T` -> `??T`).
+- **Void Handling**: For `void` payloads, the `.data.payload` or `.value` fields are omitted from the generated AST.
