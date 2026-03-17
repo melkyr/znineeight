@@ -29,7 +29,7 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 - **Platform Abstraction**: Relies on the `platform.hpp` file I/O primitives, ensuring compatibility with both Win32 (using `kernel32.dll` directly) and POSIX environments.
 - **RAII State Guards**: Uses stack-based RAII objects (`IndentScope`, `DeferScopeGuard`) to manage critical state like indentation level and the `defer_stack_`. This ensures state is correctly restored even on early returns or errors, preventing desynchronization of the generated C code.
 - **Modular Dispatch**: Large emission functions are decomposed into focused helpers to improve legibility and maintainability. For example, `emitExpression` dispatches to:
-    - `emitLiteral`: Handles all numeric, string, char, bool, and null literals. String literals are emitted as C-style string literals (e.g. `"hello"`), which are treated as pointer values by C compilers.
+    - `emitLiteral`: Handles all numeric, string, char, bool, and null literals. String literals are emitted as C-style string literals (e.g. `"hello"`), which are treated as pointer values by C compilers. For MSVC 6.0 compatibility, long strings are automatically split (see Section 4.12).
     - `emitUnaryOp` / `emitBinaryOp`: Handles operator logic.
     - `emitCast`: Centralizes `@intCast`, `@floatCast`, and `@ptrCast` logic.
     - `emitAccess`: Manages array, member, and slice access.
@@ -674,3 +674,9 @@ struct S {
     } u;
 };
 ```
+
+### 4.12 String Literal Splitting (MSVC 6.0 Compatibility)
+Standard C89 (and specifically MSVC 6.0) has limits on the maximum length of a string literal (2048 characters for MSVC 6.0). To ensure generated code remains compatible with legacy toolchains:
+- **Automatic Splitting**: The `C89Emitter` monitors the length of emitted string literals. If a literal exceeds 1024 characters, it is closed and a new one is started using C's implicit concatenation: `"part 1" "part 2"`.
+- **Atomic Escapes**: Splitting only occurs after a complete byte (and its associated escape sequence) has been emitted. This prevents breaking escape sequences like `\xAB` or `\123` across literal boundaries.
+- **Implementation**: Managed in `C89Emitter::emitStringLiteral` using a local counter and the `MAX_STRING_LITERAL_CHUNK` constant.
