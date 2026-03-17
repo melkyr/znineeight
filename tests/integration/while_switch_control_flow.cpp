@@ -38,7 +38,6 @@ TEST_FUNC(WhileSwitch_BreakExitsLoop) {
         "    }\n"
         "}";
     // We expect 'goto __loop_0_end;' instead of C 'break;' inside the switch case.
-    // The switch itself is lifted to a statement, but here it's already a statement.
     return run_while_switch_control_flow_test(source, "foo", "goto __loop_0_end;");
 }
 

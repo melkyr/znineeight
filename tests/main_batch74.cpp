@@ -1,4 +1,5 @@
 #include "test_runner_main.hpp"
+#include "test_framework.hpp"
 
 TEST_FUNC(WhileSwitch_BreakExitsLoop);
 TEST_FUNC(WhileSwitch_ContinueTargetsLoop);
