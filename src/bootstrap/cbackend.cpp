@@ -104,18 +104,9 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-    // Pass 1: Private Type Definitions (Public types are in the .h file)
-    for (size_t i = 0; i < stmts->length(); ++i) {
-        if ((*stmts)[i]->type == NODE_VAR_DECL) {
-            if (!(*stmts)[i]->as.var_decl->is_pub) {
-                emitter.emitTypeDefinition((*stmts)[i]);
-                emitter.emitBufferedTypeDefinitions();
-            }
-        }
-    }
-
-    // Pass 1.5: Special types (slices, error unions, optionals)
-    // These are emitted AFTER structs because they might depend on them (recursive types).
+    // Pass 1: Special types (slices, error unions, optionals)
+    // These are emitted BEFORE structs to ensure they are available for recursive dependencies.
+    // They will now correctly forward-declare any structs they depend on.
     DynamicArray<Type*> visited_types(unit_.getArena());
     for (size_t i = 0; i < stmts->length(); ++i) {
         visited_types.clear();
@@ -134,6 +125,16 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS, visited_types);
     }
     emitter.emitBufferedOptionals();
+
+    // Pass 1.5: Private Type Definitions (Public types are in the .h file)
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        if ((*stmts)[i]->type == NODE_VAR_DECL) {
+            if (!(*stmts)[i]->as.var_decl->is_pub) {
+                emitter.emitTypeDefinition((*stmts)[i]);
+                emitter.emitBufferedTypeDefinitions();
+            }
+        }
+    }
 
     // Pass 2: Global Variables
     for (size_t i = 0; i < stmts->length(); ++i) {

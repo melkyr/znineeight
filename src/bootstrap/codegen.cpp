@@ -1870,11 +1870,16 @@ void C89Emitter::ensureForwardDeclaration(Type* type) {
     }
     emitted_forward_decls_.append(mangled_name);
 
+    bool was_in_type_def = in_type_def_mode_;
+    in_type_def_mode_ = true;
+
     writeIndent();
     writeString(keyword);
     writeString(" ");
     writeString(mangled_name);
     writeString(";\n");
+
+    in_type_def_mode_ = was_in_type_def;
 }
 
 void C89Emitter::emitExpression(const ASTNode* node) {
@@ -2314,6 +2319,9 @@ void C89Emitter::emitArraySlice(const ASTNode* node) {
 void C89Emitter::ensureOptionalType(Type* type) {
     if (!type || type->kind != TYPE_OPTIONAL) return;
 
+    Type* payload = type->as.optional.payload;
+    ensureForwardDeclaration(payload);
+
     const char* mangled_name = getMangledTypeName(type);
 
     /* Check per-module cache first */
@@ -2346,8 +2354,6 @@ void C89Emitter::ensureOptionalType(Type* type) {
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
-    Type* payload = type->as.optional.payload;
-
     writeString("#ifndef ZIG_OPTIONAL_");
     writeString(mangled_name);
     writeString("\n#define ZIG_OPTIONAL_");
@@ -2376,6 +2382,9 @@ void C89Emitter::ensureOptionalType(Type* type) {
 
 void C89Emitter::ensureErrorUnionType(Type* type) {
     if (!type || type->kind != TYPE_ERROR_UNION) return;
+
+    Type* payload = type->as.error_union.payload;
+    ensureForwardDeclaration(payload);
 
     const char* mangled_name = getMangledTypeName(type);
 
@@ -2408,8 +2417,6 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
-
-    Type* payload = type->as.error_union.payload;
 
     writeString("#ifndef ZIG_ERRORUNION_");
     writeString(mangled_name);
@@ -2452,6 +2459,9 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 void C89Emitter::ensureSliceType(Type* type) {
     if (!type || type->kind != TYPE_SLICE) return;
 
+    Type* elem_type = type->as.slice.element_type;
+    ensureForwardDeclaration(elem_type);
+
     const char* mangled_name = getMangledTypeName(type);
 
     /* Check per-module cache first */
@@ -2485,7 +2495,6 @@ void C89Emitter::ensureSliceType(Type* type) {
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
-    Type* elem_type = type->as.slice.element_type;
     const char* slice_struct_name = mangled_name;
 
     writeString("#ifndef ZIG_SLICE_");
