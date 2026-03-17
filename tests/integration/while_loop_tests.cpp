@@ -37,7 +37,7 @@ TEST_FUNC(WhileLoopIntegration_BoolCondition) {
         "fn foo(b: bool) void {\n"
         "    while (b) { }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int b) { while (b) { } }");
+    return run_while_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Labeled Loops ---
@@ -83,7 +83,7 @@ TEST_FUNC(WhileLoopIntegration_IntCondition) {
         "fn foo(x: i32) void {\n"
         "    while (x) { }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int x) { while (x) { } }");
+    return run_while_test(source, "foo", "void foo(int x) { __loop_0_start: ; if (!(x)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_PointerCondition) {
@@ -91,7 +91,7 @@ TEST_FUNC(WhileLoopIntegration_PointerCondition) {
         "fn foo(ptr: *i32) void {\n"
         "    while (ptr) { }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int* ptr) { while (ptr) { } }");
+    return run_while_test(source, "foo", "void foo(int* ptr) { __loop_0_start: ; if (!(ptr)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Break and Continue ---
@@ -103,7 +103,7 @@ TEST_FUNC(WhileLoopIntegration_WithBreak) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { while (1) { goto __loop_0_end; } }");
+    return run_while_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_WithContinue) {
@@ -115,7 +115,7 @@ TEST_FUNC(WhileLoopIntegration_WithContinue) {
         "        continue;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { int i = 0; while (i < 10) { i = i + 1; goto __loop_0_continue; } }");
+    return run_while_test(source, "foo", "void foo(void) { int i = 0; __loop_0_start: ; if (!(i < 10)) goto __loop_0_end; { i = i + 1; /* defers for continue */ goto __loop_0_continue; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Nesting and Scoping ---
@@ -133,7 +133,7 @@ TEST_FUNC(WhileLoopIntegration_NestedWhile) {
         "    }\n"
         "}";
     return run_while_test(source, "foo",
-        "void foo(void) { int i = 0; while (i < 5) { int j = 0; while (j < 5) { j = j + 1; } i = i + 1; } }");
+        "void foo(void) { int i = 0; __loop_0_start: ; if (!(i < 5)) goto __loop_0_end; { int j = 0; __loop_1_start: ; if (!(j < 5)) goto __loop_1_end; { j = j + 1; } __loop_1_continue: ; goto __loop_1_start; __loop_1_end: ; i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_Scoping) {
@@ -146,7 +146,7 @@ TEST_FUNC(WhileLoopIntegration_Scoping) {
         "    return 0;\n"
         "}";
     // x should be fine inside the loop
-    return run_while_test(source, "foo", "int foo(void) { while (1) { int x = 42; return x; } return 0; }");
+    return run_while_test(source, "foo", "int foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { int x = 42; return x; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; return 0; }");
 }
 
 // --- Complex Conditions ---
@@ -158,7 +158,7 @@ TEST_FUNC(WhileLoopIntegration_ComplexCondition) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int a, int b) { while (a > 0 && b < 10) { goto __loop_0_end; } }");
+    return run_while_test(source, "foo", "void foo(int a, int b) { __loop_0_start: ; if (!(a > 0 && b < 10)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Negative Tests ---
@@ -177,7 +177,7 @@ TEST_FUNC(WhileLoopIntegration_AllowBracelessWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) break;\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int b) { while (b) { goto __loop_0_end; } }");
+    return run_while_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
@@ -185,5 +185,5 @@ TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
         "fn foo(b: bool) void {\n"
         "    while (b) { }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(int b) { while (b) { } }");
+    return run_while_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }

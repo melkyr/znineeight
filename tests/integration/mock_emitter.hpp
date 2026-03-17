@@ -180,19 +180,26 @@ public:
                 bool needs_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
                                        source_type && source_type->kind != TYPE_ERROR_UNION);
 
+                // Mock logic updated: return statement ALWAYS uses structured initialization if it needs wrapping OR has defers.
+                // This matches the current C89Emitter's more conservative return generation.
                 if (has_defers || needs_wrapping) {
                     ss << "{ ";
                     if (current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
                         ss << getC89TypeName(current_fn_ret_type_) << " __return_val; ";
                         if (needs_wrapping) {
                             if (node->as.return_stmt.expression && source_type->kind == TYPE_ERROR_SET) {
-                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) ss << "__return_val.data.err = "; else ss << "__return_val.err = ";
-                                ss << emitExpression(node->as.return_stmt.expression) << "; __return_val.is_error = 1; ";
+                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
+                                    ss << "__return_val.is_error = 1; ";
+                                    ss << "__return_val.data.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                                } else {
+                                    ss << "__return_val.is_error = 1; ";
+                                    ss << "__return_val.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                                }
                             } else if (node->as.return_stmt.expression) {
+                                ss << "__return_val.is_error = 0; ";
                                 if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
                                     ss << "__return_val.data.payload = " << emitExpression(node->as.return_stmt.expression) << "; ";
                                 }
-                                ss << "__return_val.is_error = 0; ";
                             } else {
                                 // return; in a !void function
                                 ss << "__return_val.is_error = 0; ";
@@ -592,8 +599,40 @@ public:
      * @brief Emits a C89 struct initializer (positional).
      */
     std::string emitStructInitializer(const ASTStructInitializerNode* node) {
-        if (!node || !node->type_expr || !node->type_expr->resolved_type) return "{ /* INVALID */ }";
-        Type* struct_type = node->type_expr->resolved_type;
+        if (!node) return "{ /* INVALID */ }";
+        
+        Type* struct_type = NULL;
+        if (node->type_expr && node->type_expr->resolved_type) {
+            struct_type = node->type_expr->resolved_type;
+        }
+
+        // Handle case where type info is missing or inferred (anonymous)
+        if (!struct_type) {
+             std::stringstream ss;
+             ss << "{";
+             if (node->fields) {
+                 for (size_t i = 0; i < node->fields->length(); ++i) {
+                     if (i > 0) ss << ", ";
+                     ss << emitExpression((*node->fields)[i]->value);
+                 }
+             }
+             ss << "}";
+             return ss.str();
+        }
+
+        if (struct_type->kind == TYPE_ERROR_UNION || struct_type->kind == TYPE_OPTIONAL || struct_type->kind == TYPE_ANYTYPE) {
+             std::stringstream ss;
+             ss << "{";
+             if (node->fields) {
+                 for (size_t i = 0; i < node->fields->length(); ++i) {
+                     if (i > 0) ss << ", ";
+                     ss << emitExpression((*node->fields)[i]->value);
+                 }
+             }
+             ss << "}";
+             return ss.str();
+        }
+
         if (struct_type->kind != TYPE_STRUCT) return "{ /* NOT A STRUCT */ }";
 
         DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;

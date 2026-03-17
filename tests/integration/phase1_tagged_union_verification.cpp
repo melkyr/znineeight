@@ -103,6 +103,7 @@ TEST_FUNC(Phase1_TaggedUnion_ForwardDecl) {
     for (size_t i = 0; i < mod->header_types.length(); ++i) {
         header_emitter.ensureForwardDeclaration(mod->header_types[i]);
     }
+    header_emitter.emitBufferedTypeDefinitions();
     header_emitter.close();
 
     /* Read and verify the header */

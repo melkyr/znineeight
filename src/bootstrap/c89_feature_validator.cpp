@@ -672,8 +672,24 @@ const char* C89FeatureValidator::getExpressionContext(ASTNode* node) {
     RETR_UNUSED(node);
     if (!current_parent_) return "expression";
 
+    ASTNode* p = current_parent_;
+    while (p && p->type == NODE_PAREN_EXPR) {
+         // This is tricky because we don't have the parent of the parent here easily
+         // and we are not tracking the stack of parents in a way that allows easy traversal.
+         // But the current_parent_ is updated in visit().
+         // Actually, visit() updates current_parent_ before recursing.
+         break; 
+    }
+
     switch (current_parent_->type) {
         case NODE_RETURN_STMT: return "return";
+        case NODE_PAREN_EXPR: {
+             // Heuristic: if parent is paren, check its context if we can.
+             // But we don't have the grand-parent here.
+             // Let's look at the parent_stack_ if we had one.
+             // C89FeatureValidator doesn't have a parent stack, only current_parent_.
+             return "expression";
+        }
         case NODE_ASSIGNMENT: return "assignment";
         case NODE_VAR_DECL: return "variable_decl";
         case NODE_FUNCTION_CALL: return "call_argument";
