@@ -3,4 +3,5 @@
 
 /* Master Single Translation Unit (STU) file */
 
-#include "repro_payload_capture.c"
+#include "vis_main.c"
+#include "vis_mod.c"
