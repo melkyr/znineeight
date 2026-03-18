@@ -633,6 +633,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
 *   **Optional Types**: Fully supported as of Task 9.3 stabilization. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
     *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types internally.
+    *   **Member Access**: Supports read-only access to `.value` and `.has_value` fields. Comparison with `null` literal (`==`, `!=`) is supported for all optional types.
     *   **C ABI Mapping (Milestone 8)**: Optional pointers (`?*T`, `?[*]T`, `?fn(...)`) are automatically transformed into raw C pointers at `extern`/`export` boundaries to maintain C ABI compatibility.
     *   **Stability**: Hardened with NULL checks and placeholder awareness during type creation. Size and alignment are dynamically calculated based on the payload type `T` and an `int` flag.
 *   **Expressions**: Arithmetic (`+`, `-`, `*`, `/`, `%`), Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), Logical (`and`, `or`, `!`), and Parentheses.

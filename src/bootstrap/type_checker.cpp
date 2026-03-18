@@ -678,6 +678,14 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
             return reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg_buffer);
         }
 
+        /* Optional vs null comparisons. */
+        if ((left_type->kind == TYPE_OPTIONAL && right_type->kind == TYPE_NULL) ||
+            (left_type->kind == TYPE_NULL && right_type->kind == TYPE_OPTIONAL)) {
+            if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
+                return get_g_type_bool();
+            }
+        }
+
         /* Pointer comparisons. */
         if ((left_type->kind == TYPE_POINTER || left_type->kind == TYPE_NULL) &&
             (right_type->kind == TYPE_POINTER || right_type->kind == TYPE_NULL)) {
@@ -3564,6 +3572,20 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* Fall through for error reporting if not "len" or "ptr" */
     }
 
+    /* Optional built-in properties */
+    if (base_type->kind == TYPE_OPTIONAL) {
+        if (plat_strcmp(node->field_name, "has_value") == 0) {
+            return get_g_type_bool();
+        } else if (plat_strcmp(node->field_name, "value") == 0) {
+            Type* payload = base_type->as.optional.payload;
+            if (payload->kind == TYPE_VOID) {
+                return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "Optional type with void payload has no 'value' field");
+            }
+            return payload;
+        }
+        /* Fall through for error reporting if not "has_value" or "value" */
+    }
+
     /* Array built-in properties */
     if (base_type->kind == TYPE_ARRAY) {
         if (plat_strcmp(node->field_name, "len") == 0) {
@@ -4532,8 +4554,18 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
         case NODE_MEMBER_ACCESS: {
             if (!node->as.member_access->base) return false;
             Type* base_type = node->as.member_access->base->resolved_type ? node->as.member_access->base->resolved_type : visit(node->as.member_access->base);
-            if (base_type && !is_type_undefined(base_type) && base_type->kind == TYPE_POINTER) {
-                return base_type->as.pointer.is_const;
+            if (base_type && !is_type_undefined(base_type)) {
+                if (base_type->kind == TYPE_OPTIONAL) {
+                    if (plat_strcmp(node->as.member_access->field_name, "value") == 0) {
+                        return true; /* Optional.value is read-only */
+                    }
+                    if (plat_strcmp(node->as.member_access->field_name, "has_value") == 0) {
+                        return true; /* Optional.has_value is read-only */
+                    }
+                }
+                if (base_type->kind == TYPE_POINTER) {
+                    return base_type->as.pointer.is_const;
+                }
             }
             /* A member access is const if the struct itself is const. */
             return isLValueConst(node->as.member_access->base);
@@ -5892,7 +5924,11 @@ Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
     }
 
     if (expr_type && expr_type->kind != TYPE_POINTER && expr_type->kind != TYPE_FUNCTION_POINTER && expr_type->kind != TYPE_FUNCTION) {
-        reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_POINTER, NULL);
+        if (expr_type->kind == TYPE_OPTIONAL) {
+            reportAndReturnUndefined(node->expr->loc, ERR_TYPE_MISMATCH, "Cannot cast an optional to a pointer. Use optional.value to get the underlying pointer (if present).");
+        } else {
+            reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_POINTER, NULL);
+        }
         target_type = get_g_type_undefined();
     }
 

@@ -42,6 +42,14 @@ The investigation suggests a race or ordering issue in how the compiler resolves
 -   **Downgraded Syntax**: Moving from `union(enum)` to manual `struct` + `union` did not fix the issue, as the underlying recursive pointer resolution still triggers the same logic.
 -   **Field Reordering**: Moving recursive members to the end of the struct did not resolve the assertion.
 
+## Resolved Issues
+
+### 1. Optional Pointer (`?*T`) Comparison with `null`
+Comparison of optional pointers with `null` using `==` or `!=` is now fully supported.
+
+### 2. Member Access on Optionals (`.value`, `.has_value`)
+Directly accessing `.value` (the payload) and `.has_value` (the presence flag) on optional types is now supported as a read-only operation.
+
 ## Unsupported Language Features (Advanced Syntax)
 
 ### 1. Tagged Union Switch Capture Failure
