@@ -2106,6 +2106,13 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
     ASTNode* condition = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after while condition");
 
+    const char* capture_name = NULL;
+    if (match(TOKEN_PIPE)) {
+        Token id_token = expect(TOKEN_IDENTIFIER, "Expected capture identifier");
+        capture_name = id_token.value.identifier;
+        expect(TOKEN_PIPE, "Expected '|' after capture");
+    }
+
     ASTNode* iter_expr = NULL;
     if (match(TOKEN_COLON)) {
         expect(TOKEN_LPAREN, "Expected '(' after ':' in while loop");
@@ -2122,6 +2129,8 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
     while_stmt_node->iter_expr = iter_expr;
     while_stmt_node->label = label;
     while_stmt_node->label_id = -1;
+    while_stmt_node->capture_name = capture_name;
+    while_stmt_node->capture_sym = NULL;
 
     ASTNode* node = createNodeAt(NODE_WHILE_STMT, while_token.location);
     node->as.while_stmt = while_stmt_node;

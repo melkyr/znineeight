@@ -189,6 +189,17 @@ If you are still seeing slices accepted, verify that the condition type is indee
 - **Potential large range expansion** – Ranges like `0...1000` generate 1001 case labels, which may blow up code size. This is a known bootstrap limitation.
 - **Pointer-to-array detection in `visitArraySlice`** – Already handled correctly.
 
+## 22. [RESOLVED] while Payload Capture Failure
+**Symptoms:** `while (opt) |val|` results in syntax error or incorrect emission.
+**Fix:**
+1.  **Parser**: Added support for the `|capture|` syntax in `parseWhileStatement`.
+2.  **Type Checker**: Implemented optional unwrapping semantics in `visitWhileStmt`, including proper capture scoping and symbol creation.
+3.  **Codegen**: Updated `emitWhile` to generate a `while(1)` loop with internal condition evaluation into a temporary, conditional jump to end, and capture assignment. Correctly handles `break`/`continue` labels.
+
+## 23. [RESOLVED] Tagged Union Switch Capture Hardening
+**Symptoms:** Potential assertion failures during capture variable creation for recursive union fields.
+**Fix:** Updated `TypeChecker::validateSwitch` to resolve payload types recursively using `resolveAllPlaceholders` before creating the capture symbol, ensuring the type is fully concrete.
+
 ## 21. [RESOLVED] Optional Pointer Comparison and Member Access
 **Symptoms:** `if (opt != null)` fails with type mismatch; `@ptrCast` on optionals rejected without helpful hint.
 **Fix:**
