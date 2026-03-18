@@ -858,9 +858,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
+#ifdef DEBUG_VISIBILITY
+        plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+#endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.check(m->ast_root);
+#ifdef DEBUG_VISIBILITY
+        plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+#endif
     }
     if (error_handler_.hasErrors()) all_success = false;
 
@@ -1147,6 +1153,10 @@ bool CompilationUnit::resolveImports(Module* module) {
 
 bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack) {
     stack.append(module->filename);
+
+#ifdef DEBUG_VISIBILITY
+    plat_printf_debug("DEBUG_VISIBILITY: Resolving imports for module '%s' (%s)\n", module->name, module->filename);
+#endif
 
     const char* saved_module = current_module_;
 

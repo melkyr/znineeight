@@ -4,7 +4,7 @@ const util = @import("util.zig");
 pub const EnvNode = struct {
     symbol: []const u8,
     value: *value_mod.Value,
-    next: usize, // ?*EnvNode
+    next: ?*EnvNode,
 };
 
 pub fn env_lookup(name: []const u8, env: ?*EnvNode) !*value_mod.Value {
@@ -14,12 +14,7 @@ pub fn env_lookup(name: []const u8, env: ?*EnvNode) !*value_mod.Value {
             if (util.mem_eql(node.symbol, name)) {
                 return node.value;
             }
-            if (node.next == 0) {
-                cur = null;
-            } else {
-                const next_any = @intToPtr(*void, node.next);
-                cur = @ptrCast(*EnvNode, next_any);
-            }
+            cur = node.next;
         } else {
             break;
         }
@@ -32,6 +27,6 @@ pub fn env_extend(name: []const u8, val: *value_mod.Value, env: ?*EnvNode, arena
     const node = @ptrCast(*EnvNode, node_mem);
     node.symbol = name;
     node.value = val;
-    node.next = @ptrToInt(@ptrCast(?*void, env));
+    node.next = env;
     return node;
 }

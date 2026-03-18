@@ -3582,6 +3582,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
 
+#ifdef DEBUG_VISIBILITY
+        plat_printf_debug("DEBUG_VISIBILITY: Module member access: mod='%s' field='%s'\n",
+                         target_mod ? target_mod->name : (base_type->kind == TYPE_MODULE ? base_type->as.module.name : "anytype"),
+                         node->field_name);
+#endif
+
         if (target_mod && target_mod->symbols) {
             Symbol* sym = target_mod->symbols->lookup(node->field_name);
             if (sym) {

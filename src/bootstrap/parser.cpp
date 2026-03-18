@@ -328,6 +328,8 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseBuiltinCall("@enumToInt", advance().location);
         case TOKEN_AT_PTR_TO_INT:
             return parseBuiltinCall("@ptrToInt", advance().location);
+        case TOKEN_AT_INT_TO_PTR:
+            return parseBuiltinCall("@intToPtr", advance().location);
         case TOKEN_AT_INT_TO_ENUM:
             return parseBuiltinCall("@intToEnum", advance().location);
         case TOKEN_LBRACKET:
@@ -1527,7 +1529,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
         .withType(symbol_type)
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
-        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0) // Semantic flags will be set by TypeChecker
+        .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0)) // Semantic flags will be set by TypeChecker
         .build();
 
     symbol_table_->insert(symbol);
@@ -1629,7 +1631,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
         .withType(NULL) // TODO: Create a function type object
         .atLocation(name_token.location)
         .definedBy(fn_decl)
-        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0)
+        .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0))
         .build();
 
     symbol_table_->insert(fn_symbol);
@@ -2431,6 +2433,10 @@ ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
         expect(TOKEN_COMMA, "Expected ',' after first argument of built-in");
         call_data->args->append(parseExpression());
     } else if (plat_strcmp(name, "@enumToInt") == 0 || plat_strcmp(name, "@ptrToInt") == 0) {
+        call_data->args->append(parseExpression());
+    } else if (plat_strcmp(name, "@intToPtr") == 0) {
+        call_data->args->append(parseType());
+        expect(TOKEN_COMMA, "Expected ',' after first argument of @intToPtr");
         call_data->args->append(parseExpression());
     }
 
