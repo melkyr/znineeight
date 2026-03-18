@@ -48,7 +48,7 @@ TEST_FUNC(BracelessControlFlow_While) {
         "    var i: i32 = 0;\n"
         "    while (i < n) i = i + 1;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int n) { int i = 0; while (i < n) { i = i + 1; } }");
+    return run_braceless_test(source, "foo", "void foo(int n) { int i = 0; __loop_0_start: ; if (!(i < n)) goto __loop_0_end; { i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_For) {
@@ -122,7 +122,7 @@ TEST_FUNC(BracelessControlFlow_EmptyWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int b) { while (b) { ; } }");
+    return run_braceless_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { ; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_ForBreak) {
@@ -137,7 +137,7 @@ TEST_FUNC(BracelessControlFlow_ForBreak) {
     if (!unit.performTestPipeline(file_id)) return false;
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string actual = emitter.emitFnDecl(unit.extractFunctionDeclaration("foo"));
-    if (actual.find("{ if (item > 0) { goto __loop_0_end; } }") == std::string::npos) {
+    if (actual.find("{ if (item > 0) { /* defers for break */ goto __loop_0_end; } }") == std::string::npos) {
         printf("FAIL: Braceless for with if-break not wrapped correctly.\nActual: %s\n", actual.c_str());
         return false;
     }

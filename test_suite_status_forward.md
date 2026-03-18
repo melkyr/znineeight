@@ -21,7 +21,7 @@
 | Batch 11 | ✓ Passed | 30/30 tests passed |
 | Batch 12 | ✓ Passed | 89/89 tests passed |
 | Batch 13 | ✓ Passed | 13/13 tests passed |
-| Batch 14 | ✗ Failed | 1/11 tests passed |
+| Batch 14 | ✓ Passed | 11/11 tests passed |
 | Batch 15 | ✓ Passed | 12/12 tests passed |
 | Batch 16 | ✓ Passed | 15/15 tests passed |
 | Batch 17 | ✓ Passed | 6/6 tests passed |
@@ -82,23 +82,9 @@
 | Batch 74 | ✓ Passed | 4/4 tests passed |
 | Batch _bugs | ✓ Passed | 5/5 tests passed |
 
-## Detailed Observations for Failing Batches
+## Detailed Observations
 
-### Batch 14 (While Loop Integration)
-- **Status**: 1/11 passed
-- **Failing Tests**:
-    - `test_WhileLoopIntegration_BoolCondition`
-    - `test_WhileLoopIntegration_IntCondition`
-    - `test_WhileLoopIntegration_PointerCondition`
-    - `test_WhileLoopIntegration_WithBreak`
-    - `test_WhileLoopIntegration_WithContinue`
-    - `test_WhileLoopIntegration_NestedWhile`
-    - `test_WhileLoopIntegration_Scoping`
-    - `test_WhileLoopIntegration_ComplexCondition`
-    - `test_WhileLoopIntegration_AllowBracelessWhile`
-    - `test_WhileLoopIntegration_EmptyWhileBlock`
-- **Observation**: These tests fail due to an emission mismatch. The tests expect a labeled-goto pattern (e.g., `__loop_0_start: ... goto __loop_0_start;`) for all while loops, which is the strategy implemented in the real `C89Emitter`. However, these integration tests use `MockC89Emitter` to verify emission, and `MockC89Emitter` still produces standard C `while` loops for simple cases without explicit labels or continue expressions. This results in a mismatch between the expected labeled-goto string and the actual `while` loop string produced by the mock emitter.
-- **One exception**: `test_WhileLoopIntegration_RejectFloatCondition` passed because it's a negative test expecting a type checker abort, which doesn't involve emission.
+All 77 test batches are currently passing. Recent fixes to `MockC89Emitter` and integration test expectations ensured that all batches (including 14, 39, 58, and 61) align with the compiler's universal labeled-goto loop emission strategy.
 
 ## Examples Verification
 
