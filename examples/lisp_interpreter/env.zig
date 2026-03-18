@@ -9,15 +9,11 @@ pub const EnvNode = struct {
 
 pub fn env_lookup(name: []const u8, env: ?*EnvNode) !*value_mod.Value {
     var cur = env;
-    while (true) {
-        if (cur) |node| {
-            if (util.mem_eql(node.symbol, name)) {
-                return node.value;
-            }
-            cur = node.next;
-        } else {
-            break;
+    while (cur) |node| {
+        if (util.mem_eql(node.symbol, name)) {
+            return node.value;
         }
+        cur = @ptrCast(?*EnvNode, node.next);
     }
     return error.UnboundSymbol;
 }
