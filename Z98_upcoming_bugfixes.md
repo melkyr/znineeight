@@ -189,6 +189,13 @@ If you are still seeing slices accepted, verify that the condition type is indee
 - **Potential large range expansion** – Ranges like `0...1000` generate 1001 case labels, which may blow up code size. This is a known bootstrap limitation.
 - **Pointer-to-array detection in `visitArraySlice`** – Already handled correctly.
 
+## 21. [RESOLVED] Optional Pointer Comparison and Member Access
+**Symptoms:** `if (opt != null)` fails with type mismatch; `@ptrCast` on optionals rejected without helpful hint.
+**Fix:**
+1.  **Null Comparison**: Allowed `==` and `!=` between any optional type and `null` in `TypeChecker::checkBinaryOperation`.
+2.  **Member Access**: Added read-only `.value` and `.has_value` fields for optional types in `TypeChecker::visitMemberAccess` and `TypeChecker::isLValueConst`.
+3.  **Improved Diagnostics**: Updated `@ptrCast` error message to suggest using `.value` when the source is an optional.
+
 ---
 
 ## 20. [RESOLVED] Cross-Module Symbol Visibility (Discovery Order Issue)

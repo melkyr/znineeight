@@ -2153,6 +2153,34 @@ void C89Emitter::emitUnaryOp(const ASTUnaryOpNode& node) {
 }
 
 void C89Emitter::emitBinaryOp(const ASTBinaryOpNode& node) {
+    /* Optional vs null comparisons. */
+    Type* left_type = node.left->resolved_type;
+    Type* right_type = node.right->resolved_type;
+
+    if ((left_type && left_type->kind == TYPE_OPTIONAL && right_type && right_type->kind == TYPE_NULL) ||
+        (left_type && left_type->kind == TYPE_NULL && right_type && right_type->kind == TYPE_OPTIONAL)) {
+
+        const ASTNode* opt_node = (left_type && left_type->kind == TYPE_OPTIONAL) ? node.left : node.right;
+
+        if (node.op == TOKEN_EQUAL_EQUAL) {
+            writeString("(!");
+            emitExpression(opt_node);
+            writeString(".has_value)");
+        } else if (node.op == TOKEN_BANG_EQUAL) {
+            writeString("(");
+            emitExpression(opt_node);
+            writeString(".has_value)");
+        } else {
+            /* Fallback (should be rejected by type checker) */
+            emitExpression(node.left);
+            writeString(" ");
+            writeString(getTokenSpelling(node.op));
+            writeString(" ");
+            emitExpression(node.right);
+        }
+        return;
+    }
+
     emitExpression(node.left);
     writeString(" ");
     writeString(getTokenSpelling(node.op));

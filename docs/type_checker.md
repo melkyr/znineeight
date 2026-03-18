@@ -39,6 +39,10 @@ The compiler enforces strict rules for error union and optional compatibility to
 - **Implicit unwrapping** (`!T` -> `T`, `?T` -> `T`) is **strictly prohibited**. Attempting to assign or compare a wrapped type directly with its payload type results in a type mismatch error.
 - **Explicit unwrapping** via `try`, `catch`, `orelse`, or capture is required.
 
+### Optional Member Access and Null Comparison
+- **Member Access**: The type checker allows read-only access to `.value` and `.has_value` on optional types. `.value` returns the payload type, and `.has_value` returns `bool`.
+- **Null Comparison**: `==` and `!=` operators are supported between any `TYPE_OPTIONAL` and `TYPE_NULL`. This allows idiomatic patterns like `if (opt != null)`.
+
 ### AST-Level Wrapping
 To support C89's lack of native error unions and optionals, the `TypeChecker::coerceNode` function performs AST transformations to wrap plain values into their target types.
 - **Error Unions**: Transformed into a `NODE_STRUCT_INITIALIZER` representing a success result (`.is_error = 0`, `.data.payload = value`).
