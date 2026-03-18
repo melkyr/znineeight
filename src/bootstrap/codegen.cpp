@@ -12,7 +12,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -26,7 +26,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -42,7 +42,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
@@ -2686,6 +2686,12 @@ void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
 void C89Emitter::emitTaggedUnionDefinition(Type* type) {
     if (!isTaggedUnion(type)) return;
 
+    /* Ensure tag enum is emitted first */
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+    if (tag_type && tag_type->kind == TYPE_ENUM) {
+        emitTypeDefinition(tag_type);
+    }
+
     ensureForwardDeclaration(type);
 
     writeIndent();
@@ -2699,36 +2705,22 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
-    ensureForwardDeclaration(type);
-
     if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
-    } else if (type->kind == TYPE_STRUCT) {
-        writeIndent();
-        writeString("struct ");
-        writeString(type->c_name ? type->c_name : "/* unknown */");
-        if (type->as.struct_details.fields) {
-            writeString(" ");
-            emitStructBody(type);
-            writeString(";\n\n");
-        } else {
-            writeString("; /* opaque */\n\n");
+        return;
+    }
+
+    if (type->kind == TYPE_ENUM) {
+        const char* enum_name = type->c_name ? type->c_name : getC89GlobalName(type->as.enum_details.name);
+        
+        /* Check cache to avoid duplicate emission */
+        for (size_t i = 0; i < emitted_enums_.length(); ++i) {
+            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) return;
         }
-    } else if (type->kind == TYPE_UNION) {
-        writeIndent();
-        writeString("union ");
-        writeString(type->c_name ? type->c_name : "/* unknown */");
-        if (type->as.struct_details.fields) {
-            writeString(" ");
-            emitUnionBody(type);
-            writeString(";\n\n");
-        } else {
-            writeString("; /* opaque union */\n\n");
-        }
-    } else if (type->kind == TYPE_ENUM) {
+        emitted_enums_.append(enum_name);
+
         writeIndent();
         writeString("enum ");
-        const char* enum_name = type->c_name ? type->c_name : "/* unknown */";
         writeString(enum_name);
         writeString(" {\n");
         {
@@ -2759,6 +2751,33 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeString(" ");
         writeString(enum_name);
         writeString(";\n\n");
+        return;
+    }
+
+    ensureForwardDeclaration(type);
+
+    if (type->kind == TYPE_STRUCT) {
+        writeIndent();
+        writeString("struct ");
+        writeString(type->c_name ? type->c_name : "/* unknown */");
+        if (type->as.struct_details.fields) {
+            writeString(" ");
+            emitStructBody(type);
+            writeString(";\n\n");
+        } else {
+            writeString("; /* opaque */\n\n");
+        }
+    } else if (type->kind == TYPE_UNION) {
+        writeIndent();
+        writeString("union ");
+        writeString(type->c_name ? type->c_name : "/* unknown */");
+        if (type->as.struct_details.fields) {
+            writeString(" ");
+            emitUnionBody(type);
+            writeString(";\n\n");
+        } else {
+            writeString("; /* opaque union */\n\n");
+        }
     } else if (type->kind == TYPE_SLICE) {
         ensureSliceType(type);
     } else if (type->kind == TYPE_ERROR_UNION) {
