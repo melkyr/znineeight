@@ -72,6 +72,15 @@ struct EnumMember {
 };
 
 /**
+ * @struct DependentNode
+ * @brief Represents a node in a linked list of types that depend on a placeholder.
+ */
+struct DependentNode {
+    Type* type;
+    DependentNode* next;
+};
+
+/**
  * @struct Type
  * @brief Represents a type within the bootstrap compiler's type system.
  */
@@ -152,7 +161,8 @@ struct Type {
             const char* name;
             struct ASTNode* decl_node;
             struct Module* module;
-            DynamicArray<Type*>* dependents;
+            DependentNode* dependents_head;
+            DependentNode* dependents_tail;
         } placeholder;
     } as;
 };

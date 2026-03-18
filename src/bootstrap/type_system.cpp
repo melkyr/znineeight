@@ -126,15 +126,20 @@ bool isTypeComplete(Type* type);
 static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent) {
     if (!base || !dependent) return;
     if (base->kind == TYPE_PLACEHOLDER) {
-        if (!base->as.placeholder.dependents) {
-            void* mem = arena.alloc(sizeof(DynamicArray<Type*>));
-            base->as.placeholder.dependents = new (mem) DynamicArray<Type*>(arena);
+        // Check for duplicates to avoid growing the list unnecessarily
+        for (DependentNode* n = base->as.placeholder.dependents_head; n; n = n->next) {
+            if (n->type == dependent) return;
         }
-        // Check for duplicates to avoid growing the array unnecessarily
-        for (size_t i = 0; i < base->as.placeholder.dependents->length(); ++i) {
-            if ((*base->as.placeholder.dependents)[i] == dependent) return;
+        DependentNode* node = (DependentNode*)arena.alloc(sizeof(DependentNode));
+        node->type = dependent;
+        node->next = NULL;
+        if (base->as.placeholder.dependents_tail) {
+            base->as.placeholder.dependents_tail->next = node;
+            base->as.placeholder.dependents_tail = node;
+        } else {
+            base->as.placeholder.dependents_head = node;
+            base->as.placeholder.dependents_tail = node;
         }
-        base->as.placeholder.dependents->append(dependent);
     } else {
         // Recursive registration for composite types that might contain placeholders
         switch (base->kind) {

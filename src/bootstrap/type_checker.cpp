@@ -199,7 +199,8 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
                 placeholder->owner_module = placeholder->as.placeholder.module;
-                placeholder->as.placeholder.dependents = NULL;
+                placeholder->as.placeholder.dependents_head = NULL;
+                placeholder->as.placeholder.dependents_tail = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
 
@@ -2274,7 +2275,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     /* Mutate placeholder in place */
     if (resolved && resolved != placeholder) {
         /* Capture dependencies before mutation */
-        DynamicArray<Type*>* dependents = placeholder->as.placeholder.dependents;
+        DependentNode* dependents_head = placeholder->as.placeholder.dependents_head;
 
         /* If resolved is TYPE_TYPE, we want the underlying type */
         if (resolved->kind == TYPE_TYPE) {
@@ -2296,10 +2297,12 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             }
             placeholder->as = resolved->as;
 
-            if (dependents) {
-                for (size_t i = 0; i < dependents->length(); ++i) {
-                    refreshLayout((*dependents)[i]);
-                }
+            /* Once mutated, the type is no longer a placeholder, so registerDependent
+               will never append new dependents to it. We process the captured list once. */
+            while (dependents_head) {
+                DependentNode* current = dependents_head;
+                dependents_head = dependents_head->next;
+                refreshLayout(current->type);
             }
         }
     }
@@ -2729,7 +2732,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
         placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
         placeholder->owner_module = placeholder->as.placeholder.module;
-        placeholder->as.placeholder.dependents = NULL;
+        placeholder->as.placeholder.dependents_head = NULL;
+        placeholder->as.placeholder.dependents_tail = NULL;
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 

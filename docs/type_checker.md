@@ -19,6 +19,8 @@ The compiler supports mutually recursive and self-referencing types using a plac
 ### Placeholder Mechanism
 - **Initialization**: When resolving a type declaration (struct, union, or enum), a `TYPE_PLACEHOLDER` is inserted into the symbol table.
 - **Lazy Resolution**: During field resolution, if a type is still a placeholder, it is resolved via `resolvePlaceholder`. This ensures that forward-declared types are correctly handled.
+- **Dependents List**: Each placeholder maintains a linked list of `DependentNode` structures. Types that depend on the placeholder (e.g., pointers or arrays) are registered in this list.
+- **Resolution and Refresh**: When a placeholder is resolved to a concrete type, the list of dependents is captured and detached before the placeholder `Type` union is mutated. The `refreshLayout` function is then called on each dependent to update its size and alignment based on the newly resolved type.
 - **Completeness Checks**: Fields in aggregate types are resolved before checking for completeness via `isTypeComplete`.
 
 ## Tagged Union and Switch Captures
