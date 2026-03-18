@@ -77,7 +77,15 @@ public:
 ```
 * **Usage:** AST Nodes, Types, and Symbols are allocated here. A transient `token_arena` is used during parsing and reset immediately after to free memory early.
 
-#### 3.1.1.2 Expected Type Stack
+3.1.1.2 Placeholder Dependents Linked List (Task 229 Bugfix)
+* **Concept:** When a recursive type is encountered, a `TYPE_PLACEHOLDER` is created. Any type that depends on it (e.g., a pointer to it) must be refreshed once the placeholder is resolved.
+* **Implementation:** Replaced the `DynamicArray<Type*>*` in the placeholder union with a linked list of `DependentNode` structures.
+* **Benefits:**
+  - **Robustness**: Avoids `DynamicArray` reallocation issues and iterator invalidation during cross-module resolution.
+  - **Memory Efficiency**: Nodes are individually allocated from the arena, matching the 16MB constraint.
+  - **Order Safety**: Resolution logic captures the list head *before* mutating the placeholder union, ensuring that the mutation doesn't corrupt the list before it's processed.
+
+3.1.1.3 Expected Type Stack
 * **Concept:** A stack-based mechanism in the `TypeChecker` used for downward type inference.
 * **Implementation:** `DynamicArray<Type*>` allocated from the `CompilationUnit` arena.
 * **Management:** Uses RAII `ExpectedTypeGuard` to ensure balanced push/pop operations during AST traversal.
