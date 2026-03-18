@@ -134,6 +134,7 @@ const char* ErrorHandler::getMessage(ErrorCode code) {
         case ERR_OUT_OF_MEMORY:                 return "out of memory";
         case ERR_INTERNAL_ERROR:                return "internal compiler error";
         case ERR_FILE_NOT_FOUND:                return "file not found";
+        case ERR_CIRCULAR_IMPORT:               return "circular import detected";
 
         default:                                return "unknown error";
     }
