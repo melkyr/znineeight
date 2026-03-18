@@ -12,15 +12,11 @@ var global_symbol_list: ?*SymbolNode = null;
 
 pub fn intern_symbol(name: []const u8, arena: *value_mod.arena_mod.LispArena) !*value_mod.Value {
     var cur = global_symbol_list;
-    while (true) {
-        if (cur) |node| {
-            if (util.mem_eql(node.name, name)) {
-                return node.value;
-            }
-            cur = node.next;
-        } else {
-            break;
+    while (cur) |node| {
+        if (util.mem_eql(node.name, name)) {
+            return node.value;
         }
+        cur = @ptrCast(?*SymbolNode, node.next);
     }
 
     // Allocate name in perm_arena

@@ -28,7 +28,11 @@ fn print_value(v: *value_mod.Value) void {
     } else if (v.tag == value_mod.ValueTag.Int) {
         __bootstrap_print_int(@intCast(i32, v.data.Int));
     } else if (v.tag == value_mod.ValueTag.Bool) {
-        print_str(if (v.data.Bool) "true" else "false");
+        if (v.data.Bool) {
+            print_str("true");
+        } else {
+            print_str("false");
+        }
     } else if (v.tag == value_mod.ValueTag.Symbol) {
         print_str(v.data.Symbol);
     } else if (v.tag == value_mod.ValueTag.Builtin) {
@@ -64,19 +68,20 @@ fn read_line(buf: []u8) ![]u8 {
     var i: usize = 0;
     while (i < buf.len) {
         const c = getchar();
-        if (c == -1 or c == '\n') break;
-        buf[i] = @intCast(u8, c);
+        const ic = @intCast(i32, c);
+        if (ic == -1 or ic == 10) break;
+        buf[i] = @intCast(u8, ic);
         i += 1;
     }
     return buf[0..i];
 }
 
 pub fn main() !void {
-    var perm_buf: [1024 * 1024]u8 = undefined;
-    var temp_buf: [1024 * 1024]u8 = undefined;
+    var perm_buf: [1048576]u8 = undefined;
+    var temp_buf: [1048576]u8 = undefined;
 
-    var perm_arena = arena_mod.lisp_arena_init(&perm_buf);
-    var temp_arena = arena_mod.lisp_arena_init(&temp_buf);
+    var perm_arena = arena_mod.lisp_arena_init(perm_buf[0..1048576]);
+    var temp_arena = arena_mod.lisp_arena_init(temp_buf[0..1048576]);
 
     var global_env: ?*env_mod.EnvNode = null;
 
