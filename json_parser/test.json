@@ -1,0 +1,10 @@
+{
+    "name": "RetroZig",
+    "version": 0,
+    "active": true,
+    "features": ["compiler", "bootstrap", "Z98"],
+    "meta": {
+        "status": "alpha",
+        "bugs": null
+    }
+}

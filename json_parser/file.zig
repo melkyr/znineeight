@@ -7,6 +7,7 @@ extern fn fseek(file: *File, offset: i64, whence: i32) i32;
 extern fn ftell(file: *File) i64;
 extern fn ferror(file: *File) i32;
 extern fn feof(file: *File) i32;
+pub extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;
 
 const SEEK_END: i32 = 2;
 const SEEK_SET: i32 = 0;

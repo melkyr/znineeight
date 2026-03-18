@@ -1,31 +1,14 @@
 const file = @import("file.zig");
-const arena_mod = @import("arena.zig");
 
-pub const JsonValueTag = enum {
+pub const JsonItem = struct { key: []const u8, value: ?*JsonValue };
+
+pub const JsonValue = union(enum) {
     Null,
-    Boolean,
-    Number,
-    String,
-    Array,
-    Object,
-};
-
-pub const JsonObjectEntry = struct {
-    key: []const u8,
-    value: *JsonValue,
-};
-
-pub const JsonData = union {
-    boolean: bool,
-    number: f64,
-    string: []const u8,
-    array: []JsonValue,
-    object: []JsonObjectEntry,
-};
-
-pub const JsonValue = struct {
-    tag: JsonValueTag,
-    data: JsonData,
+    Boolean: bool,
+    Number: f64,
+    String: []const u8,
+    Array: []JsonValue,
+    Object: []JsonItem,
 };
 
 pub const ParseError = error{
@@ -44,22 +27,16 @@ const Parser = struct {
     arena: *void,
 };
 
-fn parser_peek(self: *Parser) u8 {
-    if (self.pos < self.input.len) {
-        return self.input[self.pos];
-    } else {
-        const nul: u8 = 0;
-        return nul;
-    }
+fn parserPeek(self: *Parser) u8 {
+    const zero: u8 = 0;
+    return if (self.pos < self.input.len) self.input[self.pos] else zero;
 }
 
-fn parser_advance(self: *Parser) void {
-    if (self.pos < self.input.len) {
-        self.pos += 1;
-    }
+fn parserAdvance(self: *Parser) void {
+    if (self.pos < self.input.len) self.pos += 1;
 }
 
-fn parser_skipWhitespace(self: *Parser) void {
+fn parserSkipWhitespace(self: *Parser) void {
     while (self.pos < self.input.len) {
         const ch = self.input[self.pos];
         if (ch == ' ' or ch == '\t' or ch == '\n' or ch == '\r') {
@@ -70,108 +47,97 @@ fn parser_skipWhitespace(self: *Parser) void {
     }
 }
 
-fn parser_expect(self: *Parser, c: u8) ParseError!void {
-    if (parser_peek(self) != c) {
-        return error.ExpectedValue;
-    }
-    parser_advance(self);
+fn parserExpect(self: *Parser, c: u8) ParseError!void {
+    if (parserPeek(self) != c) return error.ExpectedValue;
+    parserAdvance(self);
 }
 
-pub fn parseJson(arena: *void, input: []const u8) ParseError!JsonValue {
+pub fn parseJson(arena: *void, input: []const u8) ParseError!*JsonValue {
     const zero: usize = 0;
-    var p = Parser{
-        .input = input,
-        .pos = zero,
-        .arena = arena,
-    };
+    var p = Parser{ .input = input, .pos = zero, .arena = arena };
     const result = try parseValue(&p);
-    parser_skipWhitespace(&p);
-    if (p.pos < p.input.len) { return error.InvalidSyntax; }
-    return result;
+    parserSkipWhitespace(&p);
+    if (p.pos < p.input.len) return error.InvalidSyntax;
+
+    const res_ptr = @ptrCast(*JsonValue, arena_alloc_default(@sizeOf(JsonValue)));
+    res_ptr.* = result;
+    return res_ptr;
 }
 
 fn parseValue(p: *Parser) ParseError!JsonValue {
-    parser_skipWhitespace(p);
-    const ch = parser_peek(p);
-    if (ch == 'n') { return try parseNull(p); }
-    if (ch == 't' or ch == 'f') { return try parseBoolean(p); }
-    if (ch == '"') { return try parseString(p); }
-    if ((ch >= '0' and ch <= '9') or ch == '-') { return try parseNumber(p); }
-    if (ch == '[') { return try parseArray(p); }
-    if (ch == '{') { return try parseObject(p); }
-    return error.ExpectedValue;
+    parserSkipWhitespace(p);
+    const ch = parserPeek(p);
+    if (ch == 'n') {
+        return try parseNull(p);
+    } else if (ch == 't' or ch == 'f') {
+        return try parseBoolean(p);
+    } else if (ch == '"') {
+        return try parseString(p);
+    } else if ((ch >= '0' and ch <= '9') or ch == '-') {
+        return try parseNumber(p);
+    } else if (ch == '[') {
+        return try parseArray(p);
+    } else if (ch == '{') {
+        return try parseObject(p);
+    } else {
+        return error.ExpectedValue;
+    }
 }
 
 fn parseNull(p: *Parser) ParseError!JsonValue {
-    if (p.input.len - p.pos < 4) { return error.InvalidSyntax; }
-    // Simple string comparison for "null"
+    if (p.input.len - p.pos < 4) return error.InvalidSyntax;
     if (p.input[p.pos] == 'n' and p.input[p.pos+1] == 'u' and p.input[p.pos+2] == 'l' and p.input[p.pos+3] == 'l') {
         p.pos += 4;
-        var val: JsonValue = undefined;
-        val.tag = JsonValueTag.Null;
-        return val;
+        return JsonValue{ .Null = {} };
     }
     return error.InvalidSyntax;
 }
 
 fn parseBoolean(p: *Parser) ParseError!JsonValue {
-    if (p.input.len - p.pos >= 4 and p.input[p.pos] == 't' and p.input[p.pos+1] == 'r' and p.input[p.pos+2] == 'u' and p.input[p.pos+3] == 'e') {
-        p.pos += 4;
-        var val_true: JsonValue = undefined;
-        val_true.tag = JsonValueTag.Boolean;
-        val_true.data.boolean = true;
-        return val_true;
+    if (p.input.len - p.pos >= 4) {
+        if (p.input[p.pos] == 't' and p.input[p.pos+1] == 'r' and p.input[p.pos+2] == 'u' and p.input[p.pos+3] == 'e') {
+            p.pos += 4;
+            return JsonValue{ .Boolean = true };
+        }
     }
-    if (p.input.len - p.pos >= 5 and p.input[p.pos] == 'f' and p.input[p.pos+1] == 'a' and p.input[p.pos+2] == 'l' and p.input[p.pos+3] == 's' and p.input[p.pos+4] == 'e') {
-        p.pos += 5;
-        var val_false: JsonValue = undefined;
-        val_false.tag = JsonValueTag.Boolean;
-        val_false.data.boolean = false;
-        return val_false;
+    if (p.input.len - p.pos >= 5) {
+        if (p.input[p.pos] == 'f' and p.input[p.pos+1] == 'a' and p.input[p.pos+2] == 'l' and p.input[p.pos+3] == 's' and p.input[p.pos+4] == 'e') {
+            p.pos += 5;
+            return JsonValue{ .Boolean = false };
+        }
     }
     return error.InvalidSyntax;
 }
 
 fn parseString(p: *Parser) ParseError!JsonValue {
-    try parser_expect(p, '"');
+    try parserExpect(p, '"');
     const start = p.pos;
     while (p.pos < p.input.len) {
-        if (p.input[p.pos] == '"') { break; }
-        if (p.input[p.pos] == '\\') {
-             p.pos += 1; // skip escape char
-        }
+        if (p.input[p.pos] == '"') break;
+        if (p.input[p.pos] == '\\') p.pos += 1;
         p.pos += 1;
     }
-    if (p.pos >= p.input.len) { return error.UnexpectedEnd; }
+    if (p.pos >= p.input.len) return error.UnexpectedEnd;
     const slice = p.input[start..p.pos];
-    try parser_expect(p, '"');
-
-    var val: JsonValue = undefined;
-    val.tag = JsonValueTag.String;
-    val.data.string = slice;
-    return val;
+    try parserExpect(p, '"');
+    return JsonValue{ .String = slice };
 }
 
 fn parseNumber(p: *Parser) ParseError!JsonValue {
     const start = p.pos;
-    if (parser_peek(p) == '-') { parser_advance(p); }
-    while (isDigit(parser_peek(p))) { parser_advance(p); }
-    if (parser_peek(p) == '.') {
-        parser_advance(p);
-        while (isDigit(parser_peek(p))) { parser_advance(p); }
+    if (parserPeek(p) == '-') parserAdvance(p);
+    while (isDigit(parserPeek(p))) parserAdvance(p);
+    if (parserPeek(p) == '.') {
+        parserAdvance(p);
+        while (isDigit(parserPeek(p))) parserAdvance(p);
     }
-    if (parser_peek(p) == 'e' or parser_peek(p) == 'E') {
-        parser_advance(p);
-        if (parser_peek(p) == '+' or parser_peek(p) == '-') { parser_advance(p); }
-        while (isDigit(parser_peek(p))) { parser_advance(p); }
+    if (parserPeek(p) == 'e' or parserPeek(p) == 'E') {
+        parserAdvance(p);
+        if (parserPeek(p) == '+' or parserPeek(p) == '-') parserAdvance(p);
+        while (isDigit(parserPeek(p))) parserAdvance(p);
     }
     const slice = p.input[start..p.pos];
-    const val_num = parseFloat(slice);
-
-    var val: JsonValue = undefined;
-    val.tag = JsonValueTag.Number;
-    val.data.number = val_num;
-    return val;
+    return JsonValue{ .Number = parseFloat(slice) };
 }
 
 fn isDigit(c: u8) bool {
@@ -181,133 +147,107 @@ fn isDigit(c: u8) bool {
 fn parseFloat(s: []const u8) f64 {
     var buf: [64]u8 = undefined;
     var i: usize = 0;
-    const buf_len: usize = 64;
-    const one: usize = 1;
-    while (i < s.len and i < buf_len - one) {
+    while (i < s.len and i < 63) {
         buf[i] = s[i];
         i += 1;
     }
     buf[i] = 0;
-    const endptr_null: ?[*]const c_char = null;
-    return strtod(@ptrCast([*]const c_char, &buf[0]), endptr_null);
+    return file.strtod(@ptrCast([*]const c_char, &buf[0]), null);
 }
 
-extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;
-
 fn parseArray(p: *Parser) ParseError!JsonValue {
-    try parser_expect(p, '[');
-    parser_skipWhitespace(p);
-
-    // First pass: count elements
+    try parserExpect(p, '[');
+    parserSkipWhitespace(p);
     var count: usize = 0;
-    const saved_pos = p.pos;
-    if (parser_peek(p) != ']') {
+    const saved = p.pos;
+    if (parserPeek(p) != ']') {
         while (true) {
             _ = try parseValue(p);
             count += 1;
-            parser_skipWhitespace(p);
-            if (parser_peek(p) == ',') {
-                parser_advance(p);
-                parser_skipWhitespace(p);
+            parserSkipWhitespace(p);
+            if (parserPeek(p) == ',') {
+                parserAdvance(p);
+                parserSkipWhitespace(p);
                 continue;
             }
             break;
         }
-        if (parser_peek(p) != ']') { return error.ExpectedCommaOrEnd; }
+        if (parserPeek(p) != ']') return error.ExpectedCommaOrEnd;
     }
-
-    // Restore position to just after '['
-    p.pos = saved_pos;
-
-    // Allocate array
-    const bytes = arena_mod.alloc_bytes(count * @sizeOf(JsonValue));
-    const arr = @ptrCast([*]JsonValue, bytes.ptr)[0..count];
-
+    p.pos = saved;
+    const arr = @ptrCast([*]JsonValue, arena_alloc_default(count * @sizeOf(JsonValue)))[0..count];
     var idx: usize = 0;
-    if (parser_peek(p) != ']') {
+    if (parserPeek(p) != ']') {
         while (idx < count) {
             arr[idx] = try parseValue(p);
             idx += 1;
-            parser_skipWhitespace(p);
-            if (parser_peek(p) == ',') {
-                parser_advance(p);
-                parser_skipWhitespace(p);
+            parserSkipWhitespace(p);
+            if (parserPeek(p) == ',') {
+                parserAdvance(p);
+                parserSkipWhitespace(p);
                 continue;
             }
             break;
         }
     }
-    try parser_expect(p, ']');
-
-    var val: JsonValue = undefined;
-    val.tag = JsonValueTag.Array;
-    val.data.array = arr;
-    return val;
+    try parserExpect(p, ']');
+    return JsonValue{ .Array = arr };
 }
 
 fn parseObject(p: *Parser) ParseError!JsonValue {
-    try parser_expect(p, '{');
-    parser_skipWhitespace(p);
-
+    try parserExpect(p, '{');
+    parserSkipWhitespace(p);
     var count: usize = 0;
-    const saved_pos = p.pos;
-    if (parser_peek(p) != '}') {
+    const saved = p.pos;
+    if (parserPeek(p) != '}') {
         while (true) {
-            const keyVal = try parseString(p);
-            _ = keyVal;
-            parser_skipWhitespace(p);
-            try parser_expect(p, ':');
+            _ = try parseString(p);
+            parserSkipWhitespace(p);
+            try parserExpect(p, ':');
             _ = try parseValue(p);
             count += 1;
-            parser_skipWhitespace(p);
-            if (parser_peek(p) == ',') {
-                parser_advance(p);
-                parser_skipWhitespace(p);
+            parserSkipWhitespace(p);
+            if (parserPeek(p) == ',') {
+                parserAdvance(p);
+                parserSkipWhitespace(p);
                 continue;
             }
             break;
         }
-        if (parser_peek(p) != '}') { return error.ExpectedCommaOrEnd; }
+        if (parserPeek(p) != '}') return error.ExpectedCommaOrEnd;
     }
-
-    p.pos = saved_pos;
-
-    const bytes = arena_mod.alloc_bytes(count * @sizeOf(JsonObjectEntry));
-    const fields = @ptrCast([*]JsonObjectEntry, bytes.ptr)[0..count];
-
+    p.pos = saved;
+    const fields = @ptrCast([*]JsonItem, arena_alloc_default(count * @sizeOf(JsonItem)))[0..count];
     var idx: usize = 0;
-    if (parser_peek(p) != '}') {
+    if (parserPeek(p) != '}') {
         while (idx < count) {
             const keyVal = try parseString(p);
-            const key = keyVal.data.string;
-            parser_skipWhitespace(p);
-            try parser_expect(p, ':');
-            const val_inner = try parseValue(p);
+            var key: []const u8 = undefined;
+            switch (keyVal) {
+                .String => |s| { key = s; },
+                else => { unreachable; }
+            }
+            parserSkipWhitespace(p);
+            try parserExpect(p, ':');
+            const val = try parseValue(p);
+            const val_ptr = @ptrCast(*JsonValue, arena_alloc_default(@sizeOf(JsonValue)));
 
-            // Allocate memory for the value since JsonObjectEntry stores a pointer
-            const val_ptr_bytes = arena_mod.alloc_bytes(@sizeOf(JsonValue));
-            const val_ptr = @ptrCast(*JsonValue, val_ptr_bytes.ptr);
-
-            // Manual field assignments to avoid potential issues with struct copy in union context
-            val_ptr.tag = val_inner.tag;
-            val_ptr.data = val_inner.data;
+            val_ptr.* = val;
 
             fields[idx].key = key;
             fields[idx].value = val_ptr;
             idx += 1;
-            parser_skipWhitespace(p);
-            if (parser_peek(p) == ',') {
-                parser_advance(p);
-                parser_skipWhitespace(p);
+            parserSkipWhitespace(p);
+            if (parserPeek(p) == ',') {
+                parserAdvance(p);
+                parserSkipWhitespace(p);
                 continue;
             }
             break;
         }
     }
-    try parser_expect(p, '}');
-
-    var val: JsonValue = undefined;
-    val.tag = JsonValueTag.Object;
-    val.data.object = fields;
-    return val;
+    try parserExpect(p, '}');
+    return JsonValue{ .Object = fields };
 }
+
+extern fn arena_alloc_default(size: usize) *void;
