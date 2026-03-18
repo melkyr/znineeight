@@ -84,7 +84,7 @@ TEST_FUNC(DeferIntegration_Break) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for break */ { bar(); } goto __loop_0_end; } }");
+    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for break */ { bar(); } goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_LabeledBreak) {
@@ -101,7 +101,7 @@ TEST_FUNC(DeferIntegration_LabeledBreak) {
         "fn a() void {}\n"
         "fn b() void {}";
     // Redundant a() at the end of outer block is acceptable as it is unreachable.
-    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { while (1) { /* defers for break */ { b(); } { a(); } goto __loop_0_end; } { a(); } } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { __loop_1_start: ; if (!(1)) goto __loop_1_end; { /* defers for break */ { b(); } { a(); } goto __loop_0_end; } __loop_1_continue: ; goto __loop_1_start; __loop_1_end: ; { a(); } } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_Continue) {
@@ -113,7 +113,7 @@ TEST_FUNC(DeferIntegration_Continue) {
         "    }\n"
         "}\n"
         "fn bar() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { /* defers for continue */ { bar(); } goto __loop_0_continue; } }");
+    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for continue */ { bar(); } goto __loop_0_continue; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_NestedContinue) {
@@ -129,7 +129,7 @@ TEST_FUNC(DeferIntegration_NestedContinue) {
         "}\n"
         "fn a() void {}\n"
         "fn b() void {}";
-    return run_defer_test(source, "foo", "void foo(void) { while (1) { { /* defers for continue */ { b(); } { a(); } goto __loop_0_continue; } } }");
+    return run_defer_test(source, "foo", "void foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { { /* defers for continue */ { b(); } { a(); } goto __loop_0_continue; } } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(DeferIntegration_RejectReturn) {

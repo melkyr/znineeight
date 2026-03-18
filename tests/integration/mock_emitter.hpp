@@ -399,13 +399,12 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        bool has_continue_expr = (node->iter_expr != NULL);
-        if (node->label || has_continue_expr) {
-            ss << "__loop_" << node->label_id << "_start: ; ";
-            ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
-        } else {
-            ss << "while (" << (node->condition ? emitExpression(node->condition) : "1") << ") ";
-        }
+        // Note: Real emitter now ALWAYS uses labeled goto pattern for all loops
+        // to ensure break/continue works correctly in C switch statements.
+        // Integration tests have been updated to expect this.
+
+        ss << "__loop_" << node->label_id << "_start: ; ";
+        ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
 
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
             ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
@@ -413,14 +412,12 @@ public:
             ss << emitExpression(node->body);
         }
 
-        if (node->label || has_continue_expr) {
-            ss << " __loop_" << node->label_id << "_continue: ; ";
-            if (has_continue_expr) {
-                ss << emitExpression(node->iter_expr) << "; ";
-            }
-            ss << "goto __loop_" << node->label_id << "_start; ";
-            ss << "__loop_" << node->label_id << "_end: ;";
+        ss << " __loop_" << node->label_id << "_continue: ; ";
+        if (node->iter_expr) {
+            ss << emitExpression(node->iter_expr) << "; ";
         }
+        ss << "goto __loop_" << node->label_id << "_start; ";
+        ss << "__loop_" << node->label_id << "_end: ;";
 
         return ss.str();
     }
@@ -445,8 +442,8 @@ public:
     std::string emitBreakStatement(const ASTBreakStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id);
-            if (!defers.empty()) ss << "/* defers for break */ " << defers;
+            ss << "/* defers for break */ ";
+            ss << emitDefersForScopeExit(node->target_label_id);
         }
 
         // Mock simplified: always use labeled break if ID is valid
@@ -464,8 +461,8 @@ public:
     std::string emitContinueStatement(const ASTContinueStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id);
-            if (!defers.empty()) ss << "/* defers for continue */ " << defers;
+            ss << "/* defers for continue */ ";
+            ss << emitDefersForScopeExit(node->target_label_id);
         }
 
         if (node->target_label_id >= 0) {
