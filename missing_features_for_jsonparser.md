@@ -1,74 +1,57 @@
-# Findings from the JSON Parser "Baptism of Fire"
+# Detailed Findings from the JSON Parser "Baptism of Fire"
 
-This document records the issues, bugs, and limitations discovered while attempting to compile a modern Z98 JSON parser.
+This document records the issues, bugs, and limitations discovered while attempting to compile and run both downgraded and advanced Z98 JSON parsers.
 
-## 1. Syntax & Parser Constraints
+## 1. Summary of Performance
+- **Peak Memory Usage (Compiler)**: ~517 KB (0.5 MB) during compilation of the advanced multi-file parser.
+- **Limit Verification**: Well within the 16MB technical constraint (< 4% of target limit).
 
-### Braceless Switch Prongs Semicolon Requirement
-- **Status**: Required.
-- **Observation**: When using the `=>` syntax in a switch without braces, a semicolon is required before the comma if the body is a statement (like `return`).
-- **Example**:
-  ```zig
-  switch (ch) {
-      'n' => return try parseNull(p);, // Semicolon required here
-      else => return error.ExpectedValue;,
-  }
-  ```
+## 2. Syntax & Parser Constraints
 
-### Braceless `if`/`while` bodies
-- **Status**: Supported, but normalized to blocks in the lifter.
+### Braceless Switch Bodies for Void Payloads
+- **Status**: **QUIRK IDENTIFIED**
+- **Observation**: Switch prongs matching a `void` payload (e.g., `.Null => ...`) that consisted of a single expression-statement would sometimes fail to emit correctly or cause "Unimplemented statement type" in C output if not wrapped in a block `{}`.
+- **Workaround**: Always use an explicit block for switch prong bodies: `.Null => { doSomething(); },`.
 
-### Switch Capture Limitations
-- **Status**: Supported for tagged unions, but the syntax is sensitive. Braces are recommended for complex bodies.
+### Slicing Syntax (Implicit End)
+- **Status**: **LIMITATION**
+- **Observation**: Syntax like `slice[pos..]` is not supported.
+- **Workaround**: Use explicit end index: `slice[pos..slice.len]`.
 
-## 2. Type System & Semantic Analysis
+### Struct Methods
+- **Status**: **DESIGN LIMITATION** (Confirmed)
+- **Observation**: Attempting to use `fn method(self: *S) ...` inside a `struct` declaration results in a syntax error.
+- **Workaround**: Use top-level functions that take a pointer to the struct: `fn structMethod(self: *S) ...`.
 
-### Recursive Type Completeness
-- **Status**: Pointers required.
-- **Observation**: Types containing slices of themselves (e.g., `Array: []JsonValue` inside `JsonValue`) often result in "incomplete type" errors during layout calculation.
-- **Workaround**: Use pointers for recursion (e.g., `value: *JsonValue`).
+## 3. Type System & Semantic Analysis
 
-### Strict Assignment Compatibility
-- **Status**: Enforced.
-- **Observation**: The compiler is very strict about identical types in assignments and struct initializers. `i32` literals do not always implicitly coerce to `usize` in these contexts.
-- **Workaround**: Use explicit types or ensured literals (e.g., `const zero: usize = 0;`).
+### Strict Numeric Coercion
+- **Status**: **DESIGN LIMITATION** (Confirmed)
+- **Observation**: `i32` literals do not implicitly coerce to `usize` in many contexts, including struct initializers and switch conditions.
+- **Workaround**: Use explicit `@intCast(usize, value)` or ensure variables are declared with the exact expected type.
 
-### If Expression Branch Consistency
-- **Status**: Enforced.
-- **Observation**: Branches of an `if` expression must have exactly the same type. No implicit widening between branches.
+### Tagged Union Equality and Assignment
+- **Status**: **QUIRK IDENTIFIED**
+- **Observation**: Direct assignment of tagged unions (e.g., `val_ptr.* = val;`) can sometimes produce invalid C code depending on the complexity of the l-value.
+- **Workaround**: Use an explicit `switch` to decompose the union and re-assign it to the target, or ensure simple l-values are used.
 
-## 3. Code Generation Bugs & Gaps
+## 4. Code Generation & Runtime
 
-### Tagged Union Forward Declaration Bug
-- **Status**: **BUG IDENTIFIED**.
-- **Observation**: Tagged unions are correctly identified as C `structs` in their definitions (Pass 1), but the `CBackend` incorrectly forward-declares them using the `union` keyword in the generated `.h` files (Pass 0).
-- **Impact**: Causes `gcc` error: "defined as wrong kind of tag".
-- **Workaround**: Manually implement tagged unions using a `struct` with an `enum` tag and a bare `union` for data.
+### Implicit `strtod` Declaration
+- **Status**: **BUGFIT**
+- **Observation**: The compiler might not automatically emit a prototype for C standard library functions like `strtod` unless explicitly declared as `extern`.
+- **Workaround**: Add `pub extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;` in the Zig source.
 
-### `unreachable` Statement Missing Emission
-- **Status**: **GAP IDENTIFIED**.
-- **Observation**: The `unreachable` expression is recognized by the parser but results in `/* Unimplemented statement type 4 */` in the generated C code when used as a statement.
+### Pointer-to-Const to Pointer-to-Mutable Slices
+- **Status**: **C89 COMPATIBILITY LIMITATION**
+- **Observation**: Generated code for `__make_slice_T` might discard `const` qualifiers, leading to C compiler warnings.
+- **Impact**: Non-fatal, but generates many warnings.
 
-### Header Dependency Cycle with Error Unions
-- **Status**: **LIMITATION IDENTIFIED**.
-- **Observation**: When a function returns a recursive struct by value in an error union (e.g., `fn foo() !RecursiveStruct`), the generated header emits the `ErrorUnion_RecursiveStruct` definition *before* the `struct RecursiveStruct` definition. In C89, a struct member must be a complete type, so this fails.
-- **Workaround**: Return a pointer instead (e.g., `fn foo() !*RecursiveStruct`).
-
-### 32-bit vs 64-bit ABI Mismatch
-- **Status**: **CORE LIMITATION**.
-- **Observation**: The RetroZig bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment). When generating C code for a 64-bit host, `@sizeOf` values and struct layouts mismatch the 64-bit C compiler's expectations.
-- **Impact**: Severe memory corruption and incorrect behavior at runtime when compiled as 64-bit.
-- **Recommendation**: Always compile the generated C code with `-m32` or on a native 32-bit platform. If `-m32` is unavailable, the bootstrap compiler's `type_system.cpp` must be updated to 64-bit assumptions.
-
-### Incomplete Type definition order
-- **Status**: Investigating.
-- **Observation**: Even with pointers, if a struct refers back to a union that is still being defined, order of emission in the header can cause issues if not forward-declared correctly.
-
-## 4. Successful Features Verified
-- **@import**: Works across multiple files.
-- **Error Unions**: `FileError![]u8` works correctly with `try` and `catch`.
-- **Extern C Interop**: `fopen`, `fread`, etc., are correctly called with `@ptrCast`.
-- **Slices**: `.len` and `.ptr` properties work.
-- **Many-item Pointers**: `[*]u8` works for C string interop.
-- **AST Lifting**: Complex `catch` expressions in `main.zig` were correctly lifted into temporary-variable-based statements.
-- **Single Translation Unit (STU)**: The generated `main.c` correctly includes all module files for a unified compilation.
+## 5. Successful Features Verified (Milestone 9)
+- **Tagged Unions (`union(enum)`)**: Core functionality is working and stable.
+- **Switch Payload Captures (`|val|`)**: Correctly extracts data from unions.
+- **Naked Tags**: Support for `.Null` without `: void` is functional.
+- **Range-based Switch**: `case '0'...'9' => ...` works correctly.
+- **Modular @import**: Multi-file compilation and symbol resolution are fully operational.
+- **Error Unions & `try`/`catch`**: Robust error propagation works across modules.
+- **Arena Allocation**: Integration with `arena_alloc_default` is seamless.

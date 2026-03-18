@@ -51,7 +51,7 @@ public:
     Type* visitExpressionStmt(ASTExpressionStmtNode* node);
     Type* visitSwitchStmt(ASTSwitchStmtNode* node);
     Type* visitSwitchExpr(ASTSwitchExprNode* node);
-    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc);
+    bool validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc, Type* expected_type = NULL);
     bool validateRange(ASTRangeNode* range, Type* cond_type);
     Type* visitVarDecl(ASTNode* parent, ASTVarDeclNode* node);
     Type* visitFnDecl(ASTFnDeclNode* node);
@@ -107,16 +107,23 @@ private:
     Type* checkArithmeticWithLiteralPromotion(Type* left_type, Type* right_type, Zig0TokenType op);
     Type* checkPointerArithmetic(Type* left_type, Type* right_type, Zig0TokenType op, SourceLocation loc);
     bool canLiteralFitInType(Type* literal_type, Type* target_type);
+    bool isPointerIndirectionTo(Type* type, Type* target);
     bool evaluateConstantExpression(ASTNode* node, i64* out_value);
     void catalogGenericInstantiation(ASTFunctionCallNode* node);
     ResolutionResult resolveCallSite(ASTFunctionCallNode* call, CallSiteEntry& entry);
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
     const char* generateImplicitEnumName(const char* union_name);
+    Type* findTaggedUnionPayload(Type* union_type, const char* tag);
     Type* transformExternType(Type* t);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
+
+    Type* resolveTypeConstant(Symbol* sym);
+    Type* getTagType(Type* tu);
+    i64 findEnumMemberValue(Type* enum_type, const char* name);
+    i64 findErrorTagValue(Type* error_set, const char* name);
 public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
@@ -140,6 +147,7 @@ private:
     int current_loop_depth_;
     int type_resolution_depth_;
     int visit_depth_;
+    int in_ptr_indirection_depth_;
     bool in_defer_; ///< True if currently checking a deferred statement.
 
     struct LoopLabel {
@@ -154,6 +162,9 @@ private:
     struct VisitDepthGuard;
     struct ResolutionDepthGuard;
     struct DeferFlagGuard;
+    struct ExpectedTypeGuard;
+    struct IndirectionGuard;
+    struct ResolvingTypeGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
@@ -162,6 +173,18 @@ private:
     friend struct VisitDepthGuard;
     friend struct ResolutionDepthGuard;
     friend struct DeferFlagGuard;
+    friend struct ExpectedTypeGuard;
+    friend struct ResolvingTypeGuard;
+    friend struct IndirectionGuard;
+
+    DynamicArray<Type*> expected_type_stack_;
+    DynamicArray<Type*> resolving_types_stack_;
+    void pushExpectedType(Type* type) { expected_type_stack_.append(type); }
+    Type* peekExpectedType() {
+        if (expected_type_stack_.length() == 0) return NULL;
+        return expected_type_stack_.back();
+    }
+    void popExpectedType() { expected_type_stack_.pop_back(); }
 
     DynamicArray<LoopLabel> label_stack_;
     DynamicArray<const char*> function_labels_;

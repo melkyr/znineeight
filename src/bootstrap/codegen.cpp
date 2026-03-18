@@ -12,10 +12,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -25,10 +26,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
@@ -40,10 +42,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
       unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getArena()) {
     type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -417,8 +420,8 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
     if (!type) return;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
-        if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
+        if (type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ANYTYPE) {
             /* Handle ErrorUnion and Optional special structures */
             const ASTStructInitializerNode* init = init_node->as.struct_initializer;
             for (size_t j = 0; j < init->fields->length(); ++j) {
@@ -916,8 +919,14 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 emitStatement(stmt);
                 if (allPathsExit(stmt)) {
@@ -985,8 +994,14 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
                 emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) {
+                    exits = true;
+                    break;
+                }
             } else if (stmt->type == NODE_DEFER_STMT) {
-                scope->defers.append(&stmt->as.defer_stmt);
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 /* Check if it's the last expression in the block */
                 if (i == node->statements->length() - 1 && target_var &&
@@ -1058,6 +1073,10 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_DEFER_STMT:
             writeIndent();
             writeString("/* defer */\n");
+            break;
+        case NODE_ERRDEFER_STMT:
+            writeIndent();
+            writeString("/* errdefer */\n");
             break;
         case NODE_EXPRESSION_STMT: {
             ASTNode* expr = node->as.expression_stmt.expression;
@@ -1494,6 +1513,11 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
             char size_buf[32];
             plat_u64_to_string(iterable_type->as.array.size, size_buf, sizeof(size_buf));
             writeString(size_buf);
+        } else if (iterable_type && iterable_type->kind == TYPE_POINTER &&
+                   iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
+            char size_buf[32];
+            plat_u64_to_string(iterable_type->as.pointer.base->as.array.size, size_buf, sizeof(size_buf));
+            writeString(size_buf);
         } else if (iterable_type && iterable_type->kind == TYPE_SLICE) {
             writeString(iter_name);
             writeString(".len");
@@ -1621,67 +1645,50 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
     loop_id_stack_.append(node->label_id);
 
-    if (node->label || node->iter_expr) {
-        loop_uses_labels_[node->label_id] = true;
-        const char* start_label = getLoopStartLabel(node->label_id);
-        const char* cont_label = getLoopContinueLabel(node->label_id);
-        const char* end_label = getLoopEndLabel(node->label_id);
+    /* Always mark this loop as using labels, so that any break/continue will be emitted as goto. */
+    loop_uses_labels_[node->label_id] = true;
+    const char* start_label = getLoopStartLabel(node->label_id);
+    const char* cont_label = getLoopContinueLabel(node->label_id);
+    const char* end_label = getLoopEndLabel(node->label_id);
 
-        writeIndent();
-        writeString(start_label);
-        writeString(": ;\n");
+    writeIndent();
+    writeString(start_label);
+    writeString(": ;\n");
 
-        writeIndent();
-        writeString("if (!(");
-        if (node->condition) {
-            emitExpression(node->condition);
-        } else {
-            writeString("1");
-        }
-        writeString(")) goto ");
-        writeString(end_label);
-        writeString(";\n");
-
-        if (node->body->type == NODE_BLOCK_STMT) {
-            writeIndent();
-            emitBlock(&node->body->as.block_stmt, node->label_id);
-        } else {
-            emitStatement(node->body);
-        }
-        writeString("\n");
-
-        writeIndent();
-        writeString(cont_label);
-        writeString(": ;\n");
-        if (node->iter_expr) {
-            emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
-        }
-
-        writeIndent();
-        writeString("goto ");
-        writeString(start_label);
-        writeString(";\n");
-
-        writeIndent();
-        writeString(end_label);
-        writeString(": ;\n");
+    writeIndent();
+    writeString("if (!(");
+    if (node->condition) {
+        emitExpression(node->condition);
     } else {
-        writeIndent();
-        writeString("while (");
-        if (node->condition) {
-            emitExpression(node->condition);
-        } else {
-            writeString("1");
-        }
-        writeString(") ");
-
-        if (node->body->type == NODE_BLOCK_STMT) {
-            emitBlock(&node->body->as.block_stmt, node->label_id);
-        } else {
-            emitStatement(node->body);
-        }
-        writeString("\n");
+        writeString("1");
     }
+    writeString(")) goto ");
+    writeString(end_label);
+    writeString(";\n");
+
+    if (node->body->type == NODE_BLOCK_STMT) {
+        writeIndent();
+        emitBlock(&node->body->as.block_stmt, node->label_id);
+    } else {
+        emitStatement(node->body);
+    }
+    writeString("\n");
+
+    writeIndent();
+    writeString(cont_label);
+    writeString(": ;\n");
+    if (node->iter_expr) {
+        emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+    }
+
+    writeIndent();
+    writeString("goto ");
+    writeString(start_label);
+    writeString(";\n");
+
+    writeIndent();
+    writeString(end_label);
+    writeString(": ;\n");
 
     loop_id_stack_.pop_back();
 }
@@ -1818,6 +1825,52 @@ void C89Emitter::close() {
         plat_close_file(output_file_);
         output_file_ = PLAT_INVALID_FILE;
     }
+}
+
+void C89Emitter::ensureForwardDeclaration(Type* type) {
+    if (!type) return;
+
+    const char* keyword = NULL;
+
+    if (type->kind == TYPE_STRUCT) {
+        keyword = "struct";
+    } else if (isTaggedUnion(type)) {
+        keyword = "struct";
+    } else if (type->kind == TYPE_UNION) {
+        keyword = "union";
+    } else {
+        /* Enums and other types cannot be forward-declared in C89 */
+        return;
+    }
+
+    const char* mangled_name = type->c_name;
+    if (!mangled_name) {
+        const char* zig_name = NULL;
+        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+            zig_name = type->as.struct_details.name;
+        } else if (type->kind == TYPE_TAGGED_UNION) {
+            zig_name = type->as.tagged_union.name;
+        }
+        if (!zig_name) return;
+        mangled_name = getC89GlobalName(zig_name);
+    }
+
+    /* Avoid duplicate forward declarations */
+    for (size_t i = 0; i < emitted_forward_decls_.length(); ++i) {
+        if (plat_strcmp(emitted_forward_decls_[i], mangled_name) == 0) return;
+    }
+    emitted_forward_decls_.append(mangled_name);
+
+    bool was_in_type_def = in_type_def_mode_;
+    in_type_def_mode_ = true;
+
+    writeIndent();
+    writeString(keyword);
+    writeString(" ");
+    writeString(mangled_name);
+    writeString(";\n");
+
+    in_type_def_mode_ = was_in_type_def;
 }
 
 void C89Emitter::emitExpression(const ASTNode* node) {
@@ -2257,6 +2310,9 @@ void C89Emitter::emitArraySlice(const ASTNode* node) {
 void C89Emitter::ensureOptionalType(Type* type) {
     if (!type || type->kind != TYPE_OPTIONAL) return;
 
+    Type* payload = type->as.optional.payload;
+    ensureForwardDeclaration(payload);
+
     const char* mangled_name = getMangledTypeName(type);
 
     /* Check per-module cache first */
@@ -2289,8 +2345,6 @@ void C89Emitter::ensureOptionalType(Type* type) {
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
-    Type* payload = type->as.optional.payload;
-
     writeString("#ifndef ZIG_OPTIONAL_");
     writeString(mangled_name);
     writeString("\n#define ZIG_OPTIONAL_");
@@ -2319,6 +2373,9 @@ void C89Emitter::ensureOptionalType(Type* type) {
 
 void C89Emitter::ensureErrorUnionType(Type* type) {
     if (!type || type->kind != TYPE_ERROR_UNION) return;
+
+    Type* payload = type->as.error_union.payload;
+    ensureForwardDeclaration(payload);
 
     const char* mangled_name = getMangledTypeName(type);
 
@@ -2351,8 +2408,6 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
-
-    Type* payload = type->as.error_union.payload;
 
     writeString("#ifndef ZIG_ERRORUNION_");
     writeString(mangled_name);
@@ -2395,6 +2450,9 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
 void C89Emitter::ensureSliceType(Type* type) {
     if (!type || type->kind != TYPE_SLICE) return;
 
+    Type* elem_type = type->as.slice.element_type;
+    ensureForwardDeclaration(elem_type);
+
     const char* mangled_name = getMangledTypeName(type);
 
     /* Check per-module cache first */
@@ -2428,7 +2486,6 @@ void C89Emitter::ensureSliceType(Type* type) {
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
-    Type* elem_type = type->as.slice.element_type;
     const char* slice_struct_name = mangled_name;
 
     writeString("#ifndef ZIG_SLICE_");
@@ -2629,6 +2686,14 @@ void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
 void C89Emitter::emitTaggedUnionDefinition(Type* type) {
     if (!isTaggedUnion(type)) return;
 
+    /* Ensure tag enum is emitted first */
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+    if (tag_type && tag_type->kind == TYPE_ENUM) {
+        emitTypeDefinition(tag_type);
+    }
+
+    ensureForwardDeclaration(type);
+
     writeIndent();
     writeString("struct ");
     writeString(type->c_name ? type->c_name : "/* unknown */");
@@ -2642,32 +2707,20 @@ void C89Emitter::emitTypeDefinition(Type* type) {
 
     if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
-    } else if (type->kind == TYPE_STRUCT) {
-        writeIndent();
-        writeString("struct ");
-        writeString(type->c_name ? type->c_name : "/* unknown */");
-        if (type->as.struct_details.fields) {
-            writeString(" ");
-            emitStructBody(type);
-            writeString(";\n\n");
-        } else {
-            writeString("; /* opaque */\n\n");
+        return;
+    }
+
+    if (type->kind == TYPE_ENUM) {
+        const char* enum_name = type->c_name ? type->c_name : getC89GlobalName(type->as.enum_details.name);
+        
+        /* Check cache to avoid duplicate emission */
+        for (size_t i = 0; i < emitted_enums_.length(); ++i) {
+            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) return;
         }
-    } else if (type->kind == TYPE_UNION) {
-        writeIndent();
-        writeString("union ");
-        writeString(type->c_name ? type->c_name : "/* unknown */");
-        if (type->as.struct_details.fields) {
-            writeString(" ");
-            emitUnionBody(type);
-            writeString(";\n\n");
-        } else {
-            writeString("; /* opaque union */\n\n");
-        }
-    } else if (type->kind == TYPE_ENUM) {
+        emitted_enums_.append(enum_name);
+
         writeIndent();
         writeString("enum ");
-        const char* enum_name = type->c_name ? type->c_name : "/* unknown */";
         writeString(enum_name);
         writeString(" {\n");
         {
@@ -2698,6 +2751,33 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeString(" ");
         writeString(enum_name);
         writeString(";\n\n");
+        return;
+    }
+
+    ensureForwardDeclaration(type);
+
+    if (type->kind == TYPE_STRUCT) {
+        writeIndent();
+        writeString("struct ");
+        writeString(type->c_name ? type->c_name : "/* unknown */");
+        if (type->as.struct_details.fields) {
+            writeString(" ");
+            emitStructBody(type);
+            writeString(";\n\n");
+        } else {
+            writeString("; /* opaque */\n\n");
+        }
+    } else if (type->kind == TYPE_UNION) {
+        writeIndent();
+        writeString("union ");
+        writeString(type->c_name ? type->c_name : "/* unknown */");
+        if (type->as.struct_details.fields) {
+            writeString(" ");
+            emitUnionBody(type);
+            writeString(";\n\n");
+        } else {
+            writeString("; /* opaque union */\n\n");
+        }
     } else if (type->kind == TYPE_SLICE) {
         ensureSliceType(type);
     } else if (type->kind == TYPE_ERROR_UNION) {
@@ -2830,12 +2910,18 @@ void C89Emitter::emitFloatLiteral(const ASTFloatLiteralNode* node) {
 void C89Emitter::emitStringLiteral(const ASTStringLiteralNode* node) {
     if (!node || !node->value) return;
 
-    /* TODO: Split long strings if needed for MSVC 6.0 */
+    size_t chunk_chars = 0;
+
     write("\"", 1);
     const char* p = node->value;
     while (*p) {
+        if (chunk_chars >= max_string_literal_chunk_) {
+            write("\" \"", 3);
+            chunk_chars = 0;
+        }
         emitEscapedByte((unsigned char)*p, false);
         p++;
+        chunk_chars++;
     }
     write("\"", 1);
 }
@@ -3320,17 +3406,21 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".data.err = ");
+            emitExpression(rvalue);
+            writeString(";\n");
         } else {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".err = ");
+            emitExpression(rvalue);
+            writeString(";\n");
         }
-        emitExpression(rvalue);
-        writeString(";\n");
-        writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 1;\n");
     } else {
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
             char payload_lval[512];
@@ -3362,17 +3452,21 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
-        writeString(lval_buf);
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".data.err = ");
+            if (source_expr) writeString(source_expr); else writeString("0");
+            writeString(";\n");
         } else {
+            writeString(lval_buf);
+            writeString(".is_error = 1; ");
+            writeString(lval_buf);
             writeString(".err = ");
+            if (source_expr) writeString(source_expr); else writeString("0");
+            writeString(";\n");
         }
-        if (source_expr) writeString(source_expr); else writeString("0");
-        writeString(";\n");
-        writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 1;\n");
     } else {
         writeIndent();
         writeString(lval_buf);

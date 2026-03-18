@@ -44,9 +44,8 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Ranges**:
   - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
   - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
-- **Slicing**: `base[start..end]` creates a slice from an array, slice, or many-item pointer.
-  - For arrays and slices, `start` and `end` can be omitted (e.g., `arr[..]`, `arr[5..]`).
-  - For many-item pointers, both `start` and `end` **must** be explicitly provided.
+- **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
+  - In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
 - **Properties**: Slices have built-in `.ptr` and `.len` properties.
   - `slice.ptr` returns a many-item pointer (`[*]T` or `[*]const T`).
@@ -104,6 +103,7 @@ Memory is reclaimed by resetting or destroying the arena.
 
 ### 3.1 Statements
 - `if (cond) statement else statement`: Braces are **optional** for `if` statement bodies. Single statements are normalized into synthetic blocks by the compiler.
+  - **Capture**: `if (result) |payload| ...` supports capturing payloads from error unions and optional types.
   - **Example**: `if (a) return 1; else return 0;`
   - **Optional Capture**: `if (optional_val) |val| statement`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
@@ -119,7 +119,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
   - **Condition**: Must be a tagged union, integer, enum, or boolean.
-  - **Prongs**: Comma-separated case items followed by `=>` and an expression.
+  - **Prongs**: Comma-separated case items followed by `=>` and an expression. For prongs consisting of a single expression-statement (especially calls returning `void`), it is recommended to wrap the body in a block `{ ... }` to ensure reliable code generation.
   - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag.
   - **Case Items**: Can be single values or ranges.
   - **Ranges**:
@@ -240,7 +240,8 @@ To maintain C89 compatibility, the following Zig features are **NOT supported** 
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **Multi-level Pointers**: `**T` and deeper are supported.
 - **Function Pointers**: `fn(...) T` types are supported.
-- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}`).
+- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
+- **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
 

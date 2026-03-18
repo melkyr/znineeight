@@ -81,6 +81,7 @@ struct Type {
     size_t alignment;
     const char* c_name; // Mangled C89 name for structs, unions, enums
     bool is_resolving;
+    struct Module* owner_module;
 
     union {
         struct {

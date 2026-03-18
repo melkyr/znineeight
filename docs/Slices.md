@@ -63,6 +63,12 @@ The TypeChecker transforms this such that both `arr1` and `arr2` are wrapped in 
 ### 3.3 Built-in Properties
 Slices have a built-in `.len` property which returns a `usize`. Accessing this property is handled as a standard member access in the AST.
 
+### 3.4 Recursive Type Support
+The bootstrap compiler supports types that contain slices of themselves (e.g., `Node = struct { children: []Node }`).
+- **Completeness**: Slices are always considered "complete" types because their C89 representation has a fixed size and alignment (8/4 on 32-bit).
+- **Placeholder Resolution**: The `TypeChecker` automatically resolves placeholders for the element type when performing operations on the slice (indexing, iteration, member access) or when performing coercions.
+- **Mutual Recursion**: This support extends to mutually recursive types and cross-module recursive types using the placeholder mechanism.
+
 ## 4. Codegen Preparation
 
 During the type checking phase, the `ASTArraySliceNode` is populated with synthetic expressions to simplify C89 emission:

@@ -179,23 +179,36 @@ public:
                                     node->as.return_stmt.expression->resolved_type : get_g_type_void();
                 bool needs_wrapping = (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
                                        source_type && source_type->kind != TYPE_ERROR_UNION);
+                bool is_struct_init = (node->as.return_stmt.expression && node->as.return_stmt.expression->type == NODE_STRUCT_INITIALIZER);
 
-                if (has_defers || needs_wrapping) {
+                // Mock logic updated: return statement ALWAYS uses structured initialization if it needs wrapping OR has defers.
+                // This matches the current C89Emitter's more conservative return generation.
+                if (has_defers || needs_wrapping || is_struct_init) {
                     ss << "{ ";
                     if (current_fn_ret_type_ && current_fn_ret_type_->kind != TYPE_VOID) {
                         ss << getC89TypeName(current_fn_ret_type_) << " __return_val; ";
                         if (needs_wrapping) {
                             if (node->as.return_stmt.expression && source_type->kind == TYPE_ERROR_SET) {
-                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) ss << "__return_val.data.err = "; else ss << "__return_val.err = ";
-                                ss << emitExpression(node->as.return_stmt.expression) << "; __return_val.is_error = 1; ";
+                                ss << "__return_val.is_error = 1; ";
+                                if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
+                                    ss << "__return_val.data.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                                } else {
+                                    ss << "__return_val.err = " << emitExpression(node->as.return_stmt.expression) << "; ";
+                                }
                             } else if (node->as.return_stmt.expression) {
+                                ss << "__return_val.is_error = 0; ";
                                 if (current_fn_ret_type_->as.error_union.payload->kind != TYPE_VOID) {
                                     ss << "__return_val.data.payload = " << emitExpression(node->as.return_stmt.expression) << "; ";
                                 }
-                                ss << "__return_val.is_error = 0; ";
                             } else {
                                 // return; in a !void function
                                 ss << "__return_val.is_error = 0; ";
+                            }
+                        } else if (is_struct_init) {
+                            const ASTStructInitializerNode* init = node->as.return_stmt.expression->as.struct_initializer;
+                            for (size_t i = 0; i < init->fields->length(); ++i) {
+                                ASTNamedInitializer* f = (*init->fields)[i];
+                                ss << "__return_val." << f->field_name << " = " << emitExpression(f->value) << "; ";
                             }
                         } else if (node->as.return_stmt.expression) {
                             ss << "__return_val = " << emitExpression(node->as.return_stmt.expression) << "; ";
@@ -211,6 +224,10 @@ public:
                 }
                 return ss.str();
             }
+            case NODE_EMPTY_STMT:
+                return ";";
+            case NODE_ERRDEFER_STMT:
+                return "/* errdefer */ " + emitExpression(node->as.errdefer_stmt.statement);
             case NODE_EXPRESSION_STMT: {
                 std::string expr = emitExpression(node->as.expression_stmt.expression);
                 if (!expr.empty() && expr[expr.length()-1] == ';') return expr;
@@ -252,8 +269,11 @@ public:
                 }
                 return "/* var " + std::string(node->as.var_decl->name) + " */";
             }
-            default:
-                return "/* unsupported node type */";
+            default: {
+                char buf[64];
+                sprintf(buf, "/* unsupported node type %d */", node->type);
+                return buf;
+            }
         }
     }
 
@@ -379,13 +399,12 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        bool has_continue_expr = (node->iter_expr != NULL);
-        if (node->label || has_continue_expr) {
-            ss << "__loop_" << node->label_id << "_start: ; ";
-            ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
-        } else {
-            ss << "while (" << (node->condition ? emitExpression(node->condition) : "1") << ") ";
-        }
+        // Note: Real emitter now ALWAYS uses labeled goto pattern for all loops
+        // to ensure break/continue works correctly in C switch statements.
+        // Integration tests have been updated to expect this.
+
+        ss << "__loop_" << node->label_id << "_start: ; ";
+        ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
 
         if (node->body && node->body->type == NODE_BLOCK_STMT) {
             ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
@@ -393,14 +412,12 @@ public:
             ss << emitExpression(node->body);
         }
 
-        if (node->label || has_continue_expr) {
-            ss << " __loop_" << node->label_id << "_continue: ; ";
-            if (has_continue_expr) {
-                ss << emitExpression(node->iter_expr) << "; ";
-            }
-            ss << "goto __loop_" << node->label_id << "_start; ";
-            ss << "__loop_" << node->label_id << "_end: ;";
+        ss << " __loop_" << node->label_id << "_continue: ; ";
+        if (node->iter_expr) {
+            ss << emitExpression(node->iter_expr) << "; ";
         }
+        ss << "goto __loop_" << node->label_id << "_start; ";
+        ss << "__loop_" << node->label_id << "_end: ;";
 
         return ss.str();
     }
@@ -425,8 +442,8 @@ public:
     std::string emitBreakStatement(const ASTBreakStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id);
-            if (!defers.empty()) ss << "/* defers for break */ " << defers;
+            ss << "/* defers for break */ ";
+            ss << emitDefersForScopeExit(node->target_label_id);
         }
 
         // Mock simplified: always use labeled break if ID is valid
@@ -444,8 +461,8 @@ public:
     std::string emitContinueStatement(const ASTContinueStmtNode* node) {
         std::stringstream ss;
         if (!defer_stack_.empty()) {
-            std::string defers = emitDefersForScopeExit(node->target_label_id);
-            if (!defers.empty()) ss << "/* defers for continue */ " << defers;
+            ss << "/* defers for continue */ ";
+            ss << emitDefersForScopeExit(node->target_label_id);
         }
 
         if (node->target_label_id >= 0) {
@@ -480,6 +497,9 @@ public:
                 ASTNode* stmt = (*block->statements)[i];
                 if (stmt->type == NODE_DEFER_STMT) {
                     defer_stack_[scope_idx].defers.push_back(&stmt->as.defer_stmt);
+                } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                    ss << emitExpression(stmt) << " ";
+                    defer_stack_[scope_idx].defers.push_back((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
                 } else {
                     ss << emitExpression(stmt) << " ";
                     if (allPathsExit(stmt)) {
@@ -494,6 +514,14 @@ public:
         if (!exits) {
             for (int i = (int)defer_stack_[scope_idx].defers.size() - 1; i >= 0; --i) {
                 ss << emitExpression(defer_stack_[scope_idx].defers[i]->statement) << " ";
+            }
+
+            /* Implicit return for Error!void */
+            if (label_id == -1 && defer_stack_.size() == 1) {
+                if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
+                    current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
+                    ss << "{ struct " << getMangledTypeName(current_fn_ret_type_) << " __implicit_ret = {.is_error = 0}; return __implicit_ret; } ";
+                }
             }
         }
 
@@ -592,8 +620,44 @@ public:
      * @brief Emits a C89 struct initializer (positional).
      */
     std::string emitStructInitializer(const ASTStructInitializerNode* node) {
-        if (!node || !node->type_expr || !node->type_expr->resolved_type) return "{ /* INVALID */ }";
-        Type* struct_type = node->type_expr->resolved_type;
+        if (!node) return "{ /* INVALID */ }";
+        
+        Type* struct_type = NULL;
+        if (node->type_expr && node->type_expr->resolved_type) {
+            struct_type = node->type_expr->resolved_type;
+        }
+
+        // Handle case where type info is missing or inferred (anonymous)
+        if (!struct_type) {
+             std::stringstream ss;
+             ss << "{";
+             if (node->fields) {
+                 for (size_t i = 0; i < node->fields->length(); ++i) {
+                     if (i > 0) ss << ", ";
+                     const char* field_name = (*node->fields)[i]->field_name;
+                     if (field_name) {
+                         ss << "." << field_name << " = ";
+                     }
+                     ss << emitExpression((*node->fields)[i]->value);
+                 }
+             }
+             ss << "}";
+             return ss.str();
+        }
+
+        if (struct_type->kind == TYPE_ERROR_UNION || struct_type->kind == TYPE_OPTIONAL || struct_type->kind == TYPE_ANYTYPE) {
+             std::stringstream ss;
+             ss << "{";
+             if (node->fields) {
+                 for (size_t i = 0; i < node->fields->length(); ++i) {
+                     if (i > 0) ss << ", ";
+                     ss << emitExpression((*node->fields)[i]->value);
+                 }
+             }
+             ss << "}";
+             return ss.str();
+        }
+
         if (struct_type->kind != TYPE_STRUCT) return "{ /* NOT A STRUCT */ }";
 
         DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;

@@ -576,34 +576,19 @@ bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     const ASTNode* effective_parent = skipParens(parent);
     if (!effective_parent) return false; // Root is always safe
 
-    // Any control‑flow expression must be lifted for C89 compatibility.
-    switch (effective_parent->type) {
-        case NODE_EXPRESSION_STMT:
-        case NODE_RETURN_STMT:
-        case NODE_VAR_DECL:
-        case NODE_ASSIGNMENT:
-        case NODE_COMPOUND_ASSIGNMENT:
-        case NODE_BINARY_OP:
-        case NODE_UNARY_OP:
-        case NODE_FUNCTION_CALL:
-        case NODE_ARRAY_ACCESS:
-        case NODE_ARRAY_SLICE:
-        case NODE_MEMBER_ACCESS:
-        case NODE_STRUCT_INITIALIZER:
-        case NODE_TUPLE_LITERAL:
-        case NODE_IF_EXPR:
-        case NODE_SWITCH_EXPR:
-        case NODE_TRY_EXPR:
-        case NODE_CATCH_EXPR:
-        case NODE_ORELSE_EXPR:
-        case NODE_IF_STMT:
-        case NODE_WHILE_STMT:
-        case NODE_FOR_STMT:
-        case NODE_PAREN_EXPR:
-            return true;
-        default:
-            return true;
+    // unreachable is already a valid statement if handled by the emitter.
+    // We don't need to lift it if it's already in a statement context.
+    if (node->type == NODE_UNREACHABLE) {
+        if (effective_parent->type == NODE_BLOCK_STMT ||
+            effective_parent->type == NODE_EXPRESSION_STMT ||
+            effective_parent->type == NODE_DEFER_STMT ||
+            effective_parent->type == NODE_ERRDEFER_STMT) {
+            return false;
+        }
     }
+
+    // Any control‑flow expression must be lifted for C89 compatibility.
+    return true;
 }
 
 const ASTNode* ControlFlowLifter::skipParens(const ASTNode* parent) {
@@ -901,6 +886,8 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
     void* prongs_mem = arena_->alloc(sizeof(DynamicArray<ASTSwitchStmtProngNode*>));
     DynamicArray<ASTSwitchStmtProngNode*>* prongs = new (prongs_mem) DynamicArray<ASTSwitchStmtProngNode*>(*arena_);
 
+    ASTNode* switch_stmt_node = createSwitchStmt(sw_expr->expression, prongs, loc);
+
     for (size_t i = 0; i < sw_expr->prongs->length(); ++i) {
         ASTSwitchProngNode* orig_prong = (*sw_expr->prongs)[i];
         ASTSwitchStmtProngNode* new_prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
@@ -929,7 +916,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
             new_prong->body = block_node;
         }
 
-        transformNode(&new_prong->body, NULL);
+        transformNode(&new_prong->body, switch_stmt_node);
 
         if (new_prong->capture_name && new_prong->capture_sym) {
             Symbol* new_sym = (Symbol*)arena_->alloc(sizeof(Symbol));
@@ -944,7 +931,7 @@ ASTNode* ControlFlowLifter::lowerSwitchExpr(ASTNode* node, Symbol* temp_sym) {
         prongs->append(new_prong);
     }
 
-    return createSwitchStmt(sw_expr->expression, prongs, loc);
+    return switch_stmt_node;
 }
 
 void ControlFlowLifter::lowerTryExpr(ASTNode* node, Symbol* temp_sym, DynamicArray<ASTNode*>& out_stmts, bool needs_wrapping) {

@@ -49,8 +49,8 @@ TEST_FUNC(ErrorHandling_ErrorLiteral) {
     emitter.emitFnDecl(unit.extractFunctionDeclaration("fail"));
 
     // Check for ERROR_FileNotFound and is_error = 1
-    ASSERT_TRUE(emitter.contains("ERROR_FileNotFound"));
-    ASSERT_TRUE(emitter.contains("is_error = 1"));
+    ASSERT_TRUE(emitter.contains("__return_val.is_error = 1"));
+    ASSERT_TRUE(emitter.contains("__return_val.data = {.err = ERROR_FileNotFound}"));
 
     return true;
 }
@@ -73,8 +73,8 @@ TEST_FUNC(ErrorHandling_SuccessWrapping) {
     emitter.emitFnDecl(unit.extractFunctionDeclaration("succeed"));
 
     // Check for payload assignment and is_error = 0
-    ASSERT_TRUE(emitter.contains("payload = 42"));
-    ASSERT_TRUE(emitter.contains("is_error = 0"));
+    ASSERT_TRUE(emitter.contains("__return_val.is_error = 0"));
+    ASSERT_TRUE(emitter.contains("__return_val.data = {.payload = 42}"));
 
     return true;
 }
@@ -98,11 +98,9 @@ TEST_FUNC(ErrorHandling_VoidPayload) {
     emitter.emitFnDecl(unit.extractFunctionDeclaration("doSomething"));
 
     // Check struct has no .data.payload for void
-    ASSERT_TRUE(emitter.contains("is_error = 1"));
-    ASSERT_TRUE(emitter.contains("is_error = 0"));
-    // Since it's void, we should NOT see ".data.payload" or ".data.err"
-    // Instead we should see ".err"
-    ASSERT_TRUE(emitter.contains(".err = ERROR_Failed"));
+    ASSERT_TRUE(emitter.contains("__return_val.is_error = 1"));
+    ASSERT_TRUE(emitter.contains("__return_val.err = ERROR_Failed"));
+    ASSERT_TRUE(emitter.contains("__return_val.is_error = 0"));
 
     return true;
 }

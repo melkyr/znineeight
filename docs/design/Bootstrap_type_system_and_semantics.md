@@ -334,10 +334,16 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
-    -   The type being initialized is a struct.
-    -   All fields defined in the struct are initialized exactly once.
+    -   The type being initialized is a struct, union, or tagged union.
+    -   For structs, all fields defined in the struct are initialized exactly once.
+    -   For unions and tagged unions, exactly one field must be initialized.
     -   No extra fields are provided in the initializer.
     -   Each initializer expression's type is compatible with the corresponding field's type.
+    -   **Naked Tags**: In tagged union initializers, a field can be initialized without a value (e.g., `.{ .Tag }`). This is only valid if the corresponding field in the union has the `void` type.
+
+3.  **Anonymous Initializers**: Anonymous struct initializers (`.{ .field = value }`) are permitted when the context type is a struct, array, or tagged union.
+    -   The `TypeChecker` uses `coerceNode` to resolve the type of the anonymous initializer based on the target type.
+    -   For tagged unions, it validates that exactly one field is present and that it matches a valid tag and payload type.
 
 ### Union and Tagged Union Type Declarations
 
@@ -373,6 +379,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 5. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
 6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
 7. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
+8. **Relaxed Completeness for Pointer Recursion**: In `visitStructDecl` and `visitUnionDecl`, field types are allowed to be incomplete if they are reached through at least one pointer indirection (e.g., `*Node`, `?*Node`, `**Node`).
+9. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
@@ -381,6 +389,7 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
     - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
     - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
 - **Tagged Union support**: Full support for `union(enum)` and switch captures (`|val|`).
+- **Switch Requirements**: Switch expressions MUST have an `else` prong for exhaustive coverage (mandatory in bootstrap). Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
 - **No Methods**: All functions must be top-level or at least not inside struct/union definitions.
@@ -877,7 +886,7 @@ These features are initially resolved by the `TypeChecker` (Pass 0) to allow for
 
 For detailed validation rules that will be enforced in Milestone 5 (when rejection is replaced by translation), see `error_handling_validation_rules.md`.
 
-To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T` and implicit (but unsafe) unwrapping of `!T` to `T` during Pass 0.
+To support accurate semantic resolution before rejection, the `TypeChecker` implements Zig-like compatibility rules for error unions, allowing implicit wrapping of a payload `T` into `!T`. Implicit unwrapping (assigning `!T` to `T`) is strictly prohibited and must be handled explicitly via `try` or `catch`.
 
 ### Error Type Elimination (Task 150)
 
@@ -1010,6 +1019,42 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 - **Qualified Lookups**: The `Parser` produces `NODE_MEMBER_ACCESS` for qualified identifiers. The `TypeChecker` resolves these by first resolving the module symbol and then looking up the member within that module's symbol table.
 - **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed. The `TypeChecker` switches its internal context (defining module) to the target module to ensure that identifiers within that module are correctly resolved.
 - **Enum Member Access**: Qualified access to enum members (e.g., `mod.Enum.Member`) is supported and follows the same on-demand resolution rules.
+
+### Type Alias Unwrapping (Phase 9a)
+
+The `TypeChecker` supports unwrapping multiple levels of type aliases to facilitate member access on tagged unions, enums, and error sets. This is primarily handled by the `resolveTypeConstant(Symbol* sym)` helper method.
+
+1. **Unwrapping Logic**: When a symbol's type is `TYPE_TYPE` (indicating a constant holding a type), the compiler follows the chain of initializers until it reaches a concrete aggregate type (struct, union, enum, or error set).
+2. **Contexts**: Unwrapping applies to:
+   - **Local Aliases**: `const MyType = struct { ... }; const Alias = MyType; Alias.Member`.
+   - **Module-qualified Aliases**: `const json = @import("json.zig"); json.JsonValue.Null`.
+3. **Member Resolution and Constant Folding**: After unwrapping, the compiler performs member-specific logic:
+   - **Tagged Unions**: Resolves to the tag enum value and constant-folds the access to an integer literal.
+   - **Enums**: Constant-folds the access to the member's integer value.
+   - **Error Sets**: Constant-folds the access to the error tag's global integer ID.
+
+This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
+
+## 7. Expected Type Propagation (Downward Inference)
+
+The type checker implements a downward type inference mechanism through an **Expected Type Stack**. This allows the compiler to propagate type information from the surrounding context into expressions that might otherwise have an ambiguous or undefined type (e.g., anonymous struct initializers or switch expressions).
+
+### How It Works
+1.  **Push**: When entering a context where a specific type is expected (e.g., the right-hand side of an assignment, a return statement, or a function argument), the expected type is pushed onto `expected_type_stack_`.
+2.  **Peek**: Child expressions can call `peekExpectedType()` to see what type is expected of them. This is primarily used by `coerceNode` to resolve anonymous initializers.
+3.  **Pop**: After visiting the child expression, the type is popped from the stack, typically using the RAII-based `ExpectedTypeGuard`.
+
+### Supported Contexts
+-   **Return Statements**: Pushes the current function's return type.
+-   **Assignments**: Pushes the type of the left-hand side.
+-   **Variable Declarations**: Pushes the declared type for the initializer.
+-   **Function Calls**: Pushes the corresponding parameter type for each argument.
+-   **If Expressions**: Propagates the outer expected type to both branches.
+-   **Block Expressions**: Propagates the outer expected type to the final statement of the block.
+-   **Switch Expressions**: Propagates the outer expected type to all prongs.
+
+### Coercion Integration
+The `coerceNode` method has been enhanced to use the expected type when encountering an anonymous struct initializer (`.{ .field = value }`). If an expected type (like a tagged union) is available, `coerceNode` validates the initializer against that type and sets its `resolved_type`, enabling seamless downward inference.
 
 ### `resolvePrimitiveTypeName`
 
@@ -1587,10 +1632,16 @@ As part of Task 9.3 and Task 9.5.7, the type system implementation was hardened 
 ## 24. Recursive Slices and For-Loop Stabilization (Task 9.6)
 
 ### 24.1 Recursive Slice Handling
-To ensure that types containing slices of themselves (e.g., `JsonValue` with `[]JsonValue`) resolve correctly during mutual resolution, the `TypeChecker` has been hardened to aggressively resolve placeholders.
+To ensure that types containing slices of themselves (e.g., `Node = struct { children: []Node }`) resolve correctly during layout calculation and usage, the bootstrap compiler employs several strategies:
 
-- **On-Demand Element Resolution**: In `visitArrayAccess` and `visitArraySlice`, the element type of the base (array, slice, or pointer) is explicitly checked for `TYPE_PLACEHOLDER` and resolved via `resolvePlaceholder` before any size-dependent or field-dependent operations are performed.
-- **Mutual Resolution Stability**: By forcing resolution during access, the compiler ensures that the in-place mutation of placeholders is reflected in all dependent slice types, even across module boundaries.
+1.  **Fixed Slice Layout**: `TYPE_SLICE` always returns `true` for `isTypeComplete` because its size (8 bytes) and alignment (4 bytes) are constant for the 32-bit target, regardless of the element type. This prevents "incomplete type" errors when a slice is used as a field in the type it refers to.
+2.  **Completeness Deferral**: `visitArrayType` and `createSliceType` do not require the element type to be complete when creating a slice type. They correctly handle elements that are `TYPE_PLACEHOLDER`.
+3.  **On-Demand Element Resolution**: The `TypeChecker` aggressively resolves placeholders when performing operations on slice elements.
+    -   **Member Access**: Accessing `.ptr` of a slice via `visitMemberAccess` resolves the element type to ensure the resulting pointer type is accurate.
+    -   **Indexing**: `visitArrayAccess` resolves the element type before returning it as the expression type.
+    -   **Iteration**: `visitForStmt` resolves the item type derived from the slice's element type.
+    -   **Compatibility**: `areTypesCompatible` and `coerceNode` resolve element types during array-to-slice, pointer-to-array-to-slice, and slice-to-slice conversions.
+4.  **Mutual and Cross-Module Resolution**: The combination of pre-registered placeholders and on-demand resolution ensures that recursive slices work correctly within a single module, across mutually recursive modules, and inside tagged unions.
 
 ### 24.2 For-Loop Iterator Stabilization
 A regression in the code generation for `for` loops was resolved by ensuring that the internal iterator pointer is emitted with the correct mutability.
@@ -1602,6 +1653,6 @@ The following issues were identified during the attempt to compile a comprehensi
 
 - **Tagged Union Forward Declaration Bug**: Tagged unions are correctly emitted as C `structs` in their definitions, but the `CBackend` incorrectly forward-declares them using the `union` keyword in generated headers.
 - **Unreachable Statement Emission**: The `unreachable` keyword results in an "unimplemented statement" comment in C89, rather than a panic or `abort()`.
-- **Braceless Switch Prongs**: Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
+- **Switch Prong Commas**: Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong before the closing brace.
 - **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
 - **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.

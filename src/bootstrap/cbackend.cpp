@@ -90,15 +90,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
                 ASTVarDeclNode* decl = node->as.var_decl;
                 if (decl->is_const && decl->initializer && decl->initializer->resolved_type) {
                     Type* t = decl->initializer->resolved_type;
-                    if (t->kind == TYPE_STRUCT) {
-                        emitter.writeString("struct ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    } else if (t->kind == TYPE_UNION) {
-                        emitter.writeString("union ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    }
+                    emitter.ensureForwardDeclaration(t);
                 }
             }
         }
@@ -112,18 +104,9 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
 
-    // Pass 1: Private Type Definitions (Public types are in the .h file)
-    for (size_t i = 0; i < stmts->length(); ++i) {
-        if ((*stmts)[i]->type == NODE_VAR_DECL) {
-            if (!(*stmts)[i]->as.var_decl->is_pub) {
-                emitter.emitTypeDefinition((*stmts)[i]);
-                emitter.emitBufferedTypeDefinitions();
-            }
-        }
-    }
-
-    // Pass 1.5: Special types (slices, error unions, optionals)
-    // These are emitted AFTER structs because they might depend on them (recursive types).
+    // Pass 1: Special types (slices, error unions, optionals)
+    // These are emitted BEFORE structs to ensure they are available for recursive dependencies.
+    // They will now correctly forward-declare any structs they depend on.
     DynamicArray<Type*> visited_types(unit_.getArena());
     for (size_t i = 0; i < stmts->length(); ++i) {
         visited_types.clear();
@@ -142,6 +125,16 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
         scanForSpecialTypes((*stmts)[i], emitter, SCAN_OPTIONALS, visited_types);
     }
     emitter.emitBufferedOptionals();
+
+    // Pass 1.5: Private Type Definitions (Public types are in the .h file)
+    for (size_t i = 0; i < stmts->length(); ++i) {
+        if ((*stmts)[i]->type == NODE_VAR_DECL) {
+            if (!(*stmts)[i]->as.var_decl->is_pub) {
+                emitter.emitTypeDefinition((*stmts)[i]);
+                emitter.emitBufferedTypeDefinitions();
+            }
+        }
+    }
 
     // Pass 2: Global Variables
     for (size_t i = 0; i < stmts->length(); ++i) {
@@ -309,40 +302,20 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     }
     emitter.writeString("\n");
 
-    /* Pass 0: Forward declarations of public aggregate types */
-    if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
-        DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                ASTVarDeclNode* decl = node->as.var_decl;
-                if (decl->is_const && decl->initializer && decl->initializer->resolved_type) {
-                    Type* t = decl->initializer->resolved_type;
-                    if (t->kind == TYPE_STRUCT) {
-                        emitter.writeString("struct ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    } else if (t->kind == TYPE_UNION) {
-                        emitter.writeString("union ");
-                        emitter.writeString(emitter.getC89GlobalName(decl->name));
-                        emitter.writeString(";\n");
-                    }
-                }
-            }
-        }
-        emitter.writeString("\n");
-    }
-
-    // Scan public symbols for special types recursively before emitting definitions
-    DynamicArray<Type*> visited_types(unit_.getArena());
+    /* Pass 0: Forward declarations of aggregate types */
+    /* We emit forward declarations for all aggregates used in the header,
+       but ONLY if they are defined in this module. Imports handle the rest. */
     for (size_t i = 0; i < module->header_types.length(); ++i) {
-        scanType(module->header_types[i], emitter, SCAN_ALL, visited_types);
+        Type* t = module->header_types[i];
+        if (t->owner_module == module && t->kind != TYPE_ENUM) {
+            emitter.ensureForwardDeclaration(t);
+        }
     }
-    emitter.emitBufferedSlices();
-    emitter.emitBufferedErrorUnions();
-    emitter.emitBufferedOptionals();
+    emitter.writeString("\n");
 
-    // Use pre-computed header types in dependency order
+    // Use pre-computed header types in dependency order.
+    // Special types (slices, error unions, optionals) are included in header_types
+    // and will be emitted via ensure... calls during this loop.
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
@@ -391,6 +364,10 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             }
         }
     }
+
+    // Final flush of any buffered special types (slices, error unions, optionals)
+    // that might have been triggered by function prototypes or global variables.
+    emitter.emitBufferedTypeDefinitions();
 
     emitter.writeString("\n#endif\n");
     emitter.close();

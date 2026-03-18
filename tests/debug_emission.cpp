@@ -30,7 +30,9 @@ TEST_FUNC(CheckEmission) {
     return true;
 }
 
+#ifndef RETROZIG_TEST
 int main(int argc, char* argv[]) {
     test_CheckEmission();
     return 0;
 }
+#endif

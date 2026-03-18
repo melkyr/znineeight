@@ -832,72 +832,17 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
     bool has_else = false;
 
     while (peek().type != TOKEN_RBRACE && !is_at_end()) {
-        void* items_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
-        if (!items_mem) error("Out of memory");
-        DynamicArray<ASTNode*>* items = new (items_mem) DynamicArray<ASTNode*>(*arena_);
-        bool is_else = false;
-
-        if (match(TOKEN_ELSE)) {
-            if (has_else) {
-                error("Duplicate else prong");
-            }
+        if (peek().type == TOKEN_ELSE) {
+            if (has_else) error("Duplicate else prong");
             has_else = true;
-            is_else = true;
-        } else {
-            // Parse one or more case items
-            do {
-                ASTNode* item = parseExpression();
-                if (peek().type == TOKEN_RANGE || peek().type == TOKEN_ELLIPSIS) {
-                    Token range_token = advance();
-                    ASTNode* end = parseExpression();
-                    ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
-                    if (!range_data) error("Out of memory");
-                    range_data->start = item;
-                    range_data->end = end;
-                    range_data->is_inclusive = (range_token.type == TOKEN_ELLIPSIS);
-
-                    ASTNode* range_node = createNodeAt(NODE_RANGE, range_token.location);
-                    range_node->as.range = range_data;
-                    item = range_node;
-                }
-                items->append(item);
-            } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
         }
 
-        expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
-
-        const char* capture_name = NULL;
-        if (match(TOKEN_PIPE)) {
-            Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
-            capture_name = cap_token.value.identifier;
-            expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
-        }
-
+        void* prong = parseSwitchProng(ctx);
         if (ctx == CTX_EXPRESSION) {
-            ASTSwitchProngNode* prong = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
-            if (!prong) error("Out of memory");
-            plat_memset(prong, 0, sizeof(ASTSwitchProngNode));
-            prong->items = items;
-            prong->is_else = is_else;
-            prong->capture_name = capture_name;
-            prong->loc = peek().location;
-            prong->body = parseExpression();
-            if (prong->body == NULL) error("Cases without corresponding body expression");
-            expr_prongs->append(prong);
+            expr_prongs->append((ASTSwitchProngNode*)prong);
         } else {
-            ASTSwitchStmtProngNode* prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
-            if (!prong) error("Out of memory");
-            plat_memset(prong, 0, sizeof(ASTSwitchStmtProngNode));
-            prong->items = items;
-            prong->is_else = is_else;
-            prong->capture_name = capture_name;
-            prong->loc = peek().location;
-            prong->body = parseStatement();
-            if (prong->body == NULL) error("Cases without corresponding body statement");
-            stmt_prongs->append(prong);
+            stmt_prongs->append((ASTSwitchStmtProngNode*)prong);
         }
-
-        if (!match(TOKEN_COMMA)) break;
     }
 
     if ((ctx == CTX_EXPRESSION && expr_prongs->length() == 0) ||
@@ -908,6 +853,75 @@ ASTNode* Parser::parseSwitch(ParseContext ctx) {
     expect(TOKEN_RBRACE, "Expected '}' to close switch");
 
     return result_node;
+}
+
+void* Parser::parseSwitchProng(ParseContext ctx) {
+    void* items_mem = arena_->alloc(sizeof(DynamicArray<ASTNode*>));
+    if (!items_mem) error("Out of memory");
+    DynamicArray<ASTNode*>* items = new (items_mem) DynamicArray<ASTNode*>(*arena_);
+    bool is_else = false;
+
+    if (match(TOKEN_ELSE)) {
+        is_else = true;
+    } else {
+        // Parse one or more case items
+        do {
+            ASTNode* item = parseExpression();
+            if (peek().type == TOKEN_RANGE || peek().type == TOKEN_ELLIPSIS) {
+                Token range_token = advance();
+                ASTNode* end = parseExpression();
+                ASTRangeNode* range_data = (ASTRangeNode*)arena_->alloc(sizeof(ASTRangeNode));
+                if (!range_data) error("Out of memory");
+                range_data->start = item;
+                range_data->end = end;
+                range_data->is_inclusive = (range_token.type == TOKEN_ELLIPSIS);
+
+                ASTNode* range_node = createNodeAt(NODE_RANGE, range_token.location);
+                range_node->as.range = range_data;
+                item = range_node;
+            }
+            items->append(item);
+        } while (match(TOKEN_COMMA) && peek().type != TOKEN_FAT_ARROW);
+    }
+
+    expect(TOKEN_FAT_ARROW, "Missing => between cases and body");
+
+    const char* capture_name = NULL;
+    if (match(TOKEN_PIPE)) {
+        Token cap_token = expect(TOKEN_IDENTIFIER, "Expected identifier for switch capture");
+        capture_name = cap_token.value.identifier;
+        expect(TOKEN_PIPE, "Expected closing '|' after switch capture");
+    }
+
+    ASTNode* body = parseExpression();
+    if (body == NULL) error("Cases without corresponding body expression");
+
+    bool has_comma = match(TOKEN_COMMA);
+    if (!has_comma && peek().type != TOKEN_RBRACE) {
+        error("Expected ',' after switch prong body");
+    }
+
+    if (ctx == CTX_EXPRESSION) {
+        ASTSwitchProngNode* prong = (ASTSwitchProngNode*)arena_->alloc(sizeof(ASTSwitchProngNode));
+        if (!prong) error("Out of memory");
+        plat_memset(prong, 0, sizeof(ASTSwitchProngNode));
+        prong->items = items;
+        prong->is_else = is_else;
+        prong->capture_name = capture_name;
+        prong->loc = body->loc;
+        prong->body = body;
+        return prong;
+    } else {
+        ASTSwitchStmtProngNode* prong = (ASTSwitchStmtProngNode*)arena_->alloc(sizeof(ASTSwitchStmtProngNode));
+        if (!prong) error("Out of memory");
+        plat_memset(prong, 0, sizeof(ASTSwitchStmtProngNode));
+        prong->items = items;
+        prong->is_else = is_else;
+        prong->capture_name = capture_name;
+        prong->loc = body->loc;
+        prong->body = body;
+        return prong;
+    }
 }
 
 /**
@@ -953,8 +967,11 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
             match(TOKEN_DOT);
             Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name in struct initializer");
             field_name_str = field_name_token.value.identifier;
-            expect(TOKEN_EQUAL, "Expected '=' after field name in struct initializer");
-            value = parseExpression();
+            if (match(TOKEN_EQUAL)) {
+                value = parseExpression();
+            } else {
+                value = NULL;
+            }
             loc = field_name_token.location;
         } else {
             // Positional initializer (mostly for arrays)
@@ -1013,8 +1030,10 @@ ASTNode* Parser::parseAnonymousLiteral() {
         while (peek().type != TOKEN_RBRACE && !is_at_end()) {
             expect(TOKEN_DOT, "Expected '.' before field name in anonymous struct initializer");
             Token field_name_token = expect(TOKEN_IDENTIFIER, "Expected field name");
-            expect(TOKEN_EQUAL, "Expected '=' after field name");
-            ASTNode* value = parseExpression();
+            ASTNode* value = NULL;
+            if (match(TOKEN_EQUAL)) {
+                value = parseExpression();
+            }
 
             ASTNamedInitializer* named_init = (ASTNamedInitializer*)arena_->alloc(sizeof(ASTNamedInitializer));
             if (!named_init) error("Out of memory");

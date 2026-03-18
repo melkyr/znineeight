@@ -6,6 +6,13 @@ TEST_FUNC(CrossModule_EnumAccess) {
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
 
+    const char* json_source =
+        "pub const JsonValueTag = enum { Number, String };\n"
+        "pub const JsonValue = struct { tag: JsonValueTag };\n";
+    FILE* fj = fopen("json.zig", "w");
+    fprintf(fj, "%s", json_source);
+    fclose(fj);
+
     const char* main_source =
         "const json = @import(\"json.zig\");\n"
         "fn main() void {\n"
@@ -19,9 +26,14 @@ TEST_FUNC(CrossModule_EnumAccess) {
     // Add current directory to include paths for json.zig
     unit.addIncludePath(".");
 
-    unit.performFullPipeline(main_id);
+    bool success = unit.performFullPipeline(main_id);
 
-    return !unit.getErrorHandler().hasErrors();
+    if (unit.getErrorHandler().hasErrors()) {
+        unit.getErrorHandler().printErrors();
+    }
+
+    remove("json.zig");
+    return success && !unit.getErrorHandler().hasErrors();
 }
 
 TEST_FUNC(CrossModule_FunctionSignature) {

@@ -321,6 +321,11 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Ensures a type is forward-declared.
+     */
+    void ensureForwardDeclaration(Type* type);
+
+    /**
      * @brief Returns true if the emitter is in a valid state (file open).
      */
     bool isValid() const { return output_file_ != PLAT_INVALID_FILE; }
@@ -397,6 +402,11 @@ public:
      * @brief Sets an external cache for emitted slice types.
      */
     void setExternalSliceCache(DynamicArray<const char*>* cache) { external_cache_ = cache; }
+
+    /**
+     * @brief Sets the maximum chunk size for string literal splitting.
+     */
+    void setMaxStringLiteralChunk(size_t size) { max_string_literal_chunk_ = size; }
 
     /**
      * @brief Emits any buffered type definitions (slices, error unions).
@@ -566,6 +576,8 @@ private:
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
+    DynamicArray<const char*> emitted_enums_;
+    DynamicArray<const char*> emitted_forward_decls_;
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
@@ -580,6 +592,7 @@ private:
     char last_char_;
     int for_loop_counter_;
     SourceLocation current_loc_;
+    size_t max_string_literal_chunk_;
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];

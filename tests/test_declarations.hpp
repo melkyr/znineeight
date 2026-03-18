@@ -1129,6 +1129,9 @@ TEST_FUNC(MultiError_Reporting);
 // Batch 50: Recursive Slices
 TEST_FUNC(RecursiveSlice_MultiModule);
 TEST_FUNC(RecursiveSlice_SelfReference);
+TEST_FUNC(RecursiveSlice_MutuallyRecursive);
+TEST_FUNC(RecursiveSlice_CrossModuleMutual);
+TEST_FUNC(RecursiveSlice_InsideUnion);
 
 // Task 9.9: Tagged Union Captures
 TEST_FUNC(UnionCapture_ForwardDeclaredStruct);
@@ -1175,5 +1178,8 @@ bool test_Codegen_AnonymousStruct_Nested();
 
 // Batch 62: Regression tests
 TEST_FUNC(IssueSegfaultReturn);
+
+// Phase 3: Header Dependency Cycle
+TEST_FUNC(Phase3_ErrorUnionRecursion);
 
 #endif // TEST_DECLARATIONS_HPP

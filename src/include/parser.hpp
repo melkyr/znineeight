@@ -337,6 +337,9 @@ private:
     /** @brief Parses a switch expression or statement. */
     ASTNode* parseSwitch(ParseContext ctx);
 
+    /** @brief Parses a single prong of a switch. */
+    void* parseSwitchProng(ParseContext ctx);
+
     /** @brief Parses a switch expression. Helper for `parsePrimaryExpr`. */
     ASTNode* parseSwitchExpression();
 

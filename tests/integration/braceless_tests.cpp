@@ -48,7 +48,7 @@ TEST_FUNC(BracelessControlFlow_While) {
         "    var i: i32 = 0;\n"
         "    while (i < n) i = i + 1;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int n) { int i = 0; while (i < n) { i = i + 1; } }");
+    return run_braceless_test(source, "foo", "void foo(int n) { int i = 0; __loop_0_start: ; if (!(i < n)) goto __loop_0_end; { i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_For) {
@@ -84,7 +84,7 @@ TEST_FUNC(BracelessControlFlow_ErrDefer) {
         "    if (b) return error.Fail;\n"
         "}";
     // Lifter now wraps errdefer.
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* unsupported node type */ if (b) { { struct ErrorUnion_void __return_val; __return_val.err = ERROR_Fail; __return_val.is_error = 1; return __return_val; } } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* errdefer */ { cleanup(); } if (b) { { struct ErrorUnion_void __return_val; __return_val.is_error = 1; __return_val.err = ERROR_Fail; { cleanup(); } return __return_val; } } { cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_Defer) {
@@ -122,7 +122,7 @@ TEST_FUNC(BracelessControlFlow_EmptyWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int b) { while (b) { /* unsupported node type */ } }");
+    return run_braceless_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { ; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_ForBreak) {
@@ -137,7 +137,7 @@ TEST_FUNC(BracelessControlFlow_ForBreak) {
     if (!unit.performTestPipeline(file_id)) return false;
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string actual = emitter.emitFnDecl(unit.extractFunctionDeclaration("foo"));
-    if (actual.find("{ if (item > 0) { goto __loop_0_end; } }") == std::string::npos) {
+    if (actual.find("{ if (item > 0) { /* defers for break */ goto __loop_0_end; } }") == std::string::npos) {
         printf("FAIL: Braceless for with if-break not wrapped correctly.\nActual: %s\n", actual.c_str());
         return false;
     }
@@ -151,7 +151,7 @@ TEST_FUNC(BracelessControlFlow_CombinedDefers) {
         "    defer cleanup();\n"
         "    errdefer cleanup();\n"
         "}";
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* unsupported node type */ { cleanup(); } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* errdefer */ { cleanup(); } { cleanup(); } { cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_InsideLifted) {
@@ -173,5 +173,5 @@ TEST_FUNC(BracelessControlFlow_EmptyFor) {
         "fn foo(arr: [5]i32) void {\n"
         "    for (arr) |_| ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int arr[5]) { { unsigned int __idx = 0; __loop_0_start: ; while (__idx < /* len */) { { /* unsupported node type */ } __loop_0_continue: ; __idx++; goto __loop_0_start; } __loop_0_end: ; } }");
+    return run_braceless_test(source, "foo", "void foo(int arr[5]) { { unsigned int __idx = 0; __loop_0_start: ; while (__idx < /* len */) { { ; } __loop_0_continue: ; __idx++; goto __loop_0_start; } __loop_0_end: ; } }");
 }

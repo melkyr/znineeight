@@ -114,12 +114,48 @@ struct TypeChecker::ResolutionDepthGuard {
     }
 };
 
+struct TypeChecker::ExpectedTypeGuard {
+    TypeChecker& tc;
+
+    ExpectedTypeGuard(TypeChecker& tc_arg, Type* type) : tc(tc_arg) {
+        tc.pushExpectedType(type);
+    }
+
+    ~ExpectedTypeGuard() {
+        tc.popExpectedType();
+    }
+};
+
+struct TypeChecker::IndirectionGuard {
+    TypeChecker& tc;
+    IndirectionGuard(TypeChecker& tc_arg) : tc(tc_arg) {
+        tc.in_ptr_indirection_depth_++;
+    }
+    ~IndirectionGuard() {
+        tc.in_ptr_indirection_depth_--;
+    }
+};
+
+struct TypeChecker::ResolvingTypeGuard {
+    TypeChecker& tc;
+    Type* type;
+    ResolvingTypeGuard(TypeChecker& tc_arg, Type* t) : tc(tc_arg), type(t) {
+        if (type) tc.resolving_types_stack_.append(type);
+    }
+    ~ResolvingTypeGuard() {
+        if (type) tc.resolving_types_stack_.pop_back();
+    }
+};
+
 
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
     : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
-      current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0), in_defer_(false),
+      current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
+      in_ptr_indirection_depth_(0), in_defer_(false),
+      expected_type_stack_(unit_arg.getArena()),
+      resolving_types_stack_(unit_arg.getArena()),
       label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()),
       current_fn_labels_start_(0), next_label_id_(0) {
 }
@@ -162,6 +198,7 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+                placeholder->owner_module = placeholder->as.placeholder.module;
                 placeholder->as.placeholder.dependents = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
@@ -1129,12 +1166,18 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
     for (i = 0; i < actual_args; ++i) {
         arg_node = (*node->args)[i];
         if (!arg_node) return get_g_type_undefined();
-        arg_type = visit(arg_node);
 
-        if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
+        if (i < expected_args) {
+            param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
+            ExpectedTypeGuard guard(*this, param_type);
+            arg_type = visit(arg_node);
+        } else {
+            arg_type = visit(arg_node);
+        }
+
+        if (!arg_type) return get_g_type_undefined();
 
         if (i >= expected_args) continue;
-        param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
 
         /* Special handling for integer literal promotion in function calls */
         promoted = tryPromoteLiteral(arg_node, param_type);
@@ -1195,8 +1238,11 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
 
     /* Step 2: Resolve the type of the right-hand side. */
     if (!node->rvalue) return get_g_type_undefined();
-    rvalue_type = visit(node->rvalue);
-    if (!rvalue_type || is_type_undefined(rvalue_type)) return get_g_type_undefined();
+    {
+        ExpectedTypeGuard guard(*this, lvalue_type);
+        rvalue_type = visit(node->rvalue);
+    }
+    if (!rvalue_type) return get_g_type_undefined();
 
     /* Special handling for integer literal promotion in assignment. */
     promoted = tryPromoteLiteral(node->rvalue, lvalue_type);
@@ -1347,7 +1393,9 @@ bool TypeChecker::needsStringLiteralCoercion(ASTNode* src, Type* target) {
     if (!src || !target) return false;
     if (src->type != NODE_STRING_LITERAL) return false;
     if (target->kind != TYPE_SLICE) return false;
-    if (target->as.slice.element_type->kind != TYPE_U8 && target->as.slice.element_type->kind != TYPE_C_CHAR) return false;
+    Type* elem = target->as.slice.element_type;
+    if (elem && elem->kind == TYPE_PLACEHOLDER) elem = resolvePlaceholder(elem);
+    if (elem->kind != TYPE_U8 && elem->kind != TYPE_C_CHAR) return false;
     if (target->as.slice.is_const != true) return false;
     return true;
 }
@@ -1734,10 +1782,21 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     unit_.getSymbolTable().enterScope();
     last_type = get_g_type_void();
     if (node->statements) {
-        for (i = 0; i < node->statements->length(); ++i) {
+        size_t len = node->statements->length();
+        for (i = 0; i < len; ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (!stmt) continue;
-            Type* res = visit(stmt);
+
+            Type* res;
+            if (i == len - 1) {
+                /* Last statement naturally sees the expected type from outer context */
+                res = visit(stmt);
+            } else {
+                /* Intermediate statements should not see the outer expected type */
+                ExpectedTypeGuard guard(*this, NULL);
+                res = visit(stmt);
+            }
+
             if (res && is_type_undefined(res)) {
                 any_error = true;
             } else if (res) {
@@ -1836,6 +1895,7 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if expression condition must be a bool, integer, pointer, or optional");
     }
 
+    Type* expected = peekExpectedType();
     Type* then_type = NULL;
     if (node->capture_name) {
         if (!is_optional) {
@@ -1856,16 +1916,26 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
         node->capture_sym = sym;
 
         if (!node->then_expr) return get_g_type_undefined();
-        then_type = visit(node->then_expr);
+        {
+            ExpectedTypeGuard guard(*this, expected);
+            then_type = visit(node->then_expr);
+        }
         unit_.getSymbolTable().exitScope();
     } else {
         if (!node->then_expr) return get_g_type_undefined();
-        then_type = visit(node->then_expr);
+        {
+            ExpectedTypeGuard guard(*this, expected);
+            then_type = visit(node->then_expr);
+        }
     }
     if (!then_type || is_type_undefined(then_type)) return get_g_type_undefined();
 
     if (!node->else_expr) return get_g_type_undefined();
-    Type* else_type = visit(node->else_expr);
+    Type* else_type = NULL;
+    {
+        ExpectedTypeGuard guard(*this, expected);
+        else_type = visit(node->else_expr);
+    }
     if (!else_type || is_type_undefined(else_type)) return get_g_type_undefined();
 
     if (then_type->kind == TYPE_NORETURN) return else_type;
@@ -1965,10 +2035,12 @@ Type* TypeChecker::visitReturnStmt(ASTNode* parent, ASTReturnStmtNode* node) {
         return reportAndReturnUndefined(node->expression ? node->expression->loc : parent->loc, ERR_RETURN_INSIDE_DEFER, NULL);
     }
 
+
     Type* return_type = NULL;
     if (node->expression) {
+        ExpectedTypeGuard guard(*this, current_fn_return_type_);
         return_type = visit(node->expression);
-        if (!return_type || is_type_undefined(return_type)) return get_g_type_undefined();
+        if (!return_type) return get_g_type_undefined();
     } else {
         return_type = get_g_type_void();
     }
@@ -2218,6 +2290,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
             placeholder->kind = resolved->kind;
             placeholder->size = resolved->size;
             placeholder->alignment = resolved->alignment;
+            placeholder->owner_module = resolved->owner_module;
             if (resolved->c_name) {
                 placeholder->c_name = resolved->c_name;
             }
@@ -2358,7 +2431,7 @@ bool TypeChecker::validateRange(ASTRangeNode* range, Type* cond_type) {
     return true;
 }
 
-bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc) {
+bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc, Type* expected_type) {
     Type* cond_type = visit(cond);
     if (!cond_type || is_type_undefined(cond_type)) return false;
 
@@ -2450,8 +2523,8 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
                     item_expr->resolved_type = tag_type;
                 } else {
                     if (prong->capture_name) {
-                        /* Check for tag requirement before visiting. Must be a member access for captures. */
-                        if (item_expr->type != NODE_MEMBER_ACCESS) {
+                        /* Check for tag requirement before visiting. Must be a member access (or folded tag) for captures. */
+                        if (item_expr->type != NODE_MEMBER_ACCESS && item_expr->type != NODE_INTEGER_LITERAL) {
                              unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture requires a tag name case item");
                              return false;
                         }
@@ -2486,7 +2559,13 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 
         if (prong->capture_name) {
             ASTNode* item_expr = (*prong->items)[0];
-            const char* field_name = (item_expr->type == NODE_INTEGER_LITERAL) ? item_expr->as.integer_literal.original_name : NULL;
+            const char* field_name = NULL;
+            if (item_expr->type == NODE_INTEGER_LITERAL) {
+                field_name = item_expr->as.integer_literal.original_name;
+            } else if (item_expr->type == NODE_MEMBER_ACCESS && item_expr->as.member_access->base == NULL) {
+                field_name = item_expr->as.member_access->field_name;
+            }
+
             if (!field_name) {
                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), "Capture requires a tag name case item");
                 return false;
@@ -2508,28 +2587,52 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
             prong->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(prong->capture_name);
         }
 
-        Type* prong_type = visit(prong->body);
+        Type* prong_type = NULL;
+        {
+            ExpectedTypeGuard guard(*this, expected_type);
+            prong_type = visit(prong->body);
+
+            /* If we have an expected type, try to coerce now to resolve anonymous initializers early.
+               This must happen while the capture scope (if any) is still active. */
+            if (is_expr && expected_type && is_type_undefined(prong_type)) {
+                coerceNode(&prong->body, expected_type);
+                prong_type = prong->body->resolved_type;
+            }
+        }
+
         if (prong->capture_name) {
             unit_.getSymbolTable().exitScope();
         }
-        if (!prong_type || is_type_undefined(prong_type)) return false;
 
         if (is_expr) {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
+
             if (prong_type->kind != TYPE_NORETURN) {
-                if (!common_type) {
-                    common_type = prong_type;
-                    has_non_noreturn = true;
-                } else if (!areTypesEqual(common_type, prong_type)) {
-                    if (areTypesCompatible(common_type, prong_type)) {
-                        /* common_type is OK */
-                    } else if (areTypesCompatible(prong_type, common_type)) {
-                        common_type = prong_type;
-                    } else {
-                        unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                has_non_noreturn = true;
+
+                if (expected_type) {
+                    if (!IsTypeAssignableTo(prong_type, expected_type, prong->body->loc, prong->body)) {
                         return false;
+                    }
+                    /* In expected type mode, we just verify compatibility. Unification is bypassed. */
+                } else {
+                    /* Traditional unification */
+                    if (!common_type) {
+                        common_type = prong_type;
+                    } else if (!areTypesEqual(common_type, prong_type)) {
+                        if (areTypesCompatible(common_type, prong_type)) {
+                            /* common_type is OK */
+                        } else if (areTypesCompatible(prong_type, common_type)) {
+                            common_type = prong_type;
+                        } else {
+                            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, prong->body->loc, "Switch prong type does not match previous prongs");
+                            return false;
+                        }
                     }
                 }
             }
+        } else {
+            if (!prong_type || is_type_undefined(prong_type)) return false;
         }
     }
 
@@ -2541,6 +2644,12 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
     if (is_expr) {
         if (!has_non_noreturn) {
             result_type = get_g_type_noreturn();
+        } else if (expected_type) {
+            result_type = expected_type;
+            /* Perform final coercion to the expected type for all prongs */
+            for (size_t i = 0; i < prongs->length(); ++i) {
+                coerceNode(&(*prongs)[i]->body, expected_type);
+            }
         } else {
             result_type = common_type;
             if (common_type->kind == TYPE_SLICE) {
@@ -2557,8 +2666,9 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 }
 
 Type* TypeChecker::visitSwitchExpr(ASTSwitchExprNode* node) {
+    Type* expected_type = peekExpectedType();
     Type* result_type = NULL;
-    if (validateSwitch(node->expression, node->prongs, true, result_type, node->expression->loc)) {
+    if (validateSwitch(node->expression, node->prongs, true, result_type, node->expression->loc, expected_type)) {
         return result_type;
     }
     return get_g_type_undefined();
@@ -2618,6 +2728,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder->as.placeholder.name = node->name;
         placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
         placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+        placeholder->owner_module = placeholder->as.placeholder.module;
         placeholder->as.placeholder.dependents = NULL;
         placeholder->is_resolving = false;
         placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
@@ -2743,9 +2854,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
         /* Special case for anonymous struct/array initializers */
         if (node->initializer->type == NODE_STRUCT_INITIALIZER && !node->initializer->as.struct_initializer->type_expr) {
-            if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY)) {
+            if (declared_type && declared_type->kind == TYPE_PLACEHOLDER) {
+                declared_type = resolvePlaceholder(declared_type);
+            }
+            if (declared_type && (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_ARRAY || isTaggedUnion(declared_type))) {
                 node->initializer->resolved_type = declared_type;
-                if (declared_type->kind == TYPE_STRUCT) {
+                if (declared_type->kind == TYPE_STRUCT || isTaggedUnion(declared_type)) {
                     if (checkStructInitializerFields(node->initializer->as.struct_initializer, declared_type, node->initializer->loc)) {
                         initializer_type = declared_type;
                     } else {
@@ -2760,7 +2874,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 initializer_type = reportAndReturnUndefined(node->initializer->loc, ERR_TYPE_MISMATCH, "anonymous struct initializer requires a declared struct or array type");
             }
         } else {
-            initializer_type = visit(node->initializer);
+            if (declared_type) {
+                ExpectedTypeGuard guard(*this, declared_type);
+                initializer_type = visit(node->initializer);
+            } else {
+                initializer_type = visit(node->initializer);
+            }
             if (!initializer_type) return get_g_type_undefined();
             if (is_type_undefined(initializer_type)) {
                 /* If it's the literal 'undefined', it's not an error. */
@@ -3085,7 +3204,12 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     size_t j;
     void* mem;
     DynamicArray<StructField>* fields;
-    Type* struct_type;
+    Type* struct_type = NULL;
+    Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+    Symbol* self_sym = struct_name ? unit_.getSymbolTable().lookupInCurrentScope(struct_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+    ResolvingTypeGuard resolving_guard(*this, self_placeholder);
+
     if (!node->fields) return get_g_type_undefined();
 
     /* 1. Check for duplicate field names. */
@@ -3114,15 +3238,35 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
-        if (!isTypeComplete(field_type)) {
+        bool is_recursive_indirection = false;
+        for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
+            if (isPointerIndirectionTo(field_type, resolving_types_stack_[k])) {
+                is_recursive_indirection = true;
+                break;
+            }
+        }
+
+        if (field_type && !is_recursive_indirection && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_data->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
+
+             char msg[512];
+             char* current = msg;
+             size_t remaining = sizeof(msg);
+
+             if (field_type->is_resolving) {
+                 safe_append(current, remaining, "cycle detected: type '");
+                 safe_append(current, remaining, struct_name ? struct_name : "(anonymous)");
+                 safe_append(current, remaining, "' depends on itself by value through field '");
+                 safe_append(current, remaining, field_data->name);
+                 safe_append(current, remaining, "'");
+             } else {
+                 safe_append(current, remaining, "field '");
+                 safe_append(current, remaining, field_data->name);
+                 safe_append(current, remaining, "' has incomplete type '");
+                 safe_append(current, remaining, type_str);
+                 safe_append(current, remaining, "'");
+             }
              return reportAndReturnUndefined(field_data->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
@@ -3137,6 +3281,9 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
     /* 3. Create struct type and calculate layout. */
     struct_type = createStructType(unit_.getArena(), fields, struct_name);
+
+    struct_type->owner_module = current_mod;
+
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -3162,7 +3309,11 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     DynamicArray<EnumMember>* members;
     char* enum_name;
     size_t len;
-    Type* union_type;
+    Type* union_type = NULL;
+    Symbol* self_sym = union_name ? unit_.getSymbolTable().lookupInCurrentScope(union_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+    ResolvingTypeGuard resolving_guard(*this, self_placeholder);
+
     if (!node->fields) return get_g_type_undefined();
 
     tag_type = NULL;
@@ -3208,15 +3359,35 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             return reportAndReturnUndefined(field_node->type->loc, ERR_NON_C89_FEATURE, "Union field type is not C89-compatible");
         }
 
-        if (field_type && !isTypeComplete(field_type)) {
+        bool is_recursive_indirection = false;
+        for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
+            if (isPointerIndirectionTo(field_type, resolving_types_stack_[k])) {
+                is_recursive_indirection = true;
+                break;
+            }
+        }
+
+        if (field_type && !is_recursive_indirection && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
-             char msg[256];
-             plat_strcpy(msg, "field '");
-             plat_strcat(msg, field_node->name);
-             plat_strcat(msg, "' has incomplete type '");
-             plat_strcat(msg, type_str);
-             plat_strcat(msg, "'");
+
+             char msg[512];
+             char* current = msg;
+             size_t remaining = sizeof(msg);
+
+             if (field_type->is_resolving) {
+                 safe_append(current, remaining, "cycle detected: type '");
+                 safe_append(current, remaining, union_name ? union_name : "(anonymous)");
+                 safe_append(current, remaining, "' depends on itself by value through field '");
+                 safe_append(current, remaining, field_node->name);
+                 safe_append(current, remaining, "'");
+             } else {
+                 safe_append(current, remaining, "field '");
+                 safe_append(current, remaining, field_node->name);
+                 safe_append(current, remaining, "' has incomplete type '");
+                 safe_append(current, remaining, type_str);
+                 safe_append(current, remaining, "'");
+             }
              return reportAndReturnUndefined(field_node->type->loc, ERR_TYPE_MISMATCH, msg);
         }
 
@@ -3263,6 +3434,9 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     }
 
     union_type = createUnionType(unit_.getArena(), fields, union_name, node->is_tagged, tag_type);
+
+    union_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+
     if (union_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(union_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -3281,8 +3455,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     DynamicArray<const char*>* tags;
     bool found;
     size_t i;
-    DynamicArray<EnumMember>* members;
-    size_t member_idx;
     Type* field_type;
     bool is_type_access = false;
 
@@ -3301,23 +3473,16 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         Type* unwrapped = node->base->resolved_type;
         if (!unwrapped || unwrapped->kind == TYPE_TYPE) {
             /* Try to find the concrete type through the symbol. */
+            Symbol* sym = NULL;
             if (node->base->type == NODE_IDENTIFIER) {
-                Symbol* sym = node->base->as.identifier.symbol;
+                sym = node->base->as.identifier.symbol;
                 if (!sym) sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
-                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                    if (decl->initializer) {
-                        unwrapped = decl->initializer->resolved_type;
-                    }
-                }
             } else if (node->base->type == NODE_MEMBER_ACCESS) {
-                Symbol* sym = node->base->as.member_access->symbol;
-                if (sym && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                    ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                    if (decl->initializer) {
-                        unwrapped = decl->initializer->resolved_type;
-                    }
-                }
+                sym = node->base->as.member_access->symbol;
+            }
+
+            if (sym) {
+                unwrapped = resolveTypeConstant(sym);
             }
         }
 
@@ -3352,6 +3517,20 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* Fall through for error reporting if not "len" or "ptr" */
     }
 
+    /* Array built-in properties */
+    if (base_type->kind == TYPE_ARRAY) {
+        if (plat_strcmp(node->field_name, "len") == 0) {
+            /* Transform into integer literal (comptime constant) */
+            parent->type = NODE_INTEGER_LITERAL;
+            parent->as.integer_literal.value = base_type->as.array.size;
+            parent->as.integer_literal.is_unsigned = true;
+            parent->as.integer_literal.is_long = false;
+            parent->as.integer_literal.resolved_type = get_g_type_usize();
+            parent->resolved_type = get_g_type_usize();
+            return get_g_type_usize();
+        }
+    }
+
     /* Module member access. */
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
@@ -3381,28 +3560,10 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                     }
 
                     /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
-                    if (result_type->kind == TYPE_TYPE && sym->details && sym->kind == SYMBOL_VARIABLE) {
-                        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
-                        Type* unwrapped = NULL;
-
-                        if (decl->initializer && decl->initializer->resolved_type && decl->initializer->resolved_type->kind != TYPE_TYPE) {
-                            unwrapped = decl->initializer->resolved_type;
-                        } else if (decl->initializer) {
-                             const char* saved_module = unit_.getCurrentModule();
-                             unit_.setCurrentModule(target_mod->name);
-                             TypeChecker target_checker(unit_);
-                             unwrapped = target_checker.visit(decl->initializer);
-                             if (unwrapped && unwrapped->kind == TYPE_TYPE && decl->initializer->resolved_type) {
-                                 unwrapped = decl->initializer->resolved_type;
-                             }
-                             unit_.setCurrentModule(saved_module);
-                        }
+                    if (result_type->kind == TYPE_TYPE) {
+                        Type* unwrapped = resolveTypeConstant(sym);
 
                         if (unwrapped && unwrapped->kind != TYPE_TYPE) {
-                            if (unwrapped->kind == TYPE_PLACEHOLDER) {
-                                unwrapped = resolvePlaceholder(unwrapped);
-                            }
-
                             const char* saved_module = unit_.getCurrentModule();
                             unit_.setCurrentModule(target_mod->name);
                             unwrapped = resolveAllPlaceholders(unwrapped);
@@ -3443,18 +3604,33 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (base_type->kind == TYPE_ERROR_SET) {
         /* Error set tag access: ErrorSetName.TagName */
-        tags = base_type->as.error_set.tags;
-        found = false;
-        if (tags) {
-            for (i = 0; i < tags->length(); ++i) {
-                if (identifiers_equal((*tags)[i], node->field_name)) {
-                    found = true;
-                    break;
+        if (is_type_access) {
+            i64 error_val = findErrorTagValue(base_type, node->field_name);
+            if (error_val != -1) {
+                /* Constant-fold to integer literal (error tag value) */
+                parent->type = NODE_INTEGER_LITERAL;
+                parent->as.integer_literal.value = (u64)error_val;
+                parent->as.integer_literal.is_unsigned = true;
+                parent->as.integer_literal.is_long = false;
+                parent->as.integer_literal.resolved_type = base_type;
+                parent->as.integer_literal.original_name = node->field_name;
+                parent->resolved_type = base_type;
+                return base_type;
+            }
+        } else {
+            tags = base_type->as.error_set.tags;
+            found = false;
+            if (tags) {
+                for (i = 0; i < tags->length(); ++i) {
+                    if (identifiers_equal((*tags)[i], node->field_name)) {
+                        found = true;
+                        break;
+                    }
                 }
             }
-        }
-        if (found) {
-            return base_type;
+            if (found) {
+                return base_type;
+            }
         }
         /* Fall through to error. */
     }
@@ -3481,30 +3657,18 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         }
 
         if (is_static_access) {
-            Type* tag_type = (base_type->kind == TYPE_TAGGED_UNION) ?
-                             base_type->as.tagged_union.tag_type : base_type->as.struct_details.tag_type;
+            Type* tag_type = getTagType(base_type);
             if (tag_type && tag_type->kind == TYPE_ENUM) {
-                members = tag_type->as.enum_details.members;
-                found = false;
-                member_idx = 0;
-                if (members) {
-                    for (i = 0; i < members->length(); ++i) {
-                        if (identifiers_equal((*members)[i].name, node->field_name)) {
-                            found = true;
-                            member_idx = i;
-                            break;
-                        }
-                    }
-                }
+                i64 tag_val = findEnumMemberValue(tag_type, node->field_name);
 
-                if (found) {
+                if (tag_val != -1) {
                     /* Constant-fold to integer literal */
                     parent->type = NODE_INTEGER_LITERAL;
-                    parent->as.integer_literal.value = (*members)[member_idx].value;
+                    parent->as.integer_literal.value = (u64)tag_val;
                     parent->as.integer_literal.is_unsigned = true;
                     parent->as.integer_literal.is_long = false;
                     parent->as.integer_literal.resolved_type = tag_type;
-                    parent->as.integer_literal.original_name = (*members)[member_idx].name;
+                    parent->as.integer_literal.original_name = node->field_name;
                     parent->resolved_type = tag_type;
                     return tag_type;
                 }
@@ -3522,18 +3686,9 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (base_type->kind == TYPE_ENUM) {
         /* Enum member access. Always static in Z98. */
-        members = base_type->as.enum_details.members;
-        found = false;
-        member_idx = 0;
-        for (i = 0; i < members->length(); ++i) {
-            if (identifiers_equal((*members)[i].name, node->field_name)) {
-                found = true;
-                member_idx = i;
-                break;
-            }
-        }
+        i64 enum_val = findEnumMemberValue(base_type, node->field_name);
 
-        if (!found) {
+        if (enum_val == -1) {
             char msg_buffer[256];
             char* current = msg_buffer;
             size_t remaining = sizeof(msg_buffer);
@@ -3546,11 +3701,11 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         /* --- ENUM CONSTANT FOLDING --- */
         /* Replace this NODE_MEMBER_ACCESS with a NODE_INTEGER_LITERAL */
         parent->type = NODE_INTEGER_LITERAL;
-        parent->as.integer_literal.value = (*members)[member_idx].value;
+        parent->as.integer_literal.value = (u64)enum_val;
         parent->as.integer_literal.is_unsigned = true;
         parent->as.integer_literal.is_long = false;
         parent->as.integer_literal.resolved_type = base_type;
-        parent->as.integer_literal.original_name = (*members)[member_idx].name;
+        parent->as.integer_literal.original_name = node->field_name;
         parent->resolved_type = base_type;
 
         return base_type; /* Result type is the enum type itself */
@@ -3575,9 +3730,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
-    if (!struct_type || (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION)) return false;
+    if (!struct_type) return false;
+    if (struct_type->kind == TYPE_PLACEHOLDER) {
+        struct_type = resolvePlaceholder(struct_type);
+    }
+    if (struct_type->kind != TYPE_STRUCT && struct_type->kind != TYPE_UNION && struct_type->kind != TYPE_TAGGED_UNION) return false;
 
-    DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    DynamicArray<StructField>* fields = (struct_type->kind == TYPE_TAGGED_UNION) ?
+                                        struct_type->as.tagged_union.payload_fields :
+                                        struct_type->as.struct_details.fields;
 
     /* 1. Check for missing fields (only for structs) */
     if (struct_type->kind == TYPE_STRUCT) {
@@ -3602,9 +3763,12 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
             }
         }
     } else {
-        /* For unions, exactly one field must be initialized. */
+        /* For unions and tagged unions, exactly one field must be initialized. */
         if (node->fields->length() != 1) {
-            reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, "union initializer must have exactly one field");
+            const char* msg = (struct_type->kind == TYPE_TAGGED_UNION) ?
+                              "tagged union initializer must have exactly one field" :
+                              "union initializer must have exactly one field";
+            reportAndReturnUndefined(loc, ERR_TYPE_MISMATCH, msg);
             return false;
         }
     }
@@ -3632,8 +3796,43 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
         }
 
         /* 2. Type check initializer values */
+        if (init->value == NULL) {
+            /* Naked tag: valid only if payload is void */
+            if (field_type->kind != TYPE_VOID) {
+                char msg[256];
+                char* curr = msg;
+                size_t rem = sizeof(msg);
+                safe_append(curr, rem, "Tag '");
+                safe_append(curr, rem, init->field_name);
+                safe_append(curr, rem, "' requires a value, but none provided (naked tag only allowed for void payload)");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+                return false;
+            }
+            continue; // Valid naked tag
+        }
+
+        /* Handle explicit empty initializer for void payload: .Tag = {} */
+        if (field_type->kind == TYPE_VOID && init->value->type == NODE_TUPLE_LITERAL && init->value->as.tuple_literal->elements->length() == 0) {
+            init->value->resolved_type = get_g_type_void();
+            continue;
+        }
+
         Type* val_type = visit(init->value);
         if (val_type && is_type_undefined(val_type)) return false;
+
+        if (field_type->kind == TYPE_VOID) {
+            if (val_type->kind != TYPE_VOID) {
+                char msg[256];
+                char* curr = msg;
+                size_t rem = sizeof(msg);
+                safe_append(curr, rem, "Tag '");
+                safe_append(curr, rem, init->field_name);
+                safe_append(curr, rem, "' has void payload, but initializer provides a non-void value");
+                reportAndReturnUndefined(init->loc, ERR_TYPE_MISMATCH, msg);
+                return false;
+            }
+            continue;
+        }
 
         /* Consistent Coercion Handling */
         coerceNode(&init->value, field_type);
@@ -3711,7 +3910,7 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
             return reportAndReturnUndefined(node->type_expr->loc, ERR_TYPE_MISMATCH, "expected struct, union or array type for initialization");
         }
 
-        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION) {
+        if (struct_type->kind == TYPE_STRUCT || struct_type->kind == TYPE_UNION || struct_type->kind == TYPE_TAGGED_UNION) {
             if (checkStructInitializerFields(node, struct_type, node->type_expr->loc)) {
                 return struct_type;
             }
@@ -3840,6 +4039,8 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
 
     /* 4. Create and return the new enum type. */
     Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
+    enum_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+
     if (enum_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(enum_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
@@ -3918,6 +4119,7 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
     Type* base_type;
     if (!node->base) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     base_type = visit(node->base);
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
     return createPointerType(unit_.getArena(), base_type, node->is_const, node->is_many, &unit_.getTypeInterner());
@@ -3930,12 +4132,14 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     /* 1. Handle slices */
     if (!node->size) {
         if (!node->element_type) return get_g_type_undefined();
+        IndirectionGuard guard(*this);
         element_type = visit(node->element_type);
         if (!element_type || is_type_undefined(element_type)) return get_g_type_undefined();
         return createSliceType(unit_.getArena(), element_type, node->is_const, &unit_.getTypeInterner());
     }
 
     /* 2. Ensure size is a constant integer literal */
+    visit(node->size);
     if (node->size->type != NODE_INTEGER_LITERAL) {
         return reportAndReturnUndefined(node->size->loc, ERR_TYPE_MISMATCH, "Array size must be a constant integer literal");
     }
@@ -3993,6 +4197,7 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 
 Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
     if (!node->payload_type) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     Type* payload = visit(node->payload_type);
     if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
 
@@ -4083,6 +4288,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
     logFeatureLocation("optional_type", node->loc);
     if (!node->payload_type) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     Type* payload = visit(node->payload_type);
     if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
     return createOptionalType(unit_.getArena(), payload, &unit_.getTypeInterner());
@@ -4345,7 +4551,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     /* Array to Slice coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_ARRAY) {
         Type* e_elem = expected->as.slice.element_type;
+        if (e_elem && e_elem->kind == TYPE_PLACEHOLDER) e_elem = resolvePlaceholder(e_elem);
         Type* a_elem = actual->as.array.element_type;
+        if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
+
         if (areTypesEqual(e_elem, a_elem)) return true;
         if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
             (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
@@ -4356,9 +4565,13 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_POINTER &&
         !actual->as.pointer.is_many && actual->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = actual->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(expected->as.slice.element_type, element_type) ||
-                         ((expected->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (expected->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* expected_elem = expected->as.slice.element_type;
+        if (expected_elem && expected_elem->kind == TYPE_PLACEHOLDER) expected_elem = resolvePlaceholder(expected_elem);
+
+        bool compatible = areTypesEqual(expected_elem, element_type) ||
+                         ((expected_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (expected_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
             return expected->as.slice.is_const || !actual->as.pointer.is_const;
         }
@@ -4395,7 +4608,10 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     /* Slice to Slice assignment/coercion */
     if (expected->kind == TYPE_SLICE && actual->kind == TYPE_SLICE) {
         Type* e_elem = expected->as.slice.element_type;
+        if (e_elem && e_elem->kind == TYPE_PLACEHOLDER) e_elem = resolvePlaceholder(e_elem);
         Type* a_elem = actual->as.slice.element_type;
+        if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
+
         bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
                                ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
                                 (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
@@ -4430,12 +4646,6 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     if (expected->kind == TYPE_ERROR_UNION) {
         /* T is compatible with !T (implicit wrap) */
         if (areTypesCompatible(expected->as.error_union.payload, actual)) {
-            return true;
-        }
-    }
-    if (actual->kind == TYPE_ERROR_UNION) {
-        /* !T is compatible with T (implicit unwrap - unsafe but fine for rejection pass) */
-        if (areTypesCompatible(expected, actual->as.error_union.payload)) {
             return true;
         }
     }
@@ -4772,6 +4982,43 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
     }
 }
 
+bool TypeChecker::isPointerIndirectionTo(Type* type, Type* target) {
+    if (!type) return false;
+    if (type == target) {
+        /* If we are already inside a pointer indirection, then finding the target means it IS recursive through a pointer. */
+        return in_ptr_indirection_depth_ > 0;
+    }
+
+    switch (type->kind) {
+        case TYPE_POINTER: {
+            Type* base = type->as.pointer.base;
+            if (base->kind == TYPE_PLACEHOLDER) base = resolvePlaceholder(base);
+            in_ptr_indirection_depth_++;
+            bool result = isPointerIndirectionTo(base, target);
+            in_ptr_indirection_depth_--;
+            return result;
+        }
+        case TYPE_ARRAY:
+            return isPointerIndirectionTo(type->as.array.element_type, target);
+        case TYPE_SLICE:
+            // Slices are pointers conceptually in Zig, so target being incomplete is OK
+            {
+                Type* elem = type->as.slice.element_type;
+                if (elem->kind == TYPE_PLACEHOLDER) elem = resolvePlaceholder(elem);
+                in_ptr_indirection_depth_++;
+                bool result = isPointerIndirectionTo(elem, target);
+                in_ptr_indirection_depth_--;
+                return result;
+            }
+        case TYPE_OPTIONAL:
+            return isPointerIndirectionTo(type->as.optional.payload, target);
+        case TYPE_ERROR_UNION:
+            return isPointerIndirectionTo(type->as.error_union.payload, target);
+        default:
+            return false;
+    }
+}
+
 bool TypeChecker::checkIntegerLiteralFit(i64 value, Type* int_type) {
     if (!isIntegerType(int_type)) {
         return false; /* Should not happen with enums */
@@ -4922,6 +5169,8 @@ void TypeChecker::validateStructOrUnionFields(ASTNode* decl_node) {
 }
 
 bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, SourceLocation loc, ASTNode* source_node) {
+    if (!source_type || !target_type) return false;
+
     if (source_node && needsStringLiteralCoercion(source_node, target_type)) {
         return true;
     }
@@ -4950,12 +5199,12 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
     /* Error Union assignment */
     if (target_type->kind == TYPE_ERROR_UNION) {
-        /* T -> !T (success wrapping) */
-        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
-            return true;
-        }
         /* error.Tag -> !T (error wrapping) */
         if (source_type->kind == TYPE_ERROR_SET) {
+            return true;
+        }
+        /* T -> !T (success wrapping) */
+        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
             return true;
         }
     }
@@ -4985,9 +5234,13 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
         !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = source_type->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
-                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+
+        bool compatible = areTypesEqual(target_elem, element_type) ||
+                         ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
             return target_type->as.slice.is_const || !source_type->as.pointer.is_const;
         }
@@ -5832,19 +6085,89 @@ ASTNode* TypeChecker::createIntegerLiteral(u64 value, Type* type, SourceLocation
 }
 
 void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
+    static int recursion_depth = 0;
+    const int MAX_RECURSION_DEPTH = 64;
+
     if (!node_slot || !*node_slot || !target_type) return;
+
+    if (++recursion_depth > MAX_RECURSION_DEPTH) {
+        /* Silently stop recursion to avoid stack overflow. Error will likely be caught by caller or later pass. */
+        --recursion_depth;
+        return;
+    }
+
+    if (target_type->kind == TYPE_PLACEHOLDER) {
+        target_type = resolvePlaceholder(target_type);
+    }
     ASTNode* node = *node_slot;
     Type* source_type = node->resolved_type;
     if (!source_type) source_type = visit(node);
-    if (!source_type || is_type_undefined(source_type)) return;
 
-    if (source_type == target_type) return;
+    bool is_anonymous_init = (node->type == NODE_STRUCT_INITIALIZER && node->as.struct_initializer->type_expr == NULL);
+    bool is_switch_expr = (node->type == NODE_SWITCH_EXPR);
+    bool is_if_expr = (node->type == NODE_IF_EXPR);
+    bool is_naked_tag = (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL);
+
+    if (is_type_undefined(source_type) && !is_anonymous_init && !is_switch_expr && !is_if_expr && !is_naked_tag) {
+        --recursion_depth;
+        return;
+    }
+
+    if (source_type == target_type && !is_anonymous_init) {
+        --recursion_depth;
+        return;
+    }
+
+    // New: Anonymous struct initializer to tagged union
+    if (is_anonymous_init) {
+        if (isTaggedUnion(target_type) || target_type->kind == TYPE_STRUCT || target_type->kind == TYPE_ARRAY) {
+            if (target_type->kind == TYPE_ARRAY) {
+                node->resolved_type = target_type;
+            } else {
+                if (checkStructInitializerFields(node->as.struct_initializer, target_type, node->loc)) {
+                    node->resolved_type = target_type;
+                }
+            }
+            return;
+        }
+    }
+
+    // New: Naked tag (.A) to tagged union
+    if (node->type == NODE_MEMBER_ACCESS && node->as.member_access->base == NULL) {
+        if (isTaggedUnion(target_type)) {
+            // Transform .Tag into .{ .Tag } (struct initializer with no value)
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+            
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+            
+            ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(field, 0, sizeof(ASTNamedInitializer));
+            field->field_name = node->as.member_access->field_name;
+            field->value = NULL; // Naked tag
+            field->loc = node->loc;
+            
+            init_node->as.struct_initializer->fields->append(field);
+            
+            if (checkStructInitializerFields(init_node->as.struct_initializer, target_type, node->loc)) {
+                init_node->resolved_type = target_type;
+                *node_slot = init_node;
+            }
+            return;
+        }
+    }
 
     /* Handle recursion for control-flow expressions (distributive property) */
     if (node->type == NODE_IF_EXPR) {
         coerceNode(&node->as.if_expr->then_expr, target_type);
         coerceNode(&node->as.if_expr->else_expr, target_type);
         node->resolved_type = target_type;
+        --recursion_depth;
         return;
     }
 
@@ -5855,12 +6178,18 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             }
         }
         node->resolved_type = target_type;
+        --recursion_depth;
         return;
     }
 
     /* Coercion 1: Array -> Slice */
-    if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
-        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.array.element_type)) {
+    if (target_type->kind == TYPE_SLICE && source_type && source_type->kind == TYPE_ARRAY) {
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+        Type* source_elem = source_type->as.array.element_type;
+        if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
+
+        if (areTypesEqual(target_elem, source_elem)) {
             ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));
             slice_node->type = NODE_ARRAY_SLICE;
@@ -5884,7 +6213,12 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
 
     /* Coercion 3: Slice -> Slice (const conversion) */
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
-        if (areTypesEqual(target_type->as.slice.element_type, source_type->as.slice.element_type)) {
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+        Type* source_elem = source_type->as.slice.element_type;
+        if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
+
+        if (areTypesEqual(target_elem, source_elem)) {
             /* If elements match, we just update the type to the target type (e.g. adding const).
                Since slices are passed by value and have identical C representation,
                a simple type change is sufficient. */
@@ -5897,9 +6231,13 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_POINTER &&
         !source_type->as.pointer.is_many && source_type->as.pointer.base->kind == TYPE_ARRAY) {
         Type* element_type = source_type->as.pointer.base->as.array.element_type;
-        bool compatible = areTypesEqual(target_type->as.slice.element_type, element_type) ||
-                         ((target_type->as.slice.element_type->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
-                          (target_type->as.slice.element_type->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
+        if (element_type && element_type->kind == TYPE_PLACEHOLDER) element_type = resolvePlaceholder(element_type);
+        Type* target_elem = target_type->as.slice.element_type;
+        if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
+
+        bool compatible = areTypesEqual(target_elem, element_type) ||
+                         ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
+                          (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible && (target_type->as.slice.is_const || !source_type->as.pointer.is_const)) {
             ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));
@@ -5913,9 +6251,252 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
             visitArraySlice(slice_node->as.array_slice);
             slice_node->resolved_type = target_type;
             *node_slot = slice_node;
+            --recursion_depth;
             return;
         }
     }
+
+    /* Coercion 5: Optional Wrapping (T -> ?T) */
+    if (target_type->kind == TYPE_OPTIONAL && source_type->kind != TYPE_OPTIONAL) {
+        if (source_type->kind == TYPE_NORETURN) {
+            --recursion_depth;
+            return;
+        }
+
+        Type* payload = target_type->as.optional.payload;
+        if (payload->kind == TYPE_PLACEHOLDER) payload = resolvePlaceholder(payload);
+
+        if (source_type->kind == TYPE_NULL) {
+            /* null -> ?T: { .has_value = 0 } */
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* has_value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(has_value_field, 0, sizeof(ASTNamedInitializer));
+            has_value_field->field_name = "has_value";
+            has_value_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+            has_value_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(has_value_field);
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        } else {
+            /* T -> ?T: { .has_value = 1, .value = coerced_source } */
+            coerceNode(node_slot, payload);
+            node = *node_slot; // Update node after potential replacement
+
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* has_value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(has_value_field, 0, sizeof(ASTNamedInitializer));
+            has_value_field->field_name = "has_value";
+            has_value_field->value = createIntegerLiteral(1, get_g_type_bool(), node->loc);
+            has_value_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(has_value_field);
+
+            if (payload->kind != TYPE_VOID) {
+                ASTNamedInitializer* value_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(value_field, 0, sizeof(ASTNamedInitializer));
+                value_field->field_name = "value";
+                value_field->value = node;
+                value_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(value_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        }
+    }
+
+    /* Coercion 6: Error Union Wrapping (T -> !T) */
+    if (target_type->kind == TYPE_ERROR_UNION && source_type->kind != TYPE_ERROR_UNION) {
+        if (source_type->kind == TYPE_NORETURN) {
+            --recursion_depth;
+            return;
+        }
+
+        Type* payload = target_type->as.error_union.payload;
+        if (payload->kind == TYPE_PLACEHOLDER) payload = resolvePlaceholder(payload);
+
+        if (source_type->kind == TYPE_ERROR_SET) {
+            /* error.Tag -> !T: { .is_error = 1, .data = { .err = tag } } (or .err if void) */
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+            is_error_field->field_name = "is_error";
+            is_error_field->value = createIntegerLiteral(1, get_g_type_bool(), node->loc);
+            is_error_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(is_error_field);
+
+            if (payload->kind != TYPE_VOID) {
+                ASTNode* data_init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(data_init_node, 0, sizeof(ASTNode));
+                data_init_node->type = NODE_STRUCT_INITIALIZER;
+                data_init_node->loc = node->loc;
+                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* data_fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                data_init_node->as.struct_initializer->fields = new (data_fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* err_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(err_field, 0, sizeof(ASTNamedInitializer));
+                err_field->field_name = "err";
+                err_field->value = node;
+                err_field->loc = node->loc;
+                data_init_node->as.struct_initializer->fields->append(err_field);
+
+                ASTNamedInitializer* data_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(data_field, 0, sizeof(ASTNamedInitializer));
+                data_field->field_name = "data";
+                data_field->value = data_init_node;
+                data_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(data_field);
+            } else {
+                ASTNamedInitializer* err_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(err_field, 0, sizeof(ASTNamedInitializer));
+                err_field->field_name = "err";
+                err_field->value = node;
+                err_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(err_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        } else {
+            /* T -> !T: { .is_error = 0, .data = { .payload = coerced_source } } */
+            if (payload->kind == TYPE_VOID) {
+                // If payload is void, we don't need to coerce the source to it (source should already be void)
+                // but we might need to preserve side effects if the source is not void.
+
+                ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(init_node, 0, sizeof(ASTNode));
+                init_node->type = NODE_STRUCT_INITIALIZER;
+                init_node->loc = node->loc;
+                init_node->resolved_type = target_type;
+                init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+                void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+                is_error_field->field_name = "is_error";
+                is_error_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+                is_error_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(is_error_field);
+
+                // Check for side effects: anything that isn't a simple literal or identifier
+                bool has_side_effects = (node->type != NODE_INTEGER_LITERAL && node->type != NODE_FLOAT_LITERAL &&
+                                         node->type != NODE_BOOL_LITERAL && node->type != NODE_NULL_LITERAL &&
+                                         node->type != NODE_STRING_LITERAL && node->type != NODE_IDENTIFIER &&
+                                         node->type != NODE_EMPTY_STMT);
+
+                if (has_side_effects) {
+                    ASTNode* block_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                    plat_memset(block_node, 0, sizeof(ASTNode));
+                    block_node->type = NODE_BLOCK_STMT;
+                    block_node->loc = node->loc;
+                    block_node->resolved_type = target_type;
+                    void* stmts_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNode*>));
+                    block_node->as.block_stmt.statements = new (stmts_mem) DynamicArray<ASTNode*>(unit_.getArena());
+                    block_node->as.block_stmt.statements->append(node);
+                    block_node->as.block_stmt.statements->append(init_node);
+                    *node_slot = block_node;
+                } else {
+                    *node_slot = init_node;
+                }
+                --recursion_depth;
+                return;
+            }
+
+            coerceNode(node_slot, payload);
+            node = *node_slot; // Update node after potential replacement
+
+            ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+            plat_memset(init_node, 0, sizeof(ASTNode));
+            init_node->type = NODE_STRUCT_INITIALIZER;
+            init_node->loc = node->loc;
+            init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+            plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+            void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+            init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+            ASTNamedInitializer* is_error_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+            plat_memset(is_error_field, 0, sizeof(ASTNamedInitializer));
+            is_error_field->field_name = "is_error";
+            is_error_field->value = createIntegerLiteral(0, get_g_type_bool(), node->loc);
+            is_error_field->loc = node->loc;
+            init_node->as.struct_initializer->fields->append(is_error_field);
+
+            if (payload->kind != TYPE_VOID) {
+                /* Build .data = { .payload = node } */
+                ASTNode* data_init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(data_init_node, 0, sizeof(ASTNode));
+                data_init_node->type = NODE_STRUCT_INITIALIZER;
+                data_init_node->loc = node->loc;
+                data_init_node->resolved_type = get_g_type_anytype();
+                data_init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(data_init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* data_fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                data_init_node->as.struct_initializer->fields = new (data_fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* payload_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(payload_field, 0, sizeof(ASTNamedInitializer));
+                payload_field->field_name = "payload";
+                payload_field->value = node;
+                payload_field->loc = node->loc;
+                data_init_node->as.struct_initializer->fields->append(payload_field);
+
+                ASTNamedInitializer* data_field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(data_field, 0, sizeof(ASTNamedInitializer));
+                data_field->field_name = "data";
+                data_field->value = data_init_node;
+                data_field->loc = node->loc;
+                init_node->as.struct_initializer->fields->append(data_field);
+            }
+
+            init_node->resolved_type = target_type;
+            *node_slot = init_node;
+            --recursion_depth;
+            return;
+        }
+    }
+
+    --recursion_depth;
 }
 
 void TypeChecker::injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type) {
@@ -6008,4 +6589,73 @@ ASTNode* TypeChecker::createUnaryOp(ASTNode* operand, Zig0TokenType op, Type* ty
     node->as.unary_op.op = op;
     node->resolved_type = type;
     return node;
+}
+
+Type* TypeChecker::resolveTypeConstant(Symbol* sym) {
+    if (!sym) return NULL;
+    Type* t = sym->symbol_type;
+    int depth = 0;
+    const int MAX_DEPTH = 64;
+    while (t && t->kind == TYPE_TYPE && sym->kind == SYMBOL_VARIABLE && sym->details) {
+        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+        if (!decl->initializer) break;
+
+        if (decl->initializer->resolved_type && decl->initializer->resolved_type->kind != TYPE_TYPE) {
+            t = decl->initializer->resolved_type;
+        } else {
+            t = visit(decl->initializer);
+            if (t && t->kind == TYPE_TYPE && decl->initializer->resolved_type) {
+                t = decl->initializer->resolved_type;
+            }
+        }
+
+        if (!t) break;
+        if (t->kind == TYPE_PLACEHOLDER) t = resolvePlaceholder(t);
+
+        if (t->kind == TYPE_TYPE && decl->initializer->type == NODE_IDENTIFIER) {
+            sym = unit_.getSymbolTable().lookup(decl->initializer->as.identifier.name);
+            if (!sym) break;
+            t = sym->symbol_type;
+        } else {
+            break;
+        }
+        if (++depth > MAX_DEPTH) break;
+    }
+    return t;
+}
+
+Type* TypeChecker::getTagType(Type* tu) {
+    if (!tu) return NULL;
+    if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
+    if (isTaggedUnion(tu)) return tu->as.struct_details.tag_type;
+    return NULL;
+}
+
+i64 TypeChecker::findEnumMemberValue(Type* enum_type, const char* name) {
+    if (!enum_type || enum_type->kind != TYPE_ENUM) return -1;
+    DynamicArray<EnumMember>* members = enum_type->as.enum_details.members;
+    if (!members) return -1;
+    for (size_t i = 0; i < members->length(); ++i) {
+        if (plat_strcmp((*members)[i].name, name) == 0)
+            return (*members)[i].value;
+    }
+    return -1;
+}
+
+i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
+    if (!error_set || error_set->kind != TYPE_ERROR_SET) return -1;
+    return (i64)unit_.getGlobalErrorRegistry().getOrAddTag(name);
+}
+
+Type* TypeChecker::findTaggedUnionPayload(Type* union_type, const char* tag) {
+    if (!union_type || !isTaggedUnion(union_type)) return NULL;
+    DynamicArray<StructField>* fields = (union_type->kind == TYPE_TAGGED_UNION) ?
+                                        union_type->as.tagged_union.payload_fields :
+                                        union_type->as.struct_details.fields;
+    if (!fields) return NULL;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        if (plat_strcmp((*fields)[i].name, tag) == 0)
+            return (*fields)[i].type;
+    }
+    return NULL;
 }

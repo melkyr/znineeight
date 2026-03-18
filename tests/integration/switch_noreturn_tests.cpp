@@ -170,7 +170,7 @@ TEST_FUNC(SwitchNoreturn_AllDivergent) {
         "    switch (x) {\n"
         "        0 => unreachable,\n"
         "        else => unreachable,\n"
-        "    };\n"
+        "    }\n"
         "}";
 
     ArenaAllocator arena(1024 * 1024);

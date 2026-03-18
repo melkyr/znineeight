@@ -76,6 +76,11 @@ public:
 };
 ```
 * **Usage:** AST Nodes, Types, and Symbols are allocated here. A transient `token_arena` is used during parsing and reset immediately after to free memory early.
+
+#### 3.1.1.2 Expected Type Stack
+* **Concept:** A stack-based mechanism in the `TypeChecker` used for downward type inference.
+* **Implementation:** `DynamicArray<Type*>` allocated from the `CompilationUnit` arena.
+* **Management:** Uses RAII `ExpectedTypeGuard` to ensure balanced push/pop operations during AST traversal.
 * **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 
@@ -591,10 +596,11 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   Multi-level pointers: Supported (e.g., `***i32`).
     *   Pointer Arithmetic: Requires unsigned integer offsets (`usize`, `u32`, etc.). Subtraction `ptr1 - ptr2` yields `isize`.
 *   **Fixed-size Arrays**: `[N]T` with constant size. Supports indexing `arr[i]`.
+    *   **Property**: `.len` property returns `usize` (compile-time constant).
 *   **Slices**: `[]T` and `[]const T`. Supported for dynamic arrays and string parameters.
     *   **Indexing**: `slice[i]`.
     *   **Property**: `.len` property returns `usize`.
-    *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
+    *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers. In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
     *   **Coercion**: Implicit coercion from `[N]T` to `[]T`.
 *   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`. Supports qualified member access `mod.E.Member`.
@@ -603,6 +609,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Control Flow**:
     *   `if (cond) { ... } else { ... }` (Braced blocks required).
     *   `while (cond) { ... }` (Supports `break` and `continue`).
+        *   **Implementation**: All loops (including simple `while` loops) use explicit labels and `goto` for control flow to ensure correct `break`/`continue` semantics when nested inside `switch` statements.
         *   Validation ensures `break` and `continue` only occur inside loops.
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
@@ -635,7 +642,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
 *   **Error Handling**: Basic support for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remain rejected in the bootstrap phase.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
-*   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment.
+*   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
 *   **Tagged Unions**: Supported as of Phase 1 of Milestone 9.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
@@ -643,20 +650,21 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
 *   **No Closures/Captures**: Anonymous functions and closures with variable captures are not supported.
 *   **No Async/Await**: Asynchronous programming constructs (`async`, `await`, `suspend`, `resume`) are not supported.
-*   **Syntax**: Braceless `if`, `while`, and `for` bodies are supported by the parser but normalized to blocks during the lifting pass. Switch prongs without braces (e.g., `=> return foo(),`) require an explicit semicolon before the comma in the current parser.
+*   **Syntax**: Braceless `if`, `while`, and `for` bodies are supported by the parser but normalized to blocks during the lifting pass. Every switch prong requires a terminating comma unless it is the final prong before the closing brace (e.g., `1 => { }, 2 => { }`). For prongs consisting of a single expression-statement (especially calls returning `void`), it is recommended to wrap the body in a block `{ ... }` to ensure reliable code generation.
 *   **Immutability**: Loop captures (`for` loops) and function parameters are strictly immutable.
 
 ### 5.3 C89 Mapping Decisions
 *   **Boolean**: Mapped to `int` (1 for true, 0 for false).
 *   **Integer 64-bit**: Mapped to `__int64` (and `unsigned __int64`) for MSVC 6.0 compatibility. Literals use MSVC-specific suffixes `i64` and `ui64` (see `docs/reference/c89_emission.md`).
 *   **Null**: Mapped to `((void*)0)`.
-*   **Strings**: String literals are mapped to `const char*`.
+*   **Strings**: String literals are mapped to `const char*`. For MSVC 6.0 compatibility, literals exceeding 1024 characters are automatically split into concatenated chunks (`"..." "..."`) by the emitter.
 *   **Name Mangling**:
     *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
     *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
     *   **Compiler-Generated Identifiers**: Symbols used internally by the compiler (identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`) bypass all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and predictable.
+    *   **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
     *   **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.
 *   **Debugging Improvements**: The compiler supports verbose logging and tracing via `--debug-lifter` and `--debug-codegen` flags.
 *   **Struct Initializers**: Zig named initializers are reordered to match C89 positional initialization.

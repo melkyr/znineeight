@@ -254,6 +254,7 @@ Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields,
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
+    new_type->owner_module = NULL;
     return new_type;
 }
 
@@ -267,6 +268,7 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
     new_type->as.struct_details.fields = fields;
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
+    new_type->owner_module = NULL;
 
     if (is_tagged) {
         // Tagged union: struct { tag_type tag; union { fields } data; }
@@ -331,6 +333,7 @@ Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* pa
     new_type->as.tagged_union.name = name;
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
+    new_type->owner_module = NULL;
 
     return new_type;
 }
@@ -475,6 +478,13 @@ void updateArrayLayout(Type* t) {
     }
 }
 
+void updateSliceLayout(Type* t) {
+    if (!t || t->kind != TYPE_SLICE) return;
+    /* Slices are ALWAYS {ptr: 4, len: 4} on 32-bit regardless of element type */
+    t->size = 8;
+    t->alignment = 4;
+}
+
 void updateOptionalLayout(Type* t) {
     if (t->kind != TYPE_OPTIONAL) return;
     Type* payload = t->as.optional.payload;
@@ -565,6 +575,7 @@ void refreshLayout(Type* t) {
             break;
         case TYPE_SLICE:
             refreshLayout(t->as.slice.element_type);
+            updateSliceLayout(t);
             break;
         case TYPE_OPTIONAL:
             refreshLayout(t->as.optional.payload);
@@ -718,6 +729,7 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
     new_type->as.enum_details.members = members;
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
+    new_type->owner_module = NULL;
     return new_type;
 }
 
@@ -933,6 +945,14 @@ bool isTypeComplete(Type* type);
 
 bool isTypeComplete(Type* type) {
     if (!type) return false;
+
+    if (type->is_resolving) {
+        /* Pointer-like types have known size even if pointee is incomplete */
+        return (type->kind == TYPE_POINTER ||
+                type->kind == TYPE_SLICE ||
+                type->kind == TYPE_OPTIONAL);
+    }
+
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:

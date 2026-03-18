@@ -13,8 +13,8 @@ TEST_FUNC(DoubleFree_SwitchPathAware) {
         "    var p: *u8 = arena_alloc_default(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
-        "        else => {}\n"
-        "    };\n"
+        "        else => {},\n"
+        "    }\n"
         "    // After switch, p should be AS_UNKNOWN\n"
         "    arena_free(p); // Should NOT be a definite double free error\n"
         "}\n";
@@ -55,8 +55,8 @@ TEST_FUNC(DoubleFree_SwitchBothFree) {
         "    var p: *u8 = arena_alloc_default(100u);\n"
         "    switch (x) {\n"
         "        1 => arena_free(p),\n"
-        "        else => arena_free(p)\n"
-        "    };\n"
+        "        else => arena_free(p),\n"
+        "    }\n"
         "    // After switch, p should be AS_FREED\n"
         "    arena_free(p); // Should be a double free error\n"
         "}\n";
