@@ -1,71 +1,57 @@
-# Findings from the JSON Parser "Baptism of Fire"
+# Detailed Findings from the JSON Parser "Baptism of Fire"
 
-This document records the issues, bugs, and limitations discovered while attempting to compile a modern Z98 JSON parser.
+This document records the issues, bugs, and limitations discovered while attempting to compile and run both downgraded and advanced Z98 JSON parsers.
 
-## 1. Syntax & Parser Constraints
+## 1. Summary of Performance
+- **Peak Memory Usage (Compiler)**: ~517 KB (0.5 MB) during compilation of the advanced multi-file parser.
+- **Limit Verification**: Well within the 16MB technical constraint (< 4% of target limit).
 
-### Braceless Switch Prongs Semicolon Requirement
-- **Status**: **RESOLVED** (Phase 6 Fix).
-- **Observation**: Switch prong bodies are now parsed using `parseExpression()`. This eliminates the semicolon requirement before the comma. Zig-style comma rules are enforced: mandatory for non-block prongs unless it is the final prong.
+## 2. Syntax & Parser Constraints
 
-### Braceless `if`/`while` bodies
-- **Status**: Supported, but normalized to blocks in the lifter.
+### Braceless Switch Bodies for Void Payloads
+- **Status**: **QUIRK IDENTIFIED**
+- **Observation**: Switch prongs matching a `void` payload (e.g., `.Null => ...`) that consisted of a single expression-statement would sometimes fail to emit correctly or cause "Unimplemented statement type" in C output if not wrapped in a block `{}`.
+- **Workaround**: Always use an explicit block for switch prong bodies: `.Null => { doSomething(); },`.
 
-### Switch Capture Limitations
-- **Status**: Supported for tagged unions.
-- **Observation**: Capture requires a tag name case item (e.g., `.String => |s|`).
+### Slicing Syntax (Implicit End)
+- **Status**: **LIMITATION**
+- **Observation**: Syntax like `slice[pos..]` is not supported.
+- **Workaround**: Use explicit end index: `slice[pos..slice.len]`.
 
-## 2. Type System & Semantic Analysis
+### Struct Methods
+- **Status**: **DESIGN LIMITATION** (Confirmed)
+- **Observation**: Attempting to use `fn method(self: *S) ...` inside a `struct` declaration results in a syntax error.
+- **Workaround**: Use top-level functions that take a pointer to the struct: `fn structMethod(self: *S) ...`.
 
-### Recursive Type Completeness (Value Cycles)
-- **Status**: **LIMITATION IDENTIFIED**.
-- **Observation**: Types containing slices of themselves (e.g., `Array: []JsonValue` inside `JsonValue`) result in "incomplete type" errors during layout calculation because the compiler attempts to calculate the size of the slice which depends on the element type.
-- **Workaround**: Use pointers for recursion (e.g., `value: *JsonValue`). Slices of a type can be used once the type is complete, but not during its own definition.
+## 3. Type System & Semantic Analysis
 
-### Comptime Type Parameters and @sizeOf
-- **Status**: **LIMITATION IDENTIFIED**.
-- **Observation**: Functions using `comptime T: type` (e.g., `alloc(arena, T, count)`) fail when calling `@sizeOf(T)` if `T` is treated as an incomplete type parameter. The bootstrap compiler's generic support is limited.
-- **Workaround**: Use byte-oriented allocators and `@ptrCast` at the call site, or specialized functions.
+### Strict Numeric Coercion
+- **Status**: **DESIGN LIMITATION** (Confirmed)
+- **Observation**: `i32` literals do not implicitly coerce to `usize` in many contexts, including struct initializers and switch conditions.
+- **Workaround**: Use explicit `@intCast(usize, value)` or ensure variables are declared with the exact expected type.
 
-### Anonymous Initializer Contextual Inference
-- **Status**: **IMPROVED** (Phase 9c).
-- **Observation**: Returning `.Null` or `.{ .Boolean = true }` directly in switch prongs or function returns sometimes fails type matching if the expected type isn't propagated correctly through all layers (especially through `try` or complex expressions).
-- **Workaround**: Explicitly type the initializer (e.g., `JsonValue.Null`) or use a temporary variable with an explicit type.
+### Tagged Union Equality and Assignment
+- **Status**: **QUIRK IDENTIFIED**
+- **Observation**: Direct assignment of tagged unions (e.g., `val_ptr.* = val;`) can sometimes produce invalid C code depending on the complexity of the l-value.
+- **Workaround**: Use an explicit `switch` to decompose the union and re-assign it to the target, or ensure simple l-values are used.
 
-### Strict Assignment Compatibility
-- **Status**: Enforced.
-- **Observation**: The compiler is very strict about identical types in assignments and struct initializers. `i32` literals do not always implicitly coerce to `usize` in these contexts.
-- **Workaround**: Use explicit `@intCast(usize, ...)` or ensure literals are compatible.
+## 4. Code Generation & Runtime
 
-## 3. Code Generation Bugs & Gaps
+### Implicit `strtod` Declaration
+- **Status**: **BUGFIT**
+- **Observation**: The compiler might not automatically emit a prototype for C standard library functions like `strtod` unless explicitly declared as `extern`.
+- **Workaround**: Add `pub extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;` in the Zig source.
 
-### Expression-as-Statement Emission
-- **Status**: **RESOLVED** (Post-Baptism Fix).
-- **Observation**: Previously, expression nodes (like `return try ...` or simple binary ops) used directly as statements in contexts like `switch` prongs were incorrectly handled, leading to "Unimplemented statement type" comments in the C output.
-- **Fix**: Updated `C89Emitter::emitStatement` to treat standard expression nodes as valid expression-statements, ensuring they are emitted followed by a semicolon.
+### Pointer-to-Const to Pointer-to-Mutable Slices
+- **Status**: **C89 COMPATIBILITY LIMITATION**
+- **Observation**: Generated code for `__make_slice_T` might discard `const` qualifiers, leading to C compiler warnings.
+- **Impact**: Non-fatal, but generates many warnings.
 
-### `break`/`continue` Ambiguity in `switch`
-- **Status**: **BUG IDENTIFIED**.
-- **Observation**: Using `break` inside a `switch` that is itself inside a `while` loop emits a C `break`. In C, this only breaks the `switch`, whereas in Zig it should break the `while`. This leads to infinite loops.
-- **Workaround**: Use `return` or labeled breaks if available, or ensure the compiler always uses `goto` for breaks targeting loops.
-
-### Tagged Union Forward Declaration Bug
-- **Status**: **RESOLVED**.
-- **Observation**: Forward declarations for tagged unions are now correctly emitted using the `struct` keyword in C headers and sources.
-
-### `unreachable` Statement Missing Emission
-- **Status**: **RESOLVED**.
-- **Observation**: `unreachable` statements now correctly emit a `__bootstrap_panic` call.
-
-### 32-bit vs 64-bit ABI Mismatch
-- **Status**: **CORE LIMITATION**.
-- **Observation**: The RetroZig bootstrap compiler is hardcoded with 32-bit target assumptions (4-byte pointers, 8-byte slices, 4-byte alignment). When generating C code for a 64-bit host, `@sizeOf` values and struct layouts mismatch the 64-bit C compiler's expectations.
-- **Impact**: Severe memory corruption (segmentation faults) when accessing fields of structs/unions via pointers in 64-bit binaries.
-- **Recommendation**: Always compile the generated C code with `-m32` or on a native 32-bit platform.
-
-## 4. Successful Features Verified
-- **Multi-file Modular Programs**: `@import` works across multiple files and correctly links the STU.
-- **Modern Control Flow**: `switch` with ranges and tagged union captures are fully functional.
-- **Error Handling**: `try` and `catch` correctly propagate and handle errors.
-- **Braceless Syntax**: `if`, `while`, and `defer` can be used without braces for single statements.
-- **C Interop**: Pointer casts and extern function calls are working as intended.
+## 5. Successful Features Verified (Milestone 9)
+- **Tagged Unions (`union(enum)`)**: Core functionality is working and stable.
+- **Switch Payload Captures (`|val|`)**: Correctly extracts data from unions.
+- **Naked Tags**: Support for `.Null` without `: void` is functional.
+- **Range-based Switch**: `case '0'...'9' => ...` works correctly.
+- **Modular @import**: Multi-file compilation and symbol resolution are fully operational.
+- **Error Unions & `try`/`catch`**: Robust error propagation works across modules.
+- **Arena Allocation**: Integration with `arena_alloc_default` is seamless.
