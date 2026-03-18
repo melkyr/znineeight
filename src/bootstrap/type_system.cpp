@@ -1056,12 +1056,17 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         case TYPE_FUNCTION_POINTER: {
             safe_append(current, remaining, "fn(");
             if (type->as.function_pointer.param_types) {
-                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
-                    typeToStringInternal((*type->as.function_pointer.param_types)[i], current, remaining);
-                    if (i < type->as.function_pointer.param_types->length() - 1) {
+                DynamicArray<Type*>* params = type->as.function_pointer.param_types;
+                size_t count = params->length();
+                Type** snapshot = (Type**)plat_alloc(count * sizeof(Type*));
+                for (size_t k = 0; k < count; ++k) snapshot[k] = (*params)[k];
+                for (size_t i = 0; i < count; ++i) {
+                    typeToStringInternal(snapshot[i], current, remaining);
+                    if (i < count - 1) {
                         safe_append(current, remaining, ", ");
                     }
                 }
+                plat_free(snapshot);
             }
             safe_append(current, remaining, ") ");
             typeToStringInternal(type->as.function_pointer.return_type, current, remaining);
@@ -1070,12 +1075,17 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         case TYPE_FUNCTION: {
             safe_append(current, remaining, "fn(");
             if (type->as.function.params) {
-                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    typeToStringInternal((*type->as.function.params)[i], current, remaining);
-                    if (i < type->as.function.params->length() - 1) {
+                DynamicArray<Type*>* params = type->as.function.params;
+                size_t count = params->length();
+                Type** snapshot = (Type**)plat_alloc(count * sizeof(Type*));
+                for (size_t k = 0; k < count; ++k) snapshot[k] = (*params)[k];
+                for (size_t i = 0; i < count; ++i) {
+                    typeToStringInternal(snapshot[i], current, remaining);
+                    if (i < count - 1) {
                         safe_append(current, remaining, ", ");
                     }
                 }
+                plat_free(snapshot);
             }
             safe_append(current, remaining, ") ");
             typeToStringInternal(type->as.function.return_type, current, remaining);
@@ -1245,11 +1255,30 @@ bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray
         return false;
     }
 
-    for (size_t i = 0; i < a_params->length(); ++i) {
-        if (!areTypesEqual((*a_params)[i], (*b_params)[i])) {
-            return false;
+    size_t a_count = a_params->length();
+    size_t b_count = b_params->length();
+
+    /* Take snapshots to prevent iterator invalidation during recursive equality checks */
+    Type** a_snapshot = (Type**)plat_alloc(a_count * sizeof(Type*));
+    for (size_t k = 0; k < a_count; ++k) {
+        a_snapshot[k] = (*a_params)[k];
+    }
+
+    Type** b_snapshot = (Type**)plat_alloc(b_count * sizeof(Type*));
+    for (size_t k = 0; k < b_count; ++k) {
+        b_snapshot[k] = (*b_params)[k];
+    }
+
+    bool result = true;
+    for (size_t i = 0; i < a_count; ++i) {
+        if (!areTypesEqual(a_snapshot[i], b_snapshot[i])) {
+            result = false;
+            break;
         }
     }
 
-    return true;
+    plat_free(a_snapshot);
+    plat_free(b_snapshot);
+
+    return result;
 }
