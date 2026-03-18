@@ -110,12 +110,7 @@ fn env_to_value(env: ?*env_mod.EnvNode, arena: *value_mod.arena_mod.LispArena) !
     if (env) |node| {
         const sym_val = try value_mod.alloc_symbol(node.symbol, arena);
         const pair = try value_mod.alloc_cons(sym_val, node.value, arena);
-        var next_ptr: ?*env_mod.EnvNode = null;
-        if (node.next != 0) {
-            const next_any = @intToPtr(*void, node.next);
-            next_ptr = @ptrCast(*env_mod.EnvNode, next_any);
-        }
-        const next = try env_to_value(next_ptr, arena);
+        const next = try env_to_value(node.next, arena);
         return try value_mod.alloc_cons(pair, next, arena);
     } else {
         return try value_mod.alloc_symbol("nil", arena);

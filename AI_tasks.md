@@ -2290,6 +2290,15 @@ Implementation steps (minimal):
     - **Switch Inference**: Updated `validateSwitch` to infer prong types from switch condition when condition is a tagged union and body is an anonymous initializer.
     - **Verification**: Created Batch 9b integration tests covering anonymous returns, assignments, naked tags, switch expressions, and error cases.
 
+247. [COMPLETE] **Task 9.23: Investigate Cross-Module Symbol Visibility**
+    - **Goal**: Identify the root cause of `module 'X' has no member named 'Y'` errors in multi-module builds.
+    - **Instrumentation**: Added `DEBUG_VISIBILITY` logging to `SymbolTable`, `CompilationUnit`, and `TypeChecker`.
+    - **Lexer/Parser**: Added support for `@intToPtr` builtin.
+    - **Symbol Table**: Implemented `SYMBOL_FLAG_PUB` and updated the parser to populate it, enabling visibility tracking.
+    - **Analysis**: Determined that the error is caused by the compiler processing modules in discovery order, which leads to failed on-demand resolution when symbols have complex cross-module dependencies.
+    - **Documentation**: Created `docs/CrossModuleSymbolVisibility.md` and updated `DESIGN.md`.
+    - **Workaround**: Updated the Lisp interpreter to use optional pointers (`?*T`) to improve compiler stability during cross-module resolution.
+
 ---
 
 

@@ -5,7 +5,7 @@ const util = @import("util.zig");
 pub const SymbolNode = struct {
     name: []const u8,
     value: *value_mod.Value,
-    next: usize, // ?*SymbolNode
+    next: ?*SymbolNode,
 };
 
 var global_symbol_list: ?*SymbolNode = null;
@@ -17,12 +17,7 @@ pub fn intern_symbol(name: []const u8, arena: *value_mod.arena_mod.LispArena) !*
             if (util.mem_eql(node.name, name)) {
                 return node.value;
             }
-            if (node.next == 0) {
-                cur = null;
-            } else {
-                const next_any = @intToPtr(*void, node.next);
-                cur = @ptrCast(*SymbolNode, next_any);
-            }
+            cur = node.next;
         } else {
             break;
         }
@@ -45,7 +40,7 @@ pub fn intern_symbol(name: []const u8, arena: *value_mod.arena_mod.LispArena) !*
     const node = @ptrCast(*SymbolNode, node_mem);
     node.name = name_slice;
     node.value = val;
-    node.next = @ptrToInt(@ptrCast(?*void, global_symbol_list));
+    node.next = global_symbol_list;
     global_symbol_list = node;
 
     return val;

@@ -166,6 +166,7 @@ enum Zig0TokenType {
     TOKEN_AT_OFFSETOF,      ///< '@offsetOf'
     TOKEN_AT_ENUM_TO_INT,   ///< '@enumToInt'
     TOKEN_AT_PTR_TO_INT,    ///< '@ptrToInt'
+    TOKEN_AT_INT_TO_PTR,    ///< '@intToPtr'
     TOKEN_AT_INT_TO_ENUM,   ///< '@intToEnum'
 
     // Delimiters

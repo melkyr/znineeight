@@ -232,7 +232,7 @@ filename.zig:23:5: error: type mismatch
             3.  Default `lib/` directory located relative to the compiler executable.
         - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
     3.  **Modular Semantic Analysis (Task 215):** Compilation unit orchestrates modular passes. Each module maintains its own `SymbolTable` and feature catalogues.
-    4.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types, to enable accurate semantic analysis.
+    4.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules, including non-C89 types, to enable accurate semantic analysis. **Note**: As discovered during the Cross-Module Visibility investigation, modules are currently processed in discovery order. A topological sort based on dependencies is recommended for future stability.
     5.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0.
     6.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
     7.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.
