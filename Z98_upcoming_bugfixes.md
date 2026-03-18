@@ -191,8 +191,8 @@ If you are still seeing slices accepted, verify that the condition type is indee
 
 ---
 
-## 20. Cross-Module Symbol Visibility (Discovery Order Issue)
+## 20. [RESOLVED] Cross-Module Symbol Visibility (Discovery Order Issue)
 **Symptoms:** `module 'X' has no member named 'Y'` reported intermittently during multi-module compilation (e.g., Lisp interpreter).
 **Root Cause:** The compiler processes modules in discovery order, leading to `main` being type-checked before its dependencies. On-demand resolution of symbols from not-yet-processed modules fails if those symbols have complex types depending on further imports.
 **Investigation Report:** See `docs/CrossModuleSymbolVisibility.md`.
-**Recommended Fix:** Implement a topological sort of modules based on their import dependencies in `CompilationUnit::performFullPipeline`.
+**Fix:** Implemented a topological sort of modules using Kahn's algorithm in `CompilationUnit::performFullPipeline`. Modules are now processed in a stable order that respects `@import` dependencies, ensuring that a module's dependencies are fully type-checked before it is.

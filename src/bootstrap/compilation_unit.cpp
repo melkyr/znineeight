@@ -822,6 +822,86 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
+    // Topological Sort of modules to respect import dependencies
+    {
+        size_t N = modules_.length();
+
+        struct Edge {
+            int to;
+            Edge* next;
+        };
+        Edge** adj = (Edge**)arena_.alloc(N * sizeof(Edge*));
+        plat_memset(adj, 0, N * sizeof(Edge*));
+
+        int* indeg = (int*)arena_.alloc(N * sizeof(int));
+        plat_memset(indeg, 0, N * sizeof(int));
+
+        for (size_t i = 0; i < N; ++i) {
+            Module* m = modules_[i];
+            for (size_t j = 0; j < m->imports.length(); ++j) {
+                const char* imported_name = m->imports[j];
+                int dep_idx = -1;
+                for (size_t k = 0; k < N; ++k) {
+                    if (plat_strcmp(modules_[k]->name, imported_name) == 0) {
+                        dep_idx = (int)k;
+                        break;
+                    }
+                }
+
+                if (dep_idx == -1) {
+                    error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Import not found during topological sort");
+                    return false;
+                }
+
+                // dep_idx -> i
+                Edge* e = (Edge*)arena_.alloc(sizeof(Edge));
+                e->to = (int)i;
+                e->next = adj[dep_idx];
+                adj[dep_idx] = e;
+                indeg[i]++;
+            }
+        }
+
+        // Kahn's algorithm
+        int* queue = (int*)arena_.alloc(N * sizeof(int));
+        int qhead = 0, qtail = 0;
+        for (size_t i = 0; i < N; ++i) {
+            if (indeg[i] == 0) queue[qtail++] = (int)i;
+        }
+
+        DynamicArray<Module*> sorted(arena_);
+        while (qhead < qtail) {
+            int u = queue[qhead++];
+            sorted.append(modules_[u]);
+            Edge* e = adj[u];
+            while (e) {
+                int v = e->to;
+                indeg[v]--;
+                if (indeg[v] == 0) queue[qtail++] = v;
+                e = e->next;
+            }
+        }
+
+        if (sorted.length() != N) {
+            // Cycle detected – report modules with remaining indegree
+            char buf[512];
+            char* cur = buf;
+            size_t rem = sizeof(buf);
+            safe_append(cur, rem, "Circular dependency involving: ");
+            for (size_t i = 0; i < N; ++i) {
+                if (indeg[i] > 0) {
+                    safe_append(cur, rem, modules_[i]->name);
+                    safe_append(cur, rem, " ");
+                }
+            }
+            error_handler_.report(ERR_CIRCULAR_IMPORT, SourceLocation(), buf);
+            return false;
+        }
+
+        // Replace modules_ with sorted order
+        modules_ = sorted;
+    }
+
     // Phase 0: Register Placeholders for all modules
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
