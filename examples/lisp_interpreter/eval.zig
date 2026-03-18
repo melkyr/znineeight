@@ -2,7 +2,7 @@ const value_mod = @import("value.zig");
 const env_mod = @import("env.zig");
 const util = @import("util.zig");
 
-pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_mod.arena_mod.Arena, perm_arena: *value_mod.arena_mod.Arena) !*value_mod.Value {
+pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_mod.arena_mod.LispArena, perm_arena: *value_mod.arena_mod.LispArena) !*value_mod.Value {
     if (expr.tag == value_mod.ValueTag.Nil or expr.tag == value_mod.ValueTag.Int or expr.tag == value_mod.ValueTag.Bool or expr.tag == value_mod.ValueTag.Builtin) {
         return expr;
     }
@@ -89,7 +89,7 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_
             cur = cur.data.Cons.cdr;
         }
 
-        const args_mem = try value_mod.arena_mod.arena_alloc(temp_arena, arg_count * @sizeOf(*value_mod.Value), @alignOf(*value_mod.Value));
+        const args_mem = try value_mod.arena_mod.lisp_alloc(temp_arena, arg_count * @sizeOf(*value_mod.Value), @alignOf(*value_mod.Value));
         const args = @ptrCast([*]*value_mod.Value, args_mem)[0..arg_count];
 
         var i: usize = 0;
@@ -106,20 +106,25 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_
     return error.InvalidExpr;
 }
 
-fn env_to_value(env: ?*env_mod.EnvNode, arena: *value_mod.arena_mod.Arena) !*value_mod.Value {
-    if (env == null) {
+fn env_to_value(env: ?*env_mod.EnvNode, arena: *value_mod.arena_mod.LispArena) !*value_mod.Value {
+    if (env) |node| {
+        const sym_val = try value_mod.alloc_symbol(node.symbol, arena);
+        const pair = try value_mod.alloc_cons(sym_val, node.value, arena);
+        var next_ptr: ?*env_mod.EnvNode = null;
+        if (node.next != 0) {
+            const next_any = @intToPtr(*void, node.next);
+            next_ptr = @ptrCast(*env_mod.EnvNode, next_any);
+        }
+        const next = try env_to_value(next_ptr, arena);
+        return try value_mod.alloc_cons(pair, next, arena);
+    } else {
         return try value_mod.alloc_symbol("nil", arena);
     }
-    const node = @ptrCast(*env_mod.EnvNode, env);
-    const sym_val = try value_mod.alloc_symbol(node.symbol, arena);
-    const pair = try value_mod.alloc_cons(sym_val, node.value, arena);
-    const next = try env_to_value(node.next, arena);
-    return try value_mod.alloc_cons(pair, next, arena);
 }
 
-fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_mod.arena_mod.Arena, perm_arena: *value_mod.arena_mod.Arena) !*value_mod.Value {
+fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNode, temp_arena: *value_mod.arena_mod.LispArena, perm_arena: *value_mod.arena_mod.LispArena) !*value_mod.Value {
     if (fun.tag == value_mod.ValueTag.Builtin) {
-        const f = @ptrCast(fn ([]*value_mod.Value, *value_mod.arena_mod.Arena) !*value_mod.Value, fun.data.Builtin);
+        const f = @ptrCast(fn ([]*value_mod.Value, *value_mod.arena_mod.LispArena) !*value_mod.Value, fun.data.Builtin);
         return try f(args, temp_arena);
     }
 
@@ -163,7 +168,7 @@ fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNod
     return error.NotCallable;
 }
 
-fn value_to_env_real(v: *value_mod.Value, arena: *value_mod.arena_mod.Arena) !?*env_mod.EnvNode {
+fn value_to_env_real(v: *value_mod.Value, arena: *value_mod.arena_mod.LispArena) !?*env_mod.EnvNode {
     if (v.tag == value_mod.ValueTag.Nil) return null;
     if (v.tag == value_mod.ValueTag.Symbol and util.mem_eql(v.data.Symbol, "nil")) return null;
 

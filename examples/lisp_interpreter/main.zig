@@ -75,8 +75,8 @@ pub fn main() !void {
     var perm_buf: [1024 * 1024]u8 = undefined;
     var temp_buf: [1024 * 1024]u8 = undefined;
 
-    var perm_arena = arena_mod.arena_init(&perm_buf);
-    var temp_arena = arena_mod.arena_init(&temp_buf);
+    var perm_arena = arena_mod.lisp_arena_init(&perm_buf);
+    var temp_arena = arena_mod.lisp_arena_init(&temp_buf);
 
     var global_env: ?*env_mod.EnvNode = null;
 
@@ -99,19 +99,13 @@ pub fn main() !void {
         const line = try read_line(&input_buf);
         if (line.len == 0) continue;
 
-        var tokenizer = token_mod.Tokenizer{ .input = line, .pos = 0 };
-        const expr = parser_mod.parse_expr(&tokenizer, &perm_arena, &temp_arena) catch |err| {
-            print_str("Parse error\n");
-            continue;
-        };
+        var tokenizer = token_mod.Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
+        const expr = try parser_mod.parse_expr(&tokenizer, &perm_arena, &temp_arena);
 
-        const result = eval_mod.eval(expr, &global_env, &temp_arena, &perm_arena) catch |err| {
-            print_str("Eval error\n");
-            continue;
-        };
+        const result = try eval_mod.eval(expr, &global_env, &temp_arena, &perm_arena);
 
         print_value(result);
         print_str("\n");
-        arena_mod.arena_reset(&temp_arena);
+        arena_mod.lisp_reset(&temp_arena);
     }
 }
