@@ -478,6 +478,13 @@ void updateArrayLayout(Type* t) {
     }
 }
 
+void updateSliceLayout(Type* t) {
+    if (!t || t->kind != TYPE_SLICE) return;
+    /* Slices are ALWAYS {ptr: 4, len: 4} on 32-bit regardless of element type */
+    t->size = 8;
+    t->alignment = 4;
+}
+
 void updateOptionalLayout(Type* t) {
     if (t->kind != TYPE_OPTIONAL) return;
     Type* payload = t->as.optional.payload;
@@ -568,6 +575,7 @@ void refreshLayout(Type* t) {
             break;
         case TYPE_SLICE:
             refreshLayout(t->as.slice.element_type);
+            updateSliceLayout(t);
             break;
         case TYPE_OPTIONAL:
             refreshLayout(t->as.optional.payload);
@@ -937,6 +945,14 @@ bool isTypeComplete(Type* type);
 
 bool isTypeComplete(Type* type) {
     if (!type) return false;
+
+    if (type->is_resolving) {
+        /* Pointer-like types have known size even if pointee is incomplete */
+        return (type->kind == TYPE_POINTER ||
+                type->kind == TYPE_SLICE ||
+                type->kind == TYPE_OPTIONAL);
+    }
+
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:

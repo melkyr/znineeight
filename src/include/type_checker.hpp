@@ -147,6 +147,7 @@ private:
     int current_loop_depth_;
     int type_resolution_depth_;
     int visit_depth_;
+    int in_ptr_indirection_depth_;
     bool in_defer_; ///< True if currently checking a deferred statement.
 
     struct LoopLabel {
@@ -162,6 +163,8 @@ private:
     struct ResolutionDepthGuard;
     struct DeferFlagGuard;
     struct ExpectedTypeGuard;
+    struct IndirectionGuard;
+    struct ResolvingTypeGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
@@ -171,8 +174,11 @@ private:
     friend struct ResolutionDepthGuard;
     friend struct DeferFlagGuard;
     friend struct ExpectedTypeGuard;
+    friend struct ResolvingTypeGuard;
+    friend struct IndirectionGuard;
 
     DynamicArray<Type*> expected_type_stack_;
+    DynamicArray<Type*> resolving_types_stack_;
     void pushExpectedType(Type* type) { expected_type_stack_.append(type); }
     Type* peekExpectedType() {
         if (expected_type_stack_.length() == 0) return NULL;
