@@ -38,6 +38,39 @@ TEST_FUNC(RecursiveSlice_MultiModule) {
     return true;
 }
 
+TEST_FUNC(RecursiveSlice_AnonymousStructNested) {
+    const char* source =
+        "pub const JsonValue = union(enum) {\n"
+        "    Null: void,\n"
+        "    Bool: bool,\n"
+        "    Number: i32,\n"
+        "    String: []const u8,\n"
+        "    Array: []JsonValue,\n"
+        "    Object: []struct {\n"
+        "        key: []const u8,\n"
+        "        value: JsonValue,\n"
+        "    },\n"
+        "};\n"
+        "pub fn main() void {\n"
+        "    var j: JsonValue = undefined;\n"
+        "    _ = j;\n"
+        "}\n";
+
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+
+    if (!unit.performFullPipeline(file_id)) {
+        printf("FAIL: Recursive slice with anonymous struct nested test failed.\n");
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    return true;
+}
+
 TEST_FUNC(RecursiveSlice_MutuallyRecursive) {
     const char* source =
         "const A = struct {\n"

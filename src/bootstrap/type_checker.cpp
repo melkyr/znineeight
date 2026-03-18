@@ -126,13 +126,36 @@ struct TypeChecker::ExpectedTypeGuard {
     }
 };
 
+struct TypeChecker::IndirectionGuard {
+    TypeChecker& tc;
+    IndirectionGuard(TypeChecker& tc_arg) : tc(tc_arg) {
+        tc.in_ptr_indirection_depth_++;
+    }
+    ~IndirectionGuard() {
+        tc.in_ptr_indirection_depth_--;
+    }
+};
+
+struct TypeChecker::ResolvingTypeGuard {
+    TypeChecker& tc;
+    Type* type;
+    ResolvingTypeGuard(TypeChecker& tc_arg, Type* t) : tc(tc_arg), type(t) {
+        if (type) tc.resolving_types_stack_.append(type);
+    }
+    ~ResolvingTypeGuard() {
+        if (type) tc.resolving_types_stack_.pop_back();
+    }
+};
+
 
 /* Helper to get the string representation of a binary operator token. */
 
 TypeChecker::TypeChecker(CompilationUnit& unit_arg)
     : unit_(unit_arg), current_fn_return_type_(NULL), current_fn_name_(NULL), current_struct_name_(NULL),
-      current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0), in_defer_(false),
+      current_loop_depth_(0), type_resolution_depth_(0), visit_depth_(0),
+      in_ptr_indirection_depth_(0), in_defer_(false),
       expected_type_stack_(unit_arg.getArena()),
+      resolving_types_stack_(unit_arg.getArena()),
       label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()),
       current_fn_labels_start_(0), next_label_id_(0) {
 }
@@ -3185,6 +3208,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     Module* current_mod = unit_.getModule(unit_.getCurrentModule());
     Symbol* self_sym = struct_name ? unit_.getSymbolTable().lookupInCurrentScope(struct_name) : NULL;
     Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+    ResolvingTypeGuard resolving_guard(*this, self_placeholder);
 
     if (!node->fields) return get_g_type_undefined();
 
@@ -3214,12 +3238,15 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
 
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
-        bool is_recursive_pointer = false;
-        if (self_placeholder && isPointerIndirectionTo(field_type, self_placeholder)) {
-            is_recursive_pointer = true;
+        bool is_recursive_indirection = false;
+        for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
+            if (isPointerIndirectionTo(field_type, resolving_types_stack_[k])) {
+                is_recursive_indirection = true;
+                break;
+            }
         }
 
-        if (!is_recursive_pointer && !isTypeComplete(field_type)) {
+        if (field_type && !is_recursive_indirection && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
 
@@ -3285,6 +3312,7 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     Type* union_type = NULL;
     Symbol* self_sym = union_name ? unit_.getSymbolTable().lookupInCurrentScope(union_name) : NULL;
     Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
+    ResolvingTypeGuard resolving_guard(*this, self_placeholder);
 
     if (!node->fields) return get_g_type_undefined();
 
@@ -3331,12 +3359,15 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             return reportAndReturnUndefined(field_node->type->loc, ERR_NON_C89_FEATURE, "Union field type is not C89-compatible");
         }
 
-        bool is_recursive_pointer = false;
-        if (self_placeholder && isPointerIndirectionTo(field_type, self_placeholder)) {
-            is_recursive_pointer = true;
+        bool is_recursive_indirection = false;
+        for (size_t k = 0; k < resolving_types_stack_.length(); ++k) {
+            if (isPointerIndirectionTo(field_type, resolving_types_stack_[k])) {
+                is_recursive_indirection = true;
+                break;
+            }
         }
 
-        if (field_type && !is_recursive_pointer && !isTypeComplete(field_type)) {
+        if (field_type && !is_recursive_indirection && !isTypeComplete(field_type)) {
              char type_str[64];
              typeToString(field_type, type_str, sizeof(type_str));
 
@@ -4088,6 +4119,7 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
 Type* TypeChecker::visitPointerType(ASTPointerTypeNode* node) {
     Type* base_type;
     if (!node->base) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     base_type = visit(node->base);
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
     return createPointerType(unit_.getArena(), base_type, node->is_const, node->is_many, &unit_.getTypeInterner());
@@ -4100,6 +4132,7 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
     /* 1. Handle slices */
     if (!node->size) {
         if (!node->element_type) return get_g_type_undefined();
+        IndirectionGuard guard(*this);
         element_type = visit(node->element_type);
         if (!element_type || is_type_undefined(element_type)) return get_g_type_undefined();
         return createSliceType(unit_.getArena(), element_type, node->is_const, &unit_.getTypeInterner());
@@ -4164,6 +4197,7 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 
 Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
     if (!node->payload_type) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     Type* payload = visit(node->payload_type);
     if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
 
@@ -4254,6 +4288,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {
     logFeatureLocation("optional_type", node->loc);
     if (!node->payload_type) return get_g_type_undefined();
+    IndirectionGuard guard(*this);
     Type* payload = visit(node->payload_type);
     if (!payload || is_type_undefined(payload)) return get_g_type_undefined();
     return createOptionalType(unit_.getArena(), payload, &unit_.getTypeInterner());
@@ -4949,14 +4984,19 @@ bool TypeChecker::canLiteralFitInType(Type* literal_type, Type* target_type) {
 
 bool TypeChecker::isPointerIndirectionTo(Type* type, Type* target) {
     if (!type) return false;
-    if (type == target) return false; // Found the target but NOT through a pointer yet
+    if (type == target) {
+        /* If we are already inside a pointer indirection, then finding the target means it IS recursive through a pointer. */
+        return in_ptr_indirection_depth_ > 0;
+    }
 
     switch (type->kind) {
         case TYPE_POINTER: {
             Type* base = type->as.pointer.base;
             if (base->kind == TYPE_PLACEHOLDER) base = resolvePlaceholder(base);
-            if (base == target) return true;
-            return isPointerIndirectionTo(base, target);
+            in_ptr_indirection_depth_++;
+            bool result = isPointerIndirectionTo(base, target);
+            in_ptr_indirection_depth_--;
+            return result;
         }
         case TYPE_ARRAY:
             return isPointerIndirectionTo(type->as.array.element_type, target);
@@ -4965,8 +5005,10 @@ bool TypeChecker::isPointerIndirectionTo(Type* type, Type* target) {
             {
                 Type* elem = type->as.slice.element_type;
                 if (elem->kind == TYPE_PLACEHOLDER) elem = resolvePlaceholder(elem);
-                if (elem == target) return true;
-                return isPointerIndirectionTo(elem, target);
+                in_ptr_indirection_depth_++;
+                bool result = isPointerIndirectionTo(elem, target);
+                in_ptr_indirection_depth_--;
+                return result;
             }
         case TYPE_OPTIONAL:
             return isPointerIndirectionTo(type->as.optional.payload, target);
