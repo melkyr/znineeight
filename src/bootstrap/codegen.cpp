@@ -1651,44 +1651,109 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     const char* cont_label = getLoopContinueLabel(node->label_id);
     const char* end_label = getLoopEndLabel(node->label_id);
 
-    writeIndent();
-    writeString(start_label);
-    writeString(": ;\n");
-
-    writeIndent();
-    writeString("if (!(");
-    if (node->condition) {
-        emitExpression(node->condition);
-    } else {
-        writeString("1");
-    }
-    writeString(")) goto ");
-    writeString(end_label);
-    writeString(";\n");
-
-    if (node->body->type == NODE_BLOCK_STMT) {
+    if (node->capture_name) {
         writeIndent();
-        emitBlock(&node->body->as.block_stmt, node->label_id);
+        writeString(start_label);
+        writeString(": ;\n");
+
+        writeIndent();
+        writeString("while (1) {\n");
+        {
+            IndentScope while_indent(*this);
+
+            /* Evaluate condition into a temporary */
+            const char* tmp = var_alloc_.generate("opt_tmp");
+            writeIndent();
+            emitType(node->condition->resolved_type, tmp);
+            writeString(" = ");
+            emitExpression(node->condition);
+            writeString(";\n");
+
+            writeIndent();
+            writeString("if (!");
+            writeString(tmp);
+            writeString(".has_value) goto ");
+            writeString(end_label);
+            writeString(";\n");
+
+            /* Unwrap capture if non-void */
+            if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+                writeIndent();
+                const char* c_name = var_alloc_.allocate(node->capture_sym);
+                emitType(node->capture_sym->symbol_type, c_name);
+                writeString(" = ");
+                writeString(tmp);
+                writeString(".value;\n");
+            }
+
+            /* Emit body */
+            if (node->body->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->body->as.block_stmt, node->label_id);
+            } else {
+                emitStatement(node->body);
+            }
+            writeString("\n");
+
+            writeIndent();
+            writeString(cont_label);
+            writeString(": ;\n");
+
+            /* Continue expression (if any) */
+            if (node->iter_expr) {
+                emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+            }
+
+            writeIndent();
+            writeString("goto ");
+            writeString(start_label);
+            writeString(";\n");
+        }
+        writeIndent();
+        writeString("}\n");
+
+        writeIndent();
+        writeString(end_label);
+        writeString(": ;\n");
     } else {
-        emitStatement(node->body);
+        writeIndent();
+        writeString(start_label);
+        writeString(": ;\n");
+
+        writeIndent();
+        writeString("if (!(");
+        if (node->condition) {
+            emitExpression(node->condition);
+        } else {
+            writeString("1");
+        }
+        writeString(")) goto ");
+        writeString(end_label);
+        writeString(";\n");
+
+        if (node->body->type == NODE_BLOCK_STMT) {
+            writeIndent();
+            emitBlock(&node->body->as.block_stmt, node->label_id);
+        } else {
+            emitStatement(node->body);
+        }
+        writeString("\n");
+
+        writeIndent();
+        writeString(cont_label);
+        writeString(": ;\n");
+        if (node->iter_expr) {
+            emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+        }
+
+        writeIndent();
+        writeString("goto ");
+        writeString(start_label);
+        writeString(";\n");
+
+        writeIndent();
+        writeString(end_label);
+        writeString(": ;\n");
     }
-    writeString("\n");
-
-    writeIndent();
-    writeString(cont_label);
-    writeString(": ;\n");
-    if (node->iter_expr) {
-        emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
-    }
-
-    writeIndent();
-    writeString("goto ");
-    writeString(start_label);
-    writeString(";\n");
-
-    writeIndent();
-    writeString(end_label);
-    writeString(": ;\n");
 
     loop_id_stack_.pop_back();
 }

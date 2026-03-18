@@ -1979,12 +1979,21 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     condition_type = visit(node->condition);
     if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
 
+    bool is_optional = (condition_type->kind == TYPE_OPTIONAL);
+
     if (condition_type->kind == TYPE_VOID) {
         return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition cannot be void");
     } else if (condition_type->kind != TYPE_BOOL &&
                !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
-               condition_type->kind != TYPE_POINTER) {
-        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition must be a bool, integer, or pointer");
+               condition_type->kind != TYPE_POINTER &&
+               condition_type->kind != TYPE_OPTIONAL) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition must be a bool, integer, pointer, or optional");
+    }
+
+    if (node->capture_name) {
+        if (!is_optional) {
+            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture requires optional type condition");
+        }
     }
 
     node->label_id = next_label_id_++;
@@ -1994,8 +2003,37 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     /* RAII: Loop context automatically managed. */
     LoopContextGuard guard(*this, node->label, node->label_id, node->condition->loc);
 
-    if (!node->body) return get_g_type_undefined();
-    body_res = visit(node->body);
+    if (node->capture_name) {
+        Type* payload = condition_type->as.optional.payload;
+        payload = resolveAllPlaceholders(payload);
+
+        unit_.getSymbolTable().enterScope();
+        Symbol sym = SymbolBuilder(unit_.getArena())
+            .withName(node->capture_name)
+            .withType(payload)
+            .ofType(SYMBOL_VARIABLE)
+            .atLocation(node->condition->loc)
+            .withFlags(SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_CONST)
+            .build();
+        unit_.getSymbolTable().insert(sym);
+        node->capture_sym = unit_.getSymbolTable().lookupInCurrentScope(node->capture_name);
+
+        if (node->iter_expr) {
+            visit(node->iter_expr);
+        }
+
+        if (!node->body) {
+            unit_.getSymbolTable().exitScope();
+            return get_g_type_undefined();
+        }
+        body_res = visit(node->body);
+        unit_.getSymbolTable().exitScope();
+        return get_g_type_void();
+    } else {
+        if (!node->body) return get_g_type_undefined();
+        body_res = visit(node->body);
+    }
+
     if (!body_res || is_type_undefined(body_res)) return get_g_type_undefined();
 
     if (node->iter_expr) {
@@ -2619,8 +2657,14 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
                 return false;
             }
             Type* field_type = findStructField(cond_type, field_name);
+            if (field_type) {
+                field_type = resolveAllPlaceholders(field_type);
+            }
+
             if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
-                field_type = resolvePlaceholder(field_type);
+                unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, item_expr->loc,
+                    "Capture variable type is incomplete");
+                return false;
             }
 
             unit_.getSymbolTable().enterScope();

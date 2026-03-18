@@ -127,6 +127,10 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         if (while_stmt->body && while_stmt->body->type != NODE_BLOCK_STMT) {
             while_stmt->body = wrapInBlock(while_stmt->body);
         }
+
+        if (while_stmt->capture_name && while_stmt->capture_sym) {
+            // Scope for while capture is handled in transformNode recursion for the body
+        }
     } else if (node->type == NODE_FOR_STMT) {
         ASTForStmtNode* for_stmt = node->as.for_stmt;
         if (for_stmt->body && for_stmt->body->type != NODE_BLOCK_STMT) {
@@ -260,6 +264,13 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
                 lowerExportPrologue(node->as.fn_decl);
             }
             Inner::process(this, node);
+        } else if (node->type == NODE_WHILE_STMT && node->as.while_stmt->capture_name) {
+            // Special handling for while capture scope
+            transformNode(&node->as.while_stmt->condition, node);
+            if (node->as.while_stmt->iter_expr) transformNode(&node->as.while_stmt->iter_expr, node);
+
+            ScopeGuard scguard(*this);
+            transformNode(&node->as.while_stmt->body, node);
         } else {
             Inner::process(this, node);
             // Handle extern calls (ABI unwrapping)

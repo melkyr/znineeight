@@ -432,6 +432,8 @@ struct ASTWhileStmtNode {
     ASTNode* iter_expr;
     const char* label;
     int label_id;
+    const char* capture_name;
+    Symbol* capture_sym;
 };
 
 /**

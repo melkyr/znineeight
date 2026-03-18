@@ -50,12 +50,17 @@ Comparison of optional pointers with `null` using `==` or `!=` is now fully supp
 ### 2. Member Access on Optionals (`.value`, `.has_value`)
 Directly accessing `.value` (the payload) and `.has_value` (the presence flag) on optional types is now supported as a read-only operation.
 
+## Resolved Issues (Advanced Syntax)
+
+### 1. Tagged Union Switch Capture
+Using `switch` captures with `union(enum)` types is now fully supported. Payload types are resolved recursively during capture variable creation to prevent assertion failures.
+
+### 2. while Payload Capture
+Support for `while (optional) |capture|` syntax and semantics has been implemented across the parser, type checker, and C89 code generator.
+
 ## Unsupported Language Features (Advanced Syntax)
 
-### 1. Tagged Union Switch Capture Failure
-Using `switch` captures with `union(enum)` types can trigger similar assertion failures in the `TypeChecker`, likely because the capture variable creation involves resolving the union type's layout.
-
-### 2. Standard Library Availability
+### 1. Standard Library Availability
 Pulling in the `std` module (e.g., `@import("std")`) remains unreliable. The interpreter uses a `util.zig` module and `extern` C runtime functions for I/O and string operations to minimize compiler surface area.
 
 ## Implementation Details of the Lisp Interpreter

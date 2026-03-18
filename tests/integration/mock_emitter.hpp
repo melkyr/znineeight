@@ -399,25 +399,42 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        // Note: Real emitter now ALWAYS uses labeled goto pattern for all loops
-        // to ensure break/continue works correctly in C switch statements.
-        // Integration tests have been updated to expect this.
-
-        ss << "__loop_" << node->label_id << "_start: ; ";
-        ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
-
-        if (node->body && node->body->type == NODE_BLOCK_STMT) {
-            ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+        if (node->capture_name) {
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "while (1) { ";
+            ss << getC89TypeName(node->condition->resolved_type) << " opt_tmp = " << emitExpression(node->condition) << "; ";
+            ss << "if (!opt_tmp.has_value) goto __loop_" << node->label_id << "_end; ";
+            if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+                ss << getC89TypeName(node->capture_sym->symbol_type) << " " << node->capture_name << " = opt_tmp.value; ";
+            }
+            if (node->body && node->body->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+            } else {
+                ss << emitExpression(node->body);
+            }
+            ss << " __loop_" << node->label_id << "_continue: ; ";
+            if (node->iter_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << "goto __loop_" << node->label_id << "_start; } ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         } else {
-            ss << emitExpression(node->body);
-        }
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
 
-        ss << " __loop_" << node->label_id << "_continue: ; ";
-        if (node->iter_expr) {
-            ss << emitExpression(node->iter_expr) << "; ";
+            if (node->body && node->body->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+            } else {
+                ss << emitExpression(node->body);
+            }
+
+            ss << " __loop_" << node->label_id << "_continue: ; ";
+            if (node->iter_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << "goto __loop_" << node->label_id << "_start; ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         }
-        ss << "goto __loop_" << node->label_id << "_start; ";
-        ss << "__loop_" << node->label_id << "_end: ;";
 
         return ss.str();
     }
@@ -842,6 +859,7 @@ private:
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
             case TYPE_ERROR_UNION: return "ErrorUnion_" + getMangledTypeName(type->as.error_union.payload);
+            case TYPE_OPTIONAL: return "Optional_" + getMangledTypeName(type->as.optional.payload);
             case TYPE_ERROR_SET: return "ErrorSet";
             case TYPE_ARRAY: {
                 std::stringstream ss;
@@ -855,7 +873,7 @@ private:
     std::string getC89TypeName(Type* type) {
         if (!type) return "/* unknown type */";
 
-        if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION) {
+        if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
             return "struct " + getMangledTypeName(type);
         }
 
