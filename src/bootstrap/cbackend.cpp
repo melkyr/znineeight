@@ -414,16 +414,28 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
             break;
         case TYPE_FUNCTION:
             if (type->as.function.params) {
-                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    scanType((*type->as.function.params)[i], emitter, kinds, visited);
+                DynamicArray<Type*>* params = type->as.function.params;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    scanType(snapshot[i], emitter, kinds, visited);
                 }
             }
             scanType(type->as.function.return_type, emitter, kinds, visited);
             break;
         case TYPE_FUNCTION_POINTER:
             if (type->as.function_pointer.param_types) {
-                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
-                    scanType((*type->as.function_pointer.param_types)[i], emitter, kinds, visited);
+                DynamicArray<Type*>* params = type->as.function_pointer.param_types;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    scanType(snapshot[i], emitter, kinds, visited);
                 }
             }
             scanType(type->as.function_pointer.return_type, emitter, kinds, visited);
@@ -434,8 +446,14 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
                 scanType(type->as.struct_details.tag_type, emitter, kinds, visited);
             }
             if (type->as.struct_details.fields) {
-                for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
-                    scanType((*type->as.struct_details.fields)[i].type, emitter, kinds, visited);
+                DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                size_t count = fields->length();
+                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*fields)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    scanType(snapshot[i].type, emitter, kinds, visited);
                 }
             }
             break;
@@ -444,15 +462,27 @@ void CBackend::scanType(Type* type, C89Emitter& emitter, int kinds, DynamicArray
                 scanType(type->as.tagged_union.tag_type, emitter, kinds, visited);
             }
             if (type->as.tagged_union.payload_fields) {
-                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
-                    scanType((*type->as.tagged_union.payload_fields)[i].type, emitter, kinds, visited);
+                DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+                size_t count = fields->length();
+                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*fields)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    scanType(snapshot[i].type, emitter, kinds, visited);
                 }
             }
             break;
         case TYPE_TUPLE:
             if (type->as.tuple.elements) {
-                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
-                    scanType((*type->as.tuple.elements)[i], emitter, kinds, visited);
+                DynamicArray<Type*>* elements = type->as.tuple.elements;
+                size_t count = elements->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*elements)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    scanType(snapshot[i], emitter, kinds, visited);
                 }
             }
             break;

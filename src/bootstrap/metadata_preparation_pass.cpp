@@ -22,12 +22,19 @@ void MetadataPreparationPass::run() {
             Scope* scope = scopes[j];
             for (size_t k = 0; k < scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
-                while (entry) {
-                    if (entry->symbol.symbol_type) {
+                /* Snapshot bucket to prevent iterator invalidation if resolution adds new symbols */
+                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                Scope::SymbolEntry* curr = entry;
+                while (curr) {
+                    snapshot.append(&curr->symbol);
+                    curr = curr->next;
+                }
+                for (size_t snap_i = 0; snap_i < snapshot.length(); ++snap_i) {
+                    Symbol* sym = snapshot[snap_i];
+                    if (sym->symbol_type) {
                         TypeChecker checker(unit_);
-                        entry->symbol.symbol_type = checker.resolveAllPlaceholders(entry->symbol.symbol_type);
+                        sym->symbol_type = checker.resolveAllPlaceholders(sym->symbol_type);
                     }
-                    entry = entry->next;
                 }
             }
         }
@@ -43,11 +50,18 @@ void MetadataPreparationPass::run() {
             Scope* scope = scopes[j];
             for (size_t k = 0; k < scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = scope->buckets[k];
-                while (entry) {
-                    if (entry->symbol.symbol_type) {
-                        prepareTypeMetadata(mod, entry->symbol.symbol_type);
+                /* Snapshot bucket to prevent iterator invalidation if metadata preparation adds new symbols */
+                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                Scope::SymbolEntry* curr = entry;
+                while (curr) {
+                    snapshot.append(&curr->symbol);
+                    curr = curr->next;
+                }
+                for (size_t snap_i = 0; snap_i < snapshot.length(); ++snap_i) {
+                    Symbol* sym = snapshot[snap_i];
+                    if (sym->symbol_type) {
+                        prepareTypeMetadata(mod, sym->symbol_type);
                     }
-                    entry = entry->next;
                 }
             }
         }
@@ -65,18 +79,24 @@ void MetadataPreparationPass::run() {
             Scope* global_scope = scopes[0];
             for (size_t k = 0; k < global_scope->buckets.length(); ++k) {
                 Scope::SymbolEntry* entry = global_scope->buckets[k];
-                while (entry) {
-                    const Symbol& sym = entry->symbol;
+                /* Snapshot bucket to prevent iterator invalidation if collection adds new symbols */
+                DynamicArray<Symbol*> snapshot(unit_.getArena());
+                Scope::SymbolEntry* curr = entry;
+                while (curr) {
+                    snapshot.append(&curr->symbol);
+                    curr = curr->next;
+                }
+                for (size_t snap_i = 0; snap_i < snapshot.length(); ++snap_i) {
+                    Symbol* sym = snapshot[snap_i];
                     bool is_pub = false;
-                    if (sym.details) {
-                        if (sym.kind == SYMBOL_VARIABLE) is_pub = ((ASTVarDeclNode*)sym.details)->is_pub;
-                        else if (sym.kind == SYMBOL_FUNCTION) is_pub = ((ASTFnDeclNode*)sym.details)->is_pub;
+                    if (sym->details) {
+                        if (sym->kind == SYMBOL_VARIABLE) is_pub = ((ASTVarDeclNode*)sym->details)->is_pub;
+                        else if (sym->kind == SYMBOL_FUNCTION) is_pub = ((ASTFnDeclNode*)sym->details)->is_pub;
                     }
 
-                    if (is_pub || (sym.flags & SYMBOL_FLAG_EXTERN)) {
-                        collectReachableTypes(mod, sym.symbol_type, visited);
+                    if (is_pub || (sym->flags & SYMBOL_FLAG_EXTERN)) {
+                        collectReachableTypes(mod, sym->symbol_type, visited);
                     }
-                    entry = entry->next;
                 }
             }
         }
@@ -109,8 +129,14 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
                 collectReachableTypes(mod, type->as.struct_details.tag_type, visited);
             }
             if (type->as.struct_details.fields) {
-                for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.struct_details.fields)[i].type, visited);
+                DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                size_t count = fields->length();
+                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*fields)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    collectReachableTypes(mod, snapshot[i].type, visited);
                 }
             }
             break;
@@ -119,8 +145,14 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
                 collectReachableTypes(mod, type->as.tagged_union.tag_type, visited);
             }
             if (type->as.tagged_union.payload_fields) {
-                for (size_t i = 0; i < type->as.tagged_union.payload_fields->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.tagged_union.payload_fields)[i].type, visited);
+                DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+                size_t count = fields->length();
+                StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*fields)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    collectReachableTypes(mod, snapshot[i].type, visited);
                 }
             }
             break;
@@ -135,8 +167,14 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             break;
         case TYPE_TUPLE:
             if (type->as.tuple.elements) {
-                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.tuple.elements)[i], visited);
+                DynamicArray<Type*>* elements = type->as.tuple.elements;
+                size_t count = elements->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*elements)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    collectReachableTypes(mod, snapshot[i], visited);
                 }
             }
             break;
@@ -165,8 +203,13 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
 
         if (belongs_here) {
             bool already_in = false;
+            /* Take a snapshot to prevent iterator invalidation if mod->header_types is modified during recursion */
+            DynamicArray<Type*> header_snapshot(unit_.getArena());
             for (size_t i = 0; i < mod->header_types.length(); ++i) {
-                if (mod->header_types[i] == type) {
+                header_snapshot.append(mod->header_types[i]);
+            }
+            for (size_t i = 0; i < header_snapshot.length(); ++i) {
+                if (header_snapshot[i] == type) {
                     already_in = true;
                     break;
                 }
@@ -188,16 +231,28 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
             break;
         case TYPE_FUNCTION:
             if (type->as.function.params) {
-                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.function.params)[i], visited);
+                DynamicArray<Type*>* params = type->as.function.params;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    collectReachableTypes(mod, snapshot[i], visited);
                 }
             }
             collectReachableTypes(mod, type->as.function.return_type, visited);
             break;
         case TYPE_FUNCTION_POINTER:
             if (type->as.function_pointer.param_types) {
-                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
-                    collectReachableTypes(mod, (*type->as.function_pointer.param_types)[i], visited);
+                DynamicArray<Type*>* params = type->as.function_pointer.param_types;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    collectReachableTypes(mod, snapshot[i], visited);
                 }
             }
             collectReachableTypes(mod, type->as.function_pointer.return_type, visited);

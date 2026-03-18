@@ -2304,6 +2304,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
                 dependents_head = dependents_head->next;
                 refreshLayout(current->type);
             }
+
         }
     }
 #ifdef DEBUG
@@ -2359,16 +2360,34 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
             break;
         case TYPE_FUNCTION:
             if (type->as.function.params) {
-                for (size_t i = 0; i < type->as.function.params->length(); ++i) {
-                    (*type->as.function.params)[i] = resolveAllPlaceholders((*type->as.function.params)[i]);
+                DynamicArray<Type*>* params = type->as.function.params;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = resolveAllPlaceholders(snapshot[i]);
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    (*params)[i] = snapshot[i];
                 }
             }
             type->as.function.return_type = resolveAllPlaceholders(type->as.function.return_type);
             break;
         case TYPE_FUNCTION_POINTER:
             if (type->as.function_pointer.param_types) {
-                for (size_t i = 0; i < type->as.function_pointer.param_types->length(); ++i) {
-                    (*type->as.function_pointer.param_types)[i] = resolveAllPlaceholders((*type->as.function_pointer.param_types)[i]);
+                DynamicArray<Type*>* params = type->as.function_pointer.param_types;
+                size_t count = params->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*params)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = resolveAllPlaceholders(snapshot[i]);
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    (*params)[i] = snapshot[i];
                 }
             }
             type->as.function_pointer.return_type = resolveAllPlaceholders(type->as.function_pointer.return_type);
@@ -2376,15 +2395,33 @@ Type* TypeChecker::resolveAllPlaceholders(Type* type) {
         case TYPE_STRUCT:
         case TYPE_UNION:
             if (type->as.struct_details.fields) {
-                 for (size_t i = 0; i < type->as.struct_details.fields->length(); ++i) {
-                     (*type->as.struct_details.fields)[i].type = resolveAllPlaceholders((*type->as.struct_details.fields)[i].type);
+                 DynamicArray<StructField>* fields = type->as.struct_details.fields;
+                 size_t count = fields->length();
+                 StructField* snapshot = (StructField*)unit_.getArena().alloc(count * sizeof(StructField));
+                 for (size_t i = 0; i < count; ++i) {
+                     snapshot[i] = (*fields)[i];
+                 }
+                 for (size_t i = 0; i < count; ++i) {
+                     snapshot[i].type = resolveAllPlaceholders(snapshot[i].type);
+                 }
+                 for (size_t i = 0; i < count; ++i) {
+                     (*fields)[i] = snapshot[i];
                  }
             }
             break;
         case TYPE_TUPLE:
             if (type->as.tuple.elements) {
-                for (size_t i = 0; i < type->as.tuple.elements->length(); ++i) {
-                    (*type->as.tuple.elements)[i] = resolveAllPlaceholders((*type->as.tuple.elements)[i]);
+                DynamicArray<Type*>* elements = type->as.tuple.elements;
+                size_t count = elements->length();
+                Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = (*elements)[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    snapshot[i] = resolveAllPlaceholders(snapshot[i]);
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    (*elements)[i] = snapshot[i];
                 }
             }
             break;
@@ -3157,10 +3194,16 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         /* Re-register parameters in the body scope. */
         param_types = fn_symbol->symbol_type->as.function.params;
         if (node->params) {
+            /* Take a snapshot of param_types to prevent iterator invalidation if the function type is mutated */
+            size_t count = param_types->length();
+            Type** snapshot = (Type**)unit_.getArena().alloc(count * sizeof(Type*));
+            for (size_t k = 0; k < count; ++k) {
+                snapshot[k] = (*param_types)[k];
+            }
             for (i = 0; i < node->params->length(); ++i) {
                  ASTNode* param_node_wrapper = (*node->params)[i];
                  ASTParamDeclNode& param_node = param_node_wrapper->as.param_decl;
-                 Type* param_type = (*param_types)[i];
+                 Type* param_type = snapshot[i];
                  Symbol param_symbol = SymbolBuilder(unit_.getArena())
                         .withName(param_node.name)
                         .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)

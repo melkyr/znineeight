@@ -84,8 +84,14 @@ public:
   - **Robustness**: Avoids `DynamicArray` reallocation issues and iterator invalidation during cross-module resolution.
   - **Memory Efficiency**: Nodes are individually allocated from the arena, matching the 16MB constraint.
   - **Order Safety**: Resolution logic captures the list head *before* mutating the placeholder union, ensuring that the mutation doesn't corrupt the list before it's processed.
+  - **Work-Queue Algorithm**: To ensure all transitive dependents are refreshed, `resolvePlaceholder` repeatedly drains the linked list until no new dependents are added during the cascade.
 
-3.1.1.3 Expected Type Stack
+3.1.1.3 Iterator Stability & Snapshotting
+* **Problem**: Recursive type resolution (especially across module boundaries) can trigger mutation of `DynamicArray` objects (like function parameters or struct fields) while they are being iterated. This leads to assertion failures or memory corruption when the underlying array is sharded or reallocated.
+* **Solution**: The compiler employs a **Snapshotting Pattern** for all critical loops involving `DynamicArray<Type*>` and other semantic collections.
+* **Implementation**: Before iterating, the loop takes a temporary copy (snapshot) of the array's pointers using the `ArenaAllocator`. This ensures the loop runs on a stable set of elements regardless of any recursive side effects that might modify the original array.
+
+3.1.1.4 Expected Type Stack
 * **Concept:** A stack-based mechanism in the `TypeChecker` used for downward type inference.
 * **Implementation:** `DynamicArray<Type*>` allocated from the `CompilationUnit` arena.
 * **Management:** Uses RAII `ExpectedTypeGuard` to ensure balanced push/pop operations during AST traversal.
