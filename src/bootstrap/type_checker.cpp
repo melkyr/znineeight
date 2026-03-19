@@ -401,6 +401,50 @@ Type* TypeChecker::visit(ASTNode* node) {
         node->resolved_type = previous_resolved;
     }
 
+    /* Cross-module check: Ensure we aren't creating a NEW type for an imported name. */
+    if (resolved_type && (resolved_type->kind == TYPE_STRUCT || resolved_type->kind == TYPE_UNION || 
+        resolved_type->kind == TYPE_ENUM || resolved_type->kind == TYPE_TAGGED_UNION || 
+        resolved_type->kind == TYPE_ERROR_SET || resolved_type->kind == TYPE_PLACEHOLDER)) {
+        
+        Module* expected_owner = resolved_type->owner_module;
+        const char* type_name = NULL;
+        if (resolved_type->kind == TYPE_STRUCT || resolved_type->kind == TYPE_UNION) type_name = resolved_type->as.struct_details.name;
+        else if (resolved_type->kind == TYPE_ENUM) type_name = resolved_type->as.enum_details.name;
+        else if (resolved_type->kind == TYPE_TAGGED_UNION) type_name = resolved_type->as.tagged_union.name;
+        else if (resolved_type->kind == TYPE_ERROR_SET) type_name = resolved_type->as.error_set.name;
+        else if (resolved_type->kind == TYPE_PLACEHOLDER) {
+            expected_owner = resolved_type->as.placeholder.module;
+            type_name = resolved_type->as.placeholder.name;
+        }
+
+        if (expected_owner && type_name) {
+            Type* found_type = unit_.getTypeRegistry().find(expected_owner, type_name);
+            if (found_type && found_type != resolved_type) {
+                /* Special Case: If we are in the middle of resolving 
+                   the placeholder itself, 'found_type' will be that placeholder. 
+                   If visit() returned a structural type, it's NOT an inconsistency. */
+                if (resolved_type->kind != TYPE_PLACEHOLDER && found_type->kind == TYPE_PLACEHOLDER) {
+                     // OK: found_type is the placeholder being resolved to resolved_type
+                } 
+                /* Another Special Case: If found_type was just resolved (it's no longer a placeholder),
+                   but resolved_type is still the placeholder that was just mutated, 
+                   pointers will differ but it's logically the same.
+                   Actually, finalizePlaceholder mutates in-place, so pointers should NOT differ.
+                   The case we see is likely 'visit()' returning a NEW type object that 
+                   hasn't been used to mutate the placeholder yet. */
+                else {
+                    plat_print_debug("Registry inconsistency detected for type: ");
+                    plat_print_debug(type_name);
+                    plat_print_debug(" in module ");
+                    plat_print_debug(expected_owner->name);
+                    plat_print_debug("\n");
+                    plat_printf_debug("found_type: %p, resolved_type: %p, found_kind: %d, resolved_kind: %d\n", found_type, resolved_type, (int)found_type->kind, (int)resolved_type->kind);
+                    plat_abort();
+                }
+            }
+        }
+    }
+
     return resolved_type;
 }
 
@@ -1755,7 +1799,7 @@ Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
     unit_.getGlobalErrorRegistry().getOrAddTag(node->tag_name);
     /* Return an anonymous error set type representing the global set. */
     /* This allows it to be coerced to any error union. */
-    return createErrorSetType(unit_.getArena(), NULL, NULL, true);
+    return createErrorSetType(unit_, unit_.getModule(unit_.getCurrentModule()), NULL, NULL, true);
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
@@ -3476,7 +3520,15 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     }
 
     /* 3. Create struct type and calculate layout. */
-    struct_type = createStructType(unit_, current_mod, fields, struct_name);
+    if (struct_name && self_placeholder) {
+        struct_type = self_placeholder;
+        struct_type->kind = TYPE_STRUCT;
+        struct_type->as.struct_details.name = struct_name;
+        struct_type->as.struct_details.fields = fields;
+        struct_type->owner_module = current_mod;
+    } else {
+        struct_type = createStructType(unit_, current_mod, fields, struct_name);
+    }
 
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
@@ -3608,7 +3660,17 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         tag_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, get_g_type_i32(), members, 0, (i64)fields->length() - 1);
     }
 
-    union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type);
+    if (union_name && self_placeholder) {
+        union_type = self_placeholder;
+        union_type->kind = TYPE_UNION;
+        union_type->as.struct_details.name = union_name;
+        union_type->as.struct_details.fields = fields;
+        union_type->as.struct_details.is_tagged = node->is_tagged;
+        union_type->as.struct_details.tag_type = tag_type;
+        union_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+    } else {
+        union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type);
+    }
 
     if (union_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(union_name);
@@ -4085,6 +4147,8 @@ Type* TypeChecker::visitStructInitializer(ASTStructInitializerNode* node) {
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     const char* enum_name = current_struct_name_;
+    Symbol* self_sym = enum_name ? unit_.getSymbolTable().lookupInCurrentScope(enum_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
     StructNameGuard name_guard(*this, NULL);
 
     /* 1. Determine the backing type. */
@@ -4162,6 +4226,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             }
         }
 
+                plat_printf_debug("found_type: %p, resolved_type: %p, found_kind: %d, resolved_kind: %d\n", found_type, resolved_type, (int)found_type->kind, (int)resolved_type->kind);
         EnumMember member;
         member.name = member_node->name;
         member.value = member_value;
@@ -4185,7 +4250,19 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     if (has_error) return get_g_type_undefined();
 
     /* 4. Create and return the new enum type. */
-    Type* enum_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, backing_type, members, min_val, max_val);
+    Type* enum_type = NULL;
+    if (enum_name && self_placeholder) {
+        enum_type = self_placeholder;
+        enum_type->kind = TYPE_ENUM;
+        enum_type->as.enum_details.name = enum_name;
+        enum_type->as.enum_details.backing_type = backing_type;
+        enum_type->as.enum_details.members = members;
+        enum_type->as.enum_details.min_value = min_val;
+        enum_type->as.enum_details.max_value = max_val;
+        enum_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+    } else {
+        enum_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, backing_type, members, min_val, max_val);
+    }
 
     if (enum_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(enum_name);
@@ -4355,6 +4432,9 @@ Type* TypeChecker::visitErrorUnionType(ASTErrorUnionTypeNode* node) {
 }
 
 Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
+    const char* set_name = current_struct_name_;
+    Symbol* self_sym = set_name ? unit_.getSymbolTable().lookupInCurrentScope(set_name) : NULL;
+    Type* self_placeholder = (self_sym && self_sym->symbol_type && self_sym->symbol_type->kind == TYPE_PLACEHOLDER) ? self_sym->symbol_type : NULL;
     ASTErrorSetDefinitionNode* decl;
     if (!node) return get_g_type_undefined();
     decl = node->as.error_set_decl;
@@ -4379,7 +4459,16 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
             unit_.getGlobalErrorRegistry().getOrAddTag(tag);
         }
     }
-    return createErrorSetType(unit_.getArena(), decl->name, decl->tags, decl->name == NULL, &unit_.getTypeInterner());
+    if (decl->name && self_placeholder) {
+        Type* set_type = self_placeholder;
+        set_type->kind = TYPE_ERROR_SET;
+        set_type->as.error_set.name = decl->name;
+        set_type->as.error_set.tags = decl->tags;
+        set_type->as.error_set.is_anonymous = (decl->name == NULL);
+        set_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+        return set_type;
+    }
+    return createErrorSetType(unit_, unit_.getModule(unit_.getCurrentModule()), decl->name, decl->tags, decl->name == NULL, NULL);
 }
 
 Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
@@ -4426,7 +4515,7 @@ Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
         }
     }
 
-    return createErrorSetType(unit_.getArena(), NULL, merged_tags, true, &unit_.getTypeInterner());
+    return createErrorSetType(unit_, unit_.getModule(unit_.getCurrentModule()), NULL, merged_tags, true, NULL);
 }
 
 Type* TypeChecker::visitOptionalType(ASTOptionalTypeNode* node) {

@@ -322,13 +322,14 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
 
 /**
  * @brief Creates a new error set Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param name The name of the error set (can be NULL).
  * @param tags A dynamic array of tag names (interned strings).
  * @param is_anonymous True if the error set is anonymous.
  * @return A pointer to the newly allocated Type object.
  */
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner = NULL);
+Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner = NULL);
 
 /**
  * @brief Calculates the layout (offsets, total size, alignment) of a struct type.
