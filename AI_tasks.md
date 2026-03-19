@@ -2323,3 +2323,21 @@ Implementation steps (minimal):
 ## Phase 2: Self-Hosting
 226. **Task 226:** Use `zig1.exe` to compile its own source code, producing `zig2.exe`.
 227. **Task 227:** Perform a binary comparison between `zig1.exe` and `zig2.exe` to confirm self-hosting.
+
+## Milestone 10: Module Symbol Resolution & Type Identity (COMPLETE)
+
+248. [COMPLETE] **Phase 1: Infrastructure & Isolation**
+    - Implemented `TypeRegistry` for deduplicating named types across modules.
+    - Added `TypeCreationScope` RAII guard for safe type registration.
+    - Verified with standalone unit tests.
+
+249. [COMPLETE] **Phase 2: Two-Phase Placeholder Strategy**
+    - Implemented "Declare First" pass to register placeholders for all top-level types.
+    - Separated declaration from definition to solve circular dependencies.
+    - Verified with mutual recursion and circular import test cases.
+
+250. [COMPLETE] **Phase 3: Integration & Symbol Resolution**
+    - Centralized named type resolution in `TypeChecker::resolveNamedType`.
+    - Integrated `TypeRegistry` with built-in types (Arena, primitives) using `builtin_module_` sentinel.
+    - Updated `visitTypeName` and `visitMemberAccess` to ensure consistent type identity.
+    - Verified with comprehensive multi-module integration tests (Batches 48, 53, 55, 73).

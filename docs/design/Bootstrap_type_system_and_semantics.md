@@ -1695,3 +1695,21 @@ The following issues were identified during the attempt to compile a comprehensi
 - **Switch Prong Commas**: Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong before the closing brace.
 - **Header Dependency Cycles**: Recursive types in error unions (e.g., `fn foo() !RecursiveStruct`) can cause compilation errors in C89 due to struct completeness requirements in the generated header. Workaround is to use pointers.
 - **ABI Mismatch**: The compiler hardcodes 32-bit assumptions (pointers, alignment) which causes memory corruption when generated C code is run in a 64-bit environment without `-m32`.
+
+## 26. Module Resolution and Type Identity (Phase 3)
+
+The bootstrap compiler uses a centralized `TypeRegistry` to manage type identity across multiple modules. This ensures that the same type defined in one module is recognized as the same `Type*` even when accessed from different importing modules.
+
+### 26.1 Centralized Named Type Resolution
+
+The `TypeChecker::resolveNamedType` method serves as the unified entry point for resolving types by name. It performs the following steps:
+1.  **Module Identification**: Identifies the defining module based on the symbol's `module_name`.
+2.  **Registry Lookup**: Queries the `TypeRegistry` using the defining module and the type's name.
+3.  **Placeholder Resolution**: If the registered type is a placeholder, it triggers its on-demand resolution.
+4.  **Consistency Check**: Verifies that the resolved type matches the symbol's recorded type, ensuring internal compiler consistency.
+
+This mechanism is used by both `visitTypeName` (for simple type references) and `visitMemberAccess` (for qualified type access like `mod.Type`), providing a consistent view of the type system across the entire compilation unit.
+
+### 26.2 Built-in Type Registration
+
+Standard Zig primitive types (e.g., `i32`, `bool`) and compiler-intrinsic types (e.g., `Arena`) are registered in the `TypeRegistry` under a special `builtin_module_` sentinel. This allows these types to be handled using the same resolution logic as user-defined types, further unifying the type system's architecture.

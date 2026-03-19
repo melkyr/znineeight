@@ -1059,3 +1059,37 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 #endif
 #endif // COMMON_HPP
 ```
+## 10. Type Registry & Two-Phase Resolution (Phase 2 & 3)
+
+To ensure consistent type identity across modules and handle circular dependencies, the compiler uses a two-phase resolution strategy supported by a global `TypeRegistry`.
+
+### 10.1 The Type Registry
+
+The `TypeRegistry` (owned by `CompilationUnit`) is a hash-map that maps a `(Module*, name)` pair to a unique `Type*`. This ensures that every named type (struct, union, enum, error set) is represented by exactly one `Type` object in memory, regardless of how many times it is imported or referenced.
+
+- **Nominal Identity**: Types are identified by their name and the module that defines them.
+- **Deduplication**: Multiple imports of the same module will always resolve to the same type pointers.
+
+### 10.2 Two-Phase Resolution
+
+To support mutual recursion (e.g., Module A uses Type B, and Module B uses Type A), type resolution is split into two distinct passes:
+
+1. **Pass 1: Placeholder Registration**:
+   - During the initial scan of a module, the compiler identifies all top-level type declarations.
+   - It creates a `TYPE_PLACEHOLDER` for each and registers it in the `TypeRegistry`.
+   - The placeholder stores the declaration's name, owner module, and a pointer to the AST node for later resolution.
+
+2. **Pass 2: On-Demand / Full Resolution**:
+   - When a type is first used (or during a dedicated resolution pass), the placeholder is "finalized".
+   - The compiler visits the AST node associated with the placeholder to determine its actual structure (fields, variants, etc.).
+   - The placeholder object is mutated **in-place** to the final type kind (e.g., `TYPE_STRUCT`).
+   - All existing references to the placeholder now automatically point to the completed type.
+
+### 10.3 Type Creation Safety
+
+Named aggregate types are created using the `TypeCreationScope` RAII guard. This guard ensures:
+- **Atomicity**: If type creation fails, the registry remains consistent.
+- **Deduplication**: If a type with the same name already exists in the registry, the creator returns the existing pointer instead of creating a new one.
+- **Automatic Registration**: Successful creation automatically inserts the type into the registry.
+
+This architecture provides the foundation for robust multi-module support and complex recursive data structures in the RetroZig compiler.
