@@ -1,4 +1,4 @@
-// Generated batch runner for tests/main_batch60.cpp
+// Generated batch runner for tests/main_batch9a.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
 #include "test_utils.cpp"
 #include "c89_validation/gcc_validator.cpp"
@@ -90,8 +90,4 @@
 #include "integration/while_continue_tests.cpp"
 #include "integration/while_loop_tests.cpp"
 #include "integration/while_switch_control_flow.cpp"
-#include "unit/ast_clone_test.cpp"
-#include "unit/ast_traversal_test.cpp"
-#include "unit/parser_switch_stmt_test.cpp"
-#include "unit/test_registry.cpp"
-#include "main_batch60.cpp"
+#include "main_batch9a.cpp"
