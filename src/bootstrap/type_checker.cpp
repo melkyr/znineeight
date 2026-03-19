@@ -188,7 +188,31 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 
                 /* Check if already has a type or placeholder */
                 Symbol* sym = unit_.getSymbolTable().lookupInCurrentScope(vd->name);
-                if (sym && sym->symbol_type) {
+                Module* current_mod = unit_.getModule(unit_.getCurrentModule());
+
+                Type* existing = unit_.getTypeRegistry().find(current_mod, vd->name);
+                if (existing) {
+                    /* If it's already in the registry, ensure the symbol table is consistent. */
+                    if (sym) {
+                         if (sym->symbol_type != existing) {
+                              char msg[256];
+                              plat_strcpy(msg, "Redefinition of '");
+                              plat_strcat(msg, vd->name);
+                              plat_strcat(msg, "'");
+                              unit_.getErrorHandler().report(ERR_REDEFINITION, vd->name_loc, msg);
+                         }
+                    } else {
+                        Symbol new_sym = SymbolBuilder(unit_.getArena())
+                            .withName(vd->name)
+                            .withModule(unit_.getCurrentModule())
+                            .ofType(SYMBOL_VARIABLE)
+                            .withType(existing)
+                            .atLocation(vd->name_loc)
+                            .definedBy(vd)
+                            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+                            .build();
+                        unit_.getSymbolTable().insert(new_sym);
+                    }
                     continue;
                 }
 
@@ -197,12 +221,21 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->kind = TYPE_PLACEHOLDER;
                 placeholder->as.placeholder.name = vd->name;
                 placeholder->as.placeholder.decl_node = node;
-                placeholder->as.placeholder.module = unit_.getModule(unit_.getCurrentModule());
+                placeholder->as.placeholder.module = current_mod;
                 placeholder->owner_module = placeholder->as.placeholder.module;
                 placeholder->as.placeholder.dependents_head = NULL;
                 placeholder->as.placeholder.dependents_tail = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
+
+                /* CRITICAL: Register the placeholder immediately */
+                unit_.getTypeRegistry().insert(current_mod, vd->name, placeholder);
+
+                /* Store mapping for Pass 2 */
+                PendingResolution pending;
+                pending.placeholder = placeholder;
+                pending.decl_node = node;
+                unit_.getPendingResolutions().append(pending);
 
                 if (sym) {
                     sym->symbol_type = placeholder;
@@ -2293,13 +2326,19 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
     if (placeholder->as.placeholder.module) {
         unit_.setCurrentModule(placeholder->as.placeholder.module->name);
     }
+    
+    /* Ensure we don't pass down a struct name that would trigger createStructType 
+       to return the placeholder, creating a loop. We want visit() to return 
+       a structure-only type that we then use to finalize this placeholder. */
     const char* saved_struct_name = current_struct_name_;
-    current_struct_name_ = placeholder->as.placeholder.name;
+    current_struct_name_ = NULL;
 
     placeholder->is_resolving = true;
 
     if (!placeholder->as.placeholder.decl_node) {
         placeholder->is_resolving = false;
+        unit_.setCurrentModule(old_mod);
+        current_struct_name_ = saved_struct_name;
         return get_g_type_undefined();
     }
     Type* resolved = visit(placeholder->as.placeholder.decl_node);
@@ -2320,9 +2359,6 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 
     /* Mutate placeholder in place */
     if (resolved && resolved != placeholder) {
-        /* Capture dependencies before mutation */
-        DependentNode* dependents_head = placeholder->as.placeholder.dependents_head;
-
         /* If resolved is TYPE_TYPE, we want the underlying type */
         if (resolved->kind == TYPE_TYPE) {
              if (placeholder->as.placeholder.decl_node->type == NODE_VAR_DECL) {
@@ -2334,23 +2370,7 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
         }
 
         if (resolved->kind != TYPE_PLACEHOLDER) {
-            placeholder->kind = resolved->kind;
-            placeholder->size = resolved->size;
-            placeholder->alignment = resolved->alignment;
-            placeholder->owner_module = resolved->owner_module;
-            if (resolved->c_name) {
-                placeholder->c_name = resolved->c_name;
-            }
-            placeholder->as = resolved->as;
-
-            /* Once mutated, the type is no longer a placeholder, so registerDependent
-               will never append new dependents to it. We process the captured list once. */
-            while (dependents_head) {
-                DependentNode* current = dependents_head;
-                dependents_head = dependents_head->next;
-                refreshLayout(current->type);
-            }
-
+            finalizePlaceholder(placeholder, resolved);
         }
     }
 #ifdef DEBUG
@@ -2362,6 +2382,107 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 #endif
 
     unit_.setCurrentModule(old_mod);
+    return placeholder;
+}
+
+void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
+    if (!placeholder || !resolved || placeholder == resolved) return;
+    if (placeholder->kind != TYPE_PLACEHOLDER) return;
+
+    /* Preservation: Ensure the placeholder keeps its identity/name if it was a named declaration. */
+    const char* original_name = placeholder->as.placeholder.name;
+#ifdef DEBUG
+    plat_printf_debug("DEBUG: Finalizing placeholder '%s' to kind %d\n", original_name ? original_name : "<null>", (int)resolved->kind);
+#endif
+
+    /* Capture dependencies before mutation */
+    DependentNode* dependents_head = placeholder->as.placeholder.dependents_head;
+
+    /* Mutate in place */
+    placeholder->kind = resolved->kind;
+    placeholder->size = resolved->size;
+    placeholder->alignment = resolved->alignment;
+    placeholder->owner_module = resolved->owner_module;
+    if (resolved->c_name) {
+        placeholder->c_name = resolved->c_name;
+    }
+    placeholder->as = resolved->as;
+
+    /* Restoration: If we just finalized a named placeholder using an anonymous structure 
+       (or another type), ensure it still identifies as having its original name. 
+       All these kinds have 'name' as the first member of their 'as' union struct. */
+    if (placeholder->kind == TYPE_STRUCT || placeholder->kind == TYPE_UNION) {
+        if (!placeholder->as.struct_details.name) placeholder->as.struct_details.name = original_name;
+    } else if (placeholder->kind == TYPE_ENUM) {
+        if (!placeholder->as.enum_details.name) placeholder->as.enum_details.name = original_name;
+    } else if (placeholder->kind == TYPE_TAGGED_UNION) {
+        if (!placeholder->as.tagged_union.name) placeholder->as.tagged_union.name = original_name;
+    } else if (placeholder->kind == TYPE_ERROR_SET) {
+        if (!placeholder->as.error_set.name) placeholder->as.error_set.name = original_name;
+    }
+
+#ifdef DEBUG
+    if ((placeholder->kind == TYPE_STRUCT || placeholder->kind == TYPE_UNION || placeholder->kind == TYPE_ENUM || placeholder->kind == TYPE_TAGGED_UNION) && !placeholder->as.struct_details.name) {
+        plat_printf_debug("DEBUG: WARNING: Finalized aggregate '%s' has NULL name!\n", original_name ? original_name : "<null>");
+    }
+#endif
+
+    /* Once mutated, the type is no longer a placeholder, so registerDependent
+       will never append new dependents to it. We process the captured list once. */
+    while (dependents_head) {
+        DependentNode* current = dependents_head;
+        dependents_head = dependents_head->next;
+        refreshLayout(current->type);
+    }
+}
+
+Type* TypeChecker::resolveNamedPlaceholder(Type* placeholder) {
+    if (!placeholder || placeholder->kind != TYPE_PLACEHOLDER) return placeholder;
+
+    if (placeholder->is_resolving) return placeholder;
+
+    /* Switch to the placeholder's module context */
+    const char* old_mod = unit_.getCurrentModule();
+    if (placeholder->as.placeholder.module) {
+        unit_.setCurrentModule(placeholder->as.placeholder.module->name);
+    }
+
+    /* Ensure we don't pass down a struct name that would trigger createStructType 
+       to return the placeholder, creating a loop. We want visit() to return 
+       a structure-only type that we then use to finalize this placeholder. */
+    const char* saved_struct_name = current_struct_name_;
+    current_struct_name_ = NULL;
+
+    placeholder->is_resolving = true;
+
+    ASTNode* decl = placeholder->as.placeholder.decl_node;
+    Type* resolved = NULL;
+
+    if (decl && decl->type == NODE_VAR_DECL) {
+        ASTVarDeclNode* vd = decl->as.var_decl;
+        if (vd->initializer) {
+            /* Visit the initializer as an anonymous aggregate.
+               We bypass visitVarDecl to avoid recursive placeholder registration logic
+               and directly extract the structure. */
+            resolved = visit(vd->initializer);
+            
+            /* Unwrap TYPE_TYPE */
+            if (resolved && resolved->kind == TYPE_TYPE) {
+                if (vd->initializer->resolved_type && vd->initializer->resolved_type != get_g_type_type()) {
+                    resolved = vd->initializer->resolved_type;
+                }
+            }
+        }
+    }
+
+    placeholder->is_resolving = false;
+    current_struct_name_ = saved_struct_name;
+    unit_.setCurrentModule(old_mod);
+
+    if (resolved && resolved->kind != TYPE_PLACEHOLDER) {
+        finalizePlaceholder(placeholder, resolved);
+    }
+
     return placeholder;
 }
 
@@ -2800,7 +2921,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         if (existing_sym->symbol_type->kind == TYPE_PLACEHOLDER) {
             placeholder = existing_sym->symbol_type;
         } else if (existing_sym->flags & (SYMBOL_FLAG_LOCAL | SYMBOL_FLAG_GLOBAL)) {
-            return existing_sym->symbol_type;
+            /* If this is a constant holding a type, we might still need to unwrap it if asked for it. */
+            if (existing_sym->symbol_type->kind == TYPE_TYPE && node->is_const && node->initializer) {
+                 /* Proceed to ensure initializer is checked */
+            } else {
+                return existing_sym->symbol_type;
+            }
         }
     }
 
@@ -3379,7 +3505,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     }
 
     /* 3. Create struct type and calculate layout. */
-    Type* struct_type = createStructType(unit_, current_mod, fields, struct_name);
+    struct_type = createStructType(unit_, current_mod, fields, struct_name);
 
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
@@ -3640,6 +3766,18 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* Module member access. */
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
+
+        /* Cross-module registry check */
+        if (target_mod) {
+            Type* registered = unit_.getTypeRegistry().find(target_mod, node->field_name);
+            if (registered) {
+                if (registered->kind == TYPE_PLACEHOLDER) {
+                    registered = resolvePlaceholder(registered);
+                }
+                parent->resolved_type = registered;
+                return get_g_type_type();
+            }
+        }
 
 #ifdef DEBUG_VISIBILITY
         plat_printf_debug("DEBUG_VISIBILITY: Module member access: mod='%s' field='%s'\n",

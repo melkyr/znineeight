@@ -44,6 +44,17 @@ struct CompilationOptions {
 
 // Forward-declare to avoid circular dependencies.
 class Parser;
+struct Type;
+struct ASTNode;
+
+/**
+ * @struct PendingResolution
+ * @brief Tracks a named type placeholder that needs finalization.
+ */
+struct PendingResolution {
+    struct Type* placeholder;
+    struct ASTNode* decl_node;
+};
 
 class CompilationUnit {
 public:
@@ -71,6 +82,7 @@ public:
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
     TypeRegistry& getTypeRegistry();
+    DynamicArray<PendingResolution>& getPendingResolutions() { return pending_resolutions_; }
     DynamicArray<const char*>& getEmittedTypesCache() { return emitted_types_cache_; }
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
@@ -82,6 +94,8 @@ public:
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);
+
+    Module* getBuiltinModule() { return builtin_module_; }
 
     CompilationOptions& getOptions();
     const CompilationOptions& getOptions() const;
@@ -152,6 +166,7 @@ private:
     ArenaAllocator token_arena_;
     TypeInterner type_interner_;
     TypeRegistry type_registry_;
+    DynamicArray<PendingResolution> pending_resolutions_;
     StringInterner& interner_;
     SourceManager source_manager_;
     SymbolTable default_symbols_; // For backward compatibility and early injection
@@ -177,6 +192,7 @@ private:
     DynamicArray<const char*> include_paths_;
     const char* default_lib_path_;
     DynamicArray<Module*> modules_;
+    Module* builtin_module_;
     ASTNode* last_ast_;
     bool is_test_mode_;
     bool validation_completed_;
