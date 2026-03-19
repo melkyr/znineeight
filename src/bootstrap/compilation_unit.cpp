@@ -180,6 +180,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
 
     modules_.append(builtin_module_);
 
+    injectRuntimeSymbols(*builtin_module_->symbols);
+
     arena_.resetPeak();
 }
 
@@ -228,6 +230,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
+    plat_printf_debug("Module created: %s (%p) for file %s\n", mod->name, (void*)mod, interned_filename);
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
@@ -446,8 +449,10 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
             const char* name = interner_.intern(primitives[i]);
+            type_registry_.insert(builtin_module_, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
+                .withModule(builtin_module_->name)
                 .withMangledName(name) // Primitives use their own name as mangled name
                 .ofType(SYMBOL_TYPE)
                 .withType(t)
@@ -461,6 +466,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     Type* arena_type = createStructType(*this, builtin_module_, NULL, arena_name);
     Symbol sym_arena = SymbolBuilder(arena_)
         .withName(arena_name)
+        .withModule(builtin_module_->name)
         .withMangledName(arena_name)
         .ofType(SYMBOL_TYPE)
         .withType(arena_type)
@@ -480,6 +486,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_create");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -501,6 +508,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -520,6 +528,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_reset");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -539,6 +548,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_destroy");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -552,6 +562,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("zig_default_arena");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_VARIABLE)
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_EXTERN)
@@ -572,6 +583,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc_default");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -593,6 +605,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* free_name = interner_.intern("arena_free");
         Symbol sym_free = SymbolBuilder(arena_)
             .withName(free_name)
+            .withModule(builtin_module_->name)
             .withMangledName(free_name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type2)
@@ -612,6 +625,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -631,6 +645,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print_int");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_module_->name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -905,19 +920,20 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         }
 
         if (sorted.length() != N) {
-            // Cycle detected – report modules with remaining indegree
-            char buf[512];
-            char* cur = buf;
-            size_t rem = sizeof(buf);
-            safe_append(cur, rem, "Circular dependency involving: ");
+            // Cycle detected. Append remaining modules in discovery order.
             for (size_t i = 0; i < N; ++i) {
-                if (indeg[i] > 0) {
-                    safe_append(cur, rem, modules_[i]->name);
-                    safe_append(cur, rem, " ");
+                Module* m = modules_[i];
+                bool found = false;
+                for (size_t j = 0; j < sorted.length(); ++j) {
+                    if (sorted[j] == m) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    sorted.append(m);
                 }
             }
-            error_handler_.report(ERR_CIRCULAR_IMPORT, SourceLocation(), buf);
-            return false;
         }
 
         // Replace modules_ with sorted order
@@ -1384,6 +1400,26 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 
         // Set the module pointer in the import node for the TypeChecker
         import_node->as.import_stmt->module_ptr = imported_mod;
+
+        // CRITICAL ADDITION: Create a module type that references the imported module
+        // This ensures visitMemberAccess can find the module_ptr
+        const char* import_alias = imported_mod->name;
+
+        // Register the module type in current module's symbol table
+        Type* mod_type = createModuleType(arena_, imported_mod->name);
+        mod_type->as.module.module_ptr = imported_mod;
+
+        Symbol mod_sym = SymbolBuilder(arena_)
+            .withName(import_alias)
+            .withModule(current_module_)
+            .ofType(SYMBOL_MODULE)
+            .withType(mod_type)
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+            .build();
+
+        if (!getSymbolTable().lookupInCurrentScope(import_alias)) {
+            getSymbolTable().insert(mod_sym);
+        }
     }
 
     setCurrentModule(saved_module);

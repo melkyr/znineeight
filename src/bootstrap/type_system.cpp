@@ -255,29 +255,31 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
     return new_type;
 }
 
-Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name) {
-    if (name == NULL) {
-        Type* new_type = allocateType(unit.getArena());
-        new_type->kind = TYPE_STRUCT;
-        new_type->size = 0; // Will be calculated by calculateStructLayout
-        new_type->alignment = 1; // Will be calculated by calculateStructLayout
-        new_type->as.struct_details.name = name;
-        new_type->as.struct_details.fields = fields;
-        new_type->owner_module = mod;
-        return new_type;
+Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, Type* placeholder) {
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
     }
 
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
-    Type* existing = unit.getTypeRegistry().find(mod, name);
-    if (existing) return existing;
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
 
-    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
     new_type->owner_module = mod;
+
+    if (name == NULL) return new_type;
 
     scope.set_type(new_type);
     if (!scope.try_commit()) {
@@ -287,10 +289,13 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
     return scope.get_final_type();
 }
 
-Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
+Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type, Type* placeholder) {
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-        if (existing) return existing;
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
     }
 
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
@@ -298,7 +303,13 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     if (!fields) {
         plat_print_debug("createUnionType: fields array is NULL\n");
     }
-    Type* new_type = allocateType(unit.getArena());
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_UNION;
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
@@ -363,10 +374,13 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     return scope.get_final_type();
 }
 
-Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name) {
+Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name, Type* placeholder) {
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-        if (existing) return existing;
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
     }
 
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
@@ -374,7 +388,13 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     if (!payload_fields) {
         plat_print_debug("createTaggedUnionType: payload_fields array is NULL\n");
     }
-    Type* new_type = allocateType(unit.getArena());
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_TAGGED_UNION;
     new_type->as.tagged_union.name = name;
     new_type->as.tagged_union.payload_fields = payload_fields;
@@ -507,10 +527,13 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     return new_type;
 }
 
-Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner) {
+Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner, Type* placeholder) {
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-        if (existing) return existing;
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
     }
 
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
@@ -519,7 +542,13 @@ Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* 
         return interner->getErrorSetType(name, tags, is_anonymous);
     }
 
-    Type* new_type = allocateType(unit.getArena());
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_ERROR_SET;
     new_type->size = 4; // Error sets map to int in C89
     new_type->alignment = 4;
@@ -788,7 +817,7 @@ void calculateStructLayout(Type* struct_type) {
     struct_type->alignment = max_alignment;
 }
 
-Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
+Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder) {
     if (!backing_type) {
         plat_print_debug("createEnumType: backing type is NULL\n");
         return get_g_type_undefined();
@@ -796,7 +825,10 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
 
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
-        if (existing) return existing;
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
     }
 
     TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
@@ -804,7 +836,13 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     if (!name) {
         plat_print_debug("createEnumType: name is NULL\n");
     }
-    Type* new_type = allocateType(unit.getArena());
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
     new_type->alignment = backing_type->alignment;

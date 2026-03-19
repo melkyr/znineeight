@@ -401,49 +401,6 @@ Type* TypeChecker::visit(ASTNode* node) {
         node->resolved_type = previous_resolved;
     }
 
-    /* Cross-module check: Ensure we aren't creating a NEW type for an imported name. */
-    if (resolved_type && (resolved_type->kind == TYPE_STRUCT || resolved_type->kind == TYPE_UNION || 
-        resolved_type->kind == TYPE_ENUM || resolved_type->kind == TYPE_TAGGED_UNION || 
-        resolved_type->kind == TYPE_ERROR_SET || resolved_type->kind == TYPE_PLACEHOLDER)) {
-        
-        Module* expected_owner = resolved_type->owner_module;
-        const char* type_name = NULL;
-        if (resolved_type->kind == TYPE_STRUCT || resolved_type->kind == TYPE_UNION) type_name = resolved_type->as.struct_details.name;
-        else if (resolved_type->kind == TYPE_ENUM) type_name = resolved_type->as.enum_details.name;
-        else if (resolved_type->kind == TYPE_TAGGED_UNION) type_name = resolved_type->as.tagged_union.name;
-        else if (resolved_type->kind == TYPE_ERROR_SET) type_name = resolved_type->as.error_set.name;
-        else if (resolved_type->kind == TYPE_PLACEHOLDER) {
-            expected_owner = resolved_type->as.placeholder.module;
-            type_name = resolved_type->as.placeholder.name;
-        }
-
-        if (expected_owner && type_name) {
-            Type* found_type = unit_.getTypeRegistry().find(expected_owner, type_name);
-            if (found_type && found_type != resolved_type) {
-                /* Special Case: If we are in the middle of resolving 
-                   the placeholder itself, 'found_type' will be that placeholder. 
-                   If visit() returned a structural type, it's NOT an inconsistency. */
-                if (resolved_type->kind != TYPE_PLACEHOLDER && found_type->kind == TYPE_PLACEHOLDER) {
-                     // OK: found_type is the placeholder being resolved to resolved_type
-                } 
-                /* Another Special Case: If found_type was just resolved (it's no longer a placeholder),
-                   but resolved_type is still the placeholder that was just mutated, 
-                   pointers will differ but it's logically the same.
-                   Actually, finalizePlaceholder mutates in-place, so pointers should NOT differ.
-                   The case we see is likely 'visit()' returning a NEW type object that 
-                   hasn't been used to mutate the placeholder yet. */
-                else {
-                    plat_print_debug("Registry inconsistency detected for type: ");
-                    plat_print_debug(type_name);
-                    plat_print_debug(" in module ");
-                    plat_print_debug(expected_owner->name);
-                    plat_print_debug("\n");
-                    plat_printf_debug("found_type: %p, resolved_type: %p, found_kind: %d, resolved_kind: %d\n", found_type, resolved_type, (int)found_type->kind, (int)resolved_type->kind);
-                    plat_abort();
-                }
-            }
-        }
-    }
 
     return resolved_type;
 }
@@ -1257,6 +1214,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             param_type = (callee_type->kind == TYPE_FUNCTION) ? (*callee_type->as.function.params)[i] : (*callee_type->as.function_pointer.param_types)[i];
             ExpectedTypeGuard guard(*this, param_type);
             arg_type = visit(arg_node);
+            if (arg_type && arg_type->kind == TYPE_PLACEHOLDER) {
+                arg_type = resolvePlaceholder(arg_type);
+            }
         } else {
             arg_type = visit(arg_node);
         }
@@ -1327,6 +1287,9 @@ Type* TypeChecker::visitAssignment(ASTAssignmentNode* node) {
     {
         ExpectedTypeGuard guard(*this, lvalue_type);
         rvalue_type = visit(node->rvalue);
+        if (rvalue_type && rvalue_type->kind == TYPE_PLACEHOLDER) {
+            rvalue_type = resolvePlaceholder(rvalue_type);
+        }
     }
     if (!rvalue_type) return get_g_type_undefined();
 
@@ -3475,6 +3438,9 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         ASTStructFieldNode* field_data = field_node->as.struct_field;
         if (!field_data->type) return get_g_type_undefined();
         Type* field_type = unwrapType(field_data->type);
+        if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+            field_type = resolvePlaceholder(field_type);
+        }
 
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
 
@@ -3520,21 +3486,13 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     }
 
     /* 3. Create struct type and calculate layout. */
-    if (struct_name && self_placeholder) {
-        struct_type = self_placeholder;
-        struct_type->kind = TYPE_STRUCT;
-        struct_type->as.struct_details.name = struct_name;
-        struct_type->as.struct_details.fields = fields;
-        struct_type->owner_module = current_mod;
-    } else {
-        struct_type = createStructType(unit_, current_mod, fields, struct_name);
-    }
+    struct_type = createStructType(unit_, current_mod, fields, struct_name, self_placeholder);
 
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
             struct_type->c_name = struct_name;
-        } else {
+        } else if (struct_type->c_name == NULL) {
             struct_type->c_name = unit_.getNameMangler().mangleTypeName(struct_name, unit_.getCurrentModule());
         }
     }
@@ -3583,6 +3541,9 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 
         if (!field_node->type) return get_g_type_undefined();
         Type* field_type = unwrapType(field_node->type);
+        if (field_type && field_type->kind == TYPE_PLACEHOLDER) {
+            field_type = resolvePlaceholder(field_type);
+        }
 
         if (!field_type || is_type_undefined(field_type)) return get_g_type_undefined();
         if (field_type && !is_c89_compatible(field_type)) {
@@ -3660,23 +3621,13 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
         tag_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, get_g_type_i32(), members, 0, (i64)fields->length() - 1);
     }
 
-    if (union_name && self_placeholder) {
-        union_type = self_placeholder;
-        union_type->kind = TYPE_UNION;
-        union_type->as.struct_details.name = union_name;
-        union_type->as.struct_details.fields = fields;
-        union_type->as.struct_details.is_tagged = node->is_tagged;
-        union_type->as.struct_details.tag_type = tag_type;
-        union_type->owner_module = unit_.getModule(unit_.getCurrentModule());
-    } else {
-        union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type);
-    }
+    union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type, self_placeholder);
 
     if (union_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(union_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
             union_type->c_name = union_name;
-        } else {
+        } else if (union_type->c_name == NULL) {
             union_type->c_name = unit_.getNameMangler().mangleTypeName(union_name, unit_.getCurrentModule());
         }
     }
@@ -3754,71 +3705,87 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     if (base_type->kind == TYPE_MODULE || base_type->kind == TYPE_ANYTYPE) {
         target_mod = (base_type->kind == TYPE_MODULE) ? (Module*)base_type->as.module.module_ptr : NULL;
 
-        /* Cross-module registry check */
         if (target_mod) {
+            // First check: Is this a type? (TypeRegistry)
             Type* registered = unit_.getTypeRegistry().find(target_mod, node->field_name);
             if (registered) {
                 if (registered->kind == TYPE_PLACEHOLDER) {
                     registered = resolvePlaceholder(registered);
                 }
                 parent->resolved_type = registered;
+                node->symbol = NULL; // It's a type, not a symbol
                 return get_g_type_type();
             }
-        }
 
-#ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Module member access: mod='%s' field='%s'\n",
-                         target_mod ? target_mod->name : (base_type->kind == TYPE_MODULE ? base_type->as.module.name : "anytype"),
-                         node->field_name);
-#endif
+            // Second check: Is this a function/variable? (SymbolTable)
+            if (target_mod->symbols) {
+                Symbol* sym = target_mod->symbols->lookup(node->field_name);
 
-        if (target_mod && target_mod->symbols) {
-            Symbol* sym = target_mod->symbols->lookup(node->field_name);
-            if (sym) {
-                node->symbol = sym;
-                /* Ensure symbol is fully resolved. */
-                if (!sym->symbol_type && sym->details) {
-                    const char* saved_module = unit_.getCurrentModule();
-                    unit_.setCurrentModule(target_mod->name);
-                    TypeChecker target_checker(unit_);
-
-                    if (sym->kind == SYMBOL_VARIABLE) {
-                        target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
-                    } else if (sym->kind == SYMBOL_FUNCTION) {
-                        target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
+                // CRITICAL: If not found in target module, check if it's re-exported
+                if (!sym) {
+                    for (size_t i = 0; i < unit_.getModules().length(); i++) {
+                        Module* other = unit_.getModules()[i];
+                        if (other != target_mod && other->symbols) {
+                            Symbol* other_sym = other->symbols->lookup(node->field_name);
+                            // Check if this symbol belongs to target module (re-export)
+                            if (other_sym && other_sym->module_name &&
+                                plat_strcmp(other_sym->module_name, target_mod->name) == 0) {
+                                sym = other_sym;
+                                break;
+                            }
+                        }
                     }
-                    unit_.setCurrentModule(saved_module);
                 }
 
-                if (sym->symbol_type) {
-                    Type* result_type = sym->symbol_type;
-                    if (result_type->kind == TYPE_PLACEHOLDER) {
-                        result_type = resolvePlaceholder(result_type);
-                    }
-
-                    /* If it's a constant holding a type, unwrap the TYPE_TYPE. */
-                    if (result_type->kind == TYPE_TYPE) {
-                        Type* unwrapped = resolveTypeConstant(sym);
-
-                        if (unwrapped && unwrapped->kind != TYPE_TYPE) {
-                            const char* saved_module = unit_.getCurrentModule();
-                            unit_.setCurrentModule(target_mod->name);
-                            unwrapped = resolveAllPlaceholders(unwrapped);
-                            unit_.setCurrentModule(saved_module);
-
-                            parent->resolved_type = unwrapped;
+                if (sym) {
+                    if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE || sym->kind == SYMBOL_MODULE) {
+                        Type* registered = resolveNamedType(target_mod, sym->name, sym);
+                        if (registered) {
+                            parent->resolved_type = registered;
+                            node->symbol = sym;
                             return get_g_type_type();
                         }
                     }
+                    node->symbol = sym;
 
-                    if (result_type && result_type->kind != TYPE_TYPE) {
+                    // Ensure symbol type is resolved
+                    if (!sym->symbol_type && sym->details) {
                         const char* saved_module = unit_.getCurrentModule();
                         unit_.setCurrentModule(target_mod->name);
-                        result_type = resolveAllPlaceholders(result_type);
+                        TypeChecker target_checker(unit_);
+
+                        if (sym->kind == SYMBOL_VARIABLE) {
+                            target_checker.visitVarDecl(NULL, (ASTVarDeclNode*)sym->details);
+                        } else if (sym->kind == SYMBOL_FUNCTION) {
+                            target_checker.visitFnSignature((ASTFnDeclNode*)sym->details);
+                        }
+
                         unit_.setCurrentModule(saved_module);
                     }
 
-                    return result_type;
+                    if (sym->symbol_type) {
+                        Type* result_type = resolveNamedType(target_mod, sym->name, sym);
+
+                        // Resolve placeholders in the result type
+                        if (result_type->kind == TYPE_PLACEHOLDER) {
+                            result_type = resolvePlaceholder(result_type);
+                        }
+
+                        // If it's a type constant, unwrap TYPE_TYPE
+                        if (result_type->kind == TYPE_TYPE) {
+                            Type* unwrapped = resolveTypeConstant(sym);
+                            if (unwrapped && unwrapped->kind != TYPE_TYPE) {
+                                const char* saved_module = unit_.getCurrentModule();
+                                unit_.setCurrentModule(target_mod->name);
+                                unwrapped = resolveAllPlaceholders(unwrapped);
+                                unit_.setCurrentModule(saved_module);
+                                parent->resolved_type = unwrapped;
+                                return get_g_type_type();
+                            }
+                        }
+
+                        return result_type;
+                    }
                 }
             }
         } else if (base_type->kind == TYPE_MODULE) {
@@ -4226,7 +4193,6 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
             }
         }
 
-                plat_printf_debug("found_type: %p, resolved_type: %p, found_kind: %d, resolved_kind: %d\n", found_type, resolved_type, (int)found_type->kind, (int)resolved_type->kind);
         EnumMember member;
         member.name = member_node->name;
         member.value = member_value;
@@ -4250,25 +4216,13 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     if (has_error) return get_g_type_undefined();
 
     /* 4. Create and return the new enum type. */
-    Type* enum_type = NULL;
-    if (enum_name && self_placeholder) {
-        enum_type = self_placeholder;
-        enum_type->kind = TYPE_ENUM;
-        enum_type->as.enum_details.name = enum_name;
-        enum_type->as.enum_details.backing_type = backing_type;
-        enum_type->as.enum_details.members = members;
-        enum_type->as.enum_details.min_value = min_val;
-        enum_type->as.enum_details.max_value = max_val;
-        enum_type->owner_module = unit_.getModule(unit_.getCurrentModule());
-    } else {
-        enum_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, backing_type, members, min_val, max_val);
-    }
+    Type* enum_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, backing_type, members, min_val, max_val, self_placeholder);
 
     if (enum_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(enum_name);
         if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
             enum_type->c_name = enum_name;
-        } else {
+        } else if (enum_type->c_name == NULL) {
             enum_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
         }
     }
@@ -4459,16 +4413,7 @@ Type* TypeChecker::visitErrorSetDefinition(ASTNode* node) {
             unit_.getGlobalErrorRegistry().getOrAddTag(tag);
         }
     }
-    if (decl->name && self_placeholder) {
-        Type* set_type = self_placeholder;
-        set_type->kind = TYPE_ERROR_SET;
-        set_type->as.error_set.name = decl->name;
-        set_type->as.error_set.tags = decl->tags;
-        set_type->as.error_set.is_anonymous = (decl->name == NULL);
-        set_type->owner_module = unit_.getModule(unit_.getCurrentModule());
-        return set_type;
-    }
-    return createErrorSetType(unit_, unit_.getModule(unit_.getCurrentModule()), decl->name, decl->tags, decl->name == NULL, NULL);
+    return createErrorSetType(unit_, unit_.getModule(unit_.getCurrentModule()), decl->name, decl->tags, decl->name == NULL, NULL, self_placeholder);
 }
 
 Type* TypeChecker::visitErrorSetMerge(ASTErrorSetMergeNode* node) {
@@ -6844,6 +6789,91 @@ Type* TypeChecker::unwrapType(ASTNode* node) {
     }
 
     return t;
+}
+
+void TypeChecker::verifyTypeIdentity(Type* type, const char* expected_name, Module* expected_module, SourceLocation loc) {
+    if (!type || !expected_name) return;
+
+    const char* actual_name = NULL;
+    Module* actual_module = NULL;
+
+    switch (type->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
+            actual_name = type->as.struct_details.name;
+            actual_module = type->owner_module;
+            break;
+        case TYPE_ENUM:
+            actual_name = type->as.enum_details.name;
+            actual_module = type->owner_module;
+            break;
+        default:
+            return;  // Primitive types don't need verification
+    }
+
+    if (actual_name && expected_name && plat_strcmp(actual_name, expected_name) != 0) {
+        char msg[512];
+        plat_strcpy(msg, "Type identity mismatch: expected '");
+        plat_strcat(msg, expected_name);
+        plat_strcat(msg, "', got '");
+        plat_strcat(msg, actual_name ? actual_name : "NULL");
+        plat_strcat(msg, "'");
+        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, loc, msg);
+    }
+
+    if (actual_module && expected_module && actual_module != expected_module) {
+        char msg[512];
+        plat_strcpy(msg, "Type module mismatch: expected '");
+        plat_strcat(msg, expected_module->name);
+        plat_strcat(msg, "', got '");
+        plat_strcat(msg, actual_module->name ? actual_module->name : "NULL");
+        plat_strcat(msg, "'");
+        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, loc, msg);
+    }
+}
+
+Type* TypeChecker::resolveNamedType(Module* defining_mod, const char* name, Symbol* sym) {
+    if (!defining_mod || !name) {
+        if (sym && sym->symbol_type) return sym->symbol_type;
+        return NULL;
+    }
+
+    // CRITICAL: Always lookup in the DEFINING module's registry, not current module
+    Type* registered = unit_.getTypeRegistry().find(defining_mod, name);
+
+    if (!registered) {
+        // Fallback: check symbol table of defining module
+        if (defining_mod->symbols) {
+            Symbol* defining_sym = defining_mod->symbols->lookup(name);
+            if (defining_sym && defining_sym->symbol_type) {
+                registered = defining_sym->symbol_type;
+            }
+        }
+        if (!registered && sym && sym->symbol_type) {
+            registered = sym->symbol_type;
+        }
+        if (!registered) return NULL;
+    }
+
+    // If registered is a placeholder, resolve it now (if not already resolving).
+    if (registered->kind == TYPE_PLACEHOLDER && !registered->is_resolving) {
+        registered = resolvePlaceholder(registered);
+    }
+
+    // Sync symbol type with registry type (critical for cross-module consistency)
+    if (sym && sym->symbol_type) {
+        if (sym->symbol_type->kind == TYPE_PLACEHOLDER && registered->kind != TYPE_PLACEHOLDER) {
+            sym->symbol_type = registered;
+        } else if (sym->symbol_type != registered &&
+                   sym->symbol_type->kind != TYPE_PLACEHOLDER &&
+                   registered->kind != TYPE_PLACEHOLDER) {
+            // Force sync - this is the key fix for type identity
+            sym->symbol_type = registered;
+        }
+    }
+
+    return registered;
 }
 
 Type* TypeChecker::resolveTypeConstant(Symbol* sym) {

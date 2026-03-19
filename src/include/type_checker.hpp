@@ -120,6 +120,8 @@ private:
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
 
+    Type* resolveNamedType(struct Module* defining_mod, const char* name, Symbol* sym);
+    void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
     Type* resolveTypeConstant(Symbol* sym);
     Type* unwrapType(ASTNode* node);
     Type* getTagType(Type* tu);
