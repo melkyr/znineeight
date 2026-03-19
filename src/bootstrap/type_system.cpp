@@ -281,7 +281,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 
     scope.set_type(new_type);
     if (!scope.try_commit()) {
-        plat_print_debug("FATAL: Failed to register struct type\n");
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register struct type due to name mismatch or internal error", unit.getArena(), name);
         plat_abort();
     }
     return scope.get_final_type();
@@ -357,7 +357,7 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 
     scope.set_type(new_type);
     if (!scope.try_commit()) {
-        plat_print_debug("FATAL: Failed to register union type\n");
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register union type due to name mismatch or internal error", unit.getArena(), name);
         plat_abort();
     }
     return scope.get_final_type();
@@ -385,7 +385,7 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
 
     scope.set_type(new_type);
     if (!scope.try_commit()) {
-        plat_print_debug("FATAL: Failed to register tagged union type\n");
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register tagged union type due to name mismatch or internal error", unit.getArena(), name);
         plat_abort();
     }
     return scope.get_final_type();
@@ -507,19 +507,35 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     return new_type;
 }
 
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner) {
+Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner) {
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) return existing;
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (interner) {
         return interner->getErrorSetType(name, tags, is_anonymous);
     }
 
-    Type* new_type = allocateType(arena);
+    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_ERROR_SET;
     new_type->size = 4; // Error sets map to int in C89
     new_type->alignment = 4;
     new_type->as.error_set.name = name;
     new_type->as.error_set.tags = tags;
     new_type->as.error_set.is_anonymous = is_anonymous;
-    return new_type;
+    new_type->owner_module = mod;
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register error set type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 void updateArrayLayout(Type* t) {
@@ -661,6 +677,13 @@ void refreshLayout(Type* t) {
             }
             calculateTaggedUnionLayout(t);
             break;
+        case TYPE_ENUM:
+            if (t->as.enum_details.backing_type) {
+                refreshLayout(t->as.enum_details.backing_type);
+                t->size = t->as.enum_details.backing_type->size;
+                t->alignment = t->as.enum_details.backing_type->alignment;
+            }
+            break;
         default:
             break;
     }
@@ -796,7 +819,7 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
 
     scope.set_type(new_type);
     if (!scope.try_commit()) {
-        plat_print_debug("FATAL: Failed to register enum type\n");
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register enum type due to name mismatch or internal error", unit.getArena(), name);
         plat_abort();
     }
     return scope.get_final_type();
@@ -900,34 +923,11 @@ Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_in
     return t;
 }
 
-Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
-    if (!is_anonymous && !name) {
-        plat_print_debug("TypeInterner::getErrorSetType: named error set has NULL name\n");
-    }
-    // For error sets, interning is primarily based on name for named sets.
-    // Anonymous sets are trickier. For bootstrap, we'll intern by name.
-    if (!is_anonymous && name) {
-        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
-        for (Entry* e = buckets[h]; e; e = e->next) {
-            if (e->type->kind == TYPE_ERROR_SET &&
-                !e->type->as.error_set.is_anonymous &&
-                e->type->as.error_set.name == name) {
-                dedupe_count++;
-                return e->type;
-            }
-        }
-    }
-
-    Type* t = createErrorSetType(arena_, name, tags, is_anonymous, NULL);
-    if (!is_anonymous && name) {
-        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
-        Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
-        e->type = t;
-        e->next = buckets[h];
-        buckets[h] = e;
-    }
-    unique_count++;
-    return t;
+// ErrorSet interning is disabled for now to simplify TypeRegistry integration.
+// Named ErrorSets are deduplicated via TypeRegistry.
+// Anonymous ones are just allocated.
+Type* TypeInterner::getErrorSetType(const char* /*name*/, DynamicArray<const char*>* /*tags*/, bool /*is_anonymous*/) {
+    return NULL;
 }
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {

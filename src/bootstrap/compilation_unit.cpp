@@ -178,6 +178,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     builtin_module_->symbols = new (builtin_sym_mem) SymbolTable(arena_);
     builtin_module_->symbols->setCurrentModule(builtin_module_->name);
 
+    modules_.append(builtin_module_);
+
     arena_.resetPeak();
 }
 
@@ -456,7 +458,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
 
     // Opaque Arena type
     const char* arena_name = interner_.intern("Arena");
-    Type* arena_type = createStructType(*this, getModule("main"), NULL, arena_name);
+    Type* arena_type = createStructType(*this, builtin_module_, NULL, arena_name);
     Symbol sym_arena = SymbolBuilder(arena_)
         .withName(arena_name)
         .withMangledName(arena_name)

@@ -3,6 +3,7 @@
 
 #include "type_registry.hpp"
 #include "platform.hpp"
+#include "error_handler.hpp"
 
 /**
  * @class TypeCreationScope
@@ -23,7 +24,7 @@ public:
         if (!committed && created_type != NULL) {
             // Log warning: Type creation aborted
             plat_print_debug("Type creation aborted for ");
-            plat_print_debug(name);
+            plat_print_debug(name ? name : "<anonymous>");
             plat_print_debug("\n");
         }
     }
@@ -34,6 +35,10 @@ public:
 
     bool try_commit() {
         if (created_type == NULL) return false;
+        if (name == NULL) {
+            committed = true;
+            return true;
+        }
 
         TypeRegistry::InsertStatus status = registry_ref.insert(owner, name, created_type, true);
         if (status == TypeRegistry::OK) {
