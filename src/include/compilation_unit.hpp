@@ -21,6 +21,7 @@
 #include "name_mangler.hpp"
 #include "call_site_lookup_table.hpp"
 #include "module.hpp"
+#include "type_registry.hpp"
 
 /**
  * @struct CompilationOptions
@@ -69,6 +70,7 @@ public:
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
+    TypeRegistry& getTypeRegistry();
     DynamicArray<const char*>& getEmittedTypesCache() { return emitted_types_cache_; }
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
@@ -149,6 +151,7 @@ private:
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
     TypeInterner type_interner_;
+    TypeRegistry type_registry_;
     StringInterner& interner_;
     SourceManager source_manager_;
     SymbolTable default_symbols_; // For backward compatibility and early injection

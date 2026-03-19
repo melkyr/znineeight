@@ -3379,9 +3379,7 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
     }
 
     /* 3. Create struct type and calculate layout. */
-    struct_type = createStructType(unit_.getArena(), fields, struct_name);
-
-    struct_type->owner_module = current_mod;
+    Type* struct_type = createStructType(unit_, current_mod, fields, struct_name);
 
     if (struct_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(struct_name);
@@ -3526,15 +3524,10 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             plat_strcpy(enum_name, union_name);
             plat_strcat(enum_name, "_Tag");
         }
-        tag_type = createEnumType(unit_.getArena(), enum_name, get_g_type_i32(), members, 0, (i64)fields->length() - 1);
-        if (enum_name) {
-            tag_type->c_name = unit_.getNameMangler().mangleTypeName(enum_name, unit_.getCurrentModule());
-        }
+        tag_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, get_g_type_i32(), members, 0, (i64)fields->length() - 1);
     }
 
-    union_type = createUnionType(unit_.getArena(), fields, union_name, node->is_tagged, tag_type);
-
-    union_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+    union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type);
 
     if (union_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(union_name);
@@ -4157,8 +4150,7 @@ Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
     if (has_error) return get_g_type_undefined();
 
     /* 4. Create and return the new enum type. */
-    Type* enum_type = createEnumType(unit_.getArena(), enum_name, backing_type, members, min_val, max_val);
-    enum_type->owner_module = unit_.getModule(unit_.getCurrentModule());
+    Type* enum_type = createEnumType(unit_, unit_.getModule(unit_.getCurrentModule()), enum_name, backing_type, members, min_val, max_val);
 
     if (enum_name) {
         Symbol* sym = unit_.getSymbolTable().lookup(enum_name);

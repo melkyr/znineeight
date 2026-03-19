@@ -122,6 +122,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     : arena_(arena),
       token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
       type_interner_(arena),
+      type_registry_(arena),
       interner_(interner),
       source_manager_(arena),
       default_symbols_(arena),
@@ -363,6 +364,10 @@ TypeInterner& CompilationUnit::getTypeInterner() {
     return type_interner_;
 }
 
+TypeRegistry& CompilationUnit::getTypeRegistry() {
+    return type_registry_;
+}
+
 const char* CompilationUnit::getCurrentModule() const {
     return current_module_;
 }
@@ -436,7 +441,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
 
     // Opaque Arena type
     const char* arena_name = interner_.intern("Arena");
-    Type* arena_type = createStructType(arena_, NULL, arena_name);
+    Type* arena_type = createStructType(*this, getModule("main"), NULL, arena_name);
     Symbol sym_arena = SymbolBuilder(arena_)
         .withName(arena_name)
         .withMangledName(arena_name)

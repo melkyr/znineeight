@@ -379,7 +379,9 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 3. **Name Mangling**: During placeholder registration, the `c_name` is immediately computed using the defining module's name (`z_mod_Name`). This ensures consistent mangling even when the type is accessed from other modules.
 4. **On-demand Resolution**: Any reference to `T` (including qualified references like `mod.T`) will trigger on-demand resolution of the placeholder if it hasn't been resolved yet. The `resolvePlaceholder` helper switches its internal context to the target module to ensure that identifiers within that module are correctly resolved.
 5. **Interning Bypass**: Complex types built using placeholders (like `*T` or `[]T`) bypass the `TypeInterner` and are created as unique objects until the placeholder is resolved.
-6. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
+6. **Type Registry and RAII Guard**: Named types (structs, unions, enums) are tracked in a `TypeRegistry` owned by the `CompilationUnit`. The `TypeCreationScope` RAII guard ensures that named types are safely registered and deduplicated across modules.
+7. Phased Type Creation: Type creation functions (e.g., `createStructType`) now accept `CompilationUnit&` and `Module*`. This allows them to interact with the registry to ensure that a unique `Type*` is returned for each named type declaration, preventing duplicate type objects for the same logical type.
+8. **In-place Mutation**: Once the full type is resolved (e.g., all fields of the struct are processed), the placeholder object is mutated in-place to the real type (e.g., `TYPE_STRUCT`). All existing references to the placeholder automatically point to the resolved type. The mutation process preserves the `c_name` of the placeholder.
 7. **Dependent Refresh (Work-Queue)**: After mutation, `resolvePlaceholder` triggers `refreshLayout` on all types that depend on it. A **Work-Queue algorithm** is used to repeatedly drain the `dependents_head` list until all transitively added dependents (during the resolution cascade) are fully processed.
 8. **Incomplete Type Enforcement**: Size-dependent operations (like `@sizeOf`) or direct field embedding of a placeholder (without a pointer/slice) are rejected using `isTypeComplete` if the type cannot be completed.
 8. **Relaxed Completeness for Pointer Recursion**: In `visitStructDecl` and `visitUnionDecl`, field types are allowed to be incomplete if they are reached through at least one pointer indirection (e.g., `*Node`, `?*Node`, `**Node`).
@@ -908,6 +910,34 @@ The `CompilationUnit` provides an `areErrorTypesEliminated()` method which retur
 ## 6. Symbol Table and Memory Usage
 
 The `SymbolTable` is a core component of the semantic analysis phase. It is owned by the `CompilationUnit` and provides hierarchical scope management for all identifiers.
+
+## 8. Type Registry and Creation Safety (Phase 0 & 1)
+
+To improve module symbol resolution and ensure type uniqueness, the compiler uses a `TypeRegistry` and an RAII guard mechanism.
+
+### `TypeRegistry`
+
+The `TypeRegistry` is a hash-map-based data structure that maps a `(Module*, name)` pair to a unique `Type*`. It is owned by the `CompilationUnit`.
+
+```cpp
+struct TypeRegistry {
+    struct Type* find(struct Module* owner, const char* name) const;
+    InsertStatus insert(struct Module* owner, const char* name, struct Type* type_ptr, bool verify_structure = false);
+};
+```
+
+### `TypeCreationScope`
+
+The `TypeCreationScope` is an RAII guard used during the creation of named aggregate types (structs, unions, enums). It ensures that if type creation fails or is aborted, the registry remains in a consistent state. It also handles returning existing types if a duplicate registration is attempted.
+
+### Signature Changes
+
+Type creation functions for named aggregates have been updated to require the `CompilationUnit` and the defining `Module`:
+
+- `createStructType(CompilationUnit& unit, Module* mod, ...)`
+- `createUnionType(CompilationUnit& unit, Module* mod, ...)`
+- `createEnumType(CompilationUnit& unit, Module* mod, ...)`
+- `createTaggedUnionType(CompilationUnit& unit, Module* mod, ...)`
 
 ## 9. Type Checker
 

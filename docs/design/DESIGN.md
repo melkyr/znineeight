@@ -95,6 +95,13 @@ public:
 * **Concept:** A stack-based mechanism in the `TypeChecker` used for downward type inference.
 * **Implementation:** `DynamicArray<Type*>` allocated from the `CompilationUnit` arena.
 * **Management:** Uses RAII `ExpectedTypeGuard` to ensure balanced push/pop operations during AST traversal.
+
+3.1.1.5 Type Registry & Creation Safety (Phase 0 & 1)
+* **Concept:** Ensure unique `Type*` pointers for logical named types (structs, unions, enums) across modules.
+* **TypeRegistry**: A hash-map maps `(Module*, name)` to `Type*`.
+* **TypeCreationScope**: RAII guard ensuring atomic registration of new types.
+* **Signature Refactoring**: Creation functions (e.g., `createStructType`) now require `CompilationUnit` and defining `Module*`.
+
 * **Alignment:** The `alloc()` method guarantees 8-byte alignment for all allocations.
 * **Safety:** The allocator uses overflow-safe checks in both `alloc` and `alloc_aligned` to prevent memory corruption when the arena is full. The `DynamicArray` implementation is also safe for non-POD types, as it uses copy construction with placement new instead of `memcpy` or assignment during reallocation.
 
@@ -233,7 +240,8 @@ filename.zig:23:5: error: type mismatch
         - **Implementation:** Uses normalized, interned filenames for consistent module caching and `plat_file_exists` to validate paths before loading.
     3.  **Modular Semantic Analysis (Task 215):** Compilation unit orchestrates modular passes. Each module maintains its own `SymbolTable` and feature catalogues.
     4.  **Topological Sorting (Task 235):** After import resolution, all discovered modules are topologically sorted based on their `@import` dependencies using Kahn's algorithm. This ensures that when a module is type-checked, all of its dependencies have already been fully processed, eliminating "module has no member" errors and providing a predictable compilation state. Circular dependencies are detected and reported as a fatal error at this stage.
-    5.  **Pass 0: Type Checking (Permissive):** Resolves all types across all loaded modules in topological order, including non-C89 types, to enable accurate semantic analysis.
+    5.  **Pass 0: Placeholder Registration:** Pre-scans all modules in topological order to register `TYPE_PLACEHOLDER` for all top-level types. This enables cross-module recursive types.
+    6.  **Pass 1: Type Checking (Permissive):** Resolves all types across all loaded modules in topological order, including non-C89 types, to enable accurate semantic analysis.
     6.  **Pass 1: C89 Feature Validation (Rejection):** Strictly rejects non-C89 features and bootstrap-specific limitations using the resolved semantic information from Pass 0.
     6.  **Pass 2: Lifetime Analysis:** Detects dangling pointers across all modules.
     7.  **Pass 3: Null Pointer Analysis:** Detects potential null dereferences.

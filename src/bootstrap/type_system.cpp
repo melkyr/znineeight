@@ -1,4 +1,7 @@
 #include "type_system.hpp"
+#include "compilation_unit.hpp"
+#include "module.hpp"
+#include "type_creation_scope.hpp"
 #include "memory.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
@@ -252,28 +255,56 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
     return new_type;
 }
 
-Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
-    Type* new_type = allocateType(arena);
+Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name) {
+    if (name == NULL) {
+        Type* new_type = allocateType(unit.getArena());
+        new_type->kind = TYPE_STRUCT;
+        new_type->size = 0; // Will be calculated by calculateStructLayout
+        new_type->alignment = 1; // Will be calculated by calculateStructLayout
+        new_type->as.struct_details.name = name;
+        new_type->as.struct_details.fields = fields;
+        new_type->owner_module = mod;
+        return new_type;
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+    Type* existing = unit.getTypeRegistry().find(mod, name);
+    if (existing) return existing;
+
+    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
-    new_type->owner_module = NULL;
-    return new_type;
+    new_type->owner_module = mod;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        plat_print_debug("FATAL: Failed to register struct type\n");
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
-Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
+Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) return existing;
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!fields) {
         plat_print_debug("createUnionType: fields array is NULL\n");
     }
-    Type* new_type = allocateType(arena);
+    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_UNION;
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
-    new_type->owner_module = NULL;
+    new_type->owner_module = mod;
 
     if (is_tagged) {
         // Tagged union: struct { tag_type tag; union { fields } data; }
@@ -322,25 +353,42 @@ Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, 
         new_type->alignment = max_align;
     }
 
-    return new_type;
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        plat_print_debug("FATAL: Failed to register union type\n");
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
-Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name) {
+Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name) {
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) return existing;
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!payload_fields) {
         plat_print_debug("createTaggedUnionType: payload_fields array is NULL\n");
     }
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-#ifdef MEASURE_MEMORY
-    MemoryTracker::types++;
-#endif
-    if (new_type) plat_memset(new_type, 0, sizeof(Type));
+    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_TAGGED_UNION;
     new_type->as.tagged_union.name = name;
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
-    new_type->owner_module = NULL;
+    new_type->owner_module = mod;
 
-    return new_type;
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        plat_print_debug("FATAL: Failed to register tagged union type\n");
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
@@ -717,15 +765,23 @@ void calculateStructLayout(Type* struct_type) {
     struct_type->alignment = max_alignment;
 }
 
-Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
+Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
     if (!backing_type) {
         plat_print_debug("createEnumType: backing type is NULL\n");
         return get_g_type_undefined();
     }
+
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) return existing;
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!name) {
         plat_print_debug("createEnumType: name is NULL\n");
     }
-    Type* new_type = allocateType(arena);
+    Type* new_type = allocateType(unit.getArena());
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
     new_type->alignment = backing_type->alignment;
@@ -734,8 +790,16 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
     new_type->as.enum_details.members = members;
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
-    new_type->owner_module = NULL;
-    return new_type;
+    new_type->owner_module = mod;
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        plat_print_debug("FATAL: Failed to register enum type\n");
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 // --- TypeInterner Implementation ---
