@@ -127,6 +127,8 @@ private:
 public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
+    void finalizePlaceholder(Type* placeholder, Type* resolved);
+    Type* resolveNamedPlaceholder(Type* placeholder);
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);

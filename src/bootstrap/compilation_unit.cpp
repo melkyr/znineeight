@@ -123,6 +123,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
       type_interner_(arena),
       type_registry_(arena),
+      pending_resolutions_(arena),
       interner_(interner),
       source_manager_(arena),
       default_symbols_(arena),
@@ -146,6 +147,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       include_paths_(arena),
       default_lib_path_(NULL),
       modules_(arena),
+      builtin_module_(NULL),
       last_ast_(NULL),
       is_test_mode_(false),
       validation_completed_(false),
@@ -162,6 +164,19 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     if (plat_file_exists(lib_path)) {
         default_lib_path_ = interner_.intern(lib_path);
     }
+
+    // Create builtin module
+    void* builtin_mem = arena_.alloc(sizeof(Module));
+    if (builtin_mem == NULL) fatalError("Out of memory allocating builtin Module");
+    builtin_module_ = new (builtin_mem) Module(arena_);
+    builtin_module_->name = interner_.intern("builtin");
+    builtin_module_->filename = interner_.intern("<builtin>");
+    builtin_module_->file_id = 0xFFFFFFFF;
+    
+    void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
+    if (builtin_sym_mem == NULL) fatalError("Out of memory allocating builtin SymbolTable");
+    builtin_module_->symbols = new (builtin_sym_mem) SymbolTable(arena_);
+    builtin_module_->symbols->setCurrentModule(builtin_module_->name);
 
     arena_.resetPeak();
 }
@@ -914,6 +929,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.registerPlaceholders(m->ast_root);
+    }
+
+    // Phase 0.5: Resolve Named Placeholders (Pass 2)
+    {
+        TypeChecker checker(*this);
+        DynamicArray<PendingResolution>& pending = getPendingResolutions();
+        for (size_t i = 0; i < pending.length(); ++i) {
+            checker.resolveNamedPlaceholder(pending[i].placeholder);
+        }
     }
 
     // Now run semantic analysis on ALL modules
