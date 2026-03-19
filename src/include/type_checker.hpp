@@ -121,6 +121,7 @@ private:
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
 
     Type* resolveTypeConstant(Symbol* sym);
+    Type* unwrapType(ASTNode* node);
     Type* getTagType(Type* tu);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
