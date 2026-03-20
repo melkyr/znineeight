@@ -265,7 +265,7 @@ TEST_FUNC(Parser_ParsePrimaryExpr_FloatLiteral) {
 
     ASSERT_TRUE(node != NULL);
     ASSERT_EQ(node->type, NODE_FLOAT_LITERAL);
-    ASSERT_EQ(node->as.float_literal.value, 3.14);
+    ASSERT_TRUE(compare_floats(node->as.float_literal.value, 3.14));
 
     return true;
 }

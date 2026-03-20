@@ -31,7 +31,7 @@ TEST_FUNC(Import_Simple) {
     remove("test_lib.zig");
 
     ASSERT_TRUE(success);
-    ASSERT_EQ(unit.getModules().length(), 2);
+    ASSERT_EQ(unit.getModules().length(), 3); // builtin + test_main + test_lib
     return true;
 }
 

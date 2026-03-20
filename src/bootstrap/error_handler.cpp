@@ -52,8 +52,27 @@ void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* m
     ErrorReport new_report;
     new_report.code = code;
     new_report.location = location;
-    new_report.message = message;
-    new_report.hint = hint;
+
+    // Ensure message is in permanent arena
+    if (message) {
+        size_t len = plat_strlen(message);
+        char* copy = (char*)arena_.alloc(len + 1);
+        plat_memcpy(copy, message, len + 1);
+        new_report.message = copy;
+    } else {
+        new_report.message = NULL;
+    }
+
+    // Ensure hint is in permanent arena
+    if (hint) {
+        size_t len = plat_strlen(hint);
+        char* copy = (char*)arena_.alloc(len + 1);
+        plat_memcpy(copy, hint, len + 1);
+        new_report.hint = copy;
+    } else {
+        new_report.hint = NULL;
+    }
+
     errors_.append(new_report);
 }
 
@@ -144,31 +163,26 @@ void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, cons
     WarningReport new_warning;
     new_warning.code = code;
     new_warning.location = location;
-    new_warning.message = message;
+
+    // Ensure message is in permanent arena
+    if (message) {
+        size_t len = plat_strlen(message);
+        char* copy = (char*)arena_.alloc(len + 1);
+        plat_memcpy(copy, message, len + 1);
+        new_warning.message = copy;
+    } else {
+        new_warning.message = NULL;
+    }
+
     warnings_.append(new_warning);
 }
 
-void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    reportWarning(code, location, msg_copy);
+void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/) {
+    reportWarning(code, location, message);
 }
 
-void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    char* hint_copy = NULL;
-    if (hint) {
-        size_t hint_len = plat_strlen(hint);
-        hint_copy = (char*)arena.alloc(hint_len + 1);
-        plat_memcpy(hint_copy, hint, hint_len + 1);
-    }
-
-    report(code, location, msg_copy, hint_copy);
+void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/, const char* hint) {
+    report(code, location, message, hint);
 }
 
 void ErrorHandler::printErrors() {
@@ -246,16 +260,22 @@ void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char
     InfoReport new_info;
     new_info.code = code;
     new_info.location = location;
-    new_info.message = message;
+
+    // Ensure message is in permanent arena
+    if (message) {
+        size_t len = plat_strlen(message);
+        char* copy = (char*)arena_.alloc(len + 1);
+        plat_memcpy(copy, message, len + 1);
+        new_info.message = copy;
+    } else {
+        new_info.message = NULL;
+    }
+
     infos_.append(new_info);
 }
 
-void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    reportInfo(code, location, msg_copy);
+void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/) {
+    reportInfo(code, location, message);
 }
 
 void ErrorHandler::printInfos() {
