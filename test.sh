@@ -1,28 +1,21 @@
 #!/bin/bash
-# test.sh - Dumb and reliable test runner compilation script
+# test.sh - Improved test runner compilation script (single-runner, minimal includes)
 
 echo "Compiling RetroZig Batch Test Runners..."
 
 FLAGS="-std=c++98 -Wall -DRETROZIG_TEST -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
 
-# Optional: Add -DDEBUG if needed, though batches should be self-contained
-# FLAGS="$FLAGS -DDEBUG"
-
 for MAIN_FILE in tests/main_batch*.cpp; do
     if [ ! -f "$MAIN_FILE" ]; then continue; fi
 
-    # Extract batch number from filename (e.g., tests/main_batch1.cpp -> 1)
     i=$(echo "$MAIN_FILE" | sed 's/tests\/main_batch//;s/\.cpp//')
-
     echo "Generating and Compiling Batch $i..."
     RUNNER_FILE="tests/batch_runner_$i.cpp"
 
-    # Generate the self-contained runner
+    # Generate self‑contained runner
     echo "// Generated batch runner for $MAIN_FILE" > "$RUNNER_FILE"
     echo "#include \"../src/bootstrap/bootstrap_all.cpp\"" >> "$RUNNER_FILE"
     echo "#include \"test_utils.cpp\"" >> "$RUNNER_FILE"
-
-    # Always include validation helpers as they are used by integration tests
     echo "#include \"c89_validation/gcc_validator.cpp\"" >> "$RUNNER_FILE"
     echo "#include \"c89_validation/msvc6_validator.cpp\"" >> "$RUNNER_FILE"
 
@@ -32,22 +25,15 @@ for MAIN_FILE in tests/main_batch*.cpp; do
         find tests -name "*.cpp" | xargs grep -lE "TEST_FUNC\($name\)|bool test_$name\(\)" | grep -v "main_batch" | grep -v "test_declarations.hpp"
     done | sort | uniq > "$TEMP_FILE_LIST"
 
-    # Add dependencies: if a file in a subdirectory is needed, include all files in that subdirectory
-    cat "$TEMP_FILE_LIST" | while read test_file; do
-        DIR=$(dirname "$test_file")
-        if [[ "$DIR" != "tests" ]]; then
-            find "$DIR" -name "*.cpp"
-        else
-            echo "$test_file"
-        fi
-    done | sort | uniq | while read test_file; do
+    # Include only the exact test files (no subdirectory wildcards)
+    while read test_file; do
         if [[ "$test_file" != "$MAIN_FILE" && "$test_file" != "tests/test_utils.cpp" && \
               "$test_file" != "tests/c89_validation/gcc_validator.cpp" && \
               "$test_file" != "tests/c89_validation/msvc6_validator.cpp" ]]; then
             REL_PATH=${test_file#tests/}
             echo "#include \"$REL_PATH\"" >> "$RUNNER_FILE"
         fi
-    done
+    done < "$TEMP_FILE_LIST"
     rm "$TEMP_FILE_LIST"
 
     echo "#include \"main_batch$i.cpp\"" >> "$RUNNER_FILE"
