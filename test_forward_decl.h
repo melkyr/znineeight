@@ -1,0 +1,2 @@
+struct Tree;
+struct Node;
