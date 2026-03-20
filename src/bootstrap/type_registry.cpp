@@ -25,7 +25,7 @@ Type* TypeRegistry::find(Module* owner, const char* name) const {
     u32 h = hash(owner, name);
     Entry* entry = buckets[h];
     while (entry) {
-        if (entry->owner == owner && strings_equal(entry->name, name)) {
+        if (sameModule(entry->owner, owner) && strings_equal(entry->name, name)) {
             return entry->type_ptr;
         }
         entry = entry->next;

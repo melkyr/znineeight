@@ -3723,18 +3723,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
                 // CRITICAL: If not found in target module, check if it's re-exported
                 if (!sym) {
-                    for (size_t i = 0; i < unit_.getModules().length(); i++) {
-                        Module* other = unit_.getModules()[i];
-                        if (other != target_mod && other->symbols) {
-                            Symbol* other_sym = other->symbols->lookup(node->field_name);
-                            // Check if this symbol belongs to target module (re-export)
-                            if (other_sym && other_sym->module_name &&
-                                plat_strcmp(other_sym->module_name, target_mod->name) == 0) {
-                                sym = other_sym;
-                                break;
-                            }
-                        }
-                    }
+                    sym = unit_.getSymbolTable().lookupWithModule(target_mod->name, node->field_name);
                 }
 
                 if (sym) {
@@ -3796,6 +3785,33 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                  return sym->symbol_type;
              }
         }
+
+#ifdef DEBUG_MEMBER_ACCESS
+        plat_printf_debug("MEMBER_ACCESS: base='%s' field='%s'\n",
+            exprToString(node->base),
+            node->field_name);
+        plat_printf_debug("  base_type->kind=%d\n", (int)base_type->kind);
+        if (base_type->kind == TYPE_MODULE) {
+            plat_printf_debug("  module.name='%s' module_ptr=%p\n",
+                base_type->as.module.name,
+                (void*)base_type->as.module.module_ptr);
+            if (base_type->as.module.module_ptr) {
+                plat_printf_debug("  module_ptr->name='%s'\n",
+                    base_type->as.module.module_ptr->name);
+                Type* registered = unit_.getTypeRegistry().find(
+                    (Module*)base_type->as.module.module_ptr, node->field_name);
+                plat_printf_debug("  registry.find()=%p\n", (void*)registered);
+            }
+        }
+        if (target_mod && target_mod->symbols) {
+            Symbol* target_sym = target_mod->symbols->lookup(node->field_name);
+            plat_printf_debug("  symbols.lookup()=%p\n", (void*)target_sym);
+            if (target_sym) {
+                plat_printf_debug("    sym->module_name='%s'\n",
+                    target_sym->module_name ? target_sym->module_name : "NULL");
+            }
+        }
+#endif
 
         char msg[256];
         plat_strcpy(msg, "module '");
@@ -6208,6 +6224,10 @@ Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
     const char* name = node->module_ptr ? node->module_ptr->name : node->module_name;
     Type* mod_type = createModuleType(unit_.getArena(), name);
     mod_type->as.module.module_ptr = node->module_ptr;
+#ifdef DEBUG_MODULE_PTR
+    plat_printf_debug("IMPORT_STMT: name='%s' module_ptr=%p\n",
+        name, (void*)node->module_ptr);
+#endif
     return mod_type;
 }
 

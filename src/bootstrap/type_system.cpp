@@ -256,8 +256,22 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 }
 
 Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_STRUCT: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
         if (existing) {
             if (existing->kind != TYPE_PLACEHOLDER) return existing;
             placeholder = existing;
@@ -279,6 +293,10 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
     new_type->as.struct_details.fields = fields;
     new_type->owner_module = mod;
 
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
+
     if (name == NULL) return new_type;
 
     scope.set_type(new_type);
@@ -290,8 +308,22 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 }
 
 Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_UNION: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
         if (existing) {
             if (existing->kind != TYPE_PLACEHOLDER) return existing;
             placeholder = existing;
@@ -316,6 +348,10 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
     new_type->owner_module = mod;
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
 
     if (is_tagged) {
         // Tagged union: struct { tag_type tag; union { fields } data; }
@@ -375,8 +411,22 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 }
 
 Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_TAGGED_UNION: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
         if (existing) {
             if (existing->kind != TYPE_PLACEHOLDER) return existing;
             placeholder = existing;
@@ -400,6 +450,10 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
     new_type->owner_module = mod;
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
 
     if (name == NULL) return new_type;
 
@@ -818,6 +872,12 @@ void calculateStructLayout(Type* struct_type) {
 }
 
 Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_ENUM: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
     if (!backing_type) {
         plat_print_debug("createEnumType: backing type is NULL\n");
         return get_g_type_undefined();
@@ -825,6 +885,14 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
 
     if (name != NULL) {
         Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
         if (existing) {
             if (existing->kind != TYPE_PLACEHOLDER) return existing;
             placeholder = existing;
@@ -852,6 +920,10 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
     new_type->owner_module = mod;
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
 
     if (name == NULL) return new_type;
 
