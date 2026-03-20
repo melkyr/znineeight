@@ -147,7 +147,8 @@ Symbol* Scope::find(const char* name, const char* module_name) {
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
         if (plat_strcmp(entry->symbol.name, name) == 0) {
             if (module_name == NULL || entry->symbol.module_name == NULL ||
-                plat_strcmp(entry->symbol.module_name, module_name) == 0) {
+                plat_strcmp(entry->symbol.module_name, module_name) == 0 ||
+                plat_strcmp(entry->symbol.module_name, "builtin") == 0) {
                 return &entry->symbol;
             }
         }
