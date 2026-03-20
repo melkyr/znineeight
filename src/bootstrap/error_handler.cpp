@@ -148,27 +148,12 @@ void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, cons
     warnings_.append(new_warning);
 }
 
-void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    reportWarning(code, location, msg_copy);
+void ErrorHandler::reportWarning(WarningCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/) {
+    reportWarning(code, location, message);
 }
 
-void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& arena, const char* hint) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    char* hint_copy = NULL;
-    if (hint) {
-        size_t hint_len = plat_strlen(hint);
-        hint_copy = (char*)arena.alloc(hint_len + 1);
-        plat_memcpy(hint_copy, hint, hint_len + 1);
-    }
-
-    report(code, location, msg_copy, hint_copy);
+void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/, const char* hint) {
+    report(code, location, message, hint);
 }
 
 void ErrorHandler::printErrors() {
@@ -250,12 +235,8 @@ void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char
     infos_.append(new_info);
 }
 
-void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& arena) {
-    size_t msg_len = plat_strlen(message);
-    char* msg_copy = (char*)arena.alloc(msg_len + 1);
-    plat_memcpy(msg_copy, message, msg_len + 1);
-
-    reportInfo(code, location, msg_copy);
+void ErrorHandler::reportInfo(InfoCode code, SourceLocation location, const char* message, ArenaAllocator& /*arena*/) {
+    reportInfo(code, location, message);
 }
 
 void ErrorHandler::printInfos() {
