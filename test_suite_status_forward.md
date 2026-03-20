@@ -4,11 +4,12 @@
 
 | Batch | Status | Details |
 |-------|--------|---------|
+| Batch _bugs | ✓ Passed | 5/5 tests passed |
 | Batch 1 | ✓ Passed | 81/81 tests passed |
-| Batch 2 | ✓ Passed | 114/114 tests passed (Precision issues FIXED) |
-| Batch 3 | ✗ Failed | 114/115 tests passed (Leak detected in compound assignment) |
+| Batch 2 | ✓ Passed | 114/114 tests passed |
+| Batch 3 | ✓ Passed | 115/115 tests passed (Compound assignment leak FIXED) |
 | Batch 4 | ✓ Passed | 37/37 tests passed |
-| Batch 5 | ✗ Failed | 16/34 tests passed (Multiple integration failures) |
+| Batch 5 | ✓ Passed | 34/34 tests passed (Double Free Analysis FIXED) |
 | Batch 6 | ✓ Passed | 33/33 tests passed |
 | Batch 7 | ✓ Passed | 51/51 tests passed |
 | Batch 7_debug | ✓ Passed | 51/51 tests passed |
@@ -26,7 +27,7 @@
 | Batch 16 | ✓ Passed | 15/15 tests passed |
 | Batch 17 | ✓ Passed | 6/6 tests passed |
 | Batch 18 | ✓ Passed | 18/18 tests passed |
-| Batch 19 | ✓ Passed | 31/31 tests passed (Built-in visibility FIXED) |
+| Batch 19 | ✓ Passed | 31/31 tests passed |
 | Batch 20 | ✓ Passed | 21/21 tests passed |
 | Batch 21 | ✓ Passed | 15/15 tests passed |
 | Batch 22 | ✓ Passed | 3/3 tests passed |
@@ -38,9 +39,9 @@
 | Batch 28 | ✓ Passed | 4/4 tests passed |
 | Batch 29 | ✓ Passed | 15/15 tests passed |
 | Batch 30 | ✓ Passed | 11/11 tests passed |
-| Batch 31 | ✓ Passed | 10/10 tests passed (Multi-file stability FIXED) |
+| Batch 31 | ✓ Passed | 10/10 tests passed |
 | Batch 32 | ✓ Passed | 2/2 tests passed |
-| Batch 33 | ✓ Passed | 3/3 tests passed (Import resolution FIXED) |
+| Batch 33 | ✓ Passed | 3/3 tests passed |
 | Batch 34 | ✓ Passed | 5/5 tests passed |
 | Batch 35 | ✓ Passed | 5/5 tests passed |
 | Batch 36 | ✓ Passed | 6/6 tests passed |
@@ -55,12 +56,12 @@
 | Batch 45 | ✓ Passed | 12/12 tests passed |
 | Batch 46 | ✓ Passed | 11/11 tests passed |
 | Batch 47 | ✓ Passed | 9/9 tests passed |
-| Batch 48 | ✓ Passed | 8/8 tests passed (Recursive types FIXED) |
+| Batch 48 | ✓ Passed | 8/8 tests passed |
 | Batch 49 | ✓ Passed | 1/1 tests passed |
 | Batch 50 | ✓ Passed | 5/5 tests passed |
-| Batch 51 | ✗ Failed | 3/4 tests passed (Forward Declared Struct capture regression) |
+| Batch 51 | ✓ Passed | 4/4 tests passed (Union capture regression FIXED) |
 | Batch 52 | ✓ Passed | 3/3 tests passed |
-| Batch 53 | ✓ Passed | 4/4 tests passed (Recursive composite mismatch FIXED) |
+| Batch 53 | ✓ Passed | 4/4 tests passed |
 | Batch 54 | ✓ Passed | 3/3 tests passed |
 | Batch 55 | ✓ Passed | 9/9 tests passed |
 | Batch 56 | ✓ Passed | 3/3 tests passed |
@@ -78,23 +79,23 @@
 | Batch 70 | ✓ Passed | 5/5 tests passed |
 | Batch 71 | ✓ Passed | 1/1 tests passed |
 | Batch 72 | ✓ Passed | 5/5 tests passed |
-| Batch 73 | ✓ Passed | 5/5 tests passed (Mutual recursion FIXED) |
+| Batch 73 | ✓ Passed | 5/5 tests passed |
 | Batch 74 | ✓ Passed | 4/4 tests passed |
-| Batch _bugs | ✓ Passed | 5/5 tests passed |
 
 ## Observations & Issues
 
-### Type System Stability
-Recent fixes in placeholder resolution and symbol table lookup have restored stability for recursive and cross-module type definitions. Built-in types and functions (like `Arena` and `arena_alloc_default`) are now correctly visible across all modules through the `builtin` module.
+### Current State (64-bit)
+The full test suite (77 batches) is now passing correctly in the 64-bit environment. The module resolution and TypeRegistry features are stable and integrated into the compilation pipeline.
+
+### Test Infrastructure Improvements
+The `test.sh` script has been optimized to handle large numbers of test files more efficiently by pre-indexing test function definitions. This ensures all batch runners are correctly generated and compiled even when dependencies are complex.
 
 ### 32-bit Compatibility (-m32)
-Tests were also run using `-m32` on the Linux host after installing `gcc-multilib`.
-- **Batch 2 Regression**: Fixed precision issues in `test_parser_expressions.cpp`.
-- **Batch 3 Regression**: An additional failure appeared in Batch 3 compared to the non-m32 run.
+While the primary focus was 64-bit verification, previous notes indicated precision issues in Batch 2 and additional failures in Batch 3 in 32-bit mode. These should be re-verified if targeting 32-bit deployment.
 
 ## Examples Verification
 
-All examples in the `examples/` directory were compiled and executed successfully in both 64-bit and 32-bit modes.
+All examples in the `examples/` directory were compiled and executed successfully in 64-bit mode.
 
 | Example | Status | Output Snippet |
 |---------|--------|----------------|
