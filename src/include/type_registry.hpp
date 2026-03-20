@@ -2,6 +2,9 @@
 #define TYPE_REGISTRY_HPP
 
 #include "common.hpp"
+#include "module.hpp"
+#include "utils.hpp"
+#include "platform.hpp"
 
 // Forward declarations
 class ArenaAllocator;
@@ -23,6 +26,18 @@ struct TypeRegistry {
     static const int BUCKET_COUNT = 256;
     Entry* buckets[BUCKET_COUNT];
     ArenaAllocator& arena;
+
+    static inline bool sameModule(Module* a, Module* b) {
+        if (!a || !b) return false;
+        if (a == b) return true;
+        // If pointers differ but names match, it's a problem
+        if (a->name && b->name && strings_equal(a->name, b->name)) {
+            plat_printf_debug("WARNING: Module name collision detected!\n");
+            plat_printf_debug("  Module A: %s at %p\n", a->name, (void*)a);
+            plat_printf_debug("  Module B: %s at %p\n", b->name, (void*)b);
+        }
+        return a == b;
+    }
 
     TypeRegistry(ArenaAllocator& arena_ref);
 
