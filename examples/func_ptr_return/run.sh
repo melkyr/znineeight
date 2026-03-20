@@ -8,5 +8,5 @@ echo "Compiling func_ptr_return..."
 mkdir -p output
 $ZIG0 func_ptr_return.zig -o output/
 cd output
-gcc -m32 -std=c89 -pedantic -Wno-pointer-sign -I. -o func_ptr_return main.c ../../../src/runtime/zig_runtime.c -I../../../src/include
+gcc -std=c89 -pedantic -Wno-pointer-sign -I. -o func_ptr_return main.c ../../../src/runtime/zig_runtime.c -I../../../src/include
 ./func_ptr_return

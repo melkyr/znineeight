@@ -54,7 +54,7 @@ public:
         // Invoke GCC
         // -std=c89 -pedantic -Wall -Wextra -c
         // We use -Wno-long-long if we want to support __int64 simulation
-        std::string cmd = "gcc -m32 -std=c89 -pedantic -Wall -Wextra -Wno-long-long -Isrc/include -c ";
+        std::string cmd = "gcc -std=c89 -pedantic -Wall -Wextra -Wno-long-long -Isrc/include -c ";
         cmd += temp_path;
         cmd += " -o /dev/null 2>&1";
 
