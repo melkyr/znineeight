@@ -34,8 +34,6 @@ Type* TypeRegistry::find(Module* owner, const char* name) const {
 }
 
 TypeRegistry::InsertStatus TypeRegistry::insert(Module* owner, const char* name, Type* type_ptr, bool verify_structure) {
-    plat_printf_debug("TypeRegistry: Insert %s in module %s (%p) -> %p\n", name, owner ? owner->name : "NULL", (void*)owner, (void*)type_ptr);
-    plat_printf_debug("TypeRegistry: Find %s in module %s (%p)\n", name, owner ? owner->name : "NULL", (void*)owner);
     u32 h = hash(owner, name);
     Entry* entry = buckets[h];
     while (entry) {

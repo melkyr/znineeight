@@ -270,6 +270,21 @@ public:
         name_detector.check(last_ast);
         if (name_detector.hasCollisions()) return false;
 
+        // Pass 0.15: Register Placeholders
+        {
+            TypeChecker checker(*this);
+            checker.registerPlaceholders(last_ast);
+        }
+
+        // Pass 0.2: Resolve Named Placeholders
+        {
+            TypeChecker checker(*this);
+            DynamicArray<PendingResolution>& pending = getPendingResolutions();
+            for (size_t i = 0; i < pending.length(); ++i) {
+                checker.resolveNamedPlaceholder(pending[i].placeholder);
+            }
+        }
+
         // Pass 0.5: Type Checking (resolves types and sets node->resolved_type)
         TypeChecker checker(*this);
         checker.check(last_ast);
