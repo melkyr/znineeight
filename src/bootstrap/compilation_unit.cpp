@@ -439,6 +439,7 @@ void CompilationUnit::injectRuntimeSymbols() {
 }
 
 void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
+    const char* builtin_name = builtin_module_->name;
     // Inject primitive types as SYMBOL_TYPE
     const char* primitives[] = {
         "void", "bool", "i8", "i16", "i32", "i64",
@@ -452,7 +453,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
             type_registry_.insert(builtin_module_, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
-                .withModule(builtin_module_->name)
+                .withModule(builtin_name)
                 .withMangledName(name) // Primitives use their own name as mangled name
                 .ofType(SYMBOL_TYPE)
                 .withType(t)
@@ -466,7 +467,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
     Type* arena_type = createStructType(*this, builtin_module_, NULL, arena_name);
     Symbol sym_arena = SymbolBuilder(arena_)
         .withName(arena_name)
-        .withModule(builtin_module_->name)
+        .withModule(builtin_name)
         .withMangledName(arena_name)
         .ofType(SYMBOL_TYPE)
         .withType(arena_type)
@@ -486,7 +487,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_create");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -508,7 +509,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -528,7 +529,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_reset");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -548,7 +549,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_destroy");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -562,7 +563,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("zig_default_arena");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_VARIABLE)
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_EXTERN)
@@ -583,7 +584,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc_default");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -605,7 +606,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* free_name = interner_.intern("arena_free");
         Symbol sym_free = SymbolBuilder(arena_)
             .withName(free_name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(free_name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type2)
@@ -625,7 +626,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -645,7 +646,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print_int");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
-            .withModule(builtin_module_->name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
