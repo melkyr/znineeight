@@ -184,6 +184,7 @@ private:
 
     DynamicArray<Type*> expected_type_stack_;
     DynamicArray<Type*> resolving_types_stack_;
+    DynamicArray<ASTNode*> deferred_decls_;
     void pushExpectedType(Type* type) { expected_type_stack_.append(type); }
     Type* peekExpectedType() {
         if (expected_type_stack_.length() == 0) return NULL;

@@ -91,6 +91,8 @@ struct Type {
     const char* c_name; // Mangled C89 name for structs, unions, enums
     bool is_resolving;
     struct Module* owner_module;
+    DependentNode* dependents_head;
+    DependentNode* dependents_tail;
 
     union {
         struct {
@@ -161,8 +163,6 @@ struct Type {
             const char* name;
             struct ASTNode* decl_node;
             struct Module* module;
-            DependentNode* dependents_head;
-            DependentNode* dependents_tail;
         } placeholder;
     } as;
 };

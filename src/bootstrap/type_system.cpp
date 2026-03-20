@@ -130,18 +130,18 @@ static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent
     if (!base || !dependent) return;
     if (base->kind == TYPE_PLACEHOLDER) {
         // Check for duplicates to avoid growing the list unnecessarily
-        for (DependentNode* n = base->as.placeholder.dependents_head; n; n = n->next) {
+        for (DependentNode* n = base->dependents_head; n; n = n->next) {
             if (n->type == dependent) return;
         }
         DependentNode* node = (DependentNode*)arena.alloc(sizeof(DependentNode));
         node->type = dependent;
         node->next = NULL;
-        if (base->as.placeholder.dependents_tail) {
-            base->as.placeholder.dependents_tail->next = node;
-            base->as.placeholder.dependents_tail = node;
+        if (base->dependents_tail) {
+            base->dependents_tail->next = node;
+            base->dependents_tail = node;
         } else {
-            base->as.placeholder.dependents_head = node;
-            base->as.placeholder.dependents_tail = node;
+            base->dependents_head = node;
+            base->dependents_tail = node;
         }
     } else {
         // Recursive registration for composite types that might contain placeholders
@@ -296,6 +296,9 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 #ifdef DEBUG_TYPE_IDENTITY
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
+
+    /* Calculate layout before returning or committing. */
+    calculateTaggedUnionLayout(new_type);
 
     if (name == NULL) return new_type;
 
@@ -797,8 +800,11 @@ void calculateTaggedUnionLayout(Type* type) {
         }
     }
     /* round union_size up to union_align */
-    if (union_align > 0)
+    if (union_align > 0) {
         union_size = (union_size + union_align - 1) & ~(union_align - 1);
+    } else {
+        union_align = 1;
+    }
 
     /* struct overall alignment = max(tag_align, union_align) */
     type->alignment = (tag_align > union_align) ? tag_align : union_align;
@@ -1125,13 +1131,6 @@ bool isTypeComplete(Type* type);
 bool isTypeComplete(Type* type) {
     if (!type) return false;
 
-    if (type->is_resolving) {
-        /* Pointer-like types have known size even if pointee is incomplete */
-        return (type->kind == TYPE_POINTER ||
-                type->kind == TYPE_SLICE ||
-                type->kind == TYPE_OPTIONAL);
-    }
-
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:
@@ -1139,22 +1138,33 @@ bool isTypeComplete(Type* type) {
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
         case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_F32: case TYPE_F64:
-        case TYPE_NORETURN: return true;
+        case TYPE_NORETURN:
         case TYPE_POINTER:
+        case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_FUNCTION:
+        case TYPE_FUNCTION_POINTER:
         case TYPE_NULL:
         case TYPE_ENUM:
-        case TYPE_FUNCTION_POINTER:
+        case TYPE_ERROR_SET:
+            /* These types either have a fixed primitive size/alignment
+               or their layout is independent of the completeness of their children. */
             return true;
+
         case TYPE_ARRAY:
             return isTypeComplete(type->as.array.element_type);
-        case TYPE_OPTIONAL:
-            return isTypeComplete(type->as.optional.payload);
         case TYPE_ERROR_UNION:
             return isTypeComplete(type->as.error_union.payload);
-        case TYPE_ERROR_SET:
-            return true;
-        case TYPE_SLICE:
-            return true; // Slices are always complete (size 8, align 4)
+
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            /* Layout calculated = complete. We don't check field completeness recursively
+               to allow recursive types via pointers/slices/optionals. */
+            return type->alignment >= 1 && type->as.struct_details.fields != NULL;
+
+        case TYPE_TAGGED_UNION:
+            return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
+
         case TYPE_PLACEHOLDER:
         case TYPE_INTEGER_LITERAL:
         case TYPE_ANYTYPE:
@@ -1162,15 +1172,6 @@ bool isTypeComplete(Type* type) {
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
         case TYPE_TUPLE:
-        case TYPE_FUNCTION:
-            return false;
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-            /* Heuristic for completion: layout must have been calculated (alignment >= 1)
-               and fields must be processed. We allow alignment >= 1 even for empty structs. */
-            return type->alignment >= 1 && type->as.struct_details.fields != NULL;
-        case TYPE_TAGGED_UNION:
-            return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
         default:
             return false;
     }
@@ -1330,7 +1331,11 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         case TYPE_INTEGER_LITERAL: safe_append(current, remaining, "comptime_int"); break;
         case TYPE_PLACEHOLDER:
             safe_append(current, remaining, "(placeholder) ");
-            safe_append(current, remaining, type->as.placeholder.name);
+            if (type->as.placeholder.name) {
+                safe_append(current, remaining, type->as.placeholder.name);
+            } else {
+                safe_append(current, remaining, "<null>");
+            }
             break;
         default:
             safe_append(current, remaining, "unknown");

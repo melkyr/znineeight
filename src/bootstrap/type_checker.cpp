@@ -156,6 +156,7 @@ TypeChecker::TypeChecker(CompilationUnit& unit_arg)
       in_ptr_indirection_depth_(0), in_defer_(false),
       expected_type_stack_(unit_arg.getArena()),
       resolving_types_stack_(unit_arg.getArena()),
+      deferred_decls_(unit_arg.getArena()),
       label_stack_(unit_arg.getArena()), function_labels_(unit_arg.getArena()),
       current_fn_labels_start_(0), next_label_id_(0) {
 }
@@ -223,8 +224,8 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
                 placeholder->as.placeholder.decl_node = node;
                 placeholder->as.placeholder.module = current_mod;
                 placeholder->owner_module = placeholder->as.placeholder.module;
-                placeholder->as.placeholder.dependents_head = NULL;
-                placeholder->as.placeholder.dependents_tail = NULL;
+                placeholder->dependents_head = NULL;
+                placeholder->dependents_tail = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(vd->name, unit_.getCurrentModule());
 
@@ -269,15 +270,55 @@ void TypeChecker::registerPlaceholders(ASTNode* root) {
 
 void TypeChecker::check(ASTNode* root) {
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
-        /* Main pass: visit children directly to avoid root block scope level issue */
+        /* Pass 1: Resolve only variable/type declarations first. 
+           This helps ensure types are resolved before function bodies are checked. */
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* stmt = (*root->as.block_stmt.statements)[i];
-            if (stmt) {
+            if (stmt && (stmt->type == NODE_VAR_DECL || stmt->type == NODE_STRUCT_DECL || 
+                         stmt->type == NODE_UNION_DECL || stmt->type == NODE_ENUM_DECL)) {
                 visit(stmt);
             }
         }
     } else {
         visit(root);
+    }
+
+    /* Retry deferred declarations (multiple passes if needed) */
+    int passes = 0;
+    const int MAX_PASSES = 5;
+    while (deferred_decls_.length() > 0 && passes < MAX_PASSES) {
+        DynamicArray<ASTNode*> to_retry(unit_.getArena());
+        for (size_t i = 0; i < deferred_decls_.length(); ++i) {
+            to_retry.append(deferred_decls_[i]);
+        }
+        deferred_decls_.clear();
+
+        for (size_t i = 0; i < to_retry.length(); ++i) {
+            visit(to_retry[i]);
+        }
+        passes++;
+    }
+
+    /* Report errors for remaining deferred declarations that never completed. */
+    if (deferred_decls_.length() > 0) {
+        for (size_t i = 0; i < deferred_decls_.length(); ++i) {
+            ASTNode* node = deferred_decls_[i];
+            if (node->type == NODE_STRUCT_DECL) {
+                /* Force final attempt to get real error message */
+                visitStructDecl(NULL, node->as.struct_decl);
+            }
+        }
+    }
+
+    /* Pass 2: Resolve everything else (Functions, etc.) now that types should be complete. */
+    if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
+        for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
+            ASTNode* stmt = (*root->as.block_stmt.statements)[i];
+            if (stmt && !(stmt->type == NODE_VAR_DECL || stmt->type == NODE_STRUCT_DECL || 
+                          stmt->type == NODE_UNION_DECL || stmt->type == NODE_ENUM_DECL)) {
+                visit(stmt);
+            }
+        }
     }
 }
 
@@ -2428,27 +2469,33 @@ Type* TypeChecker::resolvePlaceholder(Type* placeholder) {
 }
 
 void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
-    if (!placeholder || !resolved || placeholder == resolved) return;
-    if (placeholder->kind != TYPE_PLACEHOLDER) return;
+    if (!placeholder || !resolved) return;
+    
+    /* If they are the same, but it's already been mutated in-place to something else,
+       we proceed to finalize (restoring names, notifying dependents). */
+    if (placeholder == resolved) {
+        if (placeholder->kind == TYPE_PLACEHOLDER) return;
+        /* Proceed with finalization for in-place mutated type */
+    } else {
+        if (placeholder->kind != TYPE_PLACEHOLDER) return;
+        /* Proceed with normal finalization */
+    }
 
     /* Preservation: Ensure the placeholder keeps its identity/name if it was a named declaration. */
     const char* original_name = placeholder->as.placeholder.name;
-#ifdef DEBUG
-    plat_printf_debug("DEBUG: Finalizing placeholder '%s' to kind %d\n", original_name ? original_name : "<null>", (int)resolved->kind);
-#endif
-
-    /* Capture dependencies before mutation */
-    DependentNode* dependents_head = placeholder->as.placeholder.dependents_head;
+    DependentNode* dependents_head = placeholder->dependents_head;
 
     /* Mutate in place */
-    placeholder->kind = resolved->kind;
-    placeholder->size = resolved->size;
-    placeholder->alignment = resolved->alignment;
-    placeholder->owner_module = resolved->owner_module;
-    if (resolved->c_name) {
-        placeholder->c_name = resolved->c_name;
+    if (placeholder != resolved) {
+        placeholder->kind = resolved->kind;
+        placeholder->size = resolved->size;
+        placeholder->alignment = resolved->alignment;
+        placeholder->owner_module = resolved->owner_module;
+        if (resolved->c_name) {
+            placeholder->c_name = resolved->c_name;
+        }
+        placeholder->as = resolved->as;
     }
-    placeholder->as = resolved->as;
 
     /* Restoration: If we just finalized a named placeholder using an anonymous structure 
        (or another type), ensure it still identifies as having its original name. 
@@ -3017,8 +3064,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 placeholder->as.placeholder.decl_node = parent; /* parent of VarDecl is typically the module root or a block */
                 placeholder->as.placeholder.module = current_mod;
                 placeholder->owner_module = placeholder->as.placeholder.module;
-                placeholder->as.placeholder.dependents_head = NULL;
-                placeholder->as.placeholder.dependents_tail = NULL;
+                placeholder->dependents_head = NULL;
+                placeholder->dependents_tail = NULL;
                 placeholder->is_resolving = false;
                 placeholder->c_name = unit_.getNameMangler().mangleTypeName(node->name, unit_.getCurrentModule());
 
@@ -3565,6 +3612,13 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
                  safe_append(current, remaining, field_data->name);
                  safe_append(current, remaining, "'");
              } else {
+                 /* If we are in the main pass (not forced final attempt), defer instead of error. */
+                 bool is_forced = (parent == NULL && current_struct_name_ == NULL);
+                 if (!is_forced) {
+                     deferred_decls_.append(parent ? parent : (ASTNode*)node);
+                     return self_placeholder ? self_placeholder : get_g_type_undefined();
+                 }
+
                  safe_append(current, remaining, "field '");
                  safe_append(current, remaining, field_data->name);
                  safe_append(current, remaining, "' has incomplete type '");
@@ -3774,6 +3828,10 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* Auto-dereference for single level pointer. */
     if (base_type->kind == TYPE_POINTER) {
         base_type = base_type->as.pointer.base;
+    }
+
+    if (base_type && base_type->kind == TYPE_PLACEHOLDER) {
+        base_type = resolvePlaceholder(base_type);
     }
 
     /* Slice built-in properties */
@@ -4049,7 +4107,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return base_type; /* Result type is the enum type itself */
     }
 
-    if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION) {
+    if (base_type->kind != TYPE_STRUCT && base_type->kind != TYPE_UNION && base_type->kind != TYPE_TAGGED_UNION) {
         return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, "member access '.' only allowed on structs, unions, enums or pointers to structs/unions");
     }
 
