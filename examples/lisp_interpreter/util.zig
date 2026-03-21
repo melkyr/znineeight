@@ -27,15 +27,15 @@ pub fn parse_int(s: []const u8) !i64 {
     return if (negative) -val else val;
 }
 
-pub fn deep_copy(v: *value_mod.Value, perm_arena: *value_mod.arena_mod.LispArena) !*value_mod.Value {
+pub fn deep_copy(v: *value_mod.Value, perm_sand: *value_mod.sand_mod.LispSand) !*value_mod.Value {
     if (v.tag == value_mod.ValueTag.Cons) {
-        const new_car = try deep_copy(v.data.Cons.car, perm_arena);
-        const new_cdr = try deep_copy(v.data.Cons.cdr, perm_arena);
-        return try value_mod.alloc_cons(new_car, new_cdr, perm_arena);
+        const new_car = try deep_copy(v.data.Cons.car, perm_sand);
+        const new_cdr = try deep_copy(v.data.Cons.cdr, perm_sand);
+        return try value_mod.alloc_cons(new_car, new_cdr, perm_sand);
     }
 
     // Self-evaluating or already interned
-    const new_v = try value_mod.alloc_value(perm_arena);
+    const new_v = try value_mod.alloc_value(perm_sand);
     new_v.tag = v.tag;
     new_v.data = v.data;
     return new_v;
