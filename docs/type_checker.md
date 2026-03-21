@@ -13,6 +13,20 @@ The compiler implements implicit coercion from slices (`[]T`) and arrays (`[N]T`
 - `src/bootstrap/type_checker.cpp`: Implementation of compatibility rules and AST transformations.
 - `src/include/type_checker.hpp`: Definition of the `injectPtrAccessIfNeeded` helper function.
 
+## Type Equality and Identity
+The compiler distinguishes between pointer equality and structural equality to support cross-module type identity.
+
+### Structural Equality (`areTypesEqual`)
+- **Member Function**: `TypeChecker::areTypesEqual` is the primary mechanism for checking if two types are semantically identical.
+- **Placeholder Resolution**: It automatically resolves `TYPE_PLACEHOLDER` nodes before performing comparisons, ensuring that incomplete types are fully expanded if possible.
+- **Nominal Types**: For `struct`, `union`, `enum`, and `tagged_union`, the function first checks for pointer equality. If that fails (common in cross-module imports), it falls back to comparing the type name and the owner module's name. This ensures that `mod_a.Point` is considered equal to `mod_b.Point` if they refer to the same declaration.
+- **Recursive Comparison**: Composite types like pointers, arrays, and slices are compared recursively.
+
+### Internal Safety and Guards
+To prevent compiler crashes during semantic analysis, strict guards are enforced:
+- **Null Guards**: Critical paths in `visit` methods and comparison logic include checks for `NULL` type pointers. Unexpected nulls in internal invariants trigger a `fatalError` (abort), while user-level issues are reported via the standard error handler.
+- **Kind Validation**: Before accessing kind-specific union fields (e.g., `as.pointer`), the compiler explicitly verifies the `kind` field. This prevents memory corruption and UB if the type checker encounters an inconsistent AST or type state.
+
 ## Recursive Type Resolution
 The compiler supports mutually recursive and self-referencing types using a placeholder mechanism.
 
