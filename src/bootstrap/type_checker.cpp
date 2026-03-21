@@ -526,7 +526,13 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
             }
 
 
+            if (operand_type->kind != TYPE_POINTER) {
+                fatalError(node->operand->loc, "Internal error: Expected pointer kind in visitUnaryOp");
+            }
             base_type = operand_type->as.pointer.base;
+            if (!base_type) {
+                fatalError(node->operand->loc, "Internal error: Pointer type missing base in visitUnaryOp");
+            }
             if (base_type->kind == TYPE_VOID) {
                 return reportAndReturnUndefined(node->operand->loc, ERR_TYPE_MISMATCH, "Cannot dereference a void pointer");
             }
@@ -688,8 +694,8 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
 
             /* Void pointer arithmetic is strictly prohibited in Z98 to match C89 rules. */
             if (op == TOKEN_PLUS || op == TOKEN_MINUS) {
-                bool left_void_ptr = (left_type->kind == TYPE_POINTER && left_type->as.pointer.base->kind == TYPE_VOID);
-                bool right_void_ptr = (right_type->kind == TYPE_POINTER && right_type->as.pointer.base->kind == TYPE_VOID);
+                bool left_void_ptr = (left_type->kind == TYPE_POINTER && left_type->as.pointer.base && left_type->as.pointer.base->kind == TYPE_VOID);
+                bool right_void_ptr = (right_type->kind == TYPE_POINTER && right_type->as.pointer.base && right_type->as.pointer.base->kind == TYPE_VOID);
                 if (left_void_ptr || right_void_ptr) {
                     return reportAndReturnUndefined(loc, ERR_INVALID_VOID_POINTER_ARITHMETIC, NULL);
                 }
@@ -1254,11 +1260,14 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
              return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function type missing parameters");
         }
         expected_args = callee_type->as.function.params->length();
-    } else {
+    } else if (callee_type->kind == TYPE_FUNCTION_POINTER) {
         if (!callee_type->as.function_pointer.param_types) {
              return reportAndReturnUndefined(node->callee->loc, ERR_INTERNAL_ERROR, "Function pointer type missing parameters");
         }
         expected_args = callee_type->as.function_pointer.param_types->length();
+    } else {
+        fatalError(node->callee->loc, "Internal error: Unexpected callee kind in visitFunctionCall");
+        expected_args = 0; // Unreachable
     }
     actual_args = node->args->length();
 
@@ -1582,11 +1591,13 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
     /* Auto-dereference for pointer to array */
     if (base->kind == TYPE_POINTER && !base->as.pointer.is_many) {
         Type* target = base->as.pointer.base;
-        if (target->kind == TYPE_PLACEHOLDER) {
-            target = resolvePlaceholder(target);
-        }
-        if (target->kind == TYPE_ARRAY) {
-            base = target;
+        if (target) {
+            if (target->kind == TYPE_PLACEHOLDER) {
+                target = resolvePlaceholder(target);
+            }
+            if (target->kind == TYPE_ARRAY) {
+                base = target;
+            }
         }
     }
 
@@ -1667,12 +1678,14 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     /* Auto-dereference for pointer to array. */
     if (base_type->kind == TYPE_POINTER && !base_type->as.pointer.is_many) {
         Type* target = base_type->as.pointer.base;
-        if (target->kind == TYPE_PLACEHOLDER) {
-            target = resolvePlaceholder(target);
-        }
-        if (target->kind == TYPE_ARRAY) {
-            reached_via_const_ptr = base_type->as.pointer.is_const;
-            base_type = target;
+        if (target) {
+            if (target->kind == TYPE_PLACEHOLDER) {
+                target = resolvePlaceholder(target);
+            }
+            if (target->kind == TYPE_ARRAY) {
+                reached_via_const_ptr = base_type->as.pointer.is_const;
+                base_type = target;
+            }
         }
     }
 
@@ -2070,7 +2083,7 @@ Type* TypeChecker::visitIfExpr(ASTIfExprNode* node) {
     if (then_type->kind == TYPE_NORETURN) return else_type;
     if (else_type->kind == TYPE_NORETURN) return then_type;
 
-    if (areTypesEqual(then_type, else_type)) return then_type;
+    if (this->areTypesEqual(then_type, else_type)) return then_type;
 
     /* Distribute Coercions: if a control-flow expression is used where a common type is expected,
        we try to coerce both branches to a compatible common type. */
@@ -2328,10 +2341,12 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             is_valid_iterable = true;
         } else if (iterable_type->kind == TYPE_POINTER) {
             Type* target = iterable_type->as.pointer.base;
-            if (target->kind == TYPE_PLACEHOLDER) target = resolvePlaceholder(target);
-            if (target->kind == TYPE_ARRAY) {
-                item_type = target->as.array.element_type;
-                is_valid_iterable = true;
+            if (target) {
+                if (target->kind == TYPE_PLACEHOLDER) target = resolvePlaceholder(target);
+                if (target->kind == TYPE_ARRAY) {
+                    item_type = target->as.array.element_type;
+                    is_valid_iterable = true;
+                }
             }
         } else if (iterable_type->kind == TYPE_SLICE) {
             item_type = iterable_type->as.slice.element_type;
@@ -2845,7 +2860,7 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
 
                     bool compatible = false;
                     if (is_tagged_union) {
-                        compatible = areTypesEqual(tag_type, item_type);
+                        compatible = this->areTypesEqual(tag_type, item_type);
                     } else if (areTypesCompatible(cond_type, item_type)) {
                         compatible = true;
                     } else if (cond_type->kind == TYPE_ENUM && isIntegerType(item_type)) {
@@ -2936,7 +2951,7 @@ bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*
                     /* Traditional unification */
                     if (!common_type) {
                         common_type = prong_type;
-                    } else if (!areTypesEqual(common_type, prong_type)) {
+                    } else if (!this->areTypesEqual(common_type, prong_type)) {
                         if (areTypesCompatible(common_type, prong_type)) {
                             /* common_type is OK */
                         } else if (areTypesCompatible(prong_type, common_type)) {
@@ -3277,7 +3292,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     if (declared_type && declared_type->kind == TYPE_SLICE && node->initializer) {
         Type* init_type = node->initializer->resolved_type;
         if (init_type && init_type->kind == TYPE_ARRAY) {
-            if (areTypesEqual(declared_type->as.slice.element_type, init_type->as.array.element_type)) {
+            if (this->areTypesEqual(declared_type->as.slice.element_type, init_type->as.array.element_type)) {
                 /* Wrap in synthetic slice node */
                 ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
                 plat_memset(slice_node, 0, sizeof(ASTNode));
@@ -4757,7 +4772,7 @@ Type* TypeChecker::visitCatchExpr(ASTNode* node) {
 
     if (!fallback_type || is_type_undefined(fallback_type)) return get_g_type_undefined();
 
-    if (!areTypesEqual(payload_type, fallback_type)) {
+    if (!this->areTypesEqual(payload_type, fallback_type)) {
         if (fallback_type->kind != TYPE_NORETURN) {
             return reportAndReturnUndefined(node->loc, ERR_CATCH_TYPE_MISMATCH, "catch fallback expression type must match payload type");
         }
@@ -4912,8 +4927,130 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
  * 5. Pointer Const-Correctness: (e.g., *T -> *const T, *T -> *void).
  * 6. Array-to-Slice Coercion: (e.g., [N]T -> []T).
  */
+bool TypeChecker::areTypesEqual(Type* a, Type* b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+
+    if (a->kind == TYPE_PLACEHOLDER) a = resolvePlaceholder(a);
+    if (b->kind == TYPE_PLACEHOLDER) b = resolvePlaceholder(b);
+
+    if (a == b) return true;
+    if (!a || !b) return false;
+    if (a->kind != b->kind) return false;
+
+    switch (a->kind) {
+        case TYPE_POINTER:
+            if (!a->as.pointer.base || !b->as.pointer.base) return a->as.pointer.base == b->as.pointer.base;
+            return a->as.pointer.is_const == b->as.pointer.is_const &&
+                   a->as.pointer.is_many == b->as.pointer.is_many &&
+                   this->areTypesEqual(a->as.pointer.base, b->as.pointer.base);
+
+        case TYPE_ARRAY:
+            if (!a->as.array.element_type || !b->as.array.element_type) return a->as.array.element_type == b->as.array.element_type;
+            return a->as.array.size == b->as.array.size &&
+                   this->areTypesEqual(a->as.array.element_type, b->as.array.element_type);
+
+        case TYPE_SLICE:
+            if (!a->as.slice.element_type || !b->as.slice.element_type) return a->as.slice.element_type == b->as.slice.element_type;
+            return a->as.slice.is_const == b->as.slice.is_const &&
+                   this->areTypesEqual(a->as.slice.element_type, b->as.slice.element_type);
+
+        case TYPE_OPTIONAL:
+            if (!a->as.optional.payload || !b->as.optional.payload) return a->as.optional.payload == b->as.optional.payload;
+            return this->areTypesEqual(a->as.optional.payload, b->as.optional.payload);
+
+        case TYPE_ERROR_UNION:
+            if (a->as.error_union.is_inferred != b->as.error_union.is_inferred) return false;
+            if (!a->as.error_union.is_inferred) {
+                if (!this->areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set)) return false;
+            }
+            if (!a->as.error_union.payload || !b->as.error_union.payload) return a->as.error_union.payload == b->as.error_union.payload;
+            return this->areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
+
+        case TYPE_ERROR_SET:
+            if (a->as.error_set.is_anonymous != b->as.error_set.is_anonymous) return false;
+            if (a->as.error_set.is_anonymous) return true;
+            if (a->as.error_set.name && b->as.error_set.name && plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0) {
+                if (a->owner_module && b->owner_module) {
+                    return plat_strcmp(a->owner_module->name, b->owner_module->name) == 0;
+                }
+                return a->owner_module == b->owner_module;
+            }
+            return false;
+
+        case TYPE_FUNCTION:
+            return this->signaturesMatch(a->as.function.params, a->as.function.return_type,
+                                  b->as.function.params, b->as.function.return_type);
+        case TYPE_FUNCTION_POINTER:
+            return this->signaturesMatch(a->as.function_pointer.param_types, a->as.function_pointer.return_type,
+                                  b->as.function_pointer.param_types, b->as.function_pointer.return_type);
+
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
+        case TYPE_ENUM: {
+            // Nominal equality (pointer check) should have caught identical types.
+            // For cross-module types, we check the name and owner module name.
+            const char* a_name = (a->kind == TYPE_ENUM) ? a->as.enum_details.name : a->as.struct_details.name;
+            const char* b_name = (b->kind == TYPE_ENUM) ? b->as.enum_details.name : b->as.struct_details.name;
+
+            if (a_name && b_name && plat_strcmp(a_name, b_name) == 0) {
+                if (a->owner_module && b->owner_module) {
+                    if (plat_strcmp(a->owner_module->name, b->owner_module->name) == 0) {
+                        return true;
+                    }
+                } else if (!a->owner_module && !b->owner_module) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        default:
+            return true;
+    }
+}
+
+bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return) {
+    if (!this->areTypesEqual(a_return, b_return)) {
+        return false;
+    }
+
+    if (!a_params && !b_params) return true;
+    if (!a_params || !b_params) return false;
+
+    if (a_params->length() != b_params->length()) {
+        return false;
+    }
+
+    size_t a_count = a_params->length();
+    size_t b_count = b_params->length();
+
+    /* Take snapshots to prevent iterator invalidation during recursive equality checks */
+    Type** a_snapshot = (Type**)unit_.getArena().alloc(a_count * sizeof(Type*));
+    for (size_t k = 0; k < a_count; ++k) {
+        a_snapshot[k] = (*a_params)[k];
+    }
+
+    Type** b_snapshot = (Type**)unit_.getArena().alloc(b_count * sizeof(Type*));
+    for (size_t k = 0; k < b_count; ++k) {
+        b_snapshot[k] = (*b_params)[k];
+    }
+
+    bool result = true;
+    for (size_t i = 0; i < a_count; ++i) {
+        if (!this->areTypesEqual(a_snapshot[i], b_snapshot[i])) {
+            result = false;
+            break;
+        }
+    }
+
+
+    return result;
+}
+
 bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
-    if (expected == actual) {
+    if (this->areTypesEqual(expected, actual)) {
         return true;
     }
 
@@ -4964,7 +5101,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         Type* a_elem = actual->as.array.element_type;
         if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
 
-        if (areTypesEqual(e_elem, a_elem)) return true;
+        if (this->areTypesEqual(e_elem, a_elem)) return true;
         if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
             (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
         return false;
@@ -4978,7 +5115,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         Type* expected_elem = expected->as.slice.element_type;
         if (expected_elem && expected_elem->kind == TYPE_PLACEHOLDER) expected_elem = resolvePlaceholder(expected_elem);
 
-        bool compatible = areTypesEqual(expected_elem, element_type) ||
+        bool compatible = this->areTypesEqual(expected_elem, element_type) ||
                          ((expected_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
                           (expected_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
@@ -5021,7 +5158,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         Type* a_elem = actual->as.slice.element_type;
         if (a_elem && a_elem->kind == TYPE_PLACEHOLDER) a_elem = resolvePlaceholder(a_elem);
 
-        bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
+        bool elems_compatible = this->areTypesEqual(e_elem, a_elem) ||
                                ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
                                 (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
         if (elems_compatible) {
@@ -5062,11 +5199,11 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
     /* Function Pointer compatibility */
     if (expected->kind == TYPE_FUNCTION_POINTER) {
         if (actual->kind == TYPE_FUNCTION_POINTER) {
-            return signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
+            return this->signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
                                   actual->as.function_pointer.param_types, actual->as.function_pointer.return_type);
         }
         if (actual->kind == TYPE_FUNCTION) {
-            return signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
+            return this->signaturesMatch(expected->as.function_pointer.param_types, expected->as.function_pointer.return_type,
                                   actual->as.function.params, actual->as.function.return_type);
         }
     }
@@ -5102,7 +5239,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
         /* *[N]T -> [*]T (Implicit coercion to many-item pointer) */
         if (expected->kind == TYPE_POINTER && expected->as.pointer.is_many) {
-            if (areTypesEqual(expected->as.pointer.base, element_type)) {
+            if (this->areTypesEqual(expected->as.pointer.base, element_type)) {
                 /* Const correctness: *const [N]T -> [*]const T (OK), *const [N]T -> [*]T (Error) */
                 return expected->as.pointer.is_const || !actual->as.pointer.is_const;
             }
@@ -5115,7 +5252,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
         /* *[N]T -> *T (Backward compatibility for single-item pointer) */
         if (expected->kind == TYPE_POINTER && !expected->as.pointer.is_many) {
-            if (areTypesEqual(expected->as.pointer.base, element_type)) {
+            if (this->areTypesEqual(expected->as.pointer.base, element_type)) {
                 return expected->as.pointer.is_const || !actual->as.pointer.is_const;
             }
             /* Backward compatibility for u8 and c_char */
@@ -5148,7 +5285,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         /* Implicit single-item to many-item pointer conversion */
         if (!actual->as.pointer.is_many && expected->as.pointer.is_many) {
              /* Allowed if base types match and const-correctness is maintained */
-             bool bases_compatible = areTypesEqual(actual_base, expected_base) ||
+             bool bases_compatible = this->areTypesEqual(actual_base, expected_base) ||
                                     ((actual_base->kind == TYPE_U8 && expected_base->kind == TYPE_C_CHAR) ||
                                      (actual_base->kind == TYPE_C_CHAR && expected_base->kind == TYPE_U8));
              if (bases_compatible) {
@@ -5163,7 +5300,7 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
         }
 
         /* Must have the same base type */
-        if (!areTypesEqual(actual_base, expected_base)) {
+        if (!this->areTypesEqual(actual_base, expected_base)) {
             if (!((actual_base->kind == TYPE_U8 && expected_base->kind == TYPE_C_CHAR) ||
                   (actual_base->kind == TYPE_C_CHAR && expected_base->kind == TYPE_U8))) {
                 return false;
@@ -5599,7 +5736,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     /* Optional types assignment */
     if (target_type->kind == TYPE_OPTIONAL) {
         /* T -> ?T (implicit wrapping) */
-        if (IsTypeAssignableTo(source_type, target_type->as.optional.payload, loc)) {
+        if (target_type->as.optional.payload && IsTypeAssignableTo(source_type, target_type->as.optional.payload, loc)) {
             return true;
         }
     }
@@ -5611,7 +5748,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
             return true;
         }
         /* T -> !T (success wrapping) */
-        if (IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
+        if (target_type->as.error_union.payload && IsTypeAssignableTo(source_type, target_type->as.error_union.payload, loc)) {
             return true;
         }
     }
@@ -5631,7 +5768,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_ARRAY) {
         Type* e_elem = target_type->as.slice.element_type;
         Type* a_elem = source_type->as.array.element_type;
-        if (areTypesEqual(e_elem, a_elem)) return true;
+        if (this->areTypesEqual(e_elem, a_elem)) return true;
         if ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
             (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8)) return true;
         return false;
@@ -5645,7 +5782,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         Type* target_elem = target_type->as.slice.element_type;
         if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
 
-        bool compatible = areTypesEqual(target_elem, element_type) ||
+        bool compatible = this->areTypesEqual(target_elem, element_type) ||
                          ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
                           (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible) {
@@ -5657,7 +5794,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     if (target_type->kind == TYPE_SLICE && source_type->kind == TYPE_SLICE) {
         Type* e_elem = target_type->as.slice.element_type;
         Type* a_elem = source_type->as.slice.element_type;
-        bool elems_compatible = areTypesEqual(e_elem, a_elem) ||
+        bool elems_compatible = this->areTypesEqual(e_elem, a_elem) ||
                                ((e_elem->kind == TYPE_U8 && a_elem->kind == TYPE_C_CHAR) ||
                                 (e_elem->kind == TYPE_C_CHAR && a_elem->kind == TYPE_U8));
         if (elems_compatible) {
@@ -5692,7 +5829,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
         /* *[N]T -> [*]T (many-item pointer) */
         if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many) {
-            bool compatible = areTypesEqual(target_type->as.pointer.base, element_type) ||
+            bool compatible = this->areTypesEqual(target_type->as.pointer.base, element_type) ||
                              ((target_type->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
                               (target_type->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
             if (compatible) {
@@ -5702,7 +5839,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
 
         /* *[N]T -> *T (single-item pointer, backward compatibility) */
         if (target_type->kind == TYPE_POINTER && !target_type->as.pointer.is_many) {
-            bool compatible = areTypesEqual(target_type->as.pointer.base, element_type) ||
+            bool compatible = this->areTypesEqual(target_type->as.pointer.base, element_type) ||
                              ((target_type->as.pointer.base->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
                               (target_type->as.pointer.base->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
             if (compatible) {
@@ -5714,7 +5851,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     /* Pointer to Many-item pointer assignment */
     if (target_type->kind == TYPE_POINTER && target_type->as.pointer.is_many &&
         source_type->kind == TYPE_POINTER && !source_type->as.pointer.is_many) {
-        if (areTypesEqual(target_type->as.pointer.base, source_type->as.pointer.base)) {
+        if (this->areTypesEqual(target_type->as.pointer.base, source_type->as.pointer.base)) {
             return target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
         }
     }
@@ -5724,10 +5861,10 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         if (source_type->kind == TYPE_FUNCTION_POINTER || source_type->kind == TYPE_FUNCTION) {
             bool match = false;
             if (source_type->kind == TYPE_FUNCTION_POINTER) {
-                match = signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
+                match = this->signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
                                       source_type->as.function_pointer.param_types, source_type->as.function_pointer.return_type);
             } else {
-                match = signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
+                match = this->signaturesMatch(target_type->as.function_pointer.param_types, target_type->as.function_pointer.return_type,
                                       source_type->as.function.params, source_type->as.function.return_type);
             }
 
@@ -5793,7 +5930,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         bool const_compatible = target_type->as.pointer.is_const || !source_type->as.pointer.is_const;
 
         /* Base types must match */
-        bool base_match = areTypesEqual(src_base, tgt_base);
+        bool base_match = this->areTypesEqual(src_base, tgt_base);
         if (!base_match) {
             if ((src_base->kind == TYPE_U8 && tgt_base->kind == TYPE_C_CHAR) ||
                 (src_base->kind == TYPE_C_CHAR && tgt_base->kind == TYPE_U8)) {
@@ -6582,7 +6719,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         Type* source_elem = source_type->as.array.element_type;
         if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
 
-        if (areTypesEqual(target_elem, source_elem)) {
+        if (this->areTypesEqual(target_elem, source_elem)) {
             ASTNode* slice_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
             plat_memset(slice_node, 0, sizeof(ASTNode));
             slice_node->type = NODE_ARRAY_SLICE;
@@ -6611,7 +6748,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         Type* source_elem = source_type->as.slice.element_type;
         if (source_elem && source_elem->kind == TYPE_PLACEHOLDER) source_elem = resolvePlaceholder(source_elem);
 
-        if (areTypesEqual(target_elem, source_elem)) {
+        if (this->areTypesEqual(target_elem, source_elem)) {
             /* If elements match, we just update the type to the target type (e.g. adding const).
                Since slices are passed by value and have identical C representation,
                a simple type change is sufficient. */
@@ -6628,7 +6765,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         Type* target_elem = target_type->as.slice.element_type;
         if (target_elem && target_elem->kind == TYPE_PLACEHOLDER) target_elem = resolvePlaceholder(target_elem);
 
-        bool compatible = areTypesEqual(target_elem, element_type) ||
+        bool compatible = this->areTypesEqual(target_elem, element_type) ||
                          ((target_elem->kind == TYPE_U8 && element_type->kind == TYPE_C_CHAR) ||
                           (target_elem->kind == TYPE_C_CHAR && element_type->kind == TYPE_U8));
         if (compatible && (target_type->as.slice.is_const || !source_type->as.pointer.is_const)) {

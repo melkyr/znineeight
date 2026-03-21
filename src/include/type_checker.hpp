@@ -79,6 +79,8 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
+    bool areTypesEqual(Type* a, Type* b);
+    bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return);
     void coerceNode(ASTNode** node_slot, Type* target_type);
 
     Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
