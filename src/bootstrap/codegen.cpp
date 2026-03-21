@@ -98,6 +98,7 @@ void C89Emitter::emitPrologue() {
 }
 
 void C89Emitter::beginFunction() {
+    is_main_function_ = false;
     var_alloc_.reset();
     for_loop_counter_ = 0;
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -815,7 +816,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
         /* CRITICAL: C89 main MUST return int, regardless of Zig return type */
         writeString("int main(int argc, char* argv[])");
-        is_main_function_ = true;
+        is_main_function_ = true; current_fn_ret_type_ = get_g_type_void();
         /* Force internal tracking to void to avoid error-union wrapping confusion */
         current_fn_ret_type_ = get_g_type_void();
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||

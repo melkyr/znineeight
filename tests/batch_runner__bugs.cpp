@@ -5,6 +5,7 @@
 #include "c89_validation/msvc6_validator.cpp"
 #include "integration/array_property_tests.cpp"
 #include "integration/for_ptr_array_tests.cpp"
+#include "integration/milestone9_bugfixes.cpp"
 #include "integration/string_split_tests.cpp"
 #include "integration/switch_lifter_tests.cpp"
 #include "main_batch_bugs.cpp"
