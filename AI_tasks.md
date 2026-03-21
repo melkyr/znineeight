@@ -2312,6 +2312,14 @@ Implementation steps (minimal):
     - **Documentation**: Created `docs/CrossModuleSymbolVisibility.md` and updated `DESIGN.md`.
     - **Workaround**: Updated the Lisp interpreter to use optional pointers (`?*T`) to improve compiler stability during cross-module resolution.
 
+248. [COMPLETE] **Task 9.24: Guard Against Null Dereferences and Type Mismatches**
+    - **Goal**: Stabilize the compiler by adding robust guards and structural-aware type equality.
+    - **Type Checker**: Moved `areTypesEqual` and `signaturesMatch` into `TypeChecker` to support placeholder resolution during comparison.
+    - **Structural Equality**: Implemented deep structural comparison in `TypeChecker::areTypesEqual`, including cross-module nominal type identity (matching by name and module name).
+    - **Safety Guards**: Audited and added null checks and `kind` validation in `visitUnaryOp`, `visitFunctionCall`, `visitArrayAccess`, `IsTypeAssignableTo`, and other critical methods.
+    - **Internal Invariants**: Used `fatalError` to abort on internal compiler errors (e.g., unexpected null types) while maintaining recoverable reporting for user errors.
+    - **Documentation**: Updated `docs/type_checker.md` with details on the new equality and safety logic.
+
 ---
 
 
