@@ -2515,14 +2515,23 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
     /* Restoration: If we just finalized a named placeholder using an anonymous structure 
        (or another type), ensure it still identifies as having its original name. 
        All these kinds have 'name' as the first member of their 'as' union struct. */
-    if ((placeholder->kind == TYPE_STRUCT || placeholder->kind == TYPE_UNION) && !placeholder->as.struct_details.name) {
-        placeholder->as.struct_details.name = original_name;
-    } else if (placeholder->kind == TYPE_ENUM && !placeholder->as.enum_details.name) {
-        placeholder->as.enum_details.name = original_name;
-    } else if (placeholder->kind == TYPE_TAGGED_UNION && !placeholder->as.tagged_union.name) {
-        placeholder->as.tagged_union.name = original_name;
-    } else if (placeholder->kind == TYPE_ERROR_SET && !placeholder->as.error_set.name) {
-        placeholder->as.error_set.name = original_name;
+    if (placeholder->kind != TYPE_PLACEHOLDER) {
+        if ((placeholder->kind == TYPE_STRUCT || placeholder->kind == TYPE_UNION) && !placeholder->as.struct_details.name) {
+            placeholder->as.struct_details.name = original_name;
+        } else if (placeholder->kind == TYPE_ENUM && !placeholder->as.enum_details.name) {
+            placeholder->as.enum_details.name = original_name;
+        } else if (placeholder->kind == TYPE_TAGGED_UNION && !placeholder->as.tagged_union.name) {
+            placeholder->as.tagged_union.name = original_name;
+        } else if (placeholder->kind == TYPE_ERROR_SET && !placeholder->as.error_set.name) {
+            placeholder->as.error_set.name = original_name;
+        }
+
+        // Also ensure the C name is set
+        if (!placeholder->c_name && original_name) {
+            placeholder->c_name = unit_.getNameMangler().mangleTypeName(
+                original_name,
+                placeholder->owner_module ? placeholder->owner_module->name : "unknown");
+        }
     }
 
 #ifdef DEBUG
