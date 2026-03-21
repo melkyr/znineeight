@@ -1,216 +1,368 @@
+## 🎯 Priority Patches (Implement in This Order)
 
-## 1. Type Checker: Implicit Unwrapping of Error Unions and Optionals  
-**Files:** `type_checker.cpp` – `areTypesCompatible`  
-The function currently allows implicit unwrapping of error unions and optionals, which is **not** allowed in Zig. For example:  
+### Issue 3: `main` Function Return Type (Quick Win - Fix C Compilation Errors)
+
+**File:** `codegen.cpp`
+
+**Patch 1: `emitFnDecl` - Force C signature for `main`**
 ```cpp
-if (actual->kind == TYPE_ERROR_UNION) {
-    if (areTypesCompatible(expected, actual->as.error_union.payload)) return true;
-}
-if (actual->kind == TYPE_OPTIONAL) {
-    if (areTypesCompatible(expected, actual->as.optional.payload)) return true;
-}
-```
-This would permit assigning an `!T` value to a variable of type `T` without an explicit `try` or `catch`.  
-
-**Fix:** Remove these blocks. Only allow wrapping (e.g., `T → !T` or `null → ?T`), never unwrapping. The corresponding wrapping cases are already correctly handled when the **target** is an error union or optional.
-
----
-
-## 2. Parser: Incorrect Comma Handling in Switch Prongs  
-**File:** `parser.cpp` – `parseSwitchProng`  
-The parser currently exempts block bodies from the comma requirement, which allows invalid syntax like:  
-```zig
-switch (x) {
-    1 => { a; }  // missing comma before next prong
-    2 => { b; }
+// Around line 550, in emitFnDecl:
+/* Special handling for the main entry point */
+if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
+    // CRITICAL: C89 main MUST return int, regardless of Zig return type
+    writeString("int main(int argc, char* argv[])");
+    is_main_function_ = true;
+    // Force internal tracking to void to avoid error-union wrapping confusion
+    current_fn_ret_type_ = get_g_type_void();
+} else if (plat_strcmp(node->name, "__bootstrap_print") == 0 || /* ... existing runtime checks ... */) {
+    // ... existing code ...
 }
 ```
-Zig requires a comma after every prong body (even blocks) unless it’s the last prong before `}`.  
 
-**Fix:** Remove the special case for `NODE_BLOCK_STMT` in the comma check:  
+**Patch 2: `emitReturn` - Handle `main` specially**
 ```cpp
-if (!has_comma && peek().type != TOKEN_RBRACE) {
-    error("Expected ',' after switch prong body");
-}
-```
-
----
-
-## 3. [RESOLVED] Lifter: Missing Parent in Recursive Transform for Switch Prongs
-**File:** `ast_lifter.cpp` – `lowerSwitchExpr`  
-When transforming a prong body, `transformNode` is called with `NULL` as the parent. This breaks the parent‑stack mechanism, preventing nested control‑flow expressions (like an `if` inside a switch prong) from being correctly lifted.  
-
-**Fix:** Passed the newly created switch statement node as the parent.
-
----
-
-## 4. [RESOLVED] Codegen: For Loop Over Pointer‑to‑Array Uses Wrong Length
-**File:** `codegen.cpp` – `emitFor`  
-When the iterable expression is a pointer to an array (e.g., `ptr: *[5]u8`), the emitted length was `"0 /* Unknown length */"` because only `TYPE_ARRAY` was handled.
-
-**Fix:** Added a branch for `TYPE_POINTER` whose base is an array.
-
----
-
-## 5. Codegen: Block Expressions Used as Values (e.g., in Initializers)  
-**File:** `codegen.cpp` – `emitAssignmentWithLifting` and `emitExpression`  
-A block (e.g., `{ x; y }`) used as an expression (e.g., `const a = { 1; 2; };`) currently leads to invalid C because blocks cannot be expressions. The lifter does not transform plain blocks, so codegen must handle them specially.  
-
-**Fix:** In `emitAssignmentWithLifting`, if the right‑hand side is a `NODE_BLOCK_STMT`, call `emitBlockWithAssignment` to emit the block while assigning its last value to the target. Also add a case in `emitExpression` for blocks used in other contexts, but such usage should be rare after lifting.  
-
-```cpp
-if (rvalue->type == NODE_BLOCK_STMT) {
-    emitBlockWithAssignment(&rvalue->as.block_stmt, target_name, -1, target_type);
-    return;
-}
-```
-
----
-
-## 6. Codegen: Range Expansion in Switch May Generate Huge Output  
-**File:** `codegen.cpp` – `emitSwitch`  
-A range like `0...1000` expands to 1001 individual `case` labels. This can bloat the generated C code and may hit compiler limits.  
-
-**Improvement:** Add a heuristic or limit (e.g., 256) and warn/error for larger ranges. Alternatively, generate a loop inside the `default` case for contiguous ranges, but that’s more complex. For now, at least warn.
-
----
-
-## 7. Parser/Lifter: Handling of `if` with Optional Capture and Void Payload  
-**Files:** `parser.cpp`, `codegen.cpp`  
-When an optional condition has a `void` payload (e.g., `if (opt_void) |_| { ... }`), the capture variable should not be emitted. The codegen already checks for `TYPE_VOID` before emitting the capture assignment, which is correct. However, the parser should accept the capture syntax even with void; it currently does. No change needed.
-
----
-
-## 8. Type Checker: Missing Validation for `try` in Non‑Error‑Returning Functions  
-**File:** `type_checker.cpp` – `visitTryExpr`  
-The check correctly ensures the enclosing function returns an error union. However, it does not verify that the error set of the operand is a **subset** of the function’s error set (it only checks pointer equality or both inferred). For proper error safety, the operand’s error set must be a subset.  
-
-**Improvement:** Enhance `areErrorSetsCompatible` to check subset relationship (by scanning tags) when both sets are concrete. This requires access to the global error registry.
-
----
-
-## 9. Codegen: Defer Emission for `break`/`continue` with Labels  
-**File:** `codegen.cpp` – `emitBreak`, `emitContinue`  
-The code correctly emits defers up to the target label. However, it always emits a comment `"/* defers for break */"` even when there are no defers. This is harmless but could be suppressed for cleaner output.
-
-**Improvement:** Only emit the comment and the defers if `defer_stack_` contains any defers for the targeted scopes.
-
----
-
-## 10. [RESOLVED] Codegen: String Literal Length Limits (MSVC 6.0)
-**File:** `codegen.cpp` – `emitStringLiteral`  
-MSVC 6.0 has a limit of 2048 characters for string literals. The emitter now automatically splits long strings.
-
-**Improvement:** If a string literal exceeds 1024 characters, it is split into multiple concatenated literals:
-```c
-"part1" "part2"
-```
-
----
-
-## 11. Codegen: Error Union Wrapping May Miss Void Payload Case  
-**File:** `codegen.cpp` – `emitErrorUnionWrapping`  
-For a void payload, the code sets either `.err` (for error case) or just `.is_error = 0` (for success). That’s correct. However, the helper function `ensureErrorUnionType` should define the struct with only an `int err;` field when payload is void, and the code in `emitErrorUnionWrapping` must use `.err` for both success and error? Actually, for void payload, there is no payload field, so the error case stores the error code in `.err`, and the success case does nothing (no payload). The success case should only set `.is_error = 0`. The code does that. So it’s fine.
-
----
-
-## 12. Codegen: Optional Wrapping for Void Payload  
-**File:** `codegen.cpp` – `emitOptionalWrapping`  
-For void payload, it correctly sets only `.has_value`. The `ensureOptionalType` emits a struct with only `int has_value;`. Good.
-
----
-
-## 13. General: Arena Allocator Usage and Memory Safety  
-The code uses arena allocation throughout, which simplifies memory management but can lead to use‑after‑free if the arena is reset incorrectly. The lifter and codegen both rely on the arena being valid for the entire compilation. No obvious issues, but careful when adding new passes.
-
----
-
-## 14. Testing: Add Negative Tests for Rejected Implicit Unwrapping  
-To ensure the type checker correctly rejects implicit unwrapping, add test cases that attempt to assign an error union to a non‑error‑union variable without `try`/`catch`, and verify they produce errors.
-
-I've analyzed the provided code files (`ast_lifter.cpp`, `type_checker.cpp`, `parser.cpp`, `codegen.cpp`) for issues related to slices, switch statements, and other potential bugs in your 32-bit compiler. Here are the key findings:
-
-## 15. Parser: Incorrect Comma Handling in Switch Prongs  
-**File:** `parser.cpp` – `parseSwitchProng`  
-The current logic allows a prong with a block body to be followed directly by the next prong without a comma, which is incorrect Zig syntax.  
-```cpp
-if (!has_comma && body->type != NODE_BLOCK_STMT && peek().type != TOKEN_RBRACE) {
-    error("Expected ',' after switch prong body");
-}
-```
-**Fix:** Remove the special exemption for block bodies – commas are required between prongs regardless of body type.  
-```cpp
-if (!has_comma && peek().type != TOKEN_RBRACE) {
-    error("Expected ',' after switch prong body");
-}
-```
-
-## 16. Codegen: For Loop Over Pointer-to-Array Uses Wrong Length  
-**File:** `codegen.cpp` – `emitFor`  
-When the iterable expression is a pointer to an array (e.g., `ptr: *[5]u8`), the loop length is set to `0 /* Unknown length */` because only `TYPE_ARRAY` is checked. This breaks iteration.  
-**Fix:** Add a case for `TYPE_POINTER` whose base is an array, and use the array size.  
-```cpp
-if (iterable_type && iterable_type->kind == TYPE_ARRAY) {
-    // ... emit array size
-} else if (iterable_type && iterable_type->kind == TYPE_POINTER && 
-           iterable_type->as.pointer.base->kind == TYPE_ARRAY) {
-    char size_buf[32];
-    plat_u64_to_string(iterable_type->as.pointer.base->as.array.size, size_buf, sizeof(size_buf));
-    writeString(size_buf);
-} else if (iterable_type && iterable_type->kind == TYPE_SLICE) {
-    // ... emit .len
+// Around line 1580, in emitReturn:
+writeIndent();
+if (node->expression) {
+    if (is_main_function_) {
+        // For main: evaluate expression for side effects, then return 0/1
+        writeString("{
+");
+        {
+            IndentScope scope_indent(*this);
+            writeIndent();
+            writeString("(void)(");
+            emitExpression(node->expression);
+            writeString(");
+");
+            writeIndent();
+            writeString("return 0; /* Success */
+");
+        }
+        writeIndent();
+        writeString("}
+");
+    } else {
+        writeString("return ");
+        emitExpression(node->expression);
+        writeString(";
+");
+    }
 } else {
-    writeString("0 /* Unknown length */");
+    if (is_main_function_) {
+        writeString("return 0;
+");
+    } else {
+        writeString("return;
+");
+    }
 }
 ```
 
-## 17. Lifter: Missing Parent in transformNode for Switch Prong Bodies  
-**File:** `ast_lifter.cpp` – `lowerSwitchExpr`  
-When recursively transforming the prong bodies, `transformNode` is called with `NULL` as the parent. This breaks the parent stack, preventing nested control‑flow expressions (like `if` inside a switch prong) from being correctly lifted.  
-**Fix:** Pass the newly created switch statement node as the parent.  
+**Patch 3: `emitBlock` - Add implicit `return 0` for `main`**
 ```cpp
-transformNode(&new_prong->body, if_stmt_node); // or the switch node itself
+// In emitBlock, after the existing implicit-return logic for Error!void:
+/* Task: Fix #2 - Implicit return for Error!void and main */
+if (label_id == -1 && defer_stack_.length() == 1) {
+    if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION &&
+        current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
+        // ... existing Error!void handling ...
+    } else if (is_main_function_) {
+        // CRITICAL: main must always return an int in C89
+        writeIndent();
+        writeString("return 0;
+");
+    }
+}
 ```
-Similarly, the call for `else_block` in `lowerIfExpr` already does this correctly – apply the same pattern.
 
-## 18. Type Checker: Switch on Slices Should Be Rejected (Likely Already Working)  
-The code in `validateSwitch` explicitly rejects non‑tagged‑union, non‑integer, non‑enum, non‑bool types. A slice has kind `TYPE_SLICE`, so it will trigger the error:  
+---
+
+### Issue 2: Placeholder Name Preservation (Critical for Multi-Module Types)
+
+**File:** `type_checker.cpp`
+
+**Patch: `finalizePlaceholder` - Unconditionally restore names**
 ```cpp
-if (!is_tagged_union && !isIntegerType(cond_type) && cond_type->kind != TYPE_ENUM && cond_type->kind != TYPE_BOOL) {
-    unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, ...);
+// Replace the entire finalizePlaceholder function (around line 1050) with:
+void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
+    if (!placeholder || !resolved) return;
+    
+    // Save original metadata BEFORE any mutation
+    const char* original_name = placeholder->as.placeholder.name;
+    Module* original_module = placeholder->as.placeholder.module;
+    DependentNode* dependents_head = placeholder->dependents_head;
+    
+    // Mutate in place (existing logic)
+    if (placeholder != resolved) {
+        placeholder->kind = resolved->kind;
+        placeholder->size = resolved->size;
+        placeholder->alignment = resolved->alignment;
+        placeholder->owner_module = resolved->owner_module;
+        if (resolved->c_name) {
+            placeholder->c_name = resolved->c_name;
+        }
+        placeholder->as = resolved->as;
+    }
+    
+    // CRITICAL FIX: Unconditionally restore the name for ALL nominal types
+    // This prevents anonymous types in generated C code which cause compilation errors
+    switch (placeholder->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            placeholder->as.struct_details.name = original_name;
+            break;
+        case TYPE_TAGGED_UNION:
+            placeholder->as.tagged_union.name = original_name;
+            break;
+        case TYPE_ENUM:
+            placeholder->as.enum_details.name = original_name;
+            break;
+        case TYPE_ERROR_SET:
+            placeholder->as.error_set.name = original_name;
+            break;
+        default:
+            break;
+    }
+    
+    // Preserve module ownership for cross-module consistency
+    if (original_module && !placeholder->owner_module) {
+        placeholder->owner_module = original_module;
+    }
+    
+    // Process dependents (existing logic)
+    while (dependents_head) {
+        DependentNode* current = dependents_head;
+        dependents_head = dependents_head->next;
+        refreshLayout(current->type);
+    }
+}
+```
+
+---
+
+### Issue 1: Cross-Module Type Identity (Most Complex - Essential for Imports)
+
+**File 1: `type_checker.cpp` - Update `areTypesCompatible`**
+
+```cpp
+// At the START of areTypesCompatible (after the initial pointer check):
+bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
+    if (expected == actual) {
+        return true;
+    }
+    if (!expected || !actual) {
+        return false;
+    }
+    
+    // NEW: For nominal types, use structural equality via name + module
+    if ((expected->kind == TYPE_STRUCT && actual->kind == TYPE_STRUCT) ||
+        (expected->kind == TYPE_UNION && actual->kind == TYPE_UNION) ||
+        (expected->kind == TYPE_ENUM && actual->kind == TYPE_ENUM) ||
+        (expected->kind == TYPE_TAGGED_UNION && actual->kind == TYPE_TAGGED_UNION)) {
+        
+        const char* exp_name = (expected->kind == TYPE_ENUM) ? 
+            expected->as.enum_details.name : expected->as.struct_details.name;
+        const char* act_name = (actual->kind == TYPE_ENUM) ? 
+            actual->as.enum_details.name : actual->as.struct_details.name;
+            
+        if (exp_name && act_name && plat_strcmp(exp_name, act_name) == 0) {
+            // Names match - for bootstrap, accept as compatible
+            // (In production, you'd also verify module compatibility)
+            return true;
+        }
+    }
+    
+    // ... rest of existing function ...
+```
+
+**File 2: `type_registry.cpp` - Add structural check to `insert`**
+
+```cpp
+// Add this helper function to type_registry.cpp:
+static bool areTypesStructurallyEqual(Type* a, Type* b) {
+    if (a == b) return true;
+    if (!a || !b || a->kind != b->kind) return false;
+    
+    // For nominal types, compare names
+    if (a->kind == TYPE_STRUCT || a->kind == TYPE_UNION || 
+        a->kind == TYPE_ENUM || a->kind == TYPE_TAGGED_UNION) {
+        const char* a_name = (a->kind == TYPE_ENUM) ? 
+            a->as.enum_details.name : a->as.struct_details.name;
+        const char* b_name = (b->kind == TYPE_ENUM) ? 
+            b->as.enum_details.name : b->as.struct_details.name;
+        return (a_name && b_name && plat_strcmp(a_name, b_name) == 0);
+    }
+    
+    // For composite types, recurse (simplified for bootstrap)
+    if (a->kind == TYPE_POINTER) {
+        return a->as.pointer.is_const == b->as.pointer.is_const &&
+               a->as.pointer.is_many == b->as.pointer.is_many &&
+               areTypesStructurallyEqual(a->as.pointer.base, b->as.pointer.base);
+    }
+    if (a->kind == TYPE_OPTIONAL) {
+        return areTypesStructurallyEqual(a->as.optional.payload, b->as.optional.payload);
+    }
+    // ... add other cases as needed ...
+    
     return false;
 }
+
+// Then update TypeRegistry::insert:
+TypeRegistry::InsertStatus TypeRegistry::insert(Module* owner, const char* name, Type* type_ptr, bool verify_structure) {
+    u32 h = hash(owner, name);
+    Entry* entry = buckets[h];
+    while (entry) {
+        if (sameModule(entry->owner, owner) && strings_equal(entry->name, name)) {
+            if (entry->type_ptr == type_ptr) {
+                return DUPLICATE;
+            }
+            // NEW: If structure matches, accept as same type (critical for cross-module imports)
+            if (verify_structure && areTypesStructurallyEqual(entry->type_ptr, type_ptr)) {
+                return DUPLICATE; // Treat as successful registration of existing type
+            }
+            return MISMATCH;
+        }
+        entry = entry->next;
+    }
+    // ... rest of existing insert logic ...
+}
 ```
-If you are still seeing slices accepted, verify that the condition type is indeed a slice and not a placeholder that resolves to something else. The call to `visit(cond)` should resolve placeholders; ensure that `resolvePlaceholder` correctly handles slice types.
-
-## 19. Additional Minor Issues
-
-- **Unreachable `break` after return/break in switch prongs** – Not harmful, but could cause compiler warnings. Consider omitting the `break` if the prong body already exits.
-- **Potential large range expansion** – Ranges like `0...1000` generate 1001 case labels, which may blow up code size. This is a known bootstrap limitation.
-- **Pointer-to-array detection in `visitArraySlice`** – Already handled correctly.
-
-## 22. [RESOLVED] while Payload Capture Failure
-**Symptoms:** `while (opt) |val|` results in syntax error or incorrect emission.
-**Fix:**
-1.  **Parser**: Added support for the `|capture|` syntax in `parseWhileStatement`.
-2.  **Type Checker**: Implemented optional unwrapping semantics in `visitWhileStmt`, including proper capture scoping and symbol creation.
-3.  **Codegen**: Updated `emitWhile` to generate a `while(1)` loop with internal condition evaluation into a temporary, conditional jump to end, and capture assignment. Correctly handles `break`/`continue` labels.
-
-## 23. [RESOLVED] Tagged Union Switch Capture Hardening
-**Symptoms:** Potential assertion failures during capture variable creation for recursive union fields.
-**Fix:** Updated `TypeChecker::validateSwitch` to resolve payload types recursively using `resolveAllPlaceholders` before creating the capture symbol, ensuring the type is fully concrete.
-
-## 21. [RESOLVED] Optional Pointer Comparison and Member Access
-**Symptoms:** `if (opt != null)` fails with type mismatch; `@ptrCast` on optionals rejected without helpful hint.
-**Fix:**
-1.  **Null Comparison**: Allowed `==` and `!=` between any optional type and `null` in `TypeChecker::checkBinaryOperation`.
-2.  **Member Access**: Added read-only `.value` and `.has_value` fields for optional types in `TypeChecker::visitMemberAccess` and `TypeChecker::isLValueConst`.
-3.  **Improved Diagnostics**: Updated `@ptrCast` error message to suggest using `.value` when the source is an optional.
 
 ---
 
-## 20. [RESOLVED] Cross-Module Symbol Visibility (Discovery Order Issue)
-**Symptoms:** `module 'X' has no member named 'Y'` reported intermittently during multi-module compilation (e.g., Lisp interpreter).
-**Root Cause:** The compiler processes modules in discovery order, leading to `main` being type-checked before its dependencies. On-demand resolution of symbols from not-yet-processed modules fails if those symbols have complex types depending on further imports.
-**Investigation Report:** See `docs/CrossModuleSymbolVisibility.md`.
-**Fix:** Implemented a topological sort of modules using Kahn's algorithm in `CompilationUnit::performFullPipeline`. Modules are now processed in a stable order that respects `@import` dependencies, ensuring that a module's dependencies are fully type-checked before it is.
+### Issue 4: C89 Declaration Order / Expression Lifting
+
+**File:** `codegen.cpp`
+
+**Step 1: Add member variables to `C89Emitter` class (`codegen.hpp`)**
+```cpp
+// In class C89Emitter, add:
+DynamicArray<const char*> lifted_temp_names_;  // Names of lifted temporaries
+DynamicArray<Type*> lifted_temp_types_;        // Their types
+```
+
+**Step 2: Add helper to collect lifted temporaries**
+```cpp
+// Add to codegen.cpp:
+void C89Emitter::collectLiftedTemporaries(const ASTNode* node) {
+    if (!node) return;
+    
+    // Recursively walk expressions that may need lifting
+    switch (node->type) {
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR: {
+            // These expressions get lifted to temporaries in C
+            const char* temp_name = var_alloc_.generate("__lifted_tmp");
+            lifted_temp_names_.append(temp_name);
+            lifted_temp_types_.append(node->resolved_type);
+            break;
+        }
+        case NODE_IF_EXPR:
+            collectLiftedTemporaries(node->as.if_expr->then_expr);
+            collectLiftedTemporaries(node->as.if_expr->else_expr);
+            break;
+        case NODE_SWITCH_EXPR:
+            if (node->as.switch_expr->prongs) {
+                for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                    collectLiftedTemporaries((*node->as.switch_expr->prongs)[i]->body);
+                }
+            }
+            break;
+        // Add other expression types as needed
+        default:
+            break;
+    }
+}
+```
+
+**Step 3: Modify `emitBlock` to use two-pass lifting**
+```cpp
+// Replace the emitBlock function with this enhanced version:
+void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
+    if (!node) return;
+    writeString("{
+");
+    {
+        IndentScope scope_indent(*this);
+        DeferScopeGuard defer_guard(*this, label_id);
+        DeferScope* scope = defer_stack_.back();
+        
+        // NEW: Clear lifted temporaries for this block
+        lifted_temp_names_.clear();
+        lifted_temp_types_.clear();
+        
+        /* Pass 1: Local declarations (existing) */
+        for (size_t i = 0; i < node->statements->length(); ++i) {
+            ASTNode* stmt = (*node->statements)[i];
+            if (stmt->type == NODE_VAR_DECL) {
+                emitLocalVarDecl(stmt, false);
+            }
+        }
+        
+        /* NEW Pass 1.5: Collect lifted temporaries by analyzing statements */
+        for (size_t i = 0; i < node->statements->length(); ++i) {
+            ASTNode* stmt = (*node->statements)[i];
+            if (stmt->type != NODE_VAR_DECL && 
+                stmt->type != NODE_DEFER_STMT && 
+                stmt->type != NODE_ERRDEFER_STMT) {
+                collectLiftedTemporaries(stmt);
+            }
+        }
+        
+        /* NEW Pass 1.6: Emit lifted temporary declarations at TOP of block (C89 requirement) */
+        for (size_t i = 0; i < lifted_temp_names_.length(); ++i) {
+            writeIndent();
+            emitType(lifted_temp_types_[i], lifted_temp_names_[i]);
+            writeString(";
+");
+        }
+        
+        /* Pass 2: Statements (existing) */
+        bool exits = false;
+        for (size_t i = 0; i < node->statements->length(); ++i) {
+            ASTNode* stmt = (*node->statements)[i];
+            if (stmt->type == NODE_VAR_DECL) {
+                emitLocalVarDecl(stmt, true);
+                if (allPathsExit(stmt)) { exits = true; break; }
+            } else if (stmt->type == NODE_DEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
+            } else if (stmt->type == NODE_ERRDEFER_STMT) {
+                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
+            } else {
+                emitStatement(stmt);
+                if (allPathsExit(stmt)) { exits = true; break; }
+            }
+        }
+        
+        /* Emit defers and implicit return (existing) */
+        if (!exits) {
+            for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
+                emitStatement(scope->defers[i]->statement);
+            }
+            // ... existing implicit return logic ...
+        }
+    }
+    writeIndent();
+    writeString("}");
+}
+```
+
+---
+
+### Issue 5: TypeRegistry Structural Interning (Supports Issue 1)
+
+**File:** `type_registry.hpp`
+```cpp
+// Add declaration:
+bool areTypesStructurallyEqual(Type* a, Type* b);
+```
+
+**File:** `type_registry.cpp`
+```cpp
+// The implementation is already provided in the Issue 1 patch above.
+// Just ensure it's declared in the header and defined in the .cpp.
+```
+
+---
