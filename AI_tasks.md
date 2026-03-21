@@ -2312,6 +2312,14 @@ Implementation steps (minimal):
     - **Documentation**: Created `docs/CrossModuleSymbolVisibility.md` and updated `DESIGN.md`.
     - **Workaround**: Updated the Lisp interpreter to use optional pointers (`?*T`) to improve compiler stability during cross-module resolution.
 
+248. [COMPLETE] **Task 9.24: `main` Function and Tagged Union Layout Fixes**
+    - **Codegen**: Forced the C signature `int main(int argc, char* argv[])` for `main` functions and ensured they always return `int` by returning `0` (for both explicit and implicit returns).
+    - **Utils**: Added `"Arena"` and `"zig_default_arena"` to the list of internal compiler identifiers to prevent their mangling.
+    - **Type System**: Corrected `createStructType` and `createTaggedUnionType` to call the appropriate layout calculation functions.
+    - **Safety**: Added robustness to `calculateStructLayout` and `calculateTaggedUnionLayout` to handle NULL or empty field arrays, preventing crashes with opaque types like `Arena`.
+    - **Recursion**: Fixed size calculation for recursive tagged unions by ensuring pointer and slice fields have their fixed sizes (4 or 8 bytes) even when their payload type is an incomplete placeholder.
+    - **Verification**: Created 6 new integration tests in `tests/test_main_return_fix.cpp` and `tests/test_recursive_layout_fix.cpp`, all of which pass.
+
 ---
 
 

@@ -230,7 +230,6 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
-    plat_printf_debug("Module created: %s (%p) for file %s\n", mod->name, (void*)mod, interned_filename);
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
@@ -987,13 +986,11 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
 #endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.check(m->ast_root);
 #ifdef DEBUG_VISIBILITY
-        plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
 #endif
     }
     if (error_handler_.hasErrors()) all_success = false;
@@ -1283,7 +1280,6 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
     stack.append(module->filename);
 
 #ifdef DEBUG_VISIBILITY
-    plat_printf_debug("DEBUG_VISIBILITY: Resolving imports for module '%s' (%s)\n", module->name, module->filename);
 #endif
 
     const char* saved_module = current_module_;

@@ -641,11 +641,6 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
-    if (debug_trace_) {
-        plat_printf_debug("[CODEGEN] emitLocalVarDecl: name=%s has_symbol=%d\n",
-                         decl->name ? decl->name : "NULL",
-                         decl->symbol ? 1 : 0);
-    }
 
     const char* c_name = NULL;
     if (decl->symbol) {
@@ -653,14 +648,7 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     } else if (decl->name && (plat_strncmp(decl->name, "__tmp_", 6) == 0 ||
                               plat_strncmp(decl->name, "__return_", 9) == 0)) {
         c_name = decl->name;
-        if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
-        }
     } else {
-        if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
-                             decl->name ? decl->name : "NULL");
-        }
         return;
     }
 
@@ -672,15 +660,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
         writeIndent();
         emitDeclarator(node->resolved_type, c_name);
         writeString(";\n");
-        if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] Emitted decl: %s\n", c_name);
-        }
     } else {
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
             emitAssignmentWithLifting(c_name, node, decl->initializer);
-            if (debug_trace_) {
-                plat_printf_debug("[CODEGEN] Emitted assignment for: %s\n", c_name);
-            }
         }
     }
 }
@@ -831,8 +813,11 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
+        /* CRITICAL: C89 main MUST return int, regardless of Zig return type */
         writeString("int main(int argc, char* argv[])");
         is_main_function_ = true;
+        /* Force internal tracking to void to avoid error-union wrapping confusion */
+        current_fn_ret_type_ = get_g_type_void();
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
                plat_strcmp(node->name, "__bootstrap_panic") == 0) {
@@ -3703,9 +3688,25 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
     } else {
         writeIndent();
         if (node->expression) {
-            writeString("return ");
-            emitExpression(node->expression);
-            writeString(";\n");
+            if (is_main_function_) {
+                /* For main: evaluate expression for side effects, then return 0 */
+                writeString("{\n");
+                {
+                    IndentScope scope_indent(*this);
+                    writeIndent();
+                    writeString("(void)(");
+                    emitExpression(node->expression);
+                    writeString(");\n");
+                    writeIndent();
+                    writeString("return 0; /* Success */\n");
+                }
+                writeIndent();
+                writeString("}\n");
+            } else {
+                writeString("return ");
+                emitExpression(node->expression);
+                writeString(";\n");
+            }
         } else {
             if (is_main_function_) {
                 writeString("return 0;\n");

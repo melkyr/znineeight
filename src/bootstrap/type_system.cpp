@@ -257,7 +257,6 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
 
 Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, Type* placeholder) {
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("CREATE_STRUCT: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
         (void*)mod);
@@ -266,10 +265,8 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
         Type* existing = unit.getTypeRegistry().find(mod, name);
 #ifdef DEBUG_TYPE_IDENTITY
         if (existing) {
-            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
         } else {
-            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
         }
 #endif
         if (existing) {
@@ -294,11 +291,10 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
     new_type->owner_module = mod;
 
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
     /* Calculate layout before returning or committing. */
-    calculateTaggedUnionLayout(new_type);
+    calculateStructLayout(new_type);
 
     if (name == NULL) return new_type;
 
@@ -312,7 +308,6 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 
 Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type, Type* placeholder) {
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("CREATE_UNION: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
         (void*)mod);
@@ -321,10 +316,8 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
         Type* existing = unit.getTypeRegistry().find(mod, name);
 #ifdef DEBUG_TYPE_IDENTITY
         if (existing) {
-            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
         } else {
-            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
         }
 #endif
         if (existing) {
@@ -353,7 +346,6 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
     new_type->owner_module = mod;
 
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
     if (is_tagged) {
@@ -415,7 +407,6 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 
 Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name, Type* placeholder) {
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("CREATE_TAGGED_UNION: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
         (void*)mod);
@@ -424,10 +415,8 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
         Type* existing = unit.getTypeRegistry().find(mod, name);
 #ifdef DEBUG_TYPE_IDENTITY
         if (existing) {
-            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
         } else {
-            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
         }
 #endif
         if (existing) {
@@ -455,8 +444,10 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     new_type->owner_module = mod;
 
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
+
+    /* Calculate layout before returning or committing. */
+    calculateTaggedUnionLayout(new_type);
 
     if (name == NULL) return new_type;
 
@@ -778,25 +769,43 @@ void refreshLayout(Type* t) {
 }
 
 void calculateTaggedUnionLayout(Type* type) {
-    if (type->kind != TYPE_TAGGED_UNION) return;
+    if (!isTaggedUnion(type)) return;
+
     /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
     size_t tag_align = 4;
     size_t tag_size = 4;
 
-    if (type->as.tagged_union.tag_type) {
-        tag_size = type->as.tagged_union.tag_type->size;
-        tag_align = type->as.tagged_union.tag_type->alignment;
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+    if (tag_type) {
+        tag_size = tag_type->size;
+        tag_align = tag_type->alignment;
     }
 
     /* union part: max of field sizes and alignments */
     size_t union_align = 1;
     size_t union_size = 0;
-    DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
-    if (fields) {
+    DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
+
+    if (!fields || fields->length() == 0) {
+        /* Empty union part - but still need to account for tag and padding */
+    } else {
         for (size_t i = 0; i < fields->length(); ++i) {
             StructField& field = (*fields)[i];
-            if (field.type->alignment > union_align) union_align = field.type->alignment;
-            if (field.type->size > union_size) union_size = field.type->size;
+
+            size_t f_size = field.type->size;
+            size_t f_align = field.type->alignment;
+
+            /* FIX: If size is 0 but it's a known fixed-size type, use that */
+            if (f_size == 0) {
+                if (field.type->kind == TYPE_POINTER) f_size = 4;
+                else if (field.type->kind == TYPE_SLICE) f_size = 8;
+                else if (field.type->kind == TYPE_I32) f_size = 4;
+                /* Add others as needed for bootstrap stability */
+            }
+
+
+            if (f_align > union_align) union_align = f_align;
+            if (f_size > union_size) union_size = f_size;
         }
     }
     /* round union_size up to union_align */
@@ -823,6 +832,10 @@ void calculateTaggedUnionLayout(Type* type) {
 
 void calculateStructLayout(Type* struct_type) {
     if (struct_type->kind == TYPE_UNION) {
+        if (struct_type->as.struct_details.is_tagged) {
+            calculateTaggedUnionLayout(struct_type);
+            return;
+        }
         DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
         size_t max_size = 0;
         size_t max_align = 1;
@@ -845,6 +858,11 @@ void calculateStructLayout(Type* struct_type) {
     if (struct_type->kind != TYPE_STRUCT) return;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    if (!fields) {
+        struct_type->size = 0;
+        struct_type->alignment = 1;
+        return;
+    }
     size_t current_offset = 0;
     size_t max_alignment = 1;
 
@@ -879,7 +897,6 @@ void calculateStructLayout(Type* struct_type) {
 
 Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder) {
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("CREATE_ENUM: name='%s' mod='%s' mod_ptr=%p\n",
         name ? name : "anonymous",
         mod ? mod->name : "NULL",
         (void*)mod);
@@ -893,10 +910,8 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
         Type* existing = unit.getTypeRegistry().find(mod, name);
 #ifdef DEBUG_TYPE_IDENTITY
         if (existing) {
-            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
                 (void*)existing, (int)existing->kind);
         } else {
-            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
         }
 #endif
         if (existing) {
@@ -928,7 +943,6 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     new_type->owner_module = mod;
 
 #ifdef DEBUG_TYPE_IDENTITY
-    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
 
     if (name == NULL) return new_type;

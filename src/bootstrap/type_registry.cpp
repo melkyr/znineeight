@@ -21,7 +21,7 @@ u32 TypeRegistry::hash(Module* owner, const char* name) const {
 }
 
 Type* TypeRegistry::find(Module* owner, const char* name) const {
-    plat_printf_debug("TypeRegistry: Find %s in module %s (%p)\n", name, owner ? owner->name : "NULL", (void*)owner);
+    if (!name) return NULL;
     u32 h = hash(owner, name);
     Entry* entry = buckets[h];
     while (entry) {
