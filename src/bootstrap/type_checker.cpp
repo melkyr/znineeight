@@ -460,7 +460,7 @@ Type* TypeChecker::visit(ASTNode* node) {
                           resolved_type->kind == TYPE_ENUM || resolved_type->kind == TYPE_TAGGED_UNION ||
                           resolved_type->kind == TYPE_ERROR_SET)) {
             Type* found_type = unit_.getTypeRegistry().find(expected_owner, type_name);
-            if (found_type && found_type != resolved_type) {
+            if (found_type && !areTypesEqual(found_type, resolved_type)) {
                 if (resolved_type->kind != TYPE_PLACEHOLDER && found_type->kind == TYPE_PLACEHOLDER) {
                     /* OK: found_type is the placeholder being resolved */
                 } else if (resolved_type->kind == TYPE_PLACEHOLDER && found_type->kind != TYPE_PLACEHOLDER) {
@@ -525,11 +525,7 @@ Type* TypeChecker::visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node) {
                 return reportAndReturnUndefined(node->operand->loc, ERR_TYPE_MISMATCH, msg_buffer);
             }
 
-
-            if (operand_type->kind != TYPE_POINTER) {
-                fatalError(node->operand->loc, "Internal error: Expected pointer kind in visitUnaryOp");
-            }
-            base_type = operand_type->as.pointer.base;
+            base_type = (operand_type->kind == TYPE_POINTER) ? operand_type->as.pointer.base : NULL;
             if (!base_type) {
                 fatalError(node->operand->loc, "Internal error: Pointer type missing base in visitUnaryOp");
             }
@@ -713,7 +709,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
                Z98 requires explicit casts for any mixed-type numeric operations. */
             if (isNumericType(left_type) && isNumericType(right_type)) {
         /* C89 strict rule: operands must be exactly the same type. */
-                if (left_type == right_type) {
+                if (areTypesEqual(left_type, right_type)) {
             return left_type; /* Result type is same as operands. */
                 }
 
@@ -766,7 +762,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
 
         /* Numeric comparisons. */
         if (isNumericType(left_type) && isNumericType(right_type)) {
-            if (left_type == right_type) {
+            if (areTypesEqual(left_type, right_type)) {
                 return get_g_type_bool();
             }
 
@@ -863,7 +859,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
             if (isIntegerType(left_type) && isIntegerType(right_type)) {
                 /* For <<, >>: Result type is the type of the left operand (the one being shifted) */
                 if (op == TOKEN_LARROW2 || op == TOKEN_RARROW2) {
-                    if (left_type == right_type) {
+                    if (areTypesEqual(left_type, right_type)) {
                         return left_type; /* Result is the type of the value being shifted */
                     } else {
                         char left_type_str[64];
@@ -884,7 +880,7 @@ Type* TypeChecker::checkBinaryOperation(Type* left_type, Type* right_type, Zig0T
                     }
                 } else { /* &, |, ^ */
                     /* C89 rules: Operands must be the same type for these operators too */
-                    if (left_type == right_type) {
+                    if (areTypesEqual(left_type, right_type)) {
                         return left_type; /* Result is the same type */
                     } else {
                         char left_type_str[64];
@@ -1595,7 +1591,7 @@ Type* TypeChecker::visitArrayAccess(ASTArrayAccessNode* node) {
             if (target->kind == TYPE_PLACEHOLDER) {
                 target = resolvePlaceholder(target);
             }
-            if (target->kind == TYPE_ARRAY) {
+            if (target && target->kind == TYPE_ARRAY) {
                 base = target;
             }
         }
@@ -1682,14 +1678,14 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
             if (target->kind == TYPE_PLACEHOLDER) {
                 target = resolvePlaceholder(target);
             }
-            if (target->kind == TYPE_ARRAY) {
+            if (target && target->kind == TYPE_ARRAY) {
                 reached_via_const_ptr = base_type->as.pointer.is_const;
                 base_type = target;
             }
         }
     }
 
-    if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
+    if (base_type && base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_SLICE &&
         !(base_type->kind == TYPE_POINTER && base_type->as.pointer.is_many)) {
         return reportAndReturnUndefined(node->array->loc, ERR_TYPE_MISMATCH, "Cannot slice a non-array/slice/many-item pointer type.");
     }
@@ -2343,7 +2339,7 @@ Type* TypeChecker::visitForStmt(ASTForStmtNode* node) {
             Type* target = iterable_type->as.pointer.base;
             if (target) {
                 if (target->kind == TYPE_PLACEHOLDER) target = resolvePlaceholder(target);
-                if (target->kind == TYPE_ARRAY) {
+                if (target && target->kind == TYPE_ARRAY) {
                     item_type = target->as.array.element_type;
                     is_valid_iterable = true;
                 }
@@ -2497,7 +2493,7 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
     }
 
     /* Preservation: Ensure the placeholder keeps its identity/name if it was a named declaration. */
-    const char* original_name = placeholder->as.placeholder.name;
+    const char* original_name = (placeholder->kind == TYPE_PLACEHOLDER) ? placeholder->as.placeholder.name : NULL;
     DependentNode* dependents_head = placeholder->dependents_head;
 
     /* Mutate in place */
@@ -4605,7 +4601,7 @@ Type* TypeChecker::visitTryExpr(ASTNode* node) {
 
     /* Check error set compatibility.
        For bootstrap, we'll use pointer equality for interned sets. */
-    if (operand_err_set != fn_err_set) {
+    if (!areTypesEqual(operand_err_set, fn_err_set)) {
         /* If both are inferred, they might be different pointers but compatible in our simplified model. */
         if (!(inner_type->as.error_union.is_inferred && current_fn_return_type_->as.error_union.is_inferred)) {
                 return reportAndReturnUndefined(node->loc, ERR_TRY_INCOMPATIBLE_ERROR_SETS, ErrorHandler::getMessage(ERR_TRY_INCOMPATIBLE_ERROR_SETS));
@@ -4937,44 +4933,61 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
  * 6. Array-to-Slice Coercion: (e.g., [N]T -> []T).
  */
 bool TypeChecker::areTypesEqual(Type* a, Type* b) {
-    if (a == b) return true;
-    if (!a || !b) return false;
+    if (a == b) return true;  // fast path for identical pointer
 
-    if (a->kind == TYPE_PLACEHOLDER) a = resolvePlaceholder(a);
-    if (b->kind == TYPE_PLACEHOLDER) b = resolvePlaceholder(b);
+    // Resolve placeholders
+    if (a && a->kind == TYPE_PLACEHOLDER) a = resolvePlaceholder(a);
+    if (b && b->kind == TYPE_PLACEHOLDER) b = resolvePlaceholder(b);
 
-    if (a == b) return true;
-    if (!a || !b) return false;
+    if (!a || !b) return a == b;
     if (a->kind != b->kind) return false;
 
+    ResolutionDepthGuard depth_guard(*this);
+    if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
+        return true; // Conservative assumption for depth limit
+    }
+
     switch (a->kind) {
+        case TYPE_VOID:
+        case TYPE_BOOL:
+        case TYPE_I8: case TYPE_U8:
+        case TYPE_I16: case TYPE_U16:
+        case TYPE_I32: case TYPE_U32:
+        case TYPE_I64: case TYPE_U64:
+        case TYPE_F32: case TYPE_F64:
+        case TYPE_C_CHAR:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_NULL:
+        case TYPE_UNDEFINED:
+        case TYPE_NORETURN:
+        case TYPE_TYPE:
+        case TYPE_ANYTYPE:
+            return true; // primitive types are equal
+
         case TYPE_POINTER:
-            if (!a->as.pointer.base || !b->as.pointer.base) return a->as.pointer.base == b->as.pointer.base;
-            return a->as.pointer.is_const == b->as.pointer.is_const &&
-                   a->as.pointer.is_many == b->as.pointer.is_many &&
-                   this->areTypesEqual(a->as.pointer.base, b->as.pointer.base);
+            if (a->kind != TYPE_POINTER || b->kind != TYPE_POINTER) return false;
+            return areTypesEqual(a->as.pointer.base, b->as.pointer.base) &&
+                   a->as.pointer.is_const == b->as.pointer.is_const &&
+                   a->as.pointer.is_many == b->as.pointer.is_many;
 
         case TYPE_ARRAY:
-            if (!a->as.array.element_type || !b->as.array.element_type) return a->as.array.element_type == b->as.array.element_type;
+            if (a->kind != TYPE_ARRAY || b->kind != TYPE_ARRAY) return false;
             return a->as.array.size == b->as.array.size &&
-                   this->areTypesEqual(a->as.array.element_type, b->as.array.element_type);
+                   areTypesEqual(a->as.array.element_type, b->as.array.element_type);
 
         case TYPE_SLICE:
-            if (!a->as.slice.element_type || !b->as.slice.element_type) return a->as.slice.element_type == b->as.slice.element_type;
-            return a->as.slice.is_const == b->as.slice.is_const &&
-                   this->areTypesEqual(a->as.slice.element_type, b->as.slice.element_type);
+            if (a->kind != TYPE_SLICE || b->kind != TYPE_SLICE) return false;
+            return areTypesEqual(a->as.slice.element_type, b->as.slice.element_type) &&
+                   a->as.slice.is_const == b->as.slice.is_const;
 
         case TYPE_OPTIONAL:
-            if (!a->as.optional.payload || !b->as.optional.payload) return a->as.optional.payload == b->as.optional.payload;
-            return this->areTypesEqual(a->as.optional.payload, b->as.optional.payload);
+            if (a->kind != TYPE_OPTIONAL || b->kind != TYPE_OPTIONAL) return false;
+            return areTypesEqual(a->as.optional.payload, b->as.optional.payload);
 
         case TYPE_ERROR_UNION:
-            if (a->as.error_union.is_inferred != b->as.error_union.is_inferred) return false;
-            if (!a->as.error_union.is_inferred) {
-                if (!this->areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set)) return false;
-            }
-            if (!a->as.error_union.payload || !b->as.error_union.payload) return a->as.error_union.payload == b->as.error_union.payload;
-            return this->areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
+            if (a->kind != TYPE_ERROR_UNION || b->kind != TYPE_ERROR_UNION) return false;
+            return areTypesEqual(a->as.error_union.payload, b->as.error_union.payload) &&
+                   areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set);
 
         case TYPE_ERROR_SET:
             if (a->as.error_set.is_anonymous != b->as.error_set.is_anonymous) return false;
@@ -4988,35 +5001,67 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
             return false;
 
         case TYPE_FUNCTION:
-            return this->signaturesMatch(a->as.function.params, a->as.function.return_type,
-                                  b->as.function.params, b->as.function.return_type);
-        case TYPE_FUNCTION_POINTER:
-            return this->signaturesMatch(a->as.function_pointer.param_types, a->as.function_pointer.return_type,
-                                  b->as.function_pointer.param_types, b->as.function_pointer.return_type);
+        case TYPE_FUNCTION_POINTER: {
+            Type* ret_a = (a->kind == TYPE_FUNCTION) ? a->as.function.return_type : a->as.function_pointer.return_type;
+            Type* ret_b = (b->kind == TYPE_FUNCTION) ? b->as.function.return_type : b->as.function_pointer.return_type;
+            DynamicArray<Type*>* params_a = (a->kind == TYPE_FUNCTION) ? a->as.function.params : a->as.function_pointer.param_types;
+            DynamicArray<Type*>* params_b = (b->kind == TYPE_FUNCTION) ? b->as.function.params : b->as.function_pointer.param_types;
+            return signaturesMatch(params_a, ret_a, params_b, ret_b);
+        }
 
         case TYPE_STRUCT:
         case TYPE_UNION:
-        case TYPE_TAGGED_UNION:
-        case TYPE_ENUM: {
-            // Nominal equality (pointer check) should have caught identical types.
-            // For cross-module types, we check the name and owner module name.
-            const char* a_name = (a->kind == TYPE_ENUM) ? a->as.enum_details.name : a->as.struct_details.name;
-            const char* b_name = (b->kind == TYPE_ENUM) ? b->as.enum_details.name : b->as.struct_details.name;
+        case TYPE_TAGGED_UNION: {
+            if (!(a->kind == TYPE_STRUCT || a->kind == TYPE_UNION || a->kind == TYPE_TAGGED_UNION)) return false;
+            if (!(b->kind == TYPE_STRUCT || b->kind == TYPE_UNION || b->kind == TYPE_TAGGED_UNION)) return false;
+            // For named types, compare by name and module; for anonymous, compare fields.
+            const char* name_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.name : a->as.struct_details.name;
+            const char* name_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.name : b->as.struct_details.name;
 
-            if (a_name && b_name && plat_strcmp(a_name, b_name) == 0) {
-                if (a->owner_module && b->owner_module) {
-                    if (plat_strcmp(a->owner_module->name, b->owner_module->name) == 0) {
-                        return true;
-                    }
-                } else if (!a->owner_module && !b->owner_module) {
-                    return true;
-                }
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true; // same named type
             }
-            return false;
+            // Otherwise, compare field by field (anonymous or cross-module)
+            DynamicArray<StructField>* fields_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.payload_fields : a->as.struct_details.fields;
+            DynamicArray<StructField>* fields_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.payload_fields : b->as.struct_details.fields;
+            if (!fields_a || !fields_b) return fields_a == fields_b;
+            if (fields_a->length() != fields_b->length()) return false;
+            for (size_t i = 0; i < fields_a->length(); ++i) {
+                if (plat_strcmp((*fields_a)[i].name, (*fields_b)[i].name) != 0) return false;
+                if (!areTypesEqual((*fields_a)[i].type, (*fields_b)[i].type)) return false;
+            }
+            // Also compare tag type for tagged unions
+            if (a->kind == TYPE_TAGGED_UNION || b->kind == TYPE_TAGGED_UNION) {
+                Type* tag_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.tag_type : a->as.struct_details.tag_type;
+                Type* tag_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.tag_type : b->as.struct_details.tag_type;
+            if (tag_a || tag_b) {
+                if (!areTypesEqual(tag_a, tag_b)) return false;
+            }
+            }
+            return true;
+        }
+
+        case TYPE_ENUM: {
+            if (a->kind != TYPE_ENUM || b->kind != TYPE_ENUM) return false;
+            const char* name_a = a->as.enum_details.name;
+            const char* name_b = b->as.enum_details.name;
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true;
+            }
+            // Anonymous enum: compare members
+            DynamicArray<EnumMember>* members_a = a->as.enum_details.members;
+            DynamicArray<EnumMember>* members_b = b->as.enum_details.members;
+            if (!members_a || !members_b) return members_a == members_b;
+            if (members_a->length() != members_b->length()) return false;
+            for (size_t i = 0; i < members_a->length(); ++i) {
+                if (plat_strcmp((*members_a)[i].name, (*members_b)[i].name) != 0) return false;
+                if ((*members_a)[i].value != (*members_b)[i].value) return false;
+            }
+            return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
         }
 
         default:
-            return true;
+            return false;
     }
 }
 
@@ -5033,7 +5078,6 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
     }
 
     size_t a_count = a_params->length();
-    size_t b_count = b_params->length();
 
     /* Take snapshots to prevent iterator invalidation during recursive equality checks */
     Type** a_snapshot = (Type**)unit_.getArena().alloc(a_count * sizeof(Type*));
@@ -5041,8 +5085,8 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
         a_snapshot[k] = (*a_params)[k];
     }
 
-    Type** b_snapshot = (Type**)unit_.getArena().alloc(b_count * sizeof(Type*));
-    for (size_t k = 0; k < b_count; ++k) {
+    Type** b_snapshot = (Type**)unit_.getArena().alloc(a_count * sizeof(Type*));
+    for (size_t k = 0; k < a_count; ++k) {
         b_snapshot[k] = (*b_params)[k];
     }
 
@@ -5053,7 +5097,6 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
             break;
         }
     }
-
 
     return result;
 }
@@ -5390,7 +5433,7 @@ bool TypeChecker::areSamePointerTypeIgnoringConst(Type* a, Type* b) {
     /* In our bootstrap compiler, primitive types are singletons (get_g_type_*) */
     /* So pointer equality works for them. */
     /* For structs/unions/enums, they are also unique per declaration. */
-    return baseA == baseB;
+    return areTypesEqual(baseA, baseB);
 }
 
 /**
@@ -5737,7 +5780,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     }
 
     /* Exact match always works */
-    if (source_type == target_type) return true;
+    if (areTypesEqual(source_type, target_type)) return true;
 
     /* anytype target (like special discard '_') accepts anything */
     if (target_type->kind == TYPE_ANYTYPE) return true;
@@ -6652,7 +6695,7 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         return;
     }
 
-    if (source_type == target_type && !is_anonymous_init) {
+    if (areTypesEqual(source_type, target_type) && !is_anonymous_init) {
         --recursion_depth;
         return;
     }
@@ -7281,7 +7324,7 @@ Type* TypeChecker::resolveTypeConstant(Symbol* sym) {
 Type* TypeChecker::getTagType(Type* tu) {
     if (!tu) return NULL;
     if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
-    if (isTaggedUnion(tu)) return tu->as.struct_details.tag_type;
+    if (tu->kind == TYPE_UNION && tu->as.struct_details.is_tagged) return tu->as.struct_details.tag_type;
     return NULL;
 }
 
@@ -7302,10 +7345,14 @@ i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
 }
 
 Type* TypeChecker::findTaggedUnionPayload(Type* union_type, const char* tag) {
-    if (!union_type || !isTaggedUnion(union_type)) return NULL;
-    DynamicArray<StructField>* fields = (union_type->kind == TYPE_TAGGED_UNION) ?
-                                        union_type->as.tagged_union.payload_fields :
-                                        union_type->as.struct_details.fields;
+    if (!union_type) return NULL;
+    DynamicArray<StructField>* fields = NULL;
+    if (union_type->kind == TYPE_TAGGED_UNION) {
+        fields = union_type->as.tagged_union.payload_fields;
+    } else if (union_type->kind == TYPE_UNION && union_type->as.struct_details.is_tagged) {
+        fields = union_type->as.struct_details.fields;
+    }
+
     if (!fields) return NULL;
     for (size_t i = 0; i < fields->length(); ++i) {
         if (plat_strcmp((*fields)[i].name, tag) == 0)

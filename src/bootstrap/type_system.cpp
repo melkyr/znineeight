@@ -1364,14 +1364,25 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
 bool areTypesEqual(Type* a, Type* b) {
     if (a == b) return true;
     if (!a || !b) return false;
-    if (a->kind != b->kind) {
-        // One exception: TYPE_FUNCTION and TYPE_FUNCTION_POINTER are structurally equal
-        // if their signatures match. But this function is for GENERAL type equality.
-        // Actually, for pointers to functions, they should both be TYPE_FUNCTION_POINTER.
-        return false;
-    }
+    if (a->kind != b->kind) return false;
 
     switch (a->kind) {
+        case TYPE_VOID:
+        case TYPE_BOOL:
+        case TYPE_I8: case TYPE_U8:
+        case TYPE_I16: case TYPE_U16:
+        case TYPE_I32: case TYPE_U32:
+        case TYPE_I64: case TYPE_U64:
+        case TYPE_F32: case TYPE_F64:
+        case TYPE_C_CHAR:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_NULL:
+        case TYPE_UNDEFINED:
+        case TYPE_NORETURN:
+        case TYPE_TYPE:
+        case TYPE_ANYTYPE:
+            return true;
+
         case TYPE_POINTER:
             return a->as.pointer.is_const == b->as.pointer.is_const &&
                    a->as.pointer.is_many == b->as.pointer.is_many &&
@@ -1389,36 +1400,73 @@ bool areTypesEqual(Type* a, Type* b) {
             return areTypesEqual(a->as.optional.payload, b->as.optional.payload);
 
         case TYPE_ERROR_UNION:
-            if (a->as.error_union.is_inferred != b->as.error_union.is_inferred) return false;
-            if (!a->as.error_union.is_inferred) {
-                if (!areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set)) return false;
-            }
-            return areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
+            return areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set) &&
+                   areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
 
         case TYPE_ERROR_SET:
             if (a->as.error_set.is_anonymous != b->as.error_set.is_anonymous) return false;
-            if (a->as.error_set.is_anonymous) return true; // Anonymous error sets are structurally equal if kind is same? Actually Zig rules are complex, but for us we can say yes.
-            if (a->as.error_set.name && b->as.error_set.name) {
-                return plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0;
+            if (a->as.error_set.is_anonymous) return true;
+            if (a->as.error_set.name && b->as.error_set.name && plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0) {
+                if (a->owner_module && b->owner_module) {
+                    return plat_strcmp(a->owner_module->name, b->owner_module->name) == 0;
+                }
+                return a->owner_module == b->owner_module;
             }
-            return a->as.error_set.name == b->as.error_set.name;
+            return false;
 
         case TYPE_FUNCTION:
-            return signaturesMatch(a->as.function.params, a->as.function.return_type,
-                                  b->as.function.params, b->as.function.return_type);
-        case TYPE_FUNCTION_POINTER:
-            return signaturesMatch(a->as.function_pointer.param_types, a->as.function_pointer.return_type,
-                                  b->as.function_pointer.param_types, b->as.function_pointer.return_type);
+        case TYPE_FUNCTION_POINTER: {
+            Type* ret_a = (a->kind == TYPE_FUNCTION) ? a->as.function.return_type : a->as.function_pointer.return_type;
+            Type* ret_b = (b->kind == TYPE_FUNCTION) ? b->as.function.return_type : b->as.function_pointer.return_type;
+            DynamicArray<Type*>* params_a = (a->kind == TYPE_FUNCTION) ? a->as.function.params : a->as.function_pointer.param_types;
+            DynamicArray<Type*>* params_b = (b->kind == TYPE_FUNCTION) ? b->as.function.params : b->as.function_pointer.param_types;
+            return signaturesMatch(params_a, ret_a, params_b, ret_b);
+        }
 
         case TYPE_STRUCT:
         case TYPE_UNION:
-        case TYPE_TAGGED_UNION:
-        case TYPE_ENUM:
-        case TYPE_PLACEHOLDER:
-            return false; // Nominal types, handled by pointer check at top
+        case TYPE_TAGGED_UNION: {
+            const char* name_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.name : a->as.struct_details.name;
+            const char* name_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.name : b->as.struct_details.name;
+
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true;
+            }
+            DynamicArray<StructField>* fields_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.payload_fields : a->as.struct_details.fields;
+            DynamicArray<StructField>* fields_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.payload_fields : b->as.struct_details.fields;
+            if (!fields_a || !fields_b) return fields_a == fields_b;
+            if (fields_a->length() != fields_b->length()) return false;
+            for (size_t i = 0; i < fields_a->length(); ++i) {
+                if (plat_strcmp((*fields_a)[i].name, (*fields_b)[i].name) != 0) return false;
+                if (!areTypesEqual((*fields_a)[i].type, (*fields_b)[i].type)) return false;
+            }
+            if (a->kind == TYPE_TAGGED_UNION || b->kind == TYPE_TAGGED_UNION) {
+                Type* tag_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.tag_type : a->as.struct_details.tag_type;
+                Type* tag_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.tag_type : b->as.struct_details.tag_type;
+                if (!areTypesEqual(tag_a, tag_b)) return false;
+            }
+            return true;
+        }
+
+        case TYPE_ENUM: {
+            const char* name_a = a->as.enum_details.name;
+            const char* name_b = b->as.enum_details.name;
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true;
+            }
+            DynamicArray<EnumMember>* members_a = a->as.enum_details.members;
+            DynamicArray<EnumMember>* members_b = b->as.enum_details.members;
+            if (!members_a || !members_b) return members_a == members_b;
+            if (members_a->length() != members_b->length()) return false;
+            for (size_t i = 0; i < members_a->length(); ++i) {
+                if (plat_strcmp((*members_a)[i].name, (*members_b)[i].name) != 0) return false;
+                if ((*members_a)[i].value != (*members_b)[i].value) return false;
+            }
+            return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
+        }
 
         default:
-            return true;
+            return false;
     }
 }
 
