@@ -152,7 +152,7 @@ void C89Emitter::emitTypePrefix(Type* type) {
 
     switch (type->kind) {
         case TYPE_POINTER:
-            if (type->as.pointer.base->kind == TYPE_VOID) {
+            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_VOID) {
                 writeString("void");
                 if (last_char_ != ' ') {
                     writeString(" ");
@@ -160,11 +160,15 @@ void C89Emitter::emitTypePrefix(Type* type) {
                 writeString("*");
                 break;
             }
-            emitTypePrefix(type->as.pointer.base);
+            if (type->as.pointer.base) {
+                emitTypePrefix(type->as.pointer.base);
+            } else {
+                writeString("void ");
+            }
             if (type->as.pointer.is_const) {
                 writeString(" const");
             }
-            if (type->as.pointer.base->kind != TYPE_POINTER &&
+            if (type->as.pointer.base && type->as.pointer.base->kind != TYPE_POINTER &&
                 (type->as.pointer.base->kind == TYPE_ARRAY ||
                  type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
@@ -195,16 +199,18 @@ void C89Emitter::emitTypeSuffix(Type* type) {
 
     switch (type->kind) {
         case TYPE_POINTER:
-            if (type->as.pointer.base->kind == TYPE_VOID) {
+            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_VOID) {
                 break;
             }
-            if (type->as.pointer.base->kind != TYPE_POINTER &&
+            if (type->as.pointer.base && type->as.pointer.base->kind != TYPE_POINTER &&
                 (type->as.pointer.base->kind == TYPE_ARRAY ||
                  type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
                 writeString(")");
             }
-            emitTypeSuffix(type->as.pointer.base);
+            if (type->as.pointer.base) {
+                emitTypeSuffix(type->as.pointer.base);
+            }
             break;
         case TYPE_ARRAY: {
             char buf[32];
