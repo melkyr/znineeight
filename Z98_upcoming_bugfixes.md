@@ -36,11 +36,11 @@ if (!has_comma && peek().type != TOKEN_RBRACE) {
 
 ---
 
-## 3. [RESOLVED] Lifter: Missing Parent in Recursive Transform for Switch Prongs
-**File:** `ast_lifter.cpp` – `lowerSwitchExpr`  
-When transforming a prong body, `transformNode` is called with `NULL` as the parent. This breaks the parent‑stack mechanism, preventing nested control‑flow expressions (like an `if` inside a switch prong) from being correctly lifted.  
+## 3. [RESOLVED] Codegen: The `main` Function Return Type
+**File:** `codegen.cpp` – `emitFnDecl`, `emitReturn`, `emitBlock`
+The generated C code for a `!void main()` returns an `ErrorUnion_void` (a struct), which causes a C compiler error: `error: return type is an executable type`.
 
-**Fix:** Passed the newly created switch statement node as the parent.
+**Fix:** Forced `main` to return `int` in C and added logic to extract the exit code (0 for success, error tag for failure) from Zig's `!void` or `?void` return types. Also ensured `main` parameter lists are correctly handled.
 
 ---
 
