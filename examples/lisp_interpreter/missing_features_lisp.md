@@ -6,11 +6,16 @@ This document details the challenges encountered while building the Z98 Lisp int
 
 **Zig-to-C compilation now succeeds!** The compiler correctly processes the multi-module Lisp interpreter source and generates C89 code. However, the generated C code contains semantic errors that prevent final binary compilation.
 
-### Memory Usage Report (Valgrind)
+### Peak Memory Usage Analysis (Valgrind Massif)
 During the compilation of the Lisp interpreter:
-- **Total Heap Usage**: ~7.4 MB allocated.
-- **Peak Memory**: Well within the 16MB constraint for the 1998 target.
-- **Leaks**: ~23 KB definitely lost (primarily in source file reading and import resolution).
+- **Peak Memory**: ~6.4 MB (well within the 16MB constraint).
+- **Primary Contributors**:
+    - **Emitter Buffers (~2.8 MB)**: The `C89Emitter` allocates a 128 KB `type_def_buffer_` for every generated file (header and source). With ~22 files generated for the Lisp interpreter, these buffers accumulate in the permanent arena.
+    - **AST Transformation (~1 MB)**: `ControlFlowLifter` triggers a 1 MB chunk allocation for its `DynamicArray<ASTNode*>` during complex expression lifting.
+    - **Token Supply (~1 MB)**: Parsing multiple modules results in another 1 MB chunk allocation for the token stream arrays.
+    - **Symbol Table (~1 MB)**: Initial overhead for global symbol tracking and scoping.
+
+**Conclusion**: Memory usage is safe for the 16MB target, but could be further optimized by resetting the arena between module generation or reducing the fixed buffer size in the emitter.
 
 ---
 
