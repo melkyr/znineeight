@@ -299,7 +299,12 @@ Arithmetic on multi-level pointers is supported only if the outer level is a man
 ### 4.7 Operator Precedence & Parentheses
 The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
 
-This logic is implemented in `requiresParentheses()` and is applied both in `emitAccess` and during initializer decomposition in `emitInitializerAssignments`.
+This logic is implemented in `requiresParentheses()` and is applied in:
+- `emitAccess`: For standard member and array access.
+- `emitAssignmentWithLifting`: For decomposing struct/array initializers into field-by-field assignments when the l-value is complex.
+- `emitOptionalWrapping` / `emitErrorUnionWrapping`: For wrapping values into special structures when the target is a pointer dereference.
+
+The emitter uses a string-based heuristic (`lval_buf[0] == '*'`) to detect dereferences and wrap them in parentheses (e.g., `(*ptr).has_value = 1;`) to ensure correct C89 precedence during decomposition and wrapping.
 
 ### 4.8 Expression Capture (Redirection)
 The `C89Emitter::captureExpression` helper allows the compiler to obtain the C string representation of an AST node without writing it to the output file.
