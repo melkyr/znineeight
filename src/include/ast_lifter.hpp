@@ -199,6 +199,7 @@ private:
     DynamicArray<ASTNode*> processed_calls_;
     DynamicArray<ASTNode*> stmt_stack_;     ///< Ancestor statements to find insertion points.
     DynamicArray<ASTBlockStmtNode*> block_stack_; ///< Enclosing blocks for variable declaration insertion.
+    DynamicArray<size_t> block_decl_insert_idx_stack_; ///< Track insertion point for declarations in each block.
     DynamicArray<ASTNode*> parent_stack_;   ///< Stack of ancestors to resolve parent contexts.
     DynamicArray<ASTFnDeclNode*> fn_stack_; ///< Stack of function declarations to find return types.
 
