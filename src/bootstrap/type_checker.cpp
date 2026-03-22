@@ -4461,7 +4461,15 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
 
     resolved_type = resolvePrimitiveTypeName(node->name);
     if (!resolved_type) {
-        /* CRITICAL: check TypeRegistry first for cross-module or global named types */
+        /* CRITICAL: Always lookup in the DEFINING module's registry if possible */
+        sym = unit_.getSymbolTable().lookup(node->name);
+        if (sym) {
+            Module* defining_mod = unit_.getModule(sym->module_name ? sym->module_name : "main");
+            resolved_type = resolveNamedType(defining_mod, node->name, sym);
+            if (resolved_type) return resolved_type;
+        }
+
+        /* Fallback: check TypeRegistry for current module */
         Module* current_mod = unit_.getModule(unit_.getCurrentModule());
         resolved_type = unit_.getTypeRegistry().find(current_mod, node->name);
         if (resolved_type) {
@@ -4472,7 +4480,6 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         }
 
         /* Look up in symbol table for type aliases (e.g., const Point = struct { ... }) */
-        sym = unit_.getSymbolTable().lookup(node->name);
         if (sym) {
             /* Resolve on demand if needed */
             if (!sym->symbol_type && sym->kind == SYMBOL_VARIABLE && sym->details) {
@@ -4940,7 +4947,20 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
     if (b && b->kind == TYPE_PLACEHOLDER) b = resolvePlaceholder(b);
 
     if (!a || !b) return a == b;
-    if (a->kind != b->kind) return false;
+
+#ifdef DEBUG_TYPE_EQUAL
+    char a_str[128], b_str[128];
+    typeToString(a, a_str, sizeof(a_str));
+    typeToString(b, b_str, sizeof(b_str));
+    plat_printf_debug("areTypesEqual: '%s' (kind %d) vs '%s' (kind %d)\n", a_str, (int)a->kind, b_str, (int)b->kind);
+#endif
+
+    if (a->kind != b->kind) {
+#ifdef DEBUG_TYPE_EQUAL
+        plat_printf_debug("  -> false (kind mismatch)\n");
+#endif
+        return false;
+    }
 
     ResolutionDepthGuard depth_guard(*this);
     if (type_resolution_depth_ > MAX_TYPE_RESOLUTION_DEPTH) {
@@ -5004,9 +5024,33 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
         case TYPE_FUNCTION_POINTER: {
             Type* ret_a = (a->kind == TYPE_FUNCTION) ? a->as.function.return_type : a->as.function_pointer.return_type;
             Type* ret_b = (b->kind == TYPE_FUNCTION) ? b->as.function.return_type : b->as.function_pointer.return_type;
+            
+            // Resolve placeholders in return types
+            if (ret_a && ret_a->kind == TYPE_PLACEHOLDER) ret_a = resolvePlaceholder(ret_a);
+            if (ret_b && ret_b->kind == TYPE_PLACEHOLDER) ret_b = resolvePlaceholder(ret_b);
+
             DynamicArray<Type*>* params_a = (a->kind == TYPE_FUNCTION) ? a->as.function.params : a->as.function_pointer.param_types;
             DynamicArray<Type*>* params_b = (b->kind == TYPE_FUNCTION) ? b->as.function.params : b->as.function_pointer.param_types;
-            return signaturesMatch(params_a, ret_a, params_b, ret_b);
+            
+            // Resolve placeholders in parameters
+            if (params_a) {
+                for (size_t i = 0; i < params_a->length(); ++i) {
+                    if ((*params_a)[i] && (*params_a)[i]->kind == TYPE_PLACEHOLDER)
+                        (*params_a)[i] = resolvePlaceholder((*params_a)[i]);
+                }
+            }
+            if (params_b) {
+                for (size_t i = 0; i < params_b->length(); ++i) {
+                    if ((*params_b)[i] && (*params_b)[i]->kind == TYPE_PLACEHOLDER)
+                        (*params_b)[i] = resolvePlaceholder((*params_b)[i]);
+                }
+            }
+
+            bool res = signaturesMatch(params_a, ret_a, params_b, ret_b);
+#ifdef DEBUG_TYPE_EQUAL
+            plat_printf_debug("  -> signaturesMatch returned %s\n", res ? "true" : "false");
+#endif
+            return res;
         }
 
         case TYPE_STRUCT:
@@ -5066,33 +5110,55 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
 }
 
 bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return) {
+    // Ensure both are resolved
+    if (a_return && a_return->kind == TYPE_PLACEHOLDER) a_return = resolvePlaceholder(a_return);
+    if (b_return && b_return->kind == TYPE_PLACEHOLDER) b_return = resolvePlaceholder(b_return);
+
     if (!this->areTypesEqual(a_return, b_return)) {
+#ifdef DEBUG_TYPE_EQUAL
+        plat_printf_debug("signaturesMatch: return types differ\n");
+#endif
         return false;
     }
 
     if (!a_params && !b_params) return true;
-    if (!a_params || !b_params) return false;
+    if (!a_params || !b_params) {
+#ifdef DEBUG_TYPE_EQUAL
+        plat_printf_debug("signaturesMatch: one has params, other doesn't\n");
+#endif
+        return false;
+    }
 
     if (a_params->length() != b_params->length()) {
+#ifdef DEBUG_TYPE_EQUAL
+        plat_printf_debug("signaturesMatch: param count mismatch: %d vs %d\n", (int)a_params->length(), (int)b_params->length());
+#endif
         return false;
     }
 
     size_t a_count = a_params->length();
 
-    /* Take snapshots to prevent iterator invalidation during recursive equality checks */
+    /* Take snapshots and resolve them to prevent iterator invalidation and ensure deep comparison */
     Type** a_snapshot = (Type**)unit_.getArena().alloc(a_count * sizeof(Type*));
     for (size_t k = 0; k < a_count; ++k) {
-        a_snapshot[k] = (*a_params)[k];
+        Type* t = (*a_params)[k];
+        if (t && t->kind == TYPE_PLACEHOLDER) t = resolvePlaceholder(t);
+        a_snapshot[k] = t;
     }
 
     Type** b_snapshot = (Type**)unit_.getArena().alloc(a_count * sizeof(Type*));
     for (size_t k = 0; k < a_count; ++k) {
-        b_snapshot[k] = (*b_params)[k];
+        Type* t = (*b_params)[k];
+        if (t && t->kind == TYPE_PLACEHOLDER) t = resolvePlaceholder(t);
+        b_snapshot[k] = t;
     }
 
     bool result = true;
     for (size_t i = 0; i < a_count; ++i) {
         if (!this->areTypesEqual(a_snapshot[i], b_snapshot[i])) {
+#ifdef DEBUG_TYPE_EQUAL
+            plat_printf_debug("signaturesMatch: param %d differs\n", (int)i);
+#endif
             result = false;
             break;
         }
@@ -5778,6 +5844,10 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     if (source_type->kind == TYPE_NULL) {
         return (target_type->kind == TYPE_POINTER || target_type->kind == TYPE_FUNCTION_POINTER || target_type->kind == TYPE_OPTIONAL);
     }
+
+#ifdef DEBUG_TYPE_EQUAL
+    plat_printf_debug("IsTypeAssignableTo check:\n");
+#endif
 
     /* Exact match always works */
     if (areTypesEqual(source_type, target_type)) return true;
