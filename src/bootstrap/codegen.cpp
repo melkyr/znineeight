@@ -602,6 +602,14 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
             /* For complex l-values, decompose initializer into field-by-field assignments */
             char lval_buf[512];
             if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
+                /* Fix for pointer access: if lval is a dereference, wrap in parens */
+                if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
+                    char tmp[512];
+                    plat_strcpy(tmp, lval_buf);
+                    plat_strcpy(lval_buf, "(");
+                    plat_strcat(lval_buf, tmp);
+                    plat_strcat(lval_buf, ")");
+                }
                 emitInitializerAssignments(lval_buf, rvalue);
             } else {
                 /* Fallback if capture failed or truncated */
@@ -3436,6 +3444,15 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
+    /* Fix for optional pointer access: if lval is a dereference, wrap in parens */
+    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
+        char tmp[512];
+        plat_strcpy(tmp, lval_buf);
+        plat_strcpy(lval_buf, "(");
+        plat_strcat(lval_buf, tmp);
+        plat_strcat(lval_buf, ")");
+    }
+
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
         writeString(lval_buf);
@@ -3445,9 +3462,9 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
             char payload_lval[512];
             char* cur = payload_lval;
             size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
+            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, "(");
             safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
+            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, ")");
             safe_append(cur, rem, ".value");
             emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
         } else {
@@ -3467,6 +3484,15 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         plat_strcpy(lval_buf, target_name);
     } else {
         captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    }
+
+    /* Fix for optional pointer access: if lval is a dereference, wrap in parens */
+    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
+        char tmp[512];
+        plat_strcpy(tmp, lval_buf);
+        plat_strcpy(lval_buf, "(");
+        plat_strcat(lval_buf, tmp);
+        plat_strcat(lval_buf, ")");
     }
 
     if (source_type->kind == TYPE_NULL) {
@@ -3503,6 +3529,15 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         captureExpression(target_node, lval_buf, sizeof(lval_buf));
     }
 
+    /* Fix for error union pointer access: if lval is a dereference, wrap in parens */
+    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
+        char tmp[512];
+        plat_strcpy(tmp, lval_buf);
+        plat_strcpy(lval_buf, "(");
+        plat_strcat(lval_buf, tmp);
+        plat_strcat(lval_buf, ")");
+    }
+
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
@@ -3525,9 +3560,9 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
             char payload_lval[512];
             char* cur = payload_lval;
             size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
+            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, "(");
             safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
+            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, ")");
             safe_append(cur, rem, ".data.payload");
             emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
         } else {
@@ -3547,6 +3582,15 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         plat_strcpy(lval_buf, target_name);
     } else {
         captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    }
+
+    /* Fix for error union pointer access: if lval is a dereference, wrap in parens */
+    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
+        char tmp[512];
+        plat_strcpy(tmp, lval_buf);
+        plat_strcpy(lval_buf, "(");
+        plat_strcat(lval_buf, tmp);
+        plat_strcat(lval_buf, ")");
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
