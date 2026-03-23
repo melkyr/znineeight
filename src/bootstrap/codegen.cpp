@@ -584,11 +584,11 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
 
     /* Coercions */
     if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
-        emitErrorUnionWrapping(effective_target, lvalue_node, target_type, rvalue);
+        emitErrorUnionWrapping(target_var, lvalue_node, target_type, rvalue);
         return;
     }
     if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
-        emitOptionalWrapping(effective_target, lvalue_node, target_type, rvalue);
+        emitOptionalWrapping(target_var, lvalue_node, target_type, rvalue);
         return;
     }
 
@@ -1975,6 +1975,17 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
 
         case NODE_UNARY_OP:
+            if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                Type* operand_type = node->as.unary_op.operand->resolved_type;
+                if (operand_type && operand_type->kind == TYPE_POINTER && 
+                    (operand_type->as.pointer.base->kind == TYPE_OPTIONAL || 
+                     operand_type->as.pointer.base->kind == TYPE_ERROR_UNION)) {
+                    writeString("(*");
+                    emitExpression(node->as.unary_op.operand);
+                    writeString(")");
+                    break;
+                }
+            }
             emitUnaryOp(node->as.unary_op);
             break;
 
@@ -3437,79 +3448,157 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         return;
     }
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
-    }
+    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
+                           !(target_node->type == NODE_UNARY_OP && 
+                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
+                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    const char* lval_ptr = NULL;
 
-    /* Fix for optional pointer access: if lval is a dereference, wrap in parens */
-    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
-        char tmp[512];
-        plat_strcpy(tmp, lval_buf);
-        plat_strcpy(lval_buf, "(");
-        plat_strcat(lval_buf, tmp);
-        plat_strcat(lval_buf, ")");
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("opt_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 0;\n");
+        }
     } else {
         if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            char payload_lval[512];
-            char* cur = payload_lval;
-            size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, "(");
-            safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, ")");
-            safe_append(cur, rem, ".value");
-            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            if (needs_temporary) {
+                char payload_lval[512];
+                plat_strcpy(payload_lval, lval_ptr);
+                plat_strcat(payload_lval, "->value");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            } else {
+                char lval_buf[512];
+                if (target_name) {
+                    plat_strcpy(lval_buf, target_name);
+                } else {
+                    captureExpression(target_node, lval_buf, sizeof(lval_buf));
+                }
+
+                char payload_lval[512];
+                char* cur = payload_lval;
+                size_t rem = sizeof(payload_lval);
+                safe_append(cur, rem, lval_buf);
+                safe_append(cur, rem, ".value");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            }
         } else {
             emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
+
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 1;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 1;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 1;\n");
+        }
+    }
+
+    if (needs_temporary) {
+        dedent();
+        writeIndent();
+        writeString("}\n");
     }
 }
 
 void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
-    }
+    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
+                           !(target_node->type == NODE_UNARY_OP && 
+                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
+                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    const char* lval_ptr = NULL;
 
-    /* Fix for optional pointer access: if lval is a dereference, wrap in parens */
-    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
-        char tmp[512];
-        plat_strcpy(tmp, lval_buf);
-        plat_strcpy(lval_buf, "(");
-        plat_strcat(lval_buf, tmp);
-        plat_strcat(lval_buf, ")");
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("opt_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 0;\n");
+        }
     } else {
         writeIndent();
-        writeString(lval_buf);
-        if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            writeString(".value = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            if (target_type->as.optional.payload->kind != TYPE_VOID) {
+                writeString("->value = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            writeString(lval_ptr);
+            writeString("->has_value = 1;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            if (target_type->as.optional.payload->kind != TYPE_VOID) {
+                writeString(".value = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 1;\n");
         }
+    }
+
+    if (needs_temporary) {
+        dedent();
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 1;\n");
+        writeString("}\n");
     }
 }
 
@@ -3522,105 +3611,231 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         return;
     }
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
-    }
+    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
+                           !(target_node->type == NODE_UNARY_OP && 
+                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
+                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    const char* lval_ptr = NULL;
 
-    /* Fix for error union pointer access: if lval is a dereference, wrap in parens */
-    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
-        char tmp[512];
-        plat_strcpy(tmp, lval_buf);
-        plat_strcpy(lval_buf, "(");
-        plat_strcat(lval_buf, tmp);
-        plat_strcat(lval_buf, ")");
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("err_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".data.err = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->data.err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".data.err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            }
         } else {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".err = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            }
         }
     } else {
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            char payload_lval[512];
-            char* cur = payload_lval;
-            size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, "(");
-            safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) safe_append(cur, rem, ")");
-            safe_append(cur, rem, ".data.payload");
-            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            if (needs_temporary) {
+                char payload_lval[512];
+                plat_strcpy(payload_lval, lval_ptr);
+                plat_strcat(payload_lval, "->data.payload");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            } else {
+                char lval_buf[512];
+                if (target_name) {
+                    plat_strcpy(lval_buf, target_name);
+                } else {
+                    captureExpression(target_node, lval_buf, sizeof(lval_buf));
+                }
+                char payload_lval[512];
+                char* cur = payload_lval;
+                size_t rem = sizeof(payload_lval);
+                safe_append(cur, rem, lval_buf);
+                safe_append(cur, rem, ".data.payload");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            }
         } else {
             emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
         writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->is_error = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".is_error = 0;\n");
+        }
+    }
+
+    if (needs_temporary) {
+        dedent();
+        writeIndent();
+        writeString("}\n");
     }
 }
 
 void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
-    }
+    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
+                           !(target_node->type == NODE_UNARY_OP && 
+                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
+                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    const char* lval_ptr = NULL;
 
-    /* Fix for error union pointer access: if lval is a dereference, wrap in parens */
-    if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
-        char tmp[512];
-        plat_strcpy(tmp, lval_buf);
-        plat_strcpy(lval_buf, "(");
-        plat_strcat(lval_buf, tmp);
-        plat_strcat(lval_buf, ")");
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("err_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".data.err = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->data.err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".data.err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
         } else {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".err = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
         }
     } else {
         writeIndent();
-        writeString(lval_buf);
-        if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(".data.payload = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+                writeString("->data.payload = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            writeString(lval_ptr);
+            writeString("->is_error = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+                writeString(".data.payload = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".is_error = 0;\n");
         }
+    }
+
+    if (needs_temporary) {
+        dedent();
         writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 0;\n");
+        writeString("}\n");
     }
 }
 
