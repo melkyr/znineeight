@@ -114,6 +114,15 @@ public:
 #### 3.1.2 Runtime Memory Management (`zig_runtime.h`, `zig_runtime.c`)
 **Concept:** A C89 implementation of the linked-block arena allocator, designed to be available across all generated modules. It allows Zig programs to manage their own memory efficiently using multiple independent arenas.
 
+**Include Order Requirement:** `zig_runtime.h` defines core types like `isize` and `usize`. To ensure compatibility with recursive or generated types (e.g., slices) defined in `zig_special_types.h`, the latter must be included **after** the definition of `usize`.
+
+```c
+/* Correct Include Order in zig_runtime.h */
+#include <stddef.h>
+/* ... type definitions for isize, usize ... */
+#include "zig_special_types.h"
+```
+
 ```c
 typedef struct Arena Arena;
 
@@ -271,6 +280,10 @@ Modern Zig error handling features are detected and catalogued for documentation
 - **Catch Expressions**: Catalogued in `CatchExpressionCatalogue` during validation, including chaining information and error capture.
 - **Orelse Expressions**: Catalogued in `OrelseExpressionCatalogue` during validation.
 - **Success Value Extraction**: Analyzed and catalogued in `ExtractionAnalysisCatalogue` during validation. Decisions are made between `EXTRACTION_STACK`, `EXTRACTION_ARENA`, and `EXTRACTION_OUT_PARAM` based on MSVC 6.0 constraints (alignment, stack limits, and nesting depth).
+
+#### 4.0.4 Call Resolution Validation (Debug Builds)
+In debug builds, the compiler runs a `CallResolutionValidator` to ensure all direct and indirect function calls are correctly resolved and catalogued.
+- **Built-in Handling**: Built-ins (names starting with `@` like `@intCast`, `@ptrCast`, `@sizeOf`) are handled directly by the compiler and are excluded from call resolution validation. This prevents "unresolved call" false positives for these internal constructs.
 
 For details on how these features will be mapped to C89 in Milestone 5, see [Bootstrap Type System & Semantic Analysis](Bootstrap_type_system_and_semantics.md) (Section 13).
 
