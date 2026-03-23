@@ -246,7 +246,7 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
     for (size_t i = 0; i < slices.length(); ++i) {
         Type* type = slices[i];
         Type* elem_type = type->as.slice.element_type;
-        const char* mangled_name = emitter.getMangledTypeName(type);
+        const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
         emitter.ensureForwardDeclaration(elem_type);
 
@@ -267,7 +267,7 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
         emitter.writeString("static RETR_UNUSED_FUNC ");
         emitter.writeString(mangled_name);
         emitter.writeString(" __make_slice_");
-        emitter.writeString(unit_.getNameMangler().mangleType(elem_type));
+        emitter.writeString(emitter.getMangledTypeName(elem_type));
         emitter.writeString("(");
         emitter.emitType(elem_type);
         emitter.writeString("* ptr, usize len) {\n");
