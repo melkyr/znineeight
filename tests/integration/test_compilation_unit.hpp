@@ -36,6 +36,7 @@ public:
     TestCompilationUnit(ArenaAllocator& arena, StringInterner& interner)
         : CompilationUnit(arena, interner), last_ast(NULL) {
         setTestMode(true);
+        clearGlobalSliceTypes();
         injectRuntimeSymbols();
 
         CompilationOptions& opts = getOptions();

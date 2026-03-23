@@ -34,11 +34,6 @@ TEST_FUNC(Task9_8_StringLiteralCoercion) {
     ASSERT_EQ(call->as.function_call->args->length(), 1);
     ASSERT_EQ((*call->as.function_call->args)[0]->type, NODE_ARRAY_SLICE);
 
-    // Verify discarding a string literal (assignment to _)
-    const ASTNode* discard_call = unit.extractFunctionCall("takesSlice"); // Use first one to find the block
-    // Actually let's just use the fact that it compiled without errors as proof of validity for now,
-    // or look for the assignment node if we can.
-
     return true;
 }
 
@@ -63,12 +58,10 @@ TEST_FUNC(Task9_8_ImplicitReturnErrorVoid) {
     }
 
     // Verify emission includes return {0};
-    // We use validateRealFunctionEmission if it's available and working.
-    // Based on the code in test_compilation_unit.hpp, it emits to a temp file.
     ASSERT_TRUE(unit.validateRealFunctionEmission("foo",
-        "static ErrorUnion_void foo(void) {\n"
+        "static err_void foo(void) {\n"
         "    {\n"
-        "        ErrorUnion_void __implicit_ret = {0};\n"
+        "        err_void __implicit_ret = {0};\n"
         "        return __implicit_ret;\n"
         "    }\n"
         "}"));

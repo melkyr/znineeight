@@ -39,6 +39,7 @@ bool CBackend::generate(const char* output_dir) {
     if (!generateMasterMain(output_dir)) return false;
     if (!generateBuildBat(output_dir)) return false;
     if (!generateMakefile(output_dir)) return false;
+    if (!generateSpecialTypesHeader(output_dir)) return false;
 
     return true;
 }
@@ -221,6 +222,72 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     plat_write_file(f, part2, plat_strlen(part2));
 
     plat_close_file(f);
+    return true;
+}
+
+bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
+    char path[1024];
+    char* cur = path;
+    size_t rem = sizeof(path);
+    safe_append(cur, rem, output_dir);
+    safe_append(cur, rem, "/zig_special_types.h");
+
+    C89Emitter emitter(unit_, true);
+    if (!emitter.open(path)) {
+        unit_.getErrorHandler().report(ERR_INTERNAL_ERROR, SourceLocation(), ErrorHandler::getMessage(ERR_INTERNAL_ERROR), "Failed to open zig_special_types.h for writing");
+        return false;
+    }
+
+    emitter.writeString("#ifndef ZIG_SPECIAL_TYPES_H\n");
+    emitter.writeString("#define ZIG_SPECIAL_TYPES_H\n\n");
+    emitter.writeString("#include <stddef.h>\n\n");
+
+    const DynamicArray<Type*>& slices = unit_.getGlobalSliceTypes();
+    for (size_t i = 0; i < slices.length(); ++i) {
+        Type* type = slices[i];
+        Type* elem_type = type->as.slice.element_type;
+        const char* mangled_name = emitter.getMangledTypeName(type);
+
+        emitter.ensureForwardDeclaration(elem_type);
+
+        emitter.writeString("#ifndef ZIG_SLICE_");
+        emitter.writeString(mangled_name);
+        emitter.writeString("\n#define ZIG_SLICE_");
+        emitter.writeString(mangled_name);
+        emitter.writeString("\n");
+
+        emitter.writeIndent();
+        emitter.writeString("typedef struct { ");
+        emitter.emitType(elem_type);
+        emitter.writeString("* ptr; usize len; } ");
+        emitter.writeString(mangled_name);
+        emitter.writeString(";\n");
+
+        emitter.writeIndent();
+        emitter.writeString("static RETR_UNUSED_FUNC ");
+        emitter.writeString(mangled_name);
+        emitter.writeString(" __make_slice_");
+        emitter.writeString(unit_.getNameMangler().mangleType(elem_type));
+        emitter.writeString("(");
+        emitter.emitType(elem_type);
+        emitter.writeString("* ptr, usize len) {\n");
+        emitter.indent();
+        emitter.writeIndent();
+        emitter.writeString(mangled_name);
+        emitter.writeString(" s;\n");
+        emitter.writeIndent();
+        emitter.writeString("s.ptr = ptr;\n");
+        emitter.writeIndent();
+        emitter.writeString("s.len = len;\n");
+        emitter.writeIndent();
+        emitter.writeString("return s;\n");
+        emitter.dedent();
+        emitter.writeIndent();
+        emitter.writeString("}\n#endif\n\n");
+    }
+
+    emitter.writeString("#endif /* ZIG_SPECIAL_TYPES_H */\n");
+    emitter.close();
     return true;
 }
 

@@ -138,20 +138,27 @@ const char* NameMangler::mangleType(Type* type) {
         case TYPE_F64:  return "f64";
         case TYPE_ISIZE: return "isize";
         case TYPE_USIZE: return "usize";
+        case TYPE_C_CHAR: return "c_char";
         case TYPE_POINTER: {
-            char buf[64];
-            plat_strcpy(buf, "ptr_");
+            char buf[256];
+            plat_strcpy(buf, "Ptr_");
             const char* base = mangleType(type->as.pointer.base);
-            plat_strncpy(buf + 4, (char*)base, 59);
-            buf[63] = '\0';
+            plat_strcat(buf, base);
+            return interner_.intern(buf);
+        }
+        case TYPE_SLICE: {
+            char buf[256];
+            plat_strcpy(buf, "Slice_");
+            const char* elem = mangleType(type->as.slice.element_type);
+            plat_strcat(buf, elem);
             return interner_.intern(buf);
         }
         case TYPE_ARRAY: {
-            char buf[64];
+            char buf[256];
             char* ptr = buf;
             size_t remaining = sizeof(buf);
 
-            safe_append(ptr, remaining, "arr");
+            safe_append(ptr, remaining, "Arr_");
             char size_buf[21];
             plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
             safe_append(ptr, remaining, size_buf);
@@ -165,30 +172,47 @@ const char* NameMangler::mangleType(Type* type) {
         case TYPE_TYPE: return "type";
         case TYPE_ANYTYPE: return "anytype";
         case TYPE_ERROR_UNION: {
-            char buf[128];
-            char* ptr = buf;
-            size_t remaining = sizeof(buf);
-            safe_append(ptr, remaining, "err_");
+            char buf[256];
+            plat_strcpy(buf, "ErrorUnion_");
             const char* payload = mangleType(type->as.error_union.payload);
-            safe_append(ptr, remaining, payload);
+            plat_strcat(buf, payload);
             return interner_.intern(buf);
         }
         case TYPE_OPTIONAL: {
-            char buf[128];
-            char* ptr = buf;
-            size_t remaining = sizeof(buf);
-            safe_append(ptr, remaining, "opt_");
+            char buf[256];
+            plat_strcpy(buf, "Optional_");
             const char* payload = mangleType(type->as.optional.payload);
-            safe_append(ptr, remaining, payload);
+            plat_strcat(buf, payload);
             return interner_.intern(buf);
         }
         case TYPE_STRUCT:
         case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
         case TYPE_ENUM: {
             if (type->c_name) return type->c_name;
-            const char* name = (type->kind == TYPE_ENUM) ? type->as.enum_details.name : type->as.struct_details.name;
-            if (name) return name;
-            return "anonymous";
+            const char* name = NULL;
+            if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
+            else if (type->kind == TYPE_TAGGED_UNION) name = type->as.tagged_union.name;
+            else name = type->as.struct_details.name;
+
+            if (name) {
+                if (type->owner_module && plat_strcmp(type->owner_module->name, "main") != 0 &&
+                    plat_strcmp(type->owner_module->name, "test") != 0 &&
+                    plat_strcmp(type->owner_module->name, "builtin") != 0) {
+                    char buf[256];
+                    char* ptr = buf;
+                    size_t rem = sizeof(buf);
+                    safe_append(ptr, rem, "z_");
+                    safe_append(ptr, rem, type->owner_module->name);
+                    safe_append(ptr, rem, "_");
+                    safe_append(ptr, rem, name);
+                    ::sanitizeForC89(buf);
+                    if (plat_strlen(buf) > 31) buf[31] = '\0';
+                    return interner_.intern(buf);
+                }
+                return name;
+            }
+            return "anon";
         }
         case TYPE_ERROR_SET: {
             if (type->as.error_set.name) {

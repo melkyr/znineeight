@@ -84,6 +84,9 @@ public:
     TypeRegistry& getTypeRegistry();
     DynamicArray<PendingResolution>& getPendingResolutions() { return pending_resolutions_; }
     DynamicArray<const char*>& getEmittedTypesCache() { return emitted_types_cache_; }
+    void clearGlobalSliceTypes();
+    void registerSliceType(Type* type);
+    const DynamicArray<Type*>& getGlobalSliceTypes() const { return global_slice_types_; }
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
@@ -188,6 +191,7 @@ private:
     CompilationOptions options_;
     const char* current_module_;
     DynamicArray<const char*> emitted_types_cache_;
+    DynamicArray<Type*> global_slice_types_;
 
     DynamicArray<const char*> include_paths_;
     const char* default_lib_path_;

@@ -69,6 +69,13 @@ private:
     bool generateMakefile(const char* output_dir);
 
     /**
+     * @brief Generates a common header for special types (slices).
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateSpecialTypesHeader(const char* output_dir);
+
+    /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
      */
     void scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds, DynamicArray<Type*>& visited);

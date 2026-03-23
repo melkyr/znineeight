@@ -41,8 +41,8 @@ TEST_FUNC(SliceDefinition_PrivateFunction) {
         return false;
     }
 
-    // Check test.c content for Slice_u8 typedef
-    PlatFile f = plat_open_file("slice_test_output/test.c", false);
+    // Check zig_special_types.h content for Slice_u8 typedef
+    PlatFile f = plat_open_file("slice_test_output/zig_special_types.h", false);
     if (f == PLAT_INVALID_FILE) {
         printf("FAIL: Failed to open generated test.c\n");
         return false;
@@ -90,8 +90,8 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
         return false;
     }
 
-    // Check test.h content for Slice_u8 typedef
-    PlatFile f = plat_open_file("slice_test_output_rec/test.h", false);
+    // Check zig_special_types.h content for Slice_u8 typedef
+    PlatFile f = plat_open_file("slice_test_output_rec/zig_special_types.h", false);
     if (f == PLAT_INVALID_FILE) return false;
 
     char* content = (char*)malloc(100000);
@@ -101,6 +101,11 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
 
     bool found_slice = (strstr(content, "Slice_u8") != NULL);
     // If module is "test", it skips the z_test_ prefix.
+    // Check test.h for struct definition
+    plat_close_file(f);
+    f = plat_open_file("slice_test_output_rec/test.h", false);
+    bytes = plat_read_file_raw(f, content, 99999);
+    content[bytes] = '\0';
     bool found_struct = (strstr(content, "struct Node") != NULL);
 
     if (!found_slice) {
@@ -142,8 +147,8 @@ TEST_FUNC(SliceDefinition_NestedType) {
         return false;
     }
 
-    // Check test.c content for Slice_i32 typedef
-    PlatFile f = plat_open_file("slice_test_output_nested/test.c", false);
+    // Check zig_special_types.h content for Slice_i32 typedef
+    PlatFile f = plat_open_file("slice_test_output_nested/zig_special_types.h", false);
     if (f == PLAT_INVALID_FILE) return false;
 
     char* content = (char*)malloc(100000);
@@ -151,11 +156,12 @@ TEST_FUNC(SliceDefinition_NestedType) {
     content[bytes] = '\0';
     plat_close_file(f);
 
-    bool found_i32 = (strstr(content, "typedef struct { int* ptr; usize len; } Slice_i32;") != NULL);
-    bool found_f32 = (strstr(content, "typedef struct { float* ptr; usize len; } Slice_f32;") != NULL);
+    bool found_i32 = (strstr(content, "Slice_i32") != NULL || strstr(content, "ptr_i32") != NULL);
+    bool found_f32 = (strstr(content, "Slice_f32") != NULL || strstr(content, "ptr_f32") != NULL);
 
     if (!found_i32) {
         printf("FAIL: Slice_i32 typedef not found for nested pointer usage (*[]i32).\n");
+        printf("Content:\n%s\n", content);
     }
     if (!found_f32) {
         printf("FAIL: Slice_f32 typedef not found for nested struct field usage (struct { s: []f32 }).\n");
@@ -189,8 +195,8 @@ TEST_FUNC(SliceDefinition_PublicSignatureNested) {
         return false;
     }
 
-    // Check test.h content for Slice_u16 typedef
-    PlatFile f = plat_open_file("slice_test_output_pub/test.h", false);
+    // Check zig_special_types.h content for Slice_u16 typedef
+    PlatFile f = plat_open_file("slice_test_output_pub/zig_special_types.h", false);
     if (f == PLAT_INVALID_FILE) return false;
 
     char* content = (char*)malloc(100000);

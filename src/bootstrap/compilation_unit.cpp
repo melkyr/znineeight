@@ -144,6 +144,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       options_(),
       current_module_(NULL),
       emitted_types_cache_(arena),
+      global_slice_types_(arena),
       include_paths_(arena),
       default_lib_path_(NULL),
       modules_(arena),
@@ -1426,6 +1427,22 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
     setCurrentModule(saved_module);
     stack.pop_back();
     return true;
+}
+
+void CompilationUnit::clearGlobalSliceTypes() {
+    global_slice_types_.clear();
+}
+
+void CompilationUnit::registerSliceType(Type* type) {
+    if (!type || type->kind != TYPE_SLICE) return;
+
+    const char* mangled = name_mangler_.mangleType(type);
+    for (size_t i = 0; i < global_slice_types_.length(); ++i) {
+        if (plat_strcmp(name_mangler_.mangleType(global_slice_types_[i]), mangled) == 0) {
+            return;
+        }
+    }
+    global_slice_types_.append(type);
 }
 
 bool CompilationUnit::areErrorTypesEliminated() const {
