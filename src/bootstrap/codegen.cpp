@@ -413,7 +413,11 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 
     if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
         writeString(" = ");
-        emitExpression(decl->initializer);
+        if (type && type->kind == TYPE_OPTIONAL && decl->initializer->type == NODE_NULL_LITERAL) {
+            writeString("{0}");
+        } else {
+            emitExpression(decl->initializer);
+        }
     }
 
     writeString(";\n");
@@ -557,8 +561,12 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         is_discard = true;
     }
 
-    if (!effective_target && lvalue_node && lvalue_node->type == NODE_IDENTIFIER && lvalue_node->as.identifier.symbol) {
-        effective_target = var_alloc_.allocate(lvalue_node->as.identifier.symbol);
+    if (!effective_target && lvalue_node) {
+        if (lvalue_node->type == NODE_IDENTIFIER && lvalue_node->as.identifier.symbol) {
+            effective_target = var_alloc_.allocate(lvalue_node->as.identifier.symbol);
+        } else if (lvalue_node->type == NODE_VAR_DECL && lvalue_node->as.var_decl->symbol) {
+            effective_target = var_alloc_.allocate(lvalue_node->as.var_decl->symbol);
+        }
     }
 
     if (is_discard) {
@@ -596,28 +604,43 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     if (rvalue->type == NODE_STRUCT_INITIALIZER) {
         if (effective_target) {
             emitInitializerAssignments(effective_target, rvalue);
-        } else if (lvalue_node && (lvalue_node->type == NODE_ARRAY_ACCESS ||
-                                  lvalue_node->type == NODE_MEMBER_ACCESS ||
-                                  (lvalue_node->type == NODE_UNARY_OP && (lvalue_node->as.unary_op.op == TOKEN_STAR || lvalue_node->as.unary_op.op == TOKEN_DOT_ASTERISK)))) {
-            /* For complex l-values, decompose initializer into field-by-field assignments */
-            char lval_buf[512];
-            if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
-                /* Fix for pointer access: if lval is a dereference, wrap in parens */
-                if (lval_buf[0] == '*' && plat_strncmp(lval_buf, "(*", 2) != 0) {
-                    char tmp[512];
-                    plat_strcpy(tmp, lval_buf);
-                    plat_strcpy(lval_buf, "(");
-                    plat_strcat(lval_buf, tmp);
-                    plat_strcat(lval_buf, ")");
-                }
-                emitInitializerAssignments(lval_buf, rvalue);
-            } else {
-                /* Fallback if capture failed or truncated */
+        } else if (lvalue_node) {
+            bool needs_temporary = !isSimpleLValue(lvalue_node);
+
+            if (needs_temporary) {
+                const char* lval_ptr = var_alloc_.generate("init_lval_tmp");
                 writeIndent();
+                writeString("{\n");
+                indent();
+                writeIndent();
+                Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+                emitType(ptr_type, lval_ptr);
+                writeString(" = &(");
                 emitExpression(lvalue_node);
-                writeString(" = ");
-                emitExpression(rvalue);
-                writeString(";\n");
+                writeString(");\n");
+
+                char lval_buf[512];
+                plat_strcpy(lval_buf, "(*");
+                plat_strcat(lval_buf, lval_ptr);
+                plat_strcat(lval_buf, ")");
+
+                emitInitializerAssignments(lval_buf, rvalue);
+
+                dedent();
+                writeIndent();
+                writeString("}\n");
+            } else {
+                char lval_buf[512];
+                if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
+                    emitInitializerAssignments(lval_buf, rvalue);
+                } else {
+                    /* Fallback if capture failed or truncated */
+                    writeIndent();
+                    emitExpression(lvalue_node);
+                    writeString(" = ");
+                    emitExpression(rvalue);
+                    writeString(";\n");
+                }
             }
             return;
         } else {
@@ -1964,6 +1987,15 @@ void C89Emitter::emitExpression(const ASTNode* node) {
     }
 
     switch (node->type) {
+        case NODE_VAR_DECL: {
+            const ASTVarDeclNode* decl = node->as.var_decl;
+            if (decl->symbol) {
+                writeString(var_alloc_.allocate(decl->symbol));
+            } else if (decl->name) {
+                writeString(getC89GlobalName(decl->name));
+            }
+            break;
+        }
         case NODE_INTEGER_LITERAL:
         case NODE_FLOAT_LITERAL:
         case NODE_STRING_LITERAL:
@@ -3308,6 +3340,26 @@ bool C89Emitter::captureExpression(const ASTNode* node, char* buf, size_t buf_si
     return success;
 }
 
+bool C89Emitter::isSimpleLValue(const ASTNode* node) const {
+    if (!node) return false;
+
+    /* Unwrap parentheses */
+    while (node && node->type == NODE_PAREN_EXPR) {
+        node = node->as.paren_expr.expr;
+    }
+
+    if (!node) return false;
+
+    if (node->type == NODE_IDENTIFIER || node->type == NODE_VAR_DECL) return true;
+
+    if (node->type == NODE_UNARY_OP &&
+        (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+        return isSimpleLValue(node->as.unary_op.operand);
+    }
+
+    return false;
+}
+
 const char* C89Emitter::getMangledTypeName(Type* type) {
     if (!type) return "void";
 
@@ -3448,10 +3500,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         return;
     }
 
-    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
-                           !(target_node->type == NODE_UNARY_OP && 
-                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
-                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
     const char* lval_ptr = NULL;
 
     if (needs_temporary) {
@@ -3530,10 +3579,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
 void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
-                           !(target_node->type == NODE_UNARY_OP && 
-                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
-                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
     const char* lval_ptr = NULL;
 
     if (needs_temporary) {
@@ -3611,10 +3657,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         return;
     }
 
-    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
-                           !(target_node->type == NODE_UNARY_OP && 
-                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
-                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
     const char* lval_ptr = NULL;
 
     if (needs_temporary) {
@@ -3729,10 +3772,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
 void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    bool needs_temporary = (target_node && (target_node->type != NODE_IDENTIFIER && 
-                           !(target_node->type == NODE_UNARY_OP && 
-                             (target_node->as.unary_op.op == TOKEN_STAR || target_node->as.unary_op.op == TOKEN_DOT_ASTERISK) &&
-                             target_node->as.unary_op.operand->type == NODE_IDENTIFIER)));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
     const char* lval_ptr = NULL;
 
     if (needs_temporary) {

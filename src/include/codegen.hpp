@@ -372,6 +372,12 @@ public:
     const char* getMangledTypeName(Type* type);
 
     /**
+     * @brief Returns true if the node is a simple l-value (identifier or dereference of a simple l-value).
+     *        Recursively unwraps parentheses.
+     */
+    bool isSimpleLValue(const ASTNode* node) const;
+
+    /**
      * @brief Captures the C89 representation of an expression into a buffer.
      * @param node The AST node to emit.
      * @param buf The destination buffer.
