@@ -111,7 +111,9 @@ C89 requires all local variable declarations to appear at the beginning of a blo
 ### 4.3 Unified Assignment and Wrapping
 The `C89Emitter::emitAssignmentWithLifting` method provides a centralized way to handle assignments, variable initializations, and return value wrapping. It automatically handles:
 - **Type Coercion**: Generates the necessary C code to wrap values into `Optional` or `ErrorUnion` structures.
-- **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments. For complex l-values (array elements, member access, pointer dereferences), it uses the `captureExpression` mechanism to stringify the l-value before performing field-by-field decomposition.
+- **Struct/Array Initializers**: Decomposes Zig's positional initializers into individual C field assignments.
+    - **Complex L-values**: If the target l-value is "complex" (e.g., a function call or multi-level dereference), the emitter evaluates it once into a temporary pointer and performs assignments through that pointer. This prevents double evaluation of side-effectful expressions and ensures correct C precedence.
+    - **Simple L-values**: For simple identifiers or direct dereferences, it uses the `captureExpression` mechanism to stringify the l-value before decomposition.
 - **Discarding Results**: Correctly handles assignments to the blank identifier `_` by evaluating the RHS for side effects and casting to `(void)`.
 
 Note: Control-flow expression lifting is now handled at the AST level by the `ControlFlowLifter` pass, so the emitter no longer performs ad-hoc lifting.
@@ -301,10 +303,17 @@ The emitter maintains correct C precedence by automatically parenthesizing the b
 
 This logic is implemented in `requiresParentheses()` and is applied in:
 - `emitAccess`: For standard member and array access.
-- `emitAssignmentWithLifting`: For decomposing struct/array initializers into field-by-field assignments when the l-value is complex.
-- `emitOptionalWrapping` / `emitErrorUnionWrapping`: For wrapping values into special structures when the target is a pointer dereference.
+- `emitAssignmentWithLifting`: For decomposing struct/array initializers into field-by-field assignments.
+- `emitOptionalWrapping` / `emitErrorUnionWrapping`: For wrapping values into special structures.
 
-The emitter uses a string-based heuristic (`lval_buf[0] == '*'`) to detect dereferences and wrap them in parentheses (e.g., `(*ptr).has_value = 1;`) to ensure correct C89 precedence during decomposition and wrapping.
+#### 4.7.1 Complex L-value Detection (`isSimpleLValue`)
+To prevent double evaluation and ensure correct precedence, the emitter uses the `isSimpleLValue()` helper to distinguish between "safe" l-values (identifiers and simple pointer dereferences like `*ptr`) and "complex" ones (function calls like `get_ptr().*` or array access).
+
+When a complex l-value is encountered during wrapping or decomposition:
+1. A temporary pointer is declared and initialized with the address of the complex l-value: `T* tmp = &(complex_expr);`.
+2. All subsequent accesses and assignments are performed through the temporary pointer: `(*tmp).member = value;`.
+
+This strategy ensures that side-effectful expressions are evaluated exactly once and that the resulting C code correctly respects the intended Zig semantics regardless of C's complex operator precedence rules.
 
 ### 4.8 Expression Capture (Redirection)
 The `C89Emitter::captureExpression` helper allows the compiler to obtain the C string representation of an AST node without writing it to the output file.
