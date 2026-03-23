@@ -2,6 +2,7 @@
 #define ZIG_RUNTIME_H
 
 #include <stddef.h>
+#include "zig_special_types.h"
 
 #ifndef __cplusplus
 /* Boolean support for C89 */
@@ -99,11 +100,6 @@ static i32 __bootstrap_i32_from_u32(u32 x) {
     return (i32)x;
 }
 
-static i32 __bootstrap_i32_from_i64(i64 x) {
-    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
-    return (i32)x;
-}
-
 static u32 __bootstrap_u32_from_u64(u64 x) {
     if (x > (u64)4294967295U) __bootstrap_panic("integer overflow in @intCast", __FILE__, __LINE__);
     return (u32)x;
@@ -133,6 +129,36 @@ static f32 __bootstrap_f32_from_f64(double x) {
 }
 
 static i32 __bootstrap_i32_from_u8(u8 x) {
+    return (i32)x;
+}
+
+static u8 __bootstrap_u8_from_i32(i32 x) {
+    if (x < 0 || x > 255) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (u8)x;
+}
+
+static u16 __bootstrap_u16_from_i32(i32 x) {
+    if (x < 0 || x > 65535) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (u16)x;
+}
+
+static u32 __bootstrap_u32_from_i64(i64 x) {
+    if (x < 0 || x > (i64)4294967295U) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (u32)x;
+}
+
+static i8 __bootstrap_i8_from_i32(i32 x) {
+    if (x < -128 || x > 127) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (i8)x;
+}
+
+static i16 __bootstrap_i16_from_i32(i32 x) {
+    if (x < -32768 || x > 32767) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
+    return (i16)x;
+}
+
+static i32 __bootstrap_i32_from_i64(i64 x) {
+    if (x < (i64)-2147483647 - 1 || x > (i64)2147483647) __bootstrap_panic("integer cast overflow", __FILE__, __LINE__);
     return (i32)x;
 }
 
