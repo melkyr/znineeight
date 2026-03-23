@@ -2,85 +2,80 @@
 
 This document details the challenges encountered while building the Z98 Lisp interpreter ("Baptism of Water") using the `retrozig` bootstrap compiler. It highlights the gaps between the current compiler implementation and the requirements of a multi-module project.
 
-## Current Status (Updated 2024-03-22)
+## Current Status (Updated 2025-01-24)
 
-**Zig-to-C compilation now succeeds!** The compiler correctly processes the multi-module Lisp interpreter source and generates C89 code. However, the generated C code contains semantic errors that prevent final binary compilation.
+**Zig-to-C compilation succeeds!** The compiler correctly processes the multi-module Lisp interpreter source and generates C89 code. However, the generated C code still requires minor manual adjustments or compiler fixes to compile successfully into a 32-bit binary.
 
 ### Peak Memory Usage Analysis (Valgrind Massif)
 During the compilation of the Lisp interpreter:
 - **Peak Memory**: ~6.4 MB (well within the 16MB constraint).
 - **Primary Contributors**:
-    - **Emitter Buffers (~2.8 MB)**: The `C89Emitter` allocates a 128 KB `type_def_buffer_` for every generated file (header and source). With ~22 files generated for the Lisp interpreter, these buffers accumulate in the permanent arena.
-    - **AST Transformation (~1 MB)**: `ControlFlowLifter` triggers a 1 MB chunk allocation for its `DynamicArray<ASTNode*>` during complex expression lifting.
-    - **Token Supply (~1 MB)**: Parsing multiple modules results in another 1 MB chunk allocation for the token stream arrays.
-    - **Symbol Table (~1 MB)**: Initial overhead for global symbol tracking and scoping.
+    - **Emitter Buffers (~3.1 MB)**: The `C89Emitter` allocates a 128 KB `type_def_buffer_` for every generated file. With the number of modules in the Lisp interpreter, these accumulate.
+    - **AST Transformation (~1 MB)**: `ControlFlowLifter` uses significant memory for its `DynamicArray<ASTNode*>` during complex expression lifting.
+    - **Token Supply (~1 MB)**: Memory used for the token stream across all modules.
+    - **Symbol Table (~1 MB)**: Overhead for global symbol tracking.
 
-**Conclusion**: Memory usage is safe for the 16MB target, but could be further optimized by resetting the arena between module generation or reducing the fixed buffer size in the emitter.
+**Conclusion**: Memory usage is well within the 16MB target.
 
 ---
 
-## 1. Type Consistency (Cross-Module Type Identity) - **IMPROVED**
+## 1. Type Consistency (Cross-Module Type Identity) - **RESOLVED**
 
 ### The Problem
-Previously, identical types imported by different modules were treated as distinct, causing "type mismatch" errors.
+Previously, identical types imported by different modules were treated as distinct.
 
 ### Current Status
-**Resolved in Zig-to-C phase.** The `TypeChecker` now correctly identifies structurally equal nominal types across module boundaries. `zig0` successfully completes the semantic analysis of the entire Lisp interpreter without reporting incompatible assignments for these types.
+**Resolved.** The `TypeChecker` now correctly identifies structurally equal nominal types across module boundaries.
 
 ---
 
-## 2. Placeholder Resolution and Circular Dependencies - **IMPROVED**
+## 2. Placeholder Resolution and Circular Dependencies - **RESOLVED**
 
 ### The Problem
-Recursive types (e.g., `Value` -> `ConsData` -> `Value`) used to trigger assertion failures or resolution loops.
+Recursive types used to trigger assertion failures.
 
 ### Current Status
-**Resolved.** The two-phase placeholder strategy and multi-pass resolution in `TypeChecker` allow the Lisp interpreter's recursive structures to be fully resolved.
+**Resolved.** The two-phase placeholder strategy in `TypeChecker` handles the Lisp interpreter's recursive structures (like `Value` and `EnvNode`).
 
 ---
 
-## 3. C Code Generation: Optional Pointer Access - **NEW BUG**
+## 3. C Code Generation: Optional Pointer Access - **RESOLVED**
 
 ### The Problem
-When an optional type is passed by reference (e.g., `*?*EnvNode`), the compiler generates invalid C code for member access.
+Incorrect precedence for optional/error union member access via pointers.
+
+### Current Status
+**Resolved.** The `C89Emitter` now generates correctly parenthesized code: `(*env).has_value = 1;`.
+
+---
+
+## 4. C Code Generation: Missing Type Definitions - **STILL OPEN**
+
+### The Problem
+Generated types like `Slice_u8` and `Slice_Ptr_z_value_Value` are defined in `zig_special_types.h`, but this file is not automatically included in the generated `.c` or `.h` files.
 
 ### Symptoms
-In `eval.c`:
-```c
-/* Invalid C code */
-*env.has_value = 1;
-*env.value = __tmp_try_13_41;
-```
-The compiler emits `*ptr.member` which has incorrect precedence (accessing `.member` of `ptr` and then dereferencing).
+Compilation fails with "unknown type name 'Slice_u8'" and similar errors.
 
-### Required Fix
-The `C89Emitter` should use the arrow operator `->` or parentheses `(*ptr).member` when the base of an optional/error union operation is a pointer.
+### Workaround
+Manually including `zig_special_types.h` or using a compiler flag like `-include o_lisp/zig_special_types.h` is required.
 
 ---
 
-## 4. C Code Generation: Missing Type Definitions - **NEW BUG**
-
-### The Problem
-Type definitions like slices or error unions are sometimes missing from the header or source files where they are used, even if they are defined in another module.
-
-### Symptoms
-`eval.c` uses `Slice_Ptr_z_value_Value` but the definition is only present in `builtins.h`. Since `eval.c` doesn't include `builtins.h` in a way that makes the typedef available before use, C compilation fails.
-
-### Required Fix
-Improve `CBackend` dependency scanning to ensure all required `Slice`, `Optional`, and `ErrorUnion` types are emitted in every module that uses them, or centrally in a shared header.
-
----
-
-## 5. The `main` Function Return Type - **IMPROVED**
+## 5. The `main` Function Return Type - **RESOLVED**
 
 ### Current Status
-The `C89Emitter` now correctly handles `pub fn main() void` by generating an `int main(int argc, char* argv[])` that returns `0` at the end of its block.
+The `C89Emitter` correctly generates `int main(int argc, char* argv[])` for `pub fn main() void`.
 
 ---
 
-## 6. General Recommendations for the Bootstrap Compiler
+## 6. Missing Runtime Helpers - **NEW**
 
-1. **C89 Operator Precedence**: Review all generated C expressions to ensure correct parenthesization, especially for dereferences and member access.
-2. **Global Type Registry for C**: Move special type definitions (`Slice_`, `Optional_`, etc.) into a common header included by all modules to prevent "unknown type name" errors.
-3. **Signedness of String Literals**: Zig's `[]const u8` maps to `unsigned char*`, but C string literals are `char*`. This generates numerous warnings. A consistent cast or configuration is needed.
-4. **Function Pointer Casts**: Builtin registration currently casts function pointers to `void*`, which is technically prohibited by ISO C.
+### The Problem
+The compiler generates calls to helper functions that are missing from the `zig_runtime.h` / `zig_runtime.c` files.
+
+### Symptoms
+Warning/Error: `implicit declaration of function ‘__bootstrap_u8_from_i32’`.
+
+### Required Fix
+Add `__bootstrap_u8_from_i32` and similar conversion helpers to the runtime library.
