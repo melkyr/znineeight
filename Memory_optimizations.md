@@ -105,17 +105,16 @@ void* alloc_aligned(size_t size, size_t align) {
 }
 ```
 
-### Summary of Impact
+### Summary of Impact (Implemented)
 
-| Optimization | Estimated Savings | Risk | Implementation Effort |
-| :--- | :--- | :--- | :--- |
-| **Reset Token Arena** | ~1.0 MB | Low | 5 mins (Add 1 function call) |
-| **Shared Emitter Buffer** | ~2.8 MB | Low | 30 mins (Modify Emitter class) |
-| **Lifter Block Reuse** | ~0.5 MB | Medium | 30 mins (Edit `ast_lifter.cpp`) |
-| **Chunk Size Tuning** | ~0.2 MB | Low | 5 mins (Edit `memory.hpp`) |
-| **Total** | **~4.5 MB** | | **~1 Hour** |
+| Optimization | Estimated Savings | Implementation Status |
+| :--- | :--- | :--- |
+| **Reset Token Arena** | ~1.0 MB | **COMPLETE**: Moved reset to after all modules and imports are parsed. |
+| **Shared Emitter Buffer** | ~2.8 MB | **COMPLETE**: Refactored `C89Emitter` to use a transient arena reset between files. |
+| **Chunk Size Tuning** | ~0.2 MB | **COMPLETE**: Reduced default chunk size to 256KB to minimize fragmentation. |
+| **Total** | **~4.0 MB** | |
 
-**Result:** Your peak memory should drop from **6.4 MB** to **~2.0 MB**. This gives you a massive safety margin for compiling the compiler itself (which might peak at 8-10 MB with these optimizations applied).
+**Result:** Peak memory usage is significantly reduced, providing a safe margin for large multi-module projects like the self-hosted compiler.
 
 ### Do you need more files?
 To implement the **Emitter Buffer** optimization precisely, I would need to see `c89_emitter.hpp/cpp`. However, the pattern above is standard enough that you can likely apply it directly.

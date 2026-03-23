@@ -45,6 +45,7 @@ bool CBackend::generate(const char* output_dir) {
 }
 
 bool CBackend::generateSourceFile(Module* module, const char* output_dir, DynamicArray<const char*>* public_slices) {
+    unit_.resetTransientArena();
     char path[1024];
     char* cur = path;
     size_t rem = sizeof(path);
@@ -165,6 +166,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
 bool CBackend::generateMasterMain(const char* output_dir) {
     if (!entry_filename_) return true; // No main function found
+    unit_.resetTransientArena();
 
     char path[1024];
     char* cur = path;
@@ -226,6 +228,7 @@ bool CBackend::generateBuildBat(const char* output_dir) {
 }
 
 bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
+    unit_.resetTransientArena();
     char path[1024];
     char* cur = path;
     size_t rem = sizeof(path);
@@ -317,6 +320,7 @@ bool CBackend::generateMakefile(const char* output_dir) {
 }
 
 bool CBackend::generateHeaderFile(Module* module, const char* output_dir, DynamicArray<const char*>* public_slices) {
+    unit_.resetTransientArena();
     char path[1024];
     char* cur = path;
     size_t rem = sizeof(path);

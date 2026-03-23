@@ -121,6 +121,7 @@ static void fatalError(const char* message) {
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
       token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
+      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
       type_interner_(arena),
       type_registry_(arena),
       pending_resolutions_(arena),
@@ -379,6 +380,18 @@ ArenaAllocator& CompilationUnit::getArena() {
 
 ArenaAllocator& CompilationUnit::getTokenArena() {
     return token_arena_;
+}
+
+ArenaAllocator& CompilationUnit::getTransientArena() {
+    return transient_arena_;
+}
+
+void CompilationUnit::resetTransientArena() {
+    transient_arena_.reset();
+}
+
+void CompilationUnit::resetTokenArena() {
+    token_arena_.reset();
 }
 
 TypeInterner& CompilationUnit::getTypeInterner() {
@@ -818,23 +831,6 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.end_phase();
 #endif
 
-    // Reset token arena early to free memory!
-    // After parsing, AST doesn't need the tokens anymore.
-#ifdef MEASURE_MEMORY
-    size_t token_mem = token_arena_.getOffset();
-    char num_buf[32];
-    plat_i64_to_string(token_mem, num_buf, sizeof(num_buf));
-    plat_print_info("Token arena before reset: ");
-    plat_print_info(num_buf);
-    plat_print_info(" bytes\n");
-#endif
-
-    token_arena_.reset();
-    token_supplier_.reset();
-
-#ifdef MEASURE_MEMORY
-    plat_print_info("Token arena after reset: 0 bytes\n");
-#endif
     last_ast_ = ast;
     if (!ast) return false;
 
@@ -860,6 +856,24 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (!resolveImports(mod)) {
         return false;
     }
+
+    // Reset token arena after all modules (including dependencies) have been parsed!
+    // After parsing, AST doesn't need the tokens anymore.
+#ifdef MEASURE_MEMORY
+    size_t token_mem = token_arena_.getOffset();
+    char num_buf_token[32];
+    plat_i64_to_string(token_mem, num_buf_token, sizeof(num_buf_token));
+    plat_print_info("Token arena before reset: ");
+    plat_print_info(num_buf_token);
+    plat_print_info(" bytes\n");
+#endif
+
+    token_arena_.reset();
+    token_supplier_.reset();
+
+#ifdef MEASURE_MEMORY
+    plat_print_info("Token arena after reset: 0 bytes\n");
+#endif
 
     // Topological Sort of modules to respect import dependencies
     {

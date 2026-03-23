@@ -578,6 +578,7 @@ private:
     CVariableAllocator var_alloc_;
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;
+    ArenaAllocator& transient_arena_;
     DynamicArray<GlobalNameEntry> global_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
