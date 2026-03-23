@@ -298,7 +298,7 @@ Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<S
 #endif
 
     /* Calculate layout before returning or committing. */
-    calculateTaggedUnionLayout(new_type);
+    calculateStructLayout(new_type);
 
     if (name == NULL) return new_type;
 
@@ -779,6 +779,8 @@ void refreshLayout(Type* t) {
 
 void calculateTaggedUnionLayout(Type* type) {
     if (type->kind != TYPE_TAGGED_UNION) return;
+    if (type->alignment >= 1 && type->size > 0) return;
+
     /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
     size_t tag_align = 4;
     size_t tag_size = 4;
@@ -845,6 +847,7 @@ void calculateStructLayout(Type* struct_type) {
     if (struct_type->kind != TYPE_STRUCT) return;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    if (!fields) return;
     size_t current_offset = 0;
     size_t max_alignment = 1;
 
