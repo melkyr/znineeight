@@ -12,7 +12,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
-      global_names_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
@@ -27,7 +27,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
-      global_names_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
@@ -44,7 +44,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
-      global_names_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
@@ -616,7 +616,7 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
                 writeString("{\n");
                 indent();
                 writeIndent();
-                Type* ptr_type = createPointerType(transient_arena_, target_type, false, false, &unit_.getTypeInterner());
+                Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
                 emitType(ptr_type, lval_ptr);
                 writeString(" = &(");
                 emitExpression(lvalue_node);
@@ -1520,7 +1520,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         Type* iter_type = node->iterable_expr->resolved_type;
         if (iter_type->kind == TYPE_ARRAY) {
              /* Emit as pointer */
-             emitType(createPointerType(transient_arena_, iter_type->as.array.element_type, false), iter_name);
+             emitType(createPointerType(arena_, iter_type->as.array.element_type, false), iter_name);
         } else {
              emitType(iter_type, iter_name);
         }
@@ -3132,7 +3132,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     }
 
     size_t len = plat_strlen(final_buf);
-    char* owned_name = (char*)transient_arena_.alloc(len + 1);
+    char* owned_name = (char*)arena_.alloc(len + 1);
     plat_memcpy(owned_name, final_buf, len + 1);
 
     GlobalNameEntry entry;
@@ -3462,7 +3462,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         writeString("{\n");
         indent();
         writeIndent();
-        Type* ptr_type = createPointerType(transient_arena_, target_type, false, false, &unit_.getTypeInterner());
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
         emitType(ptr_type, lval_ptr);
         writeString(" = &(");
         emitExpression(target_node);
@@ -3541,7 +3541,7 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         writeString("{\n");
         indent();
         writeIndent();
-        Type* ptr_type = createPointerType(transient_arena_, target_type, false, false, &unit_.getTypeInterner());
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
         emitType(ptr_type, lval_ptr);
         writeString(" = &(");
         emitExpression(target_node);
@@ -3619,7 +3619,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         writeString("{\n");
         indent();
         writeIndent();
-        Type* ptr_type = createPointerType(transient_arena_, target_type, false, false, &unit_.getTypeInterner());
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
         emitType(ptr_type, lval_ptr);
         writeString(" = &(");
         emitExpression(target_node);
@@ -3734,7 +3734,7 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         writeString("{\n");
         indent();
         writeIndent();
-        Type* ptr_type = createPointerType(transient_arena_, target_type, false, false, &unit_.getTypeInterner());
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
         emitType(ptr_type, lval_ptr);
         writeString(" = &(");
         emitExpression(target_node);

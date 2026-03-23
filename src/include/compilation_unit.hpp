@@ -94,6 +94,7 @@ public:
 
     void resetTransientArena();
     void resetTokenArena();
+    void finalizeParsing();
 
     DynamicArray<Module*>& getModules() { return modules_; }
     Module* getModule(const char* name);

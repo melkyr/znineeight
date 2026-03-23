@@ -394,6 +394,24 @@ void CompilationUnit::resetTokenArena() {
     token_arena_.reset();
 }
 
+void CompilationUnit::finalizeParsing() {
+#ifdef MEASURE_MEMORY
+    size_t token_mem = token_arena_.getOffset();
+    char num_buf_token[32];
+    plat_i64_to_string(token_mem, num_buf_token, sizeof(num_buf_token));
+    plat_print_info("Token arena before reset: ");
+    plat_print_info(num_buf_token);
+    plat_print_info(" bytes\n");
+#endif
+
+    token_arena_.reset();
+    token_supplier_.reset();
+
+#ifdef MEASURE_MEMORY
+    plat_print_info("Token arena after reset: 0 bytes\n");
+#endif
+}
+
 TypeInterner& CompilationUnit::getTypeInterner() {
     return type_interner_;
 }
@@ -857,23 +875,6 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
-    // Reset token arena after all modules (including dependencies) have been parsed!
-    // After parsing, AST doesn't need the tokens anymore.
-#ifdef MEASURE_MEMORY
-    size_t token_mem = token_arena_.getOffset();
-    char num_buf_token[32];
-    plat_i64_to_string(token_mem, num_buf_token, sizeof(num_buf_token));
-    plat_print_info("Token arena before reset: ");
-    plat_print_info(num_buf_token);
-    plat_print_info(" bytes\n");
-#endif
-
-    token_arena_.reset();
-    token_supplier_.reset();
-
-#ifdef MEASURE_MEMORY
-    plat_print_info("Token arena after reset: 0 bytes\n");
-#endif
 
     // Topological Sort of modules to respect import dependencies
     {
