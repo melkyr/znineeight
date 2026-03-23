@@ -18,7 +18,7 @@
 | Batch 9b | ✓ Passed | 5/5 tests passed |
 | Batch 9c | ✓ Passed | 13/13 tests passed |
 | Batch 10 | ✓ Passed | 7/7 tests passed |
-| Batch 11 | ✓ Passed | 30/30 tests passed |
+| Batch 11 | ✗ Failed | 29/30 tests passed (Failing test isolated) |
 | Batch 12 | ✓ Passed | 89/89 tests passed |
 | Batch 13 | ✓ Passed | 13/13 tests passed |
 | Batch 14 | ✓ Passed | 11/11 tests passed |
@@ -59,7 +59,7 @@
 | Batch 49 | ✓ Passed | 1/1 tests passed |
 | Batch 50 | ✓ Passed | 5/5 tests passed |
 | Batch 51 | ✓ Passed | 4/4 tests passed |
-| Batch 52 | ✓ Passed | 3/3 tests passed |
+| Batch 52 | ✗ Failed | 2/3 tests passed (Failing test isolated) |
 | Batch 53 | ✓ Passed | 4/4 tests passed |
 | Batch 54 | ✓ Passed | 3/3 tests passed |
 | Batch 55 | ✓ Passed | 9/9 tests passed |
@@ -96,6 +96,18 @@
 - **Assertion**: `ASSERT_FALSE(analyzer.hasInvalidSignatures())`
 - **Reasoning**: The `SignatureAnalyzer` reports that a signature is invalid. In this test, it uses a type alias `const MyInt = i32;`. In 32-bit mode, there might be a subtle difference in how `is_type_undefined` or the underlying type resolution works within the `SignatureAnalyzer` context, leading it to fail to correctly identify `MyInt` as a valid C89 type during the analysis pass.
 
+### Batch 11
+- **Failing Test**: `test_NameMangler_Milestone4Types`
+- **Location**: `tests/test_milestone4_name_mangling.cpp:16`
+- **Assertion**: `ASSERT_STREQ("err_i32", mangler.mangleType(err_union))`
+- **Reasoning**: The test expects the mangled name for `!i32` to be `"err_i32"`, but the compiler produced `"ErrorUnion_i32"`. This indicates a discrepancy between the test's hardcoded expectations and the current implementation of `NameMangler::mangleType`.
+
+### Batch 52
+- **Failing Test**: `Task9_8_ImplicitReturnErrorVoid`
+- **Location**: `tests/integration/task_9_8_verification_tests.cpp:61`
+- **Assertion**: `ASSERT_TRUE(unit.validateRealFunctionEmission("foo", ...))`
+- **Reasoning**: The test expects the emitted C code for an implicit return of `!void` to use `err_void`, but the compiler emitted `ErrorUnion_void`. This is another mismatch between test expectations and the actual `NameMangler` output for anonymous error unions.
+
 ## Examples Verification
 
 All examples in the `examples/` directory (excluding `lisp_interpreter`) were compiled and executed successfully in 32-bit mode (`-m32`).
@@ -114,7 +126,7 @@ All examples in the `examples/` directory (excluding `lisp_interpreter`) were co
 ## Observations
 
 ### 32-bit Target Assumptions
-The RetroZig compiler is designed with a 32-bit little-endian target in mind. Running the tests in `-m32` mode correctly exercises this target model. Most of the test suite (74 out of 77 batches) passes without issue, confirming the stability of the core compiler and its type system for the intended architecture.
+The RetroZig compiler is designed with a 32-bit little-endian target in mind. Running the tests in `-m32` mode correctly exercises this target model. Most of the test suite (72 out of 77 batches) passes without issue, confirming the stability of the core compiler and its type system for the intended architecture. (Note: Total batch count 77 includes 1-74, 7_debug, and _bugs).
 
 ### Type System Stability
-The failures in Batch 3 and Batch 7 are specific to the test harness expectations and subtle differences in 32-bit environment behavior regarding extreme integer values and type resolution timing. They do not appear to indicate fundamental flaws in the generated C89 code, as evidenced by the successful execution of all examples.
+The failures in Batch 3, 7, 7_debug, 11, and 52 are primarily due to test harness expectations (especially regarding name mangling) rather than fundamental compiler bugs. Batch 11 and 52 failures specifically highlight that the `NameMangler` uses `ErrorUnion_` prefix instead of `err_` for some types.
