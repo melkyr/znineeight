@@ -16,7 +16,9 @@ bool CallResolutionValidator::validate(CompilationUnit& unit, ASTNode* root) {
 void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
     if (!node) return;
 
-    if (node->type == NODE_FUNCTION_CALL) {
+    if (node->type == NODE_FUNCTION_CALL || node->type == NODE_INT_CAST ||
+        node->type == NODE_FLOAT_CAST || node->type == NODE_PTR_CAST ||
+        node->type == NODE_OFFSET_OF) {
         checkCall(node, ctx);
     }
 
@@ -172,16 +174,24 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
 }
 
 void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
-    if (!node || !node->as.function_call || !node->as.function_call->callee) return;
-    ASTFunctionCallNode* call = node->as.function_call;
+    if (!node) return;
 
-    // Skip built-ins (Task 168/209)
-    if (call->callee->type == NODE_IDENTIFIER) {
-        const char* name = call->callee->as.identifier.name;
-        if (name && name[0] == '@') {
-            return;
+    // Skip built-ins (Task 168/209/Milestone 9)
+    if (node->type == NODE_FUNCTION_CALL) {
+        ASTFunctionCallNode* call = node->as.function_call;
+        if (call && call->callee && call->callee->type == NODE_IDENTIFIER) {
+            if (isBuiltin(call->callee->as.identifier.name)) {
+                return;
+            }
         }
+    } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST ||
+               node->type == NODE_PTR_CAST || node->type == NODE_OFFSET_OF) {
+        // These are also built-ins that don't need resolution in the call table
+        return;
     }
+
+    if (node->type != NODE_FUNCTION_CALL || !node->as.function_call) return;
+    ASTFunctionCallNode* call = node->as.function_call;
 
     // Check if it's an indirect call
     const IndirectCallInfo* indirect = ctx.unit.getIndirectCallCatalogue().findByLocation(call->callee->loc);
@@ -236,4 +246,25 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
             }
         }
     }
+}
+
+bool CallResolutionValidator::isBuiltin(const char* name) {
+    if (!name || name[0] != '@') return false;
+
+    // Milestone 9 requirements: include all built-ins handled by the compiler.
+    static const char* builtins[] = {
+        "@intCast", "@floatCast", "@ptrCast", "@sizeOf", "@alignOf",
+        "@offsetOf", "@enumToInt", "@intToEnum", "@ptrToInt", "@intToPtr",
+        "@import", "@panic", "@as", "@tagName", "@errorName", "@fieldParentPtr",
+        "@clz", "@ctz", "@popCount", "@byteSwap", "@bitReverse", "@sqrt",
+        "@sin", "@cos", "@exp", "@exp2", "@log", "@log2", "@log10", "@fabs",
+        "@floor", "@ceil", "@trunc", "@round"
+    };
+
+    for (size_t i = 0; i < sizeof(builtins) / sizeof(builtins[0]); ++i) {
+        if (plat_strcmp(name, builtins[i]) == 0) return true;
+    }
+
+    // Fallback: any name starting with @ is considered a built-in for validation purposes.
+    return true;
 }
