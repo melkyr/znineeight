@@ -658,7 +658,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 ### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
 For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
 - **Panic Handler**: A panic handler `__bootstrap_panic(const char* msg)` is implemented as a `static` function in `zig_runtime.h`.
-- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` are implemented in `zig_runtime.h` to perform bounds checks and call the panic handler on failure.
+- **Checked Conversions**: Helper functions like `__bootstrap_i32_from_i64` are implemented in `zig_runtime.h` to perform bounds checks and call the panic handler on failure. Common narrowing conversions (e.g., `__bootstrap_u8_from_i32`, `__bootstrap_i16_from_i32`) are provided as `static` non-inline functions in `zig_runtime.h`.
 - **Historical Compatibility**: The panic handler uses `fputs` to `stderr` and then calls `abort()`, ensuring compatibility with 1998-era hardware and modern environments.
 - **Debug Output**: A minimal `__bootstrap_print(const char* s)` is provided for debugging purposes, wrapping `fputs` to `stderr`.
 
@@ -1021,7 +1021,8 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 - **Debugging**: Supports emission tracing via `--debug-codegen` to track variable declarations and identifier resolution.
 - **Two-Pass Block Emission**: Collects local declarations and emits them at the top of C blocks to comply with C89 scope rules.
 - **Platform Agnostic**: Uses the Platform Abstraction Layer (PAL) for all file I/O.
-- **Slice Support**: Slices are emitted as C structs containing a pointer and a length. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated on demand to handle slicing expressions and coercion.
+- **Slice Support**: Slices are emitted as C structs containing a pointer and a length. To ensure visibility across modules, these are emitted into a central `zig_special_types.h` header. Typedefs and static inline helper functions (e.g., `__make_slice_i32`) are generated to handle slicing expressions and coercion.
+- **Complex L-value Handling**: To prevent double evaluation of side-effectful expressions (like function calls in an l-value) and ensure correct C precedence during wrapping, the emitter evaluates complex l-values once into a temporary pointer and performs subsequent assignments through that pointer.
 
 ### 13.3 CVariableAllocator
 - **Keyword Avoidance**: Automatically prefixes C89 keywords with `z_`.

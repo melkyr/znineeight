@@ -232,6 +232,13 @@ This unification reduces code duplication and ensures consistent behavior across
 ### 4.4 Slice Support
 Slices (`[]T`) are emitted as C structs containing a pointer and a length.
 
+#### Central Slice Header (`zig_special_types.h`)
+To ensure that slice types (which are often anonymous in Zig but require named `struct`s in C) are available across all modules, the compiler generates a central header file named `zig_special_types.h`.
+- **Generation**: Created once per compilation by `CBackend::generateSpecialTypesHeader`.
+- **Inclusion**: Automatically included by the `C89Emitter::emitPrologue` in every generated `.c` and `.h` file, immediately after `#include "zig_runtime.h"`.
+- **Contents**: Contains `typedef struct { T* ptr; usize len; } Slice_T;` for every unique slice type used in the program, guarded by `#ifndef ZIG_SLICE_Slice_T` to prevent multiple definitions during Single Translation Unit (STU) builds.
+- **Helper Functions**: Also contains the `__make_slice_T` static inline helpers used for array-to-slice coercion and slicing operations.
+
 #### Type Definition
 For each unique slice type encountered, the compiler generates a `typedef` and a static inline helper function for construction.
 - **Naming**: Slice structs are named using a mangling scheme: `Slice_` + mangled element type (e.g., `Slice_i32`, `Slice_Ptr_i32`).
