@@ -45,6 +45,12 @@ This matches the target Win32/x86 environment of the late 90s.
 ## 3. Architecture & Memory Strategy
 The compiler uses a layered architecture relying heavily on "Arena Allocation" to avoid `malloc`/`free` overhead on slow 90s allocators.
 
+### Memory Optimization Strategy
+To fit within the strict 16MB peak memory constraint, the compiler employs a multi-tiered arena system:
+- **Global Arena**: Stores long-lived data like the String Interner, Type Registry, and AST for all modules.
+- **Token Arena**: A transient arena used exclusively for lexing and parsing. It is reset once all modules and imports are successfully parsed, as the semantic analysis and codegen phases operate on the AST and do not require raw tokens.
+- **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
+
 ### 3.1 Memory Management
 
 The RetroZig project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
