@@ -64,16 +64,20 @@ fn print_list(v: *value_mod.Value) void {
     }
 }
 
-fn read_line(buf: []u8) []u8 {
+fn read_line(buf: []u8) i32 {
     var i: usize = 0;
     while (i < buf.len) {
         const c = getchar();
         const ic = @intCast(i32, c);
-        if (ic == -1 or ic == 10) break;
+        if (ic == -1) {
+            if (i == 0) return -1;
+            break;
+        }
+        if (ic == 10) break;
         buf[i] = @intCast(u8, ic);
         i += 1;
     }
-    return buf[0..i];
+    return @intCast(i32, i);
 }
 
 pub fn main() void {
@@ -101,8 +105,10 @@ pub fn main() void {
     var input_buf: [4096]u8 = undefined;
     while (true) {
         print_str("> ");
-        const line = read_line(&input_buf);
-        if (line.len == 0) continue;
+        const len = read_line(&input_buf);
+        if (len < 0) break;
+        if (len == 0) continue;
+        const line = input_buf[0..@intCast(usize, len)];
 
         var tokenizer = token_mod.Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
         const expr = parser_mod.parse_expr(&tokenizer, &perm_sand, &temp_sand) catch continue;

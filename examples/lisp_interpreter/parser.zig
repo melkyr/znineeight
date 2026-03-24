@@ -11,7 +11,7 @@ pub const SymbolNode = struct {
 
 var global_symbol_list: ?*SymbolNode = null;
 
-pub fn intern_symbol(name: []const u8, sand: *sand_mod.LispSand) !*value_mod.Value {
+pub fn intern_symbol(name: []const u8, sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
     var cur: ?*SymbolNode = global_symbol_list;
     while (cur) |node| {
         if (util.mem_eql(node.name, name)) {
@@ -43,7 +43,7 @@ pub fn intern_symbol(name: []const u8, sand: *sand_mod.LispSand) !*value_mod.Val
     return val;
 }
 
-pub fn parse_expr(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) !*value_mod.Value {
+pub fn parse_expr(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
     const tok = try token_mod.next_token(tokenizer);
     if (tok.tag == token_mod.TokenTag.Eof) return error.UnexpectedEof;
     if (tok.tag == token_mod.TokenTag.RParen) return error.UnexpectedRParen;
@@ -53,7 +53,7 @@ pub fn parse_expr(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand
     return error.UnexpectedToken;
 }
 
-fn parse_list(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) !*value_mod.Value {
+fn parse_list(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
     const peeked = try token_mod.peek_token(tokenizer);
     if (peeked.tag == token_mod.TokenTag.RParen) {
         _ = try token_mod.next_token(tokenizer);
@@ -65,7 +65,7 @@ fn parse_list(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, te
     return try value_mod.alloc_cons(car, cdr, temp_sand);
 }
 
-fn parse_list_tail(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) !*value_mod.Value {
+fn parse_list_tail(tokenizer: *token_mod.Tokenizer, perm_sand: *sand_mod.LispSand, temp_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
     const peeked = try token_mod.peek_token(tokenizer);
     if (peeked.tag == token_mod.TokenTag.RParen) {
         _ = try token_mod.next_token(tokenizer);

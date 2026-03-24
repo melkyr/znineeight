@@ -1,4 +1,5 @@
 const value_mod = @import("value.zig");
+const sand_mod = @import("sand.zig");
 
 pub fn mem_eql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
@@ -27,16 +28,17 @@ pub fn parse_int(s: []const u8) !i64 {
     return if (negative) -val else val;
 }
 
-pub fn deep_copy(v: *value_mod.Value, perm_sand: *value_mod.sand_mod.LispSand) !*value_mod.Value {
+pub fn boat_copy(v: *value_mod.Value, perm_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
     if (v.tag == value_mod.ValueTag.Cons) {
-        const new_car = try deep_copy(v.data.Cons.car, perm_sand);
-        const new_cdr = try deep_copy(v.data.Cons.cdr, perm_sand);
+        const new_car = try boat_copy(v.data.Cons.car, perm_sand);
+        const new_cdr = try boat_copy(v.data.Cons.cdr, perm_sand);
         return try value_mod.alloc_cons(new_car, new_cdr, perm_sand);
+    } else {
+        // Self-evaluating or already interned
+        const new_v = try value_mod.alloc_value(perm_sand);
+        new_v.* = v.*;
+        return new_v;
     }
-
-    // Self-evaluating or already interned
-    const new_v = try value_mod.alloc_value(perm_sand);
-    new_v.tag = v.tag;
-    new_v.data = v.data;
-    return new_v;
 }
+
+pub const deep_copy = boat_copy;
