@@ -119,7 +119,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Immutability**: All loop captures and function parameters are immutable. Attempting to assign to them will result in a compile-time error.
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
   - **Condition**: Must be a tagged union, integer, enum, or boolean.
-  - **Prongs**: Comma-separated case items followed by `=>` and an expression. For prongs consisting of a single expression-statement (especially calls returning `void`), it is recommended to wrap the body in a block `{ ... }` to ensure reliable code generation.
+  - **Prongs**: Comma-separated case items followed by `=>` and an expression. If a prong consists of a single expression, it is automatically treated as an expression-statement when the switch is used as a statement.
   - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag.
   - **Case Items**: Can be single values or ranges.
   - **Ranges**:

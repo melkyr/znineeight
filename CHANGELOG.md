@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Tuned `ArenaAllocator` default chunk size to 256KB to reduce internal fragmentation.
 
 ### Fixed
+- Fixed switch statement prong bodies containing expressions (e.g., function calls) by making `C89Emitter::emitStatement` handle expression nodes correctly.
 - Ensured `zig_special_types.h` is included in all generated `.c` and `.h` files, resolving "unknown type name 'Slice_u8'" errors.
 - Fixed placeholder finalization to preserve the original type name and generate proper C identifiers, resolving issues with recursive types and cross-module imports.
 - Allowed comparison of optional types with `null` literal (`==`, `!=`).
