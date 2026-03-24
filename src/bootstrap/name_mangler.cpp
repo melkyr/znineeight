@@ -196,6 +196,16 @@ const char* NameMangler::mangleType(Type* type) {
             else name = type->as.struct_details.name;
 
             if (name) {
+                if (isInternalCompilerIdentifier(name)) {
+                    if (plat_strlen(name) > 31) {
+                        char buf[32];
+                        plat_strncpy(buf, name, 31);
+                        buf[31] = '\0';
+                        return interner_.intern(buf);
+                    }
+                    return interner_.intern(name);
+                }
+
                 if (type->owner_module && plat_strcmp(type->owner_module->name, "main") != 0 &&
                     plat_strcmp(type->owner_module->name, "test") != 0 &&
                     plat_strcmp(type->owner_module->name, "builtin") != 0) {
