@@ -4466,7 +4466,7 @@ Type* TypeChecker::visitTypeName(ASTNode* parent, ASTTypeNameNode* node) {
         if (sym) {
             Module* defining_mod = unit_.getModule(sym->module_name ? sym->module_name : "main");
             resolved_type = resolveNamedType(defining_mod, node->name, sym);
-            if (resolved_type) return resolved_type;
+            if (resolved_type && resolved_type->kind != TYPE_TYPE) return resolved_type;
         }
 
         /* Fallback: check TypeRegistry for current module */

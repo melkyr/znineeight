@@ -90,6 +90,11 @@ public:
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
+    ArenaAllocator& getTransientArena();
+
+    void resetTransientArena();
+    void resetTokenArena();
+    void finalizeParsing();
 
     DynamicArray<Module*>& getModules() { return modules_; }
     Module* getModule(const char* name);
@@ -167,6 +172,7 @@ public:
 private:
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
+    ArenaAllocator transient_arena_;
     TypeInterner type_interner_;
     TypeRegistry type_registry_;
     DynamicArray<PendingResolution> pending_resolutions_;

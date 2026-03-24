@@ -174,8 +174,10 @@ int main(int argc, char* argv[]) {
             Parser* parser = unit.createParser(file_id);
             ASTNode* ast = parser->parse();
             success = (ast != NULL);
+            unit.finalizeParsing();
         } else {
             success = runCompilationPipeline(unit, file_id);
+            unit.finalizeParsing();
             if (success && output_file) {
                 success = unit.generateCode(output_file);
             }
