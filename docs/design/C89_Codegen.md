@@ -428,20 +428,21 @@ target.is_error = 1;
 #### Return Statements
 Returning from a function that returns an error union performs implicit wrapping if the returned expression is not already an error union. This is implemented by using a temporary variable `__return_val` and then returning it.
 
-## 6. Master STU File & Build System
+## 6. Build System & Separate Compilation
 
-To simplify compilation and linking, the `CBackend` generates a master entry point when a `pub fn main` is detected.
+To avoid symbol conflicts (especially with `static` functions and slice helpers) and provide a professional development experience, the `CBackend` generates build scripts that perform separate compilation and linking for each module.
 
-### 5.1 Master Entry Point (`main.c` / `master.c`)
-If any module contains a `pub fn main`, the backend generates a master Single Translation Unit (STU) file.
-- **Filename**: Usually `main.c`. If a module is already named `main`, the master file is named `master.c` to avoid conflict, and the module file is named `main_module.c`.
-- **Content**: A series of `#include` directives for every generated `.c` module implementation.
-- **Advantage**: Allows the entire program to be compiled with a single compiler command, eliminating the need for a complex linker stage.
-
-### 5.2 Build Automation
+### 6.1 Build Automation
 The backend automatically generates basic build scripts in the output directory:
-- **`build.bat`**: A Windows batch script that invokes the MSVC compiler (`cl`) to produce `app.exe`.
-- **`Makefile`**: A standard Makefile for Unix-like environments that uses `gcc` to produce the `app` binary.
+- **`build_target.bat`**: A Windows batch script for MSVC 6.0. It compiles each generated `.c` file separately using `cl /c` and links them into `app.exe` using `link.exe`.
+- **`build_target.sh`**: A shell script for GCC. It compiles each generated `.c` file separately using `gcc -c` and links them into `app` using `gcc`.
+
+### 6.2 Runtime Portability
+To ensure the generated code is self-contained and buildable on any system with a compatible C compiler:
+- **`zig_runtime.h` and `zig_runtime.c`**: These files are copied from the compiler's source tree into the output directory.
+- **`zig_special_types.h`**: This header, containing definitions for slices and other program-specific types, is generated in the output directory.
+
+By providing all necessary runtime components and a standard multi-module build script, the RetroZig compiler ensures that its output is immediately usable by developers on legacy platforms.
 
 ## 6.1 Error Handling Code Generation (Milestone 7)
 

@@ -1025,8 +1025,8 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 ### 13.1 CBackend
 - **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
 - **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
-- **Master Entry Point**: If a `pub fn main` is present, generates a master `main.c` (or `master.c` if conflicted) that `#include`s all module implementation files, facilitating a Single Translation Unit (STU) build.
-- **Build Scripts**: Automatically generates `build.bat` (MSVC) and `Makefile` (GCC) in the output directory.
+- **Build System**: Automatically generates `build_target.bat` (MSVC) and `build_target.sh` (GCC) in the output directory. These scripts perform separate compilation and linking for each module to avoid symbol conflicts.
+- **Runtime Injection**: Copies `zig_runtime.h` and `zig_runtime.c` to the output directory to ensure the generated project is self-contained.
 - **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
 - **Header Generation**: Public types and function prototypes are automatically exported to `.h` files with robust include guards.
 - **Import Handling**: Translates Zig `@import` into C `#include` directives.
