@@ -60,6 +60,8 @@ bool isInternalCompilerIdentifier(const char* name) {
     if (plat_strncmp(name, "__for_", 6) == 0) return true;
     if (plat_strncmp(name, "__make_slice_", 13) == 0) return true;
     if (plat_strncmp(name, "__implicit_ret", 14) == 0) return true;
+    if (plat_strcmp(name, "Arena") == 0) return true;
+    if (plat_strcmp(name, "zig_default_arena") == 0) return true;
     return false;
 }
 

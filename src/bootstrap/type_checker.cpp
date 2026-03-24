@@ -3805,6 +3805,12 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
 
     union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type, self_placeholder);
 
+    if (node->is_tagged) {
+        calculateTaggedUnionLayout(union_type);
+    } else {
+        calculateStructLayout(union_type);
+    }
+
     if (self_placeholder && union_type != self_placeholder) {
         finalizePlaceholder(self_placeholder, union_type);
         union_type = self_placeholder;

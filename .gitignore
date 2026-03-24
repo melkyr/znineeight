@@ -64,3 +64,5 @@ temp_hello/
 temp_prime/
 temp_*/
 examples/*/output/
+slice_test_output/
+phase3_output/*
