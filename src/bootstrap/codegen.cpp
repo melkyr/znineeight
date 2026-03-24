@@ -1476,14 +1476,28 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         writeString("/* DEBUG: capture ");
                         writeString(prong->capture_name);
                         writeString(" */\n");
+                        const char* c_name = var_alloc_.allocate(prong->capture_sym);
                         writeIndent();
-                        emitType(capture_type, var_alloc_.allocate(prong->capture_sym));
-                        writeString(" = ");
-                        writeString(switch_tmp);
-                        writeString(".data.");
+                        emitType(capture_type, c_name);
+                        writeString(";\n");
+                        char capture_lval[512];
+                        char* cur = capture_lval;
+                        size_t rem = sizeof(capture_lval);
+                        safe_append(cur, rem, c_name);
+
                         /* Field name is preserved in original_name of the case item literal */
                         ASTNode* item_expr = (*prong->items)[0];
-                        writeString(getSafeFieldName(item_expr->as.integer_literal.original_name));
+                        char rvalue_buf[512];
+                        char* r_cur = rvalue_buf;
+                        size_t r_rem = sizeof(rvalue_buf);
+                        safe_append(r_cur, r_rem, switch_tmp);
+                        safe_append(r_cur, r_rem, ".data.");
+                        safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
+
+                        writeIndent();
+                        writeString(capture_lval);
+                        writeString(" = ");
+                        writeString(rvalue_buf);
                         writeString(";\n");
                     }
                 }

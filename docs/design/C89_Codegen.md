@@ -214,6 +214,7 @@ This unification reduces code duplication and ensures consistent behavior across
     } break;
     ```
     - **Void Handling**: If the captured field has type `void`, the C variable declaration and assignment are skipped to comply with C89 rules.
+    - **Declaration/Assignment Separation**: For non-void captures, the emitter separates the declaration of the capture variable from its assignment. This avoids using braced initializers for anonymous structs, which is not permitted in C89.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Unreachable Expression**: `unreachable` is mapped to a call to `__bootstrap_panic("reached unreachable", __FILE__, __LINE__)`.

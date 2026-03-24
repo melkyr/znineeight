@@ -60,8 +60,22 @@ bool isInternalCompilerIdentifier(const char* name) {
     if (plat_strncmp(name, "__for_", 6) == 0) return true;
     if (plat_strncmp(name, "__make_slice_", 13) == 0) return true;
     if (plat_strncmp(name, "__implicit_ret", 14) == 0) return true;
-    if (plat_strcmp(name, "Arena") == 0) return true;
-    if (plat_strcmp(name, "zig_default_arena") == 0) return true;
+
+    static const char* exact_names[] = {
+        "Arena",
+        "ArenaBlock",
+        "zig_default_arena",
+        "arena_create",
+        "arena_alloc",
+        "arena_reset",
+        "arena_destroy",
+        "arena_alloc_default",
+        "arena_free"
+    };
+    for (size_t i = 0; i < sizeof(exact_names)/sizeof(exact_names[0]); ++i) {
+        if (plat_strcmp(name, exact_names[i]) == 0) return true;
+    }
+
     return false;
 }
 
