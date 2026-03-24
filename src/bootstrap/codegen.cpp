@@ -1395,6 +1395,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
 
 void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     if (!node) return;
+    writeString("/* DEBUG: emitSwitch start */\n");
 
     Type* cond_type = node->expression->resolved_type;
     bool is_tagged_union = isTaggedUnion(cond_type);
@@ -1471,7 +1472,12 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                     {
                         IndentScope capture_indent(*this);
                         writeIndent();
-                        emitType(prong->capture_sym->symbol_type, var_alloc_.allocate(prong->capture_sym));
+                        Type* capture_type = prong->capture_sym->symbol_type;
+                        writeString("/* DEBUG: capture ");
+                        writeString(prong->capture_name);
+                        writeString(" */\n");
+                        writeIndent();
+                        emitType(capture_type, var_alloc_.allocate(prong->capture_sym));
                         writeString(" = ");
                         writeString(switch_tmp);
                         writeString(".data.");
@@ -2447,6 +2453,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
             if (need_parens) writeString(")");
 
             if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
+                writeString("/* DEBUG: NODE_MEMBER_ACCESS pointer base */");
                 writeString("->");
             } else {
                 writeString(".");
