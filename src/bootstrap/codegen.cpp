@@ -1119,38 +1119,73 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeString("/* errdefer */\n");
             break;
         case NODE_EXPRESSION_STMT: {
-            ASTNode* expr = node->as.expression_stmt.expression;
-            if (expr->type == NODE_ASSIGNMENT) {
-                emitAssignmentWithLifting(NULL, expr->as.assignment->lvalue, expr->as.assignment->rvalue);
-            } else if (expr->type == NODE_FUNCTION_CALL) {
-                /* Check if it's std.debug.print */
-                bool is_print = false;
-                const ASTNode* callee = expr->as.function_call->callee;
-                if (callee->type == NODE_MEMBER_ACCESS && plat_strcmp(callee->as.member_access->field_name, "print") == 0) {
-                    is_print = true;
-                }
-
-                if (is_print) {
-                    emitPrintCall(expr->as.function_call);
-                } else {
-                    writeIndent();
-                    emitExpression(expr);
-                    writeString(";\n");
-                }
-            } else if (expr->type == NODE_RETURN_STMT ||
-                       expr->type == NODE_BREAK_STMT ||
-                       expr->type == NODE_CONTINUE_STMT ||
-                       expr->type == NODE_UNREACHABLE) {
-                emitStatement(expr);
-            } else {
-                writeIndent();
-                emitExpression(expr);
-                writeString(";\n");
-            }
+            emitStatement(node->as.expression_stmt.expression);
             break;
         }
         case NODE_ASSIGNMENT: {
             emitAssignmentWithLifting(NULL, node->as.assignment->lvalue, node->as.assignment->rvalue);
+            break;
+        }
+        case NODE_COMPOUND_ASSIGNMENT: {
+            /* Compound assignment as a statement */
+            writeIndent();
+            emitExpression(node->as.compound_assignment->lvalue);
+            writeString(" ");
+            writeString(getTokenSpelling(node->as.compound_assignment->op));
+            writeString(" ");
+            emitExpression(node->as.compound_assignment->rvalue);
+            writeString(";\n");
+            break;
+        }
+        case NODE_FUNCTION_CALL: {
+            /* Check if it's std.debug.print */
+            bool is_print = false;
+            const ASTNode* callee = node->as.function_call->callee;
+            if (callee->type == NODE_MEMBER_ACCESS && plat_strcmp(callee->as.member_access->field_name, "print") == 0) {
+                is_print = true;
+            }
+
+            if (is_print) {
+                emitPrintCall(node->as.function_call);
+            } else {
+                writeIndent();
+                emitExpression(node);
+                writeString(";\n");
+            }
+            break;
+        }
+        /* Handle remaining expression nodes as statements */
+        case NODE_BINARY_OP:
+        case NODE_UNARY_OP:
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_CHAR_LITERAL:
+        case NODE_BOOL_LITERAL:
+        case NODE_NULL_LITERAL:
+        case NODE_ERROR_LITERAL:
+        case NODE_IDENTIFIER:
+        case NODE_STRUCT_INITIALIZER:
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+        case NODE_ARRAY_SLICE:
+        case NODE_IF_EXPR:
+        case NODE_SWITCH_EXPR:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR:
+        case NODE_OFFSET_OF:
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_RANGE:
+        case NODE_PAREN_EXPR:
+        case NODE_ASYNC_EXPR:
+        case NODE_AWAIT_EXPR:
+        case NODE_TUPLE_LITERAL: {
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
             break;
         }
         case NODE_EMPTY_STMT:
