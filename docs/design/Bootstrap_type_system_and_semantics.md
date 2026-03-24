@@ -759,7 +759,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 To ensure that compiler-generated symbols (like temporaries and runtime intrinsics) never collide with user-defined identifiers, a specialized bypass mechanism is used:
 
-1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`.
+1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
 2. **Mangling Bypass**: These identifiers bypass the standard mangling process (module prefixing, keyword avoidance, and character sanitization).
 3. **Truncation Only**: They are emitted verbatim, except for truncation to 31 characters to ensure compatibility with MSVC 6.0.
 4. **User Symbol Protection**: User-defined identifiers starting with `__` are **not** treated as internal and are mangled with a `z_` prefix (e.g., `__reserved` becomes `z__reserved`).

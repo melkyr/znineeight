@@ -3,7 +3,7 @@
 
 echo "Compiling RetroZig Batch Test Runners..."
 
-FLAGS="-m32 -std=c++98 -Wall -DRETROZIG_TEST -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
+FLAGS="-std=c++98 -Wall -DRETROZIG_TEST -Wno-error=unused-function -Wno-error=c++11-extensions -Wno-error=unused-variable -Isrc/include -Itests/integration -Itests/c89_validation -Itests"
 
 for MAIN_FILE in tests/main_batch*.cpp; do
     if [ ! -f "$MAIN_FILE" ]; then continue; fi

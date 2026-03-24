@@ -357,50 +357,9 @@ Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<St
 #endif
 
     if (is_tagged) {
-        // Tagged union: struct { tag_type tag; union { fields } data; }
-        size_t tag_size = tag_type ? tag_type->size : 4;
-        size_t tag_align = tag_type ? tag_type->alignment : 4;
-
-        size_t max_union_size = 0;
-        size_t max_union_align = 1;
-        for (size_t i = 0; i < fields->length(); ++i) {
-            StructField& field = (*fields)[i];
-            if (field.type->size > max_union_size) max_union_size = field.type->size;
-            if (field.type->alignment > max_union_align) max_union_align = field.type->alignment;
-            field.offset = 0; // Offset within the 'data' union
-        }
-
-        // Align the union 'data' after the tag
-        size_t current_offset = tag_size;
-        if (max_union_align > 0 && current_offset % max_union_align != 0) {
-            current_offset += (max_union_align - (current_offset % max_union_align));
-        }
-
-        size_t total_size = current_offset + max_union_size;
-        size_t total_align = tag_align > max_union_align ? tag_align : max_union_align;
-
-        // Final struct padding
-        if (total_align > 0 && total_size % total_align != 0) {
-            total_size += (total_align - (total_size % total_align));
-        }
-
-        new_type->size = total_size;
-        new_type->alignment = total_align;
+        calculateTaggedUnionLayout(new_type);
     } else {
-        // Bare union: union { fields }
-        size_t max_size = 0;
-        size_t max_align = 1;
-        for (size_t i = 0; i < fields->length(); ++i) {
-            StructField& field = (*fields)[i];
-            if (field.type->size > max_size) max_size = field.type->size;
-            if (field.type->alignment > max_align) max_align = field.type->alignment;
-            field.offset = 0;
-        }
-        if (max_align > 0 && max_size % max_align != 0) {
-            max_size += (max_align - (max_size % max_align));
-        }
-        new_type->size = max_size;
-        new_type->alignment = max_align;
+        calculateStructLayout(new_type);
     }
 
     if (name == NULL) return new_type;
@@ -457,6 +416,8 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
 #ifdef DEBUG_TYPE_IDENTITY
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
+
+    calculateTaggedUnionLayout(new_type);
 
     if (name == NULL) return new_type;
 
@@ -750,7 +711,11 @@ void refreshLayout(Type* t) {
                     refreshLayout((*t->as.struct_details.fields)[i].type);
                 }
             }
-            calculateStructLayout(t);
+            if (t->kind == TYPE_UNION && t->as.struct_details.is_tagged) {
+                calculateTaggedUnionLayout(t);
+            } else {
+                calculateStructLayout(t);
+            }
             break;
         case TYPE_TAGGED_UNION:
             if (t->as.tagged_union.tag_type) {
@@ -778,22 +743,24 @@ void refreshLayout(Type* t) {
 }
 
 void calculateTaggedUnionLayout(Type* type) {
-    if (type->kind != TYPE_TAGGED_UNION) return;
+    if (!isTaggedUnion(type)) return;
     if (type->alignment >= 1 && type->size > 0) return;
 
     /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
     size_t tag_align = 4;
     size_t tag_size = 4;
 
-    if (type->as.tagged_union.tag_type) {
-        tag_size = type->as.tagged_union.tag_type->size;
-        tag_align = type->as.tagged_union.tag_type->alignment;
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+
+    if (tag_type) {
+        tag_size = tag_type->size;
+        tag_align = tag_type->alignment;
     }
 
     /* union part: max of field sizes and alignments */
     size_t union_align = 1;
     size_t union_size = 0;
-    DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+    DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
     if (fields) {
         for (size_t i = 0; i < fields->length(); ++i) {
             StructField& field = (*fields)[i];

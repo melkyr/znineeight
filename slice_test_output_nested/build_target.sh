@@ -4,5 +4,5 @@ set -e
 
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c zig_runtime.c -o zig_runtime.o
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c builtin.c -o builtin.o
-gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c tagged_union_layout.c -o tagged_union_layout.o
-gcc -m32 -o app zig_runtime.o builtin.o tagged_union_layout.o
+gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c test.c -o test.o
+gcc -m32 -o app zig_runtime.o builtin.o test.o
