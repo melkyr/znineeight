@@ -603,6 +603,20 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         return;
     }
 
+    if (target_type && isTaggedUnion(target_type) && rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
+        /* Assignment of a tag literal to a tagged union */
+        writeIndent();
+        if (effective_target) {
+            writeString(effective_target);
+        } else if (lvalue_node) {
+            emitExpression(lvalue_node);
+        }
+        writeString(".tag = ");
+        emitExpression(rvalue);
+        writeString(";\n");
+        return;
+    }
+
     /* Initializer Lifting */
     if (rvalue->type == NODE_STRUCT_INITIALIZER) {
         if (effective_target) {
@@ -1495,10 +1509,20 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
 
                         writeIndent();
-                        writeString(capture_lval);
-                        writeString(" = ");
-                        writeString(rvalue_buf);
-                        writeString(";\n");
+                        if (capture_type->kind == TYPE_STRUCT || capture_type->kind == TYPE_UNION) {
+                            writeString("memcpy(&");
+                            writeString(capture_lval);
+                            writeString(", &");
+                            writeString(rvalue_buf);
+                            writeString(", sizeof(");
+                            emitType(capture_type);
+                            writeString("));\n");
+                        } else {
+                            writeString(capture_lval);
+                            writeString(" = ");
+                            writeString(rvalue_buf);
+                            writeString(";\n");
+                        }
                     }
                 }
 
@@ -2461,13 +2485,19 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                 }
             }
 
-            bool need_parens = requiresParentheses(base);
-            if (need_parens) writeString("(");
-            emitExpression(base);
-            if (need_parens) writeString(")");
+            if (base->type == NODE_UNARY_OP &&
+                (base->as.unary_op.op == TOKEN_STAR || base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+                writeString("(");
+                emitExpression(base);
+                writeString(")");
+            } else {
+                bool need_parens = requiresParentheses(base);
+                if (need_parens) writeString("(");
+                emitExpression(base);
+                if (need_parens) writeString(")");
+            }
 
             if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
-                writeString("/* DEBUG: NODE_MEMBER_ACCESS pointer base */");
                 writeString("->");
             } else {
                 writeString(".");
