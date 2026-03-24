@@ -60,6 +60,9 @@ Compilation fails with "unknown type name 'Slice_u8'" and similar errors.
 ### Workaround
 Manually including `zig_special_types.h` or using a compiler flag like `-include o_lisp/zig_special_types.h` is required.
 
+### Bug Reproduction
+`examples/lisp_interpreter/bugrepro/missing_slice_def.zig`
+
 ---
 
 ## 5. The `main` Function Return Type - **RESOLVED**
@@ -69,13 +72,80 @@ The `C89Emitter` correctly generates `int main(int argc, char* argv[])` for `pub
 
 ---
 
-## 6. Missing Runtime Helpers - **NEW**
+## 6. Missing Runtime Helpers - **RESOLVED**
+
+### Current Status
+The required conversion helpers (e.g., `__bootstrap_u8_from_i32`) are now present in `src/include/zig_runtime.h`.
+
+---
+
+## 7. Include Order in `zig_runtime.h` - **OPEN**
 
 ### The Problem
-The compiler generates calls to helper functions that are missing from the `zig_runtime.h` / `zig_runtime.c` files.
+`zig_runtime.h` includes `zig_special_types.h` at the top, but `zig_special_types.h` uses `usize` which is defined later in `zig_runtime.h`.
 
 ### Symptoms
-Warning/Error: `implicit declaration of function ‘__bootstrap_u8_from_i32’`.
+Compilation fails with "unknown type name 'usize'" in `zig_special_types.h`.
 
 ### Required Fix
-Add `__bootstrap_u8_from_i32` and similar conversion helpers to the runtime library.
+Move the inclusion of `zig_special_types.h` after the definition of `usize` and `isize` in `zig_runtime.h`.
+
+### Bug Reproduction
+`examples/lisp_interpreter/bugrepro/missing_slice_def.zig`
+
+---
+
+## 8. Single Translation Unit (STU) Compilation - **OPEN**
+
+### The Problem
+The compiler generates a `main.c` file that includes all other generated `.c` files. This is intended to allow for a single compilation command. However, because each individual `.c` file also includes the headers for its dependencies, this leads to "multiple definition" errors during the link phase if all `.c` files are passed to the compiler.
+
+### Symptoms
+`multiple definition of 'z_util_mem_eql'`, etc.
+
+### Workaround
+Compile using only the master `main.c` and the runtime:
+`gcc -m32 -std=c89 -O2 -I. -o lisp_repl main.c ../src/runtime/zig_runtime.c`
+
+---
+
+## 9. False Positive "Unresolved call" Warnings - **OPEN**
+
+### The Problem
+The `CallResolutionValidator` (active in DEBUG builds) reports built-in functions (like `@intCast`, `@ptrCast`, `@sizeOf`) as unresolved calls because it doesn't recognize them as built-ins.
+
+### Symptoms
+`Unresolved call at ... in context '...'` lines in the compiler output, even though C code generation succeeds.
+
+### Bug Reproduction
+`examples/lisp_interpreter/bugrepro/builtin_warning.zig`
+
+---
+
+## 10. ISO C Warnings in 32-bit Mode - **OPEN**
+
+### The Problem
+When compiling with `-m32 -std=c89 -pedantic`, the generated code triggers warnings related to 1998-era C constraints.
+
+### Symptoms
+- `warning: ISO C90 does not support ‘long long’` (Z98 uses `i64` which maps to `long long`).
+
+---
+
+## 11. Bitwise NOT Support - **RESOLVED**
+
+### Current Status
+Bitwise NOT (`~`) is supported for integer types and correctly emitted to C.
+
+### Verification
+`examples/lisp_interpreter/bugrepro/bitwise_not.zig`
+
+---
+
+## 12. Tagged Union Support - **RESOLVED**
+
+### Current Status
+`union(enum)` types and `switch` payload captures are fully supported and correctly emitted to C89.
+
+### Verification
+`examples/lisp_interpreter/bugrepro/tagged_union.zig`
