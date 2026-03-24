@@ -12,7 +12,7 @@ pub fn lisp_sand_init(buffer: []u8) LispSand {
     };
 }
 
-pub fn lisp_sand_alloc(sand: *LispSand, size: usize, alignment: usize) ![*]u8 {
+pub fn lisp_sand_alloc(sand: *LispSand, size: usize, alignment: usize) anyerror![*]u8 {
     const mask = alignment - 1;
     const current_pos = @ptrToInt(sand.pos);
     const aligned_pos = (current_pos + mask) & ~mask;

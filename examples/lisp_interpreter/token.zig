@@ -37,7 +37,7 @@ fn skip_whitespace(self: *Tokenizer) void {
     }
 }
 
-pub fn next_token(self: *Tokenizer) !Token {
+pub fn next_token(self: *Tokenizer) anyerror!Token {
     skip_whitespace(self);
     if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Int = @intCast(i64, 0) } };
 
@@ -71,7 +71,7 @@ pub fn next_token(self: *Tokenizer) !Token {
     return Token{ .tag = TokenTag.Symbol, .data = TokenData{ .Symbol = sym } };
 }
 
-pub fn peek_token(self: *Tokenizer) !Token {
+pub fn peek_token(self: *Tokenizer) anyerror!Token {
     const saved_pos = self.pos;
     const tok = try next_token(self);
     self.pos = saved_pos;
