@@ -66,3 +66,13 @@ Alternatively, you can modify the emitter to always write these definitions dire
 4. **If you encounter warnings** about signedness of string literals or function pointer casts, those can be addressed later – they don’t prevent linking.
 
 Once these two bugs are resolved, your Lisp interpreter should build into a working executable. Great work – you’re almost there!
+
+---
+
+## Bug #3: C89 Name Mangling Collision for Tagged Unions
+
+**Problem:** The current name mangling strategy for tagged unions produces both an `enum` and a `struct` with the same base name (e.g., `z_module_Type`). When these names are long and truncated to 31 characters for C89/MSVC 6.0 compatibility, they can collide, leading to "wrong kind of tag" errors in C.
+
+**Workaround:** Use shorter filenames or shorter type names to avoid truncation.
+
+**Fix:** Modify the name mangling logic in `NameMangler` and `getC89GlobalName` to ensure `enum` tags and `struct` tags always have distinct suffixes (e.g., `_E` for enums and `_S` for structs) even before truncation.

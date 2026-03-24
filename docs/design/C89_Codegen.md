@@ -209,12 +209,14 @@ This unification reduces code duplication and ensures consistent behavior across
   - **Tagged Union Capture**: When switching on a tagged union, the emitter generates a block for each case that has a capture variable.
     ```c
     case Union_Tag_A: {
-        int x = switch_tmp.data.A;
+        int x;
+        x = switch_tmp.data.A;
         /* body */
     } break;
     ```
     - **Void Handling**: If the captured field has type `void`, the C variable declaration and assignment are skipped to comply with C89 rules.
     - **Declaration/Assignment Separation**: For non-void captures, the emitter separates the declaration of the capture variable from its assignment. This avoids using braced initializers for anonymous structs, which is not permitted in C89.
+    - **Aggregate Copying**: If the captured field is a `struct` or `union`, the emitter uses `memcpy` to perform the assignment, as C89 does not allow direct assignment of anonymous structures.
 - **Return Statements**: Mapped to `return expr;` or `return;`. If `defer` statements are active in the function, they are emitted before the return. If the function returns a value, a temporary variable is used to hold the value while defers run. If the returned expression is a `switch`, `try`, or `catch`, it is lifted to a statement and the result is returned via a temporary.
   - **Implicit Return**: For functions returning `!void` or `ErrorSet!void`, if the end of the body is reached without a return, an implicit `return {0};` (success) is emitted.
 - **Unreachable Expression**: `unreachable` is mapped to a call to `__bootstrap_panic("reached unreachable", __FILE__, __LINE__)`.
@@ -308,7 +310,7 @@ Arithmetic on multi-level pointers is supported only if the outer level is a man
 - `pp + 1` advances by `sizeof(int*)`.
 
 ### 4.7 Operator Precedence & Parentheses
-The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`.
+The emitter maintains correct C precedence by automatically parenthesizing the base expressions of postfix operators (`.`, `->`, `[]`, `()`) when the base expression involves lower-precedence operators like unary `*` or `&`. For example, Zig `ptr.*.field` becomes C `(*ptr).field`. Explicit handling is added for dereference operators (`*` and `.*`) as bases of member access to ensure they are always wrapped in parentheses.
 
 This logic is implemented in `requiresParentheses()` and is applied in:
 - `emitAccess`: For standard member and array access.
@@ -419,6 +421,11 @@ When a value of type `T` is assigned to an error union `!T` (including variable 
 ```c
 target.data.payload = value;
 target.is_error = 0;
+```
+
+When a tag literal (e.g., `Token.Eof`) is assigned to a tagged union, the emitter generates code to set only the tag field:
+```c
+target.tag = Token_Eof;
 ```
 
 When an error literal `error.Tag` is assigned to an error union, it is wrapped as an error using the registered tag ID:

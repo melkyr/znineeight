@@ -11,9 +11,10 @@ pub fn test_switch_capture(v: *Value) i64 {
         .Int => |val| return val,
         .Cons => |data| return test_switch_capture(data.car),
     }
+    return 0;
 }
 
 pub fn main() void {
-    var v: Value = Value{ .Int = 42 };
+    var v: Value = Value{ .Int = @intCast(i64, 42) };
     _ = test_switch_capture(&v);
 }

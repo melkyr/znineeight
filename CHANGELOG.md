@@ -23,3 +23,7 @@ All notable changes to this project will be documented in this file.
 - Supported read-only member access for optional types via `.value` and `.has_value`.
 - Regression test for function return segfault in Batch 62.
 - Implemented "Union Naked Tags" (Milestone 9 Phase 1 extension). Support for writing `Null` instead of `Null: void` in tagged unions.
+- Fixed pointer dereference precedence in C89 codegen by explicitly parenthesizing dereference bases in member access.
+- Fixed tag assignment for void payload variants in tagged unions to set only the `.tag` field.
+- Fixed switch payload capture for aggregate types (structs/unions) by using `memcpy` to bypass C89's direct assignment limitations for anonymous structures.
+- Added `<string.h>` inclusion to `zig_runtime.h` for `memcpy` support.

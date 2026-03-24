@@ -1495,10 +1495,20 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
 
                         writeIndent();
-                        writeString(capture_lval);
-                        writeString(" = ");
-                        writeString(rvalue_buf);
-                        writeString(";\n");
+                        if (capture_type->kind == TYPE_STRUCT || capture_type->kind == TYPE_UNION) {
+                            writeString("memcpy(&");
+                            writeString(capture_lval);
+                            writeString(", &");
+                            writeString(rvalue_buf);
+                            writeString(", sizeof(");
+                            emitType(capture_type);
+                            writeString("));\n");
+                        } else {
+                            writeString(capture_lval);
+                            writeString(" = ");
+                            writeString(rvalue_buf);
+                            writeString(";\n");
+                        }
                     }
                 }
 

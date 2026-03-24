@@ -4,7 +4,7 @@ pub const Token = union(enum) {
 };
 
 pub fn test_union_void_payload() Token {
-    return Token.Eof;
+    return .Eof;
 }
 
 pub fn main() void {
