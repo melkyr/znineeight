@@ -28,7 +28,7 @@ pub fn parse_int(s: []const u8) !i64 {
     return if (negative) -val else val;
 }
 
-pub fn boat_copy(v: *value_mod.Value, perm_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
+pub fn boat_copy(v: *value_mod.Value, perm_sand: *sand_mod.LispSand) !*value_mod.Value {
     if (v.tag == value_mod.ValueTag.Cons) {
         const new_car = try boat_copy(v.data.Cons.car, perm_sand);
         const new_cdr = try boat_copy(v.data.Cons.cdr, perm_sand);
@@ -41,4 +41,6 @@ pub fn boat_copy(v: *value_mod.Value, perm_sand: *sand_mod.LispSand) anyerror!*v
     }
 }
 
-pub const deep_copy = boat_copy;
+pub fn deep_copy(v: *value_mod.Value, perm_sand: *sand_mod.LispSand) !*value_mod.Value {
+    return try boat_copy(v, perm_sand);
+}

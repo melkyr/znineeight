@@ -9,8 +9,11 @@ pub const TokenTag = enum {
 };
 
 pub const TokenData = union {
+    LParen: void,
+    RParen: void,
     Int: i64,
     Symbol: []const u8,
+    Eof: void,
 };
 
 pub const Token = struct {
@@ -37,18 +40,18 @@ fn skip_whitespace(self: *Tokenizer) void {
     }
 }
 
-pub fn next_token(self: *Tokenizer) !Token {
+pub fn next_token(self: *Tokenizer) util.LispError!Token {
     skip_whitespace(self);
-    if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Int = @intCast(i64, 0) } };
+    if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Eof = {} } };
 
     const c = self.input[self.pos];
     if (c == '(') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.LParen, .data = TokenData{ .Int = @intCast(i64, 0) } };
+        return Token{ .tag = TokenTag.LParen, .data = TokenData{ .LParen = {} } };
     }
     if (c == ')') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.RParen, .data = TokenData{ .Int = @intCast(i64, 0) } };
+        return Token{ .tag = TokenTag.RParen, .data = TokenData{ .RParen = {} } };
     }
 
     if (is_digit(c) or (c == '-' and self.pos + 1 < self.input.len and is_digit(self.input[self.pos + 1]))) {
@@ -58,7 +61,7 @@ pub fn next_token(self: *Tokenizer) !Token {
             self.pos += 1;
         }
         const slice = self.input[start..self.pos];
-        const val = try util.parse_int(slice);
+        const val = try parse_int_simple(slice);
         return Token{ .tag = TokenTag.Int, .data = TokenData{ .Int = val } };
     }
 
@@ -71,9 +74,25 @@ pub fn next_token(self: *Tokenizer) !Token {
     return Token{ .tag = TokenTag.Symbol, .data = TokenData{ .Symbol = sym } };
 }
 
-pub fn peek_token(self: *Tokenizer) !Token {
+pub fn peek_token(self: *Tokenizer) util.LispError!Token {
     const saved_pos = self.pos;
     const tok = try next_token(self);
     self.pos = saved_pos;
     return tok;
+}
+
+fn parse_int_simple(s: []const u8) util.LispError!i64 {
+    var res: i64 = 0;
+    var neg = false;
+    var i: usize = 0;
+    if (s.len > 0 and s[0] == '-') {
+        neg = true;
+        i = 1;
+    }
+    while (i < s.len) {
+        res = res * 10 + @intCast(i64, s[i] - '0');
+        i += 1;
+    }
+    if (neg) return -res;
+    return res;
 }
