@@ -3,6 +3,8 @@
 #include "type_checker.hpp"
 #include "platform.hpp"
 
+// test.zig hash: d071e5
+
 TEST_FUNC(Recursive_Factorial) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
@@ -35,13 +37,12 @@ TEST_FUNC(Recursive_Factorial) {
         if (plat_strcmp(entry.context, "factorial") == 0) {
             ASSERT_EQ(CALL_RECURSIVE, entry.call_type);
             ASSERT_TRUE(entry.mangled_name != NULL);
-            // It should be mangled as "factorial" because it's C89 safe
-            ASSERT_STREQ("factorial", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_factorial", entry.mangled_name);
             found_recursive = true;
         } else if (plat_strcmp(entry.context, "main") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
             ASSERT_TRUE(entry.mangled_name != NULL);
-            ASSERT_STREQ("factorial", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_factorial", entry.mangled_name);
             found_direct = true;
         }
     }
@@ -82,11 +83,11 @@ TEST_FUNC(Recursive_Mutual_Mangled) {
         const CallSiteEntry& entry = table.getEntry(i);
         if (plat_strcmp(entry.context, "isEven") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("isOdd", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_isOdd", entry.mangled_name);
             found_isOdd_call = true;
         } else if (plat_strcmp(entry.context, "isOdd") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("isEven", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_isEven", entry.mangled_name);
             found_isEven_call = true;
         }
     }
@@ -121,11 +122,11 @@ TEST_FUNC(Recursive_Forward_Mangled) {
         const CallSiteEntry& entry = table.getEntry(i);
         if (plat_strcmp(entry.context, "start") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("later", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_later", entry.mangled_name);
             found_later_call = true;
         } else if (plat_strcmp(entry.context, "later") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("start", entry.mangled_name);
+            ASSERT_STREQ("zF_d071e5_start", entry.mangled_name);
             found_start_call = true;
         }
     }

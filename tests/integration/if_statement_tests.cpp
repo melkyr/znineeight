@@ -37,7 +37,7 @@ TEST_FUNC(IfStatementIntegration_BoolCondition) {
         "fn foo(b: bool) void {\n"
         "    if (b) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int b) { if (b) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int b) { if (b) { } }");
 }
 
 TEST_FUNC(IfStatementIntegration_IntCondition) {
@@ -45,7 +45,7 @@ TEST_FUNC(IfStatementIntegration_IntCondition) {
         "fn foo(x: i32) void {\n"
         "    if (x) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int x) { if (x) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int x) { if (x) { } }");
 }
 
 TEST_FUNC(IfStatementIntegration_PointerCondition) {
@@ -53,7 +53,7 @@ TEST_FUNC(IfStatementIntegration_PointerCondition) {
         "fn foo(ptr: *i32) void {\n"
         "    if (ptr) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int* ptr) { if (ptr) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int* ptr) { if (ptr) { } }");
 }
 
 // --- Basic if-else ---
@@ -67,7 +67,7 @@ TEST_FUNC(IfStatementIntegration_IfElse) {
         "        return 0;\n"
         "    }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "int foo(int b) { if (b) { return 1; } else { return 0; } }");
+    return run_if_stmt_test(source, "foo", "int zF_d071e5_foo(int b) { if (b) { return 1; } else { return 0; } }");
 }
 
 // --- Chaining and Nesting ---
@@ -84,7 +84,7 @@ TEST_FUNC(IfStatementIntegration_ElseIfChain) {
         "    }\n"
         "}";
     // Zig's "else if" is else { if ... }
-    return run_if_stmt_test(source, "foo", "int foo(int x) { if (x < 0) { return -1; } else if (x == 0) { return 0; } else { return 1; } }");
+    return run_if_stmt_test(source, "foo", "int zF_d071e5_foo(int x) { if (x < 0) { return -1; } else if (x == 0) { return 0; } else { return 1; } }");
 }
 
 TEST_FUNC(IfStatementIntegration_NestedIf) {
@@ -96,7 +96,7 @@ TEST_FUNC(IfStatementIntegration_NestedIf) {
         "        }\n"
         "    }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int a, int b) { if (a) { if (b) { return; } } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int a, int b) { if (a) { if (b) { return; } } }");
 }
 
 // --- Complex Conditions ---
@@ -106,7 +106,7 @@ TEST_FUNC(IfStatementIntegration_LogicalAnd) {
         "fn foo(a: bool, b: bool) void {\n"
         "    if (a and b) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int a, int b) { if (a && b) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int a, int b) { if (a && b) { } }");
 }
 
 TEST_FUNC(IfStatementIntegration_LogicalOr) {
@@ -114,7 +114,7 @@ TEST_FUNC(IfStatementIntegration_LogicalOr) {
         "fn foo(a: bool, b: bool) void {\n"
         "    if (a or b) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int a, int b) { if (a || b) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int a, int b) { if (a || b) { } }");
 }
 
 TEST_FUNC(IfStatementIntegration_LogicalNot) {
@@ -122,7 +122,7 @@ TEST_FUNC(IfStatementIntegration_LogicalNot) {
         "fn foo(a: bool) void {\n"
         "    if (!a) { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int a) { if (!a) { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int a) { if (!a) { } }");
 }
 
 // --- Edge Cases ---
@@ -132,7 +132,7 @@ TEST_FUNC(IfStatementIntegration_EmptyBlocks) {
         "fn foo(b: bool) void {\n"
         "    if (b) { } else { }\n"
         "}";
-    return run_if_stmt_test(source, "foo", "void foo(int b) { if (b) { } else { } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int b) { if (b) { } else { } }");
 }
 
 TEST_FUNC(IfStatementIntegration_ReturnFromBranches) {
@@ -143,7 +143,7 @@ TEST_FUNC(IfStatementIntegration_ReturnFromBranches) {
         "    }\n"
         "    return 0;\n"
         "}";
-    return run_if_stmt_test(source, "foo", "int foo(int x) { if (x > 10) { return 1; } return 0; }");
+    return run_if_stmt_test(source, "foo", "int zF_d071e5_foo(int x) { if (x > 10) { return 1; } return 0; }");
 }
 
 // --- Negative Tests ---
@@ -173,5 +173,5 @@ TEST_FUNC(IfStatementIntegration_AllowBracelessIf) {
         "    if (b) return;\n"
         "}";
 
-    return run_if_stmt_test(source, "foo", "void foo(int b) { if (b) { return; } }");
+    return run_if_stmt_test(source, "foo", "void zF_d071e5_foo(int b) { if (b) { return; } }");
 }

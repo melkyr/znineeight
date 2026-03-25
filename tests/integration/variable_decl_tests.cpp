@@ -10,6 +10,8 @@
  * @brief Integration tests for Zig variable declarations in the RetroZig compiler.
  */
 
+// test.zig hash: d071e5
+
 static bool run_var_decl_test(const char* zig_code, const char* var_name, const char* expected_c89) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
@@ -32,15 +34,15 @@ static bool run_var_decl_test(const char* zig_code, const char* var_name, const 
 // --- Basic Declarations ---
 
 TEST_FUNC(VariableIntegration_BasicI32) {
-    return run_var_decl_test("var x: i32 = 42;", "x", "int x = 42;");
+    return run_var_decl_test("var x: i32 = 42;", "x", "int zV_d071e5_x = 42;");
 }
 
 TEST_FUNC(VariableIntegration_BasicConstF64) {
-    return run_var_decl_test("const y: f64 = 3.14;", "y", "double y = 3.14;");
+    return run_var_decl_test("const y: f64 = 3.14;", "y", "double zC_d071e5_y = 3.14;");
 }
 
 TEST_FUNC(VariableIntegration_GlobalVar) {
-    return run_var_decl_test("var global_val: u32 = 100u;", "global_val", "unsigned int global_val = 100U;");
+    return run_var_decl_test("var global_val: u32 = 100u;", "global_val", "unsigned int zV_d071e5_global_val = 100U;");
 }
 
 TEST_FUNC(VariableIntegration_LocalVar) {
@@ -48,43 +50,46 @@ TEST_FUNC(VariableIntegration_LocalVar) {
         "fn foo() void {\n"
         "    var local_val: i16 = 500;\n"
         "}";
+    // Local variables do NOT get a global mangled name in the mock emitter (it uses decl->name if mangled_name is NULL)
+    // Actually, TypeChecker sets existing_sym->mangled_name = NULL for locals.
     return run_var_decl_test(source, "local_val", "short local_val = 500;");
 }
 
 // --- Type Inference ---
 
 TEST_FUNC(VariableIntegration_InferredInt) {
-    return run_var_decl_test("var x = 42;", "x", "int x = 42;");
+    return run_var_decl_test("var x = 42;", "x", "int zV_d071e5_x = 42;");
 }
 
 TEST_FUNC(VariableIntegration_InferredFloat) {
-    return run_var_decl_test("var y = 3.14;", "y", "double y = 3.14;");
+    return run_var_decl_test("var y = 3.14;", "y", "double zV_d071e5_y = 3.14;");
 }
 
 TEST_FUNC(VariableIntegration_InferredBool) {
-    return run_var_decl_test("const b = true;", "b", "int b = 1;");
+    // const inferred bool
+    return run_var_decl_test("const b = true;", "b", "int zC_d071e5_b = 1;");
 }
 
 // --- Name Mangling ---
 
 TEST_FUNC(VariableIntegration_MangleKeyword) {
     // 'int' is a C keyword but NOT a Zig keyword, so it is a valid Zig identifier.
-    // It should be mangled to 'z_int' by sanitizeForC89.
-    return run_var_decl_test("var int: i32 = 0;", "int", "int z_int = 0;");
+    return run_var_decl_test("var int: i32 = 0;", "int", "int zV_d071e5_int = 0;");
 }
 
 TEST_FUNC(VariableIntegration_MangleReserved) {
     // Names starting with __ are reserved in C.
-    // sanitizeForC89 prepends 'z' if it starts with '_'.
-    // Zig '__reserved' -> C 'z__reserved'
-    return run_var_decl_test("var __reserved: i32 = 1;", "__reserved", "int z__reserved = 1;");
+    return run_var_decl_test("var __reserved: i32 = 1;", "__reserved", "int zV_d071e5___reserved = 1;");
 }
 
 TEST_FUNC(VariableIntegration_MangleLongName) {
     // 31 character limit for MSVC 6.0
+    // "zV_d071e5_" is 10 chars.
+    // "this_is_a_very_long_variable_name_that_exceeds_31_chars" (55 chars)
+    // available = 31 - 10 = 21.
+    // suffix of 21 chars: "that_exceeds_31_chars"
     const char* long_name = "this_is_a_very_long_variable_name_that_exceeds_31_chars";
-    // Truncated to 31: "this_is_a_very_long_variable_na"
-    return run_var_decl_test("var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 1;", long_name, "int this_is_a_very_long_variable_na = 1;");
+    return run_var_decl_test("var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 1;", long_name, "int zV_d071e5_that_exceeds_31_chars = 1;");
 }
 
 // --- Negative Tests ---
@@ -125,5 +130,5 @@ TEST_FUNC(VariableIntegration_AllowSlice) {
 }
 
 TEST_FUNC(VariableIntegration_PointerToVoid) {
-    return run_var_decl_test("var p: *void = null;", "p", "void* p = ((void*)0);");
+    return run_var_decl_test("var p: *void = null;", "p", "void* zV_d071e5_p = ((void*)0);");
 }

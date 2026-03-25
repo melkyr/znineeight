@@ -59,7 +59,7 @@ TEST_FUNC(PointerIntegration_AddressOfDereference) {
         "    var p: *i32 = &x;\n"
         "    return p.*;\n"
         "}";
-    return run_pointer_test(source, "p", "int* p = &x;");
+    return run_pointer_test(source, "p", "int* zV_d071e5_p = &x;");
 }
 
 TEST_FUNC(PointerIntegration_DereferenceExpression) {
@@ -69,7 +69,7 @@ TEST_FUNC(PointerIntegration_DereferenceExpression) {
         "    var p: *i32 = &x;\n"
         "    return p.*;\n"
         "}";
-    return run_pointer_expression_test(source, "*p");
+    return run_pointer_expression_test(source, "*zV_d071e5_p");
 }
 
 TEST_FUNC(PointerIntegration_PointerArithmeticAdd) {
@@ -91,7 +91,7 @@ TEST_FUNC(PointerIntegration_PointerArithmeticSub) {
 TEST_FUNC(PointerIntegration_NullLiteral) {
     const char* source =
         "var p: *i32 = null;";
-    return run_pointer_test(source, "p", "int* p = ((void*)0);");
+    return run_pointer_test(source, "p", "int* zV_d071e5_p = ((void*)0);");
 }
 
 TEST_FUNC(PointerIntegration_NullComparison) {
@@ -99,7 +99,7 @@ TEST_FUNC(PointerIntegration_NullComparison) {
         "fn foo(p: *i32) bool {\n"
         "    return p == null;\n"
         "}";
-    return run_pointer_expression_test(source, "p == ((void*)0)");
+    return run_pointer_expression_test(source, "zV_d071e5_p == ((void*)0)");
 }
 
 TEST_FUNC(PointerIntegration_PointerToStruct) {
@@ -108,7 +108,7 @@ TEST_FUNC(PointerIntegration_PointerToStruct) {
         "fn foo(p: *Point) i32 {\n"
         "    return p.x;\n"
         "}";
-    return run_pointer_expression_test(source, "p->x");
+    return run_pointer_expression_test(source, "zV_d071e5_p->x");
 }
 
 TEST_FUNC(PointerIntegration_VoidPointerAssignment) {
@@ -117,7 +117,7 @@ TEST_FUNC(PointerIntegration_VoidPointerAssignment) {
         "    var v: *void = p;\n"
         "    return v;\n"
         "}";
-    return run_pointer_test(source, "v", "void* v = p;");
+    return run_pointer_test(source, "v", "void* zV_d071e5_v = p;");
 }
 
 TEST_FUNC(PointerIntegration_ConstAdding) {
@@ -126,7 +126,7 @@ TEST_FUNC(PointerIntegration_ConstAdding) {
         "    var cp: *const i32 = p;\n"
         "    return cp;\n"
         "}";
-    return run_pointer_test(source, "cp", "int* cp = p;");
+    return run_pointer_test(source, "cp", "int* zV_d071e5_cp = p;");
 }
 
 // --- Negative Tests ---
