@@ -1,24 +1,11 @@
 const util = @import("util.zig");
 
-pub const TokenTag = enum {
-    LParen,
-    RParen,
-    Int,
-    Symbol,
-    Eof,
-};
-
-pub const TokenData = union {
+pub const Token = union(enum) {
     LParen: void,
     RParen: void,
     Int: i64,
     Symbol: []const u8,
     Eof: void,
-};
-
-pub const Token = struct {
-    tag: TokenTag,
-    data: TokenData,
 };
 
 pub const Tokenizer = struct {
@@ -42,16 +29,16 @@ fn skip_whitespace(self: *Tokenizer) void {
 
 pub fn next_token(self: *Tokenizer) util.LispError!Token {
     skip_whitespace(self);
-    if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Eof = {} } };
+    if (self.pos >= self.input.len) return Token.Eof;
 
     const c = self.input[self.pos];
     if (c == '(') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.LParen, .data = TokenData{ .LParen = {} } };
+        return Token.LParen;
     }
     if (c == ')') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.RParen, .data = TokenData{ .RParen = {} } };
+        return Token.RParen;
     }
 
     if (is_digit(c) or (c == '-' and self.pos + 1 < self.input.len and is_digit(self.input[self.pos + 1]))) {
@@ -62,7 +49,7 @@ pub fn next_token(self: *Tokenizer) util.LispError!Token {
         }
         const slice = self.input[start..self.pos];
         const val = try parse_int_simple(slice);
-        return Token{ .tag = TokenTag.Int, .data = TokenData{ .Int = val } };
+        return Token{ .Int = val };
     }
 
     // Symbol
@@ -71,7 +58,7 @@ pub fn next_token(self: *Tokenizer) util.LispError!Token {
         self.pos += 1;
     }
     const sym = self.input[start..self.pos];
-    return Token{ .tag = TokenTag.Symbol, .data = TokenData{ .Symbol = sym } };
+    return Token{ .Symbol = sym };
 }
 
 pub fn peek_token(self: *Tokenizer) util.LispError!Token {

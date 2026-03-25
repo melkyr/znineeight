@@ -9,31 +9,26 @@ pub fn builtin_cons(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispEr
 
 pub fn builtin_car(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 1) return error.WrongArity;
-    const v = args[0];
-    if (v.tag == value_mod.ValueTag.Cons) {
-        return v.data.Cons.car;
-    } else {
-        return error.NotACons;
+    switch (args[0].*) {
+        .Cons => |data| return data.car,
+        else => return error.NotACons,
     }
 }
 
 pub fn builtin_cdr(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 1) return error.WrongArity;
-    const v = args[0];
-    if (v.tag == value_mod.ValueTag.Cons) {
-        return v.data.Cons.cdr;
-    } else {
-        return error.NotACons;
+    switch (args[0].*) {
+        .Cons => |data| return data.cdr,
+        else => return error.NotACons,
     }
 }
 
 pub fn builtin_add(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     var sum: i64 = 0;
     for (args) |arg| {
-        if (arg.tag == value_mod.ValueTag.Int) {
-            sum += arg.data.Int;
-        } else {
-            return error.NotAnInt;
+        switch (arg.*) {
+            .Int => |val| sum += val,
+            else => return error.NotAnInt,
         }
     }
     return try value_mod.alloc_int(sum, arena);
@@ -42,11 +37,9 @@ pub fn builtin_add(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErr
 pub fn builtin_sub(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len == 0) return error.WrongArity;
     var res: i64 = 0;
-    const first = args[0];
-    if (first.tag == value_mod.ValueTag.Int) {
-        res = first.data.Int;
-    } else {
-        return error.NotAnInt;
+    switch (args[0].*) {
+        .Int => |val| res = val,
+        else => return error.NotAnInt,
     }
 
     if (args.len == 1) {
@@ -54,11 +47,9 @@ pub fn builtin_sub(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErr
     }
     var i: usize = 1;
     while (i < args.len) {
-        const arg = args[i];
-        if (arg.tag == value_mod.ValueTag.Int) {
-            res -= arg.data.Int;
-        } else {
-            return error.NotAnInt;
+        switch (args[i].*) {
+            .Int => |val| res -= val,
+            else => return error.NotAnInt,
         }
         i += 1;
     }
@@ -68,10 +59,9 @@ pub fn builtin_sub(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErr
 pub fn builtin_mul(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     var res: i64 = 1;
     for (args) |arg| {
-        if (arg.tag == value_mod.ValueTag.Int) {
-            res *= arg.data.Int;
-        } else {
-            return error.NotAnInt;
+        switch (arg.*) {
+            .Int => |val| res *= val,
+            else => return error.NotAnInt,
         }
     }
     return try value_mod.alloc_int(res, arena);
@@ -80,21 +70,19 @@ pub fn builtin_mul(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErr
 pub fn builtin_div(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len == 0) return error.WrongArity;
     var res: i64 = 0;
-    const first = args[0];
-    if (first.tag == value_mod.ValueTag.Int) {
-        res = first.data.Int;
-    } else {
-        return error.NotAnInt;
+    switch (args[0].*) {
+        .Int => |val| res = val,
+        else => return error.NotAnInt,
     }
 
     var i: usize = 1;
     while (i < args.len) {
-        const arg = args[i];
-        if (arg.tag == value_mod.ValueTag.Int) {
-            if (arg.data.Int == 0) return error.DivisionByZero;
-            res /= arg.data.Int;
-        } else {
-            return error.NotAnInt;
+        switch (args[i].*) {
+            .Int => |val| {
+                if (val == 0) return error.DivisionByZero;
+                res /= val;
+            },
+            else => return error.NotAnInt,
         }
         i += 1;
     }
@@ -107,24 +95,34 @@ pub fn builtin_eq(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErro
     const b = args[1];
     var res = false;
 
-    if (a.tag == value_mod.ValueTag.Int) {
-        if (b.tag == value_mod.ValueTag.Int) {
-            res = a.data.Int == b.data.Int;
-        }
-    } else if (a.tag == value_mod.ValueTag.Bool) {
-        if (b.tag == value_mod.ValueTag.Bool) {
-            res = a.data.Bool == b.data.Bool;
-        }
-    } else if (a.tag == value_mod.ValueTag.Symbol) {
-        if (b.tag == value_mod.ValueTag.Symbol) {
-            res = util.mem_eql(a.data.Symbol, b.data.Symbol);
-        }
-    } else if (a.tag == value_mod.ValueTag.Nil) {
-        if (b.tag == value_mod.ValueTag.Nil) {
-            res = true;
-        }
-    } else {
-        res = a == b;
+    switch (a.*) {
+        .Int => |av| {
+            switch (b.*) {
+                .Int => |bv| res = av == bv,
+                else => {},
+            }
+        },
+        .Bool => |av| {
+            switch (b.*) {
+                .Bool => |bv| res = av == bv,
+                else => {},
+            }
+        },
+        .Symbol => |av| {
+            switch (b.*) {
+                .Symbol => |bv| res = util.mem_eql(av, bv),
+                else => {},
+            }
+        },
+        .Nil => {
+            switch (b.*) {
+                .Nil => res = true,
+                else => {},
+            }
+        },
+        else => {
+            res = a == b;
+        },
     }
 
     return try value_mod.alloc_bool(res, arena);
@@ -133,35 +131,38 @@ pub fn builtin_eq(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispErro
 pub fn builtin_is_nil(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 1) return error.WrongArity;
     var res = false;
-    const v = args[0];
-    if (v.tag == value_mod.ValueTag.Nil) {
-        res = true;
-    } else if (v.tag == value_mod.ValueTag.Symbol) {
-        res = util.mem_eql(v.data.Symbol, "nil");
+    switch (args[0].*) {
+        .Nil => res = true,
+        .Symbol => |s| res = util.mem_eql(s, "nil"),
+        else => {},
     }
     return try value_mod.alloc_bool(res, arena);
 }
 
 pub fn builtin_lt(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 2) return error.WrongArity;
-    const a = args[0];
-    const b = args[1];
-    if (a.tag == value_mod.ValueTag.Int) {
-        if (b.tag == value_mod.ValueTag.Int) {
-            return try value_mod.alloc_bool(a.data.Int < b.data.Int, arena);
-        }
+    switch (args[0].*) {
+        .Int => |av| {
+            switch (args[1].*) {
+                .Int => |bv| return try value_mod.alloc_bool(av < bv, arena),
+                else => {},
+            }
+        },
+        else => {},
     }
     return error.NotAnInt;
 }
 
 pub fn builtin_gt(args: []*value_mod.Value, arena: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (args.len != 2) return error.WrongArity;
-    const a = args[0];
-    const b = args[1];
-    if (a.tag == value_mod.ValueTag.Int) {
-        if (b.tag == value_mod.ValueTag.Int) {
-            return try value_mod.alloc_bool(a.data.Int > b.data.Int, arena);
-        }
+    switch (args[0].*) {
+        .Int => |av| {
+            switch (args[1].*) {
+                .Int => |bv| return try value_mod.alloc_bool(av > bv, arena),
+                else => {},
+            }
+        },
+        else => {},
     }
     return error.NotAnInt;
 }

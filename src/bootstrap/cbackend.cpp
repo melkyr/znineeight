@@ -73,6 +73,7 @@ bool CBackend::generateSourceFile(Module* module, const char* output_dir, Dynami
 
     for (size_t i = 0; i < module->imports.length(); ++i) {
         if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+        if (plat_strcmp(module->imports[i], "builtin") == 0) continue;
         emitter.writeString("#include \"");
         emitter.writeString(module->imports[i]);
         emitter.writeString(".h\"\n");
@@ -426,7 +427,17 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.writeString(guard);
     emitter.writeString("\n\n");
 
-    emitter.writeString("#include \"zig_runtime.h\"\n");
+    emitter.writeString("#include \"zig_runtime.h\"\n\n");
+
+    /* Pass 0: Forward declarations of aggregate types */
+    /* We emit forward declarations for all aggregates used in the header. */
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* t = module->header_types[i];
+        if (t->kind != TYPE_ENUM && t->kind != TYPE_SLICE && t->kind != TYPE_ERROR_UNION && t->kind != TYPE_OPTIONAL) {
+            emitter.ensureForwardDeclaration(t);
+        }
+    }
+    emitter.writeString("\n");
 
     for (size_t i = 0; i < module->imports.length(); ++i) {
         if (plat_strcmp(module->imports[i], module->name) == 0) continue;
@@ -436,25 +447,19 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     }
     emitter.writeString("\n");
 
-    /* Pass 0: Forward declarations of aggregate types */
-    /* We emit forward declarations for all aggregates used in the header,
-       but ONLY if they are defined in this module. Imports handle the rest. */
-    for (size_t i = 0; i < module->header_types.length(); ++i) {
-        Type* t = module->header_types[i];
-        if (t->owner_module == module && t->kind != TYPE_ENUM) {
-            emitter.ensureForwardDeclaration(t);
-        }
-    }
-    emitter.writeString("\n");
-
     // Use pre-computed header types in dependency order.
     // Special types (slices, error unions, optionals) are included in header_types
     // and will be emitted via ensure... calls during this loop.
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind == TYPE_FUNCTION || t->kind == TYPE_FUNCTION_POINTER) continue;
-        emitter.emitTypeDefinition(t);
-        emitter.emitBufferedTypeDefinitions();
+
+        /* Only emit the actual definition if this module owns the type.
+           Types from other modules are already forward-declared or included via headers. */
+        if (t->owner_module == module || t->kind == TYPE_SLICE || t->kind == TYPE_ERROR_UNION || t->kind == TYPE_OPTIONAL) {
+            emitter.emitTypeDefinition(t);
+            emitter.emitBufferedTypeDefinitions();
+        }
     }
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {

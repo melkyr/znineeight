@@ -96,6 +96,15 @@ void MetadataPreparationPass::run() {
 
                     if (is_pub || (sym->flags & SYMBOL_FLAG_EXTERN)) {
                         collectReachableTypes(mod, sym->symbol_type, visited);
+
+                        /* If this is a type constant (e.g., pub const T = struct {...}),
+                           ensure the actual type is also collected. */
+                        if (sym->symbol_type->kind == TYPE_TYPE && sym->details) {
+                            ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+                            if (decl->initializer && decl->initializer->resolved_type) {
+                                collectReachableTypes(mod, decl->initializer->resolved_type, visited);
+                            }
+                        }
                     }
                 }
             }
@@ -122,6 +131,9 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
     switch (type->kind) {
         case TYPE_ARRAY:
             collectReachableTypes(mod, type->as.array.element_type, visited);
+            break;
+        case TYPE_SLICE:
+            collectReachableTypes(mod, type->as.slice.element_type, visited);
             break;
         case TYPE_STRUCT:
         case TYPE_UNION:
@@ -187,36 +199,25 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
 
     // 2. Add ourselves to header_types if we belong in this module's header.
     if (isHeaderType(type)) {
-        bool belongs_here = false;
-        if (!type->owner_module || type->owner_module == mod) {
-            belongs_here = true;
-        } else if (type->kind == TYPE_SLICE || type->kind == TYPE_OPTIONAL || type->kind == TYPE_ERROR_UNION) {
-            /* Special types are added to every header that uses them to ensure self-containment. */
-            belongs_here = true;
-        } else {
-             /* If it's a named aggregate from another module, it's NOT belongs_here.
-                HOWEVER, we still need to add it if it's reachable from this module's public symbols.
-                Wait, if it's from another module, mod->header_types should NOT contain it.
-                But existing tests like MetadataPreparation_TransitiveHeaders expect Outer to be in header_types.
-                If Outer is defined in lib.zig, it should be in lib_mod->header_types. */
+        /* We add the type to header_types if:
+           a) It's owned by this module.
+           b) It's a special type (Slice, Optional, ErrorUnion) - these are emitted in every header that uses them for self-containment.
+           c) It's from another module - we add it so it gets forward-declared in this module's header.
+           In summary, any reachable header type is added to the module's header_types. */
+        bool already_in = false;
+        /* Take a snapshot to prevent iterator invalidation if mod->header_types is modified during recursion */
+        DynamicArray<Type*> header_snapshot(unit_.getArena());
+        for (size_t i = 0; i < mod->header_types.length(); ++i) {
+            header_snapshot.append(mod->header_types[i]);
         }
-
-        if (belongs_here) {
-            bool already_in = false;
-            /* Take a snapshot to prevent iterator invalidation if mod->header_types is modified during recursion */
-            DynamicArray<Type*> header_snapshot(unit_.getArena());
-            for (size_t i = 0; i < mod->header_types.length(); ++i) {
-                header_snapshot.append(mod->header_types[i]);
+        for (size_t i = 0; i < header_snapshot.length(); ++i) {
+            if (header_snapshot[i] == type) {
+                already_in = true;
+                break;
             }
-            for (size_t i = 0; i < header_snapshot.length(); ++i) {
-                if (header_snapshot[i] == type) {
-                    already_in = true;
-                    break;
-                }
-            }
-            if (!already_in) {
-                mod->header_types.append(type);
-            }
+        }
+        if (!already_in) {
+            mod->header_types.append(type);
         }
     }
 
