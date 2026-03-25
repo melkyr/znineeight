@@ -3,10 +3,11 @@ pub const Token = union(enum) {
     Int: i64,
 };
 
-pub fn test_union_void_payload() Token {
-    return Token.Eof;
+pub fn test_union_void_payload(t: *Token) void {
+    t.* = .Eof;
 }
 
 pub fn main() void {
-    _ = test_union_void_payload();
+    var t: Token = undefined;
+    test_union_void_payload(&t);
 }
