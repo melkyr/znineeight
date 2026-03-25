@@ -24,53 +24,59 @@ fn print_str(s: []const u8) void {
 }
 
 fn print_value(v: *value_mod.Value) void {
-    if (v.tag == value_mod.ValueTag.Nil) {
-        print_str("nil");
-    } else if (v.tag == value_mod.ValueTag.Int) {
-        __bootstrap_print_int(@intCast(i32, v.data.Int));
-    } else if (v.tag == value_mod.ValueTag.Bool) {
-        if (v.data.Bool) {
-            print_str("true");
-        } else {
-            print_str("false");
-        }
-    } else if (v.tag == value_mod.ValueTag.Symbol) {
-        print_str(v.data.Symbol);
-    } else if (v.tag == value_mod.ValueTag.Builtin) {
-        print_str("<builtin>");
-    } else if (v.tag == value_mod.ValueTag.Cons) {
-        const car = v.data.Cons.car;
-        if (car.tag == value_mod.ValueTag.Symbol) {
-            if (util.mem_eql(car.data.Symbol, "closure")) {
-                print_str("<closure>");
-                return;
+    switch (v.*) {
+        .Nil => print_str("nil"),
+        .Int => |val| __bootstrap_print_int(@intCast(i32, val)),
+        .Bool => |val| {
+            if (val) {
+                print_str("true");
+            } else {
+                print_str("false");
             }
-        }
-        print_str("(");
-        print_list(v);
-        print_str(")");
+        },
+        .Symbol => |name| print_str(name),
+        .Builtin => |_| print_str("<builtin>"),
+        .Cons => |data| {
+            const car = data.car;
+            switch (car.*) {
+                .Symbol => |s| {
+                    if (util.mem_eql(s, "closure")) {
+                        print_str("<closure>");
+                        return;
+                    }
+                },
+                else => {},
+            }
+            print_str("(");
+            print_list(v);
+            print_str(")");
+        },
     }
 }
 
 fn print_list(v: *value_mod.Value) void {
-    if (v.tag == value_mod.ValueTag.Cons) {
-        print_value(v.data.Cons.car);
-        const cdr = v.data.Cons.cdr;
-        if (cdr.tag == value_mod.ValueTag.Nil) {
-            // end of list
-        } else if (cdr.tag == value_mod.ValueTag.Symbol) {
-            if (util.mem_eql(cdr.data.Symbol, "nil")) return;
-            print_str(" . ");
-            print_str(cdr.data.Symbol);
-        } else if (cdr.tag == value_mod.ValueTag.Cons) {
-            print_str(" ");
-            print_list(cdr);
-        } else {
-            print_str(" . ");
-            print_value(cdr);
-        }
-    } else {
-        // unreachable in correct list
+    switch (v.*) {
+        .Cons => |data| {
+            print_value(data.car);
+            const cdr = data.cdr;
+            switch (cdr.*) {
+                .Nil => {},
+                .Symbol => |s| {
+                    if (util.mem_eql(s, "nil")) return;
+                    print_str(" . ");
+                    print_str(s);
+                },
+                .Cons => {
+                    print_str(" ");
+                    print_list(cdr);
+                },
+                else => {
+                    print_str(" . ");
+                    print_value(cdr);
+                },
+            }
+        },
+        else => {},
     }
 }
 
@@ -121,18 +127,13 @@ pub fn main() void {
         const line = input_buf[0..@intCast(usize, len)];
 
         var tokenizer = token_mod.Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
-        const expr = parser_mod.parse_expr(&tokenizer, &perm_sand, &temp_sand) catch continue;
+        const expr = parser_mod.parse_expr(&tokenizer, &perm_sand, &temp_sand) catch |err| {
+            print_str("Parse error\n");
+            continue;
+        };
 
         const result = eval_mod.eval(expr, &global_env, &temp_sand, &perm_sand) catch |err| {
-            print_str("Error: ");
-            if (err == error.NotAnInt) {
-                print_str("Not an integer");
-            } else if (err == error.WrongArity) {
-                print_str("Wrong number of arguments");
-            } else {
-                print_str("Unknown error");
-            }
-            print_str("\n");
+            print_str("Eval error\n");
             continue;
         };
 
