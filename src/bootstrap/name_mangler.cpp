@@ -15,23 +15,6 @@ const char* NameMangler::mangle(char kind, const char* module_path, const char* 
         return interner_.intern(buf);
     }
 
-    char prefix[32];
-    prefix[0] = 'z';
-    prefix[1] = kind;
-    prefix[2] = '_';
-    prefix[3] = '\0';
-
-    size_t prefix_len = plat_strlen(prefix);
-    size_t local_len = plat_strlen(local_name);
-
-    if (prefix_len + local_len <= 31) {
-        char full[256];
-        plat_strcpy(full, prefix);
-        plat_strcat(full, local_name);
-        ::sanitizeForC89(full);
-        return interner_.intern(full);
-    }
-
     // Hashed mode
     u32 hash = 0;
     if (module_path) {
@@ -51,16 +34,19 @@ const char* NameMangler::mangle(char kind, const char* module_path, const char* 
     hash_str[6] = '\0';
 
     char hashed_prefix[32];
-    plat_strcpy(hashed_prefix, prefix);
+    hashed_prefix[0] = 'z';
+    hashed_prefix[1] = kind;
+    hashed_prefix[2] = '_';
+    hashed_prefix[3] = '\0';
     plat_strcat(hashed_prefix, hash_str);
     plat_strcat(hashed_prefix, "_");
 
     size_t hp_len = plat_strlen(hashed_prefix);
     size_t available = 31 - hp_len;
+    size_t local_len = plat_strlen(local_name);
 
     char final_name[256];
     plat_strcpy(final_name, hashed_prefix);
-    
     if (local_len > available) {
         plat_strcat(final_name, local_name + (local_len - available));
     } else {

@@ -59,9 +59,9 @@ TEST_FUNC(Task9_8_ImplicitReturnErrorVoid) {
 
     // Verify emission includes return {0};
     ASSERT_TRUE(unit.validateRealFunctionEmission("foo",
-        "static err_void foo(void) {\n"
+        "static ErrorUnion_void foo(void) {\n"
         "    {\n"
-        "        err_void __implicit_ret = {0};\n"
+        "        ErrorUnion_void __implicit_ret = {0};\n"
         "        return __implicit_ret;\n"
         "    }\n"
         "}"));

@@ -3314,6 +3314,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
+    is_local = (current_fn_return_type_ != NULL);
+
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
@@ -3323,12 +3326,15 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         existing_sym->details = node;
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
             existing_sym->mangled_name = existing_sym->name;
+        } else if (is_local) {
+            /* Local variables do not get a global mangled name. 
+               The C89Emitter will handle them via CVariableAllocator. */
+            existing_sym->mangled_name = NULL;
         } else if (!existing_sym->mangled_name) {
-            existing_sym->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            char k_char = node->is_const ? 'C' : 'V';
+            existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
         }
 
-        /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
-        is_local = (current_fn_return_type_ != NULL);
         existing_sym->flags |= is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
         if (node->is_const) {
             existing_sym->flags |= SYMBOL_FLAG_CONST;
@@ -3337,9 +3343,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     } else {
         /* If not found (e.g. injected in tests), create and insert. */
         if (declared_type && !is_type_undefined(declared_type)) {
-            is_local = (current_fn_return_type_ != NULL);
-            mangled = (node->is_extern) ? node->name :
-                                 unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            mangled = NULL;
+            if (node->is_extern) {
+                mangled = node->name;
+            } else if (!is_local) {
+                char k_char = node->is_const ? 'C' : 'V';
+                mangled = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
+            }
 
             Symbol var_symbol = SymbolBuilder(unit_.getArena())
                 .withName(node->name)
@@ -3449,7 +3459,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
             fn_symbol->mangled_name = fn_symbol->name;
         } else {
-            fn_symbol->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            fn_symbol->mangled_name = unit_.getNameMangler().mangle('F', unit_.getCurrentModule(), node->name);
         }
     }
 

@@ -56,11 +56,13 @@ public:
         Type* type = symbol->symbol_type;
         if (type && type->kind == TYPE_ARRAY) {
             ss << getC89TypeName(type->as.array.element_type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
             ss << "[" << (unsigned long)type->as.array.size << "]";
         } else {
             ss << getC89TypeName(type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
         }
 
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
@@ -562,7 +564,8 @@ public:
         std::stringstream ss;
         Type* fn_type = symbol->symbol_type;
         ss << getC89TypeName(fn_type->as.function.return_type) << " ";
-        ss << (symbol->mangled_name ? symbol->mangled_name : fn->name);
+        if (symbol->mangled_name) ss << symbol->mangled_name;
+        else ss << fn->name;
         ss << "(";
 
         DynamicArray<Type*>* params = fn_type->as.function.params;

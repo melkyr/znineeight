@@ -234,9 +234,16 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
         emitter.writeString("\n");
 
         emitter.writeIndent();
-        emitter.writeString("typedef struct { ");
+        emitter.writeString("struct ");
+        emitter.writeString(mangled_name);
+        emitter.writeString(" { ");
         emitter.emitType(elem_type);
-        emitter.writeString("* ptr; usize len; } ");
+        emitter.writeString("* ptr; usize len; };\n");
+
+        emitter.writeIndent();
+        emitter.writeString("typedef struct ");
+        emitter.writeString(mangled_name);
+        emitter.writeString(" ");
         emitter.writeString(mangled_name);
         emitter.writeString(";\n");
 

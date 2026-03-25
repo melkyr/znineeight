@@ -2513,10 +2513,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                                               actual_type->as.module.name :
                                               (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
                         if (mod_name) {
-                            writeString("z_");
-                            writeString(mod_name);
-                            writeString("_");
-                            writeString(node->as.member_access->field_name);
+                            writeString(unit_.getNameMangler().mangle('V', mod_name, node->as.member_access->field_name));
                         } else {
                             writeString(node->as.member_access->field_name);
                         }
@@ -2631,8 +2628,11 @@ void C89Emitter::ensureOptionalType(Type* type) {
     writeString("\n");
 
     writeIndent();
-    writeString("typedef struct {\n");
+    writeString("struct ");
+    writeString(mangled_name);
+    writeString(" ");
     {
+        writeString("{\n");
         IndentScope struct_indent(*this);
         if (payload->kind != TYPE_VOID) {
             writeIndent();
@@ -2641,9 +2641,14 @@ void C89Emitter::ensureOptionalType(Type* type) {
         }
         writeIndent();
         writeString("int has_value;\n");
+        dedent();
+        writeIndent();
+        writeString("};\n");
     }
     writeIndent();
-    writeString("} ");
+    writeString("typedef struct ");
+    writeString(mangled_name);
+    writeString(" ");
     writeString(mangled_name);
     writeString(";\n#endif\n\n");
 
@@ -2695,8 +2700,11 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     writeString("\n");
 
     writeIndent();
-    writeString("typedef struct {\n");
+    writeString("struct ");
+    writeString(mangled_name);
+    writeString(" ");
     {
+        writeString("{\n");
         IndentScope struct_indent(*this);
         if (payload->kind != TYPE_VOID) {
             writeIndent();
@@ -2717,9 +2725,14 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
         }
         writeIndent();
         writeString("int is_error;\n");
+        dedent();
+        writeIndent();
+        writeString("};\n");
     }
     writeIndent();
-    writeString("} ");
+    writeString("typedef struct ");
+    writeString(mangled_name);
+    writeString(" ");
     writeString(mangled_name);
     writeString(";\n#endif\n\n");
 
@@ -3187,8 +3200,10 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
 
     SymbolTable& table = unit_.getSymbolTable(module_name_);
     Symbol* sym = table.lookup(zig_name);
+    bool is_local = false;
     if (sym) {
         if (sym->flags & SYMBOL_FLAG_EXTERN) is_extern = true;
+        if (sym->flags & SYMBOL_FLAG_LOCAL) is_local = true;
         
         Module* mod = unit_.getModule(sym->module_name);
         if (mod) {
@@ -3209,9 +3224,10 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         is_extern = true;
     }
 
-    if (is_extern) {
+    if (is_extern || is_local) {
         plat_strcpy(final_buf, zig_name);
         if (plat_strlen(final_buf) > 31) final_buf[31] = '\0';
+        ::sanitizeForC89(final_buf);
     } else {
         char k_char = 'V';
         if (sym) {
