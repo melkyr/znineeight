@@ -3,7 +3,7 @@ pub const Value = struct {
 };
 
 pub fn test_ptr_precedence(v: *Value) void {
-    v.tag = 42;
+    v.*.tag = 42;
 }
 
 pub fn main() void {

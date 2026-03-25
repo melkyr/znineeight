@@ -608,6 +608,7 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     }
 
     if (target_type && isTaggedUnion(target_type) && rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
+        plat_printf_debug("[emitAssignmentWithLifting] Handling tag literal assignment to tagged union\n");
         /* Assignment of a tag literal to a tagged union */
         writeIndent();
         if (effective_target) {
@@ -1521,12 +1522,16 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                                             prong->capture_sym->symbol_type->kind != TYPE_VOID);
 
                 if (has_non_void_capture) {
+                    ASTNode* item_expr = (*prong->items)[0];
+                    Type* capture_type = prong->capture_sym->symbol_type;
+                    plat_printf_debug("[emitSwitch] Non-void capture for tag '%s', capture type = %d\n",
+                                      item_expr->as.integer_literal.original_name, capture_type->kind);
+
                     writeIndent();
                     writeString("{\n");
                     {
                         IndentScope capture_indent(*this);
                         writeIndent();
-                        Type* capture_type = prong->capture_sym->symbol_type;
                         writeString("/* DEBUG: capture ");
                         writeString(prong->capture_name);
                         writeString(" */\n");
@@ -2524,6 +2529,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
 
             if (base->type == NODE_UNARY_OP &&
                 (base->as.unary_op.op == TOKEN_STAR || base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+                plat_printf_debug("[emitAccess] Wrapping dereference base\n");
                 writeString("(");
                 emitExpression(base);
                 writeString(")");

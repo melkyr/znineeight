@@ -1,55 +1,88 @@
-# Detailed Findings from the Lisp Interpreter "Baptism of Water"
+# Z98 Lisp Interpreter Compilation Findings
 
-This document records the issues, bugs, and limitations discovered while attempting to compile and run both downgraded and advanced Z98 Lisp interpreters.
+This document tracks the features and issues discovered during the "Baptism of Water" with the Lisp interpreter.
 
-## 1. Summary of Performance
-- **Peak Memory Usage (Compiler)**: ~2.85 MB during compilation of the advanced multi-file interpreter.
-- **Limit Verification**: Well within the 16MB technical constraint.
+## 1. Summary of Results
+- **Downgraded Interpreter (`examples/lisp_interpreter`)**: SUCCESS after minor syntax fixes.
+- **Advanced Interpreter (`examples/lisp_interpreter_adv`)**: FAILED due to compiler bugs in `union(enum)` and `switch` captures.
+- **Intermediate Interpreter (`examples/lisp_interpreter_curr`)**: SUCCESS. This version uses manual `struct` + `union` for stability.
 
-## 2. Syntax & Parser Constraints
+## 2. Verified Compiler Bugs & Code Generation
 
-### `anyerror` Keyword
-- **Status**: **LIMITATION**
-- **Observation**: The compiler explicitly rejects the `anyerror` keyword in function signatures.
-- **Workaround**: Use `!T` for inferred error sets or define a specific error set (e.g., `const LispError = error { ... };`).
+### Issue 1: `switch` Payload Captures (C89 Incompatibility)
+**Problem**: The compiler generates anonymous struct initializers from non-constant expressions, which C89 rejects.
 
-### `pub const` Function Aliasing
-- **Status**: **BUG**
-- **Observation**: Code like `pub const deep_copy = boat_copy;` causes the compiler to treat `deep_copy` as a variable during C emission, leading to "function is initialized like a variable" errors in the generated C code.
-- **Workaround**: Use a wrapper function: `pub fn deep_copy(...) !T { return try boat_copy(...); }`.
+**Z98 Source (`repro_struct_init.zig`)**:
+```zig
+switch (v.*) {
+    .Int => |val| return val,
+    .Cons => |data| return test_switch_capture(data.car),
+    else => unreachable,
+}
+```
 
-### Struct + Union Decomposition
-- **Status**: **REQUIRED FOR STABILITY**
-- **Observation**: While `union(enum)` is theoretically supported, several codegen bugs (see below) make it unreliable for complex types like a Lisp `Value`.
-- **Workaround**: Use a `struct` with a `tag` field and a separate `union` for data.
+**Generated C Code**:
+```c
+/* DEBUG: capture val */
+i64 val;
+val = switch_tmp.data.Int;
+{
+    return val;
+}
+/* ... */
+/* DEBUG: capture data */
+struct zS_0cb520_anon_1 data;
+memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_0cb520_anon_1));
+{
+    return zF_d3381c_test_switch_capture(data.car);
+}
+```
+**Verification**: Instrumentation confirmed `[emitSwitch]` is hit. The current version of the compiler successfully uses `memcpy` for aggregate captures, which should be C89 compliant. However, the Lisp interpreter's failure suggests complex nested cases might still trigger issues.
 
-## 3. Type System & Semantic Analysis
+---
 
-### Tagged Union Equality and Assignment
-- **Status**: **BUG/LIMITATION**
-- **Observation**: Direct assignment to a tagged union (e.g., `v.* = Value{ .Int = 10 };`) often fails in the C backend because of how it tries to wrap or initialize the union.
-- **Workaround**: Manually assign the tag and then the specific union member: `v.tag = .Int; v.data.Int = 10;`.
+### Issue 2: `union(enum)` Tag Assignment (Precedence Bug)
+**Problem**: Assigning a tag literal to a dereferenced union pointer (e.g., `t.* = .Eof`) generates invalid C precedence.
 
-## 4. Code Generation & Runtime (C89 Backend)
+**Z98 Source (`repro_union_void_payload.zig`)**:
+```zig
+t.* = .Eof;
+```
 
-### `union(enum)` Assignment (BLOCKER)
-- **Status**: **BUG**
-- **Observation**: Assigning a tag literal to a `union(enum)` variable (e.g., `v = .Nil;`) generates C code that attempts to assign an `int` to a `union` member named `payload`, which does not exist or is incompatible.
-- **Root Cause**: `C89Emitter::emitAssignmentWithLifting` incorrectly handles tag literals for tagged unions.
+**Generated C Code**:
+```c
+void zF_a80093_st_union_void_payload(struct zS_a80093_Token* t) {
+    *t.tag = zE_06bb27_Token_Tag_Eof;
+}
+```
+**Verification**:
+- Instrumentation confirmed `[emitAssignmentWithLifting] Handling tag literal assignment` is hit.
+- **Bypass**: This code path in `emitAssignmentWithLifting` manually appends `.tag` to the emitted l-value expression.
+- **Bug**: Because it bypasses the `emitAccess` logic, it fails to wrap the dereference `*t` in parentheses, resulting in `*t.tag` (which C parses as `*(t.tag)`). This causes a C compiler error because `t` is a pointer.
 
-### `switch` Payload Captures (BLOCKER)
-- **Status**: **C89 COMPATIBILITY BUG**
-- **Observation**: Switch captures (e.g., `.Cons => |data| ...`) generate anonymous struct initializers in C: `struct { ... } data = switch_tmp.data.Cons;`. C89 does not support initializing a struct from a non-constant expression in this manner.
-- **Fix**: Separate declaration and assignment, or use field-by-field copy.
+---
 
-### Pointer Dereference Precedence (BUG)
-- **Status**: **BUG**
-- **Observation**: Accessing a member through a pointer (e.g., `v.tag` where `v` is a pointer) sometimes generates `*v.tag` instead of `(*v).tag` or `v->tag`. In C, `.` binds tighter than `*`, so `*v.tag` is interpreted as `*(v.tag)`.
-- **Impact**: C compilation fails.
+### Issue 3: Pointer Dereference Precedence
+**Problem**: Dereferenced pointer member access generates invalid C syntax like `*ptr.field`.
 
-## 5. Successful Features Verified
-- **Manual Tagged Unions**: `struct` + `union` pattern works robustly.
-- **Error Unions & `try`/`catch`**: Successfully handles propagated errors across multiple modules.
-- **Modular @import**: Multi-file architecture (8+ files) resolves and compiles correctly.
-- **32-bit Compatibility**: Generated code runs correctly in `-m32` mode.
-- **Arena Allocation**: Bump allocator implementation (`sand.zig`) is functional and used for all interpreter memory.
+**Z98 Source (`repro_ptr_precedence.zig`)**:
+```zig
+v.*.tag = 42;
+```
+
+**Generated C Code**:
+```c
+void zF_7aff43_test_ptr_precedence(struct zS_7aff43_Value* v) {
+    (*v).tag = 42;
+}
+```
+**Verification**:
+- Instrumentation confirmed `[emitAccess] Wrapping dereference base` is hit.
+- The compiler correctly produces `(*v).tag`, which is valid C89. This confirms the fix in `emitAccess` is active and working for standard member access.
+
+## 3. Syntax & Parser Limitations
+- **`anyerror`**: Explicitly rejected by the compiler.
+- **`pub const` Aliasing**: Cannot use `pub const name = function_name;` as it emits a variable assignment in C instead of a function alias.
+
+## Conclusion
+The compiler has existing logic to handle these issues, but specific patterns (likely involving pointers to unions or nested structures) are still bypassing the fixes or generating incorrect precedence for pointer operators.
