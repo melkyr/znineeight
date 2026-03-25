@@ -312,13 +312,13 @@ The emitter maintains correct C precedence by automatically parenthesizing the b
 
 This logic is implemented in `requiresParentheses()` and is applied in:
 - `emitAccess`: For standard member and array access.
-- `emitAssignmentWithLifting`: For decomposing struct/array initializers into field-by-field assignments.
+- `emitAssignmentWithLifting`: For decomposing struct/array initializers into field-by-field assignments, and for assigning tag literals to tagged unions.
 - `emitOptionalWrapping` / `emitErrorUnionWrapping`: For wrapping values into special structures.
 
 #### 4.7.1 Complex L-value Detection (`isSimpleLValue`)
-To prevent double evaluation and ensure correct precedence, the emitter uses the `isSimpleLValue()` helper to distinguish between "safe" l-values (identifiers and simple pointer dereferences like `*ptr`) and "complex" ones (function calls like `get_ptr().*` or array access).
+To prevent double evaluation and ensure correct precedence, the emitter uses the `isSimpleLValue()` helper to distinguish between "safe" l-values (identifiers and variable declarations) and "complex" ones (dereferences, function calls, or array access).
 
-When a complex l-value is encountered during wrapping or decomposition:
+When a complex l-value is encountered during wrapping, decomposition, or tag assignment:
 1. A temporary pointer is declared and initialized with the address of the complex l-value: `T* tmp = &(complex_expr);`.
 2. All subsequent accesses and assignments are performed through the temporary pointer: `(*tmp).member = value;`.
 
@@ -608,6 +608,7 @@ The `C89Emitter` identifies anonymous structs and unions by checking if their `c
 - **Inlined Definition**: Instead of emitting a named type (e.g., `struct S data;`), the emitter outputs the full type body followed by the field name: `union { int a; float b; } data;`.
 - **Recursive Emission**: The `emitStructBody` and `emitUnionBody` helpers recursively handle fields, ensuring that nested anonymous types are also inlined correctly.
 - **Keyword Mangling**: Field names that conflict with C keywords (like `int` or `float`) are mangled (e.g., `z_int`) using `getSafeFieldName` to ensure valid C89 syntax.
+- **Recursive Definition**: When a struct, union, or tagged union contains a field with an anonymous aggregate type, the `C89Emitter` recursively emits the full definition of that anonymous type before the parent container's definition. This ensures that the generated C code has complete type information for all nested anonymous structures.
 
 Example Zig:
 ```zig
