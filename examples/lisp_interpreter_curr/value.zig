@@ -1,4 +1,5 @@
 const sand_mod = @import("sand.zig");
+const util = @import("util.zig");
 
 pub const ValueTag = enum {
     Nil,
@@ -15,6 +16,7 @@ pub const ConsData = struct {
 };
 
 pub const ValueData = union {
+    Nil: void,
     Int: i64,
     Bool: bool,
     Symbol: []const u8,
@@ -27,12 +29,12 @@ pub const Value = struct {
     data: ValueData,
 };
 
-pub fn alloc_value(arena: *sand_mod.LispSand) !*Value {
-    const mem = try sand_mod.lisp_sand_alloc(arena, @sizeOf(Value), @alignOf(Value));
+pub fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
+    const mem = try sand_mod.sand_alloc(arena, @sizeOf(Value), @alignOf(Value));
     return @ptrCast(*Value, mem);
 }
 
-pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Cons;
     v.data.Cons.car = car;
@@ -40,34 +42,34 @@ pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.LispSand) !*Value {
     return v;
 }
 
-pub fn alloc_int(val: i64, arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_int(val: i64, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Int;
     v.data.Int = val;
     return v;
 }
 
-pub fn alloc_bool(val: bool, arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_bool(val: bool, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Bool;
     v.data.Bool = val;
     return v;
 }
 
-pub fn alloc_symbol(name: []const u8, arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_symbol(name: []const u8, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Symbol;
     v.data.Symbol = name;
     return v;
 }
 
-pub fn alloc_nil(arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_nil(arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Nil;
     return v;
 }
 
-pub fn alloc_builtin(f: *void, arena: *sand_mod.LispSand) !*Value {
+pub fn alloc_builtin(f: *void, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
     v.tag = ValueTag.Builtin;
     v.data.Builtin = f;

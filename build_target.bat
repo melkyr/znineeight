@@ -4,5 +4,4 @@
 
 cl.exe /nologo /W3 /I. /c zig_runtime.c
 cl.exe /nologo /W3 /I. /c builtin.c
-cl.exe /nologo /W3 /I. /c tagged_union.c
 link.exe /nologo /out:app.exe *.obj

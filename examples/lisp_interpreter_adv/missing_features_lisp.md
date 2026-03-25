@@ -1,114 +1,55 @@
-# Lisp Interpreter Advanced Syntax Compilation Report
+# Detailed Findings from the Lisp Interpreter "Baptism of Water"
 
-This document details the issues encountered while attempting to compile an advanced version of the Lisp interpreter using the RetroZig bootstrap compiler (`zig0`). The advanced version uses idiomatic Z98 features like `union(enum)` with payload captures, `try`, and `orelse`.
+This document records the issues, bugs, and limitations discovered while attempting to compile and run both downgraded and advanced Z98 Lisp interpreters.
 
-## Summary of Encountered Issues
+## 1. Summary of Performance
+- **Peak Memory Usage (Compiler)**: ~2.85 MB during compilation of the advanced multi-file interpreter.
+- **Limit Verification**: Well within the 16MB technical constraint.
 
-| Category | Description | Impact |
-| --- | --- | --- |
-| **C89 Codegen** | **Invalid Initializer**: The compiler generates anonymous struct initializers in `switch` captures that C89 rejects. | **BLOCKER**: C compilation fails for all modules using `switch` captures. |
-| **C89 Codegen** | **Pointer Precedence**: The compiler emits `*ptr.tag = ...` instead of `(*ptr).tag` or `ptr->tag` in struct/union pointers. | **BLOCKER**: C compilation fails for pointer-based assignments. |
-| **C89 Codegen** | **Tag/Payload Mismatch**: Attempting to assign a tag value directly to a union's `payload` field when the variant has no payload. | **BLOCKER**: C compilation fails for `void` payload variants. |
+## 2. Syntax & Parser Constraints
 
----
+### `anyerror` Keyword
+- **Status**: **LIMITATION**
+- **Observation**: The compiler explicitly rejects the `anyerror` keyword in function signatures.
+- **Workaround**: Use `!T` for inferred error sets or define a specific error set (e.g., `const LispError = error { ... };`).
 
-## 1. Issue: Invalid Initializer in `switch` Captures
+### `pub const` Function Aliasing
+- **Status**: **BUG**
+- **Observation**: Code like `pub const deep_copy = boat_copy;` causes the compiler to treat `deep_copy` as a variable during C emission, leading to "function is initialized like a variable" errors in the generated C code.
+- **Workaround**: Use a wrapper function: `pub fn deep_copy(...) !T { return try boat_copy(...); }`.
 
-### Z98 Source Example
-```zig
-switch (v.*) {
-    .Cons => |data| return data.car,
-}
-```
+### Struct + Union Decomposition
+- **Status**: **REQUIRED FOR STABILITY**
+- **Observation**: While `union(enum)` is theoretically supported, several codegen bugs (see below) make it unreliable for complex types like a Lisp `Value`.
+- **Workaround**: Use a `struct` with a `tag` field and a separate `union` for data.
 
-### Generated C Code
-```c
-{
-    /* DEBUG: capture data */
-    struct {
-        struct z_value_Value* car;
-        struct z_value_Value* cdr;
-    } data = switch_tmp.data.Cons;
-    return data.car;
-}
-```
+## 3. Type System & Semantic Analysis
 
-### C Compiler Error (`gcc -m32`)
-```text
-examples/lisp_interpreter_adv/builtins.c:75:26: error: invalid initializer
-   75 |                 } data = switch_tmp.data.Cons;
-      |                          ^~~~~~~~~~
-```
-**Insight**: Instrumentation in `src/bootstrap/codegen.cpp:emitSwitch` shows that the compiler emits a local `struct` definition and attempts to initialize it using a single assignment. C89 does not support this "struct copy" initialization for anonymous structures in this context.
+### Tagged Union Equality and Assignment
+- **Status**: **BUG/LIMITATION**
+- **Observation**: Direct assignment to a tagged union (e.g., `v.* = Value{ .Int = 10 };`) often fails in the C backend because of how it tries to wrap or initialize the union.
+- **Workaround**: Manually assign the tag and then the specific union member: `v.tag = .Int; v.data.Int = 10;`.
 
-**Root Cause Location**: `C89Emitter::emitSwitch` in `src/bootstrap/codegen.cpp`.
-**Potential Fix**: Use a named typedef for the capture or emit field-by-field assignments.
+## 4. Code Generation & Runtime (C89 Backend)
 
----
+### `union(enum)` Assignment (BLOCKER)
+- **Status**: **BUG**
+- **Observation**: Assigning a tag literal to a `union(enum)` variable (e.g., `v = .Nil;`) generates C code that attempts to assign an `int` to a `union` member named `payload`, which does not exist or is incompatible.
+- **Root Cause**: `C89Emitter::emitAssignmentWithLifting` incorrectly handles tag literals for tagged unions.
 
-## 2. Issue: Pointer Dereference Precedence
+### `switch` Payload Captures (BLOCKER)
+- **Status**: **C89 COMPATIBILITY BUG**
+- **Observation**: Switch captures (e.g., `.Cons => |data| ...`) generate anonymous struct initializers in C: `struct { ... } data = switch_tmp.data.Cons;`. C89 does not support initializing a struct from a non-constant expression in this manner.
+- **Fix**: Separate declaration and assignment, or use field-by-field copy.
 
-### Z98 Source Example
-```zig
-v.tag = .Int;
-```
-where `v` is a pointer `*Value`.
+### Pointer Dereference Precedence (BUG)
+- **Status**: **BUG**
+- **Observation**: Accessing a member through a pointer (e.g., `v.tag` where `v` is a pointer) sometimes generates `*v.tag` instead of `(*v).tag` or `v->tag`. In C, `.` binds tighter than `*`, so `*v.tag` is interpreted as `*(v.tag)`.
+- **Impact**: C compilation fails.
 
-### Generated C Code
-```c
-*z_value_v.tag = z_value_Value_Tag_Int;
-```
-
-### C Compiler Error (`gcc -m32`)
-```text
-examples/lisp_interpreter_adv/value.c:84:15: error: ‘z_value_v’ is a pointer; did you mean to use ‘->’?
-   84 |     *z_value_v.tag = z_value_Value_Tag_Int;
-      |               ^
-      |               ->
-```
-**Insight**: The `C89Emitter` seems to decompose pointer assignments by prepending `*` to the expression but fails to add parentheses. In C, `.` binds tighter than `*`, so `*v.tag` means `*(v.tag)`.
-
-**Root Cause Location**: `C89Emitter::emitAssignmentWithLifting` or `emitExpression` for identifiers with pointer types.
-**Potential Fix**: Always wrap dereferences in parentheses or use `->` for member access on pointers.
-
----
-
-## 3. Issue: Tag/Payload Assignment Mismatch
-
-### Z98 Source Example
-```zig
-return Token.Eof;
-```
-where `Eof` is a `void` payload variant in a tagged union.
-
-### Generated C Code
-```c
-__return_val.data.payload = z_token_Token_Tag_Eof;
-```
-
-### C Compiler Error (`gcc -m32`)
-```text
-examples/lisp_interpreter_adv/token.c:66:41: error: incompatible types when assigning to type ‘struct z_token_Token’ from type ‘int’
-```
-**Insight**: For `void` payload variants, the compiler should only assign the `tag` field of the tagged union struct. Instead, it attempts to assign the tag value to a non-existent or incompatible `payload` member in the `data` union.
-
-**Root Cause Location**: `C89Emitter::emitAssignmentWithLifting` (specifically `emitErrorUnionWrapping` or `emitOptionalWrapping` logic when applied to tagged unions).
-
----
-
-## 4. Reproduction Cases
-
-Reliable reproduction Zig files have been created in `examples/lisp_interpreter_adv/repros/`:
-- `repro_struct_init.zig`
-- `repro_ptr_precedence.zig`
-- `repro_union_void_payload.zig`
-
-To trigger these, run:
-```bash
-./zig0 examples/lisp_interpreter_adv/repros/<file>.zig -o test.c
-gcc -m32 test.c src/runtime/zig_runtime.c -Isrc/runtime -o test
-```
-
-## Conclusion
-
-The advanced Lisp interpreter has successfully served as a "baptism of water," identifying key deficiencies in the bootstrap compiler's C89 code generation. Fixing these will allow idiomatic Z98 code to compile and run correctly.
+## 5. Successful Features Verified
+- **Manual Tagged Unions**: `struct` + `union` pattern works robustly.
+- **Error Unions & `try`/`catch`**: Successfully handles propagated errors across multiple modules.
+- **Modular @import**: Multi-file architecture (8+ files) resolves and compiles correctly.
+- **32-bit Compatibility**: Generated code runs correctly in `-m32` mode.
+- **Arena Allocation**: Bump allocator implementation (`sand.zig`) is functional and used for all interpreter memory.

@@ -3,7 +3,7 @@ const env_mod = @import("env.zig");
 const util = @import("util.zig");
 const sand_mod = @import("sand.zig");
 
-pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mod.LispSand, perm_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
+pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mod.LispSand, perm_sand: *sand_mod.LispSand) !*value_mod.Value {
     if (expr.tag == value_mod.ValueTag.Nil or expr.tag == value_mod.ValueTag.Int or expr.tag == value_mod.ValueTag.Bool or expr.tag == value_mod.ValueTag.Builtin) {
         return expr;
     }
@@ -107,7 +107,7 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mo
     return error.InvalidExpr;
 }
 
-fn env_to_value(env: ?*env_mod.EnvNode, sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
+fn env_to_value(env: ?*env_mod.EnvNode, sand: *sand_mod.LispSand) !*value_mod.Value {
     if (env) |node| {
         const sym_val = try value_mod.alloc_symbol(node.symbol, sand);
         const pair = try value_mod.alloc_cons(sym_val, node.value, sand);
@@ -118,9 +118,9 @@ fn env_to_value(env: ?*env_mod.EnvNode, sand: *sand_mod.LispSand) anyerror!*valu
     }
 }
 
-fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mod.LispSand, perm_sand: *sand_mod.LispSand) anyerror!*value_mod.Value {
+fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mod.LispSand, perm_sand: *sand_mod.LispSand) !*value_mod.Value {
     if (fun.tag == value_mod.ValueTag.Builtin) {
-        const f = @ptrCast(fn ([]*value_mod.Value, *sand_mod.LispSand) anyerror!*value_mod.Value, fun.data.Builtin);
+        const f = @ptrCast(fn ([]*value_mod.Value, *sand_mod.LispSand) !*value_mod.Value, fun.data.Builtin);
         return try f(args, temp_sand);
     }
 
@@ -164,7 +164,7 @@ fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNod
     return error.NotCallable;
 }
 
-fn value_to_env_real(v: *value_mod.Value, sand: *sand_mod.LispSand) anyerror!?*env_mod.EnvNode {
+fn value_to_env_real(v: *value_mod.Value, sand: *sand_mod.LispSand) !?*env_mod.EnvNode {
     if (v.tag == value_mod.ValueTag.Nil) return null;
     if (v.tag == value_mod.ValueTag.Symbol and util.mem_eql(v.data.Symbol, "nil")) return null;
 
