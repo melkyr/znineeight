@@ -276,14 +276,7 @@ void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
     // 2. Ensure c_name is set for aggregate types
     if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
         if (!type->c_name) {
-            const char* name = NULL;
-            if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
-            else if (type->kind == TYPE_TAGGED_UNION) name = type->as.tagged_union.name;
-            else name = type->as.struct_details.name;
-
-            if (name) {
-                type->c_name = unit_.getNameMangler().mangleTypeName(name, mod->name);
-            }
+            type->c_name = unit_.getNameMangler().mangleType(type);
         }
     }
 

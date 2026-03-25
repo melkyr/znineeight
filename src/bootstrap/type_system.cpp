@@ -413,6 +413,10 @@ Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicAr
     new_type->as.tagged_union.tag_type = tag_type;
     new_type->owner_module = mod;
 
+    if (name) {
+        new_type->c_name = unit.getNameMangler().mangleType(new_type);
+    }
+
 #ifdef DEBUG_TYPE_IDENTITY
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
 #endif
@@ -896,6 +900,10 @@ Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
     new_type->owner_module = mod;
+
+    if (name) {
+        new_type->c_name = unit.getNameMangler().mangleType(new_type);
+    }
 
 #ifdef DEBUG_TYPE_IDENTITY
     plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);

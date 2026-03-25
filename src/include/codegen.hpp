@@ -121,6 +121,11 @@ public:
     void emitPrologue();
 
     /**
+     * @brief Emits the symbol map comment block.
+     */
+    void emitSymbolMap();
+
+    /**
      * @brief Prepares the emitter for a new function.
      */
     void beginFunction();
@@ -557,6 +562,8 @@ private:
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
+        const char* location;
+        const char* kind;
     };
 
     struct DeferScope {
@@ -580,6 +587,7 @@ private:
     ArenaAllocator& arena_;
     ArenaAllocator& transient_arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    DynamicArray<const char*> used_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;

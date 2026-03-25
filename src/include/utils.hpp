@@ -69,6 +69,13 @@ void sanitizeForC89(char* buffer);
 bool isInternalCompilerIdentifier(const char* name);
 
 /**
+ * @brief Computes a 32-bit FNV-1a hash for a string.
+ * @param str The string to hash.
+ * @return The 32-bit hash.
+ */
+u32 fnv1a_32(const char* str);
+
+/**
  * @brief Joins a base directory and a relative path.
  * @param base_dir The base directory.
  * @param rel_path The relative path.
@@ -91,5 +98,14 @@ void get_directory(const char* path, char* buffer, size_t buffer_size);
  * @param path The path to normalize (modified in place).
  */
 void normalize_path(char* path);
+
+/**
+ * @brief Computes the path of target relative to base.
+ * @param target The target path.
+ * @param base The base path.
+ * @param buffer The buffer to store the relative path.
+ * @param buffer_size The size of the buffer.
+ */
+void get_relative_path(const char* target, const char* base, char* buffer, size_t buffer_size);
 
 #endif // UTILS_HPP

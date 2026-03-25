@@ -30,6 +30,11 @@ public:
      */
     const char* mangleTypeName(const char* name, const char* module);
 
+    /**
+     * @brief The new core mangling logic.
+     */
+    const char* mangle(char kind, const char* module_path, const char* local_name);
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
