@@ -1,12 +1,12 @@
-enum U_Tag {
-    U_Tag_A = 0,
-    U_Tag_B = 1,
-    U_Tag_C = 2
+enum zE_fad5fd_U_Tag {
+    zE_fad5fd_U_Tag_A = 0,
+    zE_fad5fd_U_Tag_B = 1,
+    zE_fad5fd_U_Tag_C = 2
 };
-typedef enum U_Tag U_Tag;
+typedef enum zE_fad5fd_U_Tag zE_fad5fd_U_Tag;
 
-struct U {
-    enum U_Tag tag;
+struct zS_d071e5_U {
+    enum zE_fad5fd_U_Tag tag;
     union {
         int A;
         double B;

@@ -1,4 +1,4 @@
-static void foo(int (* ptr)[5]) {
+static void zF_d071e5_foo(int (* ptr)[5]) {
     {
         int (* __for_iter_1)[5] = ptr;
         size_t __for_idx_1 = 0;
