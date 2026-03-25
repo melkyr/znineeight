@@ -5,9 +5,9 @@
 | Metric | Value |
 |--------|-------|
 | Total Test Batches | 77 |
-| Passed Batches | 73 |
-| Failed Batches | 4 |
-| Total Pass Rate | 94.8% |
+| Passed Batches | 68 |
+| Failed Batches | 9 |
+| Total Pass Rate | 88.3% |
 
 ---
 
@@ -15,8 +15,8 @@
 
 ### Batch 11: Name Mangling (Milestone 4)
 - **Failing Test:** `test_NameMangler_Milestone4Types`
-- **Reason:** Mismatch between expected and actual mangled names for Special Types. The test expects prefixes `err_` and `opt_`, but the compiler now emits `ErrorUnion_` and `Optional_`.
-- **Advice:** This is a simple regression in the test expectations. Update `tests/test_milestone4_name_mangling.cpp` to use the current mangling strings.
+- **Reason:** Mismatch between expected and actual mangled names for Special Types. The test expects prefixes `err_` and `opt_`, but the compiler now emits the new mangling scheme `z<Kind>_[<Hash>_]<Name>`.
+- **Advice:** Update `tests/test_milestone4_name_mangling.cpp` to use the new mangling strings.
 
 ### Batch 31: CBackend Multi-File
 - **Failing Test:** `test_CBackend_MultiFile`
@@ -30,8 +30,23 @@
 
 ### Batch 52: Implicit Returns
 - **Failing Test:** `test_Task9_8_ImplicitReturnErrorVoid`
-- **Reason:** Similar to Batch 11, this is a mangling mismatch in a string-based emission check. The test expects `err_void` but the compiler emits `ErrorUnion_void`.
+- **Reason:** Similar to Batch 11, this is a mangling mismatch in a string-based emission check. The test expects `err_void` but the compiler emits the new mangled names.
 - **Advice:** Update the expected emission string in `tests/integration/task_9_8_verification_tests.cpp` to match the current compiler output.
+
+### Batch 61, 65, 67, 72: Emission Verification Tests
+- **Failing Tests:** Various tests performing string matching on generated C code.
+- **Reason:** The new name mangling scheme adds `zF_`, `zV_`, `zS_`, `zE_` prefixes and potential hashes to all global symbols. Many tests use hardcoded expectation strings that do not include these prefixes.
+- **Advice:** Update the expectation strings in the respective test files (e.g., `tests/integration/phase1_tagged_union_verification.cpp`, `tests/integration/task_9_8_verification_tests.cpp`) to include the mandatory Kind prefixes.
+
+### Batch 66, 69: Header/Struct Verification Tests
+- **Failing Tests:** `test_HeaderEmission_RecursiveStruct`, `test_TaggedUnionVerification_Layout`
+- **Reason:** These tests look for specific struct names like `struct Node` or `struct U` in the generated header. These are now mangled as `struct zS_Node` or `struct zS_<Hash>_Node`.
+- **Advice:** Update the tests to use `unit.getNameMangler().mangleType(type)` to determine the expected C name instead of using hardcoded strings.
+
+### Batch 71: Symbol Table Mapping
+- **Failing Tests:** Tests verifying symbol names in the C emitter.
+- **Reason:** The introduction of `getC89GlobalName` using the new mangling scheme changed the output of all global symbol references.
+- **Advice:** Update expectation strings to match the new `z<Kind>_` format.
 
 ---
 
