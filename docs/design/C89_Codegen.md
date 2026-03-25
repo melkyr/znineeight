@@ -94,10 +94,12 @@ The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 2. **`foo.h`**: Contains the public interface. Only includes declarations for `pub` symbols. Uses standard header guards.
 
 ### 4.2 Type Emission Order in Headers
-To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers:
-1. **Forward Declarations**: All aggregate types (structs, unions, and tagged unions) that are defined in the current module are forward-declared first (e.g., `struct Node;`). This allows pointers to these types to be used in any subsequent definition within the same header or other headers.
-2. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions defined in the current module are emitted in topological dependency order. This order respects **value dependencies** (e.g., if `A` contains `B` by value, `B` is defined before `A`).
-3. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
+To support recursive types and avoid "incomplete type" errors in C89, the `CBackend` and `C89Emitter` follow a strict emission order in generated headers. To handle cross-module circular dependencies, forward declarations are prioritized over module inclusions:
+
+1. **Forward Declarations**: All aggregate types (structs, unions, and tagged unions) that are defined in the current module are forward-declared first (e.g., `struct Node;`). This occurs immediately after including `zig_runtime.h` and **before** including any other module headers (`#include "other.h"`). This ensures that if `other.h` refers back to a type in the current module (e.g. via a pointer), the C compiler already knows the type is a struct.
+2. **Module Inclusions**: Headers for imported modules are included after the local forward declarations.
+3. **Named Aggregate Definitions**: Structs, unions, enums, and tagged unions defined in the current module are emitted in topological dependency order. This order respects **value dependencies** (e.g., if `A` contains `B` by value, `B` is defined before `A`).
+4. **Lazy Special Type Emission**: Special types like `Slice_T`, `Optional_T`, and `ErrorUnion_T` are often anonymous in Zig but require `typedef`s in C. These are emitted "lazily":
     - During the emission of a named aggregate (Step 2), if it contains a field of a special type, the `emitter.emitBufferedTypeDefinitions()` call immediately after the struct definition ensures that the special type's C `struct` is emitted.
     - Because Step 2 follows dependency order, by the time a special type is emitted, the underlying named aggregates it depends on (the payload or element type) are guaranteed to be complete.
 4. **Globals and Prototypes**: Finally, external variables and function prototypes are emitted. Any special types used in their signatures that weren't already emitted are triggered and defined here.
@@ -632,6 +634,9 @@ struct S {
 
 ### 6.4 Tagged Unions
 Tagged unions (both `TYPE_TAGGED_UNION` and `TYPE_UNION` with `is_tagged` flag) are emitted as C `struct`s containing a `tag` field and a `data` union. This is abstracted by the `isTaggedUnion()` helper in `type_system.hpp`.
+
+#### Tag Literal Coercion
+To support idiomatic Zig patterns like `return .Eof;` for tagged unions, the `TypeChecker` and `C89Emitter` implement a coercion mechanism. When a tag literal (e.g., `.Eof`) is assigned to a tagged union, and the corresponding union arm has a `void` payload, the `TypeChecker` automatically coerces the literal into a synthetic tagged union initializer (e.g., `.{ .Eof }`). The emitter then generates a C structure initializer that only sets the `.tag` field.
 
 #### Emission Strategy
 The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handle tagged union emission.

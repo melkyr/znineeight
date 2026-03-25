@@ -2079,15 +2079,9 @@ void C89Emitter::ensureForwardDeclaration(Type* type) {
 
     const char* mangled_name = type->c_name;
     if (!mangled_name) {
-        const char* zig_name = NULL;
-        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
-            zig_name = type->as.struct_details.name;
-        } else if (type->kind == TYPE_TAGGED_UNION) {
-            zig_name = type->as.tagged_union.name;
-        }
-        if (!zig_name) return;
-        mangled_name = getC89GlobalName(zig_name);
+        mangled_name = unit_.getNameMangler().mangleType(type);
     }
+    if (!mangled_name) return;
 
     /* Avoid duplicate forward declarations */
     for (size_t i = 0; i < emitted_forward_decls_.length(); ++i) {

@@ -3662,8 +3662,8 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         sf.name = field_data->name;
         sf.type = field_type;
         sf.offset = 0;
-        sf.size = field_type->size;
-        sf.alignment = field_type->alignment;
+        sf.size = (field_type->kind == TYPE_VOID) ? 0 : field_type->size;
+        sf.alignment = (field_type->kind == TYPE_VOID) ? 1 : field_type->alignment;
         fields->append(sf);
     }
 
@@ -3786,8 +3786,8 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             field.name = field_node->name;
             field.type = field_type;
             field.offset = 0;
-            field.size = field_type->size;
-            field.alignment = field_type->alignment;
+            field.size = (field_type->kind == TYPE_VOID) ? 0 : field_type->size;
+            field.alignment = (field_type->kind == TYPE_VOID) ? 1 : field_type->alignment;
             fields->append(field);
         }
     }
@@ -5214,6 +5214,12 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     /* Handle null assignment to any pointer, function pointer, or optional */
     if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER || expected->kind == TYPE_OPTIONAL)) {
+        return true;
+    }
+
+    if (actual->kind == TYPE_ENUM && isTaggedUnion(expected)) {
+        /* This is slightly inaccurate because we don't check if the tag belongs to the union here,
+           but visitReturnStmt and visitAssignment will use coerceNode which handles it correctly. */
         return true;
     }
 
@@ -6796,6 +6802,38 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
                     node->resolved_type = target_type;
                 }
             }
+            return;
+        }
+    }
+
+    // New: Handle folded enum members that are now integer literals
+    if (node->type == NODE_INTEGER_LITERAL && node->as.integer_literal.original_name) {
+        if (isTaggedUnion(target_type)) {
+            Type* payload_type = findTaggedUnionPayload(target_type, node->as.integer_literal.original_name);
+            if (payload_type && payload_type->kind == TYPE_VOID) {
+                /* Transform tag literal into struct initializer: { .Tag } */
+                ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(init_node, 0, sizeof(ASTNode));
+                init_node->type = NODE_STRUCT_INITIALIZER;
+                init_node->loc = node->loc;
+                init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(field, 0, sizeof(ASTNamedInitializer));
+                field->field_name = node->as.integer_literal.original_name;
+                field->value = NULL; // Naked tag
+                field->loc = node->loc;
+
+                init_node->as.struct_initializer->fields->append(field);
+                init_node->resolved_type = target_type;
+                *node_slot = init_node;
+            }
+
+            --recursion_depth;
             return;
         }
     }

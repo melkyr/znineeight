@@ -323,7 +323,9 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 2.  **Field Type Resolution & C89 Check:** For each field, the `TypeChecker` resolves the field's type and verifies it using `is_c89_compatible()`. Slices and multi-level pointers are now considered C89-compatible extensions and are allowed.
 
-3.  **Layout Calculation:** The `TypeChecker` calculates the memory layout of the struct according to C89 rules:
+3.  **void Fields:** Fields of type `void` are allowed in Zig structs but are omitted from the generated C `struct` definition. To ensure correct layout calculations and compatibility with Zig's expectations, `void` fields are assigned a size of `0` and an alignment of `1` byte.
+
+4.  **Layout Calculation:** The `TypeChecker` calculates the memory layout of the struct according to C89 rules:
     -   Fields are placed in the order they are declared.
     -   Each field's offset is aligned based on its type's alignment requirements.
     -   The total size of the struct is aligned to the maximum alignment requirement of its fields, adding trailing padding if necessary.
@@ -369,6 +371,8 @@ Tagged unions (represented by `TYPE_TAGGED_UNION` or `TYPE_UNION` with the `is_t
     -   **Union Part**: Max of payload field sizes and alignments.
     -   **Overall Alignment**: `max(tag_alignment, union_alignment)`.
     -   **Overall Size**: The tag is placed first, followed by padding to meet the union's alignment requirement, then the union data. The final size is padded to the overall alignment.
+
+3.  **void Payloads**: Like structs, `void` fields in the payload union are assigned a size of `0` and an alignment of `1`. They are omitted from the emitted C `union` definition.
 
 ### Recursive Type Handling (Task 228+)
 
@@ -1057,6 +1061,12 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 - **Qualified Lookups**: The `Parser` produces `NODE_MEMBER_ACCESS` for qualified identifiers. The `TypeChecker` resolves these by first resolving the module symbol and then looking up the member within that module's symbol table.
 - **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed. The `TypeChecker` switches its internal context (defining module) to the target module to ensure that identifiers within that module are correctly resolved.
 - **Enum Member Access**: Qualified access to enum members (e.g., `mod.Enum.Member`) is supported and follows the same on-demand resolution rules.
+
+### Metadata Preparation Pass
+Before code generation, the `MetadataPreparationPass` performs a transitive scan of all modules to identify all types and symbols that need to be emitted in headers.
+- **Transitive Reachability**: The pass recursively collects all types used in public function signatures, public global variables, and public type constants (`pub const`).
+- **Type Alias Resolution**: It explicitly follows `pub const` type aliases to ensure that the underlying types are correctly marked for emission in headers, even if the original type is defined in a different module.
+- **Header Order**: It populates `module->header_types` in topological dependency order, which is used by the `CBackend` to emit definitions after forward declarations and module inclusions.
 
 ### Type Alias Unwrapping (Phase 9a)
 
