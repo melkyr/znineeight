@@ -608,13 +608,18 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     }
 
     if (target_type && isTaggedUnion(target_type) && rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
-        plat_printf_debug("[emitAssignmentWithLifting] Handling tag literal assignment to tagged union\n");
         /* Assignment of a tag literal to a tagged union */
         writeIndent();
         if (effective_target) {
             writeString(effective_target);
         } else if (lvalue_node) {
-            emitExpression(lvalue_node);
+            if (!isSimpleLValue(lvalue_node)) {
+                writeString("(");
+                emitExpression(lvalue_node);
+                writeString(")");
+            } else {
+                emitExpression(lvalue_node);
+            }
         }
         writeString(".tag = ");
         emitExpression(rvalue);
@@ -2953,8 +2958,35 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
+    static int depth = 0;
+    if (++depth > 100) {
+        error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Recursion depth exceeded in type emission");
+        plat_abort();
+    }
+
+    /* Emit definitions for anonymous payload structs/unions used as fields */
+    DynamicArray<StructField>* fields = NULL;
+    if (type->kind == TYPE_TAGGED_UNION) {
+        fields = type->as.tagged_union.payload_fields;
+    } else if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+        fields = type->as.struct_details.fields;
+    }
+
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            Type* field_type = (*fields)[i].type;
+            if (field_type && (field_type->kind == TYPE_STRUCT || field_type->kind == TYPE_UNION || field_type->kind == TYPE_TAGGED_UNION)) {
+                const char* name = (field_type->kind == TYPE_TAGGED_UNION) ? field_type->as.tagged_union.name : field_type->as.struct_details.name;
+                if (!name) {
+                    emitTypeDefinition(field_type);
+                }
+            }
+        }
+    }
+
     if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
+        depth--;
         return;
     }
 
@@ -2963,7 +2995,10 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         
         /* Check cache to avoid duplicate emission */
         for (size_t i = 0; i < emitted_enums_.length(); ++i) {
-            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) return;
+            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) {
+                depth--;
+                return;
+            }
         }
         emitted_enums_.append(enum_name);
 
@@ -2999,6 +3034,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeString(" ");
         writeString(enum_name);
         writeString(";\n\n");
+        depth--;
         return;
     }
 
@@ -3033,6 +3069,8 @@ void C89Emitter::emitTypeDefinition(Type* type) {
     } else if (type->kind == TYPE_OPTIONAL) {
         ensureOptionalType(type);
     }
+
+    depth--;
 }
 
 void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
@@ -3465,14 +3503,7 @@ bool C89Emitter::isSimpleLValue(const ASTNode* node) const {
 
     if (!node) return false;
 
-    if (node->type == NODE_IDENTIFIER || node->type == NODE_VAR_DECL) return true;
-
-    if (node->type == NODE_UNARY_OP &&
-        (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
-        return isSimpleLValue(node->as.unary_op.operand);
-    }
-
-    return false;
+    return node->type == NODE_IDENTIFIER || node->type == NODE_VAR_DECL;
 }
 
 const char* C89Emitter::getMangledTypeName(Type* type) {

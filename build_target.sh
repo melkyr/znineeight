@@ -4,4 +4,5 @@ set -e
 
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c zig_runtime.c -o zig_runtime.o
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c builtin.c -o builtin.o
-gcc -m32 -o app zig_runtime.o builtin.o
+gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -c repro_union_tag_assign.c -o repro_union_tag_assign.o
+gcc -m32 -o app zig_runtime.o builtin.o repro_union_tag_assign.o
