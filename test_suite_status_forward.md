@@ -2,57 +2,113 @@
 
 ## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Test Batches | 77 |
-| Passed Batches | 68 |
-| Failed Batches | 9 |
-| Total Pass Rate | 88.3% |
+| Metric | 32-bit Value | 64-bit Value |
+|--------|--------------|--------------|
+| Total Test Batches | 77 | 77 |
+| Passed Batches | 49 | 50 |
+| Failed Batches | 28 | 27 |
+| Total Pass Rate | 63.6% | 64.9% |
 
 ---
 
-## Detailed Breakdown
+## Detailed Breakdown of Failures
+
+### Batch 3: Type Checker
+- **Failing Test:** `TEST_FUNC(TypeCheckerIntegerLiteralType)`
+- **Reason:** Integer literal kind mismatch on 32-bit. The test expects `2147483648` to be treated as `i64`, but it may be getting truncated or misclassified in the 32-bit environment compared to 64-bit where it passed.
+
+### Batch 10: Name Mangling
+- **Failing Tests:** `plat_strcmp(mangled, "foo") == 0`, `plat_strcmp(mangled, "foo__i32") == 0`, `plat_strcmp(mangled, "bar__i32_f64") == 0`, `plat_strcmp(mangled, "z_Test") == 0`, `plat_strcmp(mangled_if, "z_if") == 0`
+- **Reason:** Legacy tests expecting old mangling formats without the mandatory `z<Kind>_` prefixes and hashes.
 
 ### Batch 11: Name Mangling (Milestone 4)
-- **Failing Test:** `test_NameMangler_Milestone4Types`
-- **Reason:** Mismatch between expected and actual mangled names for Special Types. The test expects prefixes `err_` and `opt_`, but the compiler now emits the new mangling scheme `z<Kind>_[<Hash>_]<Name>`.
-- **Advice:** Update `tests/test_milestone4_name_mangling.cpp` to use the new mangling strings.
+- **Failing Tests:** `test_NameMangler_Milestone4Types`, `test_recursive_calls`
+- **Reason:** Mismatch between expected legacy prefixes (`err_`, `opt_`) and the new mangling scheme (`ErrorUnion_`, `Optional_`, `zF_`).
+
+### Batch 12: Emission Verification
+- **Failing Tests:** Multiple signature and call emission checks for functions `foo`, `add`, `bar`, etc.
+- **Reason:** The compiler now emits `zF_` and `zV_` prefixes for all global functions and variables, causing string-matching tests with hardcoded expectations to fail.
+
+### Batch 13 & 14: Function Emission
+- **Failing Tests:** `test_FunctionEmission_...`
+- **Reason:** Mismatch in function names due to `zF_` prefixing.
+
+### Batch 15 & 16: Variable Emission
+- **Failing Tests:** `test_VariableEmission_...`
+- **Reason:** Mismatch in variable names due to `zV_` prefixing.
+
+### Batch 18: Function/Variable Refactoring
+- **Failing Tests:** Various emission checks in `tests/integration/emission_verification_tests.cpp`
+- **Reason:** Hardcoded expectation strings lack the new name mangling prefixes.
+
+### Batch 26 & 27: Codegen Verification
+- **Failing Tests:** Many small snippet verification tests.
+- **Reason:** Expectation strings are outdated and do not account for the new symbol mangling and `z`-prefixed type names.
+
+### Batch 30: Multi-Module Codegen
+- **Failing Tests:** `test_MultiModule_Codegen`
+- **Reason:** Mismatch in module-level symbol emission.
 
 ### Batch 31: CBackend Multi-File
 - **Failing Test:** `test_CBackend_MultiFile`
-- **Reason:** The test expects a "Single Translation Unit" (STU) model where `main.c` includes all other modules. The compiler has migrated to a separate compilation model where modules are compiled individually and linked. The test fails because it cannot find the expected inclusion patterns and internal file naming (e.g., `main_module.c`).
-- **Advice:** Refactor the test in `tests/integration/cbackend_multi_file_tests.cpp` to verify the presence of individual module files and a valid build script instead of searching for internal STU-style includes.
+- **Reason:** The compiler migrated to separate compilation. The test looks for internal STU-style includes (`main_module.c`) which no longer exist. Also reports "Missing generated files".
 
 ### Batch 32: End-to-End Integration
 - **Failing Tests:** `test_EndToEnd_HelloWorld`, `test_EndToEnd_PrimeNumbers`
-- **Reason:** Compilation/Linkage failure of the generated C code. The test manually invokes `gcc` but only includes `main.c` and `zig_runtime.c`, missing the object files for imported modules (like `greetings` or `std_debug`). This results in "undefined reference" errors.
-- **Advice:** Update `tests/integration/end_to_end_hello.cpp` to either use the generated `build_target.sh` script or dynamically discover and link all generated `.c` files in the output directory.
+- **Reason:** Compilation/Linkage failure of generated C code. Undefined reference to mangled symbols (e.g., `zF_44e31f_sayHello`) because the test doesn't link all generated module object files.
 
-### Batch 52: Implicit Returns
-- **Failing Test:** `test_Task9_8_ImplicitReturnErrorVoid`
-- **Reason:** Similar to Batch 11, this is a mangling mismatch in a string-based emission check. The test expects `err_void` but the compiler emits the new mangled names.
-- **Advice:** Update the expected emission string in `tests/integration/task_9_8_verification_tests.cpp` to match the current compiler output.
+### Batch 36: Variable Mangling
+- **Failing Test:** `test_VariableEmission_PointerToPointer`
+- **Reason:** Mismatch in `pp` variable name due to `zV_` prefix.
 
-### Batch 61, 65, 67, 72: Emission Verification Tests
-- **Failing Tests:** Various tests performing string matching on generated C code.
-- **Reason:** The new name mangling scheme adds `zF_`, `zV_`, `zS_`, `zE_` prefixes and potential hashes to all global symbols. Many tests use hardcoded expectation strings that do not include these prefixes.
-- **Advice:** Update the expectation strings in the respective test files (e.g., `tests/integration/phase1_tagged_union_verification.cpp`, `tests/integration/task_9_8_verification_tests.cpp`) to include the mandatory Kind prefixes.
+### Batch 39, 41, 52: Real Emission Verification
+- **Failing Tests:** `test_Task9_8_ImplicitReturnErrorVoid`, etc.
+- **Reason:** Prefix mismatch in function signatures (`zF_`) and return structure initialization strings.
 
-### Batch 66, 69: Header/Struct Verification Tests
-- **Failing Tests:** `test_HeaderEmission_RecursiveStruct`, `test_TaggedUnionVerification_Layout`
-- **Reason:** These tests look for specific struct names like `struct Node` or `struct U` in the generated header. These are now mangled as `struct zS_Node` or `struct zS_<Hash>_Node`.
-- **Advice:** Update the tests to use `unit.getNameMangler().mangleType(type)` to determine the expected C name instead of using hardcoded strings.
+### Batch 45: Error Handling
+- **Failing Tests:** Tests checking for `fallible()` call emission.
+- **Reason:** Mismatch in how the call is emitted compared to the expected string (mangled names).
+
+### Batch 47: Optional Types
+- **Failing Tests:** `Test OptionalFunction`, `Test OptionalStruct`
+- **Reason:** Logic or emission mismatches in how optional payload types are handled or wrapped.
+
+### Batch 48: Tuple Support
+- **Failing Tests:** Mismatches in tuple type emission or layout.
+
+### Batch 58, 61: Control Flow Emission
+- **Failing Tests:** Various tests for `if`, `while`, and `switch` emission.
+- **Reason:** Mismatch in function names (`zF_`) and runtime function calls (`zF_d071e5_cleanup`).
+
+### Batch 65: Tagged Union Emission
+- **Failing Tests:** `test_TaggedUnionEmission_Return`, `test_TaggedUnionEmission_Param`
+- **Reason:** Mismatch in signature emission strings (missing `zF_` prefix).
+
+### Batch 66: Header Verification
+- **Failing Test:** `test_HeaderEmission_RecursiveStruct`
+- **Reason:** Looking for `struct Node` instead of mangled `struct zS_d071e5_Node`.
+
+### Batch 67: Tagged Union Variables
+- **Failing Tests:** `test_TaggedUnionEmission_Global`, `test_TaggedUnionEmission_Local`
+- **Reason:** Mismatch in variable names (`zV_`) and tag enum names.
+
+### Batch 69: Tagged Union Layout
+- **Failing Test:** `test_TaggedUnionVerification_Layout`
+- **Reason:** Mismatch in internal tag field name/type in the generated header.
 
 ### Batch 71: Symbol Table Mapping
-- **Failing Tests:** Tests verifying symbol names in the C emitter.
-- **Reason:** The introduction of `getC89GlobalName` using the new mangling scheme changed the output of all global symbol references.
-- **Advice:** Update expectation strings to match the new `z<Kind>_` format.
+- **Failing Test:** `test_SymbolMapping`
+- **Reason:** Global symbol names in the emitter output now includeKind prefixes.
+
+### Batch 72: Switch Emission
+- **Failing Tests:** `test_SwitchEmission_Simple`, `test_SwitchEmission_Expression`
+- **Reason:** Mismatch in function names (`zF_`).
 
 ---
 
 ## Examples Status
 
-All functional examples were verified to compile and run successfully (without `-m32` in the local environment).
+All functional examples were verified to compile and run successfully in both 32-bit and 64-bit environments.
 
 | Example | Status | Notes |
 |---------|--------|-------|
