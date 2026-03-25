@@ -1,32 +1,18 @@
 const sand_mod = @import("sand.zig");
 const util = @import("util.zig");
 
-pub const ValueTag = enum {
-    Nil,
-    Int,
-    Bool,
-    Symbol,
-    Cons,
-    Builtin,
-};
-
 pub const ConsData = struct {
     car: *Value,
     cdr: *Value,
 };
 
-pub const ValueData = union {
+pub const Value = union(enum) {
     Nil: void,
     Int: i64,
     Bool: bool,
     Symbol: []const u8,
     Cons: ConsData,
     Builtin: *void,
-};
-
-pub const Value = struct {
-    tag: ValueTag,
-    data: ValueData,
 };
 
 pub fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
@@ -36,42 +22,36 @@ pub fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
 
 pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Cons;
-    v.data.Cons.car = car;
-    v.data.Cons.cdr = cdr;
+    v.* = Value{ .Cons = ConsData{ .car = car, .cdr = cdr } };
     return v;
 }
 
 pub fn alloc_int(val: i64, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Int;
-    v.data.Int = val;
+    v.* = Value{ .Int = val };
     return v;
 }
 
 pub fn alloc_bool(val: bool, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Bool;
-    v.data.Bool = val;
+    v.* = Value{ .Bool = val };
     return v;
 }
 
 pub fn alloc_symbol(name: []const u8, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Symbol;
-    v.data.Symbol = name;
+    v.* = Value{ .Symbol = name };
     return v;
 }
 
 pub fn alloc_nil(arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Nil;
+    v.* = Value{ .Nil = {} };
     return v;
 }
 
 pub fn alloc_builtin(f: *void, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.tag = ValueTag.Builtin;
-    v.data.Builtin = f;
+    v.* = Value{ .Builtin = f };
     return v;
 }
