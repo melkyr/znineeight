@@ -706,7 +706,12 @@ To maintain C89 compatibility and compiler simplicity:
     *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
-    *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
+        *   **Standard Mode (Hash-based)**:
+            *   Identifiers use the format `z<Kind>_<Hash>_<Name>`.
+            *   The hash is derived from the module path to ensure uniqueness across different modules.
+        *   **Test Mode (Deterministic)**:
+            *   Identifiers use the format `z<Kind>_<Counter>_<Name>`.
+            *   A global counter ensures predictable names independent of environment or hashes, facilitating regression testing.
     *   **Compiler-Generated Identifiers**: Symbols used internally by the compiler (identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`) bypass all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and predictable.
     *   **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
     *   **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.

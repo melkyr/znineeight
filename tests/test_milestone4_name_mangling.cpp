@@ -8,7 +8,7 @@ TEST_FUNC(NameMangler_Milestone4Types) {
     ArenaAllocator arena(262144);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
-    NameMangler mangler(arena, interner);
+    NameMangler mangler(arena, interner, unit);
 
     // Error Union: !i32 -> ErrorUnion_i32
     Type* i32_type = get_g_type_i32();

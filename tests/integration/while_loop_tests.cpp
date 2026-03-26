@@ -37,7 +37,7 @@ TEST_FUNC(WhileLoopIntegration_BoolCondition) {
         "fn foo(b: bool) void {\n"
         "    while (b) { }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Labeled Loops ---
@@ -49,7 +49,7 @@ TEST_FUNC(WhileLoopIntegration_LabeledWhile) {
         "        break :outer;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_end; }  __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_end; }  __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
@@ -59,7 +59,7 @@ TEST_FUNC(WhileLoopIntegration_LabeledContinue) {
         "        continue :outer;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_continue; }  __loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { goto __loop_0_continue; }  __loop_0_continue: ;  goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
@@ -73,7 +73,7 @@ TEST_FUNC(WhileLoopIntegration_NestedLabeledWhile) {
         "}";
     // outer: id 0, inner: id 1
     return run_while_test(source, "foo",
-        "void zF_d071e5_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; "
+        "void zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; "
         "{ __loop_1_start: ; if (!(1)) goto __loop_1_end; { goto __loop_0_end; }  __loop_1_continue: ; goto __loop_1_start; __loop_1_end: ; } "
         " __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
@@ -83,7 +83,7 @@ TEST_FUNC(WhileLoopIntegration_IntCondition) {
         "fn foo(x: i32) void {\n"
         "    while (x) { }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int x) { __loop_0_start: ; if (!(x)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int x) { __loop_0_start: ; if (!(x)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_PointerCondition) {
@@ -91,7 +91,7 @@ TEST_FUNC(WhileLoopIntegration_PointerCondition) {
         "fn foo(ptr: *i32) void {\n"
         "    while (ptr) { }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int* ptr) { __loop_0_start: ; if (!(ptr)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int* ptr) { __loop_0_start: ; if (!(ptr)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Break and Continue ---
@@ -103,7 +103,7 @@ TEST_FUNC(WhileLoopIntegration_WithBreak) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_WithContinue) {
@@ -146,7 +146,7 @@ TEST_FUNC(WhileLoopIntegration_Scoping) {
         "    return 0;\n"
         "}";
     // x should be fine inside the loop
-    return run_while_test(source, "foo", "int zF_d071e5_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { int x = 42; return x; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; return 0; }");
+    return run_while_test(source, "foo", "int zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { int x = 42; return x; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; return 0; }");
 }
 
 // --- Complex Conditions ---
@@ -158,7 +158,7 @@ TEST_FUNC(WhileLoopIntegration_ComplexCondition) {
         "        break;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int a, int b) { __loop_0_start: ; if (!(a > 0 && b < 10)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int a, int b) { __loop_0_start: ; if (!(a > 0 && b < 10)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Negative Tests ---
@@ -177,7 +177,7 @@ TEST_FUNC(WhileLoopIntegration_AllowBracelessWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) break;\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { /* defers for break */ goto __loop_0_end; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
@@ -185,5 +185,5 @@ TEST_FUNC(WhileLoopIntegration_EmptyWhileBlock) {
         "fn foo(b: bool) void {\n"
         "    while (b) { }\n"
         "}";
-    return run_while_test(source, "foo", "void zF_d071e5_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_0_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }

@@ -775,7 +775,7 @@ TEST_FUNC(IfStatementIntegration_LogicalNot);
 TEST_FUNC(IfStatementIntegration_EmptyBlocks);
 TEST_FUNC(IfStatementIntegration_ReturnFromBranches);
 TEST_FUNC(IfStatementIntegration_RejectFloatCondition);
-TEST_FUNC(IfStatementIntegration_RejectBracelessIf);
+TEST_FUNC(IfStatementIntegration_AllowBracelessIf);
 
 // Task 176: While Loop Integration Tests
 TEST_FUNC(WhileLoopIntegration_BoolCondition);

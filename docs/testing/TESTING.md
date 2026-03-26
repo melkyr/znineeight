@@ -145,7 +145,27 @@ Confirm that `C89FeatureValidator` reports `ERR_NON_C89_FEATURE` for each detect
 ### Pipeline Order
 Tests should verify that `TypeChecker` successfully resolves error types before `C89FeatureValidator` runs, ensuring that even complex return types (like those using type aliases) are accurately detected.
 
-## 9. C89 Validation Framework (Task 179)
+## 9. Test Mode (Deterministic Mangling)
+
+The compiler supports a specialized **Test Mode** to ensure that integration tests remain deterministic and maintainable, even as the internal name mangling scheme evolves.
+
+### Deterministic Naming
+In Test Mode, the compiler replaces hash-based mangling with a deterministic, counter-based scheme:
+- **Format**: `z<Kind>_<Counter>_<Name>`
+- **Kinds**: `F` (Function), `V` (Variable), `S` (Struct/Tagged Union), `E` (Enum), `U` (Union).
+- **Anonymous Types**: Use `anon` as the base name (e.g., `zS_0_anon`).
+- **Determinism**: Counters are global per `CompilationUnit` and increment based on the order symbols are encountered in the AST.
+
+### Usage
+To enable Test Mode, use the `--test-mode` flag:
+```bash
+./retrozig --test-mode my_source.zig -o output.c
+```
+
+### Regression Testing
+When updating emission tests that compare against hardcoded strings, always ensure that the test environment sets Test Mode. If test files are moved or the order of symbols in a file changes, the counters may change, necessitating an update to the expected strings.
+
+## 10. C89 Validation Framework (Task 179)
 
 The C89 Validation Framework ensures that emitted C code is compliant with ANSI C89 and MSVC 6.0 constraints.
 

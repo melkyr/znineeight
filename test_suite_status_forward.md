@@ -18,16 +18,16 @@
 - **Reason:** Integer literal kind mismatch on 32-bit. The test expects `2147483648` to be treated as `i64`, but it may be getting truncated or misclassified in the 32-bit environment compared to 64-bit where it passed.
 
 ### Batch 10: Name Mangling
-- **Failing Tests:** `plat_strcmp(mangled, "foo") == 0`, `plat_strcmp(mangled, "foo__i32") == 0`, `plat_strcmp(mangled, "bar__i32_f64") == 0`, `plat_strcmp(mangled, "z_Test") == 0`, `plat_strcmp(mangled_if, "z_if") == 0`
-- **Reason:** Legacy tests expecting old mangling formats without the mandatory `z<Kind>_` prefixes and hashes.
+- **Status:** **PARTIALLY PASSED** (Deterministic naming implemented)
+- **Reason:** Legacy tests updated to expect `zF_0_foo` etc. in Test Mode. Some hash-based tests still need adjustment or removal.
 
 ### Batch 11: Name Mangling (Milestone 4)
-- **Failing Tests:** `test_NameMangler_Milestone4Types`, `test_recursive_calls`
-- **Reason:** Mismatch between expected legacy prefixes (`err_`, `opt_`) and the new mangling scheme (`ErrorUnion_`, `Optional_`, `zF_`).
+- **Status:** **PASSED** (Test Mode enabled)
+- **Reason:** Successfully updated `test_NameMangler_Milestone4Types` and `test_recursive_calls` to align with the counter-based deterministic naming.
 
 ### Batch 12: Emission Verification
-- **Failing Tests:** Multiple signature and call emission checks for functions `foo`, `add`, `bar`, etc.
-- **Reason:** The compiler now emits `zF_` and `zV_` prefixes for all global functions and variables, causing string-matching tests with hardcoded expectations to fail.
+- **Status:** **PASSED** (Test Mode enabled)
+- **Reason:** Systematic update of emission strings in `function_decl_tests.cpp`, `variable_decl_tests.cpp`, and `function_call_tests.cpp` to use the `z<Kind>_0_` prefix and counters.
 
 ### Batch 13 & 14: Function Emission
 - **Failing Tests:** `test_FunctionEmission_...`
@@ -103,6 +103,30 @@
 ### Batch 72: Switch Emission
 - **Failing Tests:** `test_SwitchEmission_Simple`, `test_SwitchEmission_Expression`
 - **Reason:** Mismatch in function names (`zF_`).
+
+---
+
+## Progress Report (Implementing Test Mode)
+
+To resolve the widespread emission mismatches caused by the new name mangling scheme and the transition to separate compilation, a **Test Mode** architecture has been implemented.
+
+### Test Mode Implementation
+- **Flag**: `--test-mode` (Sets `CompilationUnit::is_test_mode_`).
+- **Naming Scheme**: `z<Kind>_<Counter>_<Name>`.
+    - `F`: Function
+    - `V`: Variable
+    - `S`: Struct / Tagged Union
+    - `E`: Enum
+    - `U`: Union (bare)
+- **Determinism**: A global counter in `CompilationUnit` ensures names are predictable and independent of file hashes or environment paths.
+- **Internal Identifiers**: `Arena`, `__bootstrap_*`, etc., continue to bypass mangling for runtime compatibility.
+
+### Systematic Update Process
+The remaining failing batches (13–18, 26–27, 39, 41, 52, 45, 47, 48, 58, 61, 65, 66, 67, 69, 71, 72) will be updated using the following protocol:
+1. Compile the test batch runner with `-DRETROZIG_TEST`.
+2. Run the runner to identify specific mismatches.
+3. Update the `.cpp` source files to reflect the counter-based deterministic output (e.g., changing `zF_d071e5_foo` to `zF_0_foo`).
+4. Re-verify the batch.
 
 ---
 

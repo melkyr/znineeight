@@ -9,6 +9,7 @@ TEST_FUNC(Recursive_Factorial) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
+    unit.setTestMode(true);
     unit.injectRuntimeSymbols();
 
     const char* source =
@@ -37,12 +38,12 @@ TEST_FUNC(Recursive_Factorial) {
         if (plat_strcmp(entry.context, "factorial") == 0) {
             ASSERT_EQ(CALL_RECURSIVE, entry.call_type);
             ASSERT_TRUE(entry.mangled_name != NULL);
-            ASSERT_STREQ("zF_d071e5_factorial", entry.mangled_name);
+            ASSERT_STREQ("zF_0_factorial", entry.mangled_name);
             found_recursive = true;
         } else if (plat_strcmp(entry.context, "main") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
             ASSERT_TRUE(entry.mangled_name != NULL);
-            ASSERT_STREQ("zF_d071e5_factorial", entry.mangled_name);
+            ASSERT_STREQ("zF_0_factorial", entry.mangled_name);
             found_direct = true;
         }
     }
@@ -57,6 +58,7 @@ TEST_FUNC(Recursive_Mutual_Mangled) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
+    unit.setTestMode(true);
     unit.injectRuntimeSymbols();
 
     const char* source =
@@ -83,11 +85,11 @@ TEST_FUNC(Recursive_Mutual_Mangled) {
         const CallSiteEntry& entry = table.getEntry(i);
         if (plat_strcmp(entry.context, "isEven") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("zF_d071e5_isOdd", entry.mangled_name);
+            ASSERT_STREQ("zF_1_isOdd", entry.mangled_name);
             found_isOdd_call = true;
         } else if (plat_strcmp(entry.context, "isOdd") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("zF_d071e5_isEven", entry.mangled_name);
+            ASSERT_STREQ("zF_0_isEven", entry.mangled_name);
             found_isEven_call = true;
         }
     }
@@ -102,6 +104,7 @@ TEST_FUNC(Recursive_Forward_Mangled) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
     CompilationUnit unit(arena, interner);
+    unit.setTestMode(true);
     unit.injectRuntimeSymbols();
 
     const char* source =
@@ -122,11 +125,11 @@ TEST_FUNC(Recursive_Forward_Mangled) {
         const CallSiteEntry& entry = table.getEntry(i);
         if (plat_strcmp(entry.context, "start") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("zF_d071e5_later", entry.mangled_name);
+            ASSERT_STREQ("zF_1_later", entry.mangled_name);
             found_later_call = true;
         } else if (plat_strcmp(entry.context, "later") == 0) {
             ASSERT_EQ(CALL_DIRECT, entry.call_type);
-            ASSERT_STREQ("zF_d071e5_start", entry.mangled_name);
+            ASSERT_STREQ("zF_0_start", entry.mangled_name);
             found_start_call = true;
         }
     }
