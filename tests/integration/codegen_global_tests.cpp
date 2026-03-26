@@ -87,62 +87,62 @@ static bool run_global_codegen_test(const char* zig_code, const char* expected_c
 }
 
 TEST_FUNC(Codegen_Global_PubConst) {
-    return run_global_codegen_test("pub const x: i32 = 42;", "int zV_0_x = 42;");
+    return run_global_codegen_test("pub const x: i32 = 42;", "int zV_1_x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_PrivateConst) {
-    return run_global_codegen_test("const x: i32 = 42;", "static int zV_0_x = 42;");
+    return run_global_codegen_test("const x: i32 = 42;", "static int zV_1_x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_PubVar) {
-    return run_global_codegen_test("pub var x: i32 = 42;", "int zV_0_x = 42;");
+    return run_global_codegen_test("pub var x: i32 = 42;", "int zV_1_x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_PrivateVar) {
-    return run_global_codegen_test("var x: i32 = 42;", "static int zV_0_x = 42;");
+    return run_global_codegen_test("var x: i32 = 42;", "static int zV_1_x = 42;");
 }
 
 TEST_FUNC(Codegen_Global_Array) {
-    return run_global_codegen_test("pub var x: [10]i32;", "int zV_0_x[10];");
+    return run_global_codegen_test("pub var x: [10]i32;", "int zV_1_x[10];");
 }
 
 TEST_FUNC(Codegen_Global_Array_WithInit) {
     // Zig doesn't support positional array literals in current parser yet, but we can test if we have them.
     // For now, testing that it produces a constant initializer.
-    return run_global_codegen_test("pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };", "int zC_0_x[3] = {1, 2, 3};");
+    return run_global_codegen_test("pub const x: [3]i32 = .{ ._0 = 1, ._1 = 2, ._2 = 3 };", "int zV_1_x[3] = {1, 2, 3};");
 }
 
 TEST_FUNC(Codegen_Global_Pointer) {
-    return run_global_codegen_test("pub var x: *i32;", "int* zV_0_x;");
+    return run_global_codegen_test("pub var x: *i32;", "int* zV_1_x;");
 }
 
 TEST_FUNC(Codegen_Global_ConstPointer) {
-    return run_global_codegen_test("pub var x: *const i32;", "int* zV_0_x;");
+    return run_global_codegen_test("pub var x: *const i32;", "int* zV_1_x;");
 }
 
 TEST_FUNC(Codegen_Global_KeywordCollision) {
-    return run_global_codegen_test("var int: i32 = 0;", "static int zV_0_int = 0;");
+    return run_global_codegen_test("var int: i32 = 0;", "static int zV_1_int = 0;");
 }
 
 TEST_FUNC(Codegen_Global_LongName) {
-    return run_global_codegen_test("pub var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 0;", "int zV_0_this_is_a_very_long_variable_name_that_exceeds_31_chars = 0;");
+    return run_global_codegen_test("pub var this_is_a_very_long_variable_name_that_exceeds_31_chars: i32 = 0;", "int zV_1_this_is_a_very_long_variable_name_that_exceeds_31_chars = 0;");
 }
 
 TEST_FUNC(Codegen_Global_PointerToGlobal) {
-    return run_global_codegen_test("var x: i32 = 0; pub var p: *i32 = &x;", "int* zV_0_p = &zC_0_x;");
+    return run_global_codegen_test("var x: i32 = 0; pub var p: *i32 = &x;", "int* zV_2_p = &zV_1_x;");
 }
 
 TEST_FUNC(Codegen_Global_Arithmetic) {
-    return run_global_codegen_test("pub const x: i32 = 1 + 2 * 3;", "int zC_0_x = 1 + 2 * 3;");
+    return run_global_codegen_test("pub const x: i32 = 1 + 2 * 3;", "int zV_1_x = 1 + 2 * 3;");
 }
 
 TEST_FUNC(Codegen_Global_Enum) {
     // Enum constants are folded to integers but keep their original name for mangled emission
-    return run_global_codegen_test("const Color = enum { Red, Green }; pub var c: Color = Color.Red;", "enum zE_0_Color zV_0_c = zE_0_Color_Red;");
+    return run_global_codegen_test("const Color = enum { Red, Green }; pub var c: Color = Color.Red;", "enum zE_1_Color zV_2_c = zE_1_Color_Red;");
 }
 
 TEST_FUNC(Codegen_Global_Struct) {
-    return run_global_codegen_test("const Point = struct { x: i32, y: i32 }; pub var pt: Point = .{ .x = 1, .y = 2 };", "struct zS_0_Point zV_0_pt = {1, 2};");
+    return run_global_codegen_test("const Point = struct { x: i32, y: i32 }; pub var pt: Point = .{ .x = 1, .y = 2 };", "struct zS_1_Point zV_2_pt = {1, 2};");
 }
 
 TEST_FUNC(Codegen_Global_AnonymousContainer_Error) {

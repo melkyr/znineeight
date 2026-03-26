@@ -25,7 +25,7 @@ TEST_FUNC(ArrayIntegration_FixedSizeDecl) {
         return false;
     }
 
-    if (!unit.validateFunctionSignature("foo", "void foo(int arr[5])")) {
+    if (!unit.validateFunctionSignature("foo", "void zF_0_foo(int arr[5])")) {
         return false;
     }
 

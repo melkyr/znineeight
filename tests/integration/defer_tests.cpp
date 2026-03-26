@@ -37,7 +37,7 @@ TEST_FUNC(DeferIntegration_Basic) {
         "}";
     // x = 1 should be emitted before the closing brace of foo's body block.
     // Lifter wraps defer bodies in blocks if they aren't already.
-    return run_defer_test(source, "foo", "void foo(void) { int x = 0; x = 2; { x = 1; } }");
+    return run_defer_test(source, "foo", "void zF_0_foo(void) { int x = 0; x = 2; { x = 1; } }");
 }
 
 TEST_FUNC(DeferIntegration_LIFO) {

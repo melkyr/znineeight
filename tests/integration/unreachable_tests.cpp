@@ -147,8 +147,9 @@ TEST_FUNC(Unreachable_Initializer) {
 
 TEST_FUNC(Unreachable_ErrDefer) {
     const char* source =
-        "fn foo() void {\n"
+        "fn foo() !void {\n"
         "    errdefer unreachable;\n"
+        "    return error.Fail;\n"
         "}";
 
     ArenaAllocator arena(1024 * 1024);
