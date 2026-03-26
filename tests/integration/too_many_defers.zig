@@ -1,0 +1,35 @@
+fn testTooMany() void {
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+    defer {}
+}

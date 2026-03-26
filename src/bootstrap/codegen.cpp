@@ -15,7 +15,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
@@ -31,7 +31,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
@@ -49,7 +49,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
@@ -985,6 +985,13 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     }
 
     if (node->body) {
+        /* Create error flag if needed */
+        if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION && scanForErrDefer(node->body)) {
+            current_err_flag_ = var_alloc_.generate("err_occurred");
+        } else {
+            current_err_flag_ = NULL;
+        }
+
         writeString(" ");
         emitBlock(&node->body->as.block_stmt);
         writeString("\n\n");
@@ -1006,6 +1013,13 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         DeferScope* scope = defer_stack_.back();
 
         /* Pass 1: Local declarations */
+        if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
+            writeIndent();
+            writeString("int ");
+            writeString(current_err_flag_);
+            writeString(" = 0;\n");
+        }
+
         for (size_t i = 0; i < node->statements->length(); ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
@@ -1024,9 +1038,15 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
                     break;
                 }
             } else if (stmt->type == NODE_DEFER_STMT) {
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
                 scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
             } else if (stmt->type == NODE_ERRDEFER_STMT) {
-                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
+                scope->err_defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 emitStatement(stmt);
                 if (allPathsExit(stmt)) {
@@ -1081,6 +1101,13 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
         DeferScope* scope = defer_stack_.back();
 
         /* Pass 1: Local declarations */
+        if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
+            writeIndent();
+            writeString("int ");
+            writeString(current_err_flag_);
+            writeString(" = 0;\n");
+        }
+
         for (size_t i = 0; i < node->statements->length(); ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
@@ -1099,9 +1126,15 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
                     break;
                 }
             } else if (stmt->type == NODE_DEFER_STMT) {
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
                 scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
             } else if (stmt->type == NODE_ERRDEFER_STMT) {
-                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
+                scope->err_defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 /* Check if it's the last expression in the block */
                 if (i == node->statements->length() - 1 && target_var &&
@@ -1171,12 +1204,10 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeString(";\n");
             break;
         case NODE_DEFER_STMT:
-            writeIndent();
-            writeString("/* defer */\n");
-            break;
         case NODE_ERRDEFER_STMT:
-            writeIndent();
-            writeString("/* errdefer */\n");
+            /* Should never be emitted directly; they are handled in block collection */
+            error_handler_.report(ERR_INTERNAL_ERROR, node->loc,
+                "Defer/errdefer statement emitted outside block context");
             break;
         case NODE_EXPRESSION_STMT: {
             emitStatement(node->as.expression_stmt.expression);
@@ -1347,6 +1378,27 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
         writeString("\n");
     }
+}
+
+bool C89Emitter::scanForErrDefer(const ASTNode* node) const {
+    if (!node) return false;
+    if (node->type == NODE_ERRDEFER_STMT) return true;
+
+    struct ScanVisitor : ChildVisitor {
+        bool found;
+        const C89Emitter* emitter;
+        ScanVisitor(const C89Emitter* e) : found(false), emitter(e) {}
+        void visitChild(ASTNode** child_slot) {
+            if (found) return;
+            if (emitter->scanForErrDefer(*child_slot)) {
+                found = true;
+            }
+        }
+    };
+
+    ScanVisitor visitor(this);
+    forEachChild((ASTNode*)node, visitor);
+    return visitor.found;
 }
 
 bool C89Emitter::evaluateSimpleConstant(const ASTNode* node, i64* out_value) const {
@@ -4017,11 +4069,32 @@ void C89Emitter::emitDefersForScopeExit(int target_label_id) {
     for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
         DeferScope* scope = defer_stack_[i];
         if (!scope) continue;
+
+        /* Regular defers */
         for (int j = (int)scope->defers.length() - 1; j >= 0; --j) {
             if (scope->defers[j] && scope->defers[j]->statement) {
                 emitStatement(scope->defers[j]->statement);
             }
         }
+
+        /* Errdefers */
+        if (scope->err_defers.length() > 0 && current_err_flag_) {
+            writeIndent();
+            writeString("if (");
+            writeString(current_err_flag_);
+            writeString(") {\n");
+            {
+                IndentScope errdefer_indent(*this);
+                for (int j = (int)scope->err_defers.length() - 1; j >= 0; --j) {
+                    if (scope->err_defers[j] && scope->err_defers[j]->statement) {
+                        emitStatement(scope->err_defers[j]->statement);
+                    }
+                }
+            }
+            writeIndent();
+            writeString("}\n");
+        }
+
         if (target_label_id != -1 && scope->label_id == target_label_id) {
             break;
         }
@@ -4093,7 +4166,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
     bool has_defers = false;
     for (size_t i = 0; i < defer_stack_.length(); ++i) {
-        if (defer_stack_[i]->defers.length() > 0) {
+        if (defer_stack_[i]->defers.length() > 0 || defer_stack_[i]->err_defers.length() > 0) {
             has_defers = true;
             break;
         }
@@ -4118,6 +4191,13 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
                 if (node->expression) {
                     emitAssignmentWithLifting("__return_val", NULL, node->expression, current_fn_ret_type_);
+                }
+
+                if (current_err_flag_) {
+                    writeIndent();
+                    writeString("if (__return_val.is_error) ");
+                    writeString(current_err_flag_);
+                    writeString(" = 1;\n");
                 }
 
                 emitDefersForScopeExit(-1);

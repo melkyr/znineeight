@@ -136,6 +136,7 @@ const char* ErrorHandler::getMessage(ErrorCode code) {
         case ERR_RETURN_INSIDE_DEFER:           return "return inside defer";
         case ERR_BREAK_INSIDE_DEFER:            return "break inside defer";
         case ERR_CONTINUE_INSIDE_DEFER:         return "continue inside defer";
+        case ERR_TOO_MANY_DEFERS:               return "too many defer/errdefer statements in scope";
 
         /* Operational Errors */
         case ERR_INVALID_OPERATION:             return "invalid operation";

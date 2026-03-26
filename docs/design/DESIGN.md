@@ -695,7 +695,7 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
-*   **Error Handling**: Fully supported for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remains a placeholder (parsed but only emits comment).
+*   **Error Handling**: Fully supported for `!T`, `try`, `catch`, `orelse`, `errdefer`, and Optional types (`?T`).
 *   **`anyerror`**: Explicitly rejected by the compiler.
 *   **Anonymous Union Payloads**: Direct use of anonymous structs in `union(enum)` variants results in incomplete type definitions in C89.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
