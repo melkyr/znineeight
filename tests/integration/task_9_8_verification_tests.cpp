@@ -59,9 +59,9 @@ TEST_FUNC(Task9_8_ImplicitReturnErrorVoid) {
 
     // Verify emission includes return {0};
     ASSERT_TRUE(unit.validateRealFunctionEmission("foo",
-        "static ErrorUnion_void foo(void) {\n"
+        "static struct ErrorUnion_void zF_2_foo(void) {\n"
         "    {\n"
-        "        ErrorUnion_void __implicit_ret = {0};\n"
+        "        struct ErrorUnion_void __implicit_ret = {0};\n"
         "        return __implicit_ret;\n"
         "    }\n"
         "}"));
@@ -92,7 +92,7 @@ TEST_FUNC(Task9_8_WhileContinueExpr) {
 
     // Verify emission includes i += 1 at the end of the loop body
     ASSERT_TRUE(unit.validateRealFunctionEmission("sum_up_to",
-        "unsigned int sum_up_to(unsigned int n) {\n"
+        "unsigned int zF_0_sum_up_to(unsigned int n) {\n"
         "    unsigned int i;\n"
         "    unsigned int total;\n"
         "    i = 0;\n"

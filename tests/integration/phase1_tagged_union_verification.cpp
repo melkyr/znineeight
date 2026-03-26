@@ -52,7 +52,7 @@ TEST_FUNC(Phase1_TaggedUnion_Codegen) {
 
     /* Check for structural elements */
     ASSERT_TRUE(strstr(buffer, "struct zS_0_U") != NULL);
-    ASSERT_TRUE(strstr(buffer, "zS_0_U_Tag tag;") != NULL);
+    ASSERT_TRUE(strstr(buffer, "zE_0_U_Tag tag;") != NULL);
     ASSERT_TRUE(strstr(buffer, "union {") != NULL);
     ASSERT_TRUE(strstr(buffer, "int A;") != NULL);
     ASSERT_TRUE(strstr(buffer, "double B;") != NULL);

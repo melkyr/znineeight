@@ -108,7 +108,7 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
     content[bytes] = '\0';
     plat_close_file(f);
     
-    bool found_struct = (strstr(content, "struct Node") != NULL);
+    bool found_struct = (strstr(content, "struct zS_0_Node") != NULL);
 
     if (!found_slice) {
         printf("FAIL: Slice_u8 definition not found for recursive struct usage.\n");

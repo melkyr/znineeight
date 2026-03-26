@@ -125,7 +125,7 @@ TEST_FUNC(TaggedUnionEmission_Return) {
     u32 file_id = unit.addSource("test.zig", source);
     if (!unit.performTestPipeline(file_id)) return false;
 
-    return unit.validateFunctionSignature("foo", "struct U foo(void)");
+    return unit.validateFunctionSignature("foo", "struct U zF_3_foo(void)");
 }
 
 TEST_FUNC(TaggedUnionEmission_Param) {
@@ -140,7 +140,7 @@ TEST_FUNC(TaggedUnionEmission_Param) {
     u32 file_id = unit.addSource("test.zig", source);
     if (!unit.performTestPipeline(file_id)) return false;
 
-    return unit.validateFunctionSignature("foo", "void foo(struct U u)");
+    return unit.validateFunctionSignature("foo", "void zF_3_foo(struct U u)");
 }
 
 TEST_FUNC(TaggedUnionEmission_VoidField) {
