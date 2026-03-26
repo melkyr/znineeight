@@ -41,23 +41,32 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_NULL,
+    TYPE_UNDEFINED,
     TYPE_ARRAY,
+    TYPE_SLICE,
+    TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_FUNCTION_POINTER,
     TYPE_ENUM,
     TYPE_STRUCT,
+    TYPE_UNION,
     TYPE_ERROR_UNION,
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
+    TYPE_NORETURN,
     TYPE_TYPE,
     TYPE_ANYTYPE,
-    TYPE_TAGGED_UNION
+    TYPE_MODULE,
+    TYPE_TUPLE,
+    TYPE_TAGGED_UNION,
+    TYPE_PLACEHOLDER
 };
 ```
 
 ### `Type` Struct
 
-The `Type` struct contains the `TypeKind` discriminator, information about the type's size and alignment, and a `union` to hold data for composite types (like pointers).
+The `Type` struct contains the `TypeKind` discriminator, information about the type's size and alignment, its C mangled name, and a `union` to hold data for composite types.
 
 ```cpp
 // Forward-declare Type for the pointer union member
@@ -71,13 +80,18 @@ struct Type {
     TypeKind kind;
     size_t size;
     size_t alignment;
+    const char* c_name; // Mangled C89 name for structs, unions, enums
+    bool is_resolving;
+    struct Module* owner_module;
+    DependentNode* dependents_head;
+    DependentNode* dependents_tail;
 
     union {
         /**
          * @struct PointerDetails
          * @brief Details specific to pointer types.
          */
-        struct PointerDetails {
+        struct {
             Type* base; // The type that the pointer points to.
             bool is_const;
             bool is_many;
@@ -96,18 +110,30 @@ struct Type {
          * @struct ArrayDetails
          * @brief Details specific to array types.
          */
-        struct ArrayDetails {
+        struct {
             Type* element_type; // The type of the elements in the array.
             u64 size;           // The number of elements in the array.
         } array;
+
+        struct {
+            Type* element_type;
+            bool is_const;
+        } slice;
+
+        struct {
+            i64 value;
+        } integer_literal;
 
         /**
          * @struct EnumDetails
          * @brief Details specific to enum types.
          */
-        struct EnumDetails {
+        struct {
+            const char* name;
             Type* backing_type;
             DynamicArray<EnumMember>* members;
+            i64 min_value;
+            i64 max_value;
         } enum_details;
 
         struct {
@@ -115,7 +141,8 @@ struct Type {
             Type* return_type;
         } function_pointer;
 
-        struct StructDetails {
+        struct {
+            const char* name;
             DynamicArray<StructField>* fields;
             bool is_tagged;
             Type* tag_type;
@@ -142,6 +169,21 @@ struct Type {
         struct {
             Type* payload;
         } optional;
+
+        struct {
+            const char* name;
+            struct Module* module_ptr;
+        } module;
+
+        struct {
+            DynamicArray<Type*>* elements;
+        } tuple;
+
+        struct {
+            const char* name;
+            struct ASTNode* decl_node;
+            struct Module* module;
+        } placeholder;
     } as;
 };
 ```
@@ -228,6 +270,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `c_char`                | `u8`                   | ✓           | Implicit conversion allowed for C interop.                         |
 | `T`                     | `?T`                   | ✓           | Implicit wrapping into optional.                                   |
 | `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
+| `[]T`                   | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `.ptr`).               |
+| `[N]T`                  | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `&arr[0]`).            |
 
 
 ## 4. Semantic Analysis
@@ -309,9 +353,9 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 
 When visiting an array or slice type declaration (`ASTArrayTypeNode`), the `TypeChecker` resolves the types accordingly:
 
-1.  **Slice Support:** Slices (e.g., `[]u8`, `[]const i32`) are supported as a language extension. If the `size` expression in the `ASTArrayTypeNode` is `NULL`, the `TypeChecker` creates a `TYPE_SLICE`. These are represented as 8-byte structures (pointer + length) and are interned for deduplication.
+1.  **Slice Support:** Slices (e.g., `[]u8`, `[]const i32`) are fully supported. If the `size` expression in the `ASTArrayTypeNode` is `NULL`, the `TypeChecker` creates a `TYPE_SLICE`. These are represented as 8-byte structures (pointer + length) and are interned for deduplication.
 
-2.  **Constant Size Enforcement:** For fixed-size arrays, C89 requires that sizes be compile-time constants. The bootstrap compiler enforces that the size expression must be a single integer literal (e.g., `[8]i32`). If the size expression is any other kind of node, a fatal error is reported.
+2.  **Constant Size Enforcement:** For fixed-size arrays, C89 requires that sizes be compile-time constants. The bootstrap compiler enforces that the size expression must be a constant expression.
 
 For fixed-size arrays, a new `Type` of kind `TYPE_ARRAY` is created, with its size calculated as `element_size * length`.
 
@@ -395,6 +439,7 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 11. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.
+14. **Iterator Stability (Snapshotting Pattern)**: To prevent assertion failures or memory corruption when recursive type resolution mutates `DynamicArray` objects (like function parameters or struct fields) while they are being iterated, the compiler employs a snapshotting pattern. Before entering a loop that might trigger recursive resolution, a temporary array of the elements is allocated from the arena, and the loop iterates over this stable snapshot.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
@@ -403,6 +448,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
     - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
     - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
 - **Tagged Union support**: Full support for `union(enum)` and switch captures (`|val|`).
+    - **Capture Typing**: The type of the capture variable (`|payload|`) is derived from the corresponding field of the tagged union.
+    - **Defensive Validation**: Switch prongs with captures are only allowed with a single tag case item to prevent ambiguity.
 - **Switch Requirements**: Switch expressions MUST have an `else` prong for exhaustive coverage (mandatory in bootstrap). Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
@@ -877,26 +924,29 @@ if (c) {
 var x = __tmp_if_1;
 ```
 
-## Rejected Zig Features (Milestone 4)
+## Language Status (Milestone 8/9)
 
-### Error Handling Types
-| Zig Feature | C89 Equivalent | Status | Rejection Point |
+### Feature Matrix
+| Zig Feature | C89 Equivalent | Status | Implementation Strategy |
 |-------------|----------------|--------|-----------------|
-| `!T` (error union) | `struct` | SUPPORTED | - |
-| `?T` (optional) | `struct` | SUPPORTED | - |
-| `error { ... }` | `int` | SUPPORTED | - |
-| `fn() !T` (error return) | `struct` | SUPPORTED | - |
-| `try expr` | `if` check | SUPPORTED | - |
-| `catch expr` | `if-else` | SUPPORTED | - |
-| `orelse expr` | `if-else` | SUPPORTED | - |
-| `errdefer` | `goto` cleanup | SUPPORTED | - |
+| `!T` (error union) | `struct` | SUPPORTED | Lifted into structs |
+| `?T` (optional) | `struct` | SUPPORTED | Lifted into structs |
+| `error { ... }` | `int` | SUPPORTED | Enum/Int mapping |
+| `fn() !T` (error return) | `struct` | SUPPORTED | Direct mapping |
+| `try expr` | `if` check | SUPPORTED | AST Lifting (Pass 5) |
+| `catch expr` | `if-else` | SUPPORTED | AST Lifting (Pass 5) |
+| `orelse expr` | `if-else` | SUPPORTED | AST Lifting (Pass 5) |
+| `errdefer` | `goto` cleanup | SUPPORTED | Backend Defer Stack |
+| `union(enum)` | `struct` | SUPPORTED | Tag + Payload Union |
+| Slices (`[]T`) | `struct` | SUPPORTED | Pointer + Length |
+| `if/switch` exprs | Statements | SUPPORTED | AST Lifting (Pass 5) |
 | `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `anytype` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `type` (as type) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `anyerror` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `@import` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `@import` | `#include` | SUPPORTED | Multi-module Backend |
 
-These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
+Most high-level features are resolved by the `TypeChecker` (Pass 0) and then transformed into C89-compatible statement forms by the `ControlFlowLifter` (Pass 5) before code generation.
 
 For detailed validation rules that will be enforced in Milestone 5 (when rejection is replaced by translation), see `error_handling_validation_rules.md`.
 
@@ -1233,6 +1283,10 @@ typedef struct {
     int has_value;  // 0 = null, 1 = present
 } OptionalInt32;
 ```
+
+#### Member Access and Null Comparison
+- **Member Access**: The type checker allows read-only access to `.value` and `.has_value` on optional types. `.value` returns the payload type, and `.has_value` returns `bool`.
+- **Null Comparison**: `==` and `!=` operators are supported between any `TYPE_OPTIONAL` and `TYPE_NULL`. This allows idiomatic patterns like `if (opt != null)`.
 
 ### The .? Operator
 
