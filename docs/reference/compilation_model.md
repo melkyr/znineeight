@@ -2,47 +2,33 @@
 
 This document describes the overall compilation model of the RetroZig bootstrap compiler.
 
-## Single-File Compilation (Current)
+## Separate Compilation (Current)
 
-In Milestones 1-5, the compiler operates primarily on a single-file basis.
+As of Milestone 10, the compiler uses a **Separate Compilation Model**. This replaces the earlier Single Translation Unit (STU) approach.
 
-1.  **Source Loading**: The `CompilationUnit` loads a single source file.
-2.  **Lexing**: The source is converted into a token stream.
-3.  **Parsing**: The `Parser` builds an AST from the tokens. All nodes are assigned the module name derived from the input filename.
-4.  **Semantic Analysis**:
-    -   **Name Collision Detection**: Checks for duplicate names in the same scope.
-    -   **Type Checker (Pass 0)**: Resolves types and validates basic operations. Populates catalogues (Generic, ErrorSet, etc.).
-    -   **Signature Analyzer (Pass 0.5)**: Enforces C89-compatible function signatures.
-    -   **C89 Feature Validator (Pass 1)**: Rejects any modern Zig features (like generics or error handling constructs) before code generation.
-5.  **Static Analysis** (Optional): Lifetime, Null Pointer, and Double Free analyzers run on the validated AST.
-6.  **Code Generation**: (Milestone 5) C89 code is emitted from the AST.
+1.  **Module Parsing**: The `CompilationUnit` loads and parses the entry module and recursively discovers all imports via `@import`.
+2.  **Topological Sorting**: All discovered modules are topologically sorted based on their `@import` dependencies. This ensures that a module's dependencies are always processed before the module itself.
+3.  **Semantic Analysis (Multi-Pass)**:
+    -   **Pass 0: Placeholder Registration**: Registers `TYPE_PLACEHOLDER` for all top-level types across all modules to support cross-module recursion.
+    -   **Pass 1: Type Checking**: Resolves all types and validates operations across all modules in topological order.
+    -   **Pass 2: C89 Feature Validation**: Rejects non-C89 features (e.g., `anyerror`, anonymous union payloads) and bootstrap-specific limitations.
+    -   **Pass 3: Control Flow Lifting**: Transforms expression-valued control-flow (`if`, `switch`, `try`, `catch`, `orelse`) into statement-form equivalents using temporary variables.
+4.  **Static Analysis**: Lifetime, Null Pointer, and Double Free analyzers run on the lifted AST.
+5.  **Metadata Preparation**: Collects all reachable types for module headers to ensure aggregate types (structs/unions) are defined before use.
+6.  **Code Generation**:
+    -   **Paired Output**: The `CBackend` generates one `.c` and one `.h` file for each Zig module.
+    -   **Build Scripts**: Automatically generates `build_target.sh` (POSIX) and `build_target.bat` (MSVC) to orchestrate compilation and linking of the generated C modules.
+    -   **Runtime Inclusion**: Copies `zig_runtime.h` and `zig_runtime.c` to the output directory to ensure the project is self-contained.
 
-## Multi-File Compilation (Milestone 6)
+## Symbol Visibility and Linkage
 
-Milestone 6 introduces `@import` support and a modular compilation pipeline.
-
-### Recursive Import Resolution
-
-The compiler uses a recursive, multi-pass loading strategy:
-- **Discovery**: When the `Parser` encounters an `@import("path.zig")`, it records the requirement in the current module's `ASTImportStmtNode`.
-- **Recursive Loading**: The `CompilationUnit` resolves these paths relative to the current module's directory. It uses normalized, interned filenames to avoid redundant parsing and detects circular dependencies via a filename stack.
-- **Unit Aggregation**: All parsed modules are stored in a single `CompilationUnit`, which manages the overall lifecycle.
-
-### Module-Isolated Analysis
-
-To prevent global state leakage, each module is analyzed in its own context:
-- **Per-Module Symbol Tables**: Each module has its own `SymbolTable`. `SymbolTable::lookupWithModule` is used for cross-module member access (e.g., `utils.add`).
-- **Feature Catalogues**: Analysis catalogues (Generics, ErrorSets, etc.) are moved from the unit to the individual `Module`.
-- **Pipeline Context Switching**: The `CompilationUnit` executes each analysis pass (Type Checking, C89 Validation, etc.) by iterating through all modules and setting the active module context for each one.
-
-### Cross-Module Generic Specialization
-
-Generic functions and types from imported modules are handled by tracking their source module:
-- Instantiation requests from importing modules are recorded with the target module's name.
-- The `C89Emitter` uses this information to generate unique, mangled C symbols (e.g., `z_TargetModule_GenericFn_T`) in the appropriate translation unit.
+- **Private Symbols**: Zig functions and variables without `pub` are emitted with the `static` keyword in C, limiting their visibility to the current `.c` file.
+- **Public Symbols**: Zig symbols with `pub` are emitted with external linkage and declared in the module's generated `.h` file.
+- **Extern Symbols**: `extern` declarations are emitted as `extern` in C and bypass module-based name mangling.
 
 ## Resource Management
 
-Given the <16MB memory limit, the compilation model relies heavily on:
--   **Arena Allocation**: All AST nodes and analysis metadata are allocated in a single arena that is cleared between compilation sessions.
--   **String Interning**: All identifiers, module names, and error messages are interned to minimize string storage overhead.
+The compilation model is designed to operate within a strict **<16MB memory limit**:
+-   **Arena Allocation**: All AST nodes and analysis metadata are allocated in a multi-tiered arena system (Global, Token, and Transient arenas).
+-   **String Interning**: All identifiers and module names are interned.
+-   **Token Clearing**: The Token Arena is reset after all modules are parsed, freeing memory before the memory-intensive analysis and codegen phases.

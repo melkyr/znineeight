@@ -20,6 +20,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 ### 1.2 Pointers
 - **Single-item pointers**: `*T` and `*const T`.
 - **Many-item pointers**: `[*]T` and `[*]const T`. Supported for C-style array access.
+- **Multi-level pointers**: `**T`, `***T`, etc., are fully supported.
 - **Address-of**: `&variable` produces a pointer.
 - **Dereference**: `pointer.*` accesses the value.
 - **Indexing**: `ptr[i]` is allowed for many-item pointers, but strictly rejected for single-item pointers.
@@ -27,6 +28,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
 - **Identifiers**: Identifiers starting with `__` are reserved for the compiler. User-defined identifiers starting with `__` are automatically mangled to avoid collisions with internal compiler symbols.
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
 - **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
+- **Function Pointers**: `fn(...) T` types are supported.
 
 ### 1.3 Aggregates
 - **Structs**: `const S = struct { field: T, ... };`
@@ -99,6 +101,12 @@ Memory is reclaimed by resetting or destroying the arena.
 - If a type manages external resources (like file handles), a `deinit` function should be provided and called manually before the arena is reset.
 - Memory allocated via `arena_alloc` should **not** be manually freed using `free()`.
 
+### 2.3 Advanced Patterns (Dual-Arena)
+For complex applications like compilers or interpreters (e.g., the Lisp interpreter), a **dual-arena system** is highly effective:
+- **Permanent Arena**: Stores long-lived data (e.g., global symbols, environment nodes, persistent AST).
+- **Transient Arena**: Stores temporary data that is cleared frequently (e.g., per-eval, per-file, or per-request data).
+This approach maximizes performance on legacy hardware by minimizing the active working set and avoiding frequent small allocations.
+
 ## 3. Control Flow
 
 ### 3.1 Statements
@@ -110,6 +118,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.
 - `while (cond) : (iter) statement`: While loop with a continue expression. `iter` is evaluated after the loop body on each iteration, before the condition is re-evaluated. Braces are **optional** for the loop body.
   - **Example**: `while (i < 10) i = i + 1;`
+  - **Capture**: `while (optional_expr) |capture| { ... }` is supported for optional unwrapping. The loop continues as long as `optional_expr` yields a value.
 - `for (iterable) |item| statement`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`. Braces are **optional** for the loop body.
   - **Example**: `for (arr) |item| sum = sum + item;`
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
@@ -171,7 +180,7 @@ Memory is reclaimed by resetting or destroying the arena.
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
-- `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**. Currently supported as a placeholder in the C89 backend (emits a comment).
+- `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**. **Note**: Currently supported as a placeholder in the C89 backend; it emits a C comment `/* errdefer */` but does not yet execute the statement on error paths.
   - **Example**: `errdefer rollback();`
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
   - **Example**:
@@ -228,21 +237,20 @@ Memory is reclaimed by resetting or destroying the arena.
 - `@floatCast(T, expr)`: Checked float conversion.
 - `unreachable`: Diverges with a panic. Has type `noreturn`.
 
-## 5. Explicit Limitations (Unsupported Features)
-To maintain C89 compatibility, the following Zig features are **NOT supported** in Z98:
+## 5. Known Limitations and Workarounds
 
-- **Slices**: `[]T` is **supported** as a bootstrap language extension (mapping to C structs).
-- **Many-item Pointers**: `[*]T` is **supported**. Maps to raw C pointers and allows indexing/arithmetic. Note that string literals, arrays, and slices can implicitly coerce to many-item pointers in specific contexts (see Type Coercions below).
-- **Optionals**: `?T` and `orelse` are **supported** as a bootstrap language extension.
-- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
-- **Tagged Unions**: `union(enum)` and switch captures are **supported**.
-- **Anonymous Tagged Unions**: Tagged unions defined inline (e.g., as struct fields) are supported for emission but restricted by the TypeChecker in variable declarations.
+To maintain C89 compatibility and compiler simplicity, Z98 has the following limitations:
+
+- **No `anyerror`**: The `anyerror` keyword is explicitly rejected.
+  - **Workaround**: Use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
+- **Anonymous Union Payloads**: Using anonymous structs directly as payloads for `union(enum)` (e.g., `Cons: struct { car: *V, cdr: *V }`) results in the C89 backend declaring but not defining the internal struct.
+  - **Workaround**: Define a named struct for the payload and use it in the union (see `examples/lisp_interpreter_curr/value.zig`).
+- **`errdefer` Status**: `errdefer` is currently a **placeholder**. It is parsed and catalogued but only emits a comment in the generated C code. It does NOT currently execute on error paths.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **Multi-level Pointers**: `**T` and deeper are supported.
-- **Function Pointers**: `fn(...) T` types are supported.
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
+- **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
 - **Parameter Limit**: Functions follow standard C89 parameter limits (at least 31).
 
 ## Type Coercions

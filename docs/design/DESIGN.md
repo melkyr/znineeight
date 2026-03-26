@@ -1,4 +1,4 @@
-# RetroZig Compiler: Master Design Document (v1.1)
+# RetroZig Compiler: Master Design Document (v1.2)
 
 ## 1. Project Overview & Philosophy
 **Goal:** Create a self-hosting Zig compiler targeting Windows 9x era toolchains (1998-2000).
@@ -435,8 +435,8 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 * **Function Pointers:** `fn(...) T`. Supports dynamic parameter allocation (unlimited).
 
 **Explicitly Rejected Types (Bootstrap Phase):**
-* **Optionals:** `?T` (Rejected until Milestone 5 translation).
-* **Error Unions:** `!T` (Rejected until Milestone 5 translation).
+* **Optionals:** `?T` (Fully supported as of Task 9.3).
+* **Error Unions:** `!T` (Fully supported as of Milestone 7).
 
 **Type Representation:**
 ```cpp
@@ -456,7 +456,10 @@ enum TypeKind {
     TYPE_F32,
     TYPE_F64,
     // Complex Types
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_OPTIONAL,
+    TYPE_ERROR_UNION,
+    TYPE_TAGGED_UNION
 };
 
 struct Type {
@@ -467,6 +470,14 @@ struct Type {
         struct {
             Type* base;
         } pointer;
+        struct {
+            Type* payload;
+        } optional;
+        struct {
+            Type* payload;
+            Type* error_set;
+        } error_union;
+        // ...
     } as;
 };
 ```
@@ -684,11 +695,13 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
-*   **Error Handling**: Basic support for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remain rejected in the bootstrap phase.
+*   **Error Handling**: Fully supported for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remains a placeholder (parsed but only emits comment).
+*   **`anyerror`**: Explicitly rejected by the compiler.
+*   **Anonymous Union Payloads**: Direct use of anonymous structs in `union(enum)` variants results in incomplete type definitions in C89.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **Tagged Unions**: Supported as of Phase 1 of Milestone 9.
+*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
@@ -933,8 +946,34 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [x] Task 203: return statement
 - [x] Task 204: @ptrCast
 - [x] Task 205: @intCast / @floatCast (runtime checked)
-- [ ] Task 206: defer (placeholder)
+- [x] Task 206: defer (Initial implementation)
 - [x] Task 207: Integration tests with real C89 compiler
+
+### Milestone 7: Error Handling (Milestone COMPLETE)
+- [x] Task 210: Error set and union parsing
+- [x] Task 211: Try/Catch expression lifting
+- [x] Task 212: Implicit return for !void
+- [x] Task 213: Error union coercion rules
+
+### Milestone 8: Optional Types (Milestone COMPLETE)
+- [x] Task 220: Optional type representation
+- [x] Task 221: Orelse and Optional unwrapping captures
+- [x] Task 222: Null literal handling and coercion
+
+### Milestone 9: Tagged Unions (Milestone COMPLETE)
+- [x] Task 230: union(enum) and switch payload captures
+- [x] Task 231: Recursive type layout with tagged unions
+- [x] Task 232: Tag literal coercion to tagged unions
+
+### Milestone 10: Compilation Model (Milestone COMPLETE)
+- [x] Task 240: Separate compilation via CBackend
+- [x] Task 241: Build script generation (.sh/.bat)
+- [x] Task 242: Visibility enforcement (static vs extern)
+
+### Milestone 11: Modular Refactoring (Milestone COMPLETE)
+- [x] Task 250: Header file generation (.h)
+- [x] Task 251: Recursive include resolution
+- [x] Task 252: Forward declaration orchestration
 
 ### Week 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
@@ -970,15 +1009,15 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 
 ### Week 5: Basic Code Generation (C89)
 - [x] Design C89 emitter (Mock emitter for Milestone 4)
-- [ ] Implement full C89 code generation for functions
-- [ ] Generate code for variable declarations
-- [ ] Handle basic expressions
+- [x] Implement full C89 code generation for functions
+- [x] Generate code for variable declarations
+- [x] Handle basic expressions
 
 ### Week 6: Advanced Code Generation
-- [ ] Implement defer statement code generation
-- [x] Handle slices and error unions (Slices: DONE, Error Unions: Deferred)
-- [ ] Add Win32 imports for kernel32.dll
-- [ ] Test generated code correctness
+- [x] Implement defer statement code generation
+- [x] Handle slices and error unions (Slices: DONE, Error Unions: DONE)
+- [x] Add Win32 imports for kernel32.dll
+- [x] Test generated code correctness
 
 ### Week 7: Bootstrap Stage 0 -> Stage 1
 - [ ] Write minimal Zig compiler in C++
