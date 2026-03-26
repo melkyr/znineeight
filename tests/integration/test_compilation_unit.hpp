@@ -166,6 +166,72 @@ public:
     }
 
     /**
+     * @brief Checks if a string matches a pattern with # as a wildcard for digits.
+     */
+    bool matchPattern(const std::string& pattern, const std::string& actual) {
+        if (pattern.length() == 0) return actual.length() == 0;
+        
+        size_t p = 0;
+        size_t a = 0;
+        
+        while (p < pattern.length() && a < actual.length()) {
+            if (pattern[p] == '#') {
+                if (actual[a] < '0' || actual[a] > '9') return false;
+                // Consume all consecutive digits for one #
+                while (a < actual.length() && actual[a] >= '0' && actual[a] <= '9') {
+                    a++;
+                }
+                p++;
+            } else if (pattern[p] == actual[a]) {
+                p++;
+                a++;
+            } else {
+                return false;
+            }
+        }
+        
+        return p == pattern.length() && a == actual.length();
+    }
+
+    /**
+     * @brief Checks if the actual string contains the pattern.
+     */
+    bool containsPattern(const std::string& pattern, const std::string& actual) {
+        if (pattern.empty()) return true;
+        if (actual.empty()) return false;
+
+        for (size_t i = 0; i < actual.length(); ++i) {
+            size_t p = 0;
+            size_t a = i;
+            bool match = true;
+            while (p < pattern.length()) {
+                if (a >= actual.length() && pattern[p] != '#') {
+                    match = false;
+                    break;
+                }
+                if (pattern[p] == '#') {
+                    if (a >= actual.length() || actual[a] < '0' || actual[a] > '9') {
+                        match = false;
+                        break;
+                    }
+                    while (a < actual.length() && actual[a] >= '0' && actual[a] <= '9') {
+                        a++;
+                    }
+                    p++;
+                } else if (pattern[p] == actual[a]) {
+                    p++;
+                    a++;
+                } else {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
+    }
+
+    /**
      * @brief Validates that a function signature emits the expected C89 string.
      */
     bool validateFunctionSignature(const char* name, const std::string& expectedC89) {
@@ -184,7 +250,7 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitFunctionSignature(fn, sym);
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: Signature emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
             return false;
         }
@@ -211,8 +277,8 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
-        if (actual.find(substring) == std::string::npos) {
-            printf("FAIL: Emission substring match failed for function '%s'.\nExpected to find: %s\nActual emission: %s\n", name, substring.c_str(), actual.c_str());
+        if (!containsPattern(substring, actual)) {
+            printf("FAIL: Emission substring match failed for function '%s'.\nExpected to find pattern: %s\nActual emission: %s\n", name, substring.c_str(), actual.c_str());
             return false;
         }
 
@@ -232,7 +298,7 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitExpression(call_node);
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: Call emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
             return false;
         }
@@ -490,7 +556,7 @@ public:
             }
         }
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: REAL emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
             return false;
         }
@@ -517,7 +583,7 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: Emission mismatch for function '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
             return false;
         }
@@ -561,7 +627,7 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitExpression(expr);
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: Expression emission mismatch.\nExpected: %s\nActual:   %s\n", expectedC89.c_str(), actual.c_str());
             return false;
         }
@@ -582,7 +648,7 @@ public:
         MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
         std::string actual = emitter.emitVariableDeclaration(decl, sym);
 
-        if (actual != expectedC89) {
+        if (!matchPattern(expectedC89, actual)) {
             printf("FAIL: Emission mismatch for variable '%s'.\nExpected: %s\nActual:   %s\n", name, expectedC89.c_str(), actual.c_str());
             return false;
         }

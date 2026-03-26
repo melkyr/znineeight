@@ -1,6 +1,6 @@
 #include "test_utils.hpp"
 #include "test_declarations.hpp"
-#include "compilation_unit.hpp"
+#include "test_compilation_unit.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
 #include <cstdio>
@@ -10,7 +10,7 @@
 TEST_FUNC(CBackend_MultiFile) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* utils_source =
         "pub const Point = struct { x: i32, y: i32 };\n"
@@ -100,14 +100,14 @@ TEST_FUNC(CBackend_MultiFile) {
         exit(1);
     }
 
-    if (strstr(content, "static int z_int = 0;") == NULL) {
-        plat_print_debug("main_module.c missing z_int\n");
+    if (strstr(content, "static int zV_1_int = 0;") == NULL) {
+        plat_print_debug("main_module.c missing zV_1_int\n");
         plat_print_debug(content);
         exit(1);
     }
 
-    if (strstr(content, "z_utils_add") == NULL) {
-        plat_print_debug("main_module.c missing z_utils_add\n");
+    if (strstr(content, "zF_0_add") == NULL) {
+        plat_print_debug("main_module.c missing zF_0_add\n");
         plat_print_debug(content);
         exit(1);
     }
@@ -129,8 +129,8 @@ TEST_FUNC(CBackend_MultiFile) {
     content[bytes] = '\0';
     plat_close_file(f_utils_h);
 
-    if (strstr(content, "struct z_utils_Point") == NULL) {
-        plat_print_debug("utils.h missing struct z_utils_Point\n");
+    if (strstr(content, "struct zS_0_Point") == NULL) {
+        plat_print_debug("utils.h missing struct zS_0_Point\n");
         plat_print_debug(content);
         exit(1);
     }

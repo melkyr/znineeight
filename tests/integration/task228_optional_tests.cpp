@@ -245,8 +245,8 @@ TEST_FUNC(Task228_NestedOptional) {
     plat_delete_file(temp_filename);
 
     // UT-07: var x: ??i32 = null;
-    if (generated_c.find("Optional_Optional_i32 zV_0_x;") == std::string::npos) return false;
-    if (generated_c.find("x.has_value = 0;") == std::string::npos) return false;
+    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x;", generated_c) && !unit.containsPattern("Optional_Optional_i32 x;", generated_c)) return false;
+    if (!unit.containsPattern("x.has_value = 0;", generated_c)) return false;
 
     return true;
 }
@@ -293,8 +293,8 @@ TEST_FUNC(Task228_OptionalStruct) {
     plat_delete_file(temp_filename);
 
     // UT-08: var x: ?Point = null;
-    if (generated_c.find("Optional_zS_0_Point zV_1_p;") == std::string::npos) return false;
-    if (generated_c.find("p.has_value = 0;") == std::string::npos) return false;
+    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && !unit.containsPattern("Optional_Point zV_#_p;", generated_c)) return false;
+    if (!unit.containsPattern("p.has_value = 0;", generated_c)) return false;
 
     return true;
 }

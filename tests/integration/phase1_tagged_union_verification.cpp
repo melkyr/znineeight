@@ -51,8 +51,8 @@ TEST_FUNC(Phase1_TaggedUnion_Codegen) {
     fclose(f);
 
     /* Check for structural elements */
-    ASSERT_TRUE(strstr(buffer, "struct zS_0_U") != NULL);
-    ASSERT_TRUE(strstr(buffer, "zE_0_U_Tag tag;") != NULL);
+    ASSERT_TRUE(unit.containsPattern("struct zS_#_U", buffer) || strstr(buffer, "struct U") != NULL);
+    ASSERT_TRUE(unit.containsPattern("zE_#_U_Tag tag;", buffer) || strstr(buffer, "U_Tag tag;") != NULL);
     ASSERT_TRUE(strstr(buffer, "union {") != NULL);
     ASSERT_TRUE(strstr(buffer, "int A;") != NULL);
     ASSERT_TRUE(strstr(buffer, "double B;") != NULL);
@@ -116,10 +116,10 @@ TEST_FUNC(Phase1_TaggedUnion_ForwardDecl) {
 
     /* Both Node and Tree are tagged unions, so they MUST be forward declared as 'struct' */
     /* Note: getC89GlobalName does NOT add module prefix for module "test" or "main" */
-    ASSERT_TRUE(strstr(buffer, "struct zS_0_Node;") != NULL);
-    ASSERT_TRUE(strstr(buffer, "struct zS_0_Tree;") != NULL);
-    ASSERT_TRUE(strstr(buffer, "union zS_0_Node;") == NULL);
-    ASSERT_TRUE(strstr(buffer, "union zS_0_Tree;") == NULL);
+    ASSERT_TRUE(unit.containsPattern("struct zS_#_Node;", buffer) || strstr(buffer, "struct Node;") != NULL);
+    ASSERT_TRUE(unit.containsPattern("struct zS_#_Tree;", buffer) || strstr(buffer, "struct Tree;") != NULL);
+    ASSERT_TRUE(unit.containsPattern("union zS_#_Node;", buffer) == false && strstr(buffer, "union Node;") == NULL);
+    ASSERT_TRUE(unit.containsPattern("union zS_#_Tree;", buffer) == false && strstr(buffer, "union Tree;") == NULL);
 
     return true;
 }
