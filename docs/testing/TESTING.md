@@ -165,6 +165,25 @@ To enable Test Mode, use the `--test-mode` flag:
 ### Regression Testing
 When updating emission tests that compare against hardcoded strings, always ensure that the test environment sets Test Mode. If test files are moved or the order of symbols in a file changes, the counters may change, necessitating an update to the expected strings.
 
+#### Example: Addressing a Mismatch
+Suppose a test in `function_decl_tests.cpp` fails after a refactor:
+```
+FAIL: Signature emission mismatch for function 'foo'.
+Expected: void zF_d071e5_foo(void)
+Actual:   void zF_0_foo(void)
+```
+
+To address this:
+1.  **Identify the mismatch**: The test expects the old hash-based name `zF_d071e5_foo`, but the compiler in Test Mode produced `zF_0_foo`.
+2.  **Update the test**: Change the expected string in the `.cpp` file to match the "Actual" output.
+    ```cpp
+    // tests/integration/function_decl_tests.cpp
+    TEST_FUNC(FunctionIntegration_NoParams) {
+        return run_fn_decl_test("fn foo() void {}", "foo", "void zF_0_foo(void)");
+    }
+    ```
+3.  **Verify**: Re-run the batch runner to ensure the test now passes.
+
 ## 10. C89 Validation Framework (Task 179)
 
 The C89 Validation Framework ensures that emitted C code is compliant with ANSI C89 and MSVC 6.0 constraints.
