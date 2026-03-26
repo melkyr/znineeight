@@ -1023,9 +1023,10 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 The compiler utilizes a buffered emission system and a robust variable name allocator to ensure valid C89 output.
 
 ### 13.1 CBackend
+- **Separate Compilation Model**: The compiler has moved away from the Single Translation Unit (STU) model for generated code.
 - **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
 - **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
-- **Build System**: Automatically generates `build_target.bat` (MSVC) and `build_target.sh` (GCC) in the output directory. These scripts perform separate compilation and linking for each module to avoid symbol conflicts.
+- **Build System**: Automatically generates `build_target.bat` (MSVC) and `build_target.sh` (GCC) in the output directory. These scripts perform separate compilation and linking for each module to avoid symbol conflicts and improve build performance.
 - **Runtime Injection**: Copies `zig_runtime.h` and `zig_runtime.c` to the output directory to ensure the generated project is self-contained.
 - **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
 - **Header Generation**: Public types and function prototypes are automatically exported to `.h` files with robust include guards.
