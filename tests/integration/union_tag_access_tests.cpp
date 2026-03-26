@@ -27,7 +27,7 @@ TEST_FUNC(UnionTagAccess_Basic) {
     }
 
     /* Verify that tag access was constant-folded to enum member */
-    if (!unit.validateVariableEmission("tag", "enum Value_Tag zV_3_tag = Value_Tag_Int;")) {
+    if (!unit.validateVariableEmission("tag", "enum zE_1_Value_Tag zV_3_tag = Value_Tag_Int;")) {
         return false;
     }
 
@@ -52,8 +52,8 @@ TEST_FUNC(UnionTagAccess_Alias) {
         return false;
     }
 
-    if (!unit.validateVariableEmission("t1", "enum Value_Tag zV_4_t1 = Value_Tag_A;")) return false;
-    if (!unit.validateVariableEmission("t2", "enum Value_Tag zV_5_t2 = Value_Tag_B;")) return false;
+    if (!unit.validateVariableEmission("t1", "enum zE_1_Value_Tag zV_4_t1 = Value_Tag_A;")) return false;
+    if (!unit.validateVariableEmission("t2", "enum zE_1_Value_Tag zV_5_t2 = Value_Tag_B;")) return false;
 
     return true;
 }
@@ -84,7 +84,7 @@ TEST_FUNC(UnionTagAccess_Imported) {
     }
 
     /* Null is the first field, so value should be the enum member */
-    if (!unit.validateVariableEmission("t", "enum JsonValue_Tag zV_4_t = JsonValue_Tag_Null;")) {
+    if (!unit.validateVariableEmission("t", "enum zE_#_JsonValue_Tag zV_#_t = JsonValue_Tag_Null;")) {
         return false;
     }
 

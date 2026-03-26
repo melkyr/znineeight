@@ -115,7 +115,7 @@ TEST_FUNC(WhileLoopIntegration_WithContinue) {
         "        continue;\n"
         "    }\n"
         "}";
-    return run_while_test(source, "foo", "void foo(void) { int i = 0; __loop_0_start: ; if (!(i < 10)) goto __loop_0_end; { i = i + 1; /* defers for continue */ goto __loop_0_continue; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_while_test(source, "foo", "void zF_#_foo(void) { int i = 0; __loop_0_start: ; if (!(i < 10)) goto __loop_0_end; { i = i + 1; /* defers for continue */ goto __loop_0_continue; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 // --- Nesting and Scoping ---
@@ -133,7 +133,7 @@ TEST_FUNC(WhileLoopIntegration_NestedWhile) {
         "    }\n"
         "}";
     return run_while_test(source, "foo",
-        "void foo(void) { int i = 0; __loop_0_start: ; if (!(i < 5)) goto __loop_0_end; { int j = 0; __loop_1_start: ; if (!(j < 5)) goto __loop_1_end; { j = j + 1; } __loop_1_continue: ; goto __loop_1_start; __loop_1_end: ; i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+        "void zF_#_foo(void) { int i = 0; __loop_0_start: ; if (!(i < 5)) goto __loop_0_end; { int j = 0; __loop_1_start: ; if (!(j < 5)) goto __loop_1_end; { j = j + 1; } __loop_1_continue: ; goto __loop_1_start; __loop_1_end: ; i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(WhileLoopIntegration_Scoping) {

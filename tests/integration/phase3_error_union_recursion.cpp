@@ -47,8 +47,8 @@ TEST_FUNC(Phase3_ErrorUnionRecursion) {
     content[bytes] = '\0';
     plat_close_file(f_h);
 
-    const char* struct_def = "struct zS_1_Node {";
-    const char* mangled_error_union = "ErrorUnion_zS_1_Node";
+    const char* struct_def = "struct zS_0_Node {";
+    const char* mangled_error_union = "ErrorUnion_zS_0_Node";
 
     char* struct_ptr = strstr(content, struct_def);
     char* error_union_ptr = strstr(content, mangled_error_union);

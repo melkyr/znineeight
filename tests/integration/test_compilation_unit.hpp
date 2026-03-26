@@ -247,7 +247,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitFunctionSignature(fn, sym);
 
         if (!matchPattern(expectedC89, actual)) {
@@ -274,7 +274,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
         if (!containsPattern(substring, actual)) {
@@ -295,7 +295,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitExpression(call_node);
 
         if (!matchPattern(expectedC89, actual)) {
@@ -580,7 +580,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitFunctionDeclaration(fn, sym);
 
         if (!matchPattern(expectedC89, actual)) {
@@ -624,7 +624,7 @@ public:
             return false;
         }
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitExpression(expr);
 
         if (!matchPattern(expectedC89, actual)) {
@@ -645,7 +645,7 @@ public:
         Symbol* sym = getSymbolTable().findInAnyScope(name);
         if (!sym) return false;
 
-        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable());
+        MockC89Emitter emitter(&getCallSiteLookupTable(), &getSymbolTable(), &getNameMangler());
         std::string actual = emitter.emitVariableDeclaration(decl, sym);
 
         if (!matchPattern(expectedC89, actual)) {

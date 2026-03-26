@@ -11,6 +11,7 @@
 #include "c89_type_mapping.hpp"
 #include "call_site_lookup_table.hpp"
 #include "ast_utils.hpp"
+#include "name_mangler.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -27,6 +28,7 @@ class MockC89Emitter {
 public:
     const CallSiteLookupTable* call_table_;
     SymbolTable* symbol_table_;
+    NameMangler* mangler_;
 
     struct MockDeferScope {
         int label_id;
@@ -38,8 +40,8 @@ public:
     int catch_expr_counter_;
 
 public:
-    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
-        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL),
+    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL, NameMangler* mangler = NULL)
+        : call_table_(call_table), symbol_table_(symbol_table), mangler_(mangler), current_fn_ret_type_(NULL),
           try_expr_counter_(0), catch_expr_counter_(0) {}
 
     /**
@@ -889,6 +891,14 @@ private:
         for (size_t i = 0; i < map_size; ++i) {
             if (type->kind == c89_type_map[i].zig_type_kind) {
                 return c89_type_map[i].c89_type_name;
+            }
+        }
+
+        if (mangler_) {
+            if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
+                const char* mangled = mangler_->mangleType(type);
+                std::string prefix = (type->kind == TYPE_ENUM) ? "enum " : (type->kind == TYPE_UNION ? "union " : "struct ");
+                return prefix + std::string(mangled);
             }
         }
 

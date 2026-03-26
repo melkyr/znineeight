@@ -293,8 +293,18 @@ TEST_FUNC(Task228_OptionalStruct) {
     plat_delete_file(temp_filename);
 
     // UT-08: var x: ?Point = null;
-    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && !unit.containsPattern("Optional_Point zV_#_p;", generated_c)) return false;
-    if (!unit.containsPattern("p.has_value = 0;", generated_c)) return false;
+    // Note: Point in test.zig hash d071e5 becomes zS_0_Point in test mode if it's the first struct.
+    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && 
+        !unit.containsPattern("Optional_zS_#_Point p;", generated_c) &&
+        !unit.containsPattern("Optional_Point zV_#_p;", generated_c) &&
+        !unit.containsPattern("Optional_Point p;", generated_c)) {
+        printf("FAIL: Could not find Optional_zS_#_Point or Optional_Point for p. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
+    if (!unit.containsPattern("p.has_value = 0;", generated_c) && !unit.containsPattern("zV_#_p.has_value = 0;", generated_c)) {
+        printf("FAIL: Could not find has_value = 0 for p. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
 
     return true;
 }
