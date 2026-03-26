@@ -140,7 +140,7 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       default_extraction_analysis_catalogue_(arena),
       default_errdefer_catalogue_(arena),
       default_indirect_call_catalogue_(arena),
-      name_mangler_(arena, interner),
+      name_mangler_(arena, interner, *this),
       call_site_table_(arena),
       options_(),
       current_module_(NULL),
@@ -152,6 +152,8 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       builtin_module_(NULL),
       last_ast_(NULL),
       is_test_mode_(false),
+      test_name_counters_(arena),
+      test_name_counter_(0),
       validation_completed_(false),
       c89_validation_passed_(false) {
 
@@ -762,6 +764,35 @@ bool CompilationUnit::verifyNoPlaceholders() {
 
 void CompilationUnit::setTestMode(bool test_mode) {
     is_test_mode_ = test_mode;
+}
+
+const char* CompilationUnit::getTestName(char kind, const char* module, const char* name) {
+    // Build a key string (kind, module, name)
+    char key[256];
+    plat_snprintf(key, sizeof(key), "%c_%s_%s", kind, module ? module : "", name ? name : "");
+
+    // Check if we already have a counter for this key
+    for (size_t i = 0; i < test_name_counters_.length(); ++i) {
+        if (plat_strcmp(test_name_counters_[i].key, key) == 0) {
+            // Return existing name
+            return test_name_counters_[i].c_name;
+        }
+    }
+
+    // New entry: assign next counter
+    int counter = test_name_counter_++;
+    char buf[256];
+    // Format: z<kind>_<counter>_<name>
+    // If name is NULL (anonymous), use "anon"
+    const char* base = name ? name : "anon";
+    plat_snprintf(buf, sizeof(buf), "z%c_%d_%s", kind, counter, base);
+    const char* interned = interner_.intern(buf);
+
+    TestNameEntry entry;
+    entry.key = interner_.intern(key); // store key in arena
+    entry.c_name = interned;
+    test_name_counters_.append(entry);
+    return interned;
 }
 
 size_t CompilationUnit::getASTNodeCount() const {

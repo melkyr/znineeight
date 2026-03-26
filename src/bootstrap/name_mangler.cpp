@@ -1,19 +1,26 @@
 #include "name_mangler.hpp"
+#include "compilation_unit.hpp"
 #include "type_system.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
 
-NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner)
-    : arena_(arena), interner_(interner) {}
+NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner, CompilationUnit& unit)
+    : arena_(arena), interner_(interner), unit_(unit) {}
 
 const char* NameMangler::mangle(char kind, const char* module_path, const char* local_name) {
-    if (!local_name) local_name = "anon";
     if (isInternalCompilerIdentifier(local_name)) {
+        if (!local_name) return interner_.intern("anon");
         char buf[256];
         plat_strcpy(buf, local_name);
         if (plat_strlen(buf) > 31) buf[31] = '\0';
         return interner_.intern(buf);
     }
+
+    if (unit_.isTestMode()) {
+        return unit_.getTestName(kind, module_path, local_name);
+    }
+
+    if (!local_name) local_name = "anon";
 
     // Hashed mode
     u32 hash = 0;

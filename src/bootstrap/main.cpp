@@ -109,6 +109,7 @@ int main(int argc, char* argv[]) {
     const char* output_file = NULL;
     bool parse_only = false;
     bool full_pipeline = false;
+    bool test_mode = false;
     RETR_UNUSED(full_pipeline);
 
     // We'll use a simple fixed-size array for temporary include path storage
@@ -127,6 +128,8 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc && include_path_count < 64) {
                 temp_include_paths[include_path_count++] = argv[++i];
             }
+        } else if (plat_strcmp(argv[i], "--test-mode") == 0) {
+            test_mode = true;
         } else if (plat_strcmp(argv[i], "parse") == 0) {
             parse_only = true;
             if (i + 1 < argc) input_file = argv[++i];
@@ -158,6 +161,7 @@ int main(int argc, char* argv[]) {
         }
 
         unit.injectRuntimeSymbols();
+        unit.setTestMode(test_mode);
 
         CompilationOptions opts;
         opts.enable_double_free_analysis = true;
@@ -193,6 +197,7 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --self-test             Run internal self-tests\n");
     plat_print_info("  -o <file>               Specify output C file\n");
     plat_print_info("  -I <path>               Add include search path\n");
+    plat_print_info("  --test-mode             Enable deterministic name mangling for tests\n");
     plat_print_info("  --debug-lifter          Enable debug logging in AST lifter\n");
     plat_print_info("  --debug-codegen         Enable debug tracing in C89 code generator\n");
     plat_print_info("  parse <file>            Parse only\n");

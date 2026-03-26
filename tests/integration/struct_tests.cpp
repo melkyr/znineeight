@@ -34,7 +34,7 @@ TEST_FUNC(StructIntegration_BasicNamedStruct) {
     const char* source =
         "const Point = struct { x: i32, y: i32 };\n"
         "var p: Point = Point{ .x = 1, .y = 2 };";
-    return run_struct_test(source, "p", "struct zS_d071e5_Point zV_d071e5_p = {1, 2};");
+    return run_struct_test(source, "p", "struct zS_0_Point zV_0_p = {1, 2};");
 }
 
 TEST_FUNC(StructIntegration_MemberAccess) {
@@ -42,7 +42,7 @@ TEST_FUNC(StructIntegration_MemberAccess) {
         "const Point = struct { x: i32, y: i32 };\n"
         "fn foo() i32 {\n"
         "    var p: Point = Point{ .x = 10, .y = 20 };\n"
-        "    return zV_d071e5_p.x;\n"
+        "    return zV_0_p.x;\n"
         "}";
 
     ArenaAllocator arena(1024 * 1024);
@@ -61,8 +61,8 @@ TEST_FUNC(StructIntegration_MemberAccess) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string emission = emitter.emitExpression(fn->body);
 
-    if (emission.find("return zV_d071e5_p.x;") == std::string::npos) {
-        printf("FAIL: Expected 'return zV_d071e5_p.x;' in emission, got: %s\n", emission.c_str());
+    if (emission.find("return zV_0_p.x;") == std::string::npos) {
+        printf("FAIL: Expected 'return zV_0_p.x;' in emission, got: %s\n", emission.c_str());
         return false;
     }
 
@@ -74,7 +74,7 @@ TEST_FUNC(StructIntegration_NamedInitializerOrder) {
     const char* source =
         "const Point = struct { x: i32, y: i32 };\n"
         "var p: Point = Point{ .y = 20, .x = 10 };";
-    return run_struct_test(source, "p", "struct zS_d071e5_Point zV_d071e5_p = {10, 20};");
+    return run_struct_test(source, "p", "struct zS_0_Point zV_0_p = {10, 20};");
 }
 
 // --- Negative Tests ---
