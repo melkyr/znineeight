@@ -449,6 +449,11 @@ public:
      */
     bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) const;
 
+    /**
+     * @brief Recursively scans an AST node for any 'errdefer' statements.
+     */
+    bool scanForErrDefer(const ASTNode* node) const;
+
 private:
     /**
      * @brief Emits a literal expression (integer, float, string, char, bool, null, error).
@@ -569,8 +574,9 @@ private:
     struct DeferScope {
         int label_id;
         DynamicArray<ASTDeferStmtNode*> defers;
+        DynamicArray<ASTDeferStmtNode*> err_defers;
 
-        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena) {}
+        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena), err_defers(arena) {}
     };
 
     char buffer_[4096];
@@ -596,6 +602,7 @@ private:
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
+    const char* current_err_flag_;
     bool is_header_;
     char* type_def_buffer_;
     size_t type_def_pos_;

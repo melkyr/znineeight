@@ -229,9 +229,12 @@ This unification reduces code duplication and ensures consistent behavior across
   - `defer` statements are added to the current scope on the stack.
   - At the natural end of a block, all defers in that scope are emitted in reverse order.
   - For `return`, `break`, and `continue`, the emitter identifies all scopes being exited and emits their deferred actions in order (from innermost outward) before emitting the jump or return.
-- **ErrDefer Statements**: Currently implemented as a minimal placeholder.
-  - **Behavior**: `errdefer` statements are collected into the defer stack and emitted at scope exit, similar to regular `defer`. Full support for error-only execution is deferred to a future milestone.
-  - **Nested Logic**: This minimal implementation ensures that nested statements within an `errdefer`, such as `unreachable`, are preserved and correctly emitted as panic calls during unwinding.
+- **ErrDefer Statements**: Fully implemented using a function-level error flag.
+  - **Error Tracking**: If a function returns an error union and contains at least one `errdefer`, the emitter generates a unique error flag variable (e.g., `int err_occurred_1 = 0;`) in the function prologue.
+  - **Flag Activation**: In `emitReturn`, if the return value's `is_error` field is true, the error flag is set to `1` before executing deferred actions.
+  - **Conditional Execution**: `errdefer` statements are emitted inside an `if (err_occurred_1) { ... }` block during scope exit or function return.
+  - **Execution Order**: Like regular `defer`, `errdefer` actions are executed in reverse order of declaration (LIFO) within their scope, but only after all preceding regular `defer` statements for that scope have run.
+  - **Scope Constraints**: To prevent stack exhaustion on legacy hardware, the total number of `defer` and `errdefer` statements is limited to 32 per scope. Exceeding this limit results in a compilation error (`ERR_TOO_MANY_DEFERS`).
 
 ### 4.4 Slice Support
 Slices (`[]T`) are emitted as C structs containing a pointer and a length.
