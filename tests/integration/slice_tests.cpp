@@ -7,7 +7,7 @@
 
 /**
  * @file slice_tests.cpp
- * @brief Integration tests for Zig slices in the RetroZig compiler.
+ * @brief Integration tests for Zig slices in the Z98 compiler.
  */
 
 TEST_FUNC(SliceIntegration_Declaration) {

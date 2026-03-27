@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Testing Guide
 
-This document outlines the testing strategy and procedures for the RetroZig compiler.
+This document outlines the testing strategy and procedures for the Z98 compiler.
 
 ## 1. Unit Tests
 
@@ -56,7 +58,7 @@ Existing integration tests can be found in `tests/integration_tests.cpp`, `tests
 The bootstrap compiler includes a `--self-test` mode that runs an internal suite of integration tests directly from the compiler executable.
 
 ```bash
-./retrozig --self-test
+./z98 --self-test
 ```
 
 This is useful for quick verification of the compiler's core functionality in its final binary form.
@@ -97,7 +99,7 @@ The `DoubleFreeAnalyzer` provides enhanced diagnostics by tracking allocation si
 You can manually test the compiler on Zig source files using the `--compile` flag:
 
 ```bash
-./retrozig --compile my_source.zig
+./z98 --compile my_source.zig
 ```
 
 This will run the full compilation pipeline, including all static analysis passes, and report any errors or warnings to the console.
@@ -159,7 +161,7 @@ In Test Mode, the compiler replaces hash-based mangling with a deterministic, co
 ### Usage
 To enable Test Mode, use the `--test-mode` flag:
 ```bash
-./retrozig --test-mode my_source.zig -o output.c
+./z98 --test-mode my_source.zig -o output.c
 ```
 
 ### Regression Testing

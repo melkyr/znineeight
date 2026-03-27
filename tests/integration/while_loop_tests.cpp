@@ -8,7 +8,7 @@
 
 /**
  * @file while_loop_tests.cpp
- * @brief Integration tests for Zig while loops in the RetroZig compiler.
+ * @brief Integration tests for Zig while loops in the Z98 compiler.
  */
 
 static bool run_while_test(const char* zig_code, const char* fn_name, const char* expected_c89) {

@@ -1,5 +1,5 @@
 @echo off
-:: Default build script for RetroZig
+:: Default build script for Z98
 :: Optimized for MSVC 6.0 on Windows 98
 
 cl.exe /nologo /W3 /I. /c zig_runtime.c

@@ -7,7 +7,7 @@
 
 /**
  * @file enum_tests.cpp
- * @brief Integration tests for Zig enums in the RetroZig compiler.
+ * @brief Integration tests for Zig enums in the Z98 compiler.
  */
 
 TEST_FUNC(EnumIntegration_BasicEnum) {

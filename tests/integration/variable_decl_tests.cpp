@@ -7,7 +7,7 @@
 
 /**
  * @file variable_decl_tests.cpp
- * @brief Integration tests for Zig variable declarations in the RetroZig compiler.
+ * @brief Integration tests for Zig variable declarations in the Z98 compiler.
  */
 
 // test.zig hash: d071e5

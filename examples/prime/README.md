@@ -1,6 +1,6 @@
 # Prime Number Example
 
-This example demonstrates algorithmic features of the RetroZig bootstrap compiler, including:
+This example demonstrates algorithmic features of the Z98 bootstrap compiler, including:
 - Loops (`while`)
 - Conditionals (`if`)
 - Arithmetic operators (modulo `%`, multiplication `*`)
@@ -14,7 +14,7 @@ This example demonstrates algorithmic features of the RetroZig bootstrap compile
 
 ## Building and Running
 
-1. Compile the Zig source to C89 using the RetroZig compiler:
+1. Compile the Zig source to C89 using the Z98 compiler:
    ```bash
    # Assuming zig0 is in the root directory
    ../../zig0 main.zig std.zig std_debug.zig --output output/

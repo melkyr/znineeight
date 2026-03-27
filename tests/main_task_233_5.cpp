@@ -5,7 +5,7 @@ extern bool test_ASTLifter_ComplexLvalue_Array();
 extern bool test_ASTLifter_EvaluationOrder();
 extern bool test_ASTLifter_CompoundAssignment_Complex();
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
         test_ASTLifter_ComplexLvalue_Member,

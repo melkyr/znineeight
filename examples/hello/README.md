@@ -1,6 +1,6 @@
 # Hello World Example
 
-This is a modular "Hello World" example for the RetroZig bootstrap compiler.
+This is a modular "Hello World" example for the Z98 bootstrap compiler.
 It demonstrates multi-module compilation, cross-module function calls, and runtime integration.
 
 ## Files

@@ -1,5 +1,5 @@
 # Makefile for Hello World example
-# Assumes the RetroZig compiler is available as ../../zig0 (placeholder)
+# Assumes the Z98 compiler is available as ../../zig0 (placeholder)
 
 ZIG_COMPILER = ../../zig0
 CC = gcc
