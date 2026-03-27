@@ -6,7 +6,7 @@
 
 /**
  * @file array_tests.cpp
- * @brief Integration tests for Zig arrays in the RetroZig compiler.
+ * @brief Integration tests for Zig arrays in the Z98 compiler.
  */
 
 TEST_FUNC(ArrayIntegration_FixedSizeDecl) {
@@ -25,7 +25,7 @@ TEST_FUNC(ArrayIntegration_FixedSizeDecl) {
         return false;
     }
 
-    if (!unit.validateFunctionSignature("foo", "void foo(int arr[5])")) {
+    if (!unit.validateFunctionSignature("foo", "void zF_0_foo(int arr[5])")) {
         return false;
     }
 

@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # AST & Parser Design
 
-This document provides a detailed overview of the Abstract Syntax Tree (AST) and the Parser for the RetroZig compiler.
+This document provides a detailed overview of the Abstract Syntax Tree (AST) and the Parser for the Z98 compiler.
 
 ## 1. Core Design Philosophy
 
@@ -111,10 +113,12 @@ enum NodeType {
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
     NODE_NULL_LITERAL,    ///< A `null` literal.
+    NODE_UNDEFINED_LITERAL, ///< An `undefined` literal.
     NODE_INTEGER_LITERAL, ///< An integer literal (e.g., `123`, `0xFF`).
     NODE_FLOAT_LITERAL,   ///< A floating-point literal (e.g., `3.14`).
     NODE_CHAR_LITERAL,    ///< A character literal (e.g., `'a'`).
     NODE_STRING_LITERAL,  ///< A string literal (e.g., `"hello"`).
+    NODE_ERROR_LITERAL,   ///< An error literal (e.g., `error.FileNotFound`).
     NODE_IDENTIFIER,      ///< An identifier (e.g., a variable name `my_var`).
 
     // ~~~~~~~~~~~~~~~~~~~~~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~
@@ -123,16 +127,18 @@ enum NodeType {
     NODE_IF_STMT,         ///< An if-else statement.
     NODE_IF_EXPR,         ///< An if-else expression (mandatory else, braceless).
     NODE_WHILE_STMT,      ///< A while loop statement.
+    NODE_SWITCH_STMT,     ///< A switch statement.
     NODE_BREAK_STMT,      ///< A break statement.
     NODE_CONTINUE_STMT,   ///< A continue statement.
     NODE_RETURN_STMT,     ///< A return statement.
     NODE_DEFER_STMT,      ///< A defer statement.
     NODE_FOR_STMT,        ///< A for loop statement.
     NODE_EXPRESSION_STMT, ///< A statement that consists of a single expression.
-
-    // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_PAREN_EXPR,      ///< A parenthesized expression (e.g., `(a + b)`).
     NODE_RANGE,           ///< A range expression (e.g., `0..10`).
+    NODE_UNREACHABLE,     ///< An 'unreachable' expression.
+
+    // ~~~~~~~~~~~~~~~~~~~ Expressions ~~~~~~~~~~~~~~~~~~~~~
     NODE_SWITCH_EXPR,     ///< A switch expression.
     NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
@@ -211,10 +217,12 @@ struct ASTNode {
         ASTTupleLiteralNode* tuple_literal; // Out-of-line
 
         // Literals
+        ASTBoolLiteralNode bool_literal;
         ASTIntegerLiteralNode integer_literal;
         ASTFloatLiteralNode float_literal;
         ASTCharLiteralNode char_literal;
         ASTStringLiteralNode string_literal;
+        ASTErrorLiteralNode error_literal;
         ASTIdentifierNode identifier;
 
         // Statements
@@ -222,18 +230,39 @@ struct ASTNode {
         ASTEmptyStmtNode empty_stmt;
         ASTIfStmtNode* if_stmt; // Out-of-line
         ASTIfExprNode* if_expr; // Out-of-line
-        ASTWhileStmtNode while_stmt;
+        ASTWhileStmtNode* while_stmt; // Out-of-line
         ASTBreakStmtNode break_stmt;
         ASTContinueStmtNode continue_stmt;
         ASTReturnStmtNode return_stmt;
         ASTDeferStmtNode defer_stmt;
+        ASTForStmtNode* for_stmt; // Out-of-line
         ASTExpressionStmtNode expression_stmt;
+        ASTParenExprNode paren_expr;
         ASTRangeNode* range; // Out-of-line
+
+        // Expressions
+        ASTSwitchExprNode* switch_expr; // Out-of-line
+        ASTSwitchStmtNode* switch_stmt; // Out-of-line
+        ASTUnreachableNode unreachable;
+        ASTPtrCastNode* ptr_cast; // Out-of-line
+        ASTNumericCastNode* numeric_cast; // Out-of-line (shared for @intCast, @floatCast)
+        ASTOffsetOfNode* offset_of; // Out-of-line
+
+        // Error Handling
+        ASTTryExprNode try_expr;
+        ASTCatchExprNode* catch_expr; // Out-of-line
+        ASTOrelseExprNode* orelse_expr; // Out-of-line
+        ASTErrDeferStmtNode errdefer_stmt;
+
+        // Async
+        ASTAsyncExprNode async_expr;
+        ASTAwaitExprNode await_expr;
 
         // Declarations
         ASTVarDeclNode* var_decl; // Out-of-line
         ASTParamDeclNode param_decl;
         ASTFnDeclNode* fn_decl; // Out-of-line
+        ASTStructFieldNode* struct_field; // Out-of-line
         ASTStructDeclNode* struct_decl; // Out-of-line
         ASTUnionDeclNode* union_decl; // Out-of-line
         ASTEnumDeclNode* enum_decl; // Out-of-line
@@ -250,11 +279,6 @@ struct ASTNode {
         ASTErrorUnionTypeNode* error_union_type; // Out-of-line
         ASTOptionalTypeNode* optional_type; // Out-of-line
         ASTFunctionTypeNode* function_type; // Out-of-line
-
-        // Casts and Built-ins
-        ASTPtrCastNode* ptr_cast; // Out-of-line
-        ASTNumericCastNode* numeric_cast; // Out-of-line (shared for @intCast, @floatCast)
-        ASTOffsetOfNode* offset_of; // Out-of-line
 
         // Compile-Time Operations
         ASTComptimeBlockNode comptime_block;
@@ -307,34 +331,36 @@ Total `sizeof(ASTNode)` is **28 bytes** (4 + 12 + 4 + 8).
 | `ASTIfStmtNode`             | 20           | Pointer (4)     |
 | `ASTVarDeclNode`            | 16           | Pointer (4)     |
 | `ASTFnDeclNode`             | 16           | Pointer (4)     |
-| `ASTWhileStmtNode`          | 16           | Pointer (4)     |
+| `ASTWhileStmtNode`          | 24           | Pointer (4)     |
 | `ASTRangeNode`              | 12           | Pointer (4)     |
 | `ASTArraySliceNode`         | 20           | Pointer (4)     |
 | `ASTArrayTypeNode`          | 12           | Inline          |
-| `ASTParamDeclNode`          | 8            | Inline          |
-| `ASTIntegerLiteralNode`     | 8            | Inline          |
-| `ASTFloatLiteralNode`       | 8            | Inline          |
+| `ASTParamDeclNode`          | 12           | Inline          |
+| `ASTIntegerLiteralNode`     | 24           | Inline          |
+| `ASTFloatLiteralNode`       | 12           | Inline          |
 | `ASTBlockStmtNode`          | 4            | Inline          |
 | `ASTDeferStmtNode`          | 4            | Inline          |
-| `ASTIdentifierNode`         | 4            | Inline          |
-| `ASTPointerTypeNode`        | 4            | Inline          |
+| `ASTIdentifierNode`         | 8            | Inline          |
+| `ASTPointerTypeNode`        | 8            | Inline          |
 | `ASTReturnStmtNode`         | 4            | Inline          |
 | `ASTStringLiteralNode`      | 4            | Inline          |
 | `ASTTypeNameNode`           | 4            | Inline          |
 | `ASTUnaryOpNode`            | 8            | Inline          |
-| `ASTMemberAccessNode`       | 8            | Pointer (4)     |
+| `ASTMemberAccessNode`       | 12           | Pointer (4)     |
 | `ASTStructInitializerNode`  | 8            | Pointer (4)     |
 | `ASTErrorSetDefinitionNode` | 8            | Pointer (4)     |
 | `ASTErrorSetMergeNode`      | 8            | Pointer (4)     |
-| `ASTImportStmtNode`         | 4            | Pointer (4)     |
+| `ASTImportStmtNode`         | 8            | Pointer (4)     |
 | `ASTOrelseExprNode`         | 8            | Pointer (4)     |
 | `ASTIfExprNode`             | 20           | Pointer (4)     |
 | `ASTTupleLiteralNode`       | 4            | Pointer (4)     |
-| `ASTCharLiteralNode`        | 1            | Inline          |
+| `ASTCharLiteralNode`        | 4            | Inline          |
 | `ASTErrorLiteralNode`       | 4            | Inline          |
 | `ASTErrorUnionTypeNode`     | 20           | Pointer (4)     |
 | `ASTOptionalTypeNode`       | 16           | Pointer (4)     |
 | `ASTFunctionTypeNode`       | 8            | Pointer (4)     |
+| `ASTSwitchStmtNode`         | 8            | Pointer (4)     |
+| `ASTSwitchExprNode`         | 8            | Pointer (4)     |
 
 ## 4. Name Mangling for Milestone 4 Types
 
@@ -366,9 +392,16 @@ Represents a raw integer value.
      * @struct ASTIntegerLiteralNode
      * @brief Represents an integer literal.
      * @var ASTIntegerLiteralNode::value The 64-bit integer value.
+     * @var ASTIntegerLiteralNode::is_unsigned True if the literal has a 'u' suffix.
+     * @var ASTIntegerLiteralNode::is_long True if the literal has an 'l' or 'LL' suffix.
+     * @var ASTIntegerLiteralNode::original_name For enum member preservation.
      */
     struct ASTIntegerLiteralNode {
-        i64 value;
+        u64 value;
+        bool is_unsigned;
+        bool is_long;
+        Type* resolved_type;
+        const char* original_name;
     };
     ```
 
@@ -384,6 +417,7 @@ Represents a floating-point value.
      */
     struct ASTFloatLiteralNode {
         double value;
+        Type* resolved_type;
     };
     ```
 
@@ -850,32 +884,37 @@ The `parseIfStatement` function handles the `if-else` control flow structure. It
 - **Braceless Support & Normalization**: If a branch is not a block, the `ControlFlowLifter` automatically normalizes it into a synthetic `NODE_BLOCK_STMT` during the lifting pass. This ensures that the code generator can assume all control-flow bodies are blocks, simplifying C89 emission.
 - Any deviation from this structure results in a fatal error.
 
-### While Statements (Bootstrap) (Task 176)
+### While Statements (Bootstrap)
 
-- **Syntax**: `while (condition) { statements... }`
+- **Syntax**: `while (condition) : (continue_expr) { statements... }`
 - **Conditions**: bool, integer, or pointer only.
-- **Body**: Always braced (required by bootstrap parser).
-- **Break/Continue**: Basic support only (no labels or expressions).
-- **Not supported in bootstrap**: `while-else`, optional/error captures, continue expressions.
+- **Body**: Supports both braced and single statements (normalized to blocks).
+- **Break/Continue**: Full support with labels.
+- **Payload Capture**: `while (opt) |val| { ... }` is supported for optional/error unwrapping.
 
 ### `ASTWhileStmtNode`
-Represents a `while` loop. Allocated out-of-line.
-*   **Zig Code:** `while (condition) { ... }`, `outer: while (condition) { ... }`
+Represents a while loop. Allocated out-of-line.
+*   **Zig Code:** `while (condition) : (iter) { ... }`, `outer: while (condition) |val| { ... }`
 *   **Structure:**
     ```cpp
     /**
      * @struct ASTWhileStmtNode
      * @brief Represents a while loop.
      * @var ASTWhileStmtNode::condition The loop condition expression.
-     * @var ASTWhileStmtNode::body The loop body.
+     * @var ASTWhileStmtNode::body The statement block to execute.
+     * @var ASTWhileStmtNode::iter_expr The optional continue expression.
      * @var ASTWhileStmtNode::label The optional loop label.
-     * @var ASTWhileStmtNode::label_id Unique identifier for codegen.
+     * @var ASTWhileStmtNode::label_id Unique identifier for codegen labels.
+     * @var ASTWhileStmtNode::capture_name Optional capture name for unwrapping.
      */
     struct ASTWhileStmtNode {
         ASTNode* condition;
         ASTNode* body;
+        ASTNode* iter_expr;
         const char* label;
         int label_id;
+        const char* capture_name;
+        Symbol* capture_sym;
     };
     ```
 
@@ -939,6 +978,8 @@ Represents a `for` loop, which iterates over an expression.
      * @var ASTForStmtNode::body The block statement that is the loop's body.
      * @var ASTForStmtNode::label The optional loop label.
      * @var ASTForStmtNode::label_id Unique identifier for codegen.
+     * @var ASTForStmtNode::item_sym Resolved symbol for the item capture.
+     * @var ASTForStmtNode::index_sym Resolved symbol for the index capture.
      * @note Capture variables are immutable.
      */
     struct ASTForStmtNode {
@@ -948,6 +989,8 @@ Represents a `for` loop, which iterates over an expression.
         ASTNode* body;
         const char* label;
         int label_id;
+        Symbol* item_sym;
+        Symbol* index_sym;
     };
     ```
 
@@ -1172,30 +1215,10 @@ Represents a single parameter within a function's parameter list. This node is n
 
 These nodes represent control flow constructs like loops and switches.
 
-### `ASTForStmtNode`
-Represents a `for` loop statement. This is a large node, so it is allocated out-of-line.
-*   **Zig Code:** `for (my_array) |item, i| { ... }`
-*   **Structure:**
-    ```cpp
-    /**
-     * @struct ASTForStmtNode
-     * @brief Represents a for loop statement.
-     * @var ASTForStmtNode::iterable_expr The expression being iterated over.
-     * @var ASTForStmtNode::item_name The name of the item capture variable (can be "_" to discard).
-     * @var ASTForStmtNode::index_name The optional name of the index capture variable (can be NULL or "_" to discard).
-     * @var ASTForStmtNode::body The block statement that is the loop's body.
-     * @note Capture variables are immutable.
-     */
-    struct ASTForStmtNode {
-        ASTNode* iterable_expr;
-        const char* item_name;
-        const char* index_name; // Can be NULL
-        ASTNode* body;
-    };
-    ```
 
-### `ASTSwitchExprNode`
-Represents a `switch` expression. This is a large node, so it is allocated out-of-line. It contains a list of `ASTSwitchProngNode`s.
+### `ASTSwitchExprNode` and `ASTSwitchStmtNode`
+Represents a `switch` expression or statement. These are large nodes, so they are allocated out-of-line. They contain lists of prongs.
+
 *   **Zig Code:**
     ```zig
     switch (value) {
@@ -1208,7 +1231,7 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
     ```cpp
     /**
      * @struct ASTSwitchProngNode
-     * @brief Represents a single prong in a switch expression (e.g., `case => |capture| ...`).
+     * @brief Represents a single prong in a switch expression.
      * @var ASTSwitchProngNode::items A dynamic array of case items (literals or ranges) for this prong.
      * @var ASTSwitchProngNode::is_else True if this is the `else` prong.
      * @var ASTSwitchProngNode::body The expression to execute for this prong.
@@ -1221,6 +1244,7 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
         ASTNode* body;
         const char* capture_name;
         Symbol* capture_sym;
+        SourceLocation loc;
     };
 
     /**
@@ -1249,6 +1273,7 @@ Represents a `switch` expression. This is a large node, so it is allocated out-o
         ASTNode* body;
         const char* capture_name;
         Symbol* capture_sym;
+        SourceLocation loc;
     };
 
     /**
@@ -1955,7 +1980,7 @@ All filenames are normalized and interned to ensure that each unique file is onl
 
 ## 27. Parser Path for Non-C89 Features (Task 150)
 
-To support accurate diagnostics and future translation planning, the RetroZig parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
+To support accurate diagnostics and future translation planning, the Z98 parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
 
 ### 20.1 Purpose of Detection
 - **Comprehensive Cataloguing**: By parsing and resolving these features, the compiler can maintain detailed catalogues (e.g., `ErrorSetCatalogue`, `GenericCatalogue`) that inform Milestone 5 translation strategies.

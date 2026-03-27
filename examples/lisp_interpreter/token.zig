@@ -39,16 +39,16 @@ fn skip_whitespace(self: *Tokenizer) void {
 
 pub fn next_token(self: *Tokenizer) !Token {
     skip_whitespace(self);
-    if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Int = 0 } };
+    if (self.pos >= self.input.len) return Token{ .tag = TokenTag.Eof, .data = TokenData{ .Int = @intCast(i64, 0) } };
 
     const c = self.input[self.pos];
     if (c == '(') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.LParen, .data = TokenData{ .Int = 0 } };
+        return Token{ .tag = TokenTag.LParen, .data = TokenData{ .Int = @intCast(i64, 0) } };
     }
     if (c == ')') {
         self.pos += 1;
-        return Token{ .tag = TokenTag.RParen, .data = TokenData{ .Int = 0 } };
+        return Token{ .tag = TokenTag.RParen, .data = TokenData{ .Int = @intCast(i64, 0) } };
     }
 
     if (is_digit(c) or (c == '-' and self.pos + 1 < self.input.len and is_digit(self.input[self.pos + 1]))) {
@@ -73,7 +73,7 @@ pub fn next_token(self: *Tokenizer) !Token {
 
 pub fn peek_token(self: *Tokenizer) !Token {
     const saved_pos = self.pos;
-    const tok = try self.next_token();
+    const tok = try next_token(self);
     self.pos = saved_pos;
     return tok;
 }

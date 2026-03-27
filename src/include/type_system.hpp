@@ -72,6 +72,15 @@ struct EnumMember {
 };
 
 /**
+ * @struct DependentNode
+ * @brief Represents a node in a linked list of types that depend on a placeholder.
+ */
+struct DependentNode {
+    Type* type;
+    DependentNode* next;
+};
+
+/**
  * @struct Type
  * @brief Represents a type within the bootstrap compiler's type system.
  */
@@ -82,6 +91,8 @@ struct Type {
     const char* c_name; // Mangled C89 name for structs, unions, enums
     bool is_resolving;
     struct Module* owner_module;
+    DependentNode* dependents_head;
+    DependentNode* dependents_tail;
 
     union {
         struct {
@@ -152,7 +163,6 @@ struct Type {
             const char* name;
             struct ASTNode* decl_node;
             struct Module* module;
-            DynamicArray<Type*>* dependents;
         } placeholder;
     } as;
 };
@@ -255,35 +265,45 @@ Type* createArrayType(ArenaAllocator& arena, Type* element_type, u64 size, TypeI
  */
 Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const = false, TypeInterner* interner = NULL);
 
+// Forward declarations
+class CompilationUnit;
+struct Module;
+
 /**
  * @brief Creates a new struct Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param fields A dynamic array of the struct's fields.
  * @param name The optional name of the struct type.
- * @return A pointer to the newly allocated Type object.
+ * @param placeholder An optional placeholder to finalize in-place.
+ * @return A pointer to the newly allocated or finalized Type object.
  */
-Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL);
+Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name = NULL, Type* placeholder = NULL);
 
 /**
  * @brief Creates a new union Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param fields A dynamic array of the union's fields.
  * @param name The optional name of the union type.
  * @param is_tagged True if it's a tagged union.
  * @param tag_type The tag enum type for a tagged union.
- * @return A pointer to the newly allocated Type object.
+ * @param placeholder An optional placeholder to finalize in-place.
+ * @return A pointer to the newly allocated or finalized Type object.
  */
-Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name = NULL, bool is_tagged = false, Type* tag_type = NULL);
+Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name = NULL, bool is_tagged = false, Type* tag_type = NULL, Type* placeholder = NULL);
 
 /**
  * @brief Creates a new tagged union Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param payload_fields A dynamic array of the union's payload fields.
  * @param tag_type The tag enum type for the tagged union.
  * @param name The optional name of the tagged union type.
- * @return A pointer to the newly allocated Type object.
+ * @param placeholder An optional placeholder to finalize in-place.
+ * @return A pointer to the newly allocated or finalized Type object.
  */
-Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name = NULL);
+Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name = NULL, Type* placeholder = NULL);
 
 /**
  * @brief Creates a new error union Type object from the arena.
@@ -305,13 +325,15 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
 
 /**
  * @brief Creates a new error set Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param name The name of the error set (can be NULL).
  * @param tags A dynamic array of tag names (interned strings).
  * @param is_anonymous True if the error set is anonymous.
- * @return A pointer to the newly allocated Type object.
+ * @param placeholder An optional placeholder to finalize in-place.
+ * @return A pointer to the newly allocated or finalized Type object.
  */
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner = NULL);
+Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner = NULL, Type* placeholder = NULL);
 
 /**
  * @brief Calculates the layout (offsets, total size, alignment) of a struct type.
@@ -336,15 +358,17 @@ void refreshLayout(Type* t);
 
 /**
  * @brief Creates a new enum Type object from the arena.
- * @param arena The ArenaAllocator to use for allocation.
+ * @param unit The CompilationUnit.
+ * @param mod The defining module.
  * @param name The name of the enum type (can be NULL for anonymous).
  * @param backing_type A pointer to the enum's backing type.
  * @param members A dynamic array of the enum's members.
  * @param min_val The minimum value in the enum.
  * @param max_val The maximum value in the enum.
- * @return A pointer to the newly allocated Type object.
+ * @param placeholder An optional placeholder to finalize in-place.
+ * @return A pointer to the newly allocated or finalized Type object.
  */
-Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val);
+Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder = NULL);
 
 /**
  * @brief Creates a new module Type object.

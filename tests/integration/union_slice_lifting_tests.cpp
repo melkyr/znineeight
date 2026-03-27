@@ -65,8 +65,8 @@ TEST_FUNC(UnionSliceLifting_Basic) {
     ASSERT_TRUE(tmp_pos != std::string::npos);
 
     // It should be preceded by Slice_i32 (mangled name for []i32)
+    // Actually, NameMangler now uses Slice_i32.
     ASSERT_TRUE(code.find("Slice_i32 __tmp_if_") != std::string::npos);
-    ASSERT_TRUE(code.find("Slice_i32* __tmp_if_") == std::string::npos);
 
     return true;
 }

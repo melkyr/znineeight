@@ -1,6 +1,6 @@
-# AI Agent Tasks for RetroZig Compiler
+# AI Agent Tasks for Z98 Compiler
 
-This document outlines a granular, step-by-step roadmap for an AI agent to implement the RetroZig compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
+This document outlines a granular, step-by-step roadmap for an AI agent to implement the Z98 compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
 
 ## Phase 0: The Bootstrap Compiler (C++98)
 
@@ -2029,7 +2029,7 @@ DynamicArray<ASTNode*> children(arena);
 ---
 ## Milestone 9: Adding final missing features incrementally.
 
-Phase 1: Tagged Unions (union(enum))
+Phase 1: Tagged Unions (union(enum)) (COMPLETE)
 
 Goal: Support union(enum) { field1: Type1, field2: Type2, ... } syntax.
 
@@ -2113,7 +2113,7 @@ Implementation steps:
 
         Verify that the generated C compiles and runs.
 
-Phase 2: Switch Payload Captures
+Phase 2: Switch Payload Captures (COMPLETE)
 
 Goal: Support switch (tagged_union) { .Field => |x| { ... }, ... } syntax.
 
@@ -2226,6 +2226,19 @@ Goal: Allow writing `Null` instead of `Null: void` inside a `union(enum)` declar
 - **Verification (COMPLETE)**:
     - Verified via Batch 63 integration tests, covering implicit/explicit tagged unions and rejection in structs/bare unions.
 
+Phase 7: while Payload Capture (COMPLETE)
+
+Goal: Support `while (optional) |capture| { ... }` syntax and semantics.
+
+Why needed: Common Zig idiom for iteration and linked-list traversal.
+
+- **Implementation (COMPLETE)**:
+    - Parser: Modified `parseWhileStatement` to support the `|capture|` syntax after the condition.
+    - Type Checker: Updated `visitWhileStmt` to validate that the condition is an optional type when a capture is present. Implemented scope management and symbol creation for the capture variable (payload type).
+    - Codegen: Updated `C89Emitter::emitWhile` to generate a `while(1)` loop that evaluates the condition into a temporary, checks `.has_value`, and unwraps the payload into the capture variable before executing the body.
+- **Verification (COMPLETE)**:
+    - Verified with multiple scenarios including pointer optionals and continue expressions. Added integration tests to the suite.
+
 Phase 6: (Optional) Basic comptime parameters
 
 Goal: Support fn foo(comptime T: type, x: T) ... where T is a type parameter. This is needed for generic‑like functions in zig1.
@@ -2289,6 +2302,23 @@ Implementation steps (minimal):
     - **Coercion**: Enhanced `coerceNode` to handle anonymous struct initializers for tagged unions, including placeholder resolution and field validation.
     - **Switch Inference**: Updated `validateSwitch` to infer prong types from switch condition when condition is a tagged union and body is an anonymous initializer.
     - **Verification**: Created Batch 9b integration tests covering anonymous returns, assignments, naked tags, switch expressions, and error cases.
+
+247. [COMPLETE] **Task 9.23: Investigate Cross-Module Symbol Visibility**
+    - **Goal**: Identify the root cause of `module 'X' has no member named 'Y'` errors in multi-module builds.
+    - **Instrumentation**: Added `DEBUG_VISIBILITY` logging to `SymbolTable`, `CompilationUnit`, and `TypeChecker`.
+    - **Lexer/Parser**: Added support for `@intToPtr` builtin.
+    - **Symbol Table**: Implemented `SYMBOL_FLAG_PUB` and updated the parser to populate it, enabling visibility tracking.
+    - **Analysis**: Determined that the error is caused by the compiler processing modules in discovery order, which leads to failed on-demand resolution when symbols have complex cross-module dependencies.
+    - **Documentation**: Created `docs/CrossModuleSymbolVisibility.md` and updated `DESIGN.md`.
+    - **Workaround**: Updated the Lisp interpreter to use optional pointers (`?*T`) to improve compiler stability during cross-module resolution.
+
+248. [COMPLETE] **Task 9.24: Guard Against Null Dereferences and Type Mismatches**
+    - **Goal**: Stabilize the compiler by adding robust guards and structural-aware type equality.
+    - **Type Checker**: Moved `areTypesEqual` and `signaturesMatch` into `TypeChecker` to support placeholder resolution during comparison.
+    - **Structural Equality**: Implemented deep structural comparison in `TypeChecker::areTypesEqual`, including cross-module nominal type identity (matching by name and module name).
+    - **Safety Guards**: Audited and added null checks and `kind` validation in `visitUnaryOp`, `visitFunctionCall`, `visitArrayAccess`, `IsTypeAssignableTo`, and other critical methods.
+    - **Internal Invariants**: Used `fatalError` to abort on internal compiler errors (e.g., unexpected null types) while maintaining recoverable reporting for user errors.
+    - **Documentation**: Updated `docs/type_checker.md` with details on the new equality and safety logic.
 
 ---
 

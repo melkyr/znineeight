@@ -36,6 +36,7 @@ struct Module {
     DynamicArray<Type*> header_types;
     DynamicArray<Symbol*> static_function_prototypes;
     bool is_analyzed;
+    int anon_counter;
 
     // Per-module catalogues
     ErrorSetCatalogue error_set_catalogue;
@@ -68,6 +69,7 @@ struct Module {
         file_id = 0;
         symbols = NULL;
         is_analyzed = false;
+        anon_counter = 0;
     }
 };
 

@@ -124,7 +124,7 @@ TEST_FUNC(traversal_block) {
     return true;
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main() {
     int passed = 0;
     int total = 0;

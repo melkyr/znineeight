@@ -10,45 +10,51 @@ static const size_t TYPE_DEF_BUFFER_SIZE = 131072;
 
 C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
-      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
-      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
+      unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
+      used_names_(unit.getTransientArena()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getArena()) {
-    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+      loop_id_stack_(unit.getTransientArena()) {
+    type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
     : buffer_pos_(0), indent_level_(0), owns_file_(true),
-      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
-      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
+      unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
+      used_names_(unit.getTransientArena()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getArena()) {
+      loop_id_stack_(unit.getTransientArena()) {
     output_file_ = plat_open_file(path, true);
-    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+    type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
     : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
-      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getArena()),
-      unit_(unit), var_alloc_(unit.getArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), global_names_(unit.getArena()),
-      emitted_slices_(unit.getArena()), emitted_error_unions_(unit.getArena()), emitted_optionals_(unit.getArena()), emitted_enums_(unit.getArena()), emitted_forward_decls_(unit.getArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
-      defer_stack_(unit.getArena()), current_fn_ret_type_(NULL), is_header_(is_header),
+      debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
+      unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
+      global_names_(unit.getArena()),
+      used_names_(unit.getTransientArena()),
+      emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
+      defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getArena()) {
-    type_def_buffer_ = (char*)arena_.alloc(type_def_cap_);
+      loop_id_stack_(unit.getTransientArena()) {
+    type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
@@ -73,7 +79,8 @@ void C89Emitter::writeIndent() {
 }
 
 void C89Emitter::emitPrologue() {
-    emitComment("Generated by RetroZig bootstrap compiler");
+    emitComment("Generated by Z98 bootstrap compiler");
+    emitSymbolMap();
     writeString("#include \"zig_runtime.h\"\n\n");
 
     /* Emit error tag constants */
@@ -152,7 +159,7 @@ void C89Emitter::emitTypePrefix(Type* type) {
 
     switch (type->kind) {
         case TYPE_POINTER:
-            if (type->as.pointer.base->kind == TYPE_VOID) {
+            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_VOID) {
                 writeString("void");
                 if (last_char_ != ' ') {
                     writeString(" ");
@@ -160,11 +167,15 @@ void C89Emitter::emitTypePrefix(Type* type) {
                 writeString("*");
                 break;
             }
-            emitTypePrefix(type->as.pointer.base);
+            if (type->as.pointer.base) {
+                emitTypePrefix(type->as.pointer.base);
+            } else {
+                writeString("void ");
+            }
             if (type->as.pointer.is_const) {
                 writeString(" const");
             }
-            if (type->as.pointer.base->kind != TYPE_POINTER &&
+            if (type->as.pointer.base && type->as.pointer.base->kind != TYPE_POINTER &&
                 (type->as.pointer.base->kind == TYPE_ARRAY ||
                  type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
@@ -195,16 +206,18 @@ void C89Emitter::emitTypeSuffix(Type* type) {
 
     switch (type->kind) {
         case TYPE_POINTER:
-            if (type->as.pointer.base->kind == TYPE_VOID) {
+            if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_VOID) {
                 break;
             }
-            if (type->as.pointer.base->kind != TYPE_POINTER &&
+            if (type->as.pointer.base && type->as.pointer.base->kind != TYPE_POINTER &&
                 (type->as.pointer.base->kind == TYPE_ARRAY ||
                  type->as.pointer.base->kind == TYPE_FUNCTION_POINTER ||
                  type->as.pointer.base->kind == TYPE_FUNCTION)) {
                 writeString(")");
             }
-            emitTypeSuffix(type->as.pointer.base);
+            if (type->as.pointer.base) {
+                emitTypeSuffix(type->as.pointer.base);
+            }
             break;
         case TYPE_ARRAY: {
             char buf[32];
@@ -306,7 +319,7 @@ void C89Emitter::emitBaseType(Type* type) {
             break;
         case TYPE_STRUCT:
             if (!type->c_name && type->as.struct_details.name) {
-                type->c_name = getC89GlobalName(type->as.struct_details.name);
+                type->c_name = unit_.getNameMangler().mangleType(type);
             }
             if (type->c_name) {
                 writeString("struct ");
@@ -321,7 +334,7 @@ void C89Emitter::emitBaseType(Type* type) {
             if (isTaggedUnion(type)) {
                 const char* name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
                 if (!type->c_name && name) {
-                    type->c_name = getC89GlobalName(name);
+                    type->c_name = unit_.getNameMangler().mangleType(type);
                 }
                 if (type->c_name) {
                     writeString("struct ");
@@ -332,7 +345,7 @@ void C89Emitter::emitBaseType(Type* type) {
                 }
             } else {
                 if (!type->c_name && type->as.struct_details.name) {
-                    type->c_name = getC89GlobalName(type->as.struct_details.name);
+                    type->c_name = unit_.getNameMangler().mangleType(type);
                 }
                 if (type->c_name) {
                     writeString("union ");
@@ -346,7 +359,7 @@ void C89Emitter::emitBaseType(Type* type) {
         case TYPE_ENUM:
             writeString("enum ");
             if (!type->c_name && type->as.enum_details.name) {
-                type->c_name = getC89GlobalName(type->as.enum_details.name);
+                type->c_name = unit_.getNameMangler().mangleType(type);
             }
             if (type->c_name) {
                 writeString(type->c_name);
@@ -407,7 +420,11 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 
     if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
         writeString(" = ");
-        emitExpression(decl->initializer);
+        if (type && type->kind == TYPE_OPTIONAL && decl->initializer->type == NODE_NULL_LITERAL) {
+            writeString("{0}");
+        } else {
+            emitExpression(decl->initializer);
+        }
     }
 
     writeString(";\n");
@@ -467,7 +484,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (t_type && t_type->c_name) {
                 writeString(t_type->c_name);
             } else if (t_type && t_type->as.enum_details.name) {
-                writeString(getC89GlobalName(t_type->as.enum_details.name));
+                writeString(unit_.getNameMangler().mangleType(t_type));
             } else {
                 writeString("/* enum */");
             }
@@ -551,8 +568,12 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         is_discard = true;
     }
 
-    if (!effective_target && lvalue_node && lvalue_node->type == NODE_IDENTIFIER && lvalue_node->as.identifier.symbol) {
-        effective_target = var_alloc_.allocate(lvalue_node->as.identifier.symbol);
+    if (!effective_target && lvalue_node) {
+        if (lvalue_node->type == NODE_IDENTIFIER && lvalue_node->as.identifier.symbol) {
+            effective_target = var_alloc_.allocate(lvalue_node->as.identifier.symbol);
+        } else if (lvalue_node->type == NODE_VAR_DECL && lvalue_node->as.var_decl->symbol) {
+            effective_target = var_alloc_.allocate(lvalue_node->as.var_decl->symbol);
+        }
     }
 
     if (is_discard) {
@@ -578,11 +599,31 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
 
     /* Coercions */
     if (target_type && target_type->kind == TYPE_ERROR_UNION && source_type && source_type->kind != TYPE_ERROR_UNION) {
-        emitErrorUnionWrapping(effective_target, lvalue_node, target_type, rvalue);
+        emitErrorUnionWrapping(target_var, lvalue_node, target_type, rvalue);
         return;
     }
     if (target_type && target_type->kind == TYPE_OPTIONAL && source_type && source_type->kind != TYPE_OPTIONAL) {
-        emitOptionalWrapping(effective_target, lvalue_node, target_type, rvalue);
+        emitOptionalWrapping(target_var, lvalue_node, target_type, rvalue);
+        return;
+    }
+
+    if (target_type && isTaggedUnion(target_type) && rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
+        /* Assignment of a tag literal to a tagged union */
+        writeIndent();
+        if (effective_target) {
+            writeString(effective_target);
+        } else if (lvalue_node) {
+            if (!isSimpleLValue(lvalue_node)) {
+                writeString("(");
+                emitExpression(lvalue_node);
+                writeString(")");
+            } else {
+                emitExpression(lvalue_node);
+            }
+        }
+        writeString(".tag = ");
+        emitExpression(rvalue);
+        writeString(";\n");
         return;
     }
 
@@ -590,20 +631,43 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     if (rvalue->type == NODE_STRUCT_INITIALIZER) {
         if (effective_target) {
             emitInitializerAssignments(effective_target, rvalue);
-        } else if (lvalue_node && (lvalue_node->type == NODE_ARRAY_ACCESS ||
-                                  lvalue_node->type == NODE_MEMBER_ACCESS ||
-                                  (lvalue_node->type == NODE_UNARY_OP && (lvalue_node->as.unary_op.op == TOKEN_STAR || lvalue_node->as.unary_op.op == TOKEN_DOT_ASTERISK)))) {
-            /* For complex l-values, decompose initializer into field-by-field assignments */
-            char lval_buf[512];
-            if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
-                emitInitializerAssignments(lval_buf, rvalue);
-            } else {
-                /* Fallback if capture failed or truncated */
+        } else if (lvalue_node) {
+            bool needs_temporary = !isSimpleLValue(lvalue_node);
+
+            if (needs_temporary) {
+                const char* lval_ptr = var_alloc_.generate("init_lval_tmp");
                 writeIndent();
+                writeString("{\n");
+                indent();
+                writeIndent();
+                Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+                emitType(ptr_type, lval_ptr);
+                writeString(" = &(");
                 emitExpression(lvalue_node);
-                writeString(" = ");
-                emitExpression(rvalue);
-                writeString(";\n");
+                writeString(");\n");
+
+                char lval_buf[512];
+                plat_strcpy(lval_buf, "(*");
+                plat_strcat(lval_buf, lval_ptr);
+                plat_strcat(lval_buf, ")");
+
+                emitInitializerAssignments(lval_buf, rvalue);
+
+                dedent();
+                writeIndent();
+                writeString("}\n");
+            } else {
+                char lval_buf[512];
+                if (captureExpression(lvalue_node, lval_buf, sizeof(lval_buf))) {
+                    emitInitializerAssignments(lval_buf, rvalue);
+                } else {
+                    /* Fallback if capture failed or truncated */
+                    writeIndent();
+                    emitExpression(lvalue_node);
+                    writeString(" = ");
+                    emitExpression(rvalue);
+                    writeString(";\n");
+                }
             }
             return;
         } else {
@@ -819,6 +883,42 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
     writeString(";\n");
 }
 
+void C89Emitter::emitSymbolMap() {
+    size_t global_count = 0;
+    for (size_t i = 0; i < global_names_.length(); ++i) {
+        if (plat_strncmp(global_names_[i].c89_name, "z", 1) == 0 && 
+            global_names_[i].c89_name[1] >= 'A' && global_names_[i].c89_name[1] <= 'V' &&
+            global_names_[i].c89_name[2] == '_') {
+            global_count++;
+        }
+    }
+    if (global_count == 0) return;
+
+    writeString("/*\n * Z98 Symbol Map:\n");
+    for (size_t i = 0; i < global_names_.length(); ++i) {
+        const GlobalNameEntry& entry = global_names_[i];
+        if (!(plat_strncmp(entry.c89_name, "z", 1) == 0 && 
+              entry.c89_name[1] >= 'A' && entry.c89_name[1] <= 'V' &&
+              entry.c89_name[2] == '_')) {
+            continue;
+        }
+
+        writeString(" * ");
+        writeString(entry.c89_name);
+        // Padding for alignment
+        size_t len = plat_strlen(entry.c89_name);
+        for (size_t j = len; j < 24; ++j) writeString(" ");
+        writeString(" -> ");
+        writeString(entry.location ? entry.location : "unknown");
+        writeString(":");
+        writeString(entry.zig_name);
+        writeString(" (");
+        writeString(entry.kind ? entry.kind : "unknown");
+        writeString(")\n");
+    }
+    writeString(" */\n\n");
+}
+
 void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (!node) return;
 
@@ -911,6 +1011,13 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     }
 
     if (node->body) {
+        /* Create error flag if needed */
+        if (current_fn_ret_type_ && current_fn_ret_type_->kind == TYPE_ERROR_UNION && scanForErrDefer(node->body)) {
+            current_err_flag_ = var_alloc_.generate("err_occurred");
+        } else {
+            current_err_flag_ = NULL;
+        }
+
         writeString(" ");
         emitBlock(&node->body->as.block_stmt);
         writeString("\n\n");
@@ -932,6 +1039,13 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         DeferScope* scope = defer_stack_.back();
 
         /* Pass 1: Local declarations */
+        if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
+            writeIndent();
+            writeString("int ");
+            writeString(current_err_flag_);
+            writeString(" = 0;\n");
+        }
+
         for (size_t i = 0; i < node->statements->length(); ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
@@ -950,9 +1064,15 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
                     break;
                 }
             } else if (stmt->type == NODE_DEFER_STMT) {
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
                 scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
             } else if (stmt->type == NODE_ERRDEFER_STMT) {
-                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
+                scope->err_defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 emitStatement(stmt);
                 if (allPathsExit(stmt)) {
@@ -1011,6 +1131,13 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
         DeferScope* scope = defer_stack_.back();
 
         /* Pass 1: Local declarations */
+        if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
+            writeIndent();
+            writeString("int ");
+            writeString(current_err_flag_);
+            writeString(" = 0;\n");
+        }
+
         for (size_t i = 0; i < node->statements->length(); ++i) {
             ASTNode* stmt = (*node->statements)[i];
             if (stmt->type == NODE_VAR_DECL) {
@@ -1029,9 +1156,15 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
                     break;
                 }
             } else if (stmt->type == NODE_DEFER_STMT) {
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
                 scope->defers.append((ASTDeferStmtNode*)&stmt->as.defer_stmt);
             } else if (stmt->type == NODE_ERRDEFER_STMT) {
-                scope->defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
+                if (scope->defers.length() + scope->err_defers.length() >= 32) {
+                    error_handler_.report(ERR_TOO_MANY_DEFERS, stmt->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+                }
+                scope->err_defers.append((ASTDeferStmtNode*)&stmt->as.errdefer_stmt);
             } else {
                 /* Check if it's the last expression in the block */
                 if (i == node->statements->length() - 1 && target_var &&
@@ -1101,46 +1234,80 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             writeString(";\n");
             break;
         case NODE_DEFER_STMT:
-            writeIndent();
-            writeString("/* defer */\n");
-            break;
         case NODE_ERRDEFER_STMT:
-            writeIndent();
-            writeString("/* errdefer */\n");
+            /* Should never be emitted directly; they are handled in block collection */
+            error_handler_.report(ERR_INTERNAL_ERROR, node->loc,
+                "Defer/errdefer statement emitted outside block context");
             break;
         case NODE_EXPRESSION_STMT: {
-            ASTNode* expr = node->as.expression_stmt.expression;
-            if (expr->type == NODE_ASSIGNMENT) {
-                emitAssignmentWithLifting(NULL, expr->as.assignment->lvalue, expr->as.assignment->rvalue);
-            } else if (expr->type == NODE_FUNCTION_CALL) {
-                /* Check if it's std.debug.print */
-                bool is_print = false;
-                const ASTNode* callee = expr->as.function_call->callee;
-                if (callee->type == NODE_MEMBER_ACCESS && plat_strcmp(callee->as.member_access->field_name, "print") == 0) {
-                    is_print = true;
-                }
-
-                if (is_print) {
-                    emitPrintCall(expr->as.function_call);
-                } else {
-                    writeIndent();
-                    emitExpression(expr);
-                    writeString(";\n");
-                }
-            } else if (expr->type == NODE_RETURN_STMT ||
-                       expr->type == NODE_BREAK_STMT ||
-                       expr->type == NODE_CONTINUE_STMT ||
-                       expr->type == NODE_UNREACHABLE) {
-                emitStatement(expr);
-            } else {
-                writeIndent();
-                emitExpression(expr);
-                writeString(";\n");
-            }
+            emitStatement(node->as.expression_stmt.expression);
             break;
         }
         case NODE_ASSIGNMENT: {
             emitAssignmentWithLifting(NULL, node->as.assignment->lvalue, node->as.assignment->rvalue);
+            break;
+        }
+        case NODE_COMPOUND_ASSIGNMENT: {
+            /* Compound assignment as a statement */
+            writeIndent();
+            emitExpression(node->as.compound_assignment->lvalue);
+            writeString(" ");
+            writeString(getTokenSpelling(node->as.compound_assignment->op));
+            writeString(" ");
+            emitExpression(node->as.compound_assignment->rvalue);
+            writeString(";\n");
+            break;
+        }
+        case NODE_FUNCTION_CALL: {
+            /* Check if it's std.debug.print */
+            bool is_print = false;
+            const ASTNode* callee = node->as.function_call->callee;
+            if (callee->type == NODE_MEMBER_ACCESS && plat_strcmp(callee->as.member_access->field_name, "print") == 0) {
+                is_print = true;
+            }
+
+            if (is_print) {
+                emitPrintCall(node->as.function_call);
+            } else {
+                writeIndent();
+                emitExpression(node);
+                writeString(";\n");
+            }
+            break;
+        }
+        /* Handle remaining expression nodes as statements */
+        case NODE_BINARY_OP:
+        case NODE_UNARY_OP:
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_CHAR_LITERAL:
+        case NODE_BOOL_LITERAL:
+        case NODE_NULL_LITERAL:
+        case NODE_ERROR_LITERAL:
+        case NODE_IDENTIFIER:
+        case NODE_STRUCT_INITIALIZER:
+        case NODE_ARRAY_ACCESS:
+        case NODE_MEMBER_ACCESS:
+        case NODE_ARRAY_SLICE:
+        case NODE_IF_EXPR:
+        case NODE_SWITCH_EXPR:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_ORELSE_EXPR:
+        case NODE_OFFSET_OF:
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+        case NODE_RANGE:
+        case NODE_PAREN_EXPR:
+        case NODE_ASYNC_EXPR:
+        case NODE_AWAIT_EXPR:
+        case NODE_TUPLE_LITERAL: {
+            writeIndent();
+            emitExpression(node);
+            writeString(";\n");
             break;
         }
         case NODE_EMPTY_STMT:
@@ -1242,6 +1409,27 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
         writeString("\n");
     }
+}
+
+bool C89Emitter::scanForErrDefer(const ASTNode* node) const {
+    if (!node) return false;
+    if (node->type == NODE_ERRDEFER_STMT) return true;
+
+    struct ScanVisitor : ChildVisitor {
+        bool found;
+        const C89Emitter* emitter;
+        ScanVisitor(const C89Emitter* e) : found(false), emitter(e) {}
+        void visitChild(ASTNode** child_slot) {
+            if (found) return;
+            if (emitter->scanForErrDefer(*child_slot)) {
+                found = true;
+            }
+        }
+    };
+
+    ScanVisitor visitor(this);
+    forEachChild((ASTNode*)node, visitor);
+    return visitor.found;
 }
 
 bool C89Emitter::evaluateSimpleConstant(const ASTNode* node, i64* out_value) const {
@@ -1350,6 +1538,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
 
 void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     if (!node) return;
+    writeString("/* DEBUG: emitSwitch start */\n");
 
     Type* cond_type = node->expression->resolved_type;
     bool is_tagged_union = isTaggedUnion(cond_type);
@@ -1421,19 +1610,52 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                                             prong->capture_sym->symbol_type->kind != TYPE_VOID);
 
                 if (has_non_void_capture) {
+                    ASTNode* item_expr = (*prong->items)[0];
+                    Type* capture_type = prong->capture_sym->symbol_type;
+                    plat_printf_debug("[emitSwitch] Non-void capture for tag '%s', capture type = %d\n",
+                                      item_expr->as.integer_literal.original_name, capture_type->kind);
+
                     writeIndent();
                     writeString("{\n");
                     {
                         IndentScope capture_indent(*this);
                         writeIndent();
-                        emitType(prong->capture_sym->symbol_type, var_alloc_.allocate(prong->capture_sym));
-                        writeString(" = ");
-                        writeString(switch_tmp);
-                        writeString(".data.");
+                        writeString("/* DEBUG: capture ");
+                        writeString(prong->capture_name);
+                        writeString(" */\n");
+                        const char* c_name = var_alloc_.allocate(prong->capture_sym);
+                        writeIndent();
+                        emitType(capture_type, c_name);
+                        writeString(";\n");
+                        char capture_lval[512];
+                        char* cur = capture_lval;
+                        size_t rem = sizeof(capture_lval);
+                        safe_append(cur, rem, c_name);
+
                         /* Field name is preserved in original_name of the case item literal */
                         ASTNode* item_expr = (*prong->items)[0];
-                        writeString(getSafeFieldName(item_expr->as.integer_literal.original_name));
-                        writeString(";\n");
+                        char rvalue_buf[512];
+                        char* r_cur = rvalue_buf;
+                        size_t r_rem = sizeof(rvalue_buf);
+                        safe_append(r_cur, r_rem, switch_tmp);
+                        safe_append(r_cur, r_rem, ".data.");
+                        safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
+
+                        writeIndent();
+                        if (capture_type->kind == TYPE_STRUCT || capture_type->kind == TYPE_UNION) {
+                            writeString("memcpy(&");
+                            writeString(capture_lval);
+                            writeString(", &");
+                            writeString(rvalue_buf);
+                            writeString(", sizeof(");
+                            emitType(capture_type);
+                            writeString("));\n");
+                        } else {
+                            writeString(capture_lval);
+                            writeString(" = ");
+                            writeString(rvalue_buf);
+                            writeString(";\n");
+                        }
                     }
                 }
 
@@ -1681,44 +1903,109 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     const char* cont_label = getLoopContinueLabel(node->label_id);
     const char* end_label = getLoopEndLabel(node->label_id);
 
-    writeIndent();
-    writeString(start_label);
-    writeString(": ;\n");
-
-    writeIndent();
-    writeString("if (!(");
-    if (node->condition) {
-        emitExpression(node->condition);
-    } else {
-        writeString("1");
-    }
-    writeString(")) goto ");
-    writeString(end_label);
-    writeString(";\n");
-
-    if (node->body->type == NODE_BLOCK_STMT) {
+    if (node->capture_name) {
         writeIndent();
-        emitBlock(&node->body->as.block_stmt, node->label_id);
+        writeString(start_label);
+        writeString(": ;\n");
+
+        writeIndent();
+        writeString("while (1) {\n");
+        {
+            IndentScope while_indent(*this);
+
+            /* Evaluate condition into a temporary */
+            const char* tmp = var_alloc_.generate("opt_tmp");
+            writeIndent();
+            emitType(node->condition->resolved_type, tmp);
+            writeString(" = ");
+            emitExpression(node->condition);
+            writeString(";\n");
+
+            writeIndent();
+            writeString("if (!");
+            writeString(tmp);
+            writeString(".has_value) goto ");
+            writeString(end_label);
+            writeString(";\n");
+
+            /* Unwrap capture if non-void */
+            if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+                writeIndent();
+                const char* c_name = var_alloc_.allocate(node->capture_sym);
+                emitType(node->capture_sym->symbol_type, c_name);
+                writeString(" = ");
+                writeString(tmp);
+                writeString(".value;\n");
+            }
+
+            /* Emit body */
+            if (node->body->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->body->as.block_stmt, node->label_id);
+            } else {
+                emitStatement(node->body);
+            }
+            writeString("\n");
+
+            writeIndent();
+            writeString(cont_label);
+            writeString(": ;\n");
+
+            /* Continue expression (if any) */
+            if (node->iter_expr) {
+                emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+            }
+
+            writeIndent();
+            writeString("goto ");
+            writeString(start_label);
+            writeString(";\n");
+        }
+        writeIndent();
+        writeString("}\n");
+
+        writeIndent();
+        writeString(end_label);
+        writeString(": ;\n");
     } else {
-        emitStatement(node->body);
+        writeIndent();
+        writeString(start_label);
+        writeString(": ;\n");
+
+        writeIndent();
+        writeString("if (!(");
+        if (node->condition) {
+            emitExpression(node->condition);
+        } else {
+            writeString("1");
+        }
+        writeString(")) goto ");
+        writeString(end_label);
+        writeString(";\n");
+
+        if (node->body->type == NODE_BLOCK_STMT) {
+            writeIndent();
+            emitBlock(&node->body->as.block_stmt, node->label_id);
+        } else {
+            emitStatement(node->body);
+        }
+        writeString("\n");
+
+        writeIndent();
+        writeString(cont_label);
+        writeString(": ;\n");
+        if (node->iter_expr) {
+            emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+        }
+
+        writeIndent();
+        writeString("goto ");
+        writeString(start_label);
+        writeString(";\n");
+
+        writeIndent();
+        writeString(end_label);
+        writeString(": ;\n");
     }
-    writeString("\n");
-
-    writeIndent();
-    writeString(cont_label);
-    writeString(": ;\n");
-    if (node->iter_expr) {
-        emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
-    }
-
-    writeIndent();
-    writeString("goto ");
-    writeString(start_label);
-    writeString(";\n");
-
-    writeIndent();
-    writeString(end_label);
-    writeString(": ;\n");
 
     loop_id_stack_.pop_back();
 }
@@ -1875,15 +2162,9 @@ void C89Emitter::ensureForwardDeclaration(Type* type) {
 
     const char* mangled_name = type->c_name;
     if (!mangled_name) {
-        const char* zig_name = NULL;
-        if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
-            zig_name = type->as.struct_details.name;
-        } else if (type->kind == TYPE_TAGGED_UNION) {
-            zig_name = type->as.tagged_union.name;
-        }
-        if (!zig_name) return;
-        mangled_name = getC89GlobalName(zig_name);
+        mangled_name = unit_.getNameMangler().mangleType(type);
     }
+    if (!mangled_name) return;
 
     /* Avoid duplicate forward declarations */
     for (size_t i = 0; i < emitted_forward_decls_.length(); ++i) {
@@ -1915,6 +2196,15 @@ void C89Emitter::emitExpression(const ASTNode* node) {
     }
 
     switch (node->type) {
+        case NODE_VAR_DECL: {
+            const ASTVarDeclNode* decl = node->as.var_decl;
+            if (decl->symbol) {
+                writeString(var_alloc_.allocate(decl->symbol));
+            } else if (decl->name) {
+                writeString(getC89GlobalName(decl->name));
+            }
+            break;
+        }
         case NODE_INTEGER_LITERAL:
         case NODE_FLOAT_LITERAL:
         case NODE_STRING_LITERAL:
@@ -1926,6 +2216,17 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
 
         case NODE_UNARY_OP:
+            if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                Type* operand_type = node->as.unary_op.operand->resolved_type;
+                if (operand_type && operand_type->kind == TYPE_POINTER && 
+                    (operand_type->as.pointer.base->kind == TYPE_OPTIONAL || 
+                     operand_type->as.pointer.base->kind == TYPE_ERROR_UNION)) {
+                    writeString("(*");
+                    emitExpression(node->as.unary_op.operand);
+                    writeString(")");
+                    break;
+                }
+            }
             emitUnaryOp(node->as.unary_op);
             break;
 
@@ -1936,6 +2237,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_PTR_CAST:
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             emitCast(node);
             break;
 
@@ -2183,6 +2485,34 @@ void C89Emitter::emitUnaryOp(const ASTUnaryOpNode& node) {
 }
 
 void C89Emitter::emitBinaryOp(const ASTBinaryOpNode& node) {
+    /* Optional vs null comparisons. */
+    Type* left_type = node.left->resolved_type;
+    Type* right_type = node.right->resolved_type;
+
+    if ((left_type && left_type->kind == TYPE_OPTIONAL && right_type && right_type->kind == TYPE_NULL) ||
+        (left_type && left_type->kind == TYPE_NULL && right_type && right_type->kind == TYPE_OPTIONAL)) {
+
+        const ASTNode* opt_node = (left_type && left_type->kind == TYPE_OPTIONAL) ? node.left : node.right;
+
+        if (node.op == TOKEN_EQUAL_EQUAL) {
+            writeString("(!");
+            emitExpression(opt_node);
+            writeString(".has_value)");
+        } else if (node.op == TOKEN_BANG_EQUAL) {
+            writeString("(");
+            emitExpression(opt_node);
+            writeString(".has_value)");
+        } else {
+            /* Fallback (should be rejected by type checker) */
+            emitExpression(node.left);
+            writeString(" ");
+            writeString(getTokenSpelling(node.op));
+            writeString(" ");
+            emitExpression(node.right);
+        }
+        return;
+    }
+
     emitExpression(node.left);
     writeString(" ");
     writeString(getTokenSpelling(node.op));
@@ -2202,6 +2532,7 @@ void C89Emitter::emitCast(const ASTNode* node) {
             emitIntCast(node->as.numeric_cast);
             break;
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             emitFloatCast(node->as.numeric_cast);
             break;
         default: break;
@@ -2254,7 +2585,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                     if (actual_type->c_name) {
                         writeString(actual_type->c_name);
                     } else if (actual_type->as.enum_details.name) {
-                        writeString(getC89GlobalName(actual_type->as.enum_details.name));
+                        writeString(unit_.getNameMangler().mangleType(actual_type));
                     } else {
                         writeString("/* anonymous enum */");
                     }
@@ -2271,10 +2602,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                                               actual_type->as.module.name :
                                               (base->type == NODE_IDENTIFIER ? base->as.identifier.name : NULL);
                         if (mod_name) {
-                            writeString("z_");
-                            writeString(mod_name);
-                            writeString("_");
-                            writeString(node->as.member_access->field_name);
+                            writeString(unit_.getNameMangler().mangle('V', mod_name, node->as.member_access->field_name));
                         } else {
                             writeString(node->as.member_access->field_name);
                         }
@@ -2283,10 +2611,18 @@ void C89Emitter::emitAccess(const ASTNode* node) {
                 }
             }
 
-            bool need_parens = requiresParentheses(base);
-            if (need_parens) writeString("(");
-            emitExpression(base);
-            if (need_parens) writeString(")");
+            if (base->type == NODE_UNARY_OP &&
+                (base->as.unary_op.op == TOKEN_STAR || base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+                plat_printf_debug("[emitAccess] Wrapping dereference base\n");
+                writeString("(");
+                emitExpression(base);
+                writeString(")");
+            } else {
+                bool need_parens = requiresParentheses(base);
+                if (need_parens) writeString("(");
+                emitExpression(base);
+                if (need_parens) writeString(")");
+            }
 
             if (base->resolved_type && base->resolved_type->kind == TYPE_POINTER) {
                 writeString("->");
@@ -2343,7 +2679,7 @@ void C89Emitter::ensureOptionalType(Type* type) {
     Type* payload = type->as.optional.payload;
     ensureForwardDeclaration(payload);
 
-    const char* mangled_name = getMangledTypeName(type);
+    const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
     /* Check per-module cache first */
     for (size_t i = 0; i < emitted_optionals_.length(); ++i) {
@@ -2382,8 +2718,11 @@ void C89Emitter::ensureOptionalType(Type* type) {
     writeString("\n");
 
     writeIndent();
-    writeString("typedef struct {\n");
+    writeString("struct ");
+    writeString(mangled_name);
+    writeString(" ");
     {
+        writeString("{\n");
         IndentScope struct_indent(*this);
         if (payload->kind != TYPE_VOID) {
             writeIndent();
@@ -2392,9 +2731,14 @@ void C89Emitter::ensureOptionalType(Type* type) {
         }
         writeIndent();
         writeString("int has_value;\n");
+        dedent();
+        writeIndent();
+        writeString("};\n");
     }
     writeIndent();
-    writeString("} ");
+    writeString("typedef struct ");
+    writeString(mangled_name);
+    writeString(" ");
     writeString(mangled_name);
     writeString(";\n#endif\n\n");
 
@@ -2407,7 +2751,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     Type* payload = type->as.error_union.payload;
     ensureForwardDeclaration(payload);
 
-    const char* mangled_name = getMangledTypeName(type);
+    const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
     /* Check per-module cache first */
     for (size_t i = 0; i < emitted_error_unions_.length(); ++i) {
@@ -2446,8 +2790,11 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     writeString("\n");
 
     writeIndent();
-    writeString("typedef struct {\n");
+    writeString("struct ");
+    writeString(mangled_name);
+    writeString(" ");
     {
+        writeString("{\n");
         IndentScope struct_indent(*this);
         if (payload->kind != TYPE_VOID) {
             writeIndent();
@@ -2468,9 +2815,14 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
         }
         writeIndent();
         writeString("int is_error;\n");
+        dedent();
+        writeIndent();
+        writeString("};\n");
     }
     writeIndent();
-    writeString("} ");
+    writeString("typedef struct ");
+    writeString(mangled_name);
+    writeString(" ");
     writeString(mangled_name);
     writeString(";\n#endif\n\n");
 
@@ -2483,23 +2835,17 @@ void C89Emitter::ensureSliceType(Type* type) {
     Type* elem_type = type->as.slice.element_type;
     ensureForwardDeclaration(elem_type);
 
-    const char* mangled_name = getMangledTypeName(type);
+    const char* mangled_name = unit_.getNameMangler().mangleType(type);
 
     /* Check per-module cache first */
     for (size_t i = 0; i < emitted_slices_.length(); ++i) {
         if (plat_strcmp(emitted_slices_[i], mangled_name) == 0) return;
     }
 
-    /* Check external cache (global) only if not in header mode.
-       Headers must always emit their own guarded definitions to be self-contained. */
-    if (!is_header_ && external_cache_) {
-        for (size_t j = 0; j < external_cache_->length(); ++j) {
-            if (plat_strcmp((*external_cache_)[j], mangled_name) == 0) return;
-        }
-    }
-
-    /* Not emitted in this context, so emit it now */
+    /* Not emitted in this context, register it globally for central header emission */
+    unit_.registerSliceType(type);
     emitted_slices_.append(mangled_name);
+
     if (external_cache_) {
         bool already_in_external = false;
         for (size_t k = 0; k < external_cache_->length(); ++k) {
@@ -2512,50 +2858,6 @@ void C89Emitter::ensureSliceType(Type* type) {
             external_cache_->append(mangled_name);
         }
     }
-
-    bool was_in_type_def = in_type_def_mode_;
-    in_type_def_mode_ = true;
-
-    const char* slice_struct_name = mangled_name;
-
-    writeString("#ifndef ZIG_SLICE_");
-    writeString(mangled_name);
-    writeString("\n#define ZIG_SLICE_");
-    writeString(mangled_name);
-    writeString("\n");
-
-    writeIndent();
-    writeString("typedef struct { ");
-    emitType(elem_type);
-    writeString("* ptr; usize len; } ");
-    writeString(slice_struct_name);
-    writeString(";\n");
-
-    /* Emit helper: static inline Slice_T __make_slice_T(T* ptr, usize len) */
-    writeIndent();
-    writeString("static RETR_UNUSED_FUNC ");
-    writeString(slice_struct_name);
-    writeString(" __make_slice_");
-    writeString(getMangledTypeName(elem_type));
-    writeString("(");
-    emitType(elem_type);
-    writeString("* ptr, usize len) {\n");
-    {
-        IndentScope func_indent(*this);
-        writeIndent();
-        writeString(slice_struct_name);
-        writeString(" s;\n");
-        writeIndent();
-        writeString("s.ptr = ptr;\n");
-        writeIndent();
-        writeString("s.len = len;\n");
-        writeIndent();
-        writeString("return s;\n");
-    }
-    writeIndent();
-    writeString("}\n#endif\n\n");
-
-    in_type_def_mode_ = was_in_type_def;
 }
 
 void C89Emitter::emitBufferedTypeDefinitions() {
@@ -2735,17 +3037,47 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
 void C89Emitter::emitTypeDefinition(Type* type) {
     if (!type) return;
 
+    static int depth = 0;
+    if (++depth > 100) {
+        error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Recursion depth exceeded in type emission");
+        plat_abort();
+    }
+
+    /* Emit definitions for anonymous payload structs/unions used as fields */
+    DynamicArray<StructField>* fields = NULL;
+    if (type->kind == TYPE_TAGGED_UNION) {
+        fields = type->as.tagged_union.payload_fields;
+    } else if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
+        fields = type->as.struct_details.fields;
+    }
+
+    if (fields) {
+        for (size_t i = 0; i < fields->length(); ++i) {
+            Type* field_type = (*fields)[i].type;
+            if (field_type && (field_type->kind == TYPE_STRUCT || field_type->kind == TYPE_UNION || field_type->kind == TYPE_TAGGED_UNION)) {
+                const char* name = (field_type->kind == TYPE_TAGGED_UNION) ? field_type->as.tagged_union.name : field_type->as.struct_details.name;
+                if (!name) {
+                    emitTypeDefinition(field_type);
+                }
+            }
+        }
+    }
+
     if (isTaggedUnion(type)) {
         emitTaggedUnionDefinition(type);
+        depth--;
         return;
     }
 
     if (type->kind == TYPE_ENUM) {
-        const char* enum_name = type->c_name ? type->c_name : getC89GlobalName(type->as.enum_details.name);
+        const char* enum_name = type->c_name ? type->c_name : unit_.getNameMangler().mangleType(type);
         
         /* Check cache to avoid duplicate emission */
         for (size_t i = 0; i < emitted_enums_.length(); ++i) {
-            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) return;
+            if (plat_strcmp(emitted_enums_[i], enum_name) == 0) {
+                depth--;
+                return;
+            }
         }
         emitted_enums_.append(enum_name);
 
@@ -2781,6 +3113,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeString(" ");
         writeString(enum_name);
         writeString(";\n\n");
+        depth--;
         return;
     }
 
@@ -2815,6 +3148,8 @@ void C89Emitter::emitTypeDefinition(Type* type) {
     } else if (type->kind == TYPE_OPTIONAL) {
         ensureOptionalType(type);
     }
+
+    depth--;
 }
 
 void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
@@ -2876,7 +3211,7 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
         if (node->resolved_type->c_name) {
             writeString(node->resolved_type->c_name);
         } else if (node->resolved_type->as.enum_details.name) {
-            writeString(getC89GlobalName(node->resolved_type->as.enum_details.name));
+            writeString(unit_.getNameMangler().mangleType(node->resolved_type));
         } else {
             writeString("/* anonymous enum */");
         }
@@ -2981,15 +3316,28 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         }
     }
 
-    char buf[256];
-    char* cur = buf;
-    size_t rem = sizeof(buf);
-
+    char final_buf[256];
     bool is_extern = false;
+    const char* location = NULL;
+    const char* kind = "variable";
+
     SymbolTable& table = unit_.getSymbolTable(module_name_);
     Symbol* sym = table.lookup(zig_name);
-    if (sym && (sym->flags & SYMBOL_FLAG_EXTERN)) {
-        is_extern = true;
+    bool is_local = false;
+    if (sym) {
+        if (sym->flags & SYMBOL_FLAG_EXTERN) is_extern = true;
+        if (sym->flags & SYMBOL_FLAG_LOCAL) is_local = true;
+        
+        Module* mod = unit_.getModule(sym->module_name);
+        if (mod) {
+            char rel_path[1024];
+            get_relative_path(mod->filename, ".", rel_path, sizeof(rel_path));
+            location = unit_.getStringInterner().intern(rel_path);
+        }
+
+        if (sym->kind == SYMBOL_FUNCTION) kind = "function";
+        else if (sym->kind == SYMBOL_TYPE) kind = "type";
+        else if (sym->kind == SYMBOL_MODULE) kind = "module";
     }
 
     /* Check if it's a known runtime intrinsic that should never be mangled */
@@ -2999,43 +3347,44 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         is_extern = true;
     }
 
-    if (is_extern) {
-        /* No mangling for externs, just copy directly.
-           NOTE: We don't even sanitize because the user is responsible for
-           providing a valid C name for extern symbols. */
-        safe_append(cur, rem, zig_name);
+    if (is_extern || is_local) {
+        plat_strcpy(final_buf, zig_name);
+        if (plat_strlen(final_buf) > 31) final_buf[31] = '\0';
+        ::sanitizeForC89(final_buf);
     } else {
-        if (module_name_ && plat_strcmp(module_name_, "main") != 0 &&
-            plat_strcmp(module_name_, "test") != 0 && plat_strcmp(zig_name, "main") != 0) {
-            safe_append(cur, rem, "z_");
-            safe_append(cur, rem, module_name_);
-            safe_append(cur, rem, "_");
-        } else if (isCKeyword(zig_name)) {
-            safe_append(cur, rem, "z_");
+        char k_char = 'V';
+        if (sym) {
+            if (sym->kind == SYMBOL_FUNCTION) k_char = 'F';
+            else if (sym->kind == SYMBOL_TYPE) k_char = 'S';
         }
-        safe_append(cur, rem, zig_name);
-
-        /* Sanitize (handles remaining invalid characters and starting digits) */
-        sanitizeForC89(buf);
-    }
-
-    /* Truncate to 31 characters for C89/MSVC 6.0 */
-    if (plat_strlen(buf) > 31) {
-        buf[31] = '\0';
+        
+        const char* module_path = location;
+        const char* mangled = unit_.getNameMangler().mangle(k_char, module_path, zig_name);
+        plat_strcpy(final_buf, mangled);
     }
 
     /* Ensure uniqueness within this translation unit */
-    char final_buf[256];
-    plat_strcpy(final_buf, buf);
+    char base_buf[256];
+    plat_strcpy(base_buf, final_buf);
     int suffix = 0;
     bool unique = false;
 
     while (!unique) {
         unique = true;
-        for (size_t i = 0; i < global_names_.length(); ++i) {
-            if (plat_strcmp(global_names_[i].c89_name, final_buf) == 0) {
+        // Check against used names in this file
+        for (size_t i = 0; i < used_names_.length(); ++i) {
+            if (plat_strcmp(used_names_[i], final_buf) == 0) {
                 unique = false;
                 break;
+            }
+        }
+        // Also check against already registered global names (unlikely to mismatch but good for safety)
+        if (unique) {
+            for (size_t i = 0; i < global_names_.length(); ++i) {
+                if (plat_strcmp(global_names_[i].c89_name, final_buf) == 0) {
+                    unique = false;
+                    break;
+                }
             }
         }
 
@@ -3043,31 +3392,34 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
             suffix++;
             char suffix_str[16];
             plat_i64_to_string(suffix, suffix_str, sizeof(suffix_str));
-            size_t suffix_len = plat_strlen(suffix_str);
-            size_t base_len = plat_strlen(buf);
+            size_t suffix_len = plat_strlen(suffix_str) + 1; // +1 for underscore
+            size_t base_len = plat_strlen(base_buf);
 
             if (base_len + suffix_len > 31) {
                 size_t truncate_at = 31 - suffix_len;
-                plat_strncpy(final_buf, buf, truncate_at);
+                plat_strncpy(final_buf, base_buf, truncate_at);
                 final_buf[truncate_at] = '\0';
+                plat_strcat(final_buf, "_");
                 plat_strcat(final_buf, suffix_str);
             } else {
-                plat_strcpy(final_buf, buf);
+                plat_strcpy(final_buf, base_buf);
+                plat_strcat(final_buf, "_");
                 plat_strcat(final_buf, suffix_str);
             }
         }
     }
 
-    size_t len = plat_strlen(final_buf);
-    char* owned_name = (char*)arena_.alloc(len + 1);
-    plat_memcpy(owned_name, final_buf, len + 1);
+    const char* interned = unit_.getStringInterner().intern(final_buf);
+    used_names_.append(interned);
 
     GlobalNameEntry entry;
     entry.zig_name = zig_name;
-    entry.c89_name = owned_name;
+    entry.c89_name = interned;
+    entry.location = location;
+    entry.kind = kind;
     global_names_.append(entry);
 
-    return owned_name;
+    return interned;
 }
 
 bool C89Emitter::requiresParentheses(const ASTNode* node) const {
@@ -3122,6 +3474,11 @@ bool C89Emitter::isSafeWidening(Type* src, Type* dest) const {
         if (dest->kind == TYPE_F32 || dest->kind == TYPE_F64) {
             return dest->size >= src->size;
         }
+    }
+
+    /* Integer to Float conversion */
+    if (src_is_int && (dest->kind == TYPE_F32 || dest->kind == TYPE_F64)) {
+        return true;
     }
 
     return false;
@@ -3220,6 +3577,19 @@ bool C89Emitter::captureExpression(const ASTNode* node, char* buf, size_t buf_si
     return success;
 }
 
+bool C89Emitter::isSimpleLValue(const ASTNode* node) const {
+    if (!node) return false;
+
+    /* Unwrap parentheses */
+    while (node && node->type == NODE_PAREN_EXPR) {
+        node = node->as.paren_expr.expr;
+    }
+
+    if (!node) return false;
+
+    return node->type == NODE_IDENTIFIER || node->type == NODE_VAR_DECL;
+}
+
 const char* C89Emitter::getMangledTypeName(Type* type) {
     if (!type) return "void";
 
@@ -3295,16 +3665,10 @@ const char* C89Emitter::getMangledTypeName(Type* type) {
         case TYPE_STRUCT:
         case TYPE_UNION:
         case TYPE_ENUM: {
-            const char* name = NULL;
-            if (type->kind == TYPE_ENUM) name = type->as.enum_details.name;
-            else name = type->as.struct_details.name;
-
             if (type->c_name) {
                 safe_append(cur, rem, type->c_name);
-            } else if (name) {
-                safe_append(cur, rem, getC89GlobalName(name));
             } else {
-                safe_append(cur, rem, "anon");
+                safe_append(cur, rem, unit_.getNameMangler().mangleType(type));
             }
             break;
         }
@@ -3360,61 +3724,151 @@ void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* ta
         return;
     }
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
+    const char* lval_ptr = NULL;
+
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("opt_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 0;\n");
+        }
     } else {
         if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            char payload_lval[512];
-            char* cur = payload_lval;
-            size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
-            safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
-            safe_append(cur, rem, ".value");
-            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            if (needs_temporary) {
+                char payload_lval[512];
+                plat_strcpy(payload_lval, lval_ptr);
+                plat_strcat(payload_lval, "->value");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            } else {
+                char lval_buf[512];
+                if (target_name) {
+                    plat_strcpy(lval_buf, target_name);
+                } else {
+                    captureExpression(target_node, lval_buf, sizeof(lval_buf));
+                }
+
+                char payload_lval[512];
+                char* cur = payload_lval;
+                size_t rem = sizeof(payload_lval);
+                safe_append(cur, rem, lval_buf);
+                safe_append(cur, rem, ".value");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.optional.payload);
+            }
         } else {
             emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
+
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 1;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 1;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 1;\n");
+        }
+    }
+
+    if (needs_temporary) {
+        dedent();
+        writeIndent();
+        writeString("}\n");
     }
 }
 
 void C89Emitter::emitOptionalWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
+    const char* lval_ptr = NULL;
+
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("opt_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_NULL) {
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->has_value = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 0;\n");
+        }
     } else {
         writeIndent();
-        writeString(lval_buf);
-        if (target_type->as.optional.payload->kind != TYPE_VOID) {
-            writeString(".value = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            if (target_type->as.optional.payload->kind != TYPE_VOID) {
+                writeString("->value = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            writeString(lval_ptr);
+            writeString("->has_value = 1;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            if (target_type->as.optional.payload->kind != TYPE_VOID) {
+                writeString(".value = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".has_value = 1;\n");
         }
+    }
+
+    if (needs_temporary) {
+        dedent();
         writeIndent();
-        writeString(lval_buf);
-        writeString(".has_value = 1;\n");
+        writeString("}\n");
     }
 }
 
@@ -3427,87 +3881,225 @@ void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* 
         return;
     }
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
+    const char* lval_ptr = NULL;
+
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("err_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".data.err = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->data.err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".data.err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            }
         } else {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".err = ");
-            emitExpression(rvalue);
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".err = ");
+                emitExpression(rvalue);
+                writeString(";\n");
+            }
         }
     } else {
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            char payload_lval[512];
-            char* cur = payload_lval;
-            size_t rem = sizeof(payload_lval);
-            if (lval_buf[0] == '*') safe_append(cur, rem, "(");
-            safe_append(cur, rem, lval_buf);
-            if (lval_buf[0] == '*') safe_append(cur, rem, ")");
-            safe_append(cur, rem, ".data.payload");
-            emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            if (needs_temporary) {
+                char payload_lval[512];
+                plat_strcpy(payload_lval, lval_ptr);
+                plat_strcat(payload_lval, "->data.payload");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            } else {
+                char lval_buf[512];
+                if (target_name) {
+                    plat_strcpy(lval_buf, target_name);
+                } else {
+                    captureExpression(target_node, lval_buf, sizeof(lval_buf));
+                }
+                char payload_lval[512];
+                char* cur = payload_lval;
+                size_t rem = sizeof(payload_lval);
+                safe_append(cur, rem, lval_buf);
+                safe_append(cur, rem, ".data.payload");
+                emitAssignmentWithLifting(payload_lval, NULL, rvalue, target_type->as.error_union.payload);
+            }
         } else {
             emitAssignmentWithLifting(NULL, NULL, rvalue, NULL);
         }
         writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 0;\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            writeString("->is_error = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".is_error = 0;\n");
+        }
+    }
+
+    if (needs_temporary) {
+        dedent();
+        writeIndent();
+        writeString("}\n");
     }
 }
 
 void C89Emitter::emitErrorUnionWrapping(const char* target_name, const ASTNode* target_node, Type* target_type, const char* source_expr, Type* source_type) {
     if (!target_type) target_type = target_node ? target_node->resolved_type : NULL;
 
-    char lval_buf[512];
-    if (target_name) {
-        plat_strcpy(lval_buf, target_name);
-    } else {
-        captureExpression(target_node, lval_buf, sizeof(lval_buf));
+    bool needs_temporary = target_node && !isSimpleLValue(target_node);
+    const char* lval_ptr = NULL;
+
+    if (needs_temporary) {
+        lval_ptr = var_alloc_.generate("err_lval_tmp");
+        writeIndent();
+        writeString("{\n");
+        indent();
+        writeIndent();
+        Type* ptr_type = createPointerType(arena_, target_type, false, false, &unit_.getTypeInterner());
+        emitType(ptr_type, lval_ptr);
+        writeString(" = &(");
+        emitExpression(target_node);
+        writeString(");\n");
     }
 
     if (source_type->kind == TYPE_ERROR_SET) {
         writeIndent();
         if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".data.err = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->data.err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".data.err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
         } else {
-            writeString(lval_buf);
-            writeString(".is_error = 1; ");
-            writeString(lval_buf);
-            writeString(".err = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+            if (needs_temporary) {
+                writeString(lval_ptr);
+                writeString("->is_error = 1; ");
+                writeString(lval_ptr);
+                writeString("->err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            } else {
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".is_error = 1; ");
+                if (target_name) {
+                    writeString(target_name);
+                } else {
+                    emitExpression(target_node);
+                }
+                writeString(".err = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
         }
     } else {
         writeIndent();
-        writeString(lval_buf);
-        if (target_type->as.error_union.payload->kind != TYPE_VOID) {
-            writeString(".data.payload = ");
-            if (source_expr) writeString(source_expr); else writeString("0");
-            writeString(";\n");
+        if (needs_temporary) {
+            writeString(lval_ptr);
+            if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+                writeString("->data.payload = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            writeString(lval_ptr);
+            writeString("->is_error = 0;\n");
+        } else {
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            if (target_type->as.error_union.payload->kind != TYPE_VOID) {
+                writeString(".data.payload = ");
+                if (source_expr) writeString(source_expr); else writeString("0");
+                writeString(";\n");
+            }
+            writeIndent();
+            if (target_name) {
+                writeString(target_name);
+            } else {
+                emitExpression(target_node);
+            }
+            writeString(".is_error = 0;\n");
         }
+    }
+
+    if (needs_temporary) {
+        dedent();
         writeIndent();
-        writeString(lval_buf);
-        writeString(".is_error = 0;\n");
+        writeString("}\n");
     }
 }
 
@@ -3515,11 +4107,32 @@ void C89Emitter::emitDefersForScopeExit(int target_label_id) {
     for (int i = (int)defer_stack_.length() - 1; i >= 0; --i) {
         DeferScope* scope = defer_stack_[i];
         if (!scope) continue;
+
+        /* Regular defers */
         for (int j = (int)scope->defers.length() - 1; j >= 0; --j) {
             if (scope->defers[j] && scope->defers[j]->statement) {
                 emitStatement(scope->defers[j]->statement);
             }
         }
+
+        /* Errdefers */
+        if (scope->err_defers.length() > 0 && current_err_flag_) {
+            writeIndent();
+            writeString("if (");
+            writeString(current_err_flag_);
+            writeString(") {\n");
+            {
+                IndentScope errdefer_indent(*this);
+                for (int j = (int)scope->err_defers.length() - 1; j >= 0; --j) {
+                    if (scope->err_defers[j] && scope->err_defers[j]->statement) {
+                        emitStatement(scope->err_defers[j]->statement);
+                    }
+                }
+            }
+            writeIndent();
+            writeString("}\n");
+        }
+
         if (target_label_id != -1 && scope->label_id == target_label_id) {
             break;
         }
@@ -3591,7 +4204,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
     bool has_defers = false;
     for (size_t i = 0; i < defer_stack_.length(); ++i) {
-        if (defer_stack_[i]->defers.length() > 0) {
+        if (defer_stack_[i]->defers.length() > 0 || defer_stack_[i]->err_defers.length() > 0) {
             has_defers = true;
             break;
         }
@@ -3616,6 +4229,13 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
 
                 if (node->expression) {
                     emitAssignmentWithLifting("__return_val", NULL, node->expression, current_fn_ret_type_);
+                }
+
+                if (current_err_flag_) {
+                    writeIndent();
+                    writeString("if (__return_val.is_error) ");
+                    writeString(current_err_flag_);
+                    writeString(" = 1;\n");
                 }
 
                 emitDefersForScopeExit(-1);

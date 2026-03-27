@@ -681,10 +681,20 @@ void C89FeatureValidator::visitFnDecl(ASTNode* node) {
 void C89FeatureValidator::visitBlockStmt(ASTNode* node) {
     unit.getExtractionAnalysisCatalogue().enterBlock();
 
+    int defer_count = 0;
     if (node->as.block_stmt.statements) {
         for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
-            visit((*node->as.block_stmt.statements)[i]);
+            ASTNode* stmt = (*node->as.block_stmt.statements)[i];
+            if (stmt->type == NODE_DEFER_STMT || stmt->type == NODE_ERRDEFER_STMT) {
+                defer_count++;
+            }
+            visit(stmt);
         }
+    }
+
+    if (defer_count > 32) {
+        unit.getErrorHandler().report(ERR_TOO_MANY_DEFERS, node->loc, ErrorHandler::getMessage(ERR_TOO_MANY_DEFERS), "Max 32 defers per scope");
+        error_found_ = true;
     }
 
     unit.getExtractionAnalysisCatalogue().exitBlock();

@@ -159,7 +159,7 @@ const Keyword keywords[] = {
     {"threadlocal", 11, TOKEN_THREADLOCAL},
     {"true", 4, TOKEN_TRUE},
     {"try", 3, TOKEN_TRY},
-    {"type", 4, TOKEN_TYPE},
+    {"type", 4, TOKEN_TYPE_KEYWORD},
     {"undefined", 9, TOKEN_UNDEFINED},
     {"union", 5, TOKEN_UNION},
     {"unreachable", 11, TOKEN_UNREACHABLE},
@@ -712,8 +712,12 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_AT_ENUM_TO_INT;
             } else if (len == 8 && plat_strncmp(start, "ptrToInt", 8) == 0) {
                 token.type = TOKEN_AT_PTR_TO_INT;
+            } else if (len == 9 && plat_strncmp(start, "intToPtr", 9) == 0) {
+                token.type = TOKEN_AT_INT_TO_PTR;
             } else if (len == 9 && plat_strncmp(start, "intToEnum", 9) == 0) {
                 token.type = TOKEN_AT_INT_TO_ENUM;
+            } else if (len == 10 && plat_strncmp(start, "intToFloat", 10) == 0) {
+                token.type = TOKEN_AT_INT_TO_FLOAT;
             } else {
                 token.type = TOKEN_ERROR;
             }

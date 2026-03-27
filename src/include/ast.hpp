@@ -63,6 +63,7 @@ enum NodeType {
     NODE_PTR_CAST,        ///< A pointer cast expression (@ptrCast).
     NODE_INT_CAST,        ///< An integer cast expression (@intCast).
     NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
+    NODE_INT_TO_FLOAT,    ///< An integer-to-float cast expression (@intToFloat).
     NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
@@ -432,6 +433,8 @@ struct ASTWhileStmtNode {
     ASTNode* iter_expr;
     const char* label;
     int label_id;
+    const char* capture_name;
+    Symbol* capture_sym;
 };
 
 /**

@@ -71,6 +71,7 @@ public:
     Type* visitPtrCast(ASTPtrCastNode* node);
     Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
+    Type* visitIntToFloat(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node);
     Type* visitTryExpr(ASTNode* node);
     Type* visitCatchExpr(ASTNode* node);
@@ -79,6 +80,8 @@ public:
     Type* visitComptimeBlock(ASTComptimeBlockNode* node);
     Type* visitImportStmt(ASTImportStmtNode* node);
     bool areTypesCompatible(Type* expected, Type* actual);
+    bool areTypesEqual(Type* a, Type* b);
+    bool signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return, DynamicArray<Type*>* b_params, Type* b_return);
     void coerceNode(ASTNode** node_slot, Type* target_type);
 
     Type* reportAndReturnUndefined(SourceLocation loc, ErrorCode code, const char* msg);
@@ -120,13 +123,18 @@ private:
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
     void coerceStringLiteralToSlice(ASTNode** expr_ptr, Type* target_type, SourceLocation loc);
 
+    Type* resolveNamedType(struct Module* defining_mod, const char* name, Symbol* sym);
+    void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
     Type* resolveTypeConstant(Symbol* sym);
+    Type* unwrapType(ASTNode* node);
     Type* getTagType(Type* tu);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
 public:
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
+    void finalizePlaceholder(Type* placeholder, Type* resolved);
+    Type* resolveNamedPlaceholder(Type* placeholder);
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
@@ -179,6 +187,7 @@ private:
 
     DynamicArray<Type*> expected_type_stack_;
     DynamicArray<Type*> resolving_types_stack_;
+    DynamicArray<ASTNode*> deferred_decls_;
     void pushExpectedType(Type* type) { expected_type_stack_.append(type); }
     Type* peekExpectedType() {
         if (expected_type_stack_.length() == 0) return NULL;

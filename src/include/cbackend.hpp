@@ -47,12 +47,6 @@ private:
      */
     bool generateHeaderFile(Module* module, const char* output_dir, DynamicArray<const char*>* public_slices);
 
-    /**
-     * @brief Generates a master main.c file that includes all modules.
-     * @param output_dir The output directory.
-     * @return True if successful.
-     */
-    bool generateMasterMain(const char* output_dir);
 
     /**
      * @brief Generates a build.bat file for Windows.
@@ -67,6 +61,20 @@ private:
      * @return True if successful.
      */
     bool generateMakefile(const char* output_dir);
+
+    /**
+     * @brief Generates a common header for special types (slices).
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateSpecialTypesHeader(const char* output_dir);
+
+    /**
+     * @brief Copies zig_runtime.h and zig_runtime.c to the output directory.
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool copyRuntimeFiles(const char* output_dir);
 
     /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.
@@ -86,7 +94,8 @@ private:
     };
 
     CompilationUnit& unit_;
-    const char* entry_filename_;
+    const char* executable_name_;
+    DynamicArray<const char*> generated_sources_;
 };
 
 #endif // CBACKEND_HPP

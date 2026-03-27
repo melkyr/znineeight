@@ -32,7 +32,7 @@ TEST_FUNC(SwitchProng_ReturnNoSemicolon) {
         "    }\n"
         "}";
     // Lifter will lift return into a block
-    return run_switch_prong_test(source, "foo", "int foo(int x) { switch (x) { case 1: { return 1; } break; default: { return 0; } break; } }");
+    return run_switch_prong_test(source, "foo", "int zF_0_foo(int x) { switch (x) { case 1: { return 1; } break; default: { return 0; } break; } }");
 }
 
 TEST_FUNC(SwitchProng_BlockMandatoryComma) {
@@ -45,7 +45,7 @@ TEST_FUNC(SwitchProng_BlockMandatoryComma) {
         "        else => return 0,\n"
         "    }\n"
         "}";
-    return run_switch_prong_test(source, "foo", "int foo(int x) { switch (x) { case 1: { return 1; } break; default: { return 0; } break; } }");
+    return run_switch_prong_test(source, "foo", "int zF_0_foo(int x) { switch (x) { case 1: { return 1; } break; default: { return 0; } break; } }");
 }
 
 TEST_FUNC(SwitchProng_ExprRequiredCommaFail) {
@@ -69,7 +69,7 @@ TEST_FUNC(SwitchProng_LastProngOptionalComma) {
         "}";
     // We match the actual emission pattern of our current lifter/emitter.
     // The lifter wraps prong bodies in blocks and uses __tmp_switch_N_M style names.
-    return run_switch_prong_test(source, "foo", "int foo(int x) { int __tmp_switch_5_1; switch (x) { case 1: { __tmp_switch_5_1 = 1; } break; default: { __tmp_switch_5_1 = 0; } break; } return __tmp_switch_5_1; }");
+    return run_switch_prong_test(source, "foo", "int zF_0_foo(int x) { int __tmp_switch_5_1; switch (x) { case 1: { __tmp_switch_5_1 = 1; } break; default: { __tmp_switch_5_1 = 0; } break; } return __tmp_switch_5_1; }");
 }
 
 TEST_FUNC(SwitchProng_DeclRequiresBlockFail) {

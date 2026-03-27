@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # MSVC 6.0 Compatibility Guide
 
-This document summarizes the specific constraints and strategies used in the RetroZig compiler to ensure compatibility with Microsoft Visual C++ 6.0 and the C++98 standard.
+This document summarizes the specific constraints and strategies used in the Z98 compiler to ensure compatibility with Microsoft Visual C++ 6.0 and the C++98 standard.
 
 ## 1. Core Language & STL
 

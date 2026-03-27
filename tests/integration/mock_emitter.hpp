@@ -11,6 +11,7 @@
 #include "c89_type_mapping.hpp"
 #include "call_site_lookup_table.hpp"
 #include "ast_utils.hpp"
+#include "name_mangler.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -27,6 +28,7 @@ class MockC89Emitter {
 public:
     const CallSiteLookupTable* call_table_;
     SymbolTable* symbol_table_;
+    NameMangler* mangler_;
 
     struct MockDeferScope {
         int label_id;
@@ -38,8 +40,8 @@ public:
     int catch_expr_counter_;
 
 public:
-    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
-        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL),
+    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL, NameMangler* mangler = NULL)
+        : call_table_(call_table), symbol_table_(symbol_table), mangler_(mangler), current_fn_ret_type_(NULL),
           try_expr_counter_(0), catch_expr_counter_(0) {}
 
     /**
@@ -56,11 +58,13 @@ public:
         Type* type = symbol->symbol_type;
         if (type && type->kind == TYPE_ARRAY) {
             ss << getC89TypeName(type->as.array.element_type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
             ss << "[" << (unsigned long)type->as.array.size << "]";
         } else {
             ss << getC89TypeName(type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
         }
 
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
@@ -399,25 +403,42 @@ public:
         if (!node) return "/* INVALID WHILE */";
         std::stringstream ss;
 
-        // Note: Real emitter now ALWAYS uses labeled goto pattern for all loops
-        // to ensure break/continue works correctly in C switch statements.
-        // Integration tests have been updated to expect this.
-
-        ss << "__loop_" << node->label_id << "_start: ; ";
-        ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
-
-        if (node->body && node->body->type == NODE_BLOCK_STMT) {
-            ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+        if (node->capture_name) {
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "while (1) { ";
+            ss << getC89TypeName(node->condition->resolved_type) << " opt_tmp = " << emitExpression(node->condition) << "; ";
+            ss << "if (!opt_tmp.has_value) goto __loop_" << node->label_id << "_end; ";
+            if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+                ss << getC89TypeName(node->capture_sym->symbol_type) << " " << node->capture_name << " = opt_tmp.value; ";
+            }
+            if (node->body && node->body->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+            } else {
+                ss << emitExpression(node->body);
+            }
+            ss << " __loop_" << node->label_id << "_continue: ; ";
+            if (node->iter_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << "goto __loop_" << node->label_id << "_start; } ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         } else {
-            ss << emitExpression(node->body);
-        }
+            ss << "__loop_" << node->label_id << "_start: ; ";
+            ss << "if (!(" << (node->condition ? emitExpression(node->condition) : "1") << ")) goto __loop_" << node->label_id << "_end; ";
 
-        ss << " __loop_" << node->label_id << "_continue: ; ";
-        if (node->iter_expr) {
-            ss << emitExpression(node->iter_expr) << "; ";
+            if (node->body && node->body->type == NODE_BLOCK_STMT) {
+                ss << emitBlockStatement(&node->body->as.block_stmt, node->label_id);
+            } else {
+                ss << emitExpression(node->body);
+            }
+
+            ss << " __loop_" << node->label_id << "_continue: ; ";
+            if (node->iter_expr) {
+                ss << emitExpression(node->iter_expr) << "; ";
+            }
+            ss << "goto __loop_" << node->label_id << "_start; ";
+            ss << "__loop_" << node->label_id << "_end: ;";
         }
-        ss << "goto __loop_" << node->label_id << "_start; ";
-        ss << "__loop_" << node->label_id << "_end: ;";
 
         return ss.str();
     }
@@ -545,7 +566,8 @@ public:
         std::stringstream ss;
         Type* fn_type = symbol->symbol_type;
         ss << getC89TypeName(fn_type->as.function.return_type) << " ";
-        ss << (symbol->mangled_name ? symbol->mangled_name : fn->name);
+        if (symbol->mangled_name) ss << symbol->mangled_name;
+        else ss << fn->name;
         ss << "(";
 
         DynamicArray<Type*>* params = fn_type->as.function.params;
@@ -842,6 +864,7 @@ private:
             case TYPE_POINTER: return "Ptr_" + getMangledTypeName(type->as.pointer.base);
             case TYPE_SLICE: return "Slice_" + getMangledTypeName(type->as.slice.element_type);
             case TYPE_ERROR_UNION: return "ErrorUnion_" + getMangledTypeName(type->as.error_union.payload);
+            case TYPE_OPTIONAL: return "Optional_" + getMangledTypeName(type->as.optional.payload);
             case TYPE_ERROR_SET: return "ErrorSet";
             case TYPE_ARRAY: {
                 std::stringstream ss;
@@ -855,7 +878,7 @@ private:
     std::string getC89TypeName(Type* type) {
         if (!type) return "/* unknown type */";
 
-        if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION) {
+        if (type->kind == TYPE_SLICE || type->kind == TYPE_ERROR_UNION || type->kind == TYPE_OPTIONAL) {
             return "struct " + getMangledTypeName(type);
         }
 
@@ -868,6 +891,14 @@ private:
         for (size_t i = 0; i < map_size; ++i) {
             if (type->kind == c89_type_map[i].zig_type_kind) {
                 return c89_type_map[i].c89_type_name;
+            }
+        }
+
+        if (mangler_) {
+            if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
+                const char* mangled = mangler_->mangleType(type);
+                std::string prefix = (type->kind == TYPE_ENUM) ? "enum " : (type->kind == TYPE_UNION ? "union " : "struct ");
+                return prefix + std::string(mangled);
             }
         }
 
@@ -913,7 +944,9 @@ private:
     std::string emitIntegerLiteral(const ASTIntegerLiteralNode* node, Type* type) {
         if (node->original_name && type && type->kind == TYPE_ENUM) {
             std::stringstream ss;
-            if (type->as.enum_details.name) {
+            if (mangler_) {
+                ss << mangler_->mangleType(type) << "_" << node->original_name;
+            } else if (type->as.enum_details.name) {
                 ss << type->as.enum_details.name << "_" << node->original_name;
             } else {
                 ss << "/* enum */_" << node->original_name;

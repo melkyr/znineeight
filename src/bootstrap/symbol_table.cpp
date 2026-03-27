@@ -100,6 +100,11 @@ Scope::Scope(ArenaAllocator& arena, size_t initial_bucket_count)
 }
 
 void Scope::insert(Symbol& symbol) {
+#ifdef DEBUG_VISIBILITY
+    plat_printf_debug("DEBUG_VISIBILITY: Inserting symbol '%s' (module: %s, pub: %d, kind: %d)\n",
+                     symbol.name, symbol.module_name ? symbol.module_name : "NULL",
+                     (symbol.flags & SYMBOL_FLAG_PUB) != 0, (int)symbol.kind);
+#endif
     // Resize if load factor exceeds 0.75
     if (symbol_count + 1 > bucket_count * 0.75) {
         resize();
@@ -133,13 +138,17 @@ void Scope::insert(Symbol& symbol) {
 }
 
 Symbol* Scope::find(const char* name, const char* module_name) {
+#ifdef DEBUG_VISIBILITY
+    // Too noisy for general scope find, maybe skip or keep very brief
+#endif
     u32 hash = hash_string(name);
     size_t index = hash % bucket_count;
 
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
         if (plat_strcmp(entry->symbol.name, name) == 0) {
             if (module_name == NULL || entry->symbol.module_name == NULL ||
-                plat_strcmp(entry->symbol.module_name, module_name) == 0) {
+                plat_strcmp(entry->symbol.module_name, module_name) == 0 ||
+                plat_strcmp(entry->symbol.module_name, "builtin") == 0) {
                 return &entry->symbol;
             }
         }
@@ -227,9 +236,19 @@ Symbol* SymbolTable::lookup(const char* name) {
         const char* mod = (i == 0) ? current_module_ : NULL;
         Symbol* symbol = scopes[i]->find(name, mod);
         if (symbol) {
+#ifdef DEBUG_VISIBILITY
+            plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' level %d -> FOUND (module_name: %s, pub: %d)\n",
+                             name, current_module_ ? current_module_ : "NULL", i,
+                             symbol->module_name ? symbol->module_name : "NULL",
+                             (symbol->flags & SYMBOL_FLAG_PUB) != 0);
+#endif
             return symbol;
         }
     }
+#ifdef DEBUG_VISIBILITY
+    plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' -> NOT FOUND\n",
+                     name, current_module_ ? current_module_ : "NULL");
+#endif
     return NULL; // Not found in any scope.
 }
 
@@ -243,10 +262,15 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
 
 Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbol_name) {
     // Look directly into the global scope with the specified module name
+    Symbol* result = NULL;
     if (scopes.length() > 0) {
-        return scopes[0]->find(symbol_name, module_name);
+        result = scopes[0]->find(symbol_name, module_name);
     }
-    return NULL;
+#ifdef DEBUG_VISIBILITY
+    plat_printf_debug("DEBUG_VISIBILITY: lookupWithModule(module: %s, symbol: %s) -> %p\n",
+                     module_name, symbol_name, result);
+#endif
+    return result;
 }
 
 Symbol* SymbolTable::findInAnyScope(const char* name) {

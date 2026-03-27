@@ -5,7 +5,7 @@
 
 /**
  * @struct TypeMapping
- * @brief Maps a RetroZig TypeKind to its C89 string equivalent.
+ * @brief Maps a Z98 TypeKind to its C89 string equivalent.
  */
 struct TypeMapping {
     TypeKind zig_type_kind;
@@ -14,7 +14,7 @@ struct TypeMapping {
 
 /**
  * @var c89_type_map
- * @brief A static table mapping RetroZig's primitive types to their C89 equivalents.
+ * @brief A static table mapping Z98's primitive types to their C89 equivalents.
  */
 static const TypeMapping c89_type_map[] = {
     { TYPE_VOID, "void" },

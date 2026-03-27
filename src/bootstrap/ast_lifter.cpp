@@ -17,10 +17,12 @@ ControlFlowLifter::StmtGuard::~StmtGuard() {
 
 ControlFlowLifter::BlockGuard::BlockGuard(ControlFlowLifter& l, ASTBlockStmtNode* block) : lifter_(l) {
     lifter_.block_stack_.append(block);
+    lifter_.block_decl_insert_idx_stack_.append(0);
 }
 
 ControlFlowLifter::BlockGuard::~BlockGuard() {
     lifter_.block_stack_.pop_back();
+    lifter_.block_decl_insert_idx_stack_.pop_back();
 }
 
 ControlFlowLifter::ParentGuard::ParentGuard(ControlFlowLifter& l, ASTNode* node) : lifter_(l) {
@@ -65,7 +67,9 @@ ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* inte
       current_fn_return_type_(NULL),
       registered_temps_(*arena),
       processed_calls_(*arena),
-      stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena), fn_stack_(*arena) {}
+      stmt_stack_(*arena), block_stack_(*arena), 
+      block_decl_insert_idx_stack_(*arena),
+      parent_stack_(*arena), fn_stack_(*arena) {}
 
 void ControlFlowLifter::lift(CompilationUnit* unit) {
     unit_ = unit;
@@ -126,6 +130,10 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
         ASTWhileStmtNode* while_stmt = node->as.while_stmt;
         if (while_stmt->body && while_stmt->body->type != NODE_BLOCK_STMT) {
             while_stmt->body = wrapInBlock(while_stmt->body);
+        }
+
+        if (while_stmt->capture_name && while_stmt->capture_sym) {
+            // Scope for while capture is handled in transformNode recursion for the body
         }
     } else if (node->type == NODE_FOR_STMT) {
         ASTForStmtNode* for_stmt = node->as.for_stmt;
@@ -260,6 +268,13 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
                 lowerExportPrologue(node->as.fn_decl);
             }
             Inner::process(this, node);
+        } else if (node->type == NODE_WHILE_STMT && node->as.while_stmt->capture_name) {
+            // Special handling for while capture scope
+            transformNode(&node->as.while_stmt->condition, node);
+            if (node->as.while_stmt->iter_expr) transformNode(&node->as.while_stmt->iter_expr, node);
+
+            ScopeGuard scguard(*this);
+            transformNode(&node->as.while_stmt->body, node);
         } else {
             Inner::process(this, node);
             // Handle extern calls (ABI unwrapping)

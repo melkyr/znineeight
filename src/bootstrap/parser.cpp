@@ -322,12 +322,16 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseNumericCastExpr(NODE_INT_CAST);
         case TOKEN_AT_FLOATCAST:
             return parseNumericCastExpr(NODE_FLOAT_CAST);
+        case TOKEN_AT_INT_TO_FLOAT:
+            return parseNumericCastExpr(NODE_INT_TO_FLOAT);
         case TOKEN_AT_OFFSETOF:
             return parseOffsetOfExpr();
         case TOKEN_AT_ENUM_TO_INT:
             return parseBuiltinCall("@enumToInt", advance().location);
         case TOKEN_AT_PTR_TO_INT:
             return parseBuiltinCall("@ptrToInt", advance().location);
+        case TOKEN_AT_INT_TO_PTR:
+            return parseBuiltinCall("@intToPtr", advance().location);
         case TOKEN_AT_INT_TO_ENUM:
             return parseBuiltinCall("@intToEnum", advance().location);
         case TOKEN_LBRACKET:
@@ -1527,7 +1531,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
         .withType(symbol_type)
         .atLocation(name_token.location)
         .definedBy(node->as.var_decl) // Link the symbol to its declaration details
-        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0) // Semantic flags will be set by TypeChecker
+        .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0)) // Semantic flags will be set by TypeChecker
         .build();
 
     symbol_table_->insert(symbol);
@@ -1629,7 +1633,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
         .withType(NULL) // TODO: Create a function type object
         .atLocation(name_token.location)
         .definedBy(fn_decl)
-        .withFlags(is_extern ? SYMBOL_FLAG_EXTERN : 0)
+        .withFlags((is_extern ? SYMBOL_FLAG_EXTERN : 0) | (is_pub ? SYMBOL_FLAG_PUB : 0))
         .build();
 
     symbol_table_->insert(fn_symbol);
@@ -1678,7 +1682,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
                 param_loc = param_name_token.location;
                 expect(TOKEN_COLON, "Expected ':' after parameter name");
 
-                if (peek().type == TOKEN_TYPE) {
+                if (peek().type == TOKEN_TYPE_KEYWORD) {
                     Token type_token = advance();
                     is_type_param = true;
                     if (!is_generic) {
@@ -2104,6 +2108,13 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
     ASTNode* condition = parseExpression();
     expect(TOKEN_RPAREN, "Expected ')' after while condition");
 
+    const char* capture_name = NULL;
+    if (match(TOKEN_PIPE)) {
+        Token id_token = expect(TOKEN_IDENTIFIER, "Expected capture identifier");
+        capture_name = id_token.value.identifier;
+        expect(TOKEN_PIPE, "Expected '|' after capture");
+    }
+
     ASTNode* iter_expr = NULL;
     if (match(TOKEN_COLON)) {
         expect(TOKEN_LPAREN, "Expected '(' after ':' in while loop");
@@ -2120,6 +2131,8 @@ ASTNode* Parser::parseWhileStatement(const char* label) {
     while_stmt_node->iter_expr = iter_expr;
     while_stmt_node->label = label;
     while_stmt_node->label_id = -1;
+    while_stmt_node->capture_name = capture_name;
+    while_stmt_node->capture_sym = NULL;
 
     ASTNode* node = createNodeAt(NODE_WHILE_STMT, while_token.location);
     node->as.while_stmt = while_stmt_node;
@@ -2182,13 +2195,13 @@ ASTNode* Parser::parseType() {
     } else if (peek().type == TOKEN_UNION || peek().type == TOKEN_STRUCT || peek().type == TOKEN_ENUM) {
         left = parsePrimaryExpr();
     } else if (peek().type == TOKEN_IDENTIFIER || peek().type == TOKEN_NORETURN ||
-               peek().type == TOKEN_TYPE || peek().type == TOKEN_ANYTYPE ||
+               peek().type == TOKEN_TYPE_KEYWORD || peek().type == TOKEN_ANYTYPE ||
                peek().type == TOKEN_C_CHAR) {
         Token type_name_token = advance();
         left = createNodeAt(NODE_TYPE_NAME, type_name_token.location);
         if (type_name_token.type == TOKEN_NORETURN) {
             left->as.type_name.name = "noreturn";
-        } else if (type_name_token.type == TOKEN_TYPE) {
+        } else if (type_name_token.type == TOKEN_TYPE_KEYWORD) {
             left->as.type_name.name = "type";
         } else if (type_name_token.type == TOKEN_ANYTYPE) {
             left->as.type_name.name = "anytype";
@@ -2431,6 +2444,10 @@ ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
         expect(TOKEN_COMMA, "Expected ',' after first argument of built-in");
         call_data->args->append(parseExpression());
     } else if (plat_strcmp(name, "@enumToInt") == 0 || plat_strcmp(name, "@ptrToInt") == 0) {
+        call_data->args->append(parseExpression());
+    } else if (plat_strcmp(name, "@intToPtr") == 0) {
+        call_data->args->append(parseType());
+        expect(TOKEN_COMMA, "Expected ',' after first argument of @intToPtr");
         call_data->args->append(parseExpression());
     }
 

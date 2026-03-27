@@ -1,123 +1,109 @@
 #include "name_mangler.hpp"
+#include "compilation_unit.hpp"
 #include "type_system.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
 
-NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner)
-    : arena_(arena), interner_(interner) {}
+NameMangler::NameMangler(ArenaAllocator& arena, StringInterner& interner, CompilationUnit& unit)
+    : arena_(arena), interner_(interner), unit_(unit) {}
+
+const char* NameMangler::mangle(char kind, const char* module_path, const char* local_name) {
+    if (isInternalCompilerIdentifier(local_name)) {
+        if (!local_name) return interner_.intern("anon");
+        char buf[256];
+        plat_strcpy(buf, local_name);
+        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        return interner_.intern(buf);
+    }
+
+    if (unit_.isTestMode()) {
+        return unit_.getTestName(kind, module_path, local_name);
+    }
+
+    if (!local_name) local_name = "anon";
+
+    // Hashed mode
+    u32 hash = 0;
+    if (module_path) {
+        char rel_path[1024];
+        get_relative_path(module_path, ".", rel_path, sizeof(rel_path));
+        hash = fnv1a_32(rel_path);
+    } else {
+        hash = fnv1a_32("global");
+    }
+
+    char hash_str[8];
+    char hex_chars[] = "0123456789abcdef";
+    for (int i = 5; i >= 0; --i) {
+        hash_str[i] = hex_chars[hash & 0xF];
+        hash >>= 4;
+    }
+    hash_str[6] = '\0';
+
+    char hashed_prefix[32];
+    hashed_prefix[0] = 'z';
+    hashed_prefix[1] = kind;
+    hashed_prefix[2] = '_';
+    hashed_prefix[3] = '\0';
+    plat_strcat(hashed_prefix, hash_str);
+    plat_strcat(hashed_prefix, "_");
+
+    size_t hp_len = plat_strlen(hashed_prefix);
+    size_t available = 31 - hp_len;
+    size_t local_len = plat_strlen(local_name);
+
+    char final_name[256];
+    plat_strcpy(final_name, hashed_prefix);
+    if (local_len > available) {
+        plat_strcat(final_name, local_name + (local_len - available));
+    } else {
+        plat_strcat(final_name, local_name);
+    }
+
+    ::sanitizeForC89(final_name);
+    return interner_.intern(final_name);
+}
 
 const char* NameMangler::mangleFunction(const char* name,
                                        DynamicArray<GenericParamInfo>* params,
                                        int param_count,
                                        const char* module) {
-    char buffer[256];
-    char* ptr = buffer;
-    size_t remaining = sizeof(buffer);
-
     if (isInternalCompilerIdentifier(name)) {
+        char buffer[256];
         plat_strcpy(buffer, name);
         if (plat_strlen(buffer) > 31) buffer[31] = '\0';
         return interner_.intern(buffer);
     }
 
-    // Handle module prefix (skip for main and test modules)
-    if (module && plat_strcmp(module, "main") != 0 &&
-        plat_strcmp(module, "test") != 0 && plat_strcmp(name, "main") != 0) {
+    if (plat_strcmp(name, "main") == 0) return interner_.intern("main");
+    if (plat_strcmp(name, "__bootstrap_print") == 0) return interner_.intern("__bootstrap_print");
+    if (plat_strcmp(name, "__bootstrap_print_int") == 0) return interner_.intern("__bootstrap_print_int");
+    if (plat_strcmp(name, "__bootstrap_panic") == 0) return interner_.intern("__bootstrap_panic");
 
-        safe_append(ptr, remaining, "z_");
-        safe_append(ptr, remaining, module);
-        safe_append(ptr, remaining, "_");
-    } else if (isCKeyword(name)) {
-        safe_append(ptr, remaining, "z_");
-    }
+    char local_name[512];
+    plat_strcpy(local_name, name);
 
-    // Start with function name
-    size_t name_len = plat_strlen(name);
-    if (name_len >= remaining) name_len = remaining - 1;
-    plat_strncpy(ptr, (char*)name, name_len);
-    ptr[name_len] = '\0';
-    ptr += name_len;
-    remaining -= name_len;
-
-    // Append generic parameters
     if (param_count > 0) {
-        if (remaining > 2) {
-            plat_strncpy(ptr, "__", 2);
-            ptr[2] = '\0';
-            ptr += 2;
-            remaining -= 2;
-        }
-
+        plat_strcat(local_name, "__");
         for (int i = 0; i < param_count; i++) {
-            if (i > 0) {
-                if (remaining > 1) {
-                    *ptr++ = '_';
-                    *ptr = '\0';
-                    remaining--;
-                }
-            }
+            if (i > 0) plat_strcat(local_name, "_");
             const char* type_str = "";
             if ((*params)[i].kind == GENERIC_PARAM_TYPE) {
                 type_str = mangleType((*params)[i].type_value);
             } else if ((*params)[i].kind == GENERIC_PARAM_ANYTYPE) {
                 type_str = "any";
             } else {
-                // TODO: Handle comptime values
                 type_str = "val";
             }
-
-            size_t t_len = plat_strlen(type_str);
-            if (t_len >= remaining) t_len = remaining - 1;
-            plat_strncpy(ptr, (char*)type_str, t_len);
-            ptr[t_len] = '\0';
-            ptr += t_len;
-            remaining -= t_len;
+            plat_strcat(local_name, type_str);
         }
     }
 
-    ::sanitizeForC89(buffer);
-
-    // Limit to 31 characters for MSVC 6.0 compatibility
-    if (plat_strlen(buffer) > 31) {
-        buffer[31] = '\0';
-    }
-
-    return interner_.intern(buffer);
+    return mangle('F', module, local_name);
 }
 
 const char* NameMangler::mangleTypeName(const char* name, const char* module) {
-    char buffer[256];
-    char* ptr = buffer;
-    size_t remaining = sizeof(buffer);
-
-    if (isInternalCompilerIdentifier(name)) {
-        plat_strcpy(buffer, name);
-        if (plat_strlen(buffer) > 31) buffer[31] = '\0';
-        return interner_.intern(buffer);
-    }
-
-    // Handle module prefix (skip for main and test modules)
-    if (module && plat_strcmp(module, "main") != 0 &&
-        plat_strcmp(module, "test") != 0) {
-
-        safe_append(ptr, remaining, "z_");
-        safe_append(ptr, remaining, module);
-        safe_append(ptr, remaining, "_");
-    } else if (isCKeyword(name)) {
-        safe_append(ptr, remaining, "z_");
-    }
-
-    // Append name
-    safe_append(ptr, remaining, name);
-
-    ::sanitizeForC89(buffer);
-
-    // Limit to 31 characters for MSVC 6.0 compatibility
-    if (plat_strlen(buffer) > 31) {
-        buffer[31] = '\0';
-    }
-
-    return interner_.intern(buffer);
+    return mangle('S', module, name);
 }
 
 const char* NameMangler::mangleType(Type* type) {
@@ -138,20 +124,27 @@ const char* NameMangler::mangleType(Type* type) {
         case TYPE_F64:  return "f64";
         case TYPE_ISIZE: return "isize";
         case TYPE_USIZE: return "usize";
+        case TYPE_C_CHAR: return "c_char";
         case TYPE_POINTER: {
-            char buf[64];
-            plat_strcpy(buf, "ptr_");
+            char buf[256];
+            plat_strcpy(buf, "Ptr_");
             const char* base = mangleType(type->as.pointer.base);
-            plat_strncpy(buf + 4, (char*)base, 59);
-            buf[63] = '\0';
+            plat_strcat(buf, base);
+            return interner_.intern(buf);
+        }
+        case TYPE_SLICE: {
+            char buf[256];
+            plat_strcpy(buf, "Slice_");
+            const char* elem = mangleType(type->as.slice.element_type);
+            plat_strcat(buf, elem);
             return interner_.intern(buf);
         }
         case TYPE_ARRAY: {
-            char buf[64];
+            char buf[256];
             char* ptr = buf;
             size_t remaining = sizeof(buf);
 
-            safe_append(ptr, remaining, "arr");
+            safe_append(ptr, remaining, "Arr_");
             char size_buf[21];
             plat_u64_to_string(type->as.array.size, size_buf, sizeof(size_buf));
             safe_append(ptr, remaining, size_buf);
@@ -165,30 +158,58 @@ const char* NameMangler::mangleType(Type* type) {
         case TYPE_TYPE: return "type";
         case TYPE_ANYTYPE: return "anytype";
         case TYPE_ERROR_UNION: {
-            char buf[128];
-            char* ptr = buf;
-            size_t remaining = sizeof(buf);
-            safe_append(ptr, remaining, "err_");
+            char buf[256];
+            plat_strcpy(buf, "ErrorUnion_");
             const char* payload = mangleType(type->as.error_union.payload);
-            safe_append(ptr, remaining, payload);
+            plat_strcat(buf, payload);
             return interner_.intern(buf);
         }
         case TYPE_OPTIONAL: {
-            char buf[128];
-            char* ptr = buf;
-            size_t remaining = sizeof(buf);
-            safe_append(ptr, remaining, "opt_");
+            char buf[256];
+            plat_strcpy(buf, "Optional_");
             const char* payload = mangleType(type->as.optional.payload);
-            safe_append(ptr, remaining, payload);
+            plat_strcat(buf, payload);
             return interner_.intern(buf);
         }
         case TYPE_STRUCT:
         case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
         case TYPE_ENUM: {
             if (type->c_name) return type->c_name;
-            const char* name = (type->kind == TYPE_ENUM) ? type->as.enum_details.name : type->as.struct_details.name;
-            if (name) return name;
-            return "anonymous";
+            const char* name = NULL;
+            char kind = 'S';
+            if (type->kind == TYPE_ENUM) {
+                name = type->as.enum_details.name;
+                kind = 'E';
+            } else if (type->kind == TYPE_TAGGED_UNION) {
+                name = type->as.tagged_union.name;
+                kind = 'S';
+            } else if (type->kind == TYPE_UNION) {
+                name = type->as.struct_details.name;
+                kind = 'U';
+            } else {
+                name = type->as.struct_details.name;
+                kind = 'S';
+            }
+
+            const char* module_path = type->owner_module ? type->owner_module->filename : NULL;
+            
+            if (!name) {
+                char anon_name[64];
+                plat_strcpy(anon_name, "anon_");
+                if (type->owner_module) {
+                    char count_buf[16];
+                    plat_i64_to_string(++type->owner_module->anon_counter, count_buf, sizeof(count_buf));
+                    plat_strcat(anon_name, count_buf);
+                } else {
+                    plat_strcat(anon_name, "0");
+                }
+                type->c_name = mangle(kind, module_path, anon_name);
+                return type->c_name;
+            }
+
+            type->c_name = mangle(kind, module_path, name);
+            return type->c_name;
         }
         case TYPE_ERROR_SET: {
             if (type->as.error_set.name) {

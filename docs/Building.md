@@ -1,4 +1,6 @@
-# Building RetroZig
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
+# Building Z98
 This guide provides instructions for building the Stage 0 bootstrap compiler (`zig0`) and compiling the generated C89 code.
 
 ## 1. Building the Stage 0 Compiler (`zig0`)

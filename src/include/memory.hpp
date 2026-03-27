@@ -227,8 +227,8 @@ public:
             if (p) return p;
         }
 
-        // Need new chunk. For small caps, don't use 1MB chunks.
-        size_t chunk_size = 1024 * 1024; // 1MB default
+        // Need new chunk. For small caps, don't use 256KB chunks.
+        size_t chunk_size = 256 * 1024; // 256KB default
         if (chunk_size > total_cap && total_cap > 0) {
             chunk_size = total_cap + sizeof(Chunk) + 32; // Allow some slack for headers/alignment
         }

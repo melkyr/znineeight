@@ -121,7 +121,10 @@ static void fatalError(const char* message) {
 CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner)
     : arena_(arena),
       token_arena_(1024 * 1024 * 16), // 16MB cap for tokens
+      transient_arena_(1024 * 1024 * 16), // 16MB cap for transient
       type_interner_(arena),
+      type_registry_(arena),
+      pending_resolutions_(arena),
       interner_(interner),
       source_manager_(arena),
       default_symbols_(arena),
@@ -137,16 +140,20 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
       default_extraction_analysis_catalogue_(arena),
       default_errdefer_catalogue_(arena),
       default_indirect_call_catalogue_(arena),
-      name_mangler_(arena, interner),
+      name_mangler_(arena, interner, *this),
       call_site_table_(arena),
       options_(),
       current_module_(NULL),
       emitted_types_cache_(arena),
+      global_slice_types_(arena),
       include_paths_(arena),
       default_lib_path_(NULL),
       modules_(arena),
+      builtin_module_(NULL),
       last_ast_(NULL),
       is_test_mode_(false),
+      test_name_counters_(arena),
+      test_name_counter_(0),
       validation_completed_(false),
       c89_validation_passed_(false) {
 
@@ -161,6 +168,23 @@ CompilationUnit::CompilationUnit(ArenaAllocator& arena, StringInterner& interner
     if (plat_file_exists(lib_path)) {
         default_lib_path_ = interner_.intern(lib_path);
     }
+
+    // Create builtin module
+    void* builtin_mem = arena_.alloc(sizeof(Module));
+    if (builtin_mem == NULL) fatalError("Out of memory allocating builtin Module");
+    builtin_module_ = new (builtin_mem) Module(arena_);
+    builtin_module_->name = interner_.intern("builtin");
+    builtin_module_->filename = interner_.intern("<builtin>");
+    builtin_module_->file_id = 0xFFFFFFFF;
+    
+    void* builtin_sym_mem = arena_.alloc(sizeof(SymbolTable));
+    if (builtin_sym_mem == NULL) fatalError("Out of memory allocating builtin SymbolTable");
+    builtin_module_->symbols = new (builtin_sym_mem) SymbolTable(arena_);
+    builtin_module_->symbols->setCurrentModule(builtin_module_->name);
+
+    modules_.append(builtin_module_);
+
+    injectRuntimeSymbols(*builtin_module_->symbols);
 
     arena_.resetPeak();
 }
@@ -210,6 +234,7 @@ u32 CompilationUnit::addSource(const char* filename, const char* source) {
     if (mod_mem == NULL) fatalError("Out of memory allocating Module");
     Module* mod = new (mod_mem) Module(arena_);
     mod->name = current_module_;
+    plat_printf_debug("Module created: %s (%p) for file %s\n", mod->name, (void*)mod, interned_filename);
     mod->filename = interned_filename;
     mod->file_id = file_id;
 
@@ -359,8 +384,42 @@ ArenaAllocator& CompilationUnit::getTokenArena() {
     return token_arena_;
 }
 
+ArenaAllocator& CompilationUnit::getTransientArena() {
+    return transient_arena_;
+}
+
+void CompilationUnit::resetTransientArena() {
+    transient_arena_.reset();
+}
+
+void CompilationUnit::resetTokenArena() {
+    token_arena_.reset();
+}
+
+void CompilationUnit::finalizeParsing() {
+#ifdef MEASURE_MEMORY
+    size_t token_mem = token_arena_.getOffset();
+    char num_buf_token[32];
+    plat_i64_to_string(token_mem, num_buf_token, sizeof(num_buf_token));
+    plat_print_info("Token arena before reset: ");
+    plat_print_info(num_buf_token);
+    plat_print_info(" bytes\n");
+#endif
+
+    token_arena_.reset();
+    token_supplier_.reset();
+
+#ifdef MEASURE_MEMORY
+    plat_print_info("Token arena after reset: 0 bytes\n");
+#endif
+}
+
 TypeInterner& CompilationUnit::getTypeInterner() {
     return type_interner_;
+}
+
+TypeRegistry& CompilationUnit::getTypeRegistry() {
+    return type_registry_;
 }
 
 const char* CompilationUnit::getCurrentModule() const {
@@ -414,6 +473,7 @@ void CompilationUnit::injectRuntimeSymbols() {
 }
 
 void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
+    const char* builtin_name = builtin_module_->name;
     // Inject primitive types as SYMBOL_TYPE
     const char* primitives[] = {
         "void", "bool", "i8", "i16", "i32", "i64",
@@ -424,8 +484,10 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* t = resolvePrimitiveTypeName(primitives[i]);
         if (t) {
             const char* name = interner_.intern(primitives[i]);
+            type_registry_.insert(builtin_module_, name, t);
             Symbol sym = SymbolBuilder(arena_)
                 .withName(name)
+                .withModule(builtin_name)
                 .withMangledName(name) // Primitives use their own name as mangled name
                 .ofType(SYMBOL_TYPE)
                 .withType(t)
@@ -436,9 +498,10 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
 
     // Opaque Arena type
     const char* arena_name = interner_.intern("Arena");
-    Type* arena_type = createStructType(arena_, NULL, arena_name);
+    Type* arena_type = createStructType(*this, builtin_module_, NULL, arena_name);
     Symbol sym_arena = SymbolBuilder(arena_)
         .withName(arena_name)
+        .withModule(builtin_name)
         .withMangledName(arena_name)
         .ofType(SYMBOL_TYPE)
         .withType(arena_type)
@@ -458,6 +521,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_create");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -479,6 +543,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -498,6 +563,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_reset");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -517,6 +583,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_destroy");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -530,6 +597,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("zig_default_arena");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_VARIABLE)
             .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_EXTERN)
@@ -550,6 +618,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("arena_alloc_default");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -571,6 +640,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* free_name = interner_.intern("arena_free");
         Symbol sym_free = SymbolBuilder(arena_)
             .withName(free_name)
+            .withModule(builtin_name)
             .withMangledName(free_name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type2)
@@ -590,6 +660,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -609,6 +680,7 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         const char* name = interner_.intern("__bootstrap_print_int");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
+            .withModule(builtin_name)
             .withMangledName(name)
             .ofType(SYMBOL_FUNCTION)
             .withType(fn_type)
@@ -692,6 +764,35 @@ bool CompilationUnit::verifyNoPlaceholders() {
 
 void CompilationUnit::setTestMode(bool test_mode) {
     is_test_mode_ = test_mode;
+}
+
+const char* CompilationUnit::getTestName(char kind, const char* module, const char* name) {
+    // Build a key string (kind, module, name)
+    char key[256];
+    plat_snprintf(key, sizeof(key), "%c_%s_%s", kind, module ? module : "", name ? name : "");
+
+    // Check if we already have a counter for this key
+    for (size_t i = 0; i < test_name_counters_.length(); ++i) {
+        if (plat_strcmp(test_name_counters_[i].key, key) == 0) {
+            // Return existing name
+            return test_name_counters_[i].c_name;
+        }
+    }
+
+    // New entry: assign next counter
+    int counter = test_name_counter_++;
+    char buf[256];
+    // Format: z<kind>_<counter>_<name>
+    // If name is NULL (anonymous), use "anon"
+    const char* base = name ? name : "anon";
+    plat_snprintf(buf, sizeof(buf), "z%c_%d_%s", kind, counter, base);
+    const char* interned = interner_.intern(buf);
+
+    TestNameEntry entry;
+    entry.key = interner_.intern(key); // store key in arena
+    entry.c_name = interned;
+    test_name_counters_.append(entry);
+    return interned;
 }
 
 size_t CompilationUnit::getASTNodeCount() const {
@@ -779,23 +880,6 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     tracker.end_phase();
 #endif
 
-    // Reset token arena early to free memory!
-    // After parsing, AST doesn't need the tokens anymore.
-#ifdef MEASURE_MEMORY
-    size_t token_mem = token_arena_.getOffset();
-    char num_buf[32];
-    plat_i64_to_string(token_mem, num_buf, sizeof(num_buf));
-    plat_print_info("Token arena before reset: ");
-    plat_print_info(num_buf);
-    plat_print_info(" bytes\n");
-#endif
-
-    token_arena_.reset();
-    token_supplier_.reset();
-
-#ifdef MEASURE_MEMORY
-    plat_print_info("Token arena after reset: 0 bytes\n");
-#endif
     last_ast_ = ast;
     if (!ast) return false;
 
@@ -822,6 +906,88 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         return false;
     }
 
+
+    // Topological Sort of modules to respect import dependencies
+    {
+        size_t N = modules_.length();
+
+        struct Edge {
+            int to;
+            Edge* next;
+        };
+        Edge** adj = (Edge**)arena_.alloc(N * sizeof(Edge*));
+        plat_memset(adj, 0, N * sizeof(Edge*));
+
+        int* indeg = (int*)arena_.alloc(N * sizeof(int));
+        plat_memset(indeg, 0, N * sizeof(int));
+
+        for (size_t i = 0; i < N; ++i) {
+            Module* m = modules_[i];
+            for (size_t j = 0; j < m->imports.length(); ++j) {
+                const char* imported_name = m->imports[j];
+                int dep_idx = -1;
+                for (size_t k = 0; k < N; ++k) {
+                    if (plat_strcmp(modules_[k]->name, imported_name) == 0) {
+                        dep_idx = (int)k;
+                        break;
+                    }
+                }
+
+                if (dep_idx == -1) {
+                    error_handler_.report(ERR_INTERNAL_ERROR, SourceLocation(), "Import not found during topological sort");
+                    return false;
+                }
+
+                // dep_idx -> i
+                Edge* e = (Edge*)arena_.alloc(sizeof(Edge));
+                e->to = (int)i;
+                e->next = adj[dep_idx];
+                adj[dep_idx] = e;
+                indeg[i]++;
+            }
+        }
+
+        // Kahn's algorithm
+        int* queue = (int*)arena_.alloc(N * sizeof(int));
+        int qhead = 0, qtail = 0;
+        for (size_t i = 0; i < N; ++i) {
+            if (indeg[i] == 0) queue[qtail++] = (int)i;
+        }
+
+        DynamicArray<Module*> sorted(arena_);
+        while (qhead < qtail) {
+            int u = queue[qhead++];
+            sorted.append(modules_[u]);
+            Edge* e = adj[u];
+            while (e) {
+                int v = e->to;
+                indeg[v]--;
+                if (indeg[v] == 0) queue[qtail++] = v;
+                e = e->next;
+            }
+        }
+
+        if (sorted.length() != N) {
+            // Cycle detected. Append remaining modules in discovery order.
+            for (size_t i = 0; i < N; ++i) {
+                Module* m = modules_[i];
+                bool found = false;
+                for (size_t j = 0; j < sorted.length(); ++j) {
+                    if (sorted[j] == m) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    sorted.append(m);
+                }
+            }
+        }
+
+        // Replace modules_ with sorted order
+        modules_ = sorted;
+    }
+
     // Phase 0: Register Placeholders for all modules
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
@@ -829,6 +995,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.registerPlaceholders(m->ast_root);
+    }
+
+    // Phase 0.5: Resolve Named Placeholders (Pass 2)
+    {
+        TypeChecker checker(*this);
+        DynamicArray<PendingResolution>& pending = getPendingResolutions();
+        for (size_t i = 0; i < pending.length(); ++i) {
+            checker.resolveNamedPlaceholder(pending[i].placeholder);
+        }
     }
 
     // Now run semantic analysis on ALL modules
@@ -858,9 +1033,15 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     for (size_t i = 0; i < modules_.length(); ++i) {
         Module* m = modules_[i];
         if (m->is_analyzed || !m->ast_root) continue;
+#ifdef DEBUG_VISIBILITY
+        plat_printf_debug("DEBUG_VISIBILITY: Starting type checking for module '%s'\n", m->name);
+#endif
         setCurrentModule(m->name);
         TypeChecker checker(*this);
         checker.check(m->ast_root);
+#ifdef DEBUG_VISIBILITY
+        plat_printf_debug("DEBUG_VISIBILITY: Finished type checking for module '%s'\n", m->name);
+#endif
     }
     if (error_handler_.hasErrors()) all_success = false;
 
@@ -1148,6 +1329,10 @@ bool CompilationUnit::resolveImports(Module* module) {
 bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack) {
     stack.append(module->filename);
 
+#ifdef DEBUG_VISIBILITY
+    plat_printf_debug("DEBUG_VISIBILITY: Resolving imports for module '%s' (%s)\n", module->name, module->filename);
+#endif
+
     const char* saved_module = current_module_;
 
     for (size_t i = 0; i < module->import_nodes.length(); ++i) {
@@ -1263,11 +1448,47 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
 
         // Set the module pointer in the import node for the TypeChecker
         import_node->as.import_stmt->module_ptr = imported_mod;
+
+        // CRITICAL ADDITION: Create a module type that references the imported module
+        // This ensures visitMemberAccess can find the module_ptr
+        const char* import_alias = imported_mod->name;
+
+        // Register the module type in current module's symbol table
+        Type* mod_type = createModuleType(arena_, imported_mod->name);
+        mod_type->as.module.module_ptr = imported_mod;
+
+        Symbol mod_sym = SymbolBuilder(arena_)
+            .withName(import_alias)
+            .withModule(current_module_)
+            .ofType(SYMBOL_MODULE)
+            .withType(mod_type)
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
+            .build();
+
+        if (!getSymbolTable().lookupInCurrentScope(import_alias)) {
+            getSymbolTable().insert(mod_sym);
+        }
     }
 
     setCurrentModule(saved_module);
     stack.pop_back();
     return true;
+}
+
+void CompilationUnit::clearGlobalSliceTypes() {
+    global_slice_types_.clear();
+}
+
+void CompilationUnit::registerSliceType(Type* type) {
+    if (!type || type->kind != TYPE_SLICE) return;
+
+    const char* mangled = name_mangler_.mangleType(type);
+    for (size_t i = 0; i < global_slice_types_.length(); ++i) {
+        if (plat_strcmp(name_mangler_.mangleType(global_slice_types_[i]), mangled) == 0) {
+            return;
+        }
+    }
+    global_slice_types_.append(type);
 }
 
 bool CompilationUnit::areErrorTypesEliminated() const {

@@ -1,6 +1,6 @@
-# RetroZig Examples
+# Z98 Examples
 
-This directory contains example programs written in the Z98 Zig subset, demonstrating various features of the RetroZig bootstrap compiler.
+This directory contains example programs written in the Z98 Zig subset, demonstrating various features of the Z98 bootstrap compiler.
 
 ## Available Examples
 
@@ -8,8 +8,10 @@ This directory contains example programs written in the Z98 Zig subset, demonstr
 - `hello/`: Standard "Hello World" demonstrating multi-module compilation and runtime integration.
 - `prime/`: Prime number calculation demonstrating basic arithmetic and loops.
 - `fibonacci/`: Recursive Fibonacci sequence demonstrating recursion.
+- `mandelbrot/`: Mandelbrot set ASCII art renderer demonstrating floating-point arithmetic and nested loops.
 
-### Advanced (Milestone 7)
+### Advanced (Milestone 7-11)
+- `lzw/`: LZW Compressor/Decompressor demonstrating multi-module compilation, error handling, slices, and defer/errdefer.
 - `heapsort/`: In-place Heapsort algorithm demonstrating arrays and loops.
 - `quicksort/`: Quicksort with function pointer comparator, demonstrating many-item pointers and function pointers.
 - `sort_strings/`: String sorting demonstrating multi-level pointers (`[*][*]u8`).

@@ -1,5 +1,5 @@
 {
-    "name": "RetroZig",
+    "name": "Z98",
     "version": 0.0,
     "active": true,
     "features": ["compiler", "bootstrap", "Z98"],
