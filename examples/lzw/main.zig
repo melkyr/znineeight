@@ -22,6 +22,8 @@ pub fn main() void {
             if (err == dict.LzwError.DictionaryFull) {
                 io.printErr("Dictionary full!");
             } else {
+                // Already handled by errdefer in compress.zig if we wanted,
+                // but we can add more specific info here.
                 io.printErr("Compression failed!");
             }
             return;

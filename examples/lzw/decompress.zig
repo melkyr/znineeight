@@ -18,6 +18,8 @@ fn emitAndGetFirst(lzw_dict: *dict.Dictionary, code: i32) u8 {
 }
 
 pub fn decompress() dict.LzwError!void {
+    errdefer io.printErr("Decompression aborted.");
+
     var lzw_dict: dict.Dictionary = undefined;
     dict.init(&lzw_dict);
 
