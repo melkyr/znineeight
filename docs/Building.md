@@ -1,4 +1,4 @@
-# Building RetroZig
+# Building Z98
 This guide provides instructions for building the Stage 0 bootstrap compiler (`zig0`) and compiling the generated C89 code.
 
 ## 1. Building the Stage 0 Compiler (`zig0`)
