@@ -55,3 +55,20 @@ This document records the issues, bugs, and limitations discovered while attempt
 - **Modular @import**: Multi-file compilation and symbol resolution are fully operational.
 - **Error Unions & `try`/`catch`**: Robust error propagation works across modules.
 - **Arena Allocation**: Integration with `arena_alloc_default` is seamless.
+
+## Phase 2: Lisp Interpreter Findings
+
+### Blocker: Anonymous Structs in Tagged Unions
+- **Status**: **BLOCKER IDENTIFIED**
+- **Observation**: Initializing a `union(enum)` variant with an anonymous struct payload (e.g., `.{ .Cons = .{ .car = c, .cdr = d } }`) fails to generate C code for the payload initialization.
+- **Workaround**: Use a named struct for the payload and explicit type initialization: `.{ .Cons = ConsData{ .car = c, .cdr = d } }`.
+
+### Bug: Local `const` Aggregate Declarations
+- **Status**: **BUG IDENTIFIED**
+- **Observation**: Declaring a local variable as `const` with a struct, union, or enum type causes the compiler to treat it as a type alias and skip C code emission.
+- **Example**: `const v = Value{ .Int = 1 };` results in `v` being undeclared in C.
+- **Workaround**: Use `var` for local aggregate instances even if they are intended to be constant.
+
+### Codegen: Missing `<string.h>` for `memcpy`
+- **Status**: **QUIRK IDENTIFIED**
+- **Observation**: The compiler generates `memcpy` for aggregate switch captures but does not include `<string.h>`, leading to implicit declaration warnings.
