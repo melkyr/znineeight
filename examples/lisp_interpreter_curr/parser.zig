@@ -9,7 +9,13 @@ pub fn parse_expr(tokens: *token_mod.Tokenizer, perm_sand: *sand_mod.Sand, temp_
         .LParen => return try parse_list(tokens, perm_sand, temp_sand),
         .Int => |val| return try value_mod.alloc_int(val, temp_sand),
         .Symbol => |name| {
-            return try value_mod.alloc_symbol(name, perm_sand);
+            const name_mem = try sand_mod.sand_alloc(perm_sand, name.len, 1);
+            var i: usize = 0;
+            while (i < name.len) {
+                name_mem[i] = name[i];
+                i += 1;
+            }
+            return try value_mod.alloc_symbol(name_mem[0..name.len], perm_sand);
         },
         .RParen => return error.UnexpectedRParen,
         .Eof => return error.UnexpectedEof,
