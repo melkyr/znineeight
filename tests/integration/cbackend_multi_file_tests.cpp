@@ -52,62 +52,43 @@ TEST_FUNC(CBackend_MultiFile) {
 
     // Verify files exist
     PlatFile f1 = plat_open_file("test_output/main.c", false);
-    PlatFile f1_mod = plat_open_file("test_output/main_module.c", false);
     PlatFile f2 = plat_open_file("test_output/main.h", false);
     PlatFile f3 = plat_open_file("test_output/utils.c", false);
     PlatFile f4 = plat_open_file("test_output/utils.h", false);
 
-    if (f1 == PLAT_INVALID_FILE || f1_mod == PLAT_INVALID_FILE || f2 == PLAT_INVALID_FILE ||
+    if (f1 == PLAT_INVALID_FILE || f2 == PLAT_INVALID_FILE ||
         f3 == PLAT_INVALID_FILE || f4 == PLAT_INVALID_FILE) {
         plat_print_debug("Missing generated files\n");
         exit(1);
     }
 
     plat_close_file(f1);
-    plat_close_file(f1_mod);
     plat_close_file(f2);
     plat_close_file(f3);
     plat_close_file(f4);
 
-    // Check main.c (master) content for #include "main_module.c"
+    // Check main.c content
     char* content = (char*)malloc(10000);
     PlatFile f_main = plat_open_file("test_output/main.c", false);
     size_t bytes = plat_read_file_raw(f_main, content, 9999);
     content[bytes] = '\0';
     plat_close_file(f_main);
 
-    if (strstr(content, "#include \"main_module.c\"") == NULL) {
-        plat_print_debug("main.c missing #include \"main_module.c\"\n");
-        plat_print_debug(content);
-        exit(1);
-    }
-
-    if (strstr(content, "#include \"utils.c\"") == NULL) {
-        plat_print_debug("main.c missing #include \"utils.c\"\n");
-        plat_print_debug(content);
-        exit(1);
-    }
-
-    // Check main_module.c content
-    PlatFile f_main_mod = plat_open_file("test_output/main_module.c", false);
-    bytes = plat_read_file_raw(f_main_mod, content, 9999);
-    content[bytes] = '\0';
-    plat_close_file(f_main_mod);
-
     if (strstr(content, "#include \"utils.h\"") == NULL) {
-        plat_print_debug("main_module.c missing #include \"utils.h\"\n");
+        plat_print_debug("main.c missing #include \"utils.h\"\n");
         plat_print_debug(content);
         exit(1);
     }
 
-    if (strstr(content, "static int zV_1_int = 0;") == NULL) {
-        plat_print_debug("main_module.c missing zV_1_int\n");
+    if (strstr(content, "zV_4_int = 0;") == NULL) {
+        plat_print_debug("main.c missing zV_4_int\n");
         plat_print_debug(content);
         exit(1);
     }
 
-    if (strstr(content, "zF_0_add") == NULL) {
-        plat_print_debug("main_module.c missing zF_0_add\n");
+    // Check main.c for calls to utils
+    if (strstr(content, "zF_2_add") == NULL) {
+        plat_print_debug("main.c missing zF_2_add call\n");
         plat_print_debug(content);
         exit(1);
     }

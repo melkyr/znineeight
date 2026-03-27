@@ -81,14 +81,14 @@ TEST_FUNC(EndToEnd_HelloWorld) {
     run_command("cp src/include/zig_runtime.h temp_hello/ 2>/dev/null || copy src\\include\\zig_runtime.h temp_hello\\");
     run_command("cp src/runtime/zig_runtime.c temp_hello/ 2>/dev/null || copy src\\runtime\\zig_runtime.c temp_hello\\");
 
-    // Compile with GCC
-    if (!run_command("gcc -std=c89 -pedantic -Wno-pointer-sign -Itemp_hello -o temp_hello/hello temp_hello/main.c temp_hello/zig_runtime.c")) {
-        plat_print_error("Failed to compile generated C code\n");
+    // Compile using generated build script
+    if (!run_command("cd temp_hello && sh build_target.sh")) {
+        plat_print_error("Failed to compile generated C code via build_target.sh\n");
         return false;
     }
 
     // Run and capture output portably
-    run_command("./temp_hello/hello 2>temp_hello/output.txt");
+    run_command("./temp_hello/app 2>temp_hello/output.txt");
 
     char* buffer = NULL;
     size_t size = 0;
@@ -162,12 +162,12 @@ TEST_FUNC(EndToEnd_PrimeNumbers) {
     run_command("cp src/include/zig_runtime.h temp_prime/ 2>/dev/null || copy src\\include\\zig_runtime.h temp_prime\\");
     run_command("cp src/runtime/zig_runtime.c temp_prime/ 2>/dev/null || copy src\\runtime\\zig_runtime.c temp_prime\\");
 
-    if (!run_command("gcc -std=c89 -pedantic -Wno-pointer-sign -Itemp_prime -o temp_prime/prime temp_prime/main.c temp_prime/zig_runtime.c")) {
-        plat_print_error("Failed to compile prime code\n");
+    if (!run_command("cd temp_prime && sh build_target.sh")) {
+        plat_print_error("Failed to compile prime code via build_target.sh\n");
         return false;
     }
 
-    run_command("./temp_prime/prime 2>temp_prime/output.txt");
+    run_command("./temp_prime/app 2>temp_prime/output.txt");
 
     char* buffer = NULL;
     size_t size = 0;

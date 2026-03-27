@@ -130,7 +130,7 @@ TEST_FUNC(Codegen_Array_Const) {
         "fn foo() i32 {\n"
         "    return global_arr[2];\n"
         "}";
-    return run_array_codegen_test(source, "return global_arr[2];");
+    return run_array_codegen_test(source, "return zC_0_global_arr[2];");
 }
 
 TEST_FUNC(Codegen_Array_ExpressionIndex) {

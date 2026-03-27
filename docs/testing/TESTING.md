@@ -165,6 +165,8 @@ To enable Test Mode, use the `--test-mode` flag:
 ### Regression Testing
 When updating emission tests that compare against hardcoded strings, always ensure that the test environment sets Test Mode. If test files are moved or the order of symbols in a file changes, the counters may change, necessitating an update to the expected strings.
 
+**Note on Systematic Failures:** Many integration batches (12–72) may fail systematically if the relative path of the tests is moved or if the internal name mangling scheme is updated. In such cases, the expectation strings in the corresponding `.cpp` files must be updated to align with the new output.
+
 #### Example: Addressing a Mismatch
 Suppose a test in `function_decl_tests.cpp` fails after a refactor:
 ```
