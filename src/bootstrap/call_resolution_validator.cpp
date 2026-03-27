@@ -17,8 +17,8 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
     if (!node) return;
 
     if (node->type == NODE_FUNCTION_CALL || node->type == NODE_INT_CAST ||
-        node->type == NODE_FLOAT_CAST || node->type == NODE_PTR_CAST ||
-        node->type == NODE_OFFSET_OF) {
+        node->type == NODE_FLOAT_CAST || node->type == NODE_INT_TO_FLOAT ||
+        node->type == NODE_PTR_CAST || node->type == NODE_OFFSET_OF) {
         checkCall(node, ctx);
     }
 
@@ -140,6 +140,7 @@ void CallResolutionValidator::traverse(ASTNode* node, Context& ctx) {
             break;
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             if (node->as.numeric_cast) {
                 traverse(node->as.numeric_cast->target_type, ctx);
                 traverse(node->as.numeric_cast->expr, ctx);
@@ -185,6 +186,7 @@ void CallResolutionValidator::checkCall(ASTNode* node, Context& ctx) {
             }
         }
     } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST ||
+               node->type == NODE_INT_TO_FLOAT ||
                node->type == NODE_PTR_CAST || node->type == NODE_OFFSET_OF) {
         // These are also built-ins that don't need resolution in the call table
         return;
@@ -258,6 +260,7 @@ bool CallResolutionValidator::isBuiltin(const char* name) {
         "@import", "@panic", "@as", "@tagName", "@errorName", "@fieldParentPtr",
         "@clz", "@ctz", "@popCount", "@byteSwap", "@bitReverse", "@sqrt",
         "@sin", "@cos", "@exp", "@exp2", "@log", "@log2", "@log10", "@fabs",
+        "@intToFloat",
         "@floor", "@ceil", "@trunc", "@round"
     };
 

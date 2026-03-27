@@ -228,6 +228,7 @@ void forEachChild(ASTNode* node, ChildVisitor& visitor) {
             break;
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             if (node->as.numeric_cast) {
                 visitor.visitChild(&node->as.numeric_cast->target_type);
                 visitor.visitChild(&node->as.numeric_cast->expr);
@@ -685,6 +686,7 @@ ASTNode* cloneASTNode(ASTNode* node, ArenaAllocator* arena) {
                     break;
                 case NODE_INT_CAST:
                 case NODE_FLOAT_CAST:
+                case NODE_INT_TO_FLOAT:
                     if (node->as.numeric_cast) {
                         copy->as.numeric_cast = (ASTNumericCastNode*)arena->alloc(sizeof(ASTNumericCastNode));
                         plat_memcpy(copy->as.numeric_cast, node->as.numeric_cast, sizeof(ASTNumericCastNode));

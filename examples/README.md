@@ -8,6 +8,7 @@ This directory contains example programs written in the Z98 Zig subset, demonstr
 - `hello/`: Standard "Hello World" demonstrating multi-module compilation and runtime integration.
 - `prime/`: Prime number calculation demonstrating basic arithmetic and loops.
 - `fibonacci/`: Recursive Fibonacci sequence demonstrating recursion.
+- `mandelbrot/`: Mandelbrot set ASCII art renderer demonstrating floating-point arithmetic and nested loops.
 
 ### Advanced (Milestone 7)
 - `heapsort/`: In-place Heapsort algorithm demonstrating arrays and loops.

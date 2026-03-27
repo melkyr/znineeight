@@ -716,6 +716,8 @@ Token Lexer::nextToken() {
                 token.type = TOKEN_AT_INT_TO_PTR;
             } else if (len == 9 && plat_strncmp(start, "intToEnum", 9) == 0) {
                 token.type = TOKEN_AT_INT_TO_ENUM;
+            } else if (len == 10 && plat_strncmp(start, "intToFloat", 10) == 0) {
+                token.type = TOKEN_AT_INTTOFLOAT;
             } else {
                 token.type = TOKEN_ERROR;
             }

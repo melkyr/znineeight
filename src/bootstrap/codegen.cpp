@@ -1299,6 +1299,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_PTR_CAST:
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
         case NODE_RANGE:
         case NODE_PAREN_EXPR:
         case NODE_ASYNC_EXPR:
@@ -2236,6 +2237,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_PTR_CAST:
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             emitCast(node);
             break;
 
@@ -2530,6 +2532,7 @@ void C89Emitter::emitCast(const ASTNode* node) {
             emitIntCast(node->as.numeric_cast);
             break;
         case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
             emitFloatCast(node->as.numeric_cast);
             break;
         default: break;
@@ -3471,6 +3474,11 @@ bool C89Emitter::isSafeWidening(Type* src, Type* dest) const {
         if (dest->kind == TYPE_F32 || dest->kind == TYPE_F64) {
             return dest->size >= src->size;
         }
+    }
+
+    /* Integer to Float conversion */
+    if (src_is_int && (dest->kind == TYPE_F32 || dest->kind == TYPE_F64)) {
+        return true;
     }
 
     return false;
