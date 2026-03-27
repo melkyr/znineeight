@@ -2,6 +2,8 @@ const dict = @import("dict.zig");
 const io = @import("io.zig");
 
 pub fn compress() dict.LzwError!void {
+    errdefer io.printErr("Compression aborted.");
+
     var lzw_dict: dict.Dictionary = undefined;
     dict.init(&lzw_dict);
 
