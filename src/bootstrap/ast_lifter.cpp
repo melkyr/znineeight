@@ -580,6 +580,22 @@ bool ControlFlowLifter::isOptionalPointer(Type* t) {
     return payload->kind == TYPE_POINTER || payload->kind == TYPE_FUNCTION_POINTER;
 }
 
+bool ControlFlowLifter::isAggregateType(Type* t) {
+    if (!t) return false;
+    switch (t->kind) {
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+        case TYPE_TAGGED_UNION:
+        case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_ERROR_UNION:
+        case TYPE_ARRAY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool ControlFlowLifter::needsLifting(ASTNode* node, ASTNode* parent) {
     if (!node) return false;
     if (!parent) return false;
@@ -1290,7 +1306,18 @@ void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const cha
 
     Symbol* temp_sym = NULL;
     if (temp_type && temp_type->kind != TYPE_VOID) {
-        var_decl_node = createVarDecl(temp_name, temp_type, NULL, false);
+        ASTNode* zero_init = NULL;
+        if (node->type == NODE_CATCH_EXPR) {
+            if (isAggregateType(temp_type)) {
+                zero_init = createNodeAt(NODE_STRUCT_INITIALIZER, node->loc);
+                zero_init->as.struct_initializer = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(zero_init->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+                zero_init->as.struct_initializer->fields = new (arena_->alloc(sizeof(DynamicArray<ASTNamedInitializer*>))) DynamicArray<ASTNamedInitializer*>(*arena_);
+            } else {
+                zero_init = createIntegerLiteral(0, temp_type, node->loc);
+            }
+        }
+        var_decl_node = createVarDecl(temp_name, temp_type, zero_init, false);
         temp_sym = var_decl_node->as.var_decl->symbol;
     } else {
         temp_sym = createSymbol(temp_name, get_g_type_void(), false);
