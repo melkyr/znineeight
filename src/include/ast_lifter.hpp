@@ -178,6 +178,7 @@ private:
     Symbol* createSymbol(const char* name, Type* type, bool is_const);
 
     // ABI Lowering Helpers
+    bool isAggregateType(Type* t);
     void lowerExternCall(ASTNode** node_slot, ASTNode* parent);
     void lowerExportPrologue(ASTFnDeclNode* fn);
     void lowerExportReturn(ASTNode** node_slot, ASTNode* parent);
