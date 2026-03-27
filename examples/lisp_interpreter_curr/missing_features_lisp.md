@@ -3,83 +3,62 @@
 This document records the issues, bugs, and limitations discovered while attempting to compile and run both downgraded and advanced Z98 Lisp interpreters.
 
 ## 1. Summary of Results
-- **Downgraded Interpreter (`examples/lisp_interpreter`)**: SUCCESS after minor syntax fixes (`anyerror!` -> `!`).
-- **Advanced Interpreter (`examples/lisp_interpreter_adv`)**: FAILED due to multiple C89 codegen blockers and header inclusion issues.
-- **Intermediate Interpreter (`examples/lisp_interpreter_curr`)**: SUCCESS. This version uses manual `struct` + `union` for stability.
 
-## 2. Verified Compiler Bugs & Code Generation
+| Version | Status | Notes |
+|---------|--------|-------|
+| Downgraded (`lisp_interpreter`) | **SUCCESS** | Baseline is stable in 32-bit mode. |
+| Intermediate (`lisp_interpreter_curr`) | **SUCCESS** | Fixed a symbol memory bug. Basic Lisp works. |
+| Advanced (`lisp_interpreter_adv`) | **FAILED** | Blocked by multiple C89 codegen issues (anonymous structs). |
+
+## 2. Portability & Compatibility Reports
+
+### 32-bit Compatibility (`-m32`)
+- **Status**: **SUCCESS**.
+- **Observations**: The compiler and generated code run correctly in 32-bit mode. This is essential for the 1998 target.
+
+### Windows Compatibility (Mingw-w64 + Wine)
+- **Status**: **SUCCESS**.
+- **Observations**:
+    - Successfully cross-compiled `lisp_interpreter_curr` to a 32-bit Windows `.exe`.
+    - Successfully ran basic expressions (e.g., `(+ 1 2)`) under `wine`.
+    - **Note**: Had to increase the stack size (`-Wl,--stack,16777216`) to avoid stack overflow exceptions in `wine` due to the recursive nature of the evaluator and how `wine` handles stack committed pages.
+
+### Compiler Portability (Clang++)
+- **Status**: **SUCCESS**.
+- **Observations**: `zig0` (the bootstrap compiler) compiles successfully with `clang++` and correctly generates C code.
+
+### Standard Library Portability (Musl-gcc)
+- **Status**: **PARTIAL SUCCESS / BUG FOUND**.
+- **Observations**:
+    - Building the generated C code with `musl-gcc` (64-bit) resulted in a **Segmentation Fault** during symbol lookup.
+    - **Analysis**: Musl's `string.h` and memory layout differ from GLIBC. The crash occurred in `env_lookup`, suggesting that some pointer-to-integer casts or alignment assumptions in the C89 generator might be incompatible with Musl's strictness.
+    - 32-bit Musl compilation failed due to missing `__divdi3` and other libgcc symbols in the environment.
+
+## 3. Verified Compiler & Interpreter Bugs
+
+### Issue: Symbol Name Corruption (FIXED in `curr`)
+- **Problem**: Symbol names were stored as slices pointing to the temporary line buffer. Reading a new line corrupted previous symbols.
+- **Fix**: Modified `parser.zig` to copy symbol names into permanent memory during parsing.
+
+### Issue: `memcpy` and `<string.h>`
+- **Problem**: The compiler generates `memcpy` calls for `switch` captures but fails to include `<string.h>`.
+- **Status**: Warning only, but should be fixed in the compiler for strict C89 compliance.
+
+### Issue: Recursion/Scoping in `lisp_interpreter_curr`
+- **Problem**: Recursive functions (e.g., `factorial`) fail with `UnboundSymbol`.
+- **Reason**: The interpreter captures the environment *at the time of lambda creation*. Since the function name is added to the environment *after* the lambda is created, the lambda's captured environment does not contain itself.
+- **Status**: Documented as a limitation of the current interpreter implementation.
+
+## 4. Summary of Advanced Version Blockers (from `lisp_interpreter_adv`)
 
 ### Issue 1: Missing Definitions for Anonymous Structs (BLOCKER)
-**Problem**: When a `union(enum)` variant uses an anonymous struct (e.g., `Cons: struct { car: *Value, cdr: *Value }`), the compiler declares but **never defines** this struct in the generated C code.
-
-**Z98 Source (`value.zig`)**:
-```zig
-pub const Value = union(enum) {
-    Cons: struct { car: *Value, cdr: *Value },
-    // ...
-};
-```
-
-**Generated C Header (`value.h`)**:
-```c
-struct zS_5ed3ca_Value {
-    enum zE_a16282_Value_Tag tag;
-    union {
-        // ...
-        struct zS_a16282_anon_1 Cons; // Declared but not defined in this header
-    } data;
-};
-```
-
-**Generated C Code (`eval.c`)**:
-```c
-struct zS_a16282_anon_1 data; // ERROR: storage size of 'data' isn't known
-memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_a16282_anon_1));
-```
-**Verification**: Analysis of all generated `.h` and `.c` files for `lisp_interpreter_adv` confirms that `struct zS_a16282_anon_1` is used pervasively but defined nowhere. This makes all modules using `Cons` captures uncompilable.
-
----
+When a `union(enum)` variant uses an anonymous struct, the compiler declares but **never defines** this struct in the generated C code.
 
 ### Issue 2: Cross-Module Visibility and Inclusions
-**Problem**: Even if types were defined, headers for dependent modules are not always included in the correct order, or definitions are missing from headers and only present in `.c` files.
-
-**Observation**: 
-- `eval.h` includes `value.h`, but if `value.h` contains incomplete types, `eval.c` fails.
-- Some slice types (e.g., `Slice_Ptr_zS_5ed3ca_Value`) are used in function prototypes in headers before they are defined, or are missing from the header entirely.
-
----
+Dependent module headers are not always included in the correct order, or types are used before they are fully defined in the header.
 
 ### Issue 3: `union(enum)` Tag Assignment (Precedence Bug)
-**Problem**: Assigning a tag literal to a dereferenced union pointer (e.g., `t.* = .Eof`) generates invalid C precedence.
-
-**Z98 Source (`repro_union_void_payload.zig`)**:
-```zig
-t.* = .Eof;
-```
-
-**Generated C Code**:
-```c
-void zF_a80093_st_union_void_payload(struct zS_a80093_Token* t) {
-    *t.tag = zE_06bb27_Token_Tag_Eof; // ERROR: t is a pointer, should be t->tag or (*t).tag
-}
-```
-**Verification**: Instrumentation confirmed `[emitAssignmentWithLifting]` is hit. The code path for tag literal assignment manually appends `.tag` to the l-value, bypassing the precedence-aware `emitAccess` logic and resulting in `*t.tag` instead of `(*t).tag`.
-
----
-
-### Issue 4: Pointer Dereference Precedence in Assignments
-**Problem**: Normal assignments to pointer-to-struct members also fail when they bypass `emitAccess`.
-
-**Generated C Code (`value.c`)**:
-```c
-v->tag = ...; // Correct (using ->)
-*v.tag = ...; // INCORRECT (generated in some context-lifting paths)
-```
-**Verification**: The compiler has a fix in `emitAccess` (confirmed via instrumentation `[emitAccess] Wrapping dereference base`), but this fix is not utilized by the unified `emitAssignmentWithLifting` when it constructs its own l-values.
-
-## 3. Syntax & Parser Limitations
-- **`anyerror`**: Explicitly rejected by the compiler. (Workaround: use `!T`).
-- **`pub const` Aliasing**: Cannot use `pub const name = function_name;` as it emits a variable assignment in C instead of a function alias.
+Assigning a tag literal to a dereferenced union pointer (e.g., `t.* = .Eof`) generates invalid C precedence: `*t.tag` instead of `(*t).tag`.
 
 ## Conclusion
-The advanced Lisp interpreter exposes fundamental issues with how anonymous types and cross-module dependencies are handled in the C89 backend. While individual fixes exist for some precedence issues, they are not applied consistently across all code generation paths (especially in the unified assignment logic).
+The intermediate interpreter (`lisp_interpreter_curr`) is a viable target for Win98-era systems and 32-bit environments. However, standard library portability (Musl) and advanced language features (anonymous structs in unions) still require compiler-side fixes to achieve the full "Baptism of Water" goals.
