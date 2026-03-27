@@ -23,25 +23,27 @@ v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };
 ```
 **Generated C (Broken)**:
 ```c
-{
-    struct zS_5ed3ca_Value* init_lval_tmp = &(*v);
+void zF_672edd_foo(void) {
+    struct zS_672edd_Value v;
     /* MISSING: tag and data assignment */
 }
 ```
+**Status**: REPRODUCED in `examples/lisp_interpreter_curr/repro_anon_union_bug.zig`.
 **Workaround**: Use a named struct for the payload and explicit type initialization: `v.* = Value{ .Cons = ConsData{ .car = car, .cdr = cdr } };`.
 
 #### Issue: Local `const` Aggregate Declarations
 **Observation**: Declaring a local variable as `const` with a struct, union, or enum type causes the compiler to treat it as a type declaration and skip C code emission.
 **Example**: `const v = Value{ .Int = 1 };` results in `v` being undeclared in the generated C.
+**Status**: **CONFIRMED**. Still present in Milestone 11.
 **Workaround**: Use `var` for local aggregate instances even if they are intended to be constant.
 
 #### Issue: Uninitialized `__tmp_catch` Variables
 **Observation**: The generated C code for `catch` expressions often triggers `-Wmaybe-uninitialized` warnings in GCC.
-**Analysis**: The lifter generates a temporary variable to hold the "yielded" value of the `catch` block, but does not strictly ensure initialization on all paths before use in the C output.
+**Status**: **FIXED** in Milestone 11. `ControlFlowLifter` and `C89Emitter` now ensure zero-initialization for lifted `catch` expression temporaries.
 
 #### Issue: Implicit `memcpy` and Missing `<string.h>`
 **Observation**: When capturing aggregate payloads in a `switch`, the compiler generates `memcpy` but does not include `<string.h>`.
-**Status**: Confirmed. Results in warnings on GCC/Clang.
+**Status**: **FIXED** in Milestone 11. `C89Emitter::emitPrologue` now unconditionally includes `<string.h>`.
 
 ### Z98 Syntax & Codegen Quirks
 
