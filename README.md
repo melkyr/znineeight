@@ -1,12 +1,13 @@
-# RetroZig Compiler
-**A self-hosting Zig → C89 bootstrap compiler for Windows 9x.**
+# Z98 Compiler
+**A self-hosting subset of Zig → C89 bootstrap compiler for Windows 9x.**
 
 ## Project Overview
-RetroZig is an ambitious project to build a Zig compiler from scratch that targets the Windows 9x era (Windows 95, 98, ME). To achieve this while adhering to the hardware and software constraints of that period, the compiler uses a "Progressive Enhancement" strategy.
+Z98 is a subset of the Zig language. This compiler is not affiliated with the official Zig project.
+Z98 is an ambitious project to build a somewhat Zig compiler (or at least a good subset of my interpretation of the lang spec) from scratch that targets the Windows 9x era (Windows 95, 98, ME). To achieve this while adhering to the hardware and software constraints of that period, the compiler uses a "Progressive Enhancement" strategy.
 
 We start with a **Stage 0** bootstrap compiler written in C++98, which compiles a **Stage 1** compiler written in a subset of Zig. Finally, **Stage 1** compiles itself to become the fully self-hosted **Stage 2** compiler.
 
-## Current Status: Milestone 9 in Progress
+## Current Status: Milestone 9 finished. Stabilizing Compiler
 The project has successfully completed Milestone 8 and is currently finalizing Milestone 9.
 The Stage 0 compiler (`zig0`) is a multi-module compiler capable of generating C89 code using a separate compilation model.
 
@@ -20,7 +21,7 @@ The Stage 0 compiler (`zig0`) is a multi-module compiler capable of generating C
 - **Tagged Unions**: Support for `union(enum)` with payload captures in `switch` statements.
 - **Recursive Types**: Support for mutually recursive structs and unions via a robust placeholder resolution mechanism.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
-- **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
+- **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection (Yet to be improved)
 
 ### Technical Constraints
 To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
@@ -31,6 +32,7 @@ To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
 - **MSVC 6.0 Compatibility**: Extensive use of `__int64` and C89-compliant constructs.
 
 ## Getting Started
+Just as a side note through the docs I will use zig0/retrozig/z98 but they will refer to this project, as stated at the begining this is not affiliated with the official Zig project it's just a silly idea I had.
 
 ### Prerequisites
 - **Linux**: `gcc` (C++98 compatible), `make`.
@@ -57,7 +59,7 @@ The project features a comprehensive suite of over 500 unit and integration test
 - [Language Specification](docs/reference/Language_Spec_Z98.md): Supported syntax and Z98-specific patterns.
 - [Building Guide](docs/Building.md): Detailed toolchain setup and build instructions.
 - [Design Documents](docs/design/DESIGN.md): Core architecture and Arena Allocation strategy.
-- [C89 Emission](docs/reference/c89_emission.md): How Zig constructs map to C89.
+- [C89 Emission](docs/reference/c89_emission.md): How Z98 constructs map to C89.
 
 ## Examples
 Check the `examples/` directory for sample Z98 programs:
