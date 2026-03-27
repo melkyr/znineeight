@@ -1,8 +1,8 @@
-# RetroZig Compiler - AI Agent Guidelines
+# Z98 Compiler - AI Agent Guidelines
 
 ## Overview
 
-This document outlines the roles, responsibilities, development methodology, constraints, and communication protocols for AI agents working on the RetroZig compiler project. It serves as a guide for both human developers initiating requests and the AI agents executing them.
+This document outlines the roles, responsibilities, development methodology, constraints, and communication protocols for AI agents working on the Z98 compiler project. It serves as a guide for both human developers initiating requests and the AI agents executing them.
 
 ## Project Context
 
@@ -120,7 +120,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 BIN_DIR="$PROJECT_ROOT/bin"
 
-echo "=== RetroZig Clean Environment Setup ==="
+echo "=== Z98 Clean Environment Setup ==="
 
 # Verify C++98-compatible compiler
 if ! g++ --version 2>/dev/null | grep -q "g.. (GCC) [234]\."; then
@@ -155,7 +155,7 @@ set PROJECT_ROOT=%~dp0..
 set BUILD_DIR=%PROJECT_ROOT%\build
 set BIN_DIR=%PROJECT_ROOT%\bin
 
-echo === RetroZig Clean Environment Setup ===
+echo === Z98 Clean Environment Setup ===
 
 :: Verify MSVC 6.0-era compatibility (heuristic check)
 if not exist "C:\Program Files (x86)\Microsoft Visual Studio\VC98\Bin\cl.exe" (

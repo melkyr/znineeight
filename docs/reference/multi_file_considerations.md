@@ -1,3 +1,5 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Multi-File Considerations for Milestone 6
 
 Multi-file support is implemented in the bootstrap compiler as of Milestone 6.

@@ -1,6 +1,6 @@
 # Minimal Lisp Interpreter in Z98
 
-A "Baptism of Water" implementation of a Lisp interpreter designed for 1998-era constraints using the RetroZig bootstrap compiler.
+A "Baptism of Water" implementation of a Lisp interpreter designed for 1998-era constraints using the Z98 bootstrap compiler.
 
 ## Modules
 
@@ -30,16 +30,16 @@ Due to current bootstrap compiler limitations, this implementation uses a "Downg
 
 ## Current Status
 
-**Status**: The Zig source code for the interpreter is feature-complete for the "Baptism of Water" phase. However, generating a working binary requires specific patches to the `retrozig` bootstrap compiler.
+**Status**: The Zig source code for the interpreter is feature-complete for the "Baptism of Water" phase. However, generating a working binary requires specific patches to the `z98` bootstrap compiler.
 
 ### Build Instructions
 
 To attempt a build of the Lisp interpreter:
 
-1.  Ensure you have a compiled `retrozig` compiler at the repository root.
+1.  Ensure you have a compiled `z98` compiler at the repository root.
 2.  Run the compiler on the entry point:
     ```bash
-    ./retrozig examples/lisp_interpreter/main.zig -o o_lisp/main.c
+    ./z98 examples/lisp_interpreter/main.zig -o o_lisp/main.c
     ```
 3.  Compile the generated C code (requires `-m32` for the 1998 target):
     ```bash

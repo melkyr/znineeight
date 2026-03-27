@@ -41,7 +41,7 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
     return true;
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main(int argc, char* argv[]) {
     bool debug_lifter = false;
     bool debug_codegen = false;
@@ -191,8 +191,8 @@ int main(int argc, char* argv[]) {
         return success ? 0 : 1;
     }
 
-    plat_print_info("RetroZig Compiler v0.0.1\n");
-    plat_print_info("Usage: retrozig [options] <filename>\n");
+    plat_print_info("Z98 Compiler v0.0.1\n");
+    plat_print_info("Usage: z98 [options] <filename>\n");
     plat_print_info("Options:\n");
     plat_print_info("  --self-test             Run internal self-tests\n");
     plat_print_info("  -o <file>               Specify output C file\n");

@@ -224,7 +224,7 @@ TEST_FUNC(RangeSwitch_EnumActualRange) {
     return true;
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main() {
     int passed = 0;
     int total = 0;

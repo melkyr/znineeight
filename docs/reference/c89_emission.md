@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # C89 Code Generation Strategy
 
-This document outlines the strategy for emitting C89-compliant code from the RetroZig bootstrap compiler.
+This document outlines the strategy for emitting C89-compliant code from the Z98 bootstrap compiler.
 
 ## 1. Integer Literals
 

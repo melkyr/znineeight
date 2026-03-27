@@ -130,7 +130,7 @@ TEST_FUNC(clone_binary_op) {
     return true;
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main() {
     int passed = 0;
     int total = 0;

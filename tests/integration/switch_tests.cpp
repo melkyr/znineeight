@@ -7,7 +7,7 @@
 
 /**
  * @file switch_tests.cpp
- * @brief Integration tests for Zig switch expressions in the RetroZig compiler.
+ * @brief Integration tests for Zig switch expressions in the Z98 compiler.
  */
 
 TEST_FUNC(SwitchIntegration_Basic) {

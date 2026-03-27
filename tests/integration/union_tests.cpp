@@ -7,7 +7,7 @@
 
 /**
  * @file union_tests.cpp
- * @brief Integration tests for Zig unions in the RetroZig compiler.
+ * @brief Integration tests for Zig unions in the Z98 compiler.
  */
 
 TEST_FUNC(UnionIntegration_BareUnion) {

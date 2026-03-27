@@ -4,7 +4,7 @@
 #include "type_system.hpp"
 #include <cstdio>
 
-#ifdef RETROZIG_TEST
+#ifdef Z98_TEST
 #include "module.hpp"
 #else
 // Mock Module for registry testing to avoid full dependencies in standalone
@@ -18,7 +18,7 @@ void test_basic_insert_lookup() {
     ArenaAllocator arena(1024 * 1024);
     TypeRegistry registry(arena);
 
-#ifdef RETROZIG_TEST
+#ifdef Z98_TEST
     Module mod_a(arena);
     mod_a.name = "ModuleA";
 #else
@@ -45,7 +45,7 @@ void test_duplicate_prevention() {
     ArenaAllocator arena(1024 * 1024);
     TypeRegistry registry(arena);
 
-#ifdef RETROZIG_TEST
+#ifdef Z98_TEST
     Module mod_a(arena);
     mod_a.name = "ModuleA";
 #else
@@ -68,7 +68,7 @@ void test_namespace_isolation() {
     ArenaAllocator arena(1024 * 1024);
     TypeRegistry registry(arena);
 
-#ifdef RETROZIG_TEST
+#ifdef Z98_TEST
     Module mod_a(arena);
     mod_a.name = "ModuleA";
     Module mod_b(arena);
@@ -103,7 +103,7 @@ void test_namespace_isolation() {
     printf("PASSED: Namespace isolation\n");
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main() {
     test_basic_insert_lookup();
     test_duplicate_prevention();

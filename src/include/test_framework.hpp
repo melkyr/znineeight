@@ -6,7 +6,7 @@
 
 /**
  * @file test_framework.hpp
- * @brief A minimal unit testing framework for the RetroZig compiler.
+ * @brief A minimal unit testing framework for the Z98 compiler.
  *
  * This framework provides a set of simple macros to define test functions and
  * assert conditions. It is designed to be lightweight and have zero external

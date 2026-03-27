@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Bootstrap Type System & Semantic Analysis
 
-This document provides a detailed specification for the initial type system of the RetroZig bootstrap compiler. Its primary goal is to support a subset of Zig's type system that is directly translatable to C89, adhering to the project's strict technical and historical constraints.
+This document provides a detailed specification for the initial type system of the Z98 bootstrap compiler. Its primary goal is to support a subset of Zig's type system that is directly translatable to C89, adhering to the project's strict technical and historical constraints.
 
 ## 1. Core Philosophy
 
@@ -783,9 +785,9 @@ The second layer of enforcement occurs within the `TypeChecker` and the type sys
 
 ### C89 Primitive Type Mapping Table
 
-A static mapping table, `c89_type_map`, defines the direct correspondence between the RetroZig compiler's primitive `TypeKind`s and their C89 string equivalents. This table is the single source of truth for C89 type compatibility.
+A static mapping table, `c89_type_map`, defines the direct correspondence between the Z98 compiler's primitive `TypeKind`s and their C89 string equivalents. This table is the single source of truth for C89 type compatibility.
 
-| RetroZig TypeKind | C89 Equivalent         | Notes                          |
+| Z98 TypeKind | C89 Equivalent         | Notes                          |
 |-------------------|------------------------|--------------------------------|
 | `TYPE_VOID`       | `"void"`               | Size: 0, Align: 0              |
 | `TYPE_BOOL`       | `"int"`                | Size: 4, Align: 4. C89 has no native `_Bool`. |
@@ -1022,7 +1024,7 @@ The `TypeChecker` is integrated into the main compilation pipeline as a distinct
 
 ### Error Handling & Multi-Error Reporting
 
-The RetroZig compiler uses a tiered error handling model to balance developer productivity with bootstrap reliability.
+The Z98 compiler uses a tiered error handling model to balance developer productivity with bootstrap reliability.
 
 #### Syntactic Errors (Parser)
 The `Parser` is currently **not recoverable**. To prevent unstable execution, infinite loops, or secondary crashes in the bootstrap phase, any syntactic error triggers an immediate `plat_abort()` after being reported via the `ErrorHandler`. Future work includes implementing synchronization points (e.g., on semicolons) to enable multi-error reporting in the syntactic phase.
@@ -1385,7 +1387,7 @@ The implementation follows the requested multi-pass architecture:
 - **Performance**: Uses linear search on `DynamicArray` for assignment tracking, which is efficient for typical small bootstrap-era functions.
 
 ### Observations & Deviations
-- **Global Flag**: The implementation uses `SYMBOL_FLAG_GLOBAL` to mark non-local variables. In the context of the RetroZig bootstrap compiler, these are functionally equivalent to static storage for lifetime purposes.
+- **Global Flag**: The implementation uses `SYMBOL_FLAG_GLOBAL` to mark non-local variables. In the context of the Z98 bootstrap compiler, these are functionally equivalent to static storage for lifetime purposes.
 - **Analysis Depth**: As per the "safe for bootstrap" philosophy, the analysis focuses on the most common dangling pointer cases. It does not currently handle nested pointer-to-pointer tracking or struct field addresses.
 
 

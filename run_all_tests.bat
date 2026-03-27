@@ -6,7 +6,7 @@ for %%a in (%*) do (
     if "%%a"=="--no-postclean" set POSTCLEAN=false
 )
 
-echo Running RetroZig test batches...
+echo Running Z98 test batches...
 echo ================================
 
 set FAILED=0

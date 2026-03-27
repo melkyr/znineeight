@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # AST & Parser Design
 
-This document provides a detailed overview of the Abstract Syntax Tree (AST) and the Parser for the RetroZig compiler.
+This document provides a detailed overview of the Abstract Syntax Tree (AST) and the Parser for the Z98 compiler.
 
 ## 1. Core Design Philosophy
 
@@ -1978,7 +1980,7 @@ All filenames are normalized and interned to ensure that each unique file is onl
 
 ## 27. Parser Path for Non-C89 Features (Task 150)
 
-To support accurate diagnostics and future translation planning, the RetroZig parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
+To support accurate diagnostics and future translation planning, the Z98 parser is intentionally designed to recognize a subset of modern Zig features, even though they are rejected by the `C89FeatureValidator` before code generation.
 
 ### 20.1 Purpose of Detection
 - **Comprehensive Cataloguing**: By parsing and resolving these features, the compiler can maintain detailed catalogues (e.g., `ErrorSetCatalogue`, `GenericCatalogue`) that inform Milestone 5 translation strategies.

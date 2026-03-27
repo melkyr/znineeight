@@ -304,7 +304,7 @@ void MetadataPreparationPass::collectStaticFunctions(Module* mod) {
         ASTNode* node = (*stmts)[i];
         if (node->type == NODE_FN_DECL) {
             ASTFnDeclNode* fn = node->as.fn_decl;
-            /* In RetroZig, every top-level function should have a symbol in the module scope. */
+            /* In Z98, every top-level function should have a symbol in the module scope. */
             Symbol* sym = mod->symbols->lookup(fn->name);
             if (sym && sym->kind == SYMBOL_FUNCTION) {
                 /* We collect non-pub functions for forward declarations in .c files. 

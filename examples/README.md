@@ -1,6 +1,6 @@
-# RetroZig Examples
+# Z98 Examples
 
-This directory contains example programs written in the Z98 Zig subset, demonstrating various features of the RetroZig bootstrap compiler.
+This directory contains example programs written in the Z98 Zig subset, demonstrating various features of the Z98 bootstrap compiler.
 
 ## Available Examples
 

@@ -6,7 +6,7 @@
 
 /**
  * @file array_tests.cpp
- * @brief Integration tests for Zig arrays in the RetroZig compiler.
+ * @brief Integration tests for Zig arrays in the Z98 compiler.
  */
 
 TEST_FUNC(ArrayIntegration_FixedSizeDecl) {

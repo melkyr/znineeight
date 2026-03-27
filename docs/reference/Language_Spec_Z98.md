@@ -1,7 +1,9 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Z98 Language Specification
 **A Zig subset for 1998-era hardware and software.**
 
-Z98 is a restricted subset of the Zig programming language designed to be compiled by the RetroZig bootstrap compiler into C89 code. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
+Z98 is a restricted subset of the Zig programming language designed to be compiled by the Z98 bootstrap compiler into C89 code. It maintains the core spirit of Zig while adhering to the extreme technical constraints of the late 90s.
 
 ## 1. Types
 
@@ -180,7 +182,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
   - `break`, `continue`, and `return` are strictly forbidden inside a `defer` block.
-- `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**. **Note**: Currently supported as a placeholder in the C89 backend; it emits a C comment `/* errdefer */` but does not yet execute the statement on error paths.
+- `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**.
   - **Example**: `errdefer rollback();`
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
   - **Example**:
@@ -245,7 +247,6 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
   - **Workaround**: Use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
 - **Anonymous Union Payloads**: Using anonymous structs directly as payloads for `union(enum)` (e.g., `Cons: struct { car: *V, cdr: *V }`) results in the C89 backend declaring but not defining the internal struct.
   - **Workaround**: Define a named struct for the payload and use it in the union (see `examples/lisp_interpreter_curr/value.zig`).
-- **`errdefer` Status**: `errdefer` is currently a **placeholder**. It is parsed and catalogued but only emits a comment in the generated C code. It does NOT currently execute on error paths.
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
 - **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.

@@ -1,4 +1,6 @@
-# RetroZig Compiler: Master Design Document (v1.2)
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
+# Z98 Compiler: Master Design Document (v1.2)
 
 ## 1. Project Overview & Philosophy
 **Goal:** Create a self-hosting Zig compiler targeting Windows 9x era toolchains (1998-2000).
@@ -52,8 +54,11 @@ To fit within the strict 16MB peak memory constraint, the compiler employs a mul
 - **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
 
 ### 3.1 Memory Management
+## Current Status: Milestone 11 finished.
+The project has successfully completed Milestone 11, including full cross-module visibility and `defer`/`errdefer` support.
 
-The RetroZig project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
+
+The Z98 project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
 
 #### 3.1.1 Bootstrap Compiler Memory (`memory.hpp`)
 **Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
@@ -190,7 +195,7 @@ To ensure robustness on sensitive 90s hardware and during complex bootstrap phas
 - **Fail-Hard Buffering**: Any buffer overflow in the codegen system triggers an immediate `plat_abort()` with a descriptive error, preventing silent output truncation.
 
 ### 3.7 Error Handling System (`error_handler.hpp`)
-**Philosophy:** The RetroZig compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
+**Philosophy:** The Z98 compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
 
 ```cpp
 class ErrorHandler {
@@ -637,8 +642,8 @@ public:
 };
 ```
 
-## 5. The "Zig Subset" Language Specification (Milestone 4)
-This is the restricted version of Zig the bootstrap compiler supports as of Milestone 4.
+## 5. The "Zig Subset" Language Specification (Milestone 11)
+This is the restricted version of Zig the bootstrap compiler supports as of Milestone 11.
 
 ### 5.1 Supported Syntax & Features
 *   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
@@ -668,7 +673,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
     *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
-*   **Defer**: `defer statement;` or `defer { ... }`.
+*   **Defer**: `defer statement;` or `defer { ... }`. (Full support as of Milestone 11).
+*   **Errdefer**: `errdefer statement;` or `errdefer { ... }`. (Full support as of Milestone 11).
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
 *   **Optional Types**: Fully supported as of Task 9.3 stabilization. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
     *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types internally.
@@ -975,12 +981,16 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [x] Task 251: Recursive include resolution
 - [x] Task 252: Forward declaration orchestration
 
-### Week 1: MSVC 6.0 Env Setup
+### Milestone 12: Self-Hosting Pre-requisites
+- [ ] Task 260: Support `anytype` in restricted contexts (built-ins)
+- [ ] Task 261: Implement `@as` for explicit coercion
+
+### Part 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
 - [ ] Create `PEBuilder` skeleton (generating a valid empty .exe)
 - [x] Implement compatibility layer (`common.hpp`)
 
-### Week 2: Memory & Lexer
+### Part 2: Memory & Lexer
 - [x] Implement Arena Allocator with alignment support
 - [x] Create String Interning system
 - [x] Implement lexer class with token definitions
@@ -996,35 +1006,35 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
   - [x] Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`)
   - [x] Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`)
 
-### Week 3: Parser & AST
+### Part 3: Parser & AST
 - [x] Implement recursive descent parser
 - [x] Handle expressions with precedence
 - [x] Parse function declarations
 - [x] Implement defer statement handling
 
-### Week 4: Type System
+### Part 4: Type System
 - [x] Define type representation (Primitives, Pointers, Slices, Error Unions)
 - [x] Implement type compatibility rules
 - [x] Create symbol table system
 
-### Week 5: Basic Code Generation (C89)
+### Part 5: Basic Code Generation (C89)
 - [x] Design C89 emitter (Mock emitter for Milestone 4)
 - [x] Implement full C89 code generation for functions
 - [x] Generate code for variable declarations
 - [x] Handle basic expressions
 
-### Week 6: Advanced Code Generation
+### Part 6: Advanced Code Generation
 - [x] Implement defer statement code generation
 - [x] Handle slices and error unions (Slices: DONE, Error Unions: DONE)
 - [x] Add Win32 imports for kernel32.dll
 - [x] Test generated code correctness
 
-### Week 7: Bootstrap Stage 0 -> Stage 1
+### Part 7: Bootstrap Stage 0 -> Stage 1
 - [ ] Write minimal Zig compiler in C++
 - [ ] Test compilation of stage1.zig
 - [ ] Verify generated executable works
 
-### Week 8: Self-Hosting Verification
+### Part 8: Self-Hosting Verification
 - [ ] Complete compiler implementation in Zig subset
 - [ ] Test self-compilation cycle (Stage 1 -> Stage 2)
 - [ ] Verify bootstrap integrity with binary comparison

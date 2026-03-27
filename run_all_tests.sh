@@ -7,7 +7,7 @@ for arg in "$@"; do
     fi
 done
 
-echo "Running RetroZig test batches..."
+echo "Running Z98 test batches..."
 echo "================================"
 
 FAILED=0

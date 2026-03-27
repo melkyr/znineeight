@@ -7,7 +7,7 @@
 
 /**
  * @file pointer_tests.cpp
- * @brief Integration tests for Zig pointer operations in the RetroZig compiler.
+ * @brief Integration tests for Zig pointer operations in the Z98 compiler.
  */
 
 static bool run_pointer_test(const char* zig_code, const char* var_name, const char* expected_c89) {

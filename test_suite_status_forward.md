@@ -1,4 +1,4 @@
-# RetroZig Test Suite Status Report
+# Z98 Test Suite Status Report
 
 ## Summary
 
@@ -123,7 +123,7 @@ To resolve the widespread emission mismatches caused by the new name mangling sc
 
 ### Systematic Update Process
 The remaining failing batches (13–18, 26–27, 39, 41, 52, 45, 47, 48, 58, 61, 65, 66, 67, 69, 71, 72) will be updated using the following protocol:
-1. Compile the test batch runner with `-DRETROZIG_TEST`.
+1. Compile the test batch runner with `-DZ98_TEST`.
 2. Run the runner to identify specific mismatches.
 3. Update the `.cpp` source files to reflect the counter-based deterministic output (e.g., changing `zF_d071e5_foo` to `zF_0_foo`).
 4. Re-verify the batch.

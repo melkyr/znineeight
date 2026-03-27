@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# 1. Build the RetroZig bootstrap compiler (zig0)
+# 1. Build the Z98 bootstrap compiler (zig0)
 # We use a single translation unit build for simplicity and reliability
-echo "Building RetroZig bootstrap compiler..."
+echo "Building Z98 bootstrap compiler..."
 g++ -std=c++98 -O2 -Isrc/include src/bootstrap/bootstrap_all.cpp src/bootstrap/main.cpp -o zig0
 
 # 2. Compile hello.zig to hello.c

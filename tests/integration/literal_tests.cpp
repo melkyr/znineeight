@@ -7,7 +7,7 @@
 
 /**
  * @file literal_tests.cpp
- * @brief Integration tests for Zig literals in the RetroZig compiler.
+ * @brief Integration tests for Zig literals in the Z98 compiler.
  *
  * These tests verify that the lexer, parser, and type checker correctly handle
  * various literal types and that they can be translated to valid C89 representations.

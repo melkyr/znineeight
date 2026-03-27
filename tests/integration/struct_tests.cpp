@@ -6,7 +6,7 @@
 
 /**
  * @file struct_tests.cpp
- * @brief Integration tests for Zig structs in the RetroZig compiler.
+ * @brief Integration tests for Zig structs in the Z98 compiler.
  */
 
 static bool run_struct_test(const char* zig_code, const char* var_name, const char* expected_c89) {
