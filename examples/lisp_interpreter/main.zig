@@ -1,4 +1,4 @@
-const arena_mod = @import("arena.zig");
+const sand_mod = @import("sand.zig");
 const value_mod = @import("value.zig");
 const token_mod = @import("token.zig");
 const parser_mod = @import("parser.zig");
@@ -64,53 +64,59 @@ fn print_list(v: *value_mod.Value) void {
     }
 }
 
-fn read_line(buf: []u8) ![]u8 {
+fn read_line(buf: []u8) i32 {
     var i: usize = 0;
     while (i < buf.len) {
         const c = getchar();
         const ic = @intCast(i32, c);
-        if (ic == -1 or ic == 10) break;
+        if (ic == -1) {
+            if (i == 0) return -1;
+            break;
+        }
+        if (ic == 10) break;
         buf[i] = @intCast(u8, ic);
         i += 1;
     }
-    return buf[0..i];
+    return @intCast(i32, i);
 }
 
-pub fn main() !void {
+pub fn main() void {
     var perm_buf: [1048576]u8 = undefined;
     var temp_buf: [1048576]u8 = undefined;
 
-    var perm_arena = arena_mod.lisp_arena_init(perm_buf[0..1048576]);
-    var temp_arena = arena_mod.lisp_arena_init(temp_buf[0..1048576]);
+    var perm_sand = sand_mod.lisp_sand_init(perm_buf[0..1048576]);
+    var temp_sand = sand_mod.lisp_sand_init(temp_buf[0..1048576]);
 
     var global_env: ?*env_mod.EnvNode = null;
 
     // Register builtins
-    global_env = try env_mod.env_extend("cons", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cons), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("car", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_car), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("cdr", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cdr), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("+", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_add), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("-", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_sub), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("*", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_mul), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("/", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_div), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("=", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_eq), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("nil?", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_is_nil), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend("<", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_lt), &perm_arena), global_env, &perm_arena);
-    global_env = try env_mod.env_extend(">", try value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_gt), &perm_arena), global_env, &perm_arena);
+    global_env = (env_mod.env_extend("cons", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cons), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("car", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_car), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("cdr", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_cdr), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("+", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_add), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("-", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_sub), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("*", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_mul), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("/", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_div), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("=", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_eq), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("nil?", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_is_nil), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend("<", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_lt), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
+    global_env = (env_mod.env_extend(">", (value_mod.alloc_builtin(@ptrCast(*void, builtins_mod.builtin_gt), &perm_sand) catch unreachable), global_env, &perm_sand) catch unreachable);
 
     var input_buf: [4096]u8 = undefined;
     while (true) {
         print_str("> ");
-        const line = try read_line(&input_buf);
-        if (line.len == 0) continue;
+        const len = read_line(&input_buf);
+        if (len < 0) break;
+        if (len == 0) continue;
+        const line = input_buf[0..@intCast(usize, len)];
 
         var tokenizer = token_mod.Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
-        const expr = try parser_mod.parse_expr(&tokenizer, &perm_arena, &temp_arena);
+        const expr = parser_mod.parse_expr(&tokenizer, &perm_sand, &temp_sand) catch continue;
 
-        const result = try eval_mod.eval(expr, &global_env, &temp_arena, &perm_arena);
+        const result = eval_mod.eval(expr, &global_env, &temp_sand, &perm_sand) catch continue;
 
         print_value(result);
         print_str("\n");
-        arena_mod.lisp_reset(&temp_arena);
+        sand_mod.lisp_sand_reset(&temp_sand);
     }
 }

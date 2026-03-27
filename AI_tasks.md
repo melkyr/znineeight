@@ -1,6 +1,6 @@
-# AI Agent Tasks for RetroZig Compiler
+# AI Agent Tasks for Z98 Compiler
 
-This document outlines a granular, step-by-step roadmap for an AI agent to implement the RetroZig compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
+This document outlines a granular, step-by-step roadmap for an AI agent to implement the Z98 compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
 
 ## Phase 0: The Bootstrap Compiler (C++98)
 
@@ -2311,6 +2311,14 @@ Implementation steps (minimal):
     - **Analysis**: Determined that the error is caused by the compiler processing modules in discovery order, which leads to failed on-demand resolution when symbols have complex cross-module dependencies.
     - **Documentation**: Created `docs/CrossModuleSymbolVisibility.md` and updated `DESIGN.md`.
     - **Workaround**: Updated the Lisp interpreter to use optional pointers (`?*T`) to improve compiler stability during cross-module resolution.
+
+248. [COMPLETE] **Task 9.24: Guard Against Null Dereferences and Type Mismatches**
+    - **Goal**: Stabilize the compiler by adding robust guards and structural-aware type equality.
+    - **Type Checker**: Moved `areTypesEqual` and `signaturesMatch` into `TypeChecker` to support placeholder resolution during comparison.
+    - **Structural Equality**: Implemented deep structural comparison in `TypeChecker::areTypesEqual`, including cross-module nominal type identity (matching by name and module name).
+    - **Safety Guards**: Audited and added null checks and `kind` validation in `visitUnaryOp`, `visitFunctionCall`, `visitArrayAccess`, `IsTypeAssignableTo`, and other critical methods.
+    - **Internal Invariants**: Used `fatalError` to abort on internal compiler errors (e.g., unexpected null types) while maintaining recoverable reporting for user errors.
+    - **Documentation**: Updated `docs/type_checker.md` with details on the new equality and safety logic.
 
 ---
 

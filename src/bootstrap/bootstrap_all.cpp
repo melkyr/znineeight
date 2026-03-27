@@ -4,6 +4,7 @@
 #include "error_handler.cpp"
 #include "symbol_table.cpp"
 #include "type_system.cpp"
+#include "type_registry.cpp"
 #include "type_checker.cpp"
 #include "compilation_unit.cpp"
 #include "source_manager.cpp"

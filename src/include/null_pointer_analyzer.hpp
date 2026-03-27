@@ -10,7 +10,7 @@
  */
 enum PointerState {
     PS_UNINIT = 0,    // No initializer
-    PS_NULL   = 1,    // Definitely null (0/null)
+    PS_IS_NULL = 1,   // Definitely null (0/null)
     PS_SAFE   = 2,    // Definitely non-null (&x)
     PS_MAYBE  = 3     // Unknown
 };

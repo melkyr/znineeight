@@ -121,6 +121,11 @@ public:
     void emitPrologue();
 
     /**
+     * @brief Emits the symbol map comment block.
+     */
+    void emitSymbolMap();
+
+    /**
      * @brief Prepares the emitter for a new function.
      */
     void beginFunction();
@@ -372,6 +377,12 @@ public:
     const char* getMangledTypeName(Type* type);
 
     /**
+     * @brief Returns true if the node is a simple l-value (identifier or dereference of a simple l-value).
+     *        Recursively unwraps parentheses.
+     */
+    bool isSimpleLValue(const ASTNode* node) const;
+
+    /**
      * @brief Captures the C89 representation of an expression into a buffer.
      * @param node The AST node to emit.
      * @param buf The destination buffer.
@@ -437,6 +448,11 @@ public:
      * @brief Evaluates a simple constant expression for codegen (e.g. for switch cases).
      */
     bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) const;
+
+    /**
+     * @brief Recursively scans an AST node for any 'errdefer' statements.
+     */
+    bool scanForErrDefer(const ASTNode* node) const;
 
 private:
     /**
@@ -551,13 +567,16 @@ private:
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
+        const char* location;
+        const char* kind;
     };
 
     struct DeferScope {
         int label_id;
         DynamicArray<ASTDeferStmtNode*> defers;
+        DynamicArray<ASTDeferStmtNode*> err_defers;
 
-        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena) {}
+        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena), err_defers(arena) {}
     };
 
     char buffer_[4096];
@@ -572,7 +591,9 @@ private:
     CVariableAllocator var_alloc_;
     ErrorHandler& error_handler_;
     ArenaAllocator& arena_;
+    ArenaAllocator& transient_arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    DynamicArray<const char*> used_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
@@ -581,6 +602,7 @@ private:
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
+    const char* current_err_flag_;
     bool is_header_;
     char* type_def_buffer_;
     size_t type_def_pos_;

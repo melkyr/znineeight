@@ -30,6 +30,7 @@ private:
 
     static void traverse(ASTNode* node, Context& ctx);
     static void checkCall(ASTNode* node, Context& ctx);
+    static bool isBuiltin(const char* name);
 };
 
 #endif // CALL_RESOLUTION_VALIDATOR_HPP

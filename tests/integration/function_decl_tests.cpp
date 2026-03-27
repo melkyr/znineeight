@@ -6,8 +6,10 @@
 
 /**
  * @file function_decl_tests.cpp
- * @brief Integration tests for Zig function declarations in the RetroZig compiler.
+ * @brief Integration tests for Zig function declarations in the Z98 compiler.
  */
+
+// test.zig hash: d071e5
 
 static bool run_fn_decl_test(const char* zig_code, const char* fn_name, const char* expected_signature) {
     ArenaAllocator arena(1024 * 1024);
@@ -31,32 +33,31 @@ static bool run_fn_decl_test(const char* zig_code, const char* fn_name, const ch
 // --- Basic Declarations ---
 
 TEST_FUNC(FunctionIntegration_NoParams) {
-    return run_fn_decl_test("fn foo() void {}", "foo", "void foo(void)");
+    return run_fn_decl_test("fn foo() void {}", "foo", "void zF_0_foo(void)");
 }
 
 TEST_FUNC(FunctionIntegration_FourParams) {
     const char* source = "fn add4(a: i32, b: i32, c: i32, d: i32) i32 { return a + b + c + d; }";
-    return run_fn_decl_test(source, "add4", "int add4(int a, int b, int c, int d)");
+    return run_fn_decl_test(source, "add4", "int zF_0_add4(int a, int b, int c, int d)");
 }
 
 TEST_FUNC(FunctionIntegration_PointerTypes) {
     const char* source = "fn ptr_func(p: *i32, s: *const u8) void {}";
     /* C89Emitter drops 'const' on pointers for simplicity */
-    return run_fn_decl_test(source, "ptr_func", "void ptr_func(int* p, unsigned char* s)");
+    return run_fn_decl_test(source, "ptr_func", "void zF_0_ptr_func(int* p, unsigned char* s)");
 }
 
 // --- Name Mangling ---
 
 TEST_FUNC(FunctionIntegration_MangleKeyword) {
     // 'int' is a C keyword but NOT a Zig keyword, so it is a valid Zig identifier.
-    // It should be mangled to 'z_int' by sanitizeForC89.
-    return run_fn_decl_test("fn int() void {}", "int", "void z_int(void)");
+    // It should be mangled to 'zF_hash_int' by NameMangler.
+    return run_fn_decl_test("fn int() void {}", "int", "void zF_0_int(void)");
 }
 
 TEST_FUNC(FunctionIntegration_MangleLongName) {
     const char* long_name = "this_is_a_very_long_function_name_that_exceeds_31_chars";
-    // Truncated to 31: "this_is_a_very_long_function_na"
-    return run_fn_decl_test("fn this_is_a_very_long_function_name_that_exceeds_31_chars() void {}", long_name, "void this_is_a_very_long_function_na(void)");
+    return run_fn_decl_test("fn this_is_a_very_long_function_name_that_exceeds_31_chars() void {}", long_name, "void zF_0_this_is_a_very_long_function_name_that_exceeds_31_chars(void)");
 }
 
 // --- Forward References & Recursion ---
@@ -68,14 +69,14 @@ TEST_FUNC(FunctionIntegration_Recursion) {
         "    return (n * factorial(n - 1));\n"
         "}";
     // Current TypeChecker resolves factorial by recursion support.
-    return run_fn_decl_test(source, "factorial", "int factorial(int n)");
+    return run_fn_decl_test(source, "factorial", "int zF_0_factorial(int n)");
 }
 
 TEST_FUNC(FunctionIntegration_ForwardReference) {
     const char* source =
-        "fn first() void { second(); }\n"
-        "fn second() void {}";
-    return run_fn_decl_test(source, "first", "void first(void)");
+        "fn first() void { zF_0_second(); }\n"
+        "fn zF_0_second() void {}";
+    return run_fn_decl_test(source, "first", "void zF_0_first(void)");
 }
 
 // --- Negative Tests ---

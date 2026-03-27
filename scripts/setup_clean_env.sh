@@ -5,7 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 BIN_DIR="$PROJECT_ROOT/bin"
 
-echo "=== RetroZig Clean Environment Setup ==="
+echo "=== Z98 Clean Environment Setup ==="
 
 # Verify C++98-compatible compiler
 if ! g++ --version 2>/dev/null | grep -q "g++ (GCC) [234]\."; then

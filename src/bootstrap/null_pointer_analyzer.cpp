@@ -286,7 +286,7 @@ void NullPointerAnalyzer::visitIfStmt(ASTIfStmtNode* node) {
         // 4. Analyze then block with refined state
         pushScope(true); // Branch for then
         if (isEqual) {
-            setState(varName, PS_NULL); // p == null
+            setState(varName, PS_IS_NULL); // p == null
         } else {
             setState(varName, PS_SAFE); // p != null
         }
@@ -301,7 +301,7 @@ void NullPointerAnalyzer::visitIfStmt(ASTIfStmtNode* node) {
             if (isEqual) {
                 setState(varName, PS_SAFE); // else of p == null
             } else {
-                setState(varName, PS_NULL); // else of p != null
+                setState(varName, PS_IS_NULL); // else of p != null
             }
 
             visit(node->else_block);
@@ -426,13 +426,13 @@ void NullPointerAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
 PointerState NullPointerAnalyzer::getExpressionState(ASTNode* expr) {
     if (!expr) return PS_MAYBE;
 
-    if (isNullExpression(expr)) return PS_NULL;
+    if (isNullExpression(expr)) return PS_IS_NULL;
 
     switch (expr->type) {
         case NODE_NULL_LITERAL:
-            return PS_NULL;
+            return PS_IS_NULL;
         case NODE_INTEGER_LITERAL:
-            if (expr->as.integer_literal.value == 0) return PS_NULL;
+            if (expr->as.integer_literal.value == 0) return PS_IS_NULL;
             return PS_MAYBE;
         case NODE_UNARY_OP:
             if (expr->as.unary_op.op == TOKEN_AMPERSAND) return PS_SAFE;
@@ -501,7 +501,7 @@ PointerState NullPointerAnalyzer::mergeStates(PointerState s1, PointerState s2) 
 
     // Precise merges
     if (s1 == PS_SAFE && s2 == PS_SAFE) return PS_SAFE;
-    if (s1 == PS_NULL && s2 == PS_NULL) return PS_NULL;
+    if (s1 == PS_IS_NULL && s2 == PS_IS_NULL) return PS_IS_NULL;
     if (s1 == PS_UNINIT && s2 == PS_UNINIT) return PS_UNINIT;
 
     // Everything else is conservative
@@ -532,7 +532,7 @@ void NullPointerAnalyzer::checkDereference(ASTNode* expr) {
     PointerState state = getExpressionState(expr);
 
     switch (state) {
-        case PS_NULL:
+        case PS_IS_NULL:
             unit_.getErrorHandler().report(ERR_NULL_POINTER_DEREFERENCE, expr->loc, ErrorHandler::getMessage(ERR_NULL_POINTER_DEREFERENCE), "Definite null pointer dereference");
             break;
         case PS_UNINIT:

@@ -103,6 +103,6 @@ TEST_FUNC(Pointer_Pointer_Global_Emission) {
 
     // Verify emission of 'pp'. Should ignore 'const'.
     // Zig: *const *i32 pp = &p;
-    // Expected C89: int** pp = &p; (approx, MockC89Emitter might use mangled names)
-    return unit.validateVariableEmission("pp", "int** pp = &p;");
+    // Expected C89: int** zV_2_pp = &p;
+    return unit.validateVariableEmission("pp", "int** zV_2_pp = &p;");
 }

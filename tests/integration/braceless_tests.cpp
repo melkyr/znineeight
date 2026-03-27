@@ -29,7 +29,7 @@ TEST_FUNC(BracelessControlFlow_If) {
         "    if (b) return 1; else return 0;\n"
         "}";
     // Lifter will wrap branches in blocks
-    return run_braceless_test(source, "foo", "int foo(int b) { if (b) { return 1; } else { return 0; } }");
+    return run_braceless_test(source, "foo", "int zF_0_foo(int b) { if (b) { return 1; } else { return 0; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_ElseIf) {
@@ -39,7 +39,7 @@ TEST_FUNC(BracelessControlFlow_ElseIf) {
         "    else if (x < 0) return -1;\n"
         "    else return 0;\n"
         "}";
-    return run_braceless_test(source, "foo", "int foo(int x) { if (x > 0) { return 1; } else if (x < 0) { return -1; } else { return 0; } }");
+    return run_braceless_test(source, "foo", "int zF_0_foo(int x) { if (x > 0) { return 1; } else if (x < 0) { return -1; } else { return 0; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_While) {
@@ -48,7 +48,7 @@ TEST_FUNC(BracelessControlFlow_While) {
         "    var i: i32 = 0;\n"
         "    while (i < n) i = i + 1;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int n) { int i = 0; __loop_0_start: ; if (!(i < n)) goto __loop_0_end; { i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_braceless_test(source, "foo", "void zF_0_foo(int n) { int i = 0; __loop_0_start: ; if (!(i < n)) goto __loop_0_end; { i = i + 1; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_For) {
@@ -84,7 +84,7 @@ TEST_FUNC(BracelessControlFlow_ErrDefer) {
         "    if (b) return error.Fail;\n"
         "}";
     // Lifter now wraps errdefer.
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(int b) { /* errdefer */ { cleanup(); } if (b) { { struct ErrorUnion_void __return_val; __return_val.is_error = 1; __return_val.err = ERROR_Fail; { cleanup(); } return __return_val; } } { cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void zF_1_foo(int b) { /* errdefer */ { zF_0_cleanup(); } if (b) { { struct ErrorUnion_void __return_val; __return_val.is_error = 1; __return_val.err = ERROR_Fail; { zF_0_cleanup(); } return __return_val; } } { zF_0_cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_Defer) {
@@ -95,7 +95,7 @@ TEST_FUNC(BracelessControlFlow_Defer) {
         "    if (b) return;\n"
         "}";
     // After lifting, defer is processed and cleanup() is injected before returns and at end of block.
-    return run_braceless_test(source, "foo", "void foo(int b) { if (b) { { { cleanup(); } return; } } { cleanup(); } }");
+    return run_braceless_test(source, "foo", "void zF_1_foo(int b) { if (b) { { { zF_0_cleanup(); } return; } } { zF_0_cleanup(); } }");
 }
 
 TEST_FUNC(BracelessControlFlow_Nested) {
@@ -103,7 +103,7 @@ TEST_FUNC(BracelessControlFlow_Nested) {
         "fn foo(a: bool, b: bool) i32 {\n"
         "    if (a) if (b) return 1; else return 2; else return 3;\n"
         "}";
-    return run_braceless_test(source, "foo", "int foo(int a, int b) { if (a) { if (b) { return 1; } else { return 2; } } else { return 3; } }");
+    return run_braceless_test(source, "foo", "int zF_0_foo(int a, int b) { if (a) { if (b) { return 1; } else { return 2; } } else { return 3; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_MixedBraced) {
@@ -114,7 +114,7 @@ TEST_FUNC(BracelessControlFlow_MixedBraced) {
         "    } else bar();\n"
         "}\n"
         "fn bar() void {}\n";
-    return run_braceless_test(source, "foo", "void foo(int b) { if (b) { int x = 1; } else { bar(); } }");
+    return run_braceless_test(source, "foo", "void zF_0_foo(int b) { if (b) { int x = 1; } else { zF_1_bar(); } }");
 }
 
 TEST_FUNC(BracelessControlFlow_EmptyWhile) {
@@ -122,7 +122,7 @@ TEST_FUNC(BracelessControlFlow_EmptyWhile) {
         "fn foo(b: bool) void {\n"
         "    while (b) ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { ; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
+    return run_braceless_test(source, "foo", "void zF_0_foo(int b) { __loop_0_start: ; if (!(b)) goto __loop_0_end; { ; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
 TEST_FUNC(BracelessControlFlow_ForBreak) {
@@ -151,7 +151,7 @@ TEST_FUNC(BracelessControlFlow_CombinedDefers) {
         "    defer cleanup();\n"
         "    errdefer cleanup();\n"
         "}";
-    return run_braceless_test(source, "foo", "struct ErrorUnion_void foo(void) { /* errdefer */ { cleanup(); } { cleanup(); } { cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
+    return run_braceless_test(source, "foo", "struct ErrorUnion_void zF_1_foo(void) { /* errdefer */ { zF_0_cleanup(); } { zF_0_cleanup(); } { zF_0_cleanup(); } { struct ErrorUnion_void __implicit_ret = {.is_error = 0}; return __implicit_ret; } }");
 }
 
 TEST_FUNC(BracelessControlFlow_InsideLifted) {
@@ -173,5 +173,5 @@ TEST_FUNC(BracelessControlFlow_EmptyFor) {
         "fn foo(arr: [5]i32) void {\n"
         "    for (arr) |_| ;\n"
         "}";
-    return run_braceless_test(source, "foo", "void foo(int arr[5]) { { unsigned int __idx = 0; __loop_0_start: ; while (__idx < /* len */) { { ; } __loop_0_continue: ; __idx++; goto __loop_0_start; } __loop_0_end: ; } }");
+    return run_braceless_test(source, "foo", "void zF_0_foo(int arr[5]) { { unsigned int __idx = 0; __loop_0_start: ; while (__idx < /* len */) { { ; } __loop_0_continue: ; __idx++; goto __loop_0_start; } __loop_0_end: ; } }");
 }

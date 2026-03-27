@@ -60,7 +60,34 @@ bool isInternalCompilerIdentifier(const char* name) {
     if (plat_strncmp(name, "__for_", 6) == 0) return true;
     if (plat_strncmp(name, "__make_slice_", 13) == 0) return true;
     if (plat_strncmp(name, "__implicit_ret", 14) == 0) return true;
+    if (plat_strncmp(name, "__rz_", 5) == 0) return true;
+
+    static const char* exact_names[] = {
+        "Arena",
+        "ArenaBlock",
+        "zig_default_arena",
+        "arena_create",
+        "arena_alloc",
+        "arena_reset",
+        "arena_destroy",
+        "arena_alloc_default",
+        "arena_free"
+    };
+    for (size_t i = 0; i < sizeof(exact_names)/sizeof(exact_names[0]); ++i) {
+        if (plat_strcmp(name, exact_names[i]) == 0) return true;
+    }
+
     return false;
+}
+
+u32 fnv1a_32(const char* str) {
+    if (!str) return 0;
+    u32 hash = 2166136261U;
+    while (*str) {
+        hash ^= (u32)(unsigned char)*str++;
+        hash *= 16777619U;
+    }
+    return hash;
 }
 
 void sanitizeForC89(char* buffer) {
@@ -179,4 +206,93 @@ void normalize_path(char* path) {
     if (dst > path + 1 && dst[-1] == '/') dst--;
     *dst = '\0';
     if (path[0] == '\0') plat_strcpy(path, ".");
+}
+
+void get_relative_path(const char* target, const char* base, char* buffer, size_t buffer_size) {
+    if (buffer_size == 0) return;
+    buffer[0] = '\0';
+
+    char target_norm[1024];
+    char base_norm[1024];
+
+    plat_strncpy(target_norm, target, sizeof(target_norm) - 1);
+    target_norm[sizeof(target_norm) - 1] = '\0';
+    normalize_path(target_norm);
+
+    plat_strncpy(base_norm, base, sizeof(base_norm) - 1);
+    base_norm[sizeof(base_norm) - 1] = '\0';
+    normalize_path(base_norm);
+
+    // If base is ".", just return target_norm
+    if (plat_strcmp(base_norm, ".") == 0) {
+        plat_strncpy(buffer, target_norm, buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+        return;
+    }
+
+    // Find common prefix
+    const char* t = target_norm;
+    const char* b = base_norm;
+    const char* last_common_sep = NULL;
+
+    while (*t && *b && *t == *b) {
+        if (*t == '/') last_common_sep = t;
+        t++;
+        b++;
+    }
+
+    if ((*t == '/' || *t == '\0') && (*b == '/' || *b == '\0')) {
+        // Exact match or match up to a separator
+        if (*t == '\0' && *b == '\0') {
+            plat_strcpy(buffer, ".");
+            return;
+        }
+        
+        // Check if one is a prefix of another's directory
+        if (*b == '\0' && *t == '/') {
+            const char* rel = t + 1;
+            plat_strncpy(buffer, rel, buffer_size - 1);
+            buffer[buffer_size - 1] = '\0';
+            return;
+        }
+    }
+
+    // Fallback: search for last common separator
+    t = target_norm;
+    b = base_norm;
+    const char* t_match = t;
+    const char* b_match = b;
+    
+    while (*t && *b && *t == *b) {
+        if (*t == '/') {
+            t_match = t + 1;
+            b_match = b + 1;
+        }
+        t++; b++;
+    }
+    
+    // If mismatch happens after a separator or at start
+    char result[1024];
+    result[0] = '\0';
+    char* r_ptr = result;
+    size_t r_rem = sizeof(result);
+
+    // Add ../ for each remaining level in base
+    const char* b_rem = b_match;
+    while (*b_rem) {
+        if (*b_rem == '/') {
+            safe_append(r_ptr, r_rem, "../");
+        }
+        b_rem++;
+    }
+    // Handle the last component of base if it's not empty
+    if (b_match[0] != '\0') {
+         safe_append(r_ptr, r_rem, "../");
+    }
+
+    // Add remaining part of target
+    safe_append(r_ptr, r_rem, t_match);
+
+    plat_strncpy(buffer, result, buffer_size - 1);
+    buffer[buffer_size - 1] = '\0';
 }

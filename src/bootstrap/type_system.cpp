@@ -1,4 +1,7 @@
 #include "type_system.hpp"
+#include "compilation_unit.hpp"
+#include "module.hpp"
+#include "type_creation_scope.hpp"
 #include "memory.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
@@ -127,18 +130,18 @@ static void registerDependent(ArenaAllocator& arena, Type* base, Type* dependent
     if (!base || !dependent) return;
     if (base->kind == TYPE_PLACEHOLDER) {
         // Check for duplicates to avoid growing the list unnecessarily
-        for (DependentNode* n = base->as.placeholder.dependents_head; n; n = n->next) {
+        for (DependentNode* n = base->dependents_head; n; n = n->next) {
             if (n->type == dependent) return;
         }
         DependentNode* node = (DependentNode*)arena.alloc(sizeof(DependentNode));
         node->type = dependent;
         node->next = NULL;
-        if (base->as.placeholder.dependents_tail) {
-            base->as.placeholder.dependents_tail->next = node;
-            base->as.placeholder.dependents_tail = node;
+        if (base->dependents_tail) {
+            base->dependents_tail->next = node;
+            base->dependents_tail = node;
         } else {
-            base->as.placeholder.dependents_head = node;
-            base->as.placeholder.dependents_tail = node;
+            base->dependents_head = node;
+            base->dependents_tail = node;
         }
     } else {
         // Recursive registration for composite types that might contain placeholders
@@ -252,95 +255,182 @@ Type* createSliceType(ArenaAllocator& arena, Type* element_type, bool is_const, 
     return new_type;
 }
 
-Type* createStructType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name) {
-    Type* new_type = allocateType(arena);
+Type* createStructType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_STRUCT: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_STRUCT;
     new_type->size = 0; // Will be calculated by calculateStructLayout
     new_type->alignment = 1; // Will be calculated by calculateStructLayout
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
-    new_type->owner_module = NULL;
-    return new_type;
+    new_type->owner_module = mod;
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
+
+    /* Calculate layout before returning or committing. */
+    calculateStructLayout(new_type);
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register struct type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
-Type* createUnionType(ArenaAllocator& arena, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type) {
+Type* createUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* fields, const char* name, bool is_tagged, Type* tag_type, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_UNION: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!fields) {
         plat_print_debug("createUnionType: fields array is NULL\n");
     }
-    Type* new_type = allocateType(arena);
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_UNION;
     new_type->as.struct_details.name = name;
     new_type->as.struct_details.fields = fields;
     new_type->as.struct_details.is_tagged = is_tagged;
     new_type->as.struct_details.tag_type = tag_type;
-    new_type->owner_module = NULL;
+    new_type->owner_module = mod;
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
 
     if (is_tagged) {
-        // Tagged union: struct { tag_type tag; union { fields } data; }
-        size_t tag_size = tag_type ? tag_type->size : 4;
-        size_t tag_align = tag_type ? tag_type->alignment : 4;
-
-        size_t max_union_size = 0;
-        size_t max_union_align = 1;
-        for (size_t i = 0; i < fields->length(); ++i) {
-            StructField& field = (*fields)[i];
-            if (field.type->size > max_union_size) max_union_size = field.type->size;
-            if (field.type->alignment > max_union_align) max_union_align = field.type->alignment;
-            field.offset = 0; // Offset within the 'data' union
-        }
-
-        // Align the union 'data' after the tag
-        size_t current_offset = tag_size;
-        if (max_union_align > 0 && current_offset % max_union_align != 0) {
-            current_offset += (max_union_align - (current_offset % max_union_align));
-        }
-
-        size_t total_size = current_offset + max_union_size;
-        size_t total_align = tag_align > max_union_align ? tag_align : max_union_align;
-
-        // Final struct padding
-        if (total_align > 0 && total_size % total_align != 0) {
-            total_size += (total_align - (total_size % total_align));
-        }
-
-        new_type->size = total_size;
-        new_type->alignment = total_align;
+        calculateTaggedUnionLayout(new_type);
     } else {
-        // Bare union: union { fields }
-        size_t max_size = 0;
-        size_t max_align = 1;
-        for (size_t i = 0; i < fields->length(); ++i) {
-            StructField& field = (*fields)[i];
-            if (field.type->size > max_size) max_size = field.type->size;
-            if (field.type->alignment > max_align) max_align = field.type->alignment;
-            field.offset = 0;
-        }
-        if (max_align > 0 && max_size % max_align != 0) {
-            max_size += (max_align - (max_size % max_align));
-        }
-        new_type->size = max_size;
-        new_type->alignment = max_align;
+        calculateStructLayout(new_type);
     }
 
-    return new_type;
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register union type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
-Type* createTaggedUnionType(ArenaAllocator& arena, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name) {
+Type* createTaggedUnionType(CompilationUnit& unit, struct Module* mod, DynamicArray<StructField>* payload_fields, Type* tag_type, const char* name, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_TAGGED_UNION: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!payload_fields) {
         plat_print_debug("createTaggedUnionType: payload_fields array is NULL\n");
     }
-    Type* new_type = (Type*)arena.alloc(sizeof(Type));
-#ifdef MEASURE_MEMORY
-    MemoryTracker::types++;
-#endif
-    if (new_type) plat_memset(new_type, 0, sizeof(Type));
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_TAGGED_UNION;
     new_type->as.tagged_union.name = name;
     new_type->as.tagged_union.payload_fields = payload_fields;
     new_type->as.tagged_union.tag_type = tag_type;
-    new_type->owner_module = NULL;
+    new_type->owner_module = mod;
 
-    return new_type;
+    if (name) {
+        new_type->c_name = unit.getNameMangler().mangleType(new_type);
+    }
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
+
+    calculateTaggedUnionLayout(new_type);
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register tagged union type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 Type* createErrorUnionType(ArenaAllocator& arena, Type* payload, Type* error_set, bool is_inferred, TypeInterner* interner) {
@@ -459,19 +549,44 @@ Type* createOptionalType(ArenaAllocator& arena, Type* payload, TypeInterner* int
     return new_type;
 }
 
-Type* createErrorSetType(ArenaAllocator& arena, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner) {
+Type* createErrorSetType(CompilationUnit& unit, struct Module* mod, const char* name, DynamicArray<const char*>* tags, bool is_anonymous, TypeInterner* interner, Type* placeholder) {
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (interner) {
         return interner->getErrorSetType(name, tags, is_anonymous);
     }
 
-    Type* new_type = allocateType(arena);
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_ERROR_SET;
     new_type->size = 4; // Error sets map to int in C89
     new_type->alignment = 4;
     new_type->as.error_set.name = name;
     new_type->as.error_set.tags = tags;
     new_type->as.error_set.is_anonymous = is_anonymous;
-    return new_type;
+    new_type->owner_module = mod;
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register error set type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 void updateArrayLayout(Type* t) {
@@ -600,7 +715,11 @@ void refreshLayout(Type* t) {
                     refreshLayout((*t->as.struct_details.fields)[i].type);
                 }
             }
-            calculateStructLayout(t);
+            if (t->kind == TYPE_UNION && t->as.struct_details.is_tagged) {
+                calculateTaggedUnionLayout(t);
+            } else {
+                calculateStructLayout(t);
+            }
             break;
         case TYPE_TAGGED_UNION:
             if (t->as.tagged_union.tag_type) {
@@ -613,6 +732,13 @@ void refreshLayout(Type* t) {
             }
             calculateTaggedUnionLayout(t);
             break;
+        case TYPE_ENUM:
+            if (t->as.enum_details.backing_type) {
+                refreshLayout(t->as.enum_details.backing_type);
+                t->size = t->as.enum_details.backing_type->size;
+                t->alignment = t->as.enum_details.backing_type->alignment;
+            }
+            break;
         default:
             break;
     }
@@ -621,20 +747,24 @@ void refreshLayout(Type* t) {
 }
 
 void calculateTaggedUnionLayout(Type* type) {
-    if (type->kind != TYPE_TAGGED_UNION) return;
+    if (!isTaggedUnion(type)) return;
+    if (type->alignment >= 1 && type->size > 0) return;
+
     /* tag is an int (4 bytes, alignment 4) by default, or use tag_type */
     size_t tag_align = 4;
     size_t tag_size = 4;
 
-    if (type->as.tagged_union.tag_type) {
-        tag_size = type->as.tagged_union.tag_type->size;
-        tag_align = type->as.tagged_union.tag_type->alignment;
+    Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
+
+    if (tag_type) {
+        tag_size = tag_type->size;
+        tag_align = tag_type->alignment;
     }
 
     /* union part: max of field sizes and alignments */
     size_t union_align = 1;
     size_t union_size = 0;
-    DynamicArray<StructField>* fields = type->as.tagged_union.payload_fields;
+    DynamicArray<StructField>* fields = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.payload_fields : type->as.struct_details.fields;
     if (fields) {
         for (size_t i = 0; i < fields->length(); ++i) {
             StructField& field = (*fields)[i];
@@ -643,8 +773,11 @@ void calculateTaggedUnionLayout(Type* type) {
         }
     }
     /* round union_size up to union_align */
-    if (union_align > 0)
+    if (union_align > 0) {
         union_size = (union_size + union_align - 1) & ~(union_align - 1);
+    } else {
+        union_align = 1;
+    }
 
     /* struct overall alignment = max(tag_align, union_align) */
     type->alignment = (tag_align > union_align) ? tag_align : union_align;
@@ -685,6 +818,7 @@ void calculateStructLayout(Type* struct_type) {
     if (struct_type->kind != TYPE_STRUCT) return;
 
     DynamicArray<StructField>* fields = struct_type->as.struct_details.fields;
+    if (!fields) return;
     size_t current_offset = 0;
     size_t max_alignment = 1;
 
@@ -717,15 +851,46 @@ void calculateStructLayout(Type* struct_type) {
     struct_type->alignment = max_alignment;
 }
 
-Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val) {
+Type* createEnumType(CompilationUnit& unit, struct Module* mod, const char* name, Type* backing_type, DynamicArray<EnumMember>* members, i64 min_val, i64 max_val, Type* placeholder) {
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("CREATE_ENUM: name='%s' mod='%s' mod_ptr=%p\n",
+        name ? name : "anonymous",
+        mod ? mod->name : "NULL",
+        (void*)mod);
+#endif
     if (!backing_type) {
         plat_print_debug("createEnumType: backing type is NULL\n");
         return get_g_type_undefined();
     }
+
+    if (name != NULL) {
+        Type* existing = unit.getTypeRegistry().find(mod, name);
+#ifdef DEBUG_TYPE_IDENTITY
+        if (existing) {
+            plat_printf_debug("  FOUND_EXISTING: type_ptr=%p kind=%d\n",
+                (void*)existing, (int)existing->kind);
+        } else {
+            plat_printf_debug("  NO_EXISTING_IN_REGISTRY\n");
+        }
+#endif
+        if (existing) {
+            if (existing->kind != TYPE_PLACEHOLDER) return existing;
+            placeholder = existing;
+        }
+    }
+
+    TypeCreationScope scope(unit.getTypeRegistry(), mod, name);
+
     if (!name) {
         plat_print_debug("createEnumType: name is NULL\n");
     }
-    Type* new_type = allocateType(arena);
+    Type* new_type = placeholder;
+    if (!new_type) {
+        new_type = allocateType(unit.getArena());
+    } else {
+        plat_memset(&new_type->as, 0, sizeof(new_type->as));
+    }
+
     new_type->kind = TYPE_ENUM;
     new_type->size = backing_type->size;
     new_type->alignment = backing_type->alignment;
@@ -734,8 +899,24 @@ Type* createEnumType(ArenaAllocator& arena, const char* name, Type* backing_type
     new_type->as.enum_details.members = members;
     new_type->as.enum_details.min_value = min_val;
     new_type->as.enum_details.max_value = max_val;
-    new_type->owner_module = NULL;
-    return new_type;
+    new_type->owner_module = mod;
+
+    if (name) {
+        new_type->c_name = unit.getNameMangler().mangleType(new_type);
+    }
+
+#ifdef DEBUG_TYPE_IDENTITY
+    plat_printf_debug("  CREATED_NEW: type_ptr=%p\n", (void*)new_type);
+#endif
+
+    if (name == NULL) return new_type;
+
+    scope.set_type(new_type);
+    if (!scope.try_commit()) {
+        unit.getErrorHandler().report(ERR_REDEFINITION, SourceLocation(), "Failed to register enum type due to name mismatch or internal error", unit.getArena(), name);
+        plat_abort();
+    }
+    return scope.get_final_type();
 }
 
 // --- TypeInterner Implementation ---
@@ -836,34 +1017,11 @@ Type* TypeInterner::getErrorUnionType(Type* payload, Type* error_set, bool is_in
     return t;
 }
 
-Type* TypeInterner::getErrorSetType(const char* name, DynamicArray<const char*>* tags, bool is_anonymous) {
-    if (!is_anonymous && !name) {
-        plat_print_debug("TypeInterner::getErrorSetType: named error set has NULL name\n");
-    }
-    // For error sets, interning is primarily based on name for named sets.
-    // Anonymous sets are trickier. For bootstrap, we'll intern by name.
-    if (!is_anonymous && name) {
-        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
-        for (Entry* e = buckets[h]; e; e = e->next) {
-            if (e->type->kind == TYPE_ERROR_SET &&
-                !e->type->as.error_set.is_anonymous &&
-                e->type->as.error_set.name == name) {
-                dedupe_count++;
-                return e->type;
-            }
-        }
-    }
-
-    Type* t = createErrorSetType(arena_, name, tags, is_anonymous, NULL);
-    if (!is_anonymous && name) {
-        u32 h = hashType(TYPE_ERROR_SET, (void*)name, 0);
-        Entry* e = (Entry*)arena_.alloc(sizeof(Entry));
-        e->type = t;
-        e->next = buckets[h];
-        buckets[h] = e;
-    }
-    unique_count++;
-    return t;
+// ErrorSet interning is disabled for now to simplify TypeRegistry integration.
+// Named ErrorSets are deduplicated via TypeRegistry.
+// Anonymous ones are just allocated.
+Type* TypeInterner::getErrorSetType(const char* /*name*/, DynamicArray<const char*>* /*tags*/, bool /*is_anonymous*/) {
+    return NULL;
 }
 
 Type* TypeInterner::getArrayType(Type* element_type, u64 size) {
@@ -951,13 +1109,6 @@ bool isTypeComplete(Type* type);
 bool isTypeComplete(Type* type) {
     if (!type) return false;
 
-    if (type->is_resolving) {
-        /* Pointer-like types have known size even if pointee is incomplete */
-        return (type->kind == TYPE_POINTER ||
-                type->kind == TYPE_SLICE ||
-                type->kind == TYPE_OPTIONAL);
-    }
-
     switch (type->kind) {
         case TYPE_VOID:
         case TYPE_BOOL:
@@ -965,22 +1116,33 @@ bool isTypeComplete(Type* type) {
         case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
         case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_F32: case TYPE_F64:
-        case TYPE_NORETURN: return true;
+        case TYPE_NORETURN:
         case TYPE_POINTER:
+        case TYPE_SLICE:
+        case TYPE_OPTIONAL:
+        case TYPE_FUNCTION:
+        case TYPE_FUNCTION_POINTER:
         case TYPE_NULL:
         case TYPE_ENUM:
-        case TYPE_FUNCTION_POINTER:
+        case TYPE_ERROR_SET:
+            /* These types either have a fixed primitive size/alignment
+               or their layout is independent of the completeness of their children. */
             return true;
+
         case TYPE_ARRAY:
             return isTypeComplete(type->as.array.element_type);
-        case TYPE_OPTIONAL:
-            return isTypeComplete(type->as.optional.payload);
         case TYPE_ERROR_UNION:
             return isTypeComplete(type->as.error_union.payload);
-        case TYPE_ERROR_SET:
-            return true;
-        case TYPE_SLICE:
-            return true; // Slices are always complete (size 8, align 4)
+
+        case TYPE_STRUCT:
+        case TYPE_UNION:
+            /* Layout calculated = complete. We don't check field completeness recursively
+               to allow recursive types via pointers/slices/optionals. */
+            return type->alignment >= 1 && type->as.struct_details.fields != NULL;
+
+        case TYPE_TAGGED_UNION:
+            return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
+
         case TYPE_PLACEHOLDER:
         case TYPE_INTEGER_LITERAL:
         case TYPE_ANYTYPE:
@@ -988,15 +1150,6 @@ bool isTypeComplete(Type* type) {
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
         case TYPE_TUPLE:
-        case TYPE_FUNCTION:
-            return false;
-        case TYPE_STRUCT:
-        case TYPE_UNION:
-            /* Heuristic for completion: layout must have been calculated (alignment >= 1)
-               and fields must be processed. We allow alignment >= 1 even for empty structs. */
-            return type->alignment >= 1 && type->as.struct_details.fields != NULL;
-        case TYPE_TAGGED_UNION:
-            return type->alignment >= 1 && type->as.tagged_union.payload_fields != NULL;
         default:
             return false;
     }
@@ -1156,7 +1309,11 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
         case TYPE_INTEGER_LITERAL: safe_append(current, remaining, "comptime_int"); break;
         case TYPE_PLACEHOLDER:
             safe_append(current, remaining, "(placeholder) ");
-            safe_append(current, remaining, type->as.placeholder.name);
+            if (type->as.placeholder.name) {
+                safe_append(current, remaining, type->as.placeholder.name);
+            } else {
+                safe_append(current, remaining, "<null>");
+            }
             break;
         default:
             safe_append(current, remaining, "unknown");
@@ -1185,14 +1342,25 @@ void typeToString(Type* type, char* buffer, size_t buffer_size) {
 bool areTypesEqual(Type* a, Type* b) {
     if (a == b) return true;
     if (!a || !b) return false;
-    if (a->kind != b->kind) {
-        // One exception: TYPE_FUNCTION and TYPE_FUNCTION_POINTER are structurally equal
-        // if their signatures match. But this function is for GENERAL type equality.
-        // Actually, for pointers to functions, they should both be TYPE_FUNCTION_POINTER.
-        return false;
-    }
+    if (a->kind != b->kind) return false;
 
     switch (a->kind) {
+        case TYPE_VOID:
+        case TYPE_BOOL:
+        case TYPE_I8: case TYPE_U8:
+        case TYPE_I16: case TYPE_U16:
+        case TYPE_I32: case TYPE_U32:
+        case TYPE_I64: case TYPE_U64:
+        case TYPE_F32: case TYPE_F64:
+        case TYPE_C_CHAR:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_NULL:
+        case TYPE_UNDEFINED:
+        case TYPE_NORETURN:
+        case TYPE_TYPE:
+        case TYPE_ANYTYPE:
+            return true;
+
         case TYPE_POINTER:
             return a->as.pointer.is_const == b->as.pointer.is_const &&
                    a->as.pointer.is_many == b->as.pointer.is_many &&
@@ -1210,36 +1378,73 @@ bool areTypesEqual(Type* a, Type* b) {
             return areTypesEqual(a->as.optional.payload, b->as.optional.payload);
 
         case TYPE_ERROR_UNION:
-            if (a->as.error_union.is_inferred != b->as.error_union.is_inferred) return false;
-            if (!a->as.error_union.is_inferred) {
-                if (!areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set)) return false;
-            }
-            return areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
+            return areTypesEqual(a->as.error_union.error_set, b->as.error_union.error_set) &&
+                   areTypesEqual(a->as.error_union.payload, b->as.error_union.payload);
 
         case TYPE_ERROR_SET:
             if (a->as.error_set.is_anonymous != b->as.error_set.is_anonymous) return false;
-            if (a->as.error_set.is_anonymous) return true; // Anonymous error sets are structurally equal if kind is same? Actually Zig rules are complex, but for us we can say yes.
-            if (a->as.error_set.name && b->as.error_set.name) {
-                return plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0;
+            if (a->as.error_set.is_anonymous) return true;
+            if (a->as.error_set.name && b->as.error_set.name && plat_strcmp(a->as.error_set.name, b->as.error_set.name) == 0) {
+                if (a->owner_module && b->owner_module) {
+                    return plat_strcmp(a->owner_module->name, b->owner_module->name) == 0;
+                }
+                return a->owner_module == b->owner_module;
             }
-            return a->as.error_set.name == b->as.error_set.name;
+            return false;
 
         case TYPE_FUNCTION:
-            return signaturesMatch(a->as.function.params, a->as.function.return_type,
-                                  b->as.function.params, b->as.function.return_type);
-        case TYPE_FUNCTION_POINTER:
-            return signaturesMatch(a->as.function_pointer.param_types, a->as.function_pointer.return_type,
-                                  b->as.function_pointer.param_types, b->as.function_pointer.return_type);
+        case TYPE_FUNCTION_POINTER: {
+            Type* ret_a = (a->kind == TYPE_FUNCTION) ? a->as.function.return_type : a->as.function_pointer.return_type;
+            Type* ret_b = (b->kind == TYPE_FUNCTION) ? b->as.function.return_type : b->as.function_pointer.return_type;
+            DynamicArray<Type*>* params_a = (a->kind == TYPE_FUNCTION) ? a->as.function.params : a->as.function_pointer.param_types;
+            DynamicArray<Type*>* params_b = (b->kind == TYPE_FUNCTION) ? b->as.function.params : b->as.function_pointer.param_types;
+            return signaturesMatch(params_a, ret_a, params_b, ret_b);
+        }
 
         case TYPE_STRUCT:
         case TYPE_UNION:
-        case TYPE_TAGGED_UNION:
-        case TYPE_ENUM:
-        case TYPE_PLACEHOLDER:
-            return false; // Nominal types, handled by pointer check at top
+        case TYPE_TAGGED_UNION: {
+            const char* name_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.name : a->as.struct_details.name;
+            const char* name_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.name : b->as.struct_details.name;
+
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true;
+            }
+            DynamicArray<StructField>* fields_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.payload_fields : a->as.struct_details.fields;
+            DynamicArray<StructField>* fields_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.payload_fields : b->as.struct_details.fields;
+            if (!fields_a || !fields_b) return fields_a == fields_b;
+            if (fields_a->length() != fields_b->length()) return false;
+            for (size_t i = 0; i < fields_a->length(); ++i) {
+                if (plat_strcmp((*fields_a)[i].name, (*fields_b)[i].name) != 0) return false;
+                if (!areTypesEqual((*fields_a)[i].type, (*fields_b)[i].type)) return false;
+            }
+            if (a->kind == TYPE_TAGGED_UNION || b->kind == TYPE_TAGGED_UNION) {
+                Type* tag_a = (a->kind == TYPE_TAGGED_UNION) ? a->as.tagged_union.tag_type : a->as.struct_details.tag_type;
+                Type* tag_b = (b->kind == TYPE_TAGGED_UNION) ? b->as.tagged_union.tag_type : b->as.struct_details.tag_type;
+                if (!areTypesEqual(tag_a, tag_b)) return false;
+            }
+            return true;
+        }
+
+        case TYPE_ENUM: {
+            const char* name_a = a->as.enum_details.name;
+            const char* name_b = b->as.enum_details.name;
+            if (name_a && name_b && a->owner_module == b->owner_module && plat_strcmp(name_a, name_b) == 0) {
+                return true;
+            }
+            DynamicArray<EnumMember>* members_a = a->as.enum_details.members;
+            DynamicArray<EnumMember>* members_b = b->as.enum_details.members;
+            if (!members_a || !members_b) return members_a == members_b;
+            if (members_a->length() != members_b->length()) return false;
+            for (size_t i = 0; i < members_a->length(); ++i) {
+                if (plat_strcmp((*members_a)[i].name, (*members_b)[i].name) != 0) return false;
+                if ((*members_a)[i].value != (*members_b)[i].value) return false;
+            }
+            return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
+        }
 
         default:
-            return true;
+            return false;
     }
 }
 

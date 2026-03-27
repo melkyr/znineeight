@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Bootstrap Compiler Built-ins Reference
 
-This document describes the built-in functions (intrinsics) supported by the RetroZig bootstrap compiler. These functions start with the `@` symbol and are either evaluated at compile-time or mapped to specific C89 constructs.
+This document describes the built-in functions (intrinsics) supported by the Z98 bootstrap compiler. These functions start with the `@` symbol and are either evaluated at compile-time or mapped to specific C89 constructs.
 
 ## Compile-Time Evaluated Built-ins
 
@@ -84,6 +86,13 @@ Loads and parses an external Zig module.
     - Detects circular dependencies and reports them as fatal errors.
     - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.debug.print(...);`.
 - **C89 Emission:** This built-in is handled entirely by the compiler's front-end and import resolution phase. It does not generate any code at the call site. Instead, it influences header generation and symbol resolution.
+
+### Cast Built-ins (Internal/Runtime)
+The following built-ins are supported for low-level type conversions:
+- **`@enumToInt(enum_expr)`**: Converts an enum value to its underlying integer type.
+- **`@intToEnum(T, int_expr)`**: Converts an integer to an enum value of type `T`.
+- **`@ptrToInt(ptr_expr)`**: Converts a pointer to its address as a `usize`.
+- **`@intToPtr(T, int_expr)`**: Converts a `usize` address to a pointer of type `T`.
 
 ---
 

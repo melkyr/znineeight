@@ -17,10 +17,12 @@ ControlFlowLifter::StmtGuard::~StmtGuard() {
 
 ControlFlowLifter::BlockGuard::BlockGuard(ControlFlowLifter& l, ASTBlockStmtNode* block) : lifter_(l) {
     lifter_.block_stack_.append(block);
+    lifter_.block_decl_insert_idx_stack_.append(0);
 }
 
 ControlFlowLifter::BlockGuard::~BlockGuard() {
     lifter_.block_stack_.pop_back();
+    lifter_.block_decl_insert_idx_stack_.pop_back();
 }
 
 ControlFlowLifter::ParentGuard::ParentGuard(ControlFlowLifter& l, ASTNode* node) : lifter_(l) {
@@ -65,7 +67,9 @@ ControlFlowLifter::ControlFlowLifter(ArenaAllocator* arena, StringInterner* inte
       current_fn_return_type_(NULL),
       registered_temps_(*arena),
       processed_calls_(*arena),
-      stmt_stack_(*arena), block_stack_(*arena), parent_stack_(*arena), fn_stack_(*arena) {}
+      stmt_stack_(*arena), block_stack_(*arena), 
+      block_decl_insert_idx_stack_(*arena),
+      parent_stack_(*arena), fn_stack_(*arena) {}
 
 void ControlFlowLifter::lift(CompilationUnit* unit) {
     unit_ = unit;

@@ -1,10 +1,10 @@
 # Minimal Lisp Interpreter in Z98
 
-A "Baptism of Water" implementation of a Lisp interpreter designed for 1998-era constraints using the RetroZig bootstrap compiler.
+A "Baptism of Water" implementation of a Lisp interpreter designed for 1998-era constraints using the Z98 bootstrap compiler.
 
 ## Modules
 
--   **`arena.zig`**: A simple bump allocator implementation.
+-   **`sand.zig`**: A simple bump allocator implementation (formerly `arena.zig`).
 -   **`value.zig`**: Defines the `Value` type and allocation helpers.
 -   **`token.zig`**: Tokenizer for Lisp source code.
 -   **`parser.zig`**: Recursive-descent parser that builds `Value` structures and handles symbol interning.
@@ -30,10 +30,23 @@ Due to current bootstrap compiler limitations, this implementation uses a "Downg
 
 ## Current Status
 
-**Note**: This interpreter currently triggers a compiler assertion failure during the type-checking phase of cross-module imports of recursive structures.
+**Status**: The Zig source code for the interpreter is feature-complete for the "Baptism of Water" phase. However, generating a working binary requires specific patches to the `z98` bootstrap compiler.
 
-To reproduce the bug, see `missing_features_lisp.md` in the repository root or run:
-```bash
-./retrozig examples/lisp_interpreter/repro_bug.zig -o repro_bug.c
-```
-The source code is provided as a complete reference implementation and a benchmark for future compiler improvements.
+### Build Instructions
+
+To attempt a build of the Lisp interpreter:
+
+1.  Ensure you have a compiled `z98` compiler at the repository root.
+2.  Run the compiler on the entry point:
+    ```bash
+    ./z98 examples/lisp_interpreter/main.zig -o o_lisp/main.c
+    ```
+3.  Compile the generated C code (requires `-m32` for the 1998 target):
+    ```bash
+    gcc -m32 -o lisp_repl o_lisp/*.c
+    ```
+
+**Note**: Without the compiler patches described in `missing_features_lisp.md`, the Zig compilation phase may fail with "type mismatch" errors across modules, and the generated C code may fail to compile due to C89 scoping rules or `main` function return type mismatches.
+
+For a detailed analysis of the compiler challenges and the required fixes, please refer to:
+`examples/lisp_interpreter/missing_features_lisp.md`

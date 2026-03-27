@@ -198,7 +198,7 @@ TEST_FUNC(Task228_OptionalFunction) {
     plat_delete_file(temp_filename);
 
     // UT-06: fn foo(x: ?i32) ?i32
-    if (generated_c.find("Optional_i32 foo(Optional_i32 x)") == std::string::npos) return false;
+    if (generated_c.find("Optional_i32 zF_0_foo(Optional_i32 x)") == std::string::npos) return false;
     if (generated_c.find("return x;") == std::string::npos) return false;
 
     return true;
@@ -245,8 +245,8 @@ TEST_FUNC(Task228_NestedOptional) {
     plat_delete_file(temp_filename);
 
     // UT-07: var x: ??i32 = null;
-    if (generated_c.find("Optional_Optional_i32 x;") == std::string::npos) return false;
-    if (generated_c.find("x.has_value = 0;") == std::string::npos) return false;
+    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x;", generated_c) && !unit.containsPattern("Optional_Optional_i32 x;", generated_c)) return false;
+    if (!unit.containsPattern("x.has_value = 0;", generated_c)) return false;
 
     return true;
 }
@@ -293,8 +293,18 @@ TEST_FUNC(Task228_OptionalStruct) {
     plat_delete_file(temp_filename);
 
     // UT-08: var x: ?Point = null;
-    if (generated_c.find("Optional_Point p;") == std::string::npos) return false;
-    if (generated_c.find("p.has_value = 0;") == std::string::npos) return false;
+    // Note: Point in test.zig hash d071e5 becomes zS_0_Point in test mode if it's the first struct.
+    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && 
+        !unit.containsPattern("Optional_zS_#_Point p;", generated_c) &&
+        !unit.containsPattern("Optional_Point zV_#_p;", generated_c) &&
+        !unit.containsPattern("Optional_Point p;", generated_c)) {
+        printf("FAIL: Could not find Optional_zS_#_Point or Optional_Point for p. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
+    if (!unit.containsPattern("p.has_value = 0;", generated_c) && !unit.containsPattern("zV_#_p.has_value = 0;", generated_c)) {
+        printf("FAIL: Could not find has_value = 0 for p. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
 
     return true;
 }

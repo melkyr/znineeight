@@ -28,7 +28,7 @@ static inline bool isIdentifierChar(char c) {
 
 /**
  * @file lexer.hpp
- * @brief Defines the token types and structures for the RetroZig lexer.
+ * @brief Defines the token types and structures for the Z98 lexer.
  *
  * This file contains the core definitions for the lexical analysis phase of
  * the compiler, including the Zig0TokenType enum which represents all possible
@@ -112,7 +112,7 @@ enum Zig0TokenType {
     TOKEN_ANYFRAME,         ///< 'anyframe' keyword.
     TOKEN_ANYTYPE,          ///< 'anytype' keyword.
     TOKEN_C_CHAR,           ///< 'c_char' keyword.
-    TOKEN_TYPE,             ///< 'type' keyword.
+    TOKEN_TYPE_KEYWORD,     ///< 'type' keyword.
     TOKEN_CALLCONV,         ///< 'callconv' keyword.
     TOKEN_NOALIAS,          ///< 'noalias' keyword.
     TOKEN_NORETURN,         ///< 'noreturn' keyword.

@@ -14,7 +14,8 @@ enum SymbolType {
     SYMBOL_VARIABLE,
     SYMBOL_FUNCTION,
     SYMBOL_TYPE,
-    SYMBOL_UNION_TYPE
+    SYMBOL_UNION_TYPE,
+    SYMBOL_MODULE
 };
 
 enum SymbolFlag {

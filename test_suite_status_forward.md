@@ -1,101 +1,86 @@
-# Test Suite Status Report
+# Z98 Test Suite Status Report
 
-## Summary Table
+## Summary
 
-| Batch | Status | Details |
-|-------|--------|---------|
-| Batch 1 | ✓ Passed | 81/81 tests passed |
-| Batch 2 | ✓ Passed | 114/114 tests passed |
-| Batch 3 | ✓ Passed | 115/115 tests passed |
-| Batch 4 | ✓ Passed | 37/37 tests passed |
-| Batch 5 | ✓ Passed | 34/34 tests passed |
-| Batch 6 | ✓ Passed | 33/33 tests passed |
-| Batch 7 | ✓ Passed | 51/51 tests passed |
-| Batch 7_debug | ✓ Passed | 51/51 tests passed |
-| Batch 8 | ✓ Passed | 5/5 tests passed |
-| Batch 9 | ✓ Passed | 16/16 tests passed |
-| Batch 9a | ✓ Passed | 5/5 tests passed |
-| Batch 9b | ✓ Passed | 5/5 tests passed |
-| Batch 9c | ✓ Passed | 13/13 tests passed |
-| Batch 10 | ✓ Passed | 7/7 tests passed |
-| Batch 11 | ✓ Passed | 30/30 tests passed |
-| Batch 12 | ✓ Passed | 89/89 tests passed |
-| Batch 13 | ✓ Passed | 13/13 tests passed |
-| Batch 14 | ✓ Passed | 11/11 tests passed |
-| Batch 15 | ✓ Passed | 12/12 tests passed |
-| Batch 16 | ✓ Passed | 15/15 tests passed |
-| Batch 17 | ✓ Passed | 6/6 tests passed |
-| Batch 18 | ✓ Passed | 18/18 tests passed |
-| Batch 19 | ✓ Passed | 31/31 tests passed |
-| Batch 20 | ✓ Passed | 21/21 tests passed |
-| Batch 21 | ✓ Passed | 15/15 tests passed |
-| Batch 22 | ✓ Passed | 3/3 tests passed |
-| Batch 23 | ✓ Passed | 6/6 tests passed |
-| Batch 24 | ✓ Passed | 8/8 tests passed |
-| Batch 25 | ✓ Passed | 5/5 tests passed |
-| Batch 26 | ✓ Passed | 27/27 tests passed |
-| Batch 27 | ✓ Passed | 21/21 tests passed |
-| Batch 28 | ✓ Passed | 4/4 tests passed |
-| Batch 29 | ✓ Passed | 15/15 tests passed |
-| Batch 30 | ✓ Passed | 11/11 tests passed |
-| Batch 31 | ✓ Passed | 10/10 tests passed |
-| Batch 32 | ✓ Passed | 2/2 tests passed |
-| Batch 33 | ✓ Passed | 3/3 tests passed |
-| Batch 34 | ✓ Passed | 5/5 tests passed |
-| Batch 35 | ✓ Passed | 5/5 tests passed |
-| Batch 36 | ✓ Passed | 6/6 tests passed |
-| Batch 37 | ✓ Passed | 9/9 tests passed |
-| Batch 38 | ✓ Passed | 19/19 tests passed |
-| Batch 39 | ✓ Passed | 10/10 tests passed |
-| Batch 40 | ✓ Passed | 11/11 tests passed |
-| Batch 41 | ✓ Passed | 5/5 tests passed |
-| Batch 42 | ✓ Passed | 7/7 tests passed |
-| Batch 43 | ✓ Passed | 8/8 tests passed |
-| Batch 44 | ✓ Passed | 3/3 tests passed |
-| Batch 45 | ✓ Passed | 12/12 tests passed |
-| Batch 46 | ✓ Passed | 11/11 tests passed |
-| Batch 47 | ✓ Passed | 9/9 tests passed |
-| Batch 48 | ✓ Passed | 8/8 tests passed |
-| Batch 49 | ✓ Passed | 1/1 tests passed |
-| Batch 50 | ✓ Passed | 5/5 tests passed |
-| Batch 51 | ✓ Passed | 4/4 tests passed |
-| Batch 52 | ✓ Passed | 3/3 tests passed |
-| Batch 53 | ✓ Passed | 4/4 tests passed |
-| Batch 54 | ✓ Passed | 3/3 tests passed |
-| Batch 55 | ✓ Passed | 9/9 tests passed |
-| Batch 56 | ✓ Passed | 3/3 tests passed |
-| Batch 57 | ✓ Passed | 3/3 tests passed |
-| Batch 58 | ✓ Passed | 13/13 tests passed |
-| Batch 60 | ✓ Passed | 24/24 tests passed |
-| Batch 61 | ✓ Passed | 13/13 tests passed |
-| Batch 62 | ✓ Passed | 1/1 tests passed |
-| Batch 63 | ✓ Passed | 4/4 tests passed |
-| Batch 65 | ✓ Passed | 6/6 tests passed |
-| Batch 66 | ✓ Passed | 4/4 tests passed |
-| Batch 67 | ✓ Passed | 3/3 tests passed |
-| Batch 68 | ✓ Passed | 5/5 tests passed |
-| Batch 69 | ✓ Passed | 2/2 tests passed |
-| Batch 70 | ✓ Passed | 5/5 tests passed |
-| Batch 71 | ✓ Passed | 1/1 tests passed |
-| Batch 72 | ✓ Passed | 5/5 tests passed |
-| Batch 73 | ✓ Passed | 5/5 tests passed |
-| Batch 74 | ✓ Passed | 4/4 tests passed |
-| Batch _bugs | ✓ Passed | 5/5 tests passed |
+| Metric | 32-bit Value | 64-bit Value |
+|--------|--------------|--------------|
+| Total Test Batches | 77 | 77 |
+| Passed Batches | 77 | 77 |
+| Failed Batches | 0 | 0 |
+| Total Pass Rate | 100% | 100% |
 
-## Detailed Observations
+---
 
-All 77 test batches are currently passing. Recent fixes to `MockC89Emitter` and integration test expectations ensured that all batches (including 14, 39, 58, and 61) align with the compiler's universal labeled-goto loop emission strategy.
+## Detailed Breakdown of Failures
 
-## Examples Verification
+All previously identified regressions related to name mangling and the transition to separate compilation have been resolved.
 
-All examples in the `examples/` directory were compiled and executed successfully.
+### Batch 3: Type Checker
+- **Status:** **PASSED**
+- **Reason:** Integer literal kind mismatch on 32-bit was resolved (verified in current environment).
 
-| Example | Status | Output Snippet |
-|---------|--------|----------------|
-| hello | ✓ Passed | `Hello, world!` |
-| prime | ✓ Passed | `2357` |
-| fibonacci | ✓ Passed | `55` |
-| heapsort | ✓ Passed | `135671112131520` |
-| quicksort | ✓ Passed | `Sorted (ascending): 1 1 2 3 3 4 5 5 6 9` |
-| sort_strings | ✓ Passed | `Sorted strings: apple banana cherry date` |
-| func_ptr_return | ✓ Passed | `10 + 5 = 15`, `10 - 5 = 5` |
+### Batch 10 & 11: Name Mangling
+- **Status:** **PASSED** (Test Mode enabled)
+- **Reason:** Legacy tests and Milestone 4 tests are fully aligned with the counter-based deterministic naming.
+
+### Batch 12–18: Emission Verification
+- **Status:** **PASSED**
+- **Reason:** Systematic update of emission strings completed. Function and variable names now includeKind prefixes (`zF_`, `zV_`) and deterministic counters.
+
+### Batch 26 & 27: Codegen Verification
+- **Status:** **PASSED**
+- **Reason:** Updated expectation strings to account for new symbol mangling and scope-based counters (e.g., `x_1` for shadowing).
+
+### Batch 30: Multi-Module Codegen
+- **Status:** **PASSED**
+- **Reason:** Module-level symbol emission verified and aligned with mangling scheme.
+
+### Batch 31: CBackend Multi-File
+- **Status:** **PASSED**
+- **Reason:** Test refactored to verify individual module files (`.c` and `.h`) and ensure correct cross-module references (`#include "utils.h"`).
+
+### Batch 32: End-to-End Integration
+- **Status:** **PASSED**
+- **Reason:** Tests now use the generated `build_target.sh` script to compile and link all generated modules, resolving "undefined reference" errors.
+
+### Batch 36–72: Various Integration Tests
+- **Status:** **PASSED**
+- **Reason:** Systematic mismatches in variable mangling, error handling, optional types, and control flow emission have been resolved by updating expectation strings.
+
+---
+
+## Progress Report (Implementing Test Mode)
+
+The widespread emission mismatches caused by the new name mangling scheme and the transition to separate compilation are fully resolved.
+
+### Test Mode Implementation
+- **Flag**: `--test-mode` (Sets `CompilationUnit::is_test_mode_`).
+- **Naming Scheme**: `z<Kind>_<Counter>_<Name>`.
+    - `F`: Function
+    - `V`: Variable
+    - `S`: Struct / Tagged Union
+    - `E`: Enum
+    - `U`: Union (bare)
+- **Determinism**: A global counter in `CompilationUnit` ensures names are predictable and independent of file hashes or environment paths.
+
+### Results
+The systematic update process successfully brought all 77 test batches to a passing state. E2E tests are robustly handled via generated build scripts, ensuring compatibility with the new compilation model.
+
+---
+
+## Examples Status
+
+All functional examples were verified to compile and run successfully in both 32-bit and 64-bit environments.
+
+| Example | Status | Notes |
+|---------|--------|-------|
+| hello | **PASS** | |
+| prime | **PASS** | |
+| days_in_month | **PASS** | |
+| fibonacci | **PASS** | |
+| heapsort | **PASS** | |
+| quicksort | **PASS** | |
+| sort_strings | **PASS** | |
+| func_ptr_return | **PASS** | |
+| lisp_interpreter | **EXCLUDED** | Per task requirements |
+| lisp_interpreter_adv | **EXCLUDED** | Per task requirements |

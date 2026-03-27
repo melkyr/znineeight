@@ -1,6 +1,6 @@
 # Fibonacci Example
 
-This example demonstrates recursion in the RetroZig bootstrap compiler.
+This example demonstrates recursion in the Z98 bootstrap compiler.
 
 ## Files
 - `main.zig`: Entry point with recursive `fib` function.
@@ -9,7 +9,7 @@ This example demonstrates recursion in the RetroZig bootstrap compiler.
 
 ## Building and Running
 
-1. Compile the Zig source to C89 using the RetroZig compiler:
+1. Compile the Zig source to C89 using the Z98 compiler:
    ```bash
    ../../zig0 main.zig std.zig std_debug.zig --output output/
    ```

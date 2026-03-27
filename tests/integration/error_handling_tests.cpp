@@ -125,7 +125,7 @@ TEST_FUNC(ErrorHandling_TryExpression) {
     emitter.emitFnDecl(unit.extractFunctionDeclaration("caller"));
 
     ASSERT_TRUE(emitter.contains("__tmp_try_res_"));
-    ASSERT_TRUE(emitter.contains(" = fallible()"));
+    ASSERT_TRUE(emitter.contains(" = zF_0_fallible()"));
     ASSERT_TRUE(emitter.contains(".is_error"));
 
     return true;
@@ -151,7 +151,7 @@ TEST_FUNC(ErrorHandling_CatchExpression) {
     emitter.emitFnDecl(unit.extractFunctionDeclaration("caller"));
 
     ASSERT_TRUE(emitter.contains("__tmp_catch_res_"));
-    ASSERT_TRUE(emitter.contains(" = fallible()"));
+    ASSERT_TRUE(emitter.contains(" = zF_0_fallible()"));
     ASSERT_TRUE(emitter.contains(".is_error"));
     ASSERT_TRUE(emitter.contains(" = 42"));
 

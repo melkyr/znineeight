@@ -21,6 +21,7 @@
 #include "name_mangler.hpp"
 #include "call_site_lookup_table.hpp"
 #include "module.hpp"
+#include "type_registry.hpp"
 
 /**
  * @struct CompilationOptions
@@ -43,6 +44,26 @@ struct CompilationOptions {
 
 // Forward-declare to avoid circular dependencies.
 class Parser;
+struct Type;
+struct ASTNode;
+
+/**
+ * @struct PendingResolution
+ * @brief Tracks a named type placeholder that needs finalization.
+ */
+struct PendingResolution {
+    struct Type* placeholder;
+    struct ASTNode* decl_node;
+};
+
+/**
+ * @struct TestNameEntry
+ * @brief Stores a mapping from (kind, module, name) to a deterministic C name in test mode.
+ */
+struct TestNameEntry {
+    const char* key;
+    const char* c_name;
+};
 
 class CompilationUnit {
 public:
@@ -69,10 +90,20 @@ public:
     NameMangler& getNameMangler();
     CallSiteLookupTable& getCallSiteLookupTable();
     TypeInterner& getTypeInterner();
+    TypeRegistry& getTypeRegistry();
+    DynamicArray<PendingResolution>& getPendingResolutions() { return pending_resolutions_; }
     DynamicArray<const char*>& getEmittedTypesCache() { return emitted_types_cache_; }
+    void clearGlobalSliceTypes();
+    void registerSliceType(Type* type);
+    const DynamicArray<Type*>& getGlobalSliceTypes() const { return global_slice_types_; }
     StringInterner& getStringInterner() { return interner_; }
     ArenaAllocator& getArena();
     ArenaAllocator& getTokenArena();
+    ArenaAllocator& getTransientArena();
+
+    void resetTransientArena();
+    void resetTokenArena();
+    void finalizeParsing();
 
     DynamicArray<Module*>& getModules() { return modules_; }
     Module* getModule(const char* name);
@@ -80,6 +111,8 @@ public:
 
     const char* getCurrentModule() const;
     void setCurrentModule(const char* module_name);
+
+    Module* getBuiltinModule() { return builtin_module_; }
 
     CompilationOptions& getOptions();
     const CompilationOptions& getOptions() const;
@@ -136,6 +169,16 @@ public:
      */
     void setTestMode(bool test_mode);
 
+    /**
+     * @brief Checks if the unit is in test mode.
+     */
+    bool isTestMode() const { return is_test_mode_; }
+
+    /**
+     * @brief Generates or retrieves a deterministic C name for testing.
+     */
+    const char* getTestName(char kind, const char* module, const char* name);
+
     // Memory tracking helpers
     void collectImports(ASTNode* node, Module* module);
     bool resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack);
@@ -148,7 +191,10 @@ public:
 private:
     ArenaAllocator& arena_;
     ArenaAllocator token_arena_;
+    ArenaAllocator transient_arena_;
     TypeInterner type_interner_;
+    TypeRegistry type_registry_;
+    DynamicArray<PendingResolution> pending_resolutions_;
     StringInterner& interner_;
     SourceManager source_manager_;
     SymbolTable default_symbols_; // For backward compatibility and early injection
@@ -170,12 +216,16 @@ private:
     CompilationOptions options_;
     const char* current_module_;
     DynamicArray<const char*> emitted_types_cache_;
+    DynamicArray<Type*> global_slice_types_;
 
     DynamicArray<const char*> include_paths_;
     const char* default_lib_path_;
     DynamicArray<Module*> modules_;
+    Module* builtin_module_;
     ASTNode* last_ast_;
     bool is_test_mode_;
+    DynamicArray<TestNameEntry> test_name_counters_;
+    int test_name_counter_;
     bool validation_completed_;
     bool c89_validation_passed_;
 };
