@@ -76,6 +76,13 @@ Performs an explicit floating-point cast with range checking.
   - **Safe widenings** (e.g., `f32` to `f64`): Emitted as a direct C-style cast: `(double)expr`.
   - **Potentially unsafe narrowing** (`f64` to `f32`): Emitted as a call to a runtime helper: `__bootstrap_f32_from_f64(expr)`.
 
+### `@intToFloat(T, expr)`
+Performs an explicit conversion from an integer to a floating-point type.
+- **Syntax:** `@intToFloat(FloatType, integer_expression)`
+- **Constraints:** `T` must be a floating-point type (`f32`, `f64`), and `expr` must be an integer type.
+- **Compile-time Evaluation:** Constant folding for constant integer literals.
+- **C89 Emission Strategy:** Emitted as a direct C-style cast: `(double)expr`.
+
 ### `@import(path)`
 Loads and parses an external Zig module.
 - **Syntax:** `@import("relative_path.zig")`

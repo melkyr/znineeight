@@ -683,7 +683,7 @@ void CBackend::scanForSpecialTypes(ASTNode* node, C89Emitter& emitter, int kinds
     } else if (node->type == NODE_PTR_CAST) {
         scanForSpecialTypes(node->as.ptr_cast->target_type, emitter, kinds, visited);
         scanForSpecialTypes(node->as.ptr_cast->expr, emitter, kinds, visited);
-    } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST) {
+    } else if (node->type == NODE_INT_CAST || node->type == NODE_FLOAT_CAST || node->type == NODE_INT_TO_FLOAT) {
         scanForSpecialTypes(node->as.numeric_cast->target_type, emitter, kinds, visited);
         scanForSpecialTypes(node->as.numeric_cast->expr, emitter, kinds, visited);
     } else if (node->type == NODE_OFFSET_OF) {

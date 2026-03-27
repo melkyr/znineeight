@@ -428,6 +428,7 @@ Type* TypeChecker::visit(ASTNode* node) {
         case NODE_PTR_CAST:         resolved_type = visitPtrCast(node->as.ptr_cast); break;
         case NODE_INT_CAST:         resolved_type = visitIntCast(node, node->as.numeric_cast); break;
         case NODE_FLOAT_CAST:       resolved_type = visitFloatCast(node, node->as.numeric_cast); break;
+        case NODE_INT_TO_FLOAT:     resolved_type = visitIntToFloat(node, node->as.numeric_cast); break;
         case NODE_OFFSET_OF:        resolved_type = visitOffsetOf(node, node->as.offset_of); break;
         case NODE_PARAM_DECL:       resolved_type = unwrapType(node->as.param_decl.type); break;
         case NODE_VAR_DECL:         resolved_type = visitVarDecl(node, node->as.var_decl); break;
@@ -1204,7 +1205,7 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             return target_type;
         }
 
-        if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0) {
+        if (plat_strcmp(name, "@intCast") == 0 || plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@intToFloat") == 0) {
             if (!node->args || node->args->length() != 2) {
                 return reportAndReturnUndefined(node->callee->loc, ERR_TYPE_MISMATCH, "built-in expects 2 arguments");
             }
@@ -4579,6 +4580,19 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 
     /* 2. Ensure size is a constant integer literal */
     visit(node->size);
+    i64 const_size;
+    if (evaluateConstantExpression(node->size, &const_size)) {
+        if (const_size < 0) {
+            return reportAndReturnUndefined(node->size->loc, ERR_TYPE_MISMATCH, "Array size cannot be negative");
+        }
+        /* Update the node to be an integer literal for codegen */
+        node->size->type = NODE_INTEGER_LITERAL;
+        node->size->as.integer_literal.value = (u64)const_size;
+        node->size->as.integer_literal.is_unsigned = true;
+        node->size->as.integer_literal.is_long = false;
+        node->size->as.integer_literal.resolved_type = get_g_type_usize();
+    }
+
     if (node->size->type != NODE_INTEGER_LITERAL) {
         return reportAndReturnUndefined(node->size->loc, ERR_TYPE_MISMATCH, "Array size must be a constant integer literal");
     }
@@ -6525,6 +6539,44 @@ Type* TypeChecker::visitPtrCast(ASTPtrCastNode* node) {
             reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_POINTER, NULL);
         }
         target_type = get_g_type_undefined();
+    }
+
+    return target_type;
+}
+
+Type* TypeChecker::visitIntToFloat(ASTNode* parent, ASTNumericCastNode* node) {
+    Type* target_type;
+    Type* source_type;
+
+    if (!node->target_type) return get_g_type_undefined();
+    target_type = unwrapType(node->target_type);
+    if (!target_type || is_type_undefined(target_type)) return get_g_type_undefined();
+
+    if (target_type->kind != TYPE_F32 && target_type->kind != TYPE_F64) {
+        return reportAndReturnUndefined(node->target_type->loc, ERR_CAST_TARGET_NOT_FLOAT, "target type of @intToFloat must be a floating-point type");
+    }
+
+    if (!node->expr) return get_g_type_undefined();
+    source_type = visit(node->expr);
+    if (!source_type || is_type_undefined(source_type)) return get_g_type_undefined();
+
+    if (!isIntegerType(source_type)) {
+        return reportAndReturnUndefined(node->expr->loc, ERR_CAST_SOURCE_NOT_INTEGER, "source expression of @intToFloat must be an integer type");
+    }
+
+    /* Constant folding */
+    if (node->expr->type == NODE_INTEGER_LITERAL) {
+        double val = (double)node->expr->as.integer_literal.value;
+        if (!node->expr->as.integer_literal.is_unsigned) {
+            val = (double)(i64)node->expr->as.integer_literal.value;
+        }
+
+        /* In-place replace @intToFloat node with float literal */
+        parent->type = NODE_FLOAT_LITERAL;
+        parent->as.float_literal.value = val;
+        parent->as.float_literal.resolved_type = target_type;
+        parent->resolved_type = target_type;
+        return target_type;
     }
 
     return target_type;
