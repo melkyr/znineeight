@@ -36,7 +36,7 @@ To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
 
 ## Comparison with Official Zig
 
-| Feature | Official Zig Project | Z98 Bootstrap (Interpretation) |
+| Feature | Official Zig Project | Z98 Bootstrap (Kind of Zig Subset) |
 | :--- | :--- | :--- |
 | **Language Standard** | Modern Zig (0.13.0+) | Z98 Subset (Interpretation) |
 | **Compiler Host** | Modern C++, Zig | C++98 (Stage 0), Z98 (Stage 1) |
