@@ -322,7 +322,7 @@ ASTNode* Parser::parsePrimaryExpr() {
             return parseNumericCastExpr(NODE_INT_CAST);
         case TOKEN_AT_FLOATCAST:
             return parseNumericCastExpr(NODE_FLOAT_CAST);
-        case TOKEN_AT_INTTOFLOAT:
+        case TOKEN_AT_INT_TO_FLOAT:
             return parseNumericCastExpr(NODE_INT_TO_FLOAT);
         case TOKEN_AT_OFFSETOF:
             return parseOffsetOfExpr();
@@ -2439,8 +2439,7 @@ ASTNode* Parser::parseBuiltinCall(const char* name, SourceLocation loc) {
     if (plat_strcmp(name, "@sizeOf") == 0 || plat_strcmp(name, "@alignOf") == 0) {
         call_data->args->append(parseType());
     } else if (plat_strcmp(name, "@ptrCast") == 0 || plat_strcmp(name, "@intCast") == 0 ||
-               plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@intToEnum") == 0 ||
-               plat_strcmp(name, "@intToFloat") == 0) {
+               plat_strcmp(name, "@floatCast") == 0 || plat_strcmp(name, "@intToEnum") == 0) {
         call_data->args->append(parseType());
         expect(TOKEN_COMMA, "Expected ',' after first argument of built-in");
         call_data->args->append(parseExpression());
