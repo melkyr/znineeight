@@ -1,15 +1,17 @@
 const sand_mod = @import("sand.zig");
 const util = @import("util.zig");
 
+pub const ConsData = struct {
+    car: *Value,
+    cdr: *Value,
+};
+
 pub const Value = union(enum) {
     Nil: void,
     Int: i64,
     Bool: bool,
     Symbol: []const u8,
-    Cons: struct {
-        car: *Value,
-        cdr: *Value,
-    },
+    Cons: ConsData,
     Builtin: *void,
 };
 
@@ -20,7 +22,7 @@ pub fn alloc_value(arena: *sand_mod.Sand) util.LispError!*Value {
 
 pub fn alloc_cons(car: *Value, cdr: *Value, arena: *sand_mod.Sand) util.LispError!*Value {
     const v = try alloc_value(arena);
-    v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };
+    v.* = Value{ .Cons = ConsData{ .car = car, .cdr = cdr } };
     return v;
 }
 
