@@ -83,38 +83,38 @@ static bool run_function_codegen_test(const char* zig_code, const char* expected
 }
 
 TEST_FUNC(Codegen_Fn_Simple) {
-    return run_function_codegen_test("fn foo() void {}", "static void foo(void) {");
+    return run_function_codegen_test("fn foo() void {}", "static void zF_0_foo(void) {");
 }
 
 TEST_FUNC(Codegen_Fn_Public) {
-    return run_function_codegen_test("pub fn foo() void {}", "void foo(void) {");
+    return run_function_codegen_test("pub fn foo() void {}", "void zF_0_foo(void) {");
 }
 
 TEST_FUNC(Codegen_Fn_Params) {
     return run_function_codegen_test(
         "fn add(a: i32, b: i32) i32 { return a + b; }",
-        "static int add(int a, int b) {\n    return a + b;\n}"
+        "static int zF_0_add(int a, int b) {\n    return a + b;\n}"
     );
 }
 
 TEST_FUNC(Codegen_Fn_Pointers) {
     return run_function_codegen_test(
         "fn process(p: *i32) *i32 { return p; }",
-        "static int* process(int* p) {\n    return p;\n}"
+        "static int* zF_0_process(int* p) {\n    return p;\n}"
     );
 }
 
 TEST_FUNC(Codegen_Fn_Call) {
     return run_function_codegen_test(
         "fn bar() void {} fn foo() void { bar(); }",
-        "static void foo(void) {\n    bar();\n}"
+        "static void zF_1_foo(void) {\n    zF_0_bar();\n}"
     );
 }
 
 TEST_FUNC(Codegen_Fn_KeywordParam) {
     return run_function_codegen_test(
         "fn my_test(int: i32) void {}",
-        "static void my_test(int z_int) {"
+        "static void zF_0_my_test(int z_int) {"
     );
 }
 
@@ -122,7 +122,7 @@ TEST_FUNC(Codegen_Fn_MangledCall) {
     // Should use mangled name for keywords
     return run_function_codegen_test(
         "fn register() void {} fn my_test() void { register(); }",
-        "static void z_register(void) {\n}\n\nstatic void my_test(void) {\n    z_register();\n}"
+        "static void zF_0_register(void) {\n}\n\nstatic void zF_1_my_test(void) {\n    zF_0_register();\n}"
     );
 }
 
@@ -131,7 +131,7 @@ TEST_FUNC(Codegen_Fn_StructReturn) {
     // and the RetroZig emitter splits declarations and assignments for local variables.
     return run_function_codegen_test(
         "const Point = struct { x: i32, y: i32 }; fn getOrigin() Point { var p: Point = undefined; p.x = 0; p.y = 0; return p; }",
-        "static struct Point getOrigin(void) {\n    struct Point p;\n    p.x = 0;\n    p.y = 0;\n    return p;\n}"
+        "static struct zS_0_Point zF_2_getOrigin(void) {\n    struct zS_0_Point p;\n    p.x = 0;\n    p.y = 0;\n    return p;\n}"
     );
 }
 
@@ -145,7 +145,7 @@ TEST_FUNC(Codegen_Fn_Extern) {
 TEST_FUNC(Codegen_Fn_Export) {
     return run_function_codegen_test(
         "export fn bar() void {}",
-        "void bar(void) {"
+        "void zF_0_bar(void) {"
     );
 }
 
@@ -153,7 +153,7 @@ TEST_FUNC(Codegen_Fn_LongName) {
     // Should be truncated to 31 chars
     return run_function_codegen_test(
         "fn this_is_a_very_long_function_name_exceeding_31_chars() void {}",
-        "static void this_is_a_very_long_function_na(void) {"
+        "static void zF_0_this_is_a_very_long_function_name_exceeding_31_chars(void) {"
     );
 }
 

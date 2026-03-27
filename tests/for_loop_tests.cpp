@@ -37,7 +37,7 @@ TEST_FUNC(ForIntegration_Array) {
         "    }\n"
         "}";
     const char* expected =
-        "void foo(void) {\n"
+        "void zF_0_foo(void) {\n"
         "    int arr[3];\n"
         "    arr[0] = 1;\n"
         "    arr[1] = 2;\n"
@@ -70,7 +70,7 @@ TEST_FUNC(ForIntegration_Slice) {
         "    }\n"
         "}";
     const char* expected =
-        "void foo(Slice_i32 s) {\n"
+        "void zF_0_foo(Slice_i32 s) {\n"
         "    {\n"
         "        Slice_i32 __for_iter_1 = s;\n"
         "        size_t __for_idx_1 = 0;\n"
@@ -99,7 +99,7 @@ TEST_FUNC(ForIntegration_Range) {
         "    }\n"
         "}";
     const char* expected =
-        "void foo(void) {\n"
+        "void zF_0_foo(void) {\n"
         "    {\n"
         "        size_t __for_idx_1 = 0;\n"
         "        size_t __for_len_1 = 10;\n"
@@ -128,7 +128,7 @@ TEST_FUNC(ForIntegration_IndexCapture) {
         "    }\n"
         "}";
     const char* expected =
-        "void foo(Slice_i32 s) {\n"
+        "void zF_0_foo(Slice_i32 s) {\n"
         "    {\n"
         "        Slice_i32 __for_iter_1 = s;\n"
         "        size_t __for_idx_1 = 0;\n"
@@ -159,7 +159,7 @@ TEST_FUNC(ForIntegration_Labeled) {
         "    }\n"
         "}";
     const char* expected =
-        "void foo(void) {\n"
+        "void zF_0_foo(void) {\n"
         "    {\n"
         "        size_t __for_idx_1 = 0;\n"
         "        size_t __for_len_1 = 10;\n"

@@ -27,9 +27,9 @@ TEST_FUNC(EnumIntegration_BasicEnum) {
     }
 
     /* Color is mangled as zS_0_Color, c is mangled as zV_2_c in Test Mode.
-       Enum members like Red are mangled as EnumName_MemberName (Color_Red).
+       Enum members like Red are mangled as EnumName_MemberName (zS_0_Color_Red).
     */
-    if (!unit.validateVariableEmission("c", "enum zS_0_Color zV_2_c = Color_Red;")) {
+    if (!unit.validateVariableEmission("c", "enum zS_0_Color zV_2_c = zS_0_Color_Red;")) {
         return false;
     }
 
@@ -60,7 +60,7 @@ TEST_FUNC(EnumIntegration_MemberAccess) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string emission = emitter.emitExpression(fn->body);
 
-    if (emission.find("return Status_Ok;") == std::string::npos) {
+    if (emission.find("return zS_0_Status_Ok;") == std::string::npos) {
         // printf("DEBUG: Emission: %s\n", emission.c_str());
     }
 

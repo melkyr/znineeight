@@ -149,7 +149,7 @@ TEST_FUNC(SwitchIntegration_Enum) {
     MockC89Emitter emitter(&unit.getCallSiteLookupTable(), &unit.getSymbolTable());
     std::string emission = emitter.emitExpression(fn->body);
 
-    if (emission.find("case Color_Red:") == std::string::npos) {
+    if (emission.find("case zS_0_Color_Red:") == std::string::npos) {
         // printf("DEBUG: Emission: %s\n", emission.c_str());
     }
 
