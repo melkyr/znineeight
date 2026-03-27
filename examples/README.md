@@ -10,7 +10,8 @@ This directory contains example programs written in the Z98 Zig subset, demonstr
 - `fibonacci/`: Recursive Fibonacci sequence demonstrating recursion.
 - `mandelbrot/`: Mandelbrot set ASCII art renderer demonstrating floating-point arithmetic and nested loops.
 
-### Advanced (Milestone 7)
+### Advanced (Milestone 7-11)
+- `lzw/`: LZW Compressor/Decompressor demonstrating multi-module compilation, error handling, slices, and defer/errdefer.
 - `heapsort/`: In-place Heapsort algorithm demonstrating arrays and loops.
 - `quicksort/`: Quicksort with function pointer comparator, demonstrating many-item pointers and function pointers.
 - `sort_strings/`: String sorting demonstrating multi-level pointers (`[*][*]u8`).
