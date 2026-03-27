@@ -97,14 +97,14 @@ TEST_FUNC(Codegen_Local_Undefined) {
 TEST_FUNC(Codegen_Local_Shadowing) {
     return run_local_codegen_test(
         "fn my_test() void { var x: i32 = 1; { var x: i32 = 2; } }",
-        "int x;\n    x = 1;\n    {\n        int x_0;\n        x_0 = 2;\n    }"
+        "int x;\n    x = 1;\n    {\n        int x_1;\n        x_1 = 2;\n    }"
     );
 }
 
 TEST_FUNC(Codegen_Local_IfStatement) {
     return run_local_codegen_test(
         "fn my_test(c: bool) void { if (c) { var x: i32 = 1; } else { var x: i32 = 2; } }",
-        "if (c) {\n        int x;\n        x = 1;\n    } else {\n        int x_0;\n        x_0 = 2;\n    }"
+        "if (c) {\n        int x;\n        x = 1;\n    } else {\n        int x_1;\n        x_1 = 2;\n    }"
     );
 }
 

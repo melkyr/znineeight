@@ -111,7 +111,8 @@ TEST_FUNC(DeferIntegration_Continue) {
         "        defer bar();\n"
         "        continue;\n"
         "    }\n"
-        "}";
+        "}\n"
+        "fn bar() void {}";
     return run_defer_test(source, "foo", "void zF_0_foo(void) { __loop_0_start: ; if (!(1)) goto __loop_0_end; { /* defers for continue */ { zF_1_bar(); } goto __loop_0_continue; } __loop_0_continue: ; goto __loop_0_start; __loop_0_end: ; }");
 }
 
