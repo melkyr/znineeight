@@ -1680,7 +1680,7 @@ ASTNode* Parser::parseFnDecl(bool is_pub, bool is_extern, bool is_export) {
                 param_loc = param_name_token.location;
                 expect(TOKEN_COLON, "Expected ':' after parameter name");
 
-                if (peek().type == TOKEN_TYPE) {
+                if (peek().type == TOKEN_TYPE_KEYWORD) {
                     Token type_token = advance();
                     is_type_param = true;
                     if (!is_generic) {
@@ -2193,13 +2193,13 @@ ASTNode* Parser::parseType() {
     } else if (peek().type == TOKEN_UNION || peek().type == TOKEN_STRUCT || peek().type == TOKEN_ENUM) {
         left = parsePrimaryExpr();
     } else if (peek().type == TOKEN_IDENTIFIER || peek().type == TOKEN_NORETURN ||
-               peek().type == TOKEN_TYPE || peek().type == TOKEN_ANYTYPE ||
+               peek().type == TOKEN_TYPE_KEYWORD || peek().type == TOKEN_ANYTYPE ||
                peek().type == TOKEN_C_CHAR) {
         Token type_name_token = advance();
         left = createNodeAt(NODE_TYPE_NAME, type_name_token.location);
         if (type_name_token.type == TOKEN_NORETURN) {
             left->as.type_name.name = "noreturn";
-        } else if (type_name_token.type == TOKEN_TYPE) {
+        } else if (type_name_token.type == TOKEN_TYPE_KEYWORD) {
             left->as.type_name.name = "type";
         } else if (type_name_token.type == TOKEN_ANYTYPE) {
             left->as.type_name.name = "anytype";

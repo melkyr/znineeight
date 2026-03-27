@@ -148,8 +148,8 @@ TEST_FUNC(Codegen_MemberAccess_Cast) {
         "fn foo(p: *void) i32 {\n"
         "    return @ptrCast(*S, p).f;\n"
         "}";
-    // Zig @ptrCast(*S, p).f -> C ((struct S*)p)->f
-    return run_member_codegen_test(source, "return ((struct S*)p)->f;");
+    // Zig @ptrCast(*S, p).f -> C ((struct zS_0_S*)p)->f
+    return run_member_codegen_test(source, "return ((struct zS_0_S*)p)->f;");
 }
 
 TEST_FUNC(Codegen_MemberAccess_NestedPointer) {

@@ -6,7 +6,7 @@
 
 /**
  * @file struct_tests.cpp
- * @brief Integration tests for Zig structs in the RetroZig compiler.
+ * @brief Integration tests for Zig structs in the Z98 compiler.
  */
 
 static bool run_struct_test(const char* zig_code, const char* var_name, const char* expected_c89) {
@@ -34,7 +34,7 @@ TEST_FUNC(StructIntegration_BasicNamedStruct) {
     const char* source =
         "const Point = struct { x: i32, y: i32 };\n"
         "var p: Point = Point{ .x = 1, .y = 2 };";
-    return run_struct_test(source, "p", "struct Point p = {1, 2};");
+    return run_struct_test(source, "p", "struct zS_#_Point zV_#_p = {1, 2};");
 }
 
 TEST_FUNC(StructIntegration_MemberAccess) {
@@ -74,7 +74,7 @@ TEST_FUNC(StructIntegration_NamedInitializerOrder) {
     const char* source =
         "const Point = struct { x: i32, y: i32 };\n"
         "var p: Point = Point{ .y = 20, .x = 10 };";
-    return run_struct_test(source, "p", "struct Point p = {10, 20};");
+    return run_struct_test(source, "p", "struct zS_#_Point zV_#_p = {10, 20};");
 }
 
 // --- Negative Tests ---

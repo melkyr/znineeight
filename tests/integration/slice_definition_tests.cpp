@@ -1,6 +1,5 @@
 #include "test_framework.hpp"
 #include "test_compilation_unit.hpp"
-#include "compilation_unit.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
 #include "cbackend.hpp"
@@ -17,7 +16,7 @@
 TEST_FUNC(SliceDefinition_PrivateFunction) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* source =
         "fn private() void {\n"
@@ -67,7 +66,7 @@ TEST_FUNC(SliceDefinition_PrivateFunction) {
 TEST_FUNC(SliceDefinition_RecursiveType) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* source =
         "pub const Node = struct {\n"
@@ -108,7 +107,7 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
     content[bytes] = '\0';
     plat_close_file(f);
     
-    bool found_struct = (strstr(content, "struct Node") != NULL);
+    bool found_struct = (strstr(content, "struct zS_0_Node") != NULL);
 
     if (!found_slice) {
         printf("FAIL: Slice_u8 definition not found for recursive struct usage.\n");
@@ -124,7 +123,7 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
 TEST_FUNC(SliceDefinition_NestedType) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* source =
         "const S = struct { s: []f32 };\n"
@@ -177,7 +176,7 @@ TEST_FUNC(SliceDefinition_NestedType) {
 TEST_FUNC(SliceDefinition_PublicSignatureNested) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* source =
         "pub fn public_func(ptr: *[]u16) void {\n"

@@ -1,4 +1,4 @@
-unsigned int sum_up_to(unsigned int n) {
+unsigned int zF_0_sum_up_to(unsigned int n) {
     unsigned int i;
     unsigned int total;
     i = 0;

@@ -4,8 +4,9 @@
 #include "zig_runtime.h"
 
 
-struct z_builtin_Arena; /* opaque */
 
-struct z_builtin_Arena;
+struct Arena; /* opaque */
+
+struct Arena;
 
 #endif

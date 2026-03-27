@@ -59,7 +59,7 @@ protected:
             "#ifndef NULL\n"
             "#define NULL ((void*)0)\n"
             "#endif\n"
-            "/* Basic types used by RetroZig */\n"
+            "/* Basic types used by Z98 */\n"
             "typedef signed char i8;\n"
             "typedef short i16;\n"
             "typedef int i32;\n"

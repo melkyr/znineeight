@@ -121,6 +121,11 @@ public:
     void emitPrologue();
 
     /**
+     * @brief Emits the symbol map comment block.
+     */
+    void emitSymbolMap();
+
+    /**
      * @brief Prepares the emitter for a new function.
      */
     void beginFunction();
@@ -444,6 +449,11 @@ public:
      */
     bool evaluateSimpleConstant(const ASTNode* node, i64* out_value) const;
 
+    /**
+     * @brief Recursively scans an AST node for any 'errdefer' statements.
+     */
+    bool scanForErrDefer(const ASTNode* node) const;
+
 private:
     /**
      * @brief Emits a literal expression (integer, float, string, char, bool, null, error).
@@ -557,13 +567,16 @@ private:
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
+        const char* location;
+        const char* kind;
     };
 
     struct DeferScope {
         int label_id;
         DynamicArray<ASTDeferStmtNode*> defers;
+        DynamicArray<ASTDeferStmtNode*> err_defers;
 
-        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena) {}
+        DeferScope(ArenaAllocator& arena, int id) : label_id(id), defers(arena), err_defers(arena) {}
     };
 
     char buffer_[4096];
@@ -580,6 +593,7 @@ private:
     ArenaAllocator& arena_;
     ArenaAllocator& transient_arena_;
     DynamicArray<GlobalNameEntry> global_names_;
+    DynamicArray<const char*> used_names_;
     DynamicArray<const char*> emitted_slices_;
     DynamicArray<const char*> emitted_error_unions_;
     DynamicArray<const char*> emitted_optionals_;
@@ -588,6 +602,7 @@ private:
     DynamicArray<const char*>* external_cache_;
     DynamicArray<DeferScope*> defer_stack_;
     Type* current_fn_ret_type_;
+    const char* current_err_flag_;
     bool is_header_;
     char* type_def_buffer_;
     size_t type_def_pos_;

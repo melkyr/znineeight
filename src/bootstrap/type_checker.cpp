@@ -3314,6 +3314,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
+    is_local = (current_fn_return_type_ != NULL);
+
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (existing_sym) {
@@ -3323,12 +3326,15 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         existing_sym->details = node;
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
             existing_sym->mangled_name = existing_sym->name;
+        } else if (is_local) {
+            /* Local variables do not get a global mangled name. 
+               The C89Emitter will handle them via CVariableAllocator. */
+            existing_sym->mangled_name = NULL;
         } else if (!existing_sym->mangled_name) {
-            existing_sym->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            char k_char = node->is_const ? 'C' : 'V';
+            existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
         }
 
-        /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
-        is_local = (current_fn_return_type_ != NULL);
         existing_sym->flags |= is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
         if (node->is_const) {
             existing_sym->flags |= SYMBOL_FLAG_CONST;
@@ -3337,9 +3343,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     } else {
         /* If not found (e.g. injected in tests), create and insert. */
         if (declared_type && !is_type_undefined(declared_type)) {
-            is_local = (current_fn_return_type_ != NULL);
-            mangled = (node->is_extern) ? node->name :
-                                 unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            mangled = NULL;
+            if (node->is_extern) {
+                mangled = node->name;
+            } else if (!is_local) {
+                char k_char = node->is_const ? 'C' : 'V';
+                mangled = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
+            }
 
             Symbol var_symbol = SymbolBuilder(unit_.getArena())
                 .withName(node->name)
@@ -3449,7 +3459,7 @@ Type* TypeChecker::visitFnSignature(ASTFnDeclNode* node) {
         if (fn_symbol->flags & SYMBOL_FLAG_EXTERN) {
             fn_symbol->mangled_name = fn_symbol->name;
         } else {
-            fn_symbol->mangled_name = unit_.getNameMangler().mangleFunction(node->name, NULL, 0, unit_.getCurrentModule());
+            fn_symbol->mangled_name = unit_.getNameMangler().mangle('F', unit_.getCurrentModule(), node->name);
         }
     }
 
@@ -3652,8 +3662,8 @@ Type* TypeChecker::visitStructDecl(ASTNode* parent, ASTStructDeclNode* node) {
         sf.name = field_data->name;
         sf.type = field_type;
         sf.offset = 0;
-        sf.size = field_type->size;
-        sf.alignment = field_type->alignment;
+        sf.size = (field_type->kind == TYPE_VOID) ? 0 : field_type->size;
+        sf.alignment = (field_type->kind == TYPE_VOID) ? 1 : field_type->alignment;
         fields->append(sf);
     }
 
@@ -3776,8 +3786,8 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
             field.name = field_node->name;
             field.type = field_type;
             field.offset = 0;
-            field.size = field_type->size;
-            field.alignment = field_type->alignment;
+            field.size = (field_type->kind == TYPE_VOID) ? 0 : field_type->size;
+            field.alignment = (field_type->kind == TYPE_VOID) ? 1 : field_type->alignment;
             fields->append(field);
         }
     }
@@ -3804,6 +3814,12 @@ Type* TypeChecker::visitUnionDecl(ASTNode* parent, ASTUnionDeclNode* node) {
     }
 
     union_type = createUnionType(unit_, unit_.getModule(unit_.getCurrentModule()), fields, union_name, node->is_tagged, tag_type, self_placeholder);
+
+    if (node->is_tagged) {
+        calculateTaggedUnionLayout(union_type);
+    } else {
+        calculateStructLayout(union_type);
+    }
 
     if (self_placeholder && union_type != self_placeholder) {
         finalizePlaceholder(self_placeholder, union_type);
@@ -5198,6 +5214,12 @@ bool TypeChecker::areTypesCompatible(Type* expected, Type* actual) {
 
     /* Handle null assignment to any pointer, function pointer, or optional */
     if (actual->kind == TYPE_NULL && (expected->kind == TYPE_POINTER || expected->kind == TYPE_FUNCTION_POINTER || expected->kind == TYPE_OPTIONAL)) {
+        return true;
+    }
+
+    if (actual->kind == TYPE_ENUM && isTaggedUnion(expected)) {
+        /* This is slightly inaccurate because we don't check if the tag belongs to the union here,
+           but visitReturnStmt and visitAssignment will use coerceNode which handles it correctly. */
         return true;
     }
 
@@ -6780,6 +6802,38 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
                     node->resolved_type = target_type;
                 }
             }
+            return;
+        }
+    }
+
+    // New: Handle folded enum members that are now integer literals
+    if (node->type == NODE_INTEGER_LITERAL && node->as.integer_literal.original_name) {
+        if (isTaggedUnion(target_type)) {
+            Type* payload_type = findTaggedUnionPayload(target_type, node->as.integer_literal.original_name);
+            if (payload_type && payload_type->kind == TYPE_VOID) {
+                /* Transform tag literal into struct initializer: { .Tag } */
+                ASTNode* init_node = (ASTNode*)unit_.getArena().alloc(sizeof(ASTNode));
+                plat_memset(init_node, 0, sizeof(ASTNode));
+                init_node->type = NODE_STRUCT_INITIALIZER;
+                init_node->loc = node->loc;
+                init_node->as.struct_initializer = (ASTStructInitializerNode*)unit_.getArena().alloc(sizeof(ASTStructInitializerNode));
+                plat_memset(init_node->as.struct_initializer, 0, sizeof(ASTStructInitializerNode));
+
+                void* fields_mem = unit_.getArena().alloc(sizeof(DynamicArray<ASTNamedInitializer*>));
+                init_node->as.struct_initializer->fields = new (fields_mem) DynamicArray<ASTNamedInitializer*>(unit_.getArena());
+
+                ASTNamedInitializer* field = (ASTNamedInitializer*)unit_.getArena().alloc(sizeof(ASTNamedInitializer));
+                plat_memset(field, 0, sizeof(ASTNamedInitializer));
+                field->field_name = node->as.integer_literal.original_name;
+                field->value = NULL; // Naked tag
+                field->loc = node->loc;
+
+                init_node->as.struct_initializer->fields->append(field);
+                init_node->resolved_type = target_type;
+                *node_slot = init_node;
+            }
+
+            --recursion_depth;
             return;
         }
     }

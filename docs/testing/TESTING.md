@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Testing Guide
 
-This document outlines the testing strategy and procedures for the RetroZig compiler.
+This document outlines the testing strategy and procedures for the Z98 compiler.
 
 ## 1. Unit Tests
 
@@ -56,7 +58,7 @@ Existing integration tests can be found in `tests/integration_tests.cpp`, `tests
 The bootstrap compiler includes a `--self-test` mode that runs an internal suite of integration tests directly from the compiler executable.
 
 ```bash
-./retrozig --self-test
+./z98 --self-test
 ```
 
 This is useful for quick verification of the compiler's core functionality in its final binary form.
@@ -97,7 +99,7 @@ The `DoubleFreeAnalyzer` provides enhanced diagnostics by tracking allocation si
 You can manually test the compiler on Zig source files using the `--compile` flag:
 
 ```bash
-./retrozig --compile my_source.zig
+./z98 --compile my_source.zig
 ```
 
 This will run the full compilation pipeline, including all static analysis passes, and report any errors or warnings to the console.
@@ -145,7 +147,48 @@ Confirm that `C89FeatureValidator` reports `ERR_NON_C89_FEATURE` for each detect
 ### Pipeline Order
 Tests should verify that `TypeChecker` successfully resolves error types before `C89FeatureValidator` runs, ensuring that even complex return types (like those using type aliases) are accurately detected.
 
-## 9. C89 Validation Framework (Task 179)
+## 9. Test Mode (Deterministic Mangling)
+
+The compiler supports a specialized **Test Mode** to ensure that integration tests remain deterministic and maintainable, even as the internal name mangling scheme evolves.
+
+### Deterministic Naming
+In Test Mode, the compiler replaces hash-based mangling with a deterministic, counter-based scheme:
+- **Format**: `z<Kind>_<Counter>_<Name>`
+- **Kinds**: `F` (Function), `V` (Variable), `S` (Struct/Tagged Union), `E` (Enum), `U` (Union).
+- **Anonymous Types**: Use `anon` as the base name (e.g., `zS_0_anon`).
+- **Determinism**: Counters are global per `CompilationUnit` and increment based on the order symbols are encountered in the AST.
+
+### Usage
+To enable Test Mode, use the `--test-mode` flag:
+```bash
+./z98 --test-mode my_source.zig -o output.c
+```
+
+### Regression Testing
+When updating emission tests that compare against hardcoded strings, always ensure that the test environment sets Test Mode. If test files are moved or the order of symbols in a file changes, the counters may change, necessitating an update to the expected strings.
+
+**Note on Systematic Failures:** Many integration batches (12–72) may fail systematically if the relative path of the tests is moved or if the internal name mangling scheme is updated. In such cases, the expectation strings in the corresponding `.cpp` files must be updated to align with the new output.
+
+#### Example: Addressing a Mismatch
+Suppose a test in `function_decl_tests.cpp` fails after a refactor:
+```
+FAIL: Signature emission mismatch for function 'foo'.
+Expected: void zF_d071e5_foo(void)
+Actual:   void zF_0_foo(void)
+```
+
+To address this:
+1.  **Identify the mismatch**: The test expects the old hash-based name `zF_d071e5_foo`, but the compiler in Test Mode produced `zF_0_foo`.
+2.  **Update the test**: Change the expected string in the `.cpp` file to match the "Actual" output.
+    ```cpp
+    // tests/integration/function_decl_tests.cpp
+    TEST_FUNC(FunctionIntegration_NoParams) {
+        return run_fn_decl_test("fn foo() void {}", "foo", "void zF_0_foo(void)");
+    }
+    ```
+3.  **Verify**: Re-run the batch runner to ensure the test now passes.
+
+## 10. C89 Validation Framework (Task 179)
 
 The C89 Validation Framework ensures that emitted C code is compliant with ANSI C89 and MSVC 6.0 constraints.
 

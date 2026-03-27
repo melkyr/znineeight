@@ -1,4 +1,6 @@
-# RetroZig Compiler: Master Design Document (v1.1)
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
+# Z98 Compiler: Master Design Document (v1.2)
 
 ## 1. Project Overview & Philosophy
 **Goal:** Create a self-hosting Zig compiler targeting Windows 9x era toolchains (1998-2000).
@@ -52,8 +54,11 @@ To fit within the strict 16MB peak memory constraint, the compiler employs a mul
 - **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
 
 ### 3.1 Memory Management
+## Current Status: Milestone 11 finished.
+The project has successfully completed Milestone 11, including full cross-module visibility and `defer`/`errdefer` support.
 
-The RetroZig project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
+
+The Z98 project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
 
 #### 3.1.1 Bootstrap Compiler Memory (`memory.hpp`)
 **Concept:** A chunked, region-based allocator that frees all memory at once. It minimizes physical memory waste by using lazy allocation.
@@ -190,7 +195,7 @@ To ensure robustness on sensitive 90s hardware and during complex bootstrap phas
 - **Fail-Hard Buffering**: Any buffer overflow in the codegen system triggers an immediate `plat_abort()` with a descriptive error, preventing silent output truncation.
 
 ### 3.7 Error Handling System (`error_handler.hpp`)
-**Philosophy:** The RetroZig compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
+**Philosophy:** The Z98 compiler uses a two-tier error handling model to balance developer productivity (multi-error reporting) with bootstrap reliability.
 
 ```cpp
 class ErrorHandler {
@@ -435,8 +440,8 @@ The bootstrap compiler (Stage 0) implements a strict subset of Zig types specifi
 * **Function Pointers:** `fn(...) T`. Supports dynamic parameter allocation (unlimited).
 
 **Explicitly Rejected Types (Bootstrap Phase):**
-* **Optionals:** `?T` (Rejected until Milestone 5 translation).
-* **Error Unions:** `!T` (Rejected until Milestone 5 translation).
+* **Optionals:** `?T` (Fully supported as of Task 9.3).
+* **Error Unions:** `!T` (Fully supported as of Milestone 7).
 
 **Type Representation:**
 ```cpp
@@ -456,7 +461,10 @@ enum TypeKind {
     TYPE_F32,
     TYPE_F64,
     // Complex Types
-    TYPE_POINTER
+    TYPE_POINTER,
+    TYPE_OPTIONAL,
+    TYPE_ERROR_UNION,
+    TYPE_TAGGED_UNION
 };
 
 struct Type {
@@ -467,6 +475,14 @@ struct Type {
         struct {
             Type* base;
         } pointer;
+        struct {
+            Type* payload;
+        } optional;
+        struct {
+            Type* payload;
+            Type* error_set;
+        } error_union;
+        // ...
     } as;
 };
 ```
@@ -626,8 +642,8 @@ public:
 };
 ```
 
-## 5. The "Zig Subset" Language Specification (Milestone 4)
-This is the restricted version of Zig the bootstrap compiler supports as of Milestone 4.
+## 5. The "Zig Subset" Language Specification (Milestone 11)
+This is the restricted version of Zig the bootstrap compiler supports as of Milestone 11.
 
 ### 5.1 Supported Syntax & Features
 *   **Variable Declarations**: `var` and `const` with explicit types or type inference from literals.
@@ -657,7 +673,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
         *   `break` and `continue` are strictly forbidden inside `defer` and `errdefer` blocks.
     *   `switch (expr) { ... }` (Basic support, typically mapped to comments in Milestone 4 mock emission).
     *   `for (iterable) |item| { ... }` (Full support for arrays, slices, and ranges).
-*   **Defer**: `defer statement;` or `defer { ... }`.
+*   **Defer**: `defer statement;` or `defer { ... }`. (Full support as of Milestone 11).
+*   **Errdefer**: `errdefer statement;` or `errdefer { ... }`. (Full support as of Milestone 11).
 *   **Error Handling**: Supported as of Milestone 7. Includes Error Unions (`!T`), `try` expressions, and `catch` expressions (with optional error capture).
 *   **Optional Types**: Fully supported as of Task 9.3 stabilization. Includes Optional types (`?T`), `null` literal, `orelse` expressions, and `if` with optional unwrapping capture (`if (opt) |val|`).
     *   **Representation**: Uses a **uniform struct representation** `{ T value; int has_value; }` for all optional types internally.
@@ -684,11 +701,13 @@ For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCas
 ### 5.3 Explicit Limitations & Rejections
 To maintain C89 compatibility and compiler simplicity:
 *   **Slices**: `[]T` is **supported** as a bootstrap language extension.
-*   **Error Handling**: Basic support for `!T`, `try`, `catch`, `orelse`, and Optional types (`?T`). `errdefer` remain rejected in the bootstrap phase.
+*   **Error Handling**: Fully supported for `!T`, `try`, `catch`, `orelse`, `errdefer`, and Optional types (`?T`).
+*   **`anyerror`**: Explicitly rejected by the compiler.
+*   **Anonymous Union Payloads**: Direct use of anonymous structs in `union(enum)` variants results in incomplete type definitions in C89.
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **Tagged Unions**: Supported as of Phase 1 of Milestone 9.
+*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures.
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
@@ -706,7 +725,12 @@ To maintain C89 compatibility and compiler simplicity:
     *   Zig identifiers that are C89 keywords (e.g., `int`, `register`) are mangled (e.g., `z_int`).
     *   Identifiers exceeding 31 characters are truncated for MSVC 6.0.
     *   Enum members are mangled as `EnumName_MemberName`.
-    *   **Types**: Mangled as `z_<defining_module>_<name>`. This ensures that same-named types in different modules (e.g., `a.Point` and `b.Point`) do not collide in the generated C code.
+        *   **Standard Mode (Hash-based)**:
+            *   Identifiers use the format `z<Kind>_<Hash>_<Name>`.
+            *   The hash is derived from the module path to ensure uniqueness across different modules.
+        *   **Test Mode (Deterministic)**:
+            *   Identifiers use the format `z<Kind>_<Counter>_<Name>`.
+            *   A global counter ensures predictable names independent of environment or hashes, facilitating regression testing.
     *   **Compiler-Generated Identifiers**: Symbols used internally by the compiler (identified by prefixes like `__tmp_`, `__return_`, `__bootstrap_`) bypass all mangling (module prefixing, keyword avoidance, and sanitization). They are emitted verbatim after 31-character truncation to ensure they remain unique and predictable.
     *   **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
     *   **User Symbol Protection**: User-defined identifiers starting with `__` are automatically mangled (e.g., prepended with `z_`) to avoid collisions with internal compiler symbols.
@@ -928,15 +952,45 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [x] Task 203: return statement
 - [x] Task 204: @ptrCast
 - [x] Task 205: @intCast / @floatCast (runtime checked)
-- [ ] Task 206: defer (placeholder)
+- [x] Task 206: defer (Initial implementation)
 - [x] Task 207: Integration tests with real C89 compiler
 
-### Week 1: MSVC 6.0 Env Setup
+### Milestone 7: Error Handling (Milestone COMPLETE)
+- [x] Task 210: Error set and union parsing
+- [x] Task 211: Try/Catch expression lifting
+- [x] Task 212: Implicit return for !void
+- [x] Task 213: Error union coercion rules
+
+### Milestone 8: Optional Types (Milestone COMPLETE)
+- [x] Task 220: Optional type representation
+- [x] Task 221: Orelse and Optional unwrapping captures
+- [x] Task 222: Null literal handling and coercion
+
+### Milestone 9: Tagged Unions (Milestone COMPLETE)
+- [x] Task 230: union(enum) and switch payload captures
+- [x] Task 231: Recursive type layout with tagged unions
+- [x] Task 232: Tag literal coercion to tagged unions
+
+### Milestone 10: Compilation Model (Milestone COMPLETE)
+- [x] Task 240: Separate compilation via CBackend
+- [x] Task 241: Build script generation (.sh/.bat)
+- [x] Task 242: Visibility enforcement (static vs extern)
+
+### Milestone 11: Modular Refactoring (Milestone COMPLETE)
+- [x] Task 250: Header file generation (.h)
+- [x] Task 251: Recursive include resolution
+- [x] Task 252: Forward declaration orchestration
+
+### Milestone 12: Self-Hosting Pre-requisites
+- [ ] Task 260: Support `anytype` in restricted contexts (built-ins)
+- [ ] Task 261: Implement `@as` for explicit coercion
+
+### Part 1: MSVC 6.0 Env Setup
 - [x] Set up Windows 98 VM with MSVC 6.0
 - [ ] Create `PEBuilder` skeleton (generating a valid empty .exe)
 - [x] Implement compatibility layer (`common.hpp`)
 
-### Week 2: Memory & Lexer
+### Part 2: Memory & Lexer
 - [x] Implement Arena Allocator with alignment support
 - [x] Create String Interning system
 - [x] Implement lexer class with token definitions
@@ -952,35 +1006,35 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
   - [x] Implement keyword recognition for visibility and linkage (`export`, `extern`, `pub`, `linksection`, `usingnamespace`)
   - [x] Implement keyword recognition for compile-time and special functions (`asm`, `comptime`, `errdefer`, `inline`, `noinline`, `test`, `unreachable`)
 
-### Week 3: Parser & AST
+### Part 3: Parser & AST
 - [x] Implement recursive descent parser
 - [x] Handle expressions with precedence
 - [x] Parse function declarations
 - [x] Implement defer statement handling
 
-### Week 4: Type System
+### Part 4: Type System
 - [x] Define type representation (Primitives, Pointers, Slices, Error Unions)
 - [x] Implement type compatibility rules
 - [x] Create symbol table system
 
-### Week 5: Basic Code Generation (C89)
+### Part 5: Basic Code Generation (C89)
 - [x] Design C89 emitter (Mock emitter for Milestone 4)
-- [ ] Implement full C89 code generation for functions
-- [ ] Generate code for variable declarations
-- [ ] Handle basic expressions
+- [x] Implement full C89 code generation for functions
+- [x] Generate code for variable declarations
+- [x] Handle basic expressions
 
-### Week 6: Advanced Code Generation
-- [ ] Implement defer statement code generation
-- [x] Handle slices and error unions (Slices: DONE, Error Unions: Deferred)
-- [ ] Add Win32 imports for kernel32.dll
-- [ ] Test generated code correctness
+### Part 6: Advanced Code Generation
+- [x] Implement defer statement code generation
+- [x] Handle slices and error unions (Slices: DONE, Error Unions: DONE)
+- [x] Add Win32 imports for kernel32.dll
+- [x] Test generated code correctness
 
-### Week 7: Bootstrap Stage 0 -> Stage 1
+### Part 7: Bootstrap Stage 0 -> Stage 1
 - [ ] Write minimal Zig compiler in C++
 - [ ] Test compilation of stage1.zig
 - [ ] Verify generated executable works
 
-### Week 8: Self-Hosting Verification
+### Part 8: Self-Hosting Verification
 - [ ] Complete compiler implementation in Zig subset
 - [ ] Test self-compilation cycle (Stage 1 -> Stage 2)
 - [ ] Verify bootstrap integrity with binary comparison
@@ -1023,10 +1077,11 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 The compiler utilizes a buffered emission system and a robust variable name allocator to ensure valid C89 output.
 
 ### 13.1 CBackend
+- **Separate Compilation Model**: The compiler has moved away from the Single Translation Unit (STU) model for generated code.
 - **Orchestration**: Manages multiple `C89Emitter` instances for multi-file generation.
 - **Module Mapping**: Generates one `.c` and one `.h` file per Zig module.
-- **Master Entry Point**: If a `pub fn main` is present, generates a master `main.c` (or `master.c` if conflicted) that `#include`s all module implementation files, facilitating a Single Translation Unit (STU) build.
-- **Build Scripts**: Automatically generates `build.bat` (MSVC) and `Makefile` (GCC) in the output directory.
+- **Build System**: Automatically generates `build_target.bat` (MSVC) and `build_target.sh` (GCC) in the output directory. These scripts perform separate compilation and linking for each module to avoid symbol conflicts and improve build performance.
+- **Runtime Injection**: Copies `zig_runtime.h` and `zig_runtime.c` to the output directory to ensure the generated project is self-contained.
 - **Visibility**: Enforces Zig visibility rules by marking non-`pub` symbols as `static`.
 - **Header Generation**: Public types and function prototypes are automatically exported to `.h` files with robust include guards.
 - **Import Handling**: Translates Zig `@import` into C `#include` directives.

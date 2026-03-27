@@ -5,7 +5,7 @@ set PROJECT_ROOT=%~dp0..
 set BUILD_DIR=%PROJECT_ROOT%\build
 set BIN_DIR=%PROJECT_ROOT%\bin
 
-echo === RetroZig Clean Environment Setup ===
+echo === Z98 Clean Environment Setup ===
 
 :: Verify MSVC 6.0-era compatibility (heuristic check)
 if not exist "C:\Program Files (x86)\Microsoft Visual Studio\VC98\Bin\cl.exe" (

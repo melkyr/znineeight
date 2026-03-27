@@ -1,6 +1,8 @@
-# RetroZig Detailed Test Failure Analysis
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-This document provides a comprehensive breakdown of failing tests in the RetroZig bootstrap compiler test suite, including diagnostic information and hypothesized causes.
+# Z98 Detailed Test Failure Analysis
+
+This document provides a comprehensive breakdown of failing tests in the Z98 bootstrap compiler test suite, including diagnostic information and hypothesized causes.
 
 ## Summary of Failing Batches
 

@@ -11,6 +11,7 @@
 #include "c89_type_mapping.hpp"
 #include "call_site_lookup_table.hpp"
 #include "ast_utils.hpp"
+#include "name_mangler.hpp"
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -27,6 +28,7 @@ class MockC89Emitter {
 public:
     const CallSiteLookupTable* call_table_;
     SymbolTable* symbol_table_;
+    NameMangler* mangler_;
 
     struct MockDeferScope {
         int label_id;
@@ -38,8 +40,8 @@ public:
     int catch_expr_counter_;
 
 public:
-    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL)
-        : call_table_(call_table), symbol_table_(symbol_table), current_fn_ret_type_(NULL),
+    MockC89Emitter(const CallSiteLookupTable* call_table = NULL, SymbolTable* symbol_table = NULL, NameMangler* mangler = NULL)
+        : call_table_(call_table), symbol_table_(symbol_table), mangler_(mangler), current_fn_ret_type_(NULL),
           try_expr_counter_(0), catch_expr_counter_(0) {}
 
     /**
@@ -56,11 +58,13 @@ public:
         Type* type = symbol->symbol_type;
         if (type && type->kind == TYPE_ARRAY) {
             ss << getC89TypeName(type->as.array.element_type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
             ss << "[" << (unsigned long)type->as.array.size << "]";
         } else {
             ss << getC89TypeName(type) << " ";
-            ss << (symbol->mangled_name ? symbol->mangled_name : decl->name);
+            if (symbol->mangled_name) ss << symbol->mangled_name;
+            else ss << decl->name;
         }
 
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
@@ -562,7 +566,8 @@ public:
         std::stringstream ss;
         Type* fn_type = symbol->symbol_type;
         ss << getC89TypeName(fn_type->as.function.return_type) << " ";
-        ss << (symbol->mangled_name ? symbol->mangled_name : fn->name);
+        if (symbol->mangled_name) ss << symbol->mangled_name;
+        else ss << fn->name;
         ss << "(";
 
         DynamicArray<Type*>* params = fn_type->as.function.params;
@@ -889,6 +894,14 @@ private:
             }
         }
 
+        if (mangler_) {
+            if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION || type->kind == TYPE_TAGGED_UNION || type->kind == TYPE_ENUM) {
+                const char* mangled = mangler_->mangleType(type);
+                std::string prefix = (type->kind == TYPE_ENUM) ? "enum " : (type->kind == TYPE_UNION ? "union " : "struct ");
+                return prefix + std::string(mangled);
+            }
+        }
+
         if (isTaggedUnion(type)) {
             const char* name = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.name : type->as.struct_details.name;
             if (name) return "struct " + std::string(name);
@@ -931,7 +944,9 @@ private:
     std::string emitIntegerLiteral(const ASTIntegerLiteralNode* node, Type* type) {
         if (node->original_name && type && type->kind == TYPE_ENUM) {
             std::stringstream ss;
-            if (type->as.enum_details.name) {
+            if (mangler_) {
+                ss << mangler_->mangleType(type) << "_" << node->original_name;
+            } else if (type->as.enum_details.name) {
                 ss << type->as.enum_details.name << "_" << node->original_name;
             } else {
                 ss << "/* enum */_" << node->original_name;

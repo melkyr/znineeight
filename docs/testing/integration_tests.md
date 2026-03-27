@@ -1,6 +1,8 @@
-# Integration Testing in RetroZig
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-Integration tests in RetroZig verify that multiple components of the compiler (Lexer, Parser, TypeChecker, and Validator) work together correctly. Unlike unit tests which focus on individual functions or classes, integration tests process small Zig source snippets through the full compilation pipeline.
+# Integration Testing in Z98
+
+Integration tests in Z98 verify that multiple components of the compiler (Lexer, Parser, TypeChecker, and Validator) work together correctly. Unlike unit tests which focus on individual functions or classes, integration tests process small Zig source snippets through the full compilation pipeline.
 
 ## Philosophy
 

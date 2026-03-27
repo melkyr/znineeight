@@ -7,8 +7,10 @@
 
 /**
  * @file function_call_tests.cpp
- * @brief Integration tests for Zig function calls in the RetroZig compiler.
+ * @brief Integration tests for Zig function calls in the Z98 compiler.
  */
+
+// test.zig hash: d071e5
 
 static bool run_function_call_test(const char* zig_code, const char* call_name, const char* expected_c89) {
     ArenaAllocator arena(1024 * 1024);
@@ -45,21 +47,21 @@ TEST_FUNC(FunctionCallIntegration_NoParams) {
     const char* source =
         "fn foo() void {}\n"
         "fn main_func() void { foo(); }";
-    return run_function_call_test(source, "foo", "foo()");
+    return run_function_call_test(source, "foo", "zF_0_foo()");
 }
 
 TEST_FUNC(FunctionCallIntegration_TwoArgs) {
     const char* source =
         "fn add(a: i32, b: i32) i32 { return a + b; }\n"
         "fn main_func() i32 { return add(1, 2); }";
-    return run_function_call_test(source, "add", "add(1, 2)");
+    return run_function_call_test(source, "add", "zF_0_add(1, 2)");
 }
 
 TEST_FUNC(FunctionCallIntegration_FourArgs) {
     const char* source =
         "fn bar(a: i32, b: f64, c: bool, d: *i32) void {}\n"
         "fn main_func(p: *i32) void { bar(1, 2.0, true, p); }";
-    return run_function_call_test(source, "bar", "bar(1, 2.0, 1, p)");
+    return run_function_call_test(source, "bar", "zF_0_bar(1, 2.0, 1, p)");
 }
 
 // --- Nested Calls ---
@@ -70,17 +72,17 @@ TEST_FUNC(FunctionCallIntegration_Nested) {
         "fn outer(a: i32) i32 { return a; }\n"
         "fn main_func() i32 { return outer(inner()); }";
     // outer(inner())
-    return run_function_call_test(source, "outer", "outer(inner())");
+    return run_function_call_test(source, "outer", "zF_1_outer(zF_0_inner())");
 }
 
 // --- Name Mangling ---
 
 TEST_FUNC(FunctionCallIntegration_MangleKeyword) {
-    // 'int' is a C keyword. Zig function 'int' -> C 'z_int'
+    // 'int' is a C keyword. Zig function 'int' -> C 'zF_hash_int'
     const char* source =
         "fn int() void {}\n"
         "fn main_func() void { int(); }";
-    return run_function_call_test(source, "int", "z_int()");
+    return run_function_call_test(source, "int", "zF_0_int()");
 }
 
 // --- Void Calls as Statements ---
@@ -91,7 +93,7 @@ TEST_FUNC(FunctionCallIntegration_VoidStatement) {
         "fn main_func() void {\n"
         "    do_work();\n"
         "}";
-    return run_function_call_test(source, "do_work", "do_work()");
+    return run_function_call_test(source, "do_work", "zF_0_do_work()");
 }
 
 // --- Call Resolution ---

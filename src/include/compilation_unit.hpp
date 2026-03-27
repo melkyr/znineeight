@@ -56,6 +56,15 @@ struct PendingResolution {
     struct ASTNode* decl_node;
 };
 
+/**
+ * @struct TestNameEntry
+ * @brief Stores a mapping from (kind, module, name) to a deterministic C name in test mode.
+ */
+struct TestNameEntry {
+    const char* key;
+    const char* c_name;
+};
+
 class CompilationUnit {
 public:
     CompilationUnit(ArenaAllocator& arena, StringInterner& interner);
@@ -160,6 +169,16 @@ public:
      */
     void setTestMode(bool test_mode);
 
+    /**
+     * @brief Checks if the unit is in test mode.
+     */
+    bool isTestMode() const { return is_test_mode_; }
+
+    /**
+     * @brief Generates or retrieves a deterministic C name for testing.
+     */
+    const char* getTestName(char kind, const char* module, const char* name);
+
     // Memory tracking helpers
     void collectImports(ASTNode* node, Module* module);
     bool resolveImportsRecursive(Module* module, DynamicArray<const char*>& stack);
@@ -205,6 +224,8 @@ private:
     Module* builtin_module_;
     ASTNode* last_ast_;
     bool is_test_mode_;
+    DynamicArray<TestNameEntry> test_name_counters_;
+    int test_name_counter_;
     bool validation_completed_;
     bool c89_validation_passed_;
 };

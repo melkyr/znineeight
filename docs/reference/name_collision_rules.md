@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Name Collision Rules (Task 152)
 
-This document outlines the rules for name collision detection in the RetroZig bootstrap compiler. These rules are designed to ensure C89 compatibility while respecting core Zig naming principles.
+This document outlines the rules for name collision detection in the Z98 bootstrap compiler. These rules are designed to ensure C89 compatibility while respecting core Zig naming principles.
 
 ## Bootstrap Compiler Rules
 

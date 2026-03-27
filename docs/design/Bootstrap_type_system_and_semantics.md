@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Bootstrap Type System & Semantic Analysis
 
-This document provides a detailed specification for the initial type system of the RetroZig bootstrap compiler. Its primary goal is to support a subset of Zig's type system that is directly translatable to C89, adhering to the project's strict technical and historical constraints.
+This document provides a detailed specification for the initial type system of the Z98 bootstrap compiler. Its primary goal is to support a subset of Zig's type system that is directly translatable to C89, adhering to the project's strict technical and historical constraints.
 
 ## 1. Core Philosophy
 
@@ -41,23 +43,32 @@ enum TypeKind {
     TYPE_F64,
     // Complex Types
     TYPE_POINTER,
+    TYPE_NULL,
+    TYPE_UNDEFINED,
     TYPE_ARRAY,
+    TYPE_SLICE,
+    TYPE_INTEGER_LITERAL,
     TYPE_FUNCTION,
     TYPE_FUNCTION_POINTER,
     TYPE_ENUM,
     TYPE_STRUCT,
+    TYPE_UNION,
     TYPE_ERROR_UNION,
     TYPE_ERROR_SET,
     TYPE_OPTIONAL,
+    TYPE_NORETURN,
     TYPE_TYPE,
     TYPE_ANYTYPE,
-    TYPE_TAGGED_UNION
+    TYPE_MODULE,
+    TYPE_TUPLE,
+    TYPE_TAGGED_UNION,
+    TYPE_PLACEHOLDER
 };
 ```
 
 ### `Type` Struct
 
-The `Type` struct contains the `TypeKind` discriminator, information about the type's size and alignment, and a `union` to hold data for composite types (like pointers).
+The `Type` struct contains the `TypeKind` discriminator, information about the type's size and alignment, its C mangled name, and a `union` to hold data for composite types.
 
 ```cpp
 // Forward-declare Type for the pointer union member
@@ -71,13 +82,18 @@ struct Type {
     TypeKind kind;
     size_t size;
     size_t alignment;
+    const char* c_name; // Mangled C89 name for structs, unions, enums
+    bool is_resolving;
+    struct Module* owner_module;
+    DependentNode* dependents_head;
+    DependentNode* dependents_tail;
 
     union {
         /**
          * @struct PointerDetails
          * @brief Details specific to pointer types.
          */
-        struct PointerDetails {
+        struct {
             Type* base; // The type that the pointer points to.
             bool is_const;
             bool is_many;
@@ -96,18 +112,30 @@ struct Type {
          * @struct ArrayDetails
          * @brief Details specific to array types.
          */
-        struct ArrayDetails {
+        struct {
             Type* element_type; // The type of the elements in the array.
             u64 size;           // The number of elements in the array.
         } array;
+
+        struct {
+            Type* element_type;
+            bool is_const;
+        } slice;
+
+        struct {
+            i64 value;
+        } integer_literal;
 
         /**
          * @struct EnumDetails
          * @brief Details specific to enum types.
          */
-        struct EnumDetails {
+        struct {
+            const char* name;
             Type* backing_type;
             DynamicArray<EnumMember>* members;
+            i64 min_value;
+            i64 max_value;
         } enum_details;
 
         struct {
@@ -115,7 +143,8 @@ struct Type {
             Type* return_type;
         } function_pointer;
 
-        struct StructDetails {
+        struct {
+            const char* name;
             DynamicArray<StructField>* fields;
             bool is_tagged;
             Type* tag_type;
@@ -142,6 +171,21 @@ struct Type {
         struct {
             Type* payload;
         } optional;
+
+        struct {
+            const char* name;
+            struct Module* module_ptr;
+        } module;
+
+        struct {
+            DynamicArray<Type*>* elements;
+        } tuple;
+
+        struct {
+            const char* name;
+            struct ASTNode* decl_node;
+            struct Module* module;
+        } placeholder;
     } as;
 };
 ```
@@ -228,6 +272,8 @@ Compound assignment operations (`+=`, `-=`, etc.) follow the same modifiable l-v
 | `c_char`                | `u8`                   | ✓           | Implicit conversion allowed for C interop.                         |
 | `T`                     | `?T`                   | ✓           | Implicit wrapping into optional.                                   |
 | `null`                  | `?T`                   | ✓           | `null` compatible with all optional types.                         |
+| `[]T`                   | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `.ptr`).               |
+| `[N]T`                  | `[*]T`                 | ✓           | Implicit coercion to many-item pointer (via `&arr[0]`).            |
 
 
 ## 4. Semantic Analysis
@@ -309,9 +355,9 @@ When visiting a variable declaration (`ASTVarDeclNode`), the `TypeChecker` perfo
 
 When visiting an array or slice type declaration (`ASTArrayTypeNode`), the `TypeChecker` resolves the types accordingly:
 
-1.  **Slice Support:** Slices (e.g., `[]u8`, `[]const i32`) are supported as a language extension. If the `size` expression in the `ASTArrayTypeNode` is `NULL`, the `TypeChecker` creates a `TYPE_SLICE`. These are represented as 8-byte structures (pointer + length) and are interned for deduplication.
+1.  **Slice Support:** Slices (e.g., `[]u8`, `[]const i32`) are fully supported. If the `size` expression in the `ASTArrayTypeNode` is `NULL`, the `TypeChecker` creates a `TYPE_SLICE`. These are represented as 8-byte structures (pointer + length) and are interned for deduplication.
 
-2.  **Constant Size Enforcement:** For fixed-size arrays, C89 requires that sizes be compile-time constants. The bootstrap compiler enforces that the size expression must be a single integer literal (e.g., `[8]i32`). If the size expression is any other kind of node, a fatal error is reported.
+2.  **Constant Size Enforcement:** For fixed-size arrays, C89 requires that sizes be compile-time constants. The bootstrap compiler enforces that the size expression must be a constant expression.
 
 For fixed-size arrays, a new `Type` of kind `TYPE_ARRAY` is created, with its size calculated as `element_size * length`.
 
@@ -323,7 +369,9 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 2.  **Field Type Resolution & C89 Check:** For each field, the `TypeChecker` resolves the field's type and verifies it using `is_c89_compatible()`. Slices and multi-level pointers are now considered C89-compatible extensions and are allowed.
 
-3.  **Layout Calculation:** The `TypeChecker` calculates the memory layout of the struct according to C89 rules:
+3.  **void Fields:** Fields of type `void` are allowed in Zig structs but are omitted from the generated C `struct` definition. To ensure correct layout calculations and compatibility with Zig's expectations, `void` fields are assigned a size of `0` and an alignment of `1` byte.
+
+4.  **Layout Calculation:** The `TypeChecker` calculates the memory layout of the struct according to C89 rules:
     -   Fields are placed in the order they are declared.
     -   Each field's offset is aligned based on its type's alignment requirements.
     -   The total size of the struct is aligned to the maximum alignment requirement of its fields, adding trailing padding if necessary.
@@ -370,6 +418,8 @@ Tagged unions (represented by `TYPE_TAGGED_UNION` or `TYPE_UNION` with the `is_t
     -   **Overall Alignment**: `max(tag_alignment, union_alignment)`.
     -   **Overall Size**: The tag is placed first, followed by padding to meet the union's alignment requirement, then the union data. The final size is padded to the overall alignment.
 
+3.  **void Payloads**: Like structs, `void` fields in the payload union are assigned a size of `0` and an alignment of `1`. They are omitted from the emitted C `union` definition.
+
 ### Recursive Type Handling (Task 228+)
 
 The bootstrap compiler supports recursive and mutually recursive structs and unions using a placeholder mechanism:
@@ -391,6 +441,7 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 11. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.
+14. **Iterator Stability (Snapshotting Pattern)**: To prevent assertion failures or memory corruption when recursive type resolution mutates `DynamicArray` objects (like function parameters or struct fields) while they are being iterated, the compiler employs a snapshotting pattern. Before entering a loop that might trigger recursive resolution, a temporary array of the elements is allocated from the arena, and the loop iterates over this stable snapshot.
 
 - **AST Lifting**: Control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically lifted into statement blocks using temporary variables. This ensures compatibility with the C89 backend, which only supports these constructs as statements.
 - **Range Validation**: Ranges used in `switch` cases are subject to the following rules:
@@ -399,6 +450,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
     - **Size Limit**: Each range can contain at most 1000 values to avoid excessive code generation (`ERR_RANGE_TOO_LARGE`).
     - **Direction**: Inverted ranges (where effective `start > end`) are rejected with `ERR_INVALID_RANGE`.
 - **Tagged Union support**: Full support for `union(enum)` and switch captures (`|val|`).
+    - **Capture Typing**: The type of the capture variable (`|payload|`) is derived from the corresponding field of the tagged union.
+    - **Defensive Validation**: Switch prongs with captures are only allowed with a single tag case item to prevent ambiguity.
 - **Switch Requirements**: Switch expressions MUST have an `else` prong for exhaustive coverage (mandatory in bootstrap). Every switch prong (including those with block bodies) must be followed by a comma unless it is the last prong.
 - **Function Pointers**: Supported as of Milestone 7 (Task 221).
 - **Function Parameters**: Function declarations and calls support unlimited parameters via dynamic allocation (Milestone 7).
@@ -732,9 +785,9 @@ The second layer of enforcement occurs within the `TypeChecker` and the type sys
 
 ### C89 Primitive Type Mapping Table
 
-A static mapping table, `c89_type_map`, defines the direct correspondence between the RetroZig compiler's primitive `TypeKind`s and their C89 string equivalents. This table is the single source of truth for C89 type compatibility.
+A static mapping table, `c89_type_map`, defines the direct correspondence between the Z98 compiler's primitive `TypeKind`s and their C89 string equivalents. This table is the single source of truth for C89 type compatibility.
 
-| RetroZig TypeKind | C89 Equivalent         | Notes                          |
+| Z98 TypeKind | C89 Equivalent         | Notes                          |
 |-------------------|------------------------|--------------------------------|
 | `TYPE_VOID`       | `"void"`               | Size: 0, Align: 0              |
 | `TYPE_BOOL`       | `"int"`                | Size: 4, Align: 4. C89 has no native `_Bool`. |
@@ -759,7 +812,7 @@ A static mapping table, `c89_type_map`, defines the direct correspondence betwee
 
 To ensure that compiler-generated symbols (like temporaries and runtime intrinsics) never collide with user-defined identifiers, a specialized bypass mechanism is used:
 
-1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`.
+1. **Prefix Identification**: The compiler identifies internal identifiers based on specific prefixes: `__tmp_`, `__return_`, `__bootstrap_`, `__zig_label_`, `__for_`, `__make_slice_`, and `__implicit_ret`. It also whitelists exact matches for runtime types and globals: `Arena` and `zig_default_arena`.
 2. **Mangling Bypass**: These identifiers bypass the standard mangling process (module prefixing, keyword avoidance, and character sanitization).
 3. **Truncation Only**: They are emitted verbatim, except for truncation to 31 characters to ensure compatibility with MSVC 6.0.
 4. **User Symbol Protection**: User-defined identifiers starting with `__` are **not** treated as internal and are mangled with a `z_` prefix (e.g., `__reserved` becomes `z__reserved`).
@@ -873,26 +926,29 @@ if (c) {
 var x = __tmp_if_1;
 ```
 
-## Rejected Zig Features (Milestone 4)
+## Language Status (Milestone 8/9)
 
-### Error Handling Types
-| Zig Feature | C89 Equivalent | Status | Rejection Point |
+### Feature Matrix
+| Zig Feature | C89 Equivalent | Status | Implementation Strategy |
 |-------------|----------------|--------|-----------------|
-| `!T` (error union) | `struct` | SUPPORTED | - |
-| `?T` (optional) | `struct` | SUPPORTED | - |
-| `error { ... }` | `int` | SUPPORTED | - |
-| `fn() !T` (error return) | `struct` | SUPPORTED | - |
-| `try expr` | `if` check | SUPPORTED | - |
-| `catch expr` | `if-else` | SUPPORTED | - |
-| `orelse expr` | `if-else` | SUPPORTED | - |
-| `errdefer` | `goto` cleanup | SUPPORTED | - |
+| `!T` (error union) | `struct` | SUPPORTED | Lifted into structs |
+| `?T` (optional) | `struct` | SUPPORTED | Lifted into structs |
+| `error { ... }` | `int` | SUPPORTED | Enum/Int mapping |
+| `fn() !T` (error return) | `struct` | SUPPORTED | Direct mapping |
+| `try expr` | `if` check | SUPPORTED | AST Lifting (Pass 5) |
+| `catch expr` | `if-else` | SUPPORTED | AST Lifting (Pass 5) |
+| `orelse expr` | `if-else` | SUPPORTED | AST Lifting (Pass 5) |
+| `errdefer` | `goto` cleanup | SUPPORTED | Backend Defer Stack |
+| `union(enum)` | `struct` | SUPPORTED | Tag + Payload Union |
+| Slices (`[]T`) | `struct` | SUPPORTED | Pointer + Length |
+| `if/switch` exprs | Statements | SUPPORTED | AST Lifting (Pass 5) |
 | `comptime` (params) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `anytype` | No equivalent | REJECTED | `C89FeatureValidator` |
 | `type` (as type) | No equivalent | REJECTED | `C89FeatureValidator` |
 | `anyerror` | No equivalent | REJECTED | `C89FeatureValidator` |
-| `@import` | No equivalent | REJECTED | `C89FeatureValidator` |
+| `@import` | `#include` | SUPPORTED | Multi-module Backend |
 
-These features are initially resolved by the `TypeChecker` (Pass 0) to allow for accurate cataloguing and type-aware diagnostics (including usage context and nesting for `try`), and are then strictly rejected by the `C89FeatureValidator` (Pass 1).
+Most high-level features are resolved by the `TypeChecker` (Pass 0) and then transformed into C89-compatible statement forms by the `ControlFlowLifter` (Pass 5) before code generation.
 
 For detailed validation rules that will be enforced in Milestone 5 (when rejection is replaced by translation), see `error_handling_validation_rules.md`.
 
@@ -968,7 +1024,7 @@ The `TypeChecker` is integrated into the main compilation pipeline as a distinct
 
 ### Error Handling & Multi-Error Reporting
 
-The RetroZig compiler uses a tiered error handling model to balance developer productivity with bootstrap reliability.
+The Z98 compiler uses a tiered error handling model to balance developer productivity with bootstrap reliability.
 
 #### Syntactic Errors (Parser)
 The `Parser` is currently **not recoverable**. To prevent unstable execution, infinite loops, or secondary crashes in the bootstrap phase, any syntactic error triggers an immediate `plat_abort()` after being reported via the `ErrorHandler`. Future work includes implementing synchronization points (e.g., on semicolons) to enable multi-error reporting in the syntactic phase.
@@ -1057,6 +1113,12 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 - **Qualified Lookups**: The `Parser` produces `NODE_MEMBER_ACCESS` for qualified identifiers. The `TypeChecker` resolves these by first resolving the module symbol and then looking up the member within that module's symbol table.
 - **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed. The `TypeChecker` switches its internal context (defining module) to the target module to ensure that identifiers within that module are correctly resolved.
 - **Enum Member Access**: Qualified access to enum members (e.g., `mod.Enum.Member`) is supported and follows the same on-demand resolution rules.
+
+### Metadata Preparation Pass
+Before code generation, the `MetadataPreparationPass` performs a transitive scan of all modules to identify all types and symbols that need to be emitted in headers.
+- **Transitive Reachability**: The pass recursively collects all types used in public function signatures, public global variables, and public type constants (`pub const`).
+- **Type Alias Resolution**: It explicitly follows `pub const` type aliases to ensure that the underlying types are correctly marked for emission in headers, even if the original type is defined in a different module.
+- **Header Order**: It populates `module->header_types` in topological dependency order, which is used by the `CBackend` to emit definitions after forward declarations and module inclusions.
 
 ### Type Alias Unwrapping (Phase 9a)
 
@@ -1224,6 +1286,10 @@ typedef struct {
 } OptionalInt32;
 ```
 
+#### Member Access and Null Comparison
+- **Member Access**: The type checker allows read-only access to `.value` and `.has_value` on optional types. `.value` returns the payload type, and `.has_value` returns `bool`.
+- **Null Comparison**: `==` and `!=` operators are supported between any `TYPE_OPTIONAL` and `TYPE_NULL`. This allows idiomatic patterns like `if (opt != null)`.
+
 ### The .? Operator
 
 #### Zig Semantics
@@ -1321,7 +1387,7 @@ The implementation follows the requested multi-pass architecture:
 - **Performance**: Uses linear search on `DynamicArray` for assignment tracking, which is efficient for typical small bootstrap-era functions.
 
 ### Observations & Deviations
-- **Global Flag**: The implementation uses `SYMBOL_FLAG_GLOBAL` to mark non-local variables. In the context of the RetroZig bootstrap compiler, these are functionally equivalent to static storage for lifetime purposes.
+- **Global Flag**: The implementation uses `SYMBOL_FLAG_GLOBAL` to mark non-local variables. In the context of the Z98 bootstrap compiler, these are functionally equivalent to static storage for lifetime purposes.
 - **Analysis Depth**: As per the "safe for bootstrap" philosophy, the analysis focuses on the most common dangling pointer cases. It does not currently handle nested pointer-to-pointer tracking or struct field addresses.
 
 

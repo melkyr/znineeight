@@ -1,6 +1,6 @@
 #include "test_utils.hpp"
 #include "test_declarations.hpp"
-#include "compilation_unit.hpp"
+#include "test_compilation_unit.hpp"
 #include "platform.hpp"
 #include "utils.hpp"
 #include <cstdio>
@@ -10,7 +10,7 @@
 TEST_FUNC(Phase3_ErrorUnionRecursion) {
     ArenaAllocator arena(1024 * 1024 * 2);
     StringInterner interner(arena);
-    CompilationUnit unit(arena, interner);
+    TestCompilationUnit unit(arena, interner);
 
     const char* source =
         "pub const Node = struct {\n"
@@ -47,8 +47,8 @@ TEST_FUNC(Phase3_ErrorUnionRecursion) {
     content[bytes] = '\0';
     plat_close_file(f_h);
 
-    const char* struct_def = "struct Node {";
-    const char* mangled_error_union = "ErrorUnion_Node";
+    const char* struct_def = "struct zS_0_Node {";
+    const char* mangled_error_union = "ErrorUnion_zS_0_Node";
 
     char* struct_ptr = strstr(content, struct_def);
     char* error_union_ptr = strstr(content, mangled_error_union);

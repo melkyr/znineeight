@@ -82,7 +82,7 @@ TEST_FUNC(Codegen_Local_Simple) {
 }
 
 TEST_FUNC(Codegen_Local_AfterStatement) {
-    return run_local_codegen_test("fn foo() void {} fn my_test() void { foo(); var x: i32 = 42; }", "void my_test(void) {\n    int x;\n    foo();\n    x = 42;\n}");
+    return run_local_codegen_test("fn foo() void {} fn my_test() void { foo(); var x: i32 = 42; }", "static void zF_1_my_test(void) {\n    int x;\n    zF_0_foo();\n    x = 42;\n}");
 }
 
 TEST_FUNC(Codegen_Local_Const) {
@@ -118,7 +118,7 @@ TEST_FUNC(Codegen_Local_WhileLoop) {
 TEST_FUNC(Codegen_Local_Return) {
     return run_local_codegen_test(
         "fn my_test(a: i32) i32 { return a + 1; }",
-        "int my_test(int a) {\n    return a + 1;\n}"
+        "static int zF_0_my_test(int a) {\n    return a + 1;\n}"
     );
 }
 

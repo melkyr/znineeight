@@ -7,7 +7,7 @@
 
 /**
  * @file union_tests.cpp
- * @brief Integration tests for Zig unions in the RetroZig compiler.
+ * @brief Integration tests for Zig unions in the Z98 compiler.
  */
 
 TEST_FUNC(UnionIntegration_BareUnion) {
@@ -27,7 +27,7 @@ TEST_FUNC(UnionIntegration_BareUnion) {
         return false;
     }
 
-    if (!unit.validateFunctionSignature("foo", "void foo(union U u)")) {
+    if (!unit.validateFunctionSignature("foo", "void zF_2_foo(union zS_0_U u)")) {
         return false;
     }
 

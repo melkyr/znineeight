@@ -8,9 +8,11 @@
 
 struct Type;
 
+class CompilationUnit;
+
 class NameMangler {
 public:
-    NameMangler(ArenaAllocator& arena, StringInterner& interner);
+    NameMangler(ArenaAllocator& arena, StringInterner& interner, CompilationUnit& unit);
 
     /**
      * @brief Mangles a function name based on its base name and generic parameters.
@@ -30,9 +32,15 @@ public:
      */
     const char* mangleTypeName(const char* name, const char* module);
 
+    /**
+     * @brief The new core mangling logic.
+     */
+    const char* mangle(char kind, const char* module_path, const char* local_name);
+
 private:
     ArenaAllocator& arena_;
     StringInterner& interner_;
+    CompilationUnit& unit_;
 };
 
 #endif // NAME_MANGLER_HPP

@@ -34,6 +34,7 @@ void plat_print_info(const char* message);  // stdout
 void plat_print_error(const char* message); // stderr
 void plat_print_debug(const char* message); // debugger only
 void plat_printf_debug(const char* format, ...); // variadic debug print
+int plat_snprintf(char* str, size_t size, const char* format, ...);
 void plat_write_str(const char* s);         // low-level stderr write
 
 // String operations (CRT-free on Windows)

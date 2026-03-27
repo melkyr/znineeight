@@ -64,3 +64,13 @@ temp_hello/
 temp_prime/
 temp_*/
 examples/*/output/
+slice_test_output/
+phase3_output/*
+slice_test_output_nested/*
+slice_test_output_pub/*
+slice_test_output_rec/*
+test_tagged_union_codegen.c
+temp_string_split_test.c
+temp_for_ptr_array_test.c
+tagged_union.c
+test_forward_decl.h

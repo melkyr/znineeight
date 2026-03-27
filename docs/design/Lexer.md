@@ -1,6 +1,8 @@
-# RetroZig Lexer Specification
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-This document provides a detailed specification for the RetroZig lexer. It outlines the tokenization process, error handling, and the complete list of tokens the lexer is responsible for recognizing.
+# Z98 Lexer Specification
+
+This document provides a detailed specification for the Z98 lexer. It outlines the tokenization process, error handling, and the complete list of tokens the lexer is responsible for recognizing.
 
 ## 1. Tokenization Process
 
@@ -37,7 +39,7 @@ If the lexer encounters a character that does not belong to any valid token, it 
 
 ## 2. Token Implementation Status
 
-This section tracks the implementation status of all tokens required for the RetroZig compiler. It is based on a gap analysis between the official Zig language specification and the current lexer implementation.
+This section tracks the implementation status of all tokens required for the Z98 compiler. It is based on a gap analysis between the official Zig language specification and the current lexer implementation.
 
 ### 2.1. Literals
 
