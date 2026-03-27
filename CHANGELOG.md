@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.10.0] - "Xylene"
 
 ### Optimized
 - Reduced memory usage by resetting token arena after parsing all modules and dependencies.
