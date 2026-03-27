@@ -1,4 +1,4 @@
-# RetroZig Detailed Test Failure Analysis
+# Z98 Detailed Test Failure Analysis
 
 This document provides a comprehensive breakdown of failing tests in the RetroZig bootstrap compiler test suite, including diagnostic information and hypothesized causes.
 
