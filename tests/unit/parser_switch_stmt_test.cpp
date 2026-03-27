@@ -118,7 +118,7 @@ TEST_FUNC(Parser_Switch_MixedItems) {
     return true;
 }
 
-#ifndef RETROZIG_TEST
+#ifndef Z98_TEST
 int main() {
     int passed = 0;
     int total = 0;

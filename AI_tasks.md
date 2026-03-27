@@ -1,6 +1,6 @@
-# AI Agent Tasks for RetroZig Compiler
+# AI Agent Tasks for Z98 Compiler
 
-This document outlines a granular, step-by-step roadmap for an AI agent to implement the RetroZig compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
+This document outlines a granular, step-by-step roadmap for an AI agent to implement the Z98 compiler. The tasks are organized by phase and component, starting with the C++ bootstrap compiler.
 
 ## Phase 0: The Bootstrap Compiler (C++98)
 

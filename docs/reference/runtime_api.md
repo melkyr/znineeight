@@ -1,10 +1,12 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Runtime API Reference
 
-This document describes the runtime functions and types available to Zig programs compiled by the RetroZig bootstrap compiler. These functions are implemented in C89 to ensure compatibility with 1998-era software environments.
+This document describes the runtime functions and types available to Zig programs compiled by the Z98 bootstrap compiler. These functions are implemented in C89 to ensure compatibility with 1998-era software environments.
 
 ## 1. Memory Management (Arena Allocator)
 
-The primary memory management mechanism in RetroZig is the Arena Allocator. It is designed for high performance and low fragmentation.
+The primary memory management mechanism in Z98 is the Arena Allocator. It is designed for high performance and low fragmentation.
 
 ### 1.1 `Arena` (Type)
 An opaque type representing a memory arena. All allocations made from an arena are freed together when the arena is destroyed.

@@ -1,6 +1,8 @@
+> **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
+
 # Name Mangling Design (Task 161)
 
-This document outlines the name mangling algorithm used by the RetroZig bootstrap compiler to ensure C89 compatibility and support unique identification of generic function instantiations.
+This document outlines the name mangling algorithm used by the Z98 bootstrap compiler to ensure C89 compatibility and support unique identification of generic function instantiations.
 
 ## Goals
 

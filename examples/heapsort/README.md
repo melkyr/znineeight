@@ -9,7 +9,7 @@ This example demonstrates in-place sorting of a fixed-size array using the Heaps
 
 ## Building and Running
 
-1. Compile the Zig source to C89 using the RetroZig compiler:
+1. Compile the Zig source to C89 using the Z98 compiler:
    ```bash
    ../../zig0 main.zig std.zig std_debug.zig --output output/
    ```

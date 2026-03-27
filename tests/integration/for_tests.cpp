@@ -7,7 +7,7 @@
 
 /**
  * @file for_tests.cpp
- * @brief Integration tests for Zig for loops in the RetroZig compiler.
+ * @brief Integration tests for Zig for loops in the Z98 compiler.
  */
 
 TEST_FUNC(ForIntegration_Basic) {

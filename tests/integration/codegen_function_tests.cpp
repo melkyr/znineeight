@@ -128,7 +128,7 @@ TEST_FUNC(Codegen_Fn_MangledCall) {
 
 TEST_FUNC(Codegen_Fn_StructReturn) {
     // Note: We use individual field assignments because C89 doesn't support struct literal assignments,
-    // and the RetroZig emitter splits declarations and assignments for local variables.
+    // and the Z98 emitter splits declarations and assignments for local variables.
     return run_function_codegen_test(
         "const Point = struct { x: i32, y: i32 }; fn getOrigin() Point { var p: Point = undefined; p.x = 0; p.y = 0; return p; }",
         "static struct zS_0_Point zF_2_getOrigin(void) {\n    struct zS_0_Point p;\n    p.x = 0;\n    p.y = 0;\n    return p;\n}"
