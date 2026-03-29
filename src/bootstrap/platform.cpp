@@ -18,11 +18,22 @@ static void plat_reverse(char* str, int length) {
 // --- Windows Implementation ---
 
 void* plat_alloc(size_t size) {
-    return HeapAlloc(GetProcessHeap(), 0, size);
+    if (size == 0) return NULL;
+    if (size > 4 * 1024 * 1024) {  /* > 4 MB */
+        /* VirtualAlloc gives page-aligned memory, suitable for large blocks */
+        return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    } else {
+        return HeapAlloc(GetProcessHeap(), 0, size);
+    }
 }
 
 void plat_free(void* ptr) {
-    if (ptr) {
+    if (!ptr) return;
+    /* Freeing a VirtualAlloc block requires VirtualFree */
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
+        VirtualFree(ptr, 0, MEM_RELEASE);
+    } else {
         HeapFree(GetProcessHeap(), 0, ptr);
     }
 }
@@ -91,18 +102,32 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
 }
 
 void plat_print_info(const char* message) {
-    DWORD written;
-    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hStdOut != INVALID_HANDLE_VALUE && hStdOut != NULL) {
-        WriteFile(hStdOut, message, (DWORD)plat_strlen(message), &written, NULL);
+    if (!message) return;
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) {
+        /* Fallback to stderr if stdout is invalid (rare) */
+        hOut = GetStdHandle(STD_ERROR_HANDLE);
+        if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) return;
+    }
+
+    DWORD written = 0;
+    DWORD len = (DWORD)plat_strlen(message);
+    /* Try WriteConsoleA first - it works better with Win9x console */
+    if (!WriteConsoleA(hOut, (LPCSTR)message, len, &written, NULL)) {
+        /* Fallback to WriteFile for redirected output */
+        WriteFile(hOut, message, len, &written, NULL);
     }
 }
 
 void plat_print_error(const char* message) {
-    DWORD written;
-    HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
-    if (hStdErr != INVALID_HANDLE_VALUE && hStdErr != NULL) {
-        WriteFile(hStdErr, message, (DWORD)plat_strlen(message), &written, NULL);
+    if (!message) return;
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
+
+    DWORD written = 0;
+    DWORD len = (DWORD)plat_strlen(message);
+    if (!WriteConsoleA(hErr, (LPCSTR)message, len, &written, NULL)) {
+        WriteFile(hErr, message, len, &written, NULL);
     }
 }
 
@@ -139,10 +164,14 @@ int plat_snprintf(char* str, size_t size, const char* format, ...) {
 }
 
 void plat_write_str(const char* s) {
-    DWORD written;
-    HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
-    if (hStdErr != INVALID_HANDLE_VALUE && hStdErr != NULL) {
-        WriteFile(hStdErr, s, (DWORD)plat_strlen(s), &written, NULL);
+    if (!s) return;
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
+
+    DWORD written = 0;
+    DWORD len = (DWORD)plat_strlen(s);
+    if (!WriteConsoleA(hErr, (LPCSTR)s, len, &written, NULL)) {
+        WriteFile(hErr, s, len, &written, NULL);
     }
 }
 

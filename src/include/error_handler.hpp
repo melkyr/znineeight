@@ -108,7 +108,10 @@ enum WarningCode {
 
     // Extraction Analysis Warnings (7000s)
     WARN_EXTRACTION_LARGE_PAYLOAD = 7001,
-    WARN_EXTRACTION_DEEP_NESTING = 7002
+    WARN_EXTRACTION_DEEP_NESTING = 7002,
+
+    // Portability Warnings (7100s)
+    WARN_PORTABILITY_WIN98 = 7101
 };
 
 /**

@@ -1383,6 +1383,50 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             return false;
         }
 
+        /* Windows 98 Compatibility Check: 8.3 filename and ANSI characters */
+        {
+            const char* last_slash = plat_strrchr(abs_path, '/');
+            const char* last_backslash = plat_strrchr(abs_path, '\\');
+            const char* filename_only = NULL;
+            if (last_slash && last_backslash) {
+                filename_only = (last_slash > last_backslash) ? last_slash : last_backslash;
+            } else {
+                filename_only = last_slash ? last_slash : last_backslash;
+            }
+            if (filename_only) filename_only++;
+            else filename_only = abs_path;
+
+            bool is_83 = true;
+            const char* dot = plat_strchr(filename_only, '.');
+            if (dot) {
+                if (dot - filename_only > 8) is_83 = false;
+                if (plat_strlen(dot + 1) > 3) is_83 = false;
+                if (plat_strchr(dot + 1, '.')) is_83 = false; /* Multiple dots */
+            } else {
+                if (plat_strlen(filename_only) > 8) is_83 = false;
+            }
+
+            bool is_ansi = true;
+            for (const char* p = abs_path; *p; p++) {
+                if ((unsigned char)*p > 127) {
+                    is_ansi = false;
+                    break;
+                }
+            }
+
+            if (!is_83 || !is_ansi) {
+                char warn_msg[1024];
+                char* w_cur = warn_msg;
+                size_t w_rem = sizeof(warn_msg);
+                safe_append(w_cur, w_rem, "Path '");
+                safe_append(w_cur, w_rem, abs_path);
+                safe_append(w_cur, w_rem, "' may cause issues on Windows 98.");
+                if (!is_83) safe_append(w_cur, w_rem, " Non-8.3 filename detected.");
+                if (!is_ansi) safe_append(w_cur, w_rem, " Non-ANSI characters detected.");
+                error_handler_.reportWarning(WARN_PORTABILITY_WIN98, import_node->loc, warn_msg, arena_);
+            }
+        }
+
         const char* interned_abs_path = interner_.intern(abs_path);
 
         // Cycle detection: check if this path is already in the current stack

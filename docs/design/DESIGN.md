@@ -1039,11 +1039,31 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [ ] Test self-compilation cycle (Stage 1 -> Stage 2)
 - [ ] Verify bootstrap integrity with binary comparison
 
-## 11. Specific Win9x Constraints
-* **Filename lengths:** Keep source filenames < 8.3 characters if possible to avoid VFAT issues in pure DOS mode
-* **Stack Size:** Default stack is 1MB. Recursion depth is limited
-* **Memory Fragmentation:** Use arena allocators to minimize fragmentation
-* **Error Reporting:** No stack traces on Win9x; errors must be clear and contextual
+## 11. Specific Win9x Constraints & Portability
+To ensure robust operation on Windows 98 and compatibility with legacy toolchains:
+
+### 11.1 Platform Detection & Target Level
+The compiler and generated code utilize a common header `platform_win98.h` to force the Windows 98 API level (`0x0410`). This ensures that only APIs available on Windows 98 are used and prevents issues with modern headers.
+
+### 11.2 Console Output
+Standard output and error streams are handled defensively:
+- **Stream Preference**: The generated code prioritizes `stdout` for normal output, falling back to `stderr` only if necessary.
+- **WriteConsoleA**: On Windows, the PAL uses `WriteConsoleA` as the primary output method for console handles. This is more reliable on Windows 9x than `WriteFile` for console I/O.
+- **Handle Validation**: All handles from `GetStdHandle` are validated against `INVALID_HANDLE_VALUE` and `NULL`.
+
+### 11.3 Memory Allocation (The 255MB Heap Ceiling)
+To avoid the ~255MB per-allocation limit on Windows 9x and improve performance for large arenas:
+- **VirtualAlloc**: Allocations larger than 4MB use `VirtualAlloc` instead of `HeapAlloc`. `VirtualAlloc` provides page-aligned memory directly from the system.
+- **Automatic Detection**: The PAL automatically detects whether a pointer was allocated via `VirtualAlloc` or `HeapAlloc` during free operations using `VirtualQuery`.
+
+### 11.4 Filename Constraints
+- **8.3 Format**: While VFAT supports long filenames, the compiler issues a portability warning if a source file does not adhere to the 8.3 format (8 characters for name, 3 for extension).
+- **ANSI Pathnames**: Non-ANSI characters in file paths are flagged, as legacy Windows APIs often lack full Unicode support without additional libraries.
+
+### 11.5 Build Configuration
+Generated build scripts (`build_target.bat`, `build_target.sh`) are optimized for legacy toolchains:
+- **MinGW 3.x**: Recommended for Windows 98. Uses `-mconsole` and `-static-libgcc`.
+- **MSVC 6.0**: Uses `/subsystem:console` and explicit target defines.
 
 ## 12. Directory Structure
 ```text

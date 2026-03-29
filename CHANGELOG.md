@@ -23,3 +23,4 @@ All notable changes to this project will be documented in this file.
 - Supported read-only member access for optional types via `.value` and `.has_value`.
 - Regression test for function return segfault in Batch 62.
 - Implemented "Union Naked Tags" (Milestone 9 Phase 1 extension). Support for writing `Null` instead of `Null: void` in tagged unions.
+- Improved Windows 98 compatibility: defensive console output (`WriteConsoleA`), large memory allocations (`VirtualAlloc`), and optimized build scripts.

@@ -51,7 +51,7 @@ Just as a side note through the docs I will use zig0/z98 but they will refer to 
 
 ### Prerequisites
 - **Linux**: `gcc` (C++98 compatible), `make`.
-- **Windows 98**: MSVC 6.0 SP6.
+- **Windows 98**: MSVC 6.0 SP6 or MinGW 3.x.
 
 ### Building the Compiler
 Detailed instructions are available in [docs/Building.md](docs/Building.md).

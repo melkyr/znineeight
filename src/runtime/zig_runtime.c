@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
+#include "platform_win98.h"
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -33,8 +33,14 @@ Arena* zig_default_arena = (Arena*)0;
  */
 static void* platform_alloc(usize size) {
 #ifdef _WIN32
-    /* Note: HeapAlloc on Win32 returns 8-byte aligned memory. */
-    return HeapAlloc(GetProcessHeap(), 0, size);
+    if (size == 0) return (void*)0;
+    if (size > 4 * 1024 * 1024) {  /* > 4 MB */
+        /* VirtualAlloc gives page-aligned memory, suitable for large blocks */
+        return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    } else {
+        /* Note: HeapAlloc on Win32 returns 8-byte aligned memory. */
+        return HeapAlloc(GetProcessHeap(), 0, size);
+    }
 #else
     return malloc(size);
 #endif
@@ -44,8 +50,15 @@ static void* platform_alloc(usize size) {
  * @brief Platform-specific free wrapper.
  */
 static void platform_free(void* ptr) {
+    if (!ptr) return;
 #ifdef _WIN32
-    HeapFree(GetProcessHeap(), 0, ptr);
+    /* Freeing a VirtualAlloc block requires VirtualFree */
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) && mbi.AllocationBase == ptr) {
+        VirtualFree(ptr, 0, MEM_RELEASE);
+    } else {
+        HeapFree(GetProcessHeap(), 0, ptr);
+    }
 #else
     free(ptr);
 #endif
@@ -144,11 +157,33 @@ void arena_free(void* ptr) {
 }
 
 void __bootstrap_write(const unsigned char* s, usize len) {
-    if (!s) return;
+    if (!s || len == 0) return;
 #ifdef _WIN32
-    WriteFile(GetStdHandle(STD_ERROR_HANDLE), s, (DWORD)len, NULL, NULL);
+    {
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD written = 0;
+        if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) {
+            /* Fallback to stderr if stdout is invalid (rare) */
+            hOut = GetStdHandle(STD_ERROR_HANDLE);
+            if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) return;
+        }
+
+        /* Try WriteConsoleA first - it works better with Win9x console */
+        if (!WriteConsoleA(hOut, (LPCSTR)s, (DWORD)len, &written, NULL)) {
+            /* Fallback to WriteFile for redirected output */
+            WriteFile(hOut, s, (DWORD)len, &written, NULL);
+        }
+    }
 #else
-    write(2, (const char*)s, len);
+    /* Unix: write to stdout (fd 1) */
+    {
+        size_t total_written = 0;
+        while (total_written < len) {
+            ssize_t written = write(1, (const char*)s + total_written, len - total_written);
+            if (written <= 0) break;
+            total_written += (size_t)written;
+        }
+    }
 #endif
 }
 
