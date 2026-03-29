@@ -13,30 +13,8 @@ On a modern Linux system, you need `g++` (C++98 compatible) and `make`.
 g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 
-### 1.2 Windows 98 / MSVC 6.0
-To produce `zig0.exe` on Windows 98, you need **Microsoft Visual C++ 6.0 (Service Pack 6 recommended)**.
-
-#### Environment Setup
-You must ensure that the MSVC binaries and libraries are in your environment paths. You can set them manually in a batch script:
-
-```batch
-@echo off
-:: Adjust paths to your MSVC 6.0 installation
-set MSVC_DIR=C:\Program Files\Microsoft Visual Studio\VC98
-set PATH=%MSVC_DIR%\Bin;%PATH%
-set INCLUDE=%MSVC_DIR%\Include
-set LIB=%MSVC_DIR%\Lib
-```
-
-#### Compilation
-Use the `cl` command to build the compiler:
-
-```batch
-cl /Za /W3 /Isrc/include src\bootstrap\bootstrap_all.cpp /Fezig0.exe
-```
-
-### 1.3 Windows 98 / MinGW 3.x
-Alternatively, you can build the compiler using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit).
+### 1.2 Windows 98 / MinGW 3.x (Required)
+On Windows 98, you must build the bootstrap compiler using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit). MSVC 6.0 is supported for compiling the *generated* C89 code, but MinGW is the required host toolchain for `zig0`.
 
 #### Compilation
 ```batch
@@ -92,7 +70,7 @@ gcc -m32 -mconsole -static-libgcc -o main.exe zig_runtime.o main_module.o
 
 | Tool | Target | Version |
 |------|--------|---------|
-| MSVC 6.0 | Windows 9x | Service Pack 6 |
-| MinGW / GCC | Windows 9x | 3.x (using -mconsole -static-libgcc) |
+| MinGW / GCC | Windows 9x | 3.x (Required for Host zig0) |
+| MSVC 6.0 | Windows 9x | Service Pack 6 (C89 target only) |
 | GCC | Linux/Modern | 3.x or 4.x (using -std=c89) |
 | g++ | Host (zig0) | C++98 compatible |

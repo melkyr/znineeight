@@ -8,7 +8,7 @@
 **Target Environment:**
 * **OS:** Windows 95/98/ME/NT 4.0
 * **Hardware:** Intel Pentium I/II (i586), 32-64MB RAM
-* **Host Compiler:** MSVC 6.0 (Visual C++ 98)
+* **Host Compiler:** MinGW 3.x (Required for Stage 0)
 * **Output:** 32-bit Win32 PE Executables (no external linker dependency in final stage)
 
 ## 2. Technical Constraints
@@ -39,9 +39,12 @@ This matches the target Win32/x86 environment of the late 90s.
   * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
   * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<iostream>`, `<string>` (`std::string`), and `<vector>` (`std::vector`).
   * **Exceptions:** `<cstdlib>` is allowed *only* for `strtol`/`strtod`. Process termination MUST use `plat_abort()` from `platform.hpp`.
-* **Specific MSVC 6.0 Hacks:**
-  * Use `__int64` instead of `long long`
-  * Define `bool`, `true`, `false` manually if missing
+* **Toolchain Requirements (Windows 98):**
+  * **Host Compiler**: MinGW 3.x is required to build the bootstrap compiler (`zig0`).
+  * **C89 Target**: MSVC 6.0 is supported for compiling the generated C89 code.
+  * **MSVC 6.0 Compatibility Hacks**:
+    * Use `__int64` instead of `long long` for 64-bit integer support in the generated C code.
+    * Define `bool`, `true`, `false` manually if missing in the C runtime.
 * **Dynamic Memory:** Standard C dynamic memory allocation functions (e.g., `malloc`, `free`) are forbidden. The compiler will produce a fatal error if calls to these functions are detected.
 
 ## 3. Architecture & Memory Strategy

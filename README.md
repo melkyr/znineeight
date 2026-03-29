@@ -51,7 +51,7 @@ Just as a side note through the docs I will use zig0/z98 but they will refer to 
 
 ### Prerequisites
 - **Linux**: `gcc` (C++98 compatible), `make`.
-- **Windows 98**: MSVC 6.0 SP6 or MinGW 3.x.
+- **Windows 98**: MinGW 3.x (Required for `zig0`). MSVC 6.0 SP6 (Supported for C89 target only).
 
 ### Building the Compiler
 Detailed instructions are available in [docs/Building.md](docs/Building.md).
@@ -59,9 +59,9 @@ On Linux:
 ```bash
 g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
-On Windows (MSVC 6.0):
+On Windows (MinGW 3.x):
 ```batch
-cl /Za /W3 /Isrc/include src\bootstrap\bootstrap_all.cpp /Fezig0.exe
+g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe
 ```
 
 ### Running Tests
