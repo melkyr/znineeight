@@ -8,6 +8,28 @@
 
 static const size_t TYPE_DEF_BUFFER_SIZE = 131072;
 
+const char* const C89Emitter::KW_BREAK = "break";
+const char* const C89Emitter::KW_CONTINUE = "continue";
+const char* const C89Emitter::KW_RETURN = "return";
+const char* const C89Emitter::KW_GOTO = "goto";
+const char* const C89Emitter::KW_IF = "if";
+const char* const C89Emitter::KW_ELSE = "else";
+const char* const C89Emitter::KW_WHILE = "while";
+const char* const C89Emitter::KW_FOR = "for";
+const char* const C89Emitter::KW_SWITCH = "switch";
+const char* const C89Emitter::KW_CASE = "case";
+const char* const C89Emitter::KW_DEFAULT = "default";
+const char* const C89Emitter::KW_STRUCT = "struct";
+const char* const C89Emitter::KW_UNION = "union";
+const char* const C89Emitter::KW_ENUM = "enum";
+const char* const C89Emitter::KW_TYPEDEF = "typedef";
+const char* const C89Emitter::KW_EXTERN = "extern";
+const char* const C89Emitter::KW_STATIC = "static";
+const char* const C89Emitter::KW_CONST = "const";
+const char* const C89Emitter::KW_VOID = "void";
+const char* const C89Emitter::KW_INT = "int";
+const char* const C89Emitter::KW_SIZEOF = "sizeof";
+
 C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
@@ -19,6 +41,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
+#ifdef _WIN32
+      line_ending_("\r\n"),
+#else
+      line_ending_("\n"),
+#endif
       loop_id_stack_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -35,6 +62,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
+#ifdef _WIN32
+      line_ending_("\r\n"),
+#else
+      line_ending_("\n"),
+#endif
       loop_id_stack_(unit.getTransientArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
@@ -53,6 +85,11 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
+#ifdef _WIN32
+      line_ending_("\r\n"),
+#else
+      line_ending_("\n"),
+#endif
       loop_id_stack_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -2128,6 +2165,26 @@ void C89Emitter::writeString(const char* str) {
     write(str, plat_strlen(str));
 }
 
+C89Emitter::GuardScope::GuardScope(C89Emitter& emitter, const char* guard_name)
+    : emitter_(emitter), guard_name_(guard_name), started_(false) {
+    emitter_.writeString("#ifndef ");
+    emitter_.writeString(guard_name_);
+    emitter_.writeLine();
+    emitter_.writeString("#define ");
+    emitter_.writeString(guard_name_);
+    emitter_.writeLine();
+    started_ = true;
+}
+
+C89Emitter::GuardScope::~GuardScope() {
+    if (started_) {
+        emitter_.writeString("#endif /* ");
+        emitter_.writeString(guard_name_);
+        emitter_.writeString(" */");
+        emitter_.writeLine();
+    }
+}
+
 void C89Emitter::emitComment(const char* text) {
     if (!text) return;
     writeIndent();
@@ -2729,36 +2786,32 @@ void C89Emitter::ensureOptionalType(Type* type) {
     bool was_in_type_def = in_type_def_mode_;
     in_type_def_mode_ = true;
 
-    writeString("#ifndef ZIG_OPTIONAL_");
-    writeString(mangled_name);
-    writeString("\n#define ZIG_OPTIONAL_");
-    writeString(mangled_name);
-    writeString("\n");
+    size_t guard_len = plat_strlen("ZIG_OPTIONAL_") + plat_strlen(mangled_name) + 1;
+    char* guard_buf = (char*)transient_arena_.alloc(guard_len);
+    plat_strcpy(guard_buf, "ZIG_OPTIONAL_");
+    plat_strcat(guard_buf, mangled_name);
 
-    writeIndent();
-    writeString("struct ");
-    writeString(mangled_name);
-    writeString(" ");
     {
-        writeString("{\n");
-        IndentScope struct_indent(*this);
+        GuardScope guard(*this, guard_buf);
+        writeIndent();
+        writeKeyword(KW_STRUCT);
+        writeString(mangled_name);
+        writeString(" ");
+        writeBlockOpen();
         if (payload->kind != TYPE_VOID) {
-            writeIndent();
-            emitType(payload, "value");
-            writeString(";\n");
+            writeFieldDecl(payload, "value");
         }
+        writeFieldDecl(get_g_type_i32(), "has_value");
+        writeBlockClose(";");
         writeIndent();
-        writeString("int has_value;\n");
-        dedent();
-        writeIndent();
-        writeString("};\n");
+        writeKeyword(KW_TYPEDEF);
+        writeKeyword(KW_STRUCT);
+        writeString(mangled_name);
+        writeString(" ");
+        writeString(mangled_name);
+        endStmt();
     }
-    writeIndent();
-    writeString("typedef struct ");
-    writeString(mangled_name);
-    writeString(" ");
-    writeString(mangled_name);
-    writeString(";\n#endif\n\n");
+    writeLine();
 
     in_type_def_mode_ = was_in_type_def;
 }
@@ -4158,11 +4211,9 @@ void C89Emitter::emitDefersForScopeExit(int target_label_id) {
 }
 
 void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
-    writeIndent();
     if (defer_stack_.length() > 0) {
-        writeString("/* defers for break */\n");
+        writeIndentedLine("/* defers for break */");
         emitDefersForScopeExit(node->target_label_id);
-        writeIndent();
     }
 
     int target_id = node->target_label_id;
@@ -4176,20 +4227,19 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        writeString("goto ");
+        writeIndent();
+        writeKeyword(KW_GOTO);
         writeString(getLoopEndLabel(target_id));
-        writeString(";\n");
+        endStmt();
     } else {
-        writeString("break;\n");
+        writeStmt(KW_BREAK);
     }
 }
 
 void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
-    writeIndent();
     if (defer_stack_.length() > 0) {
-        writeString("/* defers for continue */\n");
+        writeIndentedLine("/* defers for continue */");
         emitDefersForScopeExit(node->target_label_id);
-        writeIndent();
     }
 
     int target_id = node->target_label_id;
@@ -4203,11 +4253,12 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        writeString("goto ");
+        writeIndent();
+        writeKeyword(KW_GOTO);
         writeString(getLoopContinueLabel(target_id));
-        writeString(";\n");
+        endStmt();
     } else {
-        writeString("continue;\n");
+        writeStmt(KW_CONTINUE);
     }
 }
 
@@ -4236,67 +4287,64 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
     if (has_defers || needs_wrapping || needs_opt_wrapping || is_main_function_ ||
         (node->expression && node->expression->type == NODE_STRUCT_INITIALIZER)) {
         writeIndent();
-        writeString("{\n");
-        {
-            IndentScope scope_indent(*this);
+        writeBlockOpen();
 
-            if (current_fn_ret_type_->kind != TYPE_VOID) {
+        if (current_fn_ret_type_->kind != TYPE_VOID) {
+            writeIndent();
+            emitType(current_fn_ret_type_, "__return_val");
+            writeString(" = {0}");
+            endStmt();
+
+            if (node->expression) {
+                emitAssignmentWithLifting("__return_val", NULL, node->expression, current_fn_ret_type_);
+            }
+
+            if (current_err_flag_) {
                 writeIndent();
-                emitType(current_fn_ret_type_, "__return_val");
-                writeString(" = {0};\n");
+                writeKeyword(KW_IF);
+                writeString("(__return_val.is_error) ");
+                writeString(current_err_flag_);
+                writeString(" = 1");
+                endStmt();
+            }
 
-                if (node->expression) {
-                    emitAssignmentWithLifting("__return_val", NULL, node->expression, current_fn_ret_type_);
-                }
+            emitDefersForScopeExit(-1);
 
-                if (current_err_flag_) {
-                    writeIndent();
-                    writeString("if (__return_val.is_error) ");
-                    writeString(current_err_flag_);
-                    writeString(" = 1;\n");
-                }
-
-                emitDefersForScopeExit(-1);
-
-                writeIndent();
-                if (is_main_function_) {
-                    if (current_fn_ret_type_->kind == TYPE_ERROR_UNION) {
-                        writeString("return __return_val.is_error ? __return_val.err : 0;\n");
-                    } else if (current_fn_ret_type_->kind == TYPE_OPTIONAL) {
-                        writeString("return __return_val.has_value ? 0 : 1;\n");
-                    } else {
-                        writeString("return (int)__return_val;\n");
-                    }
+            writeIndent();
+            writeKeyword(KW_RETURN);
+            if (is_main_function_) {
+                if (current_fn_ret_type_->kind == TYPE_ERROR_UNION) {
+                    writeString("__return_val.is_error ? __return_val.err : 0");
+                } else if (current_fn_ret_type_->kind == TYPE_OPTIONAL) {
+                    writeString("__return_val.has_value ? 0 : 1");
                 } else {
-                    writeString("return __return_val;\n");
+                    writeString("(int)__return_val");
                 }
             } else {
-                if (node->expression) {
-                    emitAssignmentWithLifting(NULL, NULL, node->expression, NULL);
-                }
-                emitDefersForScopeExit(-1);
-                writeIndent();
-                if (is_main_function_) {
-                    writeString("return 0;\n");
-                } else {
-                    writeString("return;\n");
-                }
+                writeString("__return_val");
             }
+            endStmt();
+        } else {
+            if (node->expression) {
+                emitAssignmentWithLifting(NULL, NULL, node->expression, NULL);
+            }
+            emitDefersForScopeExit(-1);
+            writeIndent();
+            writeKeyword(KW_RETURN);
+            if (is_main_function_) {
+                writeString("0");
+            }
+            endStmt();
         }
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
     } else {
         writeIndent();
+        writeKeyword(KW_RETURN);
         if (node->expression) {
-            writeString("return ");
             emitExpression(node->expression);
-            writeString(";\n");
-        } else {
-            if (is_main_function_) {
-                writeString("return 0;\n");
-            } else {
-                writeString("return;\n");
-            }
+        } else if (is_main_function_) {
+            writeString("0");
         }
+        endStmt();
     }
 }

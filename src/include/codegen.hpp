@@ -20,6 +20,28 @@ class CompilationUnit;
  */
 class C89Emitter {
 public:
+    static const char* const KW_BREAK;
+    static const char* const KW_CONTINUE;
+    static const char* const KW_RETURN;
+    static const char* const KW_GOTO;
+    static const char* const KW_IF;
+    static const char* const KW_ELSE;
+    static const char* const KW_WHILE;
+    static const char* const KW_FOR;
+    static const char* const KW_SWITCH;
+    static const char* const KW_CASE;
+    static const char* const KW_DEFAULT;
+    static const char* const KW_STRUCT;
+    static const char* const KW_UNION;
+    static const char* const KW_ENUM;
+    static const char* const KW_TYPEDEF;
+    static const char* const KW_EXTERN;
+    static const char* const KW_STATIC;
+    static const char* const KW_CONST;
+    static const char* const KW_VOID;
+    static const char* const KW_INT;
+    static const char* const KW_SIZEOF;
+
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
      * @param unit The compilation unit.
@@ -435,6 +457,64 @@ public:
     void emitDefersForScopeExit(int target_label_id = -1);
 
     /**
+     * @brief Helpers for cleaner code generation.
+     */
+    const char* LE() const { return line_ending_; }
+    void writeLine() { writeString(line_ending_); }
+    void writeLine(const char* str) { writeString(str); writeString(line_ending_); }
+    void writeIndentedLine(const char* str) { writeIndent(); writeString(str); writeString(line_ending_); }
+    void endStmt() { writeString(";"); writeString(line_ending_); }
+
+    void writeStmt(const char* str) {
+        writeIndent();
+        writeString(str);
+        endStmt();
+    }
+
+    void writeKeyword(const char* kw) {
+        writeString(kw);
+        writeString(" ");
+    }
+
+    void writeBlockOpen() {
+        writeLine("{");
+        indent();
+    }
+
+    void writeBlockClose(const char* suffix = NULL) {
+        dedent();
+        writeIndent();
+        writeString("}");
+        if (suffix) writeString(suffix);
+        writeLine();
+    }
+
+    void writeDecl(Type* type, const char* name) {
+        emitType(type, name);
+        endStmt();
+    }
+
+    void writeFieldDecl(Type* type, const char* name) {
+        writeIndent();
+        writeDecl(type, name);
+    }
+
+    void writeExprStmt(const ASTNode* expr) {
+        writeIndent();
+        emitExpression(expr);
+        endStmt();
+    }
+
+    const char* makeTempVar(const char* prefix) {
+        return var_alloc_.generate(prefix);
+    }
+
+    const char* makeTempVarForType(Type* type, const char* prefix) {
+        (void)type;
+        return var_alloc_.generate(prefix);
+    }
+
+    /**
      * @brief Emits an integer literal expression.
      */
     void emitIntegerLiteral(const ASTIntegerLiteralNode* node);
@@ -564,6 +644,18 @@ private:
         DeferScopeGuard& operator=(const DeferScopeGuard&);
     };
 
+public:
+    class GuardScope {
+        C89Emitter& emitter_;
+        const char* guard_name_;
+        bool started_;
+    public:
+        GuardScope(C89Emitter& emitter, const char* guard_name);
+        ~GuardScope();
+    };
+
+private:
+
     struct GlobalNameEntry {
         const char* zig_name;
         const char* c89_name;
@@ -615,6 +707,7 @@ private:
     int for_loop_counter_;
     SourceLocation current_loc_;
     size_t max_string_literal_chunk_;
+    const char* line_ending_;
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];

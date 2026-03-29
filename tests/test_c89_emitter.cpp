@@ -34,6 +34,50 @@ TEST_FUNC(c89_emitter_basic) {
     return true;
 }
 
+TEST_FUNC(c89_emitter_helpers) {
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+    const char* filename = "test_emitter_helpers.c";
+    C89Emitter emitter(unit, filename);
+    ASSERT_TRUE(emitter.isValid());
+
+    // Test Keywords
+    ASSERT_EQ(0, plat_strcmp(C89Emitter::KW_RETURN, "return"));
+
+    // Test Block helpers
+    emitter.writeIndent();
+    emitter.writeKeyword(C89Emitter::KW_IF);
+    emitter.writeString("(1) ");
+    emitter.writeBlockOpen();
+    emitter.writeStmt("return 0");
+    emitter.writeBlockClose();
+
+    // Test GuardScope
+    {
+        C89Emitter::GuardScope guard(emitter, "TEST_GUARD");
+        emitter.writeIndentedLine("int x = 0;");
+    }
+
+    emitter.close();
+
+    char* buffer = NULL;
+    size_t size = 0;
+    ASSERT_TRUE(plat_file_read(filename, &buffer, &size));
+
+    ASSERT_TRUE(strstr(buffer, "if (1) {") != NULL);
+    ASSERT_TRUE(strstr(buffer, "    return 0;") != NULL);
+    ASSERT_TRUE(strstr(buffer, "}") != NULL);
+    ASSERT_TRUE(strstr(buffer, "#ifndef TEST_GUARD") != NULL);
+    ASSERT_TRUE(strstr(buffer, "#define TEST_GUARD") != NULL);
+    ASSERT_TRUE(strstr(buffer, "int x = 0;") != NULL);
+    ASSERT_TRUE(strstr(buffer, "#endif /* TEST_GUARD */") != NULL);
+
+    plat_free(buffer);
+    plat_delete_file(filename);
+    return true;
+}
+
 TEST_FUNC(c89_emitter_buffering) {
     ArenaAllocator arena(1024 * 1024);
     StringInterner interner(arena);
