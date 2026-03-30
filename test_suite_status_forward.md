@@ -84,3 +84,19 @@ All functional examples were verified to compile and run successfully in both 32
 | func_ptr_return | **PASS** | |
 | lisp_interpreter | **EXCLUDED** | Per task requirements |
 | lisp_interpreter_adv | **EXCLUDED** | Per task requirements |
+
+---
+
+## Codegen Refactor (Phase 1, Point 6)
+
+The "Line Ending and Statement Terminator Abstraction" (Point 6 from `codegen_quick_refactor.MD`) has been implemented in `src/bootstrap/codegen.cpp`.
+
+### Changes
+- Replaced 50 occurrences of `writeString(";\n")` with `endStmt()`.
+- Replaced 11 occurrences of `writeString("\n")` with `writeLine()`.
+- Centralized line ending handling through the `line_ending_` member of `C89Emitter`.
+
+### Verification Results
+- **Compiler Build**: `zig0` compiles successfully.
+- **Batch 26 (Codegen Verification)**: **PASSED** (27/27 tests).
+- **Regression Check**: Verified that core emission logic remains identical to baseline. Existing failures in other batches (e.g., Batch 57) were confirmed to be present in the baseline and are unrelated to these changes.
