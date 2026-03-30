@@ -48,8 +48,24 @@ void zF_672edd_foo(void) {
 ### Z98 Syntax & Codegen Quirks
 
 #### Issue: Lisp Interpreter Recursion
-**Observation**: Recursive Lisp functions defined via `(define fact (lambda (n) ...))` fail with `UnboundSymbol`.
-**Reason**: This is an **interpreter design limitation**, not a compiler bug. Closures capture the environment at creation time, which does not yet contain the name being defined.
+**Observation**: Recursive Lisp functions defined via `(define fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))` fail with `UnboundSymbol`.
+**Reason**: Closures capture the environment at creation time. In the `define` expression, the `lambda` is evaluated first, creating a closure that captures the environment *before* the name `fact` is added to it.
+**Attempted Fix**: A "pre-binding" strategy was attempted where the name is first bound to a dummy value (e.g., `nil`) in the environment, then the `lambda` is evaluated (capturing the environment with the dummy binding), and finally the dummy value is updated in-place with the actual closure.
+**Status**: Blocked by compiler/codegen quirks when implementing the in-place update and complex loop logic for parameter matching.
+
+#### Issue: Direct Tagged Union Member Access
+**Observation**: Attempting to access a tagged union member directly (e.g., `v.Cons.car`) when the compiler "should" know the tag is active sometimes generates invalid C code or is rejected with confusing errors.
+**Reproduction**: `examples/lisp_interpreter_curr/repro_union_member_access.zig`
+**Note**: Z98 generally expects `switch` captures or `if` captures for safe union access.
+
+#### Issue: Loop State & Capture Sensitivity
+**Observation**: Complex logic inside `while` loops that involves `switch` captures on tagged unions can lead to unexpected runtime errors (like `TooManyArgs` in the interpreter when the data is clearly valid) or C compilation failures. The compiler seems to struggle with managing the lifecycle or scope of union payloads when combined with loop variables and `try` expressions.
+**Reproduction**: `examples/lisp_interpreter_curr/repro_capture_loop.zig`
+**Status**: Documented as a discovery during the recursion fix attempt.
+
+#### Issue: Named Union Assignment
+**Observation**: While anonymous struct payloads have known issues, assignment of named unions (like `Value`) should ideally work but was found to be sensitive to how the assignment is structured in C89.
+**Reproduction**: `examples/lisp_interpreter_curr/repro_union_assignment.zig`
 
 ## 3. Portability & Compatibility Reports
 
