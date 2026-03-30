@@ -579,6 +579,24 @@ Represents an array slice expression.
     };
     ```
 
+#### `ASTStructInitializerNode`
+Represents a struct, union, or tagged union initializer.
+*   **Zig Code:** `Point { .x = 1, .y = 2 }`, `Value { .Cons = .{ .car = 1, .cdr = 2 } }`, `.{ .x = 1 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTStructInitializerNode
+     * @brief Represents a struct/union initializer.
+     * @var ASTStructInitializerNode::type_expr The type being initialized (NULL for anonymous).
+     * @var ASTStructInitializerNode::fields A dynamic array of named field initializers.
+     */
+    struct ASTStructInitializerNode {
+        ASTNode* type_expr;
+        DynamicArray<ASTNamedInitializer*>* fields;
+    };
+    ```
+*   **Anonymous Struct Payloads**: To support tagged union variants with anonymous struct payloads, the parser allows nesting `NODE_STRUCT_INITIALIZER` as the value of a field. The `TypeChecker` resolves these nested initializers against the variant's payload type.
+
 #### Parsing Logic (`parsePostfixExpression`)
 The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
 

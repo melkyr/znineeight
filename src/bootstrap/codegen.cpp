@@ -497,13 +497,12 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
         if (is_tagged) {
             /* Emit tag assignment */
-        const char* field_name = NULL;
-        if (init->fields->length() > 0) {
-            field_name = (*init->fields)[0]->field_name;
-        } else {
-            /* Fallback for empty union initializer? Should have been checked. */
-            return;
-        }
+            const char* field_name = NULL;
+            if (init->fields->length() > 0) {
+                field_name = (*init->fields)[0]->field_name;
+            } else {
+                return;
+            }
             writeIndent();
             writeString(base_name);
             writeString(".tag = ");
@@ -518,45 +517,131 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             writeString("_");
             writeString(field_name);
             endStmt();
-        }
 
-        for (size_t i = 0; i < fields->length(); ++i) {
-            const char* field_name = (*fields)[i].name;
-            Type* field_type = (*fields)[i].type;
+            /* New: handle nested struct initializer for the variant value */
+            bool handled = false;
+            if (init->fields->length() > 0) {
+                ASTNamedInitializer* variant_init = (*init->fields)[0];
+                if (variant_init->value && variant_init->value->type == NODE_STRUCT_INITIALIZER) {
+                    /* Find the type of this variant */
+                    Type* variant_type = NULL;
+                    DynamicArray<StructField>* variants = (type->kind == TYPE_TAGGED_UNION)
+                        ? type->as.tagged_union.payload_fields
+                        : type->as.struct_details.fields;
+                    for (size_t v_idx = 0; v_idx < variants->length(); ++v_idx) {
+                        if (plat_strcmp((*variants)[v_idx].name, variant_init->field_name) == 0) {
+                            variant_type = (*variants)[v_idx].type;
+                            break;
+                        }
+                    }
 
-            /* Skip void fields in C */
-            if (field_type->kind == TYPE_VOID) continue;
+                    if (variant_type && (variant_type->kind == TYPE_STRUCT || variant_type->kind == TYPE_UNION)) {
+                        const ASTStructInitializerNode* payload_init = variant_init->value->as.struct_initializer;
+                        DynamicArray<StructField>* payload_fields = variant_type->as.struct_details.fields;
 
-            /* Find in initializer */
-            ASTNode* val = NULL;
-            for (size_t j = 0; j < init->fields->length(); ++j) {
-                if (plat_strcmp((*init->fields)[j]->field_name, field_name) == 0) {
-                    val = (*init->fields)[j]->value;
-                    break;
+                        for (size_t j = 0; j < payload_fields->length(); ++j) {
+                            const char* field_name_j = (*payload_fields)[j].name;
+                            Type* field_type = (*payload_fields)[j].type;
+                            if (field_type->kind == TYPE_VOID) continue;
+
+                            /* Find this field in the nested initializer */
+                            ASTNode* val = NULL;
+                            for (size_t k = 0; k < payload_init->fields->length(); ++k) {
+                                if (plat_strcmp((*payload_init->fields)[k]->field_name, field_name_j) == 0) {
+                                    val = (*payload_init->fields)[k]->value;
+                                    break;
+                                }
+                            }
+
+                            if (val) {
+                                char nested_name[512];
+                                char* cur = nested_name;
+                                size_t rem = sizeof(nested_name);
+                                bool needs_parens = (base_name[0] == '*');
+                                if (needs_parens) safe_append(cur, rem, "(");
+                                safe_append(cur, rem, base_name);
+                                if (needs_parens) safe_append(cur, rem, ")");
+                                safe_append(cur, rem, ".data.");
+                                safe_append(cur, rem, getSafeFieldName(variant_init->field_name));
+                                safe_append(cur, rem, ".");
+                                safe_append(cur, rem, getSafeFieldName(field_name_j));
+                                emitAssignmentWithLifting(nested_name, NULL, val, field_type);
+                            }
+                        }
+                        handled = true; /* skip the regular loop */
+                    }
                 }
             }
 
-            if (val) {
-                char nested_name[256];
-                char* cur = nested_name;
-                size_t rem = sizeof(nested_name);
+            if (!handled) {
+                /* Fallback: original field-by-field loop for non-struct payloads (e.g., integers) */
+                for (size_t i = 0; i < fields->length(); ++i) {
+                    const char* field_name_j = (*fields)[i].name;
+                    Type* field_type = (*fields)[i].type;
+                    if (field_type->kind == TYPE_VOID) continue;
 
-                bool needs_parens = false;
-                /* If base_name contains operators that have lower precedence than '.', wrap it.
-                   Specifically if it starts with '*' (dereference). */
-                if (base_name[0] == '*') needs_parens = true;
+                    ASTNode* val = NULL;
+                    for (size_t j = 0; j < init->fields->length(); ++j) {
+                        if (plat_strcmp((*init->fields)[j]->field_name, field_name_j) == 0) {
+                            val = (*init->fields)[j]->value;
+                            break;
+                        }
+                    }
 
-                if (needs_parens) safe_append(cur, rem, "(");
-                safe_append(cur, rem, base_name);
-                if (needs_parens) safe_append(cur, rem, ")");
-
-                if (is_tagged) {
-                    safe_append(cur, rem, ".data");
+                    if (val) {
+                        char nested_name[256];
+                        char* cur = nested_name;
+                        size_t rem = sizeof(nested_name);
+                        bool needs_parens = (base_name[0] == '*');
+                        if (needs_parens) safe_append(cur, rem, "(");
+                        safe_append(cur, rem, base_name);
+                        if (needs_parens) safe_append(cur, rem, ")");
+                        if (is_tagged) safe_append(cur, rem, ".data");
+                        safe_append(cur, rem, ".");
+                        safe_append(cur, rem, field_name_j);
+                        emitAssignmentWithLifting(nested_name, NULL, val, field_type);
+                    }
                 }
-                safe_append(cur, rem, ".");
-                safe_append(cur, rem, field_name);
+            }
+        } else {
+            for (size_t i = 0; i < fields->length(); ++i) {
+                const char* field_name = (*fields)[i].name;
+                Type* field_type = (*fields)[i].type;
 
-                emitAssignmentWithLifting(nested_name, NULL, val, field_type);
+                /* Skip void fields in C */
+                if (field_type->kind == TYPE_VOID) continue;
+
+                /* Find in initializer */
+                ASTNode* val = NULL;
+                for (size_t j = 0; j < init->fields->length(); ++j) {
+                    if (plat_strcmp((*init->fields)[j]->field_name, field_name) == 0) {
+                        val = (*init->fields)[j]->value;
+                        break;
+                    }
+                }
+
+                if (val) {
+                    char nested_name[256];
+                    char* cur = nested_name;
+                    size_t rem = sizeof(nested_name);
+
+                    bool needs_parens = false;
+                    /* If base_name contains operators that have lower precedence than '.', wrap it.
+                       Specifically if it starts with '*' (dereference). */
+                    if (base_name[0] == '*') needs_parens = true;
+
+                    if (needs_parens) safe_append(cur, rem, "(");
+                    safe_append(cur, rem, base_name);
+                    if (needs_parens) safe_append(cur, rem, ")");
+
+                    if (is_tagged) {
+                        safe_append(cur, rem, ".data");
+                    }
+                    safe_append(cur, rem, ".");
+                    safe_append(cur, rem, field_name);
+
+                    emitAssignmentWithLifting(nested_name, NULL, val, field_type);
+                }
             }
         }
     } else if (type->kind == TYPE_ARRAY) {
@@ -656,6 +741,9 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
 
     /* Initializer Lifting */
     if (rvalue->type == NODE_STRUCT_INITIALIZER) {
+        if (!rvalue->resolved_type && target_type) {
+            ((ASTNode*)rvalue)->resolved_type = target_type;
+        }
         if (effective_target) {
             emitInitializerAssignments(effective_target, rvalue);
         } else if (lvalue_node) {
