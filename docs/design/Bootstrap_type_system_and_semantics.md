@@ -10,6 +10,7 @@ The bootstrap type system is intentionally minimal. It is not designed to handle
 
 Semantic analysis at this stage will be limited to what is necessary to support this C89-compatible subset, including:
 -   **Import Resolution & Topological Sorting:** Discovering all module dependencies and ordering them such that each module is processed after its imports.
+-   **Header Type Topological Sorting:** Ordering types within a module's header based on value dependencies to satisfy C89 definition-before-use requirements.
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
 -   **Scope management:** Handling global and function-level scopes.
@@ -1118,7 +1119,14 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 Before code generation, the `MetadataPreparationPass` performs a transitive scan of all modules to identify all types and symbols that need to be emitted in headers.
 - **Transitive Reachability**: The pass recursively collects all types used in public function signatures, public global variables, and public type constants (`pub const`).
 - **Type Alias Resolution**: It explicitly follows `pub const` type aliases to ensure that the underlying types are correctly marked for emission in headers, even if the original type is defined in a different module.
-- **Header Order**: It populates `module->header_types` in topological dependency order, which is used by the `CBackend` to emit definitions after forward declarations and module inclusions.
+- **Header Type Topological Sort**: It populates `module->header_types` and sorts them in topological dependency order using Kahn's algorithm. This is a **second topological sort** (independent of the module-level import sort) that operates at the type level within each module.
+
+#### Value Dependencies vs. Pointer Dependencies
+The sort strictly uses **value dependencies** to determine the order. A type `A` depends on `B` by value if `A` contains `B` directly (as a field, array element, or error union payload). In C89, `B` must be fully defined before `A` can be defined if `A` contains `B` by value.
+
+Dependencies via pointers or function signatures do **not** force an order, as they only require a forward declaration (e.g., `struct Node;`). These are excluded from the sort to allow for circular pointer relationships (e.g., linked list nodes).
+
+The `CBackend` uses this sorted list to emit definitions, ensuring that `struct Node` is defined before `ErrorUnion_Node` if the latter contains the former by value.
 
 ### Type Alias Unwrapping (Phase 9a)
 

@@ -12,6 +12,11 @@ MetadataPreparationPass::MetadataPreparationPass(CompilationUnit& unit)
 void MetadataPreparationPass::run() {
     DynamicArray<Module*>& modules = unit_.getModules();
 
+    // Pass 0: Reset header_types to prevent stale entries
+    for (size_t i = 0; i < modules.length(); ++i) {
+        modules[i]->header_types.clear();
+    }
+
     // Pass 1: Resolve all placeholders for all symbols in all modules.
     for (size_t i = 0; i < modules.length(); ++i) {
         Module* mod = modules[i];
@@ -72,14 +77,15 @@ void MetadataPreparationPass::run() {
         Module* mod = modules[i];
         if (!mod->symbols) continue;
 
+        mod->header_types.clear();
+
         DynamicArray<Type*> visited(unit_.getArena());
         const DynamicArray<Scope*>& scopes = mod->symbols->getAllScopes();
 
-        if (scopes.length() > 0) {
-            Scope* global_scope = scopes[0];
-            for (size_t k = 0; k < global_scope->buckets.length(); ++k) {
-                Scope::SymbolEntry* entry = global_scope->buckets[k];
-                /* Snapshot bucket to prevent iterator invalidation if collection adds new symbols */
+        for (size_t j = 0; j < scopes.length(); ++j) {
+            Scope* scope = scopes[j];
+            for (size_t k = 0; k < scope->buckets.length(); ++k) {
+                Scope::SymbolEntry* entry = scope->buckets[k];
                 DynamicArray<Symbol*> snapshot(unit_.getArena());
                 Scope::SymbolEntry* curr = entry;
                 while (curr) {
@@ -97,20 +103,175 @@ void MetadataPreparationPass::run() {
                     if (is_pub || (sym->flags & SYMBOL_FLAG_EXTERN)) {
                         collectReachableTypes(mod, sym->symbol_type, visited);
 
-                        /* If this is a type constant (e.g., pub const T = struct {...}),
-                           ensure the actual type is also collected. */
                         if (sym->symbol_type->kind == TYPE_TYPE && sym->details) {
                             ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
                             if (decl->initializer && decl->initializer->resolved_type) {
                                 collectReachableTypes(mod, decl->initializer->resolved_type, visited);
                             }
                         }
+                    } else if (sym->symbol_type && (sym->symbol_type->kind == TYPE_STRUCT || sym->symbol_type->kind == TYPE_UNION || sym->symbol_type->kind == TYPE_TAGGED_UNION || sym->symbol_type->kind == TYPE_ENUM)) {
+                        collectReachableTypes(mod, sym->symbol_type, visited);
                     }
                 }
             }
         }
 
         collectStaticFunctions(mod);
+    }
+
+    // Pass 4: Topologically sort header_types based on value dependencies.
+    // This ensures that if Type A contains Type B by value, B is defined before A in the C header.
+    for (size_t i = 0; i < modules.length(); ++i) {
+        Module* mod = modules[i];
+        if (mod->header_types.length() == 0) continue;
+
+        DynamicArray<Type*> types(unit_.getArena());
+        for (size_t j = 0; j < mod->header_types.length(); ++j) {
+            types.append(mod->header_types[j]);
+        }
+
+        DynamicArray<size_t> indeg(unit_.getArena());
+        DynamicArray<DynamicArray<size_t>*> adj(unit_.getArena());
+
+        for (size_t j = 0; j < types.length(); ++j) {
+            indeg.append(0);
+            DynamicArray<size_t>* neighbors = (DynamicArray<size_t>*)unit_.getArena().alloc(sizeof(DynamicArray<size_t>));
+            new (neighbors) DynamicArray<size_t>(unit_.getArena());
+            adj.append(neighbors);
+        }
+
+        for (size_t j = 0; j < types.length(); ++j) {
+            Type* t = types[j];
+
+            // Helper to add a value-dependency edge: k -> j (k is dependency, must come before j)
+            // Note: We use a nested block for dependencies.
+            DynamicArray<Type*> deps(unit_.getArena());
+            switch (t->kind) {
+                case TYPE_ARRAY:
+                    deps.append(t->as.array.element_type);
+                    break;
+                case TYPE_STRUCT:
+                case TYPE_UNION:
+                    if (t->as.struct_details.fields) {
+                        for (size_t f = 0; f < t->as.struct_details.fields->length(); ++f) {
+                            deps.append((*t->as.struct_details.fields)[f].type);
+                        }
+                    }
+                    if (t->as.struct_details.tag_type) {
+                        deps.append(t->as.struct_details.tag_type);
+                    }
+                    break;
+                case TYPE_TAGGED_UNION:
+                    if (t->as.tagged_union.payload_fields) {
+                        for (size_t f = 0; f < t->as.tagged_union.payload_fields->length(); ++f) {
+                            deps.append((*t->as.tagged_union.payload_fields)[f].type);
+                        }
+                    }
+                    if (t->as.tagged_union.tag_type) {
+                        deps.append(t->as.tagged_union.tag_type);
+                    }
+                    break;
+                case TYPE_ERROR_UNION:
+                    deps.append(t->as.error_union.payload);
+                    if (t->as.error_union.error_set) {
+                        deps.append(t->as.error_union.error_set);
+                    }
+                    break;
+                case TYPE_OPTIONAL:
+                    deps.append(t->as.optional.payload);
+                    break;
+                case TYPE_ENUM:
+                    deps.append(t->as.enum_details.backing_type);
+                    break;
+                case TYPE_TUPLE:
+                    if (t->as.tuple.elements) {
+                        for (size_t e = 0; e < t->as.tuple.elements->length(); ++e) {
+                            deps.append((*t->as.tuple.elements)[e]);
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            for (size_t d = 0; d < deps.length(); ++d) {
+                Type* dep = deps[d];
+                if (!dep) continue;
+
+                /* Handle special types by recursing into their payloads for value dependencies */
+                if (dep->kind == TYPE_OPTIONAL) {
+                    deps.append(dep->as.optional.payload);
+                    continue;
+                } else if (dep->kind == TYPE_ERROR_UNION) {
+                    deps.append(dep->as.error_union.payload);
+                    if (dep->as.error_union.error_set) deps.append(dep->as.error_union.error_set);
+                    continue;
+                } else if (dep->kind == TYPE_POINTER) {
+                    // Pointers are NOT value dependencies
+                    continue;
+                } else if (dep->kind == TYPE_FUNCTION || dep->kind == TYPE_FUNCTION_POINTER) {
+                    // Functions are NOT value dependencies
+                    continue;
+                }
+
+                // Find index of dep in types
+                size_t k = (size_t)-1;
+                for (size_t idx = 0; idx < types.length(); ++idx) {
+                    if (types[idx] == dep) {
+                        k = idx;
+                        break;
+                    }
+                }
+
+                if (k != (size_t)-1 && k != j) {
+                    // Check for duplicate edge
+                    bool exists = false;
+                    for (size_t e = 0; e < adj[k]->length(); ++e) {
+                        if ((*adj[k])[e] == j) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        // Edge is dep -> t (k -> j), meaning dep must come before t
+                        adj[k]->append(j);
+                        indeg[j]++;
+                    }
+                }
+            }
+        }
+
+        // Kahn's algorithm
+        DynamicArray<size_t> queue(unit_.getArena());
+        for (size_t j = 0; j < indeg.length(); ++j) {
+            if (indeg[j] == 0) {
+                queue.append(j);
+            }
+        }
+
+        DynamicArray<Type*> sorted(unit_.getArena());
+        while (queue.length() > 0) {
+            size_t u = queue[0];
+            // Manual shift to remove first element
+            for (size_t q_idx = 0; q_idx < queue.length() - 1; ++q_idx) {
+                queue[q_idx] = queue[q_idx + 1];
+            }
+            queue.pop_back();
+
+            sorted.append(types[u]);
+
+            for (size_t j = 0; j < adj[u]->length(); ++j) {
+                size_t v = (*adj[u])[j];
+                indeg[v]--;
+                if (indeg[v] == 0) {
+                    queue.append(v);
+                }
+            }
+        }
+
+        if (sorted.length() == types.length()) {
+            mod->header_types = sorted;
+        }
     }
 }
 

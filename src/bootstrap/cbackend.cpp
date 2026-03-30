@@ -451,33 +451,6 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.writeString("#include \"zig_runtime.h\"\n");
     emitter.writeString("#include \"zig_special_types.h\"\n\n");
 
-    /* Pass -0.5: Force emission of all special types used in public symbols */
-    DynamicArray<Type*> visited_public(unit_.getArena());
-    if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
-        DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
-        for (size_t i = 0; i < stmts->length(); ++i) {
-            ASTNode* node = (*stmts)[i];
-            if (node->type == NODE_FN_DECL && node->as.fn_decl->is_pub) {
-                ASTFnDeclNode* fn = node->as.fn_decl;
-                if (fn->return_type && fn->return_type->resolved_type) {
-                    scanType(fn->return_type->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
-                }
-                if (fn->params) {
-                    for (size_t j = 0; j < fn->params->length(); ++j) {
-                        ASTNode* p = (*fn->params)[j];
-                        if (p->as.param_decl.type && p->as.param_decl.type->resolved_type) {
-                            scanType(p->as.param_decl.type->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
-                        }
-                    }
-                }
-            } else if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
-                if (node->resolved_type) {
-                    scanType(node->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
-                }
-            }
-        }
-    }
-    emitter.emitBufferedTypeDefinitions();
 
     /* Pass 0: Forward declarations of aggregate types */
     /* We emit forward declarations for all aggregates used in the header. */
