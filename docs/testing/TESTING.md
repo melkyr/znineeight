@@ -208,3 +208,25 @@ To run the framework's self-tests:
 ```
 
 For more details, see the [C89 Validation Documentation](c89_validation.md).
+
+## 11. Example Programs Verification
+
+The examples in the `examples/` directory demonstrate the compiler's capabilities on larger, multi-file programs.
+
+### Separate Compilation Model
+As of Milestone 10, the Z98 compiler uses a **separate compilation model**. Each Zig module is compiled into a separate `.c`/`.h` pair. The compiler also generates a `build_target.sh` (for Unix) and `build_target.bat` (for Windows) script in the output directory to handle the compilation and linking of these modules.
+
+### Verification Procedure
+To verify an example:
+1.  **Generate C Code**: Run the compiler on the main Zig file, specifying an output directory.
+    ```bash
+    ./zig0 examples/hello/main.zig -o examples/hello/output/
+    ```
+2.  **Build and Run**: Navigate to the output directory and execute the generated build script.
+    ```bash
+    cd examples/hello/output/
+    sh build_target.sh
+    ./app
+    ```
+
+**Note on `run.sh` scripts:** The legacy `run.sh` scripts located directly in the example directories may be outdated as they often assume a single translation unit model. Always prefer the generated `build_target.sh` for accurate verification of the current compilation model.
