@@ -181,12 +181,12 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     plat_write_file(f, header, plat_strlen(header));
 
     // Compile zig_runtime.c
-    const char* runtime_cmd = "cl.exe /nologo /W3 /I. /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c zig_runtime.c\n";
+    const char* runtime_cmd = "cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c zig_runtime.c\n";
     plat_write_file(f, runtime_cmd, plat_strlen(runtime_cmd));
 
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
-        const char* cmd_part1 = "cl.exe /nologo /W3 /I. /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c ";
+        const char* cmd_part1 = "cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c ";
         plat_write_file(f, cmd_part1, plat_strlen(cmd_part1));
         plat_write_file(f, generated_sources_[i], plat_strlen(generated_sources_[i]));
         plat_write_file(f, "\n", 1);
@@ -301,9 +301,12 @@ bool CBackend::generateMakefile(const char* output_dir) {
 #endif
 
     // Compile zig_runtime.c
-    plat_write_file(f, "gcc -std=c89 -m32 ", 17);
-    plat_write_file(f, extra_flags, plat_strlen(extra_flags));
-    const char* runtime_cmd_rest = "-pedantic -Wall -O2 -I. -c zig_runtime.c -o zig_runtime.o\n";
+    plat_write_file(f, "gcc -std=c89 -m32 ", 18);
+    if (extra_flags[0] != '\0') {
+        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+        plat_write_file(f, " ", 1);
+    }
+    const char* runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o\n";
     plat_write_file(f, runtime_cmd_rest, plat_strlen(runtime_cmd_rest));
 
     // Compile all modules
@@ -315,9 +318,12 @@ bool CBackend::generateMakefile(const char* output_dir) {
         obj[len-1] = 'o';
         obj[len] = '\0';
 
-        plat_write_file(f, "gcc -std=c89 -m32 ", 17);
-        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
-        const char* cmd_part1_rest = "-pedantic -Wall -O2 -I. -c ";
+        plat_write_file(f, "gcc -std=c89 -m32 ", 18);
+        if (extra_flags[0] != '\0') {
+            plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+            plat_write_file(f, " ", 1);
+        }
+        const char* cmd_part1_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c ";
         plat_write_file(f, cmd_part1_rest, plat_strlen(cmd_part1_rest));
         plat_write_file(f, source, len);
         plat_write_file(f, " -o ", 4);
@@ -327,7 +333,10 @@ bool CBackend::generateMakefile(const char* output_dir) {
 
     // Link everything
     plat_write_file(f, "gcc -m32 ", 9);
-    plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+    if (extra_flags[0] != '\0') {
+        plat_write_file(f, extra_flags, plat_strlen(extra_flags));
+        plat_write_file(f, " ", 1);
+    }
     const char* link_cmd_start = "-o ";
     plat_write_file(f, link_cmd_start, plat_strlen(link_cmd_start));
     plat_write_file(f, executable_name_, plat_strlen(executable_name_));
@@ -439,24 +448,52 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
     emitter.writeString(guard);
     emitter.writeString("\n\n");
 
-    emitter.writeString("#include \"zig_runtime.h\"\n\n");
+    emitter.writeString("#include \"zig_runtime.h\"\n");
+    emitter.writeString("#include \"zig_special_types.h\"\n\n");
+
+    /* Pass -0.5: Force emission of all special types used in public symbols */
+    DynamicArray<Type*> visited_public(unit_.getArena());
+    if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
+        DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
+        for (size_t i = 0; i < stmts->length(); ++i) {
+            ASTNode* node = (*stmts)[i];
+            if (node->type == NODE_FN_DECL && node->as.fn_decl->is_pub) {
+                ASTFnDeclNode* fn = node->as.fn_decl;
+                if (fn->return_type && fn->return_type->resolved_type) {
+                    scanType(fn->return_type->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
+                }
+                if (fn->params) {
+                    for (size_t j = 0; j < fn->params->length(); ++j) {
+                        ASTNode* p = (*fn->params)[j];
+                        if (p->as.param_decl.type && p->as.param_decl.type->resolved_type) {
+                            scanType(p->as.param_decl.type->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
+                        }
+                    }
+                }
+            } else if (node->type == NODE_VAR_DECL && node->as.var_decl->is_pub) {
+                if (node->resolved_type) {
+                    scanType(node->resolved_type, emitter, SCAN_SLICES | SCAN_ERROR_UNIONS | SCAN_OPTIONALS, visited_public);
+                }
+            }
+        }
+    }
+    emitter.emitBufferedTypeDefinitions();
 
     /* Pass 0: Forward declarations of aggregate types */
     /* We emit forward declarations for all aggregates used in the header. */
+    for (size_t i = 0; i < module->header_types.length(); ++i) {
+        Type* t = module->header_types[i];
+        if (t->kind == TYPE_ENUM) {
+            emitter.ensureForwardDeclaration(t);
+        }
+    }
     for (size_t i = 0; i < module->header_types.length(); ++i) {
         Type* t = module->header_types[i];
         if (t->kind != TYPE_ENUM && t->kind != TYPE_SLICE && t->kind != TYPE_ERROR_UNION && t->kind != TYPE_OPTIONAL) {
             emitter.ensureForwardDeclaration(t);
         }
     }
-    emitter.writeString("\n");
-
-    for (size_t i = 0; i < module->imports.length(); ++i) {
-        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
-        emitter.writeString("#include \"");
-        emitter.writeString(module->imports[i]);
-        emitter.writeString(".h\"\n");
-    }
+    emitter.emitBufferedTypeDefinitions();
     emitter.writeString("\n");
 
     // Use pre-computed header types in dependency order.
@@ -473,6 +510,14 @@ bool CBackend::generateHeaderFile(Module* module, const char* output_dir, Dynami
             emitter.emitBufferedTypeDefinitions();
         }
     }
+
+    for (size_t i = 0; i < module->imports.length(); ++i) {
+        if (plat_strcmp(module->imports[i], module->name) == 0) continue;
+        emitter.writeString("#include \"");
+        emitter.writeString(module->imports[i]);
+        emitter.writeString(".h\"\n");
+    }
+    emitter.writeString("\n");
 
     if (module->ast_root && module->ast_root->type == NODE_BLOCK_STMT) {
         DynamicArray<ASTNode*>* stmts = module->ast_root->as.block_stmt.statements;
