@@ -33,13 +33,15 @@ struct CompilationOptions {
     bool enable_lifetime_analysis;
     bool debug_lifter;
     bool debug_codegen;
+    bool win_friendly_line_endings;
 
     CompilationOptions()
         : enable_double_free_analysis(false),
           enable_null_pointer_analysis(false),
           enable_lifetime_analysis(false),
           debug_lifter(false),
-          debug_codegen(false) {}
+          debug_codegen(false),
+          win_friendly_line_endings(false) {}
 };
 
 // Forward-declare to avoid circular dependencies.

@@ -8,6 +8,28 @@
 
 static const size_t TYPE_DEF_BUFFER_SIZE = 131072;
 
+const char* const C89Emitter::KW_BREAK = "break";
+const char* const C89Emitter::KW_CONTINUE = "continue";
+const char* const C89Emitter::KW_RETURN = "return";
+const char* const C89Emitter::KW_GOTO = "goto";
+const char* const C89Emitter::KW_IF = "if";
+const char* const C89Emitter::KW_ELSE = "else";
+const char* const C89Emitter::KW_WHILE = "while";
+const char* const C89Emitter::KW_FOR = "for";
+const char* const C89Emitter::KW_SWITCH = "switch";
+const char* const C89Emitter::KW_CASE = "case";
+const char* const C89Emitter::KW_DEFAULT = "default";
+const char* const C89Emitter::KW_STRUCT = "struct";
+const char* const C89Emitter::KW_UNION = "union";
+const char* const C89Emitter::KW_ENUM = "enum";
+const char* const C89Emitter::KW_TYPEDEF = "typedef";
+const char* const C89Emitter::KW_EXTERN = "extern";
+const char* const C89Emitter::KW_STATIC = "static";
+const char* const C89Emitter::KW_CONST = "const";
+const char* const C89Emitter::KW_VOID = "void";
+const char* const C89Emitter::KW_INT = "int";
+const char* const C89Emitter::KW_SIZEOF = "sizeof";
+
 C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
@@ -19,7 +41,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -35,7 +58,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -53,7 +77,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -3593,6 +3618,33 @@ bool C89Emitter::captureExpression(const ASTNode* node, char* buf, size_t buf_si
     output_file_ = saved_file;
 
     return success;
+}
+
+C89Emitter::GuardScope::GuardScope(C89Emitter& emitter, const char* guard_name)
+    : emitter_(emitter), name_(guard_name), started_(false) {
+    emitter_.writeString("#ifndef ");
+    emitter_.writeLine(name_);
+    emitter_.writeString("#define ");
+    emitter_.writeLine(name_);
+    started_ = true;
+}
+
+C89Emitter::GuardScope::~GuardScope() {
+    if (started_) {
+        emitter_.writeString("#endif /* ");
+        emitter_.writeString(name_);
+        emitter_.writeString(" */");
+        emitter_.writeLine();
+    }
+}
+
+const char* C89Emitter::makeTempVarForType(Type* type, const char* prefix, bool emit_decl) {
+    const char* name = var_alloc_.generate(prefix);
+    if (emit_decl) {
+        writeIndent();
+        writeDecl(type, name);
+    }
+    return name;
 }
 
 bool C89Emitter::isSimpleLValue(const ASTNode* node) const {

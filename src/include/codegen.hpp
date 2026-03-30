@@ -377,6 +377,77 @@ public:
     const char* getMangledTypeName(Type* type);
 
     /**
+     * @brief Line ending and statement terminator helpers.
+     */
+    inline const char* LE() const { return line_ending_; }
+    inline void writeLine() { writeString(line_ending_); }
+    inline void writeLine(const char* str) { writeString(str); writeString(line_ending_); }
+    inline void writeIndentedLine(const char* str) { writeIndent(); writeString(str); writeString(line_ending_); }
+    inline void endStmt() { writeString(";" ); writeString(line_ending_); }
+
+    /**
+     * @brief Combined write methods.
+     */
+    inline void writeStmt(const char* str) { writeIndent(); writeString(str); endStmt(); }
+    inline void writeKeyword(const char* kw) { writeString(kw); writeString(" "); }
+    inline void writeBlockOpen() { writeLine("{"); indent(); }
+    inline void writeBlockClose() { dedent(); writeIndentedLine("}"); }
+
+    /**
+     * @brief Type and variable declaration helpers.
+     */
+    inline void writeDecl(Type* type, const char* name) { emitType(type, name); endStmt(); }
+    inline void writeFieldDecl(Type* type, const char* name) { writeIndent(); writeDecl(type, name); }
+
+    /**
+     * @brief Expression statement helper.
+     */
+    inline void writeExprStmt(const ASTNode* expr) { writeIndent(); emitExpression(expr); endStmt(); }
+
+    /**
+     * @brief Temporary variable helpers.
+     */
+    inline const char* makeTempVar(const char* prefix) { return var_alloc_.generate(prefix); }
+    const char* makeTempVarForType(Type* type, const char* prefix, bool emit_decl = false);
+
+    /**
+     * @brief RAII-style guard helper for header definitions.
+     */
+    class GuardScope {
+        C89Emitter& emitter_;
+        const char* name_;
+        bool started_;
+    public:
+        GuardScope(C89Emitter& emitter, const char* guard_name);
+        ~GuardScope();
+    };
+
+    /**
+     * @brief C89 Keywords.
+     */
+    static const char* const KW_BREAK;
+    static const char* const KW_CONTINUE;
+    static const char* const KW_RETURN;
+    static const char* const KW_GOTO;
+    static const char* const KW_IF;
+    static const char* const KW_ELSE;
+    static const char* const KW_WHILE;
+    static const char* const KW_FOR;
+    static const char* const KW_SWITCH;
+    static const char* const KW_CASE;
+    static const char* const KW_DEFAULT;
+    static const char* const KW_STRUCT;
+    static const char* const KW_UNION;
+    static const char* const KW_ENUM;
+    static const char* const KW_TYPEDEF;
+    static const char* const KW_EXTERN;
+    static const char* const KW_STATIC;
+    static const char* const KW_CONST;
+    static const char* const KW_VOID;
+    static const char* const KW_INT;
+    static const char* const KW_SIZEOF;
+
+    /**
      * @brief Returns true if the node is a simple l-value (identifier or dereference of a simple l-value).
      *        Recursively unwraps parentheses.
      */
@@ -618,6 +689,7 @@ private:
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
+    const char* line_ending_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);
