@@ -48,9 +48,6 @@ typedef char           c_char;
     typedef unsigned long usize;
 #endif
 
-/* Then include the generated special types (e.g. Slices) that depend on usize */
-#include "zig_special_types.h"
-
 /* Forward declaration for Arena structures */
 typedef struct ArenaBlock ArenaBlock;
 
