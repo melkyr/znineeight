@@ -326,6 +326,12 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Emits the base expression with proper parentheses if needed.
+     * @param base The base expression node.
+     */
+    void emitBaseWithParens(const ASTNode* base);
+
+    /**
      * @brief Ensures a type is forward-declared.
      */
     void ensureForwardDeclaration(Type* type);
