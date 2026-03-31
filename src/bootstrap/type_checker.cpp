@@ -3347,6 +3347,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
              existing_sym->symbol_type = declared_type;
         }
         existing_sym->details = node;
+
+        /* FIX: Ensure local variables have NULL module name for correct lookup */
+        existing_sym->module_name = is_local ? NULL : unit_.getCurrentModule();
+
         if (existing_sym->flags & SYMBOL_FLAG_EXTERN) {
             existing_sym->mangled_name = existing_sym->name;
         } else if (is_local) {
@@ -3376,7 +3380,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
             Symbol var_symbol = SymbolBuilder(unit_.getArena())
                 .withName(node->name)
-                .withModule(unit_.getCurrentModule())
+                .withModule(is_local ? NULL : unit_.getCurrentModule())
                 .withMangledName(mangled)
                 .ofType(SYMBOL_VARIABLE)
                 .withType(declared_type)
@@ -3572,6 +3576,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                  Type* param_type = snapshot[i];
                  Symbol param_symbol = SymbolBuilder(unit_.getArena())
                         .withName(param_node.name)
+                        .withModule(NULL)
                         .ofType(param_type->kind == TYPE_TYPE ? SYMBOL_TYPE : SYMBOL_VARIABLE)
                         .withType(param_type)
                         .atLocation(param_node_wrapper->loc)

@@ -13,7 +13,8 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Header Type Topological Sorting:** Ordering types within a module's header based on value dependencies to satisfy C89 definition-before-use requirements.
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
--   **Scope management:** Handling global and function-level scopes.
+-   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
+-   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly without entering an additional block scope.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
@@ -302,12 +303,16 @@ Each entry in the symbol table is a `Symbol` struct, which contains all the nece
 // from symbol_table.hpp
 struct Symbol {
     const char* name;
+    const char* module_name; // NULL for local or 'main' module
+    const char* mangled_name;
     SymbolType kind;
-    Type* symbol_type;
+    Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
     void* details;
-    unsigned int scope_level;
-    unsigned int flags;
+    unsigned int scope_level; // Set by SymbolTable on insertion
+    unsigned int flags;        // Bitmask of SymbolFlag
+    bool is_generic;           // True if it's a generic function
+    Type* c_prototype_type;    // For extern/export functions, the C-compatible type
 };
 
 /**
