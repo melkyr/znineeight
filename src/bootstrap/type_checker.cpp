@@ -3130,7 +3130,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
         Symbol sym = SymbolBuilder(unit_.getArena())
             .withName(node->name)
-            .withModule(unit_.getCurrentModule())
+            .withModule(current_fn_return_type_ != NULL ? NULL : unit_.getCurrentModule())
             .ofType(SYMBOL_VARIABLE) /* Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type */
             .withType(placeholder)
             .atLocation(node->name_loc)
@@ -3339,6 +3339,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
     is_local = (current_fn_return_type_ != NULL);
+
+    /* FIX: If this is a local variable, ensure it doesn't have a placeholder from global scope incorrectly */
+    if (is_local && placeholder && placeholder->as.placeholder.module && 
+        plat_strcmp(placeholder->as.placeholder.module->name, unit_.getCurrentModule()) == 0) {
+        /* If a global placeholder with the same name exists, we should ignore it for local variables */
+        placeholder = NULL;
+    }
 
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
@@ -3951,6 +3958,33 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
             return payload;
         }
         /* Fall through for error reporting if not "has_value" or "value" */
+    }
+
+    /* Tagged Union built-in properties and variant access */
+    if (isTaggedUnion(base_type) && !is_type_access) {
+        // Instance access (not static type access)
+
+        // 1. .tag property
+        if (plat_strcmp(node->field_name, "tag") == 0) {
+            Type* tag_type = getTagType(base_type);
+            parent->resolved_type = tag_type;
+            return tag_type;
+        }
+
+        // 2. Variant name access
+        DynamicArray<StructField>* payload_fields = getTaggedUnionPayloadFields(base_type);
+        if (payload_fields) {
+            for (size_t k = 0; k < payload_fields->length(); ++k) {
+                if (plat_strcmp((*payload_fields)[k].name, node->field_name) == 0) {
+                    Type* variant_type = (*payload_fields)[k].type;
+                    if (variant_type && variant_type->kind == TYPE_PLACEHOLDER) {
+                        variant_type = resolvePlaceholder(variant_type);
+                    }
+                    parent->resolved_type = variant_type;
+                    return variant_type;
+                }
+            }
+        }
     }
 
     /* Array built-in properties */
