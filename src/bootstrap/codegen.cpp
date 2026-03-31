@@ -688,6 +688,12 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
         }
     }
 
+    if (rvalue->type == NODE_UNDEFINED_LITERAL) {
+        /* In C89, assigning undefined means doing nothing as a statement.
+           If we are in an expression context (like initializers), we already handled it in emitLiteral. */
+        return;
+    }
+
     if (is_discard) {
         switch (rvalue->type) {
             case NODE_STRUCT_INITIALIZER:
@@ -855,6 +861,10 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
         if (decl->initializer && decl->initializer->type == NODE_STRUCT_INITIALIZER &&
             (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
             writeString(" = {0}");
+        } else if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && isConstantInitializer(decl->initializer)) {
+            /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
+            writeString(" = ");
+            emitExpression(decl->initializer);
         }
 
         endStmt();
@@ -2348,6 +2358,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_BOOL_LITERAL:
         case NODE_NULL_LITERAL:
         case NODE_ERROR_LITERAL:
+        case NODE_UNDEFINED_LITERAL:
             emitLiteral(node);
             break;
 
@@ -2615,6 +2626,17 @@ void C89Emitter::emitLiteral(const ASTNode* node) {
             writeString("ERROR_");
             writeString(node->as.error_literal.tag_name);
             break;
+        case NODE_UNDEFINED_LITERAL:
+            /* undefined in Zig means "uninitialized". In expression context,
+               we emit 0 for safety and to maintain valid C syntax. */
+            if (node->resolved_type && (node->resolved_type->kind == TYPE_POINTER || node->resolved_type->kind == TYPE_FUNCTION_POINTER)) {
+                writeString("((void*)0)");
+            } else if (node->resolved_type && (node->resolved_type->kind == TYPE_STRUCT || node->resolved_type->kind == TYPE_UNION || node->resolved_type->kind == TYPE_TAGGED_UNION)) {
+                writeString("{0}");
+            } else {
+                writeString("0");
+            }
+            break;
         default: break;
     }
 }
@@ -2679,6 +2701,21 @@ void C89Emitter::emitCast(const ASTNode* node) {
     }
 }
 
+void C89Emitter::emitBaseWithParens(const ASTNode* base) {
+    if (base->type == NODE_UNARY_OP &&
+        (base->as.unary_op.op == TOKEN_STAR ||
+         base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+        writeString("(");
+        emitExpression(base);
+        writeString(")");
+    } else {
+        bool need_parens = requiresParentheses(base);
+        if (need_parens) writeString("(");
+        emitExpression(base);
+        if (need_parens) writeString(")");
+    }
+}
+
 void C89Emitter::emitAccess(const ASTNode* node) {
 #ifdef DEBUG_SYMBOL
     if (node->type == NODE_MEMBER_ACCESS) {
@@ -2732,30 +2769,9 @@ void C89Emitter::emitAccess(const ASTNode* node) {
             if (effective_base && isTaggedUnion(effective_base) && effective_base->kind != TYPE_TYPE) {
                 const char* field_name = member->field_name;
 
-                // Helper to emit the base expression with proper parentheses
-                struct BaseEmitter {
-                    C89Emitter* emitter;
-                    const ASTNode* base;
-                    BaseEmitter(C89Emitter* e, const ASTNode* b) : emitter(e), base(b) {}
-                    void emit() {
-                        if (base->type == NODE_UNARY_OP &&
-                            (base->as.unary_op.op == TOKEN_STAR ||
-                             base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
-                            emitter->writeString("(");
-                            emitter->emitExpression(base);
-                            emitter->writeString(")");
-                        } else {
-                            bool need_parens = emitter->requiresParentheses(base);
-                            if (need_parens) emitter->writeString("(");
-                            emitter->emitExpression(base);
-                            if (need_parens) emitter->writeString(")");
-                        }
-                    }
-                } base_emitter(this, member->base);
-
                 // 1. Tag access
                 if (plat_strcmp(field_name, "tag") == 0) {
-                    base_emitter.emit();
+                    emitBaseWithParens(member->base);
                     writeString(base_type->kind == TYPE_POINTER ? "->" : ".");
                     writeString("tag");
                     return;
@@ -2763,7 +2779,7 @@ void C89Emitter::emitAccess(const ASTNode* node) {
 
                 // 2. Variant access (e.g., v.Cons)
                 // (We don't need to check existence; the type checker already did)
-                base_emitter.emit();
+                emitBaseWithParens(member->base);
                 writeString(base_type->kind == TYPE_POINTER ? "->" : ".");
                 writeString("data.");
                 writeString(getSafeFieldName(field_name));
