@@ -2711,6 +2711,55 @@ void C89Emitter::emitAccess(const ASTNode* node) {
             break;
         }
         case NODE_MEMBER_ACCESS: {
+            const ASTMemberAccessNode* member = node->as.member_access;
+            Type* base_type = member->base->resolved_type;
+            Type* effective_base = base_type;
+            if (effective_base && effective_base->kind == TYPE_POINTER) {
+                effective_base = effective_base->as.pointer.base;
+            }
+
+            // Handle tagged union instance access
+            if (effective_base && isTaggedUnion(effective_base) && effective_base->kind != TYPE_TYPE) {
+                const char* field_name = member->field_name;
+
+                // Helper to emit the base expression with proper parentheses
+                struct BaseEmitter {
+                    C89Emitter* emitter;
+                    const ASTNode* base;
+                    BaseEmitter(C89Emitter* e, const ASTNode* b) : emitter(e), base(b) {}
+                    void emit() {
+                        if (base->type == NODE_UNARY_OP &&
+                            (base->as.unary_op.op == TOKEN_STAR ||
+                             base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
+                            emitter->writeString("(");
+                            emitter->emitExpression(base);
+                            emitter->writeString(")");
+                        } else {
+                            bool need_parens = emitter->requiresParentheses(base);
+                            if (need_parens) emitter->writeString("(");
+                            emitter->emitExpression(base);
+                            if (need_parens) emitter->writeString(")");
+                        }
+                    }
+                } base_emitter(this, member->base);
+
+                // 1. Tag access
+                if (plat_strcmp(field_name, "tag") == 0) {
+                    base_emitter.emit();
+                    writeString(base_type->kind == TYPE_POINTER ? "->" : ".");
+                    writeString("tag");
+                    return;
+                }
+
+                // 2. Variant access (e.g., v.Cons)
+                // (We don't need to check existence; the type checker already did)
+                base_emitter.emit();
+                writeString(base_type->kind == TYPE_POINTER ? "->" : ".");
+                writeString("data.");
+                writeString(getSafeFieldName(field_name));
+                return;
+            }
+
             const ASTNode* base = node->as.member_access->base;
             if (base->resolved_type) {
                 Type* actual_type = base->resolved_type;
