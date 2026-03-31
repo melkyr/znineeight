@@ -6,6 +6,10 @@
 #include "utils.hpp"
 #include "platform.hpp"
 
+#ifdef DEBUG_VISIBILITY
+    #define DEBUG_SYMBOL 1
+#endif
+
 struct TypeChecker::FunctionContextGuard {
     TypeChecker& tc;
     const char* old_fn_name;
@@ -1856,6 +1860,12 @@ Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
+#ifdef DEBUG_SYMBOL
+    const char* debug_name = node->as.identifier.name;
+    unsigned int depth = unit_.getSymbolTable().getCurrentScopeLevel();
+    plat_printf_debug("[TYPE] IDENTIFIER: '%s' line=%d depth=%u\n",
+                     debug_name, node->loc.line, depth);
+#endif
     const char* name = node->as.identifier.name;
     Type* prim;
     Symbol* sym;
@@ -1914,6 +1924,10 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 }
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] BLOCK_ENTER: depth_before=%u\n",
+                     unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
     Type* last_type;
     bool any_error = false;
     size_t i;
@@ -3030,6 +3044,11 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
  * - Implicit array-to-slice coercion.
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
+#ifdef DEBUG_SYMBOL
+    unsigned int depth = unit_.getSymbolTable().getCurrentScopeLevel();
+    plat_printf_debug("[TYPE] VARDECL: '%s' line=%d depth=%u\n",
+                     node->name, node->name_loc.line, depth);
+#endif
     Symbol* existing_sym;
     Type* placeholder;
     Type* declared_type;
@@ -3528,7 +3547,15 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         /* RAII: Function context automatically managed. */
         FunctionContextGuard guard(*this, node->name, fn_symbol->symbol_type->as.function.return_type);
 
+#ifdef DEBUG_SYMBOL
+        plat_printf_debug("[TYPE] FN_BODY_ENTER: '%s' depth_before=%u\n",
+                         node->name, unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
         unit_.getSymbolTable().enterScope();
+#ifdef DEBUG_SYMBOL
+        plat_printf_debug("[TYPE] FN_BODY_AFTER_ENTER: depth=%u\n",
+                         unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
 
         /* Re-register parameters in the body scope. */
         param_types = fn_symbol->symbol_type->as.function.params;
@@ -3555,7 +3582,18 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
             }
         }
 
-        visit(node->body);
+        /* Process body statements WITHOUT entering another scope (Fix double-nesting) */
+        if (node->body && node->body->type == NODE_BLOCK_STMT) {
+            ASTBlockStmtNode& block = node->body->as.block_stmt;
+            if (block.statements) {
+                for (size_t k = 0; k < block.statements->length(); ++k) {
+                    visit((*block.statements)[k]);
+                }
+            }
+            node->body->resolved_type = get_g_type_void();
+        } else {
+            visit(node->body);
+        }
 
         if (current_fn_return_type_->kind != TYPE_VOID) {
             /* Allow implicit return for Error!void (Task: Fix #2) */
@@ -3567,6 +3605,10 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
             }
         }
 
+#ifdef DEBUG_SYMBOL
+        plat_printf_debug("[TYPE] FN_BODY_EXIT: '%s' depth_before_exit=%u\n",
+                         node->name, unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
         unit_.getSymbolTable().exitScope();
     }
 
