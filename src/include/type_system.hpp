@@ -180,6 +180,21 @@ static inline bool isTaggedUnion(const Type* type) {
 }
 
 /**
+ * @brief Unifies access to payload fields for both TYPE_TAGGED_UNION and TYPE_UNION with the is_tagged flag.
+ * @param type The type to get payload fields from.
+ * @return A pointer to the dynamic array of struct fields, or NULL if not a tagged union.
+ */
+static inline DynamicArray<StructField>* getTaggedUnionPayloadFields(Type* type) {
+    if (!type) return NULL;
+    if (type->kind == TYPE_TAGGED_UNION) {
+        return type->as.tagged_union.payload_fields;
+    } else if (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) {
+        return type->as.struct_details.fields;
+    }
+    return NULL;
+}
+
+/**
  * @brief Resolves a string identifier into a pointer to a primitive Type.
  * @param name The string name of the type (e.g., "i32", "bool").
  * @return A pointer to the static Type object, or NULL if the name is not a
