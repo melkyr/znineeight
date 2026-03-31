@@ -2680,6 +2680,16 @@ void C89Emitter::emitCast(const ASTNode* node) {
 }
 
 void C89Emitter::emitAccess(const ASTNode* node) {
+#ifdef DEBUG_SYMBOL
+    if (node->type == NODE_MEMBER_ACCESS) {
+        const ASTMemberAccessNode* member = node->as.member_access;
+        Type* base_type = member->base->resolved_type;
+        plat_printf_debug("[EMITTER] MEMBER_ACCESS: field='%s' base_type=%p base_type_kind=%d\n",
+                         member->field_name,
+                         (void*)base_type,
+                         base_type ? base_type->kind : -1);
+    }
+#endif
     switch (node->type) {
         case NODE_ARRAY_ACCESS: {
             const ASTNode* array_node = node->as.array_access->array;
