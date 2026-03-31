@@ -3064,7 +3064,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     /* Capture struct/union name if it's a const declaration. */
     name_to_set = current_struct_name_;
     if (node->is_const && node->initializer &&
-        (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL)) {
+        (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL || node->initializer->type == NODE_ERROR_SET_DEFINITION)) {
         name_to_set = node->name;
     } else if (node->is_const && node->initializer && node->initializer->type == NODE_TYPE_NAME && !node->type) {
         /* Alias case: const Aliased = Existing; */
@@ -3258,8 +3258,11 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             }
             if (!initializer_type) return get_g_type_undefined();
             if (is_type_undefined(initializer_type)) {
-                /* If it's the literal 'undefined', it's not an error. */
-                if (node->initializer->type != NODE_UNDEFINED_LITERAL) {
+                /* If it's the literal 'undefined', it's not an error.
+                   Also allow anonymous initializers and naked tags to proceed to coercion. */
+                if (node->initializer->type != NODE_UNDEFINED_LITERAL &&
+                    node->initializer->type != NODE_STRUCT_INITIALIZER &&
+                    !(node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL)) {
                     return get_g_type_undefined();
                 }
             }
@@ -3277,7 +3280,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
 
         if (declared_type) {
-            if (initializer_type && !is_type_undefined(initializer_type)) {
+            if (initializer_type) {
                     /* Consistent Coercion Handling */
                     coerceNode(&node->initializer, declared_type);
                     initializer_type = node->initializer->resolved_type;
@@ -3860,6 +3863,9 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* If the base is a type constant (TYPE_TYPE), mark it for static access. */
     if (base_type->kind == TYPE_TYPE) {
         is_type_access = true;
+        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
+            base_type = node->base->resolved_type;
+        }
     }
 
     /* Auto-dereference for single level pointer. */
@@ -4077,13 +4083,13 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         if (!is_static_access) {
             if (node->base->type == NODE_IDENTIFIER) {
                 Symbol* sym = node->base->as.identifier.symbol;
-                if (sym && (sym->symbol_type == base_type || sym->symbol_type == get_g_type_type())) {
+                /* ONLY treat as static if it's a type name (symbol_type is TYPE_TYPE) */
+                if (sym && sym->symbol_type == get_g_type_type()) {
                     is_static_access = true;
                 }
             } else if (node->base->type == NODE_MEMBER_ACCESS) {
                 /* e.g., json.JsonValue */
-                if (node->base->resolved_type == base_type || (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE)) {
-                     /* Heuristic: if the base was a member access that resolved to a type, it's static. */
+                if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE) {
                      is_static_access = true;
                 }
             }
@@ -4114,6 +4120,12 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 safe_append(current, remaining, "'");
                 return reportAndReturnUndefined(parent->loc, ERR_UNDEFINED_ENUM_MEMBER, msg_buffer);
             }
+        } else {
+            /* Instance access: handle '.tag' property */
+            if (plat_strcmp(node->field_name, "tag") == 0) {
+                return getTagType(base_type);
+            }
+            /* Other fields (variants) will be handled by findStructField below */
         }
     }
 
@@ -4150,6 +4162,15 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     field_type = findStructField(base_type, node->field_name);
     if (!field_type) {
+        if (isTaggedUnion(base_type)) {
+            char msg_buffer[256];
+            char* current = msg_buffer;
+            size_t remaining = sizeof(msg_buffer);
+            safe_append(current, remaining, "union has no member named '");
+            safe_append(current, remaining, node->field_name);
+            safe_append(current, remaining, "'");
+            return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, msg_buffer);
+        }
         char msg_buffer[256];
         char* current = msg_buffer;
         size_t remaining = sizeof(msg_buffer);
@@ -4159,7 +4180,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         return reportAndReturnUndefined(node->base->loc, ERR_TYPE_MISMATCH, msg_buffer);
     }
 
-    return field_type;
+    return resolveAllPlaceholders(field_type);
 }
 
 bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc) {
@@ -4942,6 +4963,11 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
                     }
                     if (plat_strcmp(node->as.member_access->field_name, "has_value") == 0) {
                         return true; /* Optional.has_value is read-only */
+                    }
+                }
+                if (isTaggedUnion(base_type)) {
+                    if (plat_strcmp(node->as.member_access->field_name, "tag") == 0) {
+                        return true; /* .tag is read-only */
                     }
                 }
                 if (base_type->kind == TYPE_POINTER) {
@@ -5807,7 +5833,9 @@ bool TypeChecker::all_paths_return(ASTNode* node) {
         case NODE_EXPRESSION_STMT:
             return all_paths_return(node->as.expression_stmt.expression);
         case NODE_SWITCH_EXPR: {
-            ASTSwitchExprNode* sw = node->as.switch_expr;
+            ASTSwitchExprNode* sw = node
+
+->as.switch_expr;
             if (!sw->prongs || sw->prongs->length() == 0) return false;
             bool has_else = false;
             for (size_t i = 0; i < sw->prongs->length(); ++i) {
