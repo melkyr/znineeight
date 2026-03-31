@@ -255,6 +255,12 @@ Symbol* SymbolTable::lookup(const char* name) {
 #endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
+        /* Local variables have module_name=NULL. 
+           Module-level symbols have module_name=current_module_.
+           Wait: if we are in local scope (i > 0), we want to find local variables (mod=NULL)
+           AND also we might want to find symbols from the current module if they were shadowed? 
+           No, module-level symbols are only in scope 0.
+        */
         const char* mod = (i == 0) ? current_module_ : NULL;
         Symbol* symbol = scopes[i]->find(name, mod);
         if (symbol) {
