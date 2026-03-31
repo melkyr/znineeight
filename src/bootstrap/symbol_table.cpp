@@ -3,6 +3,10 @@
 #include <new>
 #include "memory.hpp"
 
+#ifdef DEBUG_VISIBILITY
+    #define DEBUG_SYMBOL 1
+#endif
+
 // 32-bit FNV-1a hash function
 static u32 hash_string(const char* str) {
     u32 hash = 2166136261u; // FNV_offset_basis
@@ -212,6 +216,13 @@ void SymbolTable::exitScope() {
 }
 
 bool SymbolTable::insert(Symbol& symbol) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] INSERT: '%s' module=%s scope_level=%u current_depth=%zu\n",
+                     symbol.name, 
+                     symbol.module_name ? symbol.module_name : "NULL",
+                     getCurrentScopeLevel(), 
+                     scopes.length());
+#endif
     // Check for redeclaration in the current scope.
     // If it's the global scope, we must check for collisions within the same module
     if (scopes.length() == 1) {
@@ -227,10 +238,21 @@ bool SymbolTable::insert(Symbol& symbol) {
     symbol.scope_level = getCurrentScopeLevel();
     // Add the symbol to the current scope.
     scopes.back()->insert(symbol);
+#ifdef DEBUG_SYMBOL
+    Symbol* check = lookupInCurrentScope(symbol.name);
+    plat_printf_debug("[SYMBOL] INSERT_POST: lookupInCurrentScope('%s') -> %p\n",
+                     symbol.name, (void*)check);
+#endif
     return true;
 }
 
 Symbol* SymbolTable::lookup(const char* name) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] LOOKUP: '%s' current_module=%s scopes=%zu\n",
+                     name, 
+                     current_module_ ? current_module_ : "NULL", 
+                     scopes.length());
+#endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
         const char* mod = (i == 0) ? current_module_ : NULL;
@@ -257,7 +279,11 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
         return NULL;
     }
     const char* mod = (scopes.length() == 1) ? current_module_ : NULL;
-    return scopes.back()->find(name, mod);
+    Symbol* sym = scopes.back()->find(name, mod);
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] LOOKUP_CURRENT: '%s' -> %p\n", name, (void*)sym);
+#endif
+    return sym;
 }
 
 Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbol_name) {
