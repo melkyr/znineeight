@@ -481,10 +481,10 @@ Type* TypeChecker::visit(ASTNode* node) {
         if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
             node->resolved_type = resolved_type;
         }
-    } else {
-        node->resolved_type = previous_resolved;
     }
 
+    /* CRITICAL: Always reflect what visit() actually returned, even if NULL or UNDEFINED */
+    node->resolved_type = resolved_type;
 
     return resolved_type;
 }
@@ -1749,6 +1749,11 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 
     /* Bounds checking for arrays. */
     if (base_type->kind == TYPE_ARRAY) {
+#ifdef DEBUG_CONST_EVAL
+        plat_printf_debug("[CONST_EVAL] start_expr type=%d, end_expr type=%d\n",
+            node->start ? node->start->type : -1,
+            node->end ? node->end->type : -1);
+#endif
         start_val = 0;
         start_const = node->start ? evaluateConstantExpression(node->start, &start_val) : true;
         end_val = (i64)base_type->as.array.size;
@@ -1895,7 +1900,7 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     if (!sym) {
         // Fallback for local variables that might have been inserted during Pass 2
         // but are being looked up in a nested scope.
-        sym = unit_.getSymbolTable().findInAnyScope(name);
+        sym = unit_.getSymbolTable().findInAnyScope(name, unit_.getCurrentModule());
     }
 
     if (!sym) {
@@ -3137,9 +3142,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 }
             }
 
+        bool is_local_placeholder = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
         Symbol sym = SymbolBuilder(unit_.getArena())
             .withName(node->name)
-            .withModule(current_fn_return_type_ != NULL ? NULL : unit_.getCurrentModule())
+            .withModule(is_local_placeholder ? NULL : unit_.getCurrentModule())
             .ofType(SYMBOL_VARIABLE) /* Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type */
             .withType(placeholder)
             .atLocation(node->name_loc)
@@ -3947,7 +3953,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     bool is_type_access = false;
 
     if (!node->base) return get_g_type_undefined();
-    base_type = unwrapType(node->base);
+    base_type = visit(node->base);
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
 
     /* If the base is a type constant (TYPE_TYPE), mark it for static access. */
@@ -3997,8 +4003,26 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     }
 
     /* Tagged Union built-in properties and variant access */
-    if (isTaggedUnion(base_type) && !is_type_access) {
-        // Instance access (not static type access)
+    if (isTaggedUnion(base_type)) {
+        bool is_static = is_type_access;
+        if (!is_static) {
+            if (node->base->type == NODE_IDENTIFIER) {
+                Symbol* sym = node->base->as.identifier.symbol;
+                if (sym && sym->symbol_type == get_g_type_type()) {
+                    is_static = true;
+                }
+            } else if (node->base->type == NODE_MEMBER_ACCESS) {
+                if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE) {
+                     is_static = true;
+                }
+            }
+        }
+
+        if (!is_static) {
+#ifdef DEBUG_SYMBOL
+            plat_printf_debug("[TYPE] TaggedUnion member access '%s' on %s\n", 
+                             node->field_name, base_type->as.tagged_union.name ? base_type->as.tagged_union.name : "(anon)");
+#endif
 
         // 1. .tag property
         if (plat_strcmp(node->field_name, "tag") == 0) {
@@ -4213,6 +4237,10 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
         }
 
         if (is_static_access) {
+#ifdef DEBUG_SYMBOL
+            plat_printf_debug("[TYPE] TaggedUnion static access '%s' on %s\n", 
+                             node->field_name, base_type->as.tagged_union.name ? base_type->as.tagged_union.name : "(anon)");
+#endif
             Type* tag_type = getTagType(base_type);
             if (tag_type && tag_type->kind == TYPE_ENUM) {
                 i64 tag_val = findEnumMemberValue(tag_type, node->field_name);
@@ -6488,6 +6516,12 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
 
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
+#ifdef DEBUG_CONST_EVAL
+            plat_printf_debug("[CONST_EVAL] literal value=%llu file=%s:%d\n",
+                (unsigned long long)node->as.integer_literal.value,
+                unit_.getSourceManager().getFile(node->loc.file_id)->filename,
+                node->loc.line);
+#endif
             *out_value = (i64)node->as.integer_literal.value;
             return true;
 
