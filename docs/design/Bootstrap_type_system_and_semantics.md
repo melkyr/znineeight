@@ -14,7 +14,7 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
 -   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
--   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly without entering an additional block scope.
+-   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
@@ -386,7 +386,8 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 ### Member Access and Struct Initialization
 
-1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
+1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct, union, module, or a single-level pointer to one. It then verifies that the field exists within the definition and resolves to the field's type.
+    -   **Static Variant Access**: Support for accessing variant names on tagged union types (e.g., `Value.Cons`) is implemented, allowing type unwrapping and constant folding.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
     -   The type being initialized is a struct, union, or tagged union.
@@ -442,8 +443,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 8. **Relaxed `isTypeComplete` Rules**: The `isTypeComplete` check has been refined to treat container-like types as inherently complete for declaration purposes. Pointers (`*T`, `[*]T`), slices (`[]T`), optionals (`?T`), and functions (`fn(...) T`) are always considered complete, even if their base/payload/return types are still placeholders. This allows these types to be used as fields in recursive structures without triggering "incomplete type" errors.
 9. **Lightweight Deferral Mechanism**: When `visitStructDecl` or `visitUnionDecl` encounters a field whose type is truly incomplete (e.g., a value-dependency on another placeholder that is not yet resolving), the compiler defers the resolution of that declaration instead of reporting an error.
 10. **Two-Pass Type Checking**: To ensure all types are finalized before they are used in expressions or function bodies, the `TypeChecker::check` method uses a two-pass strategy:
-    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass includes a retry loop that repeatedly attempts to resolve deferred declarations until no further progress can be made or all types are complete.
-    - **Pass 2**: Resolve all other nodes, including function bodies and statements. This ensures that when a function like `fn example(u: U)` is checked, types like `U` and its dependencies are already fully resolved.
+    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass builds the initial type map and resolves top-level constants.
+    - **Pass 2**: Re-visit **all** nodes, including `VarDecl` and function bodies. Re-visiting `VarDecl` nodes in this pass is critical because it allows the `TypeChecker` to re-insert local symbols into the currently active function scope. Since the parser's scope is discarded after its pass, this re-insertion ensures that local variables are "visible" to subsequent statements in the same block during semantic analysis.
 11. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.

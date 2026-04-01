@@ -6,9 +6,6 @@
 #include "utils.hpp"
 #include "platform.hpp"
 
-#ifdef DEBUG_VISIBILITY
-    #define DEBUG_SYMBOL 1
-#endif
 
 struct TypeChecker::FunctionContextGuard {
     TypeChecker& tc;
@@ -314,12 +311,11 @@ void TypeChecker::check(ASTNode* root) {
         }
     }
 
-    /* Pass 2: Resolve everything else (Functions, etc.) now that types should be complete. */
+    /* Pass 2: Resolve everything else (including local VarDecls) now that function context is active. */
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* stmt = (*root->as.block_stmt.statements)[i];
-            if (stmt && !(stmt->type == NODE_VAR_DECL || stmt->type == NODE_STRUCT_DECL || 
-                          stmt->type == NODE_UNION_DECL || stmt->type == NODE_ENUM_DECL)) {
+            if (stmt) {
                 visit(stmt);
             }
         }
@@ -1860,12 +1856,6 @@ Type* TypeChecker::visitErrorLiteral(ASTErrorLiteralNode* node) {
 }
 
 Type* TypeChecker::visitIdentifier(ASTNode* node) {
-#ifdef DEBUG_SYMBOL
-    const char* debug_name = node->as.identifier.name;
-    unsigned int depth = unit_.getSymbolTable().getCurrentScopeLevel();
-    plat_printf_debug("[TYPE] IDENTIFIER: '%s' line=%d depth=%u\n",
-                     debug_name, node->loc.line, depth);
-#endif
     const char* name = node->as.identifier.name;
     Type* prim;
     Symbol* sym;
@@ -1890,6 +1880,12 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     }
 
     sym = unit_.getSymbolTable().lookup(name);
+    if (!sym) {
+        // Fallback for local variables that might have been inserted during Pass 2
+        // but are being looked up in a nested scope.
+        sym = unit_.getSymbolTable().findInAnyScope(name);
+    }
+
     if (!sym) {
         return reportAndReturnUndefined(node->loc, ERR_UNDEFINED_VARIABLE, NULL);
     }
@@ -1924,10 +1920,6 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 }
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
-#ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] BLOCK_ENTER: depth_before=%u\n",
-                     unit_.getSymbolTable().getCurrentScopeLevel());
-#endif
     Type* last_type;
     bool any_error = false;
     size_t i;
@@ -3044,11 +3036,6 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
  * - Implicit array-to-slice coercion.
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
-#ifdef DEBUG_SYMBOL
-    unsigned int depth = unit_.getSymbolTable().getCurrentScopeLevel();
-    plat_printf_debug("[TYPE] VARDECL: '%s' line=%d depth=%u\n",
-                     node->name, node->name_loc.line, depth);
-#endif
     Symbol* existing_sym;
     Type* placeholder;
     Type* declared_type;
@@ -3338,7 +3325,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
-    is_local = (current_fn_return_type_ != NULL);
+    is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
 
     /* FIX: If this is a local variable, ensure it doesn't have a placeholder from global scope incorrectly */
     if (is_local && placeholder && placeholder->as.placeholder.module && 
@@ -3349,6 +3336,21 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     /* Update the symbol in the current scope with flags. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+    if (!existing_sym && is_local) {
+        // Fallback: the parser might have inserted it but it might be hidden by module filtering
+        // since we are now in a function body.
+        existing_sym = unit_.getSymbolTable().lookup(node->name);
+        if (existing_sym) {
+            unsigned int current_level = unit_.getSymbolTable().getCurrentScopeLevel();
+            if (existing_sym->scope_level != current_level) {
+                // If it's a global symbol being shadowed, it's not our existing local symbol.
+                if (existing_sym->scope_level <= 1) {
+                    existing_sym = NULL;
+                }
+            }
+        }
+    }
+
     if (existing_sym) {
         if (declared_type) {
              existing_sym->symbol_type = declared_type;
@@ -3558,15 +3560,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
         /* RAII: Function context automatically managed. */
         FunctionContextGuard guard(*this, node->name, fn_symbol->symbol_type->as.function.return_type);
 
-#ifdef DEBUG_SYMBOL
-        plat_printf_debug("[TYPE] FN_BODY_ENTER: '%s' depth_before=%u\n",
-                         node->name, unit_.getSymbolTable().getCurrentScopeLevel());
-#endif
         unit_.getSymbolTable().enterScope();
-#ifdef DEBUG_SYMBOL
-        plat_printf_debug("[TYPE] FN_BODY_AFTER_ENTER: depth=%u\n",
-                         unit_.getSymbolTable().getCurrentScopeLevel());
-#endif
 
         /* Re-register parameters in the body scope. */
         param_types = fn_symbol->symbol_type->as.function.params;
@@ -3617,10 +3611,6 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
             }
         }
 
-#ifdef DEBUG_SYMBOL
-        plat_printf_debug("[TYPE] FN_BODY_EXIT: '%s' depth_before_exit=%u\n",
-                         node->name, unit_.getSymbolTable().getCurrentScopeLevel());
-#endif
         unit_.getSymbolTable().exitScope();
     }
 
