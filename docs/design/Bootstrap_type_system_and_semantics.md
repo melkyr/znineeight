@@ -16,6 +16,7 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
 -   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
+-   **TYPE_UNDEFINED Persistence**: Ensuring that nodes resolving to the "undefined" singleton type correctly store this state in `node->resolved_type`, preventing downstream type-mismatch errors from `NULL` values.
 
 ## 2. Type Representation
 
@@ -1120,6 +1121,7 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 - **Qualified Lookups**: The `Parser` produces `NODE_MEMBER_ACCESS` for qualified identifiers. The `TypeChecker` resolves these by first resolving the module symbol and then looking up the member within that module's symbol table.
 - **On-demand Resolution**: Symbols from imported modules are resolved on-demand when accessed. The `TypeChecker` switches its internal context (defining module) to the target module to ensure that identifiers within that module are correctly resolved.
 - **Enum Member Access**: Qualified access to enum members (e.g., `mod.Enum.Member`) is supported and follows the same on-demand resolution rules.
+-   **Symbol Synchronization**: When a module-level or local variable is re-visited (e.g., during Pass 2 of type checking), its `module_name` is explicitly synchronized based on its locality. This ensures that local variables always use the `NULL` module filter required for scoped lookups.
 
 ### Metadata Preparation Pass
 Before code generation, the `MetadataPreparationPass` performs a transitive scan of all modules to identify all types and symbols that need to be emitted in headers.

@@ -485,6 +485,8 @@ Type* TypeChecker::visit(ASTNode* node) {
         node->resolved_type = previous_resolved;
     }
 
+    /* CRITICAL: Always update to reflect what visit() actually returned */
+    node->resolved_type = resolved_type;
 
     return resolved_type;
 }
@@ -1896,6 +1898,14 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
         // Fallback for local variables that might have been inserted during Pass 2
         // but are being looked up in a nested scope.
         sym = unit_.getSymbolTable().findInAnyScope(name);
+
+        // If still not found and we have a current module, try module-scoped lookup
+        if (!sym && unit_.getCurrentModule()) {
+#ifdef DEBUG_SYMBOL
+            plat_printf_debug("[IDENT] '%s' not found in any scope, trying module-scoped lookup for %s\n", name, unit_.getCurrentModule());
+#endif
+            sym = unit_.getSymbolTable().lookupWithModule(unit_.getCurrentModule(), name);
+        }
     }
 
     if (!sym) {
@@ -3428,6 +3438,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .build();
             unit_.getSymbolTable().insert(var_symbol);
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+#ifdef DEBUG_SYMBOL
+            if (node->symbol) {
+                plat_printf_debug("[SYMBOL] INSERTED '%s' module=%s scope_level=%u\n",
+                    node->symbol->name,
+                    node->symbol->module_name ? node->symbol->module_name : "NULL",
+                    node->symbol->scope_level);
+            }
+#endif
         }
     }
 
@@ -4702,6 +4720,9 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 
     /* 1. Handle slices */
     if (!node->size) {
+#ifdef DEBUG_ARRAY_TYPE
+        plat_printf_debug("[ARRAY_TYPE] Slice: size_expr is NULL\n");
+#endif
         if (!node->element_type) return get_g_type_undefined();
         IndirectionGuard guard(*this);
         element_type = unwrapType(node->element_type);
@@ -4718,6 +4739,11 @@ Type* TypeChecker::visitArrayType(ASTArrayTypeNode* node) {
 
     /* 2. Ensure size is a constant integer literal */
     visit(node->size);
+#ifdef DEBUG_ARRAY_TYPE
+    plat_printf_debug("[ARRAY_TYPE] size_expr type=%d resolved=%p\n",
+        node->size ? node->size->type : -1,
+        node->size ? (void*)node->size->resolved_type : NULL);
+#endif
     i64 const_size;
     if (evaluateConstantExpression(node->size, &const_size)) {
         if (const_size < 0) {
@@ -6488,6 +6514,17 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
 
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
+#ifdef DEBUG_CONST_EVAL
+            {
+                char val_buf[21];
+                plat_u64_to_string(node->as.integer_literal.value, val_buf, sizeof(val_buf));
+                plat_printf_debug("[CONST_EVAL] literal value=%s is_unsigned=%d is_long=%d file_id=%u\n",
+                    val_buf,
+                    node->as.integer_literal.is_unsigned,
+                    node->as.integer_literal.is_long,
+                    node->loc.file_id);
+            }
+#endif
             *out_value = (i64)node->as.integer_literal.value;
             return true;
 

@@ -1527,6 +1527,9 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
         .withModule(symbol_table_->getCurrentScopeLevel() > 1 ? NULL : module_name_)
+#ifdef DEBUG_SYMBOL
+        .inScope(symbol_table_->getCurrentScopeLevel())
+#endif
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)

@@ -57,6 +57,7 @@ To fit within the strict 16MB peak memory constraint, the compiler employs a mul
 - **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
 
 ### 3.1 Memory Management
+**The compiler relies on the "Arena Allocation" strategy** to minimize `malloc`/`free` overhead on slow 1990s allocators and fit within the 16MB peak usage constraint. Most data is bump-allocated and released collectively at appropriate pipeline stages.
 ## Current Status: Milestone 11 finished.
 The project has successfully completed Milestone 11, including full cross-module visibility and `defer`/`errdefer` support.
 
