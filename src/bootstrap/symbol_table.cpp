@@ -321,18 +321,29 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
     return result;
 }
 
-Symbol* SymbolTable::findInAnyScope(const char* name) {
+Symbol* SymbolTable::findInAnyScope(const char* name, const char* preferred_module) {
+    Symbol* local_fallback = NULL;
+
     // Search all scopes ever created, from most recent to oldest.
     for (int i = (int)all_scopes_.length() - 1; i >= 0; --i) {
-        // This is tricky because we don't know which module a scope belongs to here
-        // But for any-scope lookup (used for things like forward references),
-        // we probably want to ignore module filtering or use current module.
-        Symbol* symbol = all_scopes_[i]->find(name, current_module_);
-        if (symbol) {
-            return symbol;
+        // 1. Try preferred module first
+        if (preferred_module) {
+            Symbol* sym = all_scopes_[i]->find(name, preferred_module);
+            if (sym) return sym;
+        }
+
+        // 2. Try NULL module (local variables)
+        if (!local_fallback) {
+            local_fallback = all_scopes_[i]->find(name, NULL);
+        }
+
+        // 3. Try current module
+        if (current_module_ && current_module_ != preferred_module) {
+            Symbol* sym = all_scopes_[i]->find(name, current_module_);
+            if (sym) return sym;
         }
     }
-    return NULL;
+    return local_fallback;
 }
 
 unsigned int SymbolTable::getCurrentScopeLevel() const {
