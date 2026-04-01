@@ -850,7 +850,16 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 
     if (c_name) {
-        emitted_decls_.append(c_name);
+        bool already_emitted = false;
+        for (size_t i = 0; i < emitted_decls_.length(); ++i) {
+            if (plat_strcmp(emitted_decls_[i], c_name) == 0) {
+                already_emitted = true;
+                break;
+            }
+        }
+        if (!already_emitted) {
+            emitted_decls_.append(c_name);
+        }
     }
 
     if (!emit_assignment) {
@@ -865,6 +874,8 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
             writeString(" = ");
             emitExpression(decl->initializer);
+        } else if (decl->initializer && decl->initializer->type == NODE_UNDEFINED_LITERAL) {
+            /* Zig 'undefined' means no initialization in C */
         }
 
         endStmt();
@@ -2631,7 +2642,7 @@ void C89Emitter::emitLiteral(const ASTNode* node) {
                we emit 0 for safety and to maintain valid C syntax. */
             if (node->resolved_type && (node->resolved_type->kind == TYPE_POINTER || node->resolved_type->kind == TYPE_FUNCTION_POINTER)) {
                 writeString("((void*)0)");
-            } else if (node->resolved_type && (node->resolved_type->kind == TYPE_STRUCT || node->resolved_type->kind == TYPE_UNION || node->resolved_type->kind == TYPE_TAGGED_UNION)) {
+            } else if (node->resolved_type && (node->resolved_type->kind == TYPE_STRUCT || node->resolved_type->kind == TYPE_UNION || node->resolved_type->kind == TYPE_TAGGED_UNION || node->resolved_type->kind == TYPE_ARRAY)) {
                 writeString("{0}");
             } else {
                 writeString("0");
