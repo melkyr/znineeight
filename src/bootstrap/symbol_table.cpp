@@ -3,9 +3,6 @@
 #include <new>
 #include "memory.hpp"
 
-#ifdef DEBUG_VISIBILITY
-    #define DEBUG_SYMBOL 1
-#endif
 
 // 32-bit FNV-1a hash function
 static u32 hash_string(const char* str) {
@@ -142,17 +139,21 @@ void Scope::insert(Symbol& symbol) {
 }
 
 Symbol* Scope::find(const char* name, const char* module_name) {
-#ifdef DEBUG_VISIBILITY
-    // Too noisy for general scope find, maybe skip or keep very brief
-#endif
     u32 hash = hash_string(name);
     size_t index = hash % bucket_count;
 
     for (SymbolEntry* entry = buckets[index]; entry != NULL; entry = entry->next) {
         if (plat_strcmp(entry->symbol.name, name) == 0) {
-            if (module_name == NULL || entry->symbol.module_name == NULL ||
-                plat_strcmp(entry->symbol.module_name, module_name) == 0 ||
-                plat_strcmp(entry->symbol.module_name, "builtin") == 0) {
+            bool module_matches = false;
+            if (module_name == NULL || entry->symbol.module_name == NULL) {
+                module_matches = true;
+            } else if (plat_strcmp(entry->symbol.module_name, module_name) == 0) {
+                module_matches = true;
+            } else if (plat_strcmp(entry->symbol.module_name, "builtin") == 0) {
+                module_matches = true;
+            }
+
+            if (module_matches) {
                 return &entry->symbol;
             }
         }
@@ -216,13 +217,6 @@ void SymbolTable::exitScope() {
 }
 
 bool SymbolTable::insert(Symbol& symbol) {
-#ifdef DEBUG_SYMBOL
-    plat_printf_debug("[SYMBOL] INSERT: '%s' module=%s scope_level=%u current_depth=%zu\n",
-                     symbol.name, 
-                     symbol.module_name ? symbol.module_name : "NULL",
-                     getCurrentScopeLevel(), 
-                     scopes.length());
-#endif
     // Check for redeclaration in the current scope.
     // If it's the global scope, we must check for collisions within the same module
     if (scopes.length() == 1) {
@@ -238,31 +232,19 @@ bool SymbolTable::insert(Symbol& symbol) {
     symbol.scope_level = getCurrentScopeLevel();
     // Add the symbol to the current scope.
     scopes.back()->insert(symbol);
-#ifdef DEBUG_SYMBOL
-    Symbol* check = lookupInCurrentScope(symbol.name);
-    plat_printf_debug("[SYMBOL] INSERT_POST: lookupInCurrentScope('%s') -> %p\n",
-                     symbol.name, (void*)check);
-#endif
     return true;
 }
 
 Symbol* SymbolTable::lookup(const char* name) {
-#ifdef DEBUG_SYMBOL
-    plat_printf_debug("[SYMBOL] LOOKUP: '%s' current_module=%s scopes=%zu\n",
-                     name, 
-                     current_module_ ? current_module_ : "NULL", 
-                     scopes.length());
-#endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
-        /* Local variables have module_name=NULL. 
-           Module-level symbols have module_name=current_module_.
-           Wait: if we are in local scope (i > 0), we want to find local variables (mod=NULL)
-           AND also we might want to find symbols from the current module if they were shadowed? 
-           No, module-level symbols are only in scope 0.
-        */
-        const char* mod = (i == 0) ? current_module_ : NULL;
-        Symbol* symbol = scopes[i]->find(name, mod);
+        // Try local lookup (NULL module) first in all scopes
+        Symbol* symbol = scopes[i]->find(name, NULL);
+        if (!symbol) {
+            // Then try current module lookup
+            symbol = scopes[i]->find(name, current_module_);
+        }
+
         if (symbol) {
 #ifdef DEBUG_VISIBILITY
             plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' level %d -> FOUND (module_name: %s, pub: %d)\n",
@@ -284,11 +266,11 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     if (scopes.length() == 0) {
         return NULL;
     }
-    const char* mod = (scopes.length() == 1) ? current_module_ : NULL;
-    Symbol* sym = scopes.back()->find(name, mod);
-#ifdef DEBUG_SYMBOL
-    plat_printf_debug("[SYMBOL] LOOKUP_CURRENT: '%s' -> %p\n", name, (void*)sym);
-#endif
+    // For local scopes (depth > 1), we ONLY want local variables (module_name == NULL).
+    // For the global scope (depth == 1), we want module-level symbols.
+    const char* mod_filter = (scopes.length() == 1) ? current_module_ : NULL;
+    Symbol* sym = scopes.back()->find(name, mod_filter);
+
     return sym;
 }
 
