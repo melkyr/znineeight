@@ -313,6 +313,9 @@ void TypeChecker::check(ASTNode* root) {
 
     /* Pass 2: Resolve everything else (including local VarDecls) now that function context is active. */
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
+#ifdef DEBUG_SYMBOL
+        plat_printf_debug("[TYPE] starting pass 2 for module %s\n", unit_.getCurrentModule());
+#endif
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* stmt = (*root->as.block_stmt.statements)[i];
             if (stmt) {
@@ -1662,12 +1665,21 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     ASTNode* len_field;
 
     if (!node->array) return get_g_type_undefined();
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitArraySlice start\n");
+#endif
     original_base_type = visit(node->array);
     if (!original_base_type || is_type_undefined(original_base_type)) return get_g_type_undefined();
 
     if (original_base_type->kind == TYPE_PLACEHOLDER) {
         original_base_type = resolvePlaceholder(original_base_type);
     }
+
+#ifdef DEBUG_SYMBOL
+    char type_buf[128];
+    typeToString(original_base_type, type_buf, sizeof(type_buf));
+    plat_printf_debug("[TYPE] visitArraySlice original_base_type=%s kind=%d\n", type_buf, original_base_type->kind);
+#endif
 
     base_type = original_base_type;
 
@@ -1920,6 +1932,9 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 }
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitBlockStmt ENTER\n");
+#endif
     Type* last_type;
     bool any_error = false;
     size_t i;
@@ -1950,6 +1965,9 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
         }
     }
     unit_.getSymbolTable().exitScope();
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitBlockStmt EXIT\n");
+#endif
     return any_error ? get_g_type_undefined() : last_type;
 }
 
@@ -3036,6 +3054,10 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
  * - Implicit array-to-slice coercion.
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitVarDecl '%s' line=%d depth=%u module=%s\n",
+                     node->name, node->name_loc.line, unit_.getSymbolTable().getCurrentScopeLevel(), unit_.getCurrentModule() ? unit_.getCurrentModule() : "NULL");
+#endif
     Symbol* existing_sym;
     Type* placeholder;
     Type* declared_type;
@@ -3326,6 +3348,10 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
     is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitVarDecl '%s' is_local=%d current_fn_ret=%p level=%u\n", 
+                     node->name, is_local, (void*)current_fn_return_type_, unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
 
     /* FIX: If this is a local variable, ensure it doesn't have a placeholder from global scope incorrectly */
     if (is_local && placeholder && placeholder->as.placeholder.module && 
@@ -3335,6 +3361,9 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     /* Update the symbol in the current scope with flags. */
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE] visitVarDecl '%s' lookupInCurrentScope\n", node->name);
+#endif
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (!existing_sym && is_local) {
         // Fallback: the parser might have inserted it but it might be hidden by module filtering
@@ -3528,6 +3557,9 @@ Type* TypeChecker::transformExternType(Type* t) {
 }
 
 Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SCOPE] FnBody ENTER '%s' depth=%u\n", node->name, unit_.getSymbolTable().getCurrentScopeLevel());
+#endif
     Symbol* fn_symbol;
     DynamicArray<Type*>* param_types;
     size_t i;
@@ -3593,7 +3625,21 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
             ASTBlockStmtNode& block = node->body->as.block_stmt;
             if (block.statements) {
                 for (size_t k = 0; k < block.statements->length(); ++k) {
-                    visit((*block.statements)[k]);
+                    ASTNode* stmt = (*block.statements)[k];
+#ifdef DEBUG_SYMBOL
+                    if (stmt->type == NODE_VAR_DECL) {
+                        plat_printf_debug("[TYPE] FnBody visiting VarDecl '%s'\n", stmt->as.var_decl->name);
+                    }
+#endif
+                    /* Visit the statement. visitBlockStmt naturally manages its own scope, 
+                       but since we processed the function body block directly in Pass 1 
+                       (to avoid double nesting), we must also do it here. */
+                    if (stmt->type == NODE_BLOCK_STMT) {
+                        /* For nested blocks, let visitBlockStmt handle it normally. */
+                        visit(stmt);
+                    } else {
+                        visit(stmt);
+                    }
                 }
             }
             node->body->resolved_type = get_g_type_void();
@@ -5040,6 +5086,7 @@ bool TypeChecker::isLValueConst(ASTNode* node) {
                     if (plat_strcmp(node->as.member_access->field_name, "tag") == 0) {
                         return true; /* .tag is read-only */
                     }
+                    /* Variant access (e.g. v.Cons) is not read-only unless the union is const */
                 }
                 if (base_type->kind == TYPE_POINTER) {
                     return base_type->as.pointer.is_const;
