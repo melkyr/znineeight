@@ -207,16 +207,25 @@ void SymbolTable::enterScope() {
     new (new_scope) Scope(arena_);
     scopes.append(new_scope);
     all_scopes_.append(new_scope);
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] ENTER_SCOPE depth=%zu\n", scopes.length());
+#endif
 }
 
 void SymbolTable::exitScope() {
     if (scopes.length() > 1) { // Do not exit the global scope.
+#ifdef DEBUG_SYMBOL
+        plat_printf_debug("[SYMBOL] EXIT_SCOPE depth=%zu\n", scopes.length());
+#endif
         scopes.pop_back();
         current_scope_level_--;
     }
 }
 
 bool SymbolTable::insert(Symbol& symbol) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] INSERT '%s' module=%s scope_level=%u depth=%zu\n", symbol.name, symbol.module_name ? symbol.module_name : "NULL", symbol.scope_level, scopes.length());
+#endif
     // Check for redeclaration in the current scope.
     // If it's the global scope, we must check for collisions within the same module
     if (scopes.length() == 1) {
@@ -231,11 +240,17 @@ bool SymbolTable::insert(Symbol& symbol) {
     // Assign the current scope level to the symbol.
     symbol.scope_level = getCurrentScopeLevel();
     // Add the symbol to the current scope.
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] INSERTED '%s' into scope level %zu\n", symbol.name, scopes.length());
+#endif
     scopes.back()->insert(symbol);
     return true;
 }
 
 Symbol* SymbolTable::lookup(const char* name) {
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] LOOKUP '%s' current_module=%s scopes=%zu\n", name, current_module_ ? current_module_ : "NULL", scopes.length());
+#endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
         // Try local lookup (NULL module) first in all scopes
@@ -246,6 +261,9 @@ Symbol* SymbolTable::lookup(const char* name) {
         }
 
         if (symbol) {
+#ifdef DEBUG_SYMBOL
+            plat_printf_debug("[SYMBOL] FOUND '%s' at level %d module=%s\n", name, i, symbol->module_name ? symbol->module_name : "NULL");
+#endif
 #ifdef DEBUG_VISIBILITY
             plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' level %d -> FOUND (module_name: %s, pub: %d)\n",
                              name, current_module_ ? current_module_ : "NULL", i,
@@ -255,6 +273,9 @@ Symbol* SymbolTable::lookup(const char* name) {
             return symbol;
         }
     }
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] NOT FOUND '%s'\n", name);
+#endif
 #ifdef DEBUG_VISIBILITY
     plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' -> NOT FOUND\n",
                      name, current_module_ ? current_module_ : "NULL");
@@ -269,7 +290,20 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     // For local scopes (depth > 1), we ONLY want local variables (module_name == NULL).
     // For the global scope (depth == 1), we want module-level symbols.
     const char* mod_filter = (scopes.length() == 1) ? current_module_ : NULL;
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' depth=%zu mod_filter=%s\n", 
+                     name, scopes.length(), mod_filter ? mod_filter : "NULL");
+#endif
     Symbol* sym = scopes.back()->find(name, mod_filter);
+
+#ifdef DEBUG_SYMBOL
+    if (sym) {
+        plat_printf_debug("[SYMBOL] FOUND_IN_CURRENT_SCOPE '%s' module=%s\n", 
+                         name, sym->module_name ? sym->module_name : "NULL");
+    } else {
+        plat_printf_debug("[SYMBOL] NOT_FOUND_IN_CURRENT_SCOPE '%s'\n", name);
+    }
+#endif
 
     return sym;
 }
