@@ -663,19 +663,19 @@ The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handl
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
 - **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
 
-#### Tagged Union Initialization with Anonymous Structs
-When a tagged union variant has an anonymous struct payload (e.g., `Cons: struct { car: i32, cdr: i32 }`), the compiler transforms the Zig initializer `Value{ .Cons = .{ .car = x, .cdr = y } }` into the following C code:
-```c
-struct zS_xxx_Value v;
-v.tag = zE_xxx_Value_Tag_Cons;
-v.data.Cons.car = x;
-v.data.Cons.cdr = y;
-```
-This ensures correct field ordering and C89 compatibility. The implementation handles:
-- **Detection**: `C89Emitter::emitInitializerAssignments` detects if the value being assigned to a tagged union variant is a nested `NODE_STRUCT_INITIALIZER`.
-- **L-value Capture**: Uses `captureExpression` to safely stringify the base l-value (e.g., `v`).
-- **Field-by-Field Assignment**: Recursively emits assignments for each field of the anonymous payload struct into the `.data.Variant.Field` path in C.
-- **Complex L-values**: To prevent double-evaluation, complex l-values are evaluated into a temporary pointer (e.g., `init_lval_tmp`) before decomposition.
+#### Tagged Union Initialization
+Tagged unions are initialized by assigning the tag and then optionally assigning the payload if it is not `void`.
+
+- **Static Tag Access**: When a variant name is accessed statically (e.g., `Token.Eof`), the `TypeChecker` constant-folds it to the corresponding integer tag value. The `C89Emitter` then outputs the mangled C enum constant (e.g., `zE_<hash>_Token_Tag_Eof`).
+- **Void Payloads**: For variants with a `void` payload, the `C89Emitter::emitInitializerAssignments` skips emitting any payload assignment, outputting only the `.tag` assignment. This is consistent with C89's omission of `void` fields in unions.
+- **Anonymous Struct Payloads**: When a variant has an anonymous struct payload (e.g., `Cons: struct { car: i32, cdr: i32 }`), the compiler transforms the Zig initializer `Value{ .Cons = .{ .car = x, .cdr = y } }` into field-by-field assignments in C:
+  ```c
+  struct zS_xxx_Value v;
+  v.tag = zE_xxx_Value_Tag_Cons;
+  v.data.Cons.car = x;
+  v.data.Cons.cdr = y;
+  ```
+- **Detection and Lifting**: `C89Emitter::emitInitializerAssignments` detects nested `NODE_STRUCT_INITIALIZER` values and uses `captureExpression` or temporary pointers to safely decompose them into multiple C assignments.
 
 Example Zig (Named):
 ```zig

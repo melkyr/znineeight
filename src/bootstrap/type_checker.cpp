@@ -3959,9 +3959,31 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* If the base is a type constant (TYPE_TYPE), mark it for static access. */
     if (base_type->kind == TYPE_TYPE) {
         is_type_access = true;
-        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
-            base_type = node->base->resolved_type;
+    }
+
+    // Case 2: base is an identifier that resolves to a type constant
+    if (!is_type_access && node->base->type == NODE_IDENTIFIER) {
+        Symbol* sym = node->base->as.identifier.symbol;
+        if (sym && (sym->flags & SYMBOL_FLAG_CONST)) {
+            Type* t = sym->symbol_type;
+            if (t && (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION ||
+                      t->kind == TYPE_TAGGED_UNION || t->kind == TYPE_ENUM ||
+                      t->kind == TYPE_ERROR_SET)) {
+                is_type_access = true;
+            }
         }
+    }
+
+    // Case 3: base is a member access that resolved to a type (e.g., value_mod.Token)
+    if (!is_type_access && node->base->type == NODE_MEMBER_ACCESS) {
+        if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE) {
+            is_type_access = true;
+        }
+    }
+
+    // If it's a static access and we have a concrete type, update base_type
+    if (is_type_access && node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
+        base_type = node->base->resolved_type;
     }
 
     /* Auto-dereference for single level pointer. */
