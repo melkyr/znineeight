@@ -496,6 +496,9 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
         bool is_tagged = isTaggedUnion(type);
 
         if (is_tagged) {
+#ifdef DEBUG_TAGGED_UNION
+            plat_printf_debug("[CODEGEN] emitInitializerAssignments (tagged union): base_name=%s\n", base_name);
+#endif
             /* Emit tag assignment */
             const char* field_name = NULL;
             if (init->fields->length() > 0) {
@@ -522,19 +525,16 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             bool handled = false;
             if (init->fields->length() > 0) {
                 ASTNamedInitializer* variant_init = (*init->fields)[0];
-                if (variant_init->value && variant_init->value->type == NODE_STRUCT_INITIALIZER) {
-                    /* Find the type of this variant */
-                    Type* variant_type = NULL;
-                    DynamicArray<StructField>* variants = (type->kind == TYPE_TAGGED_UNION)
-                        ? type->as.tagged_union.payload_fields
-                        : type->as.struct_details.fields;
-                    for (size_t v_idx = 0; v_idx < variants->length(); ++v_idx) {
-                        if (plat_strcmp((*variants)[v_idx].name, variant_init->field_name) == 0) {
-                            variant_type = (*variants)[v_idx].type;
-                            break;
-                        }
-                    }
+                
+                /* Find the type of this variant */
+                Type* variant_type = findTaggedUnionPayload(type, variant_init->field_name);
 
+                if (variant_type && variant_type->kind == TYPE_VOID) {
+#ifdef DEBUG_TAGGED_UNION
+                    plat_printf_debug("[CODEGEN] Variant %s is VOID, skipping payload emission\n", variant_init->field_name);
+#endif
+                    handled = true; /* Nothing to emit for void payload */
+                } else if (variant_init->value && variant_init->value->type == NODE_STRUCT_INITIALIZER) {
                     if (variant_type && (variant_type->kind == TYPE_STRUCT || variant_type->kind == TYPE_UNION)) {
                         const ASTStructInitializerNode* payload_init = variant_init->value->as.struct_initializer;
                         DynamicArray<StructField>* payload_fields = variant_type->as.struct_details.fields;
@@ -2563,6 +2563,42 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             }
             writeString("{");
             Type* struct_type = node->resolved_type;
+            if (struct_type && isTaggedUnion(struct_type)) {
+                const ASTStructInitializerNode* init = node->as.struct_initializer;
+#ifdef DEBUG_TAGGED_UNION
+                plat_printf_debug("[CODEGEN] NODE_STRUCT_INITIALIZER (tagged union expression)\n");
+#endif
+                if (init->fields && init->fields->length() > 0) {
+                    /* Emit tag: .tag = TagConstant */
+                    ASTNamedInitializer* tag_init = (*init->fields)[0];
+                    writeString(".tag = ");
+                    
+                    /* Emit the enum tag constant reference */
+                    Type* tag_enum = getTagType(struct_type);
+                    if (tag_enum && tag_enum->c_name) {
+                        writeString(tag_enum->c_name);
+                    } else {
+                        writeString(unit_.getNameMangler().mangleType(tag_enum));
+                    }
+                    writeString("_");
+                    writeString(tag_init->field_name);
+                    
+                    /* If variant has non-void payload, emit it too */
+                    Type* variant_type = findTaggedUnionPayload(struct_type, tag_init->field_name);
+                    if (variant_type && variant_type->kind != TYPE_VOID && tag_init->value) {
+                        writeString(", .data = {.");
+                        writeString(getSafeFieldName(tag_init->field_name));
+                        writeString(" = ");
+                        emitExpression(tag_init->value);
+                        writeString("}");
+                    }
+                } else {
+                    writeString("0");
+                }
+                writeString("}");
+                break;
+            }
+
             if (struct_type && struct_type->kind == TYPE_STRUCT) {
                 DynamicArray<StructField>* type_fields = struct_type->as.struct_details.fields;
                 DynamicArray<ASTNamedInitializer*>* init_fields = node->as.struct_initializer->fields;
