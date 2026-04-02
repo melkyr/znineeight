@@ -4045,6 +4045,7 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 }
             }
         }
+        }
     }
 
     /* Array built-in properties */
