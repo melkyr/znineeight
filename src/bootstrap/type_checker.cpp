@@ -3959,8 +3959,73 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* If the base is a type constant (TYPE_TYPE), mark it for static access. */
     if (base_type->kind == TYPE_TYPE) {
         is_type_access = true;
-        if (node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
-            base_type = node->base->resolved_type;
+    }
+
+    // Case 2: base is an identifier that resolves to a type constant
+    if (!is_type_access && node->base->type == NODE_IDENTIFIER) {
+        Symbol* sym = node->base->as.identifier.symbol;
+        if (!sym) {
+             sym = unit_.getSymbolTable().lookup(node->base->as.identifier.name);
+        }
+        if (sym) {
+            if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) {
+                is_type_access = true;
+            } else if (sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST)) {
+                if (sym->details) {
+                    ASTVarDeclNode* vd = (ASTVarDeclNode*)sym->details;
+                    if (vd->initializer && (vd->initializer->type == NODE_STRUCT_DECL || 
+                                           vd->initializer->type == NODE_UNION_DECL || 
+                                           vd->initializer->type == NODE_ENUM_DECL || 
+                                           vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
+                                           vd->initializer->type == NODE_TYPE_NAME ||
+                                           vd->initializer->type == NODE_POINTER_TYPE ||
+                                           vd->initializer->type == NODE_ARRAY_TYPE ||
+                                           vd->initializer->type == NODE_OPTIONAL_TYPE ||
+                                           vd->initializer->type == NODE_ERROR_UNION_TYPE)) {
+                        is_type_access = true;
+                    }
+                }
+                if (!is_type_access && sym->symbol_type && (sym->symbol_type->kind == TYPE_TYPE || sym->symbol_type->kind == TYPE_PLACEHOLDER)) {
+                     is_type_access = true;
+                }
+            }
+        }
+    }
+
+    // Case 3: base is a member access that resolved to a type (e.g., value_mod.Token)
+    if (!is_type_access && node->base->type == NODE_MEMBER_ACCESS) {
+        if (node->base->resolved_type) {
+            if (node->base->resolved_type->kind == TYPE_TYPE) {
+                is_type_access = true;
+            } else {
+                 Symbol* sym = node->base->as.member_access->symbol;
+                 if (sym && (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE || (sym->flags & SYMBOL_FLAG_CONST))) {
+                      /* Check if it's a type access even if resolved_type is the struct type */
+                      if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE) is_type_access = true;
+                      else if (sym->details) {
+                          ASTVarDeclNode* vd = (ASTVarDeclNode*)sym->details;
+                          if (vd->initializer && (vd->initializer->type == NODE_STRUCT_DECL || 
+                                                 vd->initializer->type == NODE_UNION_DECL || 
+                                                 vd->initializer->type == NODE_ENUM_DECL || 
+                                                 vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
+                                                 vd->initializer->type == NODE_TYPE_NAME)) {
+                              is_type_access = true;
+                          }
+                      }
+                 }
+            }
+        }
+    }
+
+    // If it's a static access and we have a concrete type, update base_type
+    if (is_type_access && node->base->resolved_type && node->base->resolved_type != get_g_type_type()) {
+        base_type = node->base->resolved_type;
+    }
+
+    if (is_type_access && !node->base->resolved_type && node->base->type == NODE_IDENTIFIER) {
+        Symbol* sym = node->base->as.identifier.symbol;
+        if (sym && sym->symbol_type && sym->symbol_type->kind != TYPE_TYPE) {
+            base_type = sym->symbol_type;
         }
     }
 
@@ -4005,18 +4070,6 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     /* Tagged Union built-in properties and variant access */
     if (isTaggedUnion(base_type)) {
         bool is_static = is_type_access;
-        if (!is_static) {
-            if (node->base->type == NODE_IDENTIFIER) {
-                Symbol* sym = node->base->as.identifier.symbol;
-                if (sym && sym->symbol_type == get_g_type_type()) {
-                    is_static = true;
-                }
-            } else if (node->base->type == NODE_MEMBER_ACCESS) {
-                if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE) {
-                     is_static = true;
-                }
-            }
-        }
 
         if (!is_static) {
 #ifdef DEBUG_SYMBOL
@@ -4077,7 +4130,22 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
                 }
 
                 if (sym) {
-                    if (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE || sym->kind == SYMBOL_MODULE) {
+                    bool is_actually_type = (sym->kind == SYMBOL_TYPE || sym->kind == SYMBOL_UNION_TYPE || sym->kind == SYMBOL_MODULE);
+                    if (!is_actually_type && sym->kind == SYMBOL_VARIABLE && (sym->flags & SYMBOL_FLAG_CONST) && sym->details) {
+                         ASTVarDeclNode* vd = (ASTVarDeclNode*)sym->details;
+                         if (vd->initializer && (vd->initializer->type == NODE_STRUCT_DECL || 
+                                                vd->initializer->type == NODE_UNION_DECL || 
+                                                vd->initializer->type == NODE_ENUM_DECL || 
+                                                vd->initializer->type == NODE_ERROR_SET_DEFINITION ||
+                                                vd->initializer->type == NODE_TYPE_NAME ||
+                                                vd->initializer->type == NODE_POINTER_TYPE ||
+                                                vd->initializer->type == NODE_ARRAY_TYPE ||
+                                                vd->initializer->type == NODE_OPTIONAL_TYPE ||
+                                                vd->initializer->type == NODE_ERROR_UNION_TYPE)) {
+                             is_actually_type = true;
+                         }
+                    }
+                    if (is_actually_type) {
                         Type* registered = resolveNamedType(target_mod, sym->name, sym);
                         if (registered) {
                             parent->resolved_type = registered;
@@ -4218,24 +4286,8 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
 
     if (isTaggedUnion(base_type)) {
         /* In Z98, member access on a tagged union type (not an instance)
-           resolves to its tag enum members. We detect 'type access' by
-           checking if the base expression is an identifier that resolved
-           directly to the union type (a type alias). */
+           resolves to its tag enum members. */
         bool is_static_access = is_type_access;
-        if (!is_static_access) {
-            if (node->base->type == NODE_IDENTIFIER) {
-                Symbol* sym = node->base->as.identifier.symbol;
-                /* ONLY treat as static if it's a type name (symbol_type is TYPE_TYPE) */
-                if (sym && sym->symbol_type == get_g_type_type()) {
-                    is_static_access = true;
-                }
-            } else if (node->base->type == NODE_MEMBER_ACCESS) {
-                /* e.g., json.JsonValue */
-                if (node->base->resolved_type && node->base->resolved_type->kind == TYPE_TYPE) {
-                     is_static_access = true;
-                }
-            }
-        }
 
         if (is_static_access) {
 #ifdef DEBUG_SYMBOL
@@ -6091,6 +6143,22 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
         return true;
     }
 
+    /* Enum to Tagged Union conversion (if payload is void) */
+    if (source_type->kind == TYPE_ENUM && isTaggedUnion(target_type)) {
+        if (source_node && source_node->type == NODE_INTEGER_LITERAL && source_node->as.integer_literal.original_name) {
+            Type* payload = findTaggedUnionPayload(target_type, source_node->as.integer_literal.original_name);
+            if (payload && payload->kind == TYPE_VOID) {
+                return true;
+            }
+        } else if (source_node && source_node->type == NODE_MEMBER_ACCESS && source_node->as.member_access->base == NULL) {
+             /* Naked tag .Eof */
+             Type* payload = findTaggedUnionPayload(target_type, source_node->as.member_access->field_name);
+             if (payload && payload->kind == TYPE_VOID) {
+                 return true;
+             }
+        }
+    }
+
     /* c_char and u8 compatibility */
     if ((source_type->kind == TYPE_U8 && target_type->kind == TYPE_C_CHAR) ||
         (source_type->kind == TYPE_C_CHAR && target_type->kind == TYPE_U8)) {
@@ -7678,13 +7746,6 @@ Type* TypeChecker::resolveTypeConstant(Symbol* sym) {
     return t;
 }
 
-Type* TypeChecker::getTagType(Type* tu) {
-    if (!tu) return NULL;
-    if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
-    if (tu->kind == TYPE_UNION && tu->as.struct_details.is_tagged) return tu->as.struct_details.tag_type;
-    return NULL;
-}
-
 i64 TypeChecker::findEnumMemberValue(Type* enum_type, const char* name) {
     if (!enum_type || enum_type->kind != TYPE_ENUM) return -1;
     DynamicArray<EnumMember>* members = enum_type->as.enum_details.members;
@@ -7701,19 +7762,3 @@ i64 TypeChecker::findErrorTagValue(Type* error_set, const char* name) {
     return (i64)unit_.getGlobalErrorRegistry().getOrAddTag(name);
 }
 
-Type* TypeChecker::findTaggedUnionPayload(Type* union_type, const char* tag) {
-    if (!union_type) return NULL;
-    DynamicArray<StructField>* fields = NULL;
-    if (union_type->kind == TYPE_TAGGED_UNION) {
-        fields = union_type->as.tagged_union.payload_fields;
-    } else if (union_type->kind == TYPE_UNION && union_type->as.struct_details.is_tagged) {
-        fields = union_type->as.struct_details.fields;
-    }
-
-    if (!fields) return NULL;
-    for (size_t i = 0; i < fields->length(); ++i) {
-        if (plat_strcmp((*fields)[i].name, tag) == 0)
-            return (*fields)[i].type;
-    }
-    return NULL;
-}
