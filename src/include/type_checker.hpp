@@ -117,7 +117,6 @@ private:
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
     const char* generateImplicitEnumName(const char* union_name);
-    Type* findTaggedUnionPayload(Type* union_type, const char* tag);
     Type* transformExternType(Type* t);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
@@ -127,7 +126,6 @@ private:
     void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
     Type* resolveTypeConstant(Symbol* sym);
     Type* unwrapType(ASTNode* node);
-    Type* getTagType(Type* tu);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
 public:
