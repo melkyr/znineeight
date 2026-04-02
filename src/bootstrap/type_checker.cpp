@@ -477,14 +477,13 @@ Type* TypeChecker::visit(ASTNode* node) {
                 }
             }
         }
-
-        if (node->resolved_type == NULL || resolved_type != get_g_type_type()) {
-            node->resolved_type = resolved_type;
-        }
     }
 
-    /* CRITICAL: Always reflect what visit() actually returned, even if NULL or UNDEFINED */
-    node->resolved_type = resolved_type;
+    /* CRITICAL: Reflect what visit() actually returned, but preserve specific types set by visitors for type expressions.
+       Visitors for type expressions return TYPE_TYPE but set node->resolved_type to the concrete type. */
+    if (node->resolved_type == NULL || resolved_type != get_g_type_type() || is_type_undefined(resolved_type)) {
+        node->resolved_type = resolved_type;
+    }
 
     return resolved_type;
 }
