@@ -387,7 +387,7 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 ### Member Access and Struct Initialization
 
 1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct, union, module, or a single-level pointer to one. It then verifies that the field exists within the definition and resolves to the field's type.
-    -   **Static Variant Access**: Support for accessing variant names on tagged union types (e.g., `Value.Cons`) is implemented, allowing type unwrapping and constant folding.
+-   **Static Variant Access**: Support for accessing variant names on tagged union types (e.g., `Value.Cons`) is implemented, allowing type unwrapping and constant folding. The `TypeChecker::visitMemberAccess` function distinguishes static type access (which resolves to the tag enum value) from instance access.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
     -   The type being initialized is a struct, union, or tagged union.

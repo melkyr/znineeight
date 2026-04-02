@@ -663,6 +663,14 @@ The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handl
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
 - **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
 
+#### Tagged Union Tag Constants
+When a tagged union variant name is used as a static constant (e.g., `Token.Eof`), it is constant-folded to the integer value of the corresponding enum tag. The generated C code uses the mangled enum constant, for example:
+
+Zig: `Token.Eof`
+C: `zE_<hash>_Token_Tag_Eof`
+
+The mangling follows the pattern `zE_<module_hash><union_name>_Tag_<variant_name>`.
+
 #### Tagged Union Initialization with Anonymous Structs
 When a tagged union variant has an anonymous struct payload (e.g., `Cons: struct { car: i32, cdr: i32 }`), the compiler transforms the Zig initializer `Value{ .Cons = .{ .car = x, .cdr = y } }` into the following C code:
 ```c
