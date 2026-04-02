@@ -195,6 +195,35 @@ static inline DynamicArray<StructField>* getTaggedUnionPayloadFields(Type* type)
 }
 
 /**
+ * @brief Gets the tag enum type for a tagged union.
+ * @param tu The tagged union type.
+ * @return The tag enum type, or NULL if not a tagged union.
+ */
+static inline Type* getTagType(Type* tu) {
+    if (!tu) return NULL;
+    if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
+    if (tu->kind == TYPE_UNION && tu->as.struct_details.is_tagged) return tu->as.struct_details.tag_type;
+    return NULL;
+}
+
+/**
+ * @brief Finds the payload type for a specific tag in a tagged union.
+ * @param union_type The tagged union type.
+ * @param tag The tag name.
+ * @return The payload type, or NULL if the tag is not found or not a tagged union.
+ */
+static inline Type* findTaggedUnionPayload(Type* union_type, const char* tag) {
+    if (!union_type) return NULL;
+    DynamicArray<StructField>* fields = getTaggedUnionPayloadFields(union_type);
+    if (!fields) return NULL;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        if (plat_strcmp((*fields)[i].name, tag) == 0)
+            return (*fields)[i].type;
+    }
+    return NULL;
+}
+
+/**
  * @brief Resolves a string identifier into a pointer to a primitive Type.
  * @param name The string name of the type (e.g., "i32", "bool").
  * @return A pointer to the static Type object, or NULL if the name is not a
