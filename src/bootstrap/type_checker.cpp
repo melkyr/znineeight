@@ -484,7 +484,13 @@ Type* TypeChecker::visit(ASTNode* node) {
     }
 
     /* CRITICAL: Always reflect what visit() actually returned, even if NULL or UNDEFINED */
-    node->resolved_type = resolved_type;
+    /* EXCEPTION: If node already has a resolved type (e.g. type constant or primitive) and visit returned TYPE_TYPE,
+       preserve the underlying type for consumers like SignatureAnalyzer and GenericCatalogue. */
+    if (resolved_type && resolved_type->kind == TYPE_TYPE && node->resolved_type && node->resolved_type->kind != TYPE_TYPE) {
+        /* Keep existing resolved_type */
+    } else {
+        node->resolved_type = resolved_type;
+    }
 
     return resolved_type;
 }
@@ -1887,7 +1893,11 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
     /* Handle primitive types as values (e.g. @sizeOf(i32)) */
     prim = resolvePrimitiveTypeName(name);
     if (prim) {
-        node->resolved_type = prim; /* Store the actual type for built-ins to use */
+        /* Store the actual type for built-ins and SignatureAnalyzer to use.
+           We only set it if not already set, to avoid redundant updates. */
+        if (!node->resolved_type || node->resolved_type->kind == TYPE_TYPE) {
+            node->resolved_type = prim;
+        }
         return get_g_type_type();
     }
 
@@ -6409,7 +6419,7 @@ void TypeChecker::catalogGenericInstantiation(ASTFunctionCallNode* node) {
             GenericParamInfo info;
             if (isTypeExpression(arg, unit_.getSymbolTable())) {
                 info.kind = GENERIC_PARAM_TYPE;
-                info.type_value = (arg_type && arg_type->kind == TYPE_TYPE) ? arg->resolved_type : arg_type;
+                info.type_value = (arg_type && arg_type->kind == TYPE_TYPE && arg->resolved_type && arg->resolved_type->kind != TYPE_TYPE) ? arg->resolved_type : arg_type;
                 info.param_name = NULL;
             } else {
                 /* If it's not a type expression, it might be a value that infers a type */
