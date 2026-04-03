@@ -44,6 +44,22 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 
+### 2.1 Line Ending and Statement Terminator Abstraction
+To improve portability (e.g., support for CRLF on Windows 98) and centralize formatting, the `C89Emitter` provides abstractions for common C89 terminators. Direct use of hardcoded `";\n"` or `"\n"` is discouraged in favor of these helpers:
+- **`endStmt()`**: Appends a semicolon followed by the configured line ending.
+- **`writeLine()`**: Appends the configured line ending.
+- **`writeLine(const char* str)`**: Appends a string followed by the configured line ending.
+- **`LE()`**: Returns the current line ending string (`\n` or `\r\n`).
+
+This ensures that the generated C code respects the `win_friendly_line_endings` compilation option consistently across all modules.
+
+### 2.2 C Keyword Constants
+To ensure consistency and avoid hardcoding strings for standard C89 keywords, the `C89Emitter` uses centralized constants (`KW_BREAK`, `KW_IF`, `KW_INT`, etc.).
+- **Usage**: Emitter methods should use `writeString(KW_...)` or the `writeKeyword(KW_...)` helper.
+- **`writeKeyword(const char* kw)`**: Emits the keyword followed by a single space. This is the preferred method for keywords that act as prefixes (e.g., `static`, `extern`, `struct`).
+
+Using these constants simplifies maintenance and ensures that any necessary mangling or platform-specific keyword variations can be handled in one place.
+
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
 

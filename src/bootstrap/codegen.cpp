@@ -29,6 +29,15 @@ const char* const C89Emitter::KW_CONST = "const";
 const char* const C89Emitter::KW_VOID = "void";
 const char* const C89Emitter::KW_INT = "int";
 const char* const C89Emitter::KW_SIZEOF = "sizeof";
+const char* const C89Emitter::KW_CHAR = "char";
+const char* const C89Emitter::KW_SHORT = "short";
+const char* const C89Emitter::KW_LONG = "long";
+const char* const C89Emitter::KW_FLOAT = "float";
+const char* const C89Emitter::KW_DOUBLE = "double";
+const char* const C89Emitter::KW_SIGNED = "signed";
+const char* const C89Emitter::KW_UNSIGNED = "unsigned";
+const char* const C89Emitter::KW_REGISTER = "register";
+const char* const C89Emitter::KW_VOLATILE = "volatile";
 
 C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
     : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
@@ -154,7 +163,7 @@ void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNod
     if (params_node) {
         writeString("(");
         if (!params_node->params || params_node->params->length() == 0) {
-            writeString("void");
+            writeString(KW_VOID);
         } else {
             for (size_t i = 0; i < params_node->params->length(); ++i) {
                 ASTNode* param_node = (*params_node->params)[i];
@@ -180,14 +189,14 @@ void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNod
 
 void C89Emitter::emitTypePrefix(Type* type) {
     if (!type) {
-        writeString("void");
+        writeString(KW_VOID);
         return;
     }
 
     switch (type->kind) {
         case TYPE_POINTER:
             if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_VOID) {
-                writeString("void");
+                writeString(KW_VOID);
                 if (last_char_ != ' ') {
                     writeString(" ");
                 }
@@ -197,7 +206,7 @@ void C89Emitter::emitTypePrefix(Type* type) {
             if (type->as.pointer.base) {
                 emitTypePrefix(type->as.pointer.base);
             } else {
-                writeString("void ");
+                writeKeyword(KW_VOID);
             }
             if (type->as.pointer.is_const) {
                 writeString(" const");
@@ -259,7 +268,7 @@ void C89Emitter::emitTypeSuffix(Type* type) {
             writeString("(");
             DynamicArray<Type*>* params = type->as.function.params;
             if (!params || params->length() == 0) {
-                writeString("void");
+                writeString(KW_VOID);
             } else {
                 for (size_t i = 0; i < params->length(); ++i) {
                     if ((*params)[i]->kind == TYPE_ANYTYPE) {
@@ -279,7 +288,7 @@ void C89Emitter::emitTypeSuffix(Type* type) {
             writeString("(");
             DynamicArray<Type*>* params = type->as.function_pointer.param_types;
             if (!params || params->length() == 0) {
-                writeString("void");
+                writeString(KW_VOID);
             } else {
                 for (size_t i = 0; i < params->length(); ++i) {
                     emitDeclarator((*params)[i], NULL);
@@ -297,19 +306,19 @@ void C89Emitter::emitTypeSuffix(Type* type) {
 
 void C89Emitter::emitBaseType(Type* type) {
     if (!type) {
-        writeString("void");
+        writeString(KW_VOID);
         return;
     }
 
     switch (type->kind) {
-        case TYPE_VOID: writeString("void"); break;
-        case TYPE_BOOL: writeString("int"); break;
-        case TYPE_I8: writeString("signed char"); break;
-        case TYPE_U8: writeString("unsigned char"); break;
-        case TYPE_I16: writeString("short"); break;
-        case TYPE_U16: writeString("unsigned short"); break;
-        case TYPE_I32: writeString("int"); break;
-        case TYPE_U32: writeString("unsigned int"); break;
+        case TYPE_VOID: writeString(KW_VOID); break;
+        case TYPE_BOOL: writeString(KW_INT); break;
+        case TYPE_I8: writeKeyword(KW_SIGNED); writeString(KW_CHAR); break;
+        case TYPE_U8: writeKeyword(KW_UNSIGNED); writeString(KW_CHAR); break;
+        case TYPE_I16: writeString(KW_SHORT); break;
+        case TYPE_U16: writeKeyword(KW_UNSIGNED); writeString(KW_SHORT); break;
+        case TYPE_I32: writeString(KW_INT); break;
+        case TYPE_U32: writeKeyword(KW_UNSIGNED); writeString(KW_INT); break;
         case TYPE_I64:
             #ifdef _MSC_VER
             writeString("__int64");
@@ -324,9 +333,9 @@ void C89Emitter::emitBaseType(Type* type) {
             writeString("u64");
             #endif
             break;
-        case TYPE_C_CHAR: writeString("char"); break;
-        case TYPE_F32: writeString("float"); break;
-        case TYPE_F64: writeString("double"); break;
+        case TYPE_C_CHAR: writeString(KW_CHAR); break;
+        case TYPE_F32: writeString(KW_FLOAT); break;
+        case TYPE_F64: writeString(KW_DOUBLE); break;
         case TYPE_ISIZE: writeString("isize"); break;
         case TYPE_USIZE: writeString("usize"); break;
         case TYPE_SLICE:
@@ -342,17 +351,17 @@ void C89Emitter::emitBaseType(Type* type) {
             writeString(getMangledTypeName(type));
             break;
         case TYPE_ERROR_SET:
-            writeString("int");
+            writeString(KW_INT);
             break;
         case TYPE_STRUCT:
             if (!type->c_name && type->as.struct_details.name) {
                 type->c_name = unit_.getNameMangler().mangleType(type);
             }
             if (type->c_name) {
-                writeString("struct ");
+                writeKeyword(KW_STRUCT);
                 writeString(type->c_name);
             } else {
-                writeString("struct ");
+                writeKeyword(KW_STRUCT);
                 emitStructBody(type);
             }
             break;
@@ -364,10 +373,10 @@ void C89Emitter::emitBaseType(Type* type) {
                     type->c_name = unit_.getNameMangler().mangleType(type);
                 }
                 if (type->c_name) {
-                    writeString("struct ");
+                    writeKeyword(KW_STRUCT);
                     writeString(type->c_name);
                 } else {
-                    writeString("struct ");
+                    writeKeyword(KW_STRUCT);
                     emitTaggedUnionBody(type);
                 }
             } else {
@@ -375,16 +384,16 @@ void C89Emitter::emitBaseType(Type* type) {
                     type->c_name = unit_.getNameMangler().mangleType(type);
                 }
                 if (type->c_name) {
-                    writeString("union ");
+                    writeKeyword(KW_UNION);
                     writeString(type->c_name);
                 } else {
-                    writeString("union ");
+                    writeKeyword(KW_UNION);
                     emitUnionBody(type);
                 }
             }
             break;
         case TYPE_ENUM:
-            writeString("enum ");
+            writeKeyword(KW_ENUM);
             if (!type->c_name && type->as.enum_details.name) {
                 type->c_name = unit_.getNameMangler().mangleType(type);
             }
@@ -426,9 +435,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
 
     writeIndent();
     if (decl->is_extern) {
-        writeString("extern ");
+        writeKeyword(KW_EXTERN);
     } else if (!external) {
-        writeString("static ");
+        writeKeyword(KW_STATIC);
     }
 
     Type* type = node->resolved_type;
@@ -907,7 +916,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
         writeString("int main(");
         if (!node->params || node->params->length() == 0) {
-            writeString("void");
+            writeString(KW_VOID);
         } else {
             for (size_t i = 0; i < node->params->length(); ++i) {
                 ASTNode* param_node = (*node->params)[i];
@@ -924,9 +933,9 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         /* Skip internal runtime prototypes in module headers to avoid conflicts with zig_runtime.h */
     } else {
         if (node->is_extern) {
-            writeString("extern ");
+            writeKeyword(KW_EXTERN);
         } else if (!is_public && !node->is_pub && !node->is_export) {
-            writeString("static ");
+            writeKeyword(KW_STATIC);
         }
 
         Type* ret_type = node->return_type ? node->return_type->resolved_type : get_g_type_void();
@@ -950,7 +959,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
             writeString("(");
             DynamicArray<Type*>* params = abi_type->as.function.params;
             if (!params || params->length() == 0) {
-                writeString("void");
+                writeString(KW_VOID);
             } else {
                 for (size_t i = 0; i < params->length(); ++i) {
                     emitDeclarator((*params)[i], NULL);
@@ -966,7 +975,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
             writeString(mangled_name);
             writeString("(");
             if (!node->params || node->params->length() == 0) {
-                writeString("void");
+                writeString(KW_VOID);
             } else {
                 for (size_t i = 0; i < node->params->length(); ++i) {
                     ASTNode* param_node = (*node->params)[i];
@@ -992,7 +1001,7 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
 
     writeIndent();
     if (!fn->is_pub && !fn->is_extern && !fn->is_export) {
-        writeString("static ");
+        writeKeyword(KW_STATIC);
     }
 
     if (sym->c_prototype_type) {
@@ -1003,7 +1012,7 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
         writeString("(");
         DynamicArray<Type*>* params = abi_type->as.function.params;
         if (!params || params->length() == 0) {
-            writeString("void");
+            writeString(KW_VOID);
         } else {
             for (size_t i = 0; i < params->length(); ++i) {
                 if (i > 0) writeString(", ");
@@ -1018,7 +1027,7 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
         writeString(mangled_name);
         writeString("(");
         if (!fn->params || fn->params->length() == 0) {
-            writeString("void");
+            writeString(KW_VOID);
         } else {
             for (size_t i = 0; i < fn->params->length(); ++i) {
                 if (i > 0) writeString(", ");
@@ -1094,7 +1103,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
         writeString("int main(");
         if (!node->params || node->params->length() == 0) {
-            writeString("void");
+            writeString(KW_VOID);
         } else {
             for (size_t i = 0; i < node->params->length(); ++i) {
                 ASTNode* param_node = (*node->params)[i];
@@ -1116,9 +1125,9 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
         emitDeclarator(ret_type, mangled_name, node);
     } else {
         if (node->is_extern) {
-            writeString("extern ");
+            writeKeyword(KW_EXTERN);
         } else if (!node->is_pub && !node->is_export) {
-            writeString("static ");
+            writeKeyword(KW_STATIC);
         }
 
         const char* mangled_name = NULL;
@@ -1141,7 +1150,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             writeString("(");
             DynamicArray<Type*>* params = abi_type->as.function.params;
             if (!params || params->length() == 0) {
-                writeString("void");
+                writeString(KW_VOID);
             } else {
                 for (size_t i = 0; i < params->length(); ++i) {
                     ASTNode* param_node = (*node->params)[i];
@@ -1190,7 +1199,7 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
         /* Pass 1: Local declarations */
         if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
             writeIndent();
-            writeString("int ");
+            writeKeyword(KW_INT);
             writeString(current_err_flag_);
             writeString(" = 0;\n");
         }
@@ -1282,7 +1291,7 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
         /* Pass 1: Local declarations */
         if (label_id == -1 && defer_stack_.length() == 1 && current_err_flag_) {
             writeIndent();
-            writeString("int ");
+            writeKeyword(KW_INT);
             writeString(current_err_flag_);
             writeString(" = 0;\n");
         }
@@ -2016,7 +2025,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
             writeString("++;\n");
 
             writeIndent();
-            writeString("goto ");
+            writeKeyword(KW_GOTO);
             writeString(start_label);
             endStmt();
         }
@@ -2105,7 +2114,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
             }
 
             writeIndent();
-            writeString("goto ");
+            writeKeyword(KW_GOTO);
             writeString(start_label);
             endStmt();
         }
@@ -2147,7 +2156,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         }
 
         writeIndent();
-        writeString("goto ");
+        writeKeyword(KW_GOTO);
         writeString(start_label);
         endStmt();
 
@@ -2980,7 +2989,7 @@ void C89Emitter::ensureOptionalType(Type* type) {
     writeLine();
 
     writeIndent();
-    writeString("struct ");
+    writeKeyword(KW_STRUCT);
     writeString(mangled_name);
     writeString(" ");
     {
@@ -2998,7 +3007,7 @@ void C89Emitter::ensureOptionalType(Type* type) {
         writeString("};\n");
     }
     writeIndent();
-    writeString("typedef struct ");
+    writeKeyword(KW_TYPEDEF); writeKeyword(KW_STRUCT);
     writeString(mangled_name);
     writeString(" ");
     writeString(mangled_name);
@@ -3052,7 +3061,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
     writeLine();
 
     writeIndent();
-    writeString("struct ");
+    writeKeyword(KW_STRUCT);
     writeString(mangled_name);
     writeString(" ");
     {
@@ -3082,7 +3091,7 @@ void C89Emitter::ensureErrorUnionType(Type* type) {
         writeString("};\n");
     }
     writeIndent();
-    writeString("typedef struct ");
+    writeKeyword(KW_TYPEDEF); writeKeyword(KW_STRUCT);
     writeString(mangled_name);
     writeString(" ");
     writeString(mangled_name);
@@ -3238,7 +3247,7 @@ void C89Emitter::emitTaggedUnionBody(Type* type) {
 
         /* union of payloads */
         writeIndent();
-        writeString("union ");
+        writeKeyword(KW_UNION);
         emitTaggedUnionPayloadBody(type);
         writeString(" data;\n");
     }
@@ -3289,7 +3298,7 @@ void C89Emitter::emitTaggedUnionDefinition(Type* type) {
     ensureForwardDeclaration(type);
 
     writeIndent();
-    writeString("struct ");
+    writeKeyword(KW_STRUCT);
     writeString(type->c_name ? type->c_name : "/* unknown */");
     writeString(" ");
     emitTaggedUnionBody(type);
@@ -3371,7 +3380,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         emitted_enums_.append(enum_name);
 
         writeIndent();
-        writeString("enum ");
+        writeKeyword(KW_ENUM);
         writeString(enum_name);
         writeString(" {\n");
         {
@@ -3397,7 +3406,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         writeIndent();
         writeString("};\n");
         writeIndent();
-        writeString("typedef enum ");
+        writeKeyword(KW_TYPEDEF); writeKeyword(KW_ENUM);
         writeString(enum_name);
         writeString(" ");
         writeString(enum_name);
@@ -3418,7 +3427,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
 
     if (type->kind == TYPE_STRUCT) {
         writeIndent();
-        writeString("struct ");
+        writeKeyword(KW_STRUCT);
         writeString(type->c_name ? type->c_name : "/* unknown */");
         if (type->as.struct_details.fields) {
             writeString(" ");
@@ -3429,7 +3438,7 @@ void C89Emitter::emitTypeDefinition(Type* type) {
         }
     } else if (type->kind == TYPE_UNION) {
         writeIndent();
-        writeString("union ");
+        writeKeyword(KW_UNION);
         writeString(type->c_name ? type->c_name : "/* unknown */");
         if (type->as.struct_details.fields) {
             writeString(" ");
@@ -4489,7 +4498,7 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        writeString("goto ");
+        writeKeyword(KW_GOTO);
         writeString(getLoopEndLabel(target_id));
         endStmt();
     } else {
@@ -4516,7 +4525,7 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
-        writeString("goto ");
+        writeKeyword(KW_GOTO);
         writeString(getLoopContinueLabel(target_id));
         endStmt();
     } else {
@@ -4601,7 +4610,7 @@ void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {
     } else {
         writeIndent();
         if (node->expression) {
-            writeString("return ");
+            writeKeyword(KW_RETURN);
             emitExpression(node->expression);
             endStmt();
         } else {

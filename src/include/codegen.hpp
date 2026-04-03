@@ -452,6 +452,15 @@ public:
     static const char* const KW_VOID;
     static const char* const KW_INT;
     static const char* const KW_SIZEOF;
+    static const char* const KW_CHAR;
+    static const char* const KW_SHORT;
+    static const char* const KW_LONG;
+    static const char* const KW_FLOAT;
+    static const char* const KW_DOUBLE;
+    static const char* const KW_SIGNED;
+    static const char* const KW_UNSIGNED;
+    static const char* const KW_REGISTER;
+    static const char* const KW_VOLATILE;
 
     /**
      * @brief Returns true if the node is a simple l-value (identifier or dereference of a simple l-value).

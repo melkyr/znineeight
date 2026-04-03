@@ -1565,6 +1565,17 @@ Key changes:
     - **Modification**: Modified `NameMangler` to bypass module prefixing for `__` names.
     - **Verification**: Verified that Batch 55 and Batch 45 integration tests pass, resolving "undeclared identifier" errors in generated C code.
 
+236.6 [COMPLETE] **Task 9.17: Line Ending and Statement Terminator Abstraction (Point 6)**
+    - **Modification**: Verified and formalized the abstraction of statement terminators and line endings in `src/bootstrap/codegen.cpp`.
+    - **Documentation**: Updated `docs/design/C89_Codegen.md` to include the official standard for using `endStmt()` and `writeLine()`.
+    - **Abstraction**: Ensured that the `win_friendly_line_endings` option is consistently respected via the `C89Emitter` helpers.
+
+236.7 [COMPLETE] **Task 9.18: C Keyword Constants (Point 5)**
+    - **Modification**: Refactored `src/bootstrap/codegen.cpp` to use centralized `KW_*` constants for C89 keywords.
+    - **Abstraction**: Replaced hardcoded strings like `"extern "`, `"static "`, and `"struct "` with `writeKeyword(KW_...)` calls.
+    - **Expansion**: Added missing C89 keywords (`char`, `short`, `float`, `double`, `signed`, `unsigned`, `typedef`, `goto`) to `codegen.hpp`.
+    - **Documentation**: Added a section to `docs/design/C89_Codegen.md` explaining the keyword constant infrastructure.
+
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
 
