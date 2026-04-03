@@ -254,14 +254,22 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
         emitter.writeString(" __make_slice_");
         emitter.writeString(emitter.getMangledTypeName(elem_type));
         emitter.writeString("(");
-        emitter.emitType(elem_type);
-        emitter.writeString("* ptr, usize len) {\n");
+        if (elem_type->kind == TYPE_U8) {
+            emitter.writeString("const char* ptr, usize len) {\n");
+        } else {
+            emitter.emitType(elem_type);
+            emitter.writeString("* ptr, usize len) {\n");
+        }
         emitter.indent();
         emitter.writeIndent();
         emitter.writeString(mangled_name);
         emitter.writeString(" s;\n");
         emitter.writeIndent();
-        emitter.writeString("s.ptr = ptr;\n");
+        if (elem_type->kind == TYPE_U8) {
+            emitter.writeString("s.ptr = (unsigned char*)ptr;\n");
+        } else {
+            emitter.writeString("s.ptr = ptr;\n");
+        }
         emitter.writeIndent();
         emitter.writeString("s.len = len;\n");
         emitter.writeIndent();

@@ -2331,6 +2331,12 @@ Implementation steps (minimal):
     - **Internal Invariants**: Used `fatalError` to abort on internal compiler errors (e.g., unexpected null types) while maintaining recoverable reporting for user errors.
     - **Documentation**: Updated `docs/type_checker.md` with details on the new equality and safety logic.
 
+249. [COMPLETE] **Issue 1: String Literal Slice Mismatch (Signedness Warning)**
+    - **Goal**: Resolve `-Wpointer-sign` warnings when passing string literals to `u8` slice helpers.
+    - **CBackend**: Specialized `__make_slice_u8` to accept `const char*` and perform an explicit cast to `unsigned char*` internally.
+    - **Documentation**: Updated `docs/design/C89_Codegen.md` to reflect the specialized helper.
+    - **Verification**: Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
+
 ---
 
 
