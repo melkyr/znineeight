@@ -819,15 +819,19 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
             return;
         }
 
-        writeIndent();
-        if (effective_target) {
-            writeString(effective_target);
-        } else if (lvalue_node) {
-            emitExpression(lvalue_node);
+        if (effective_target || lvalue_node) {
+            writeIndent();
+            if (effective_target) {
+                writeString(effective_target);
+            } else if (lvalue_node) {
+                emitExpression(lvalue_node);
+            }
+            writeString(" = ");
+            emitExpression(rvalue);
+            endStmt();
+        } else {
+            writeExprStmt(rvalue);
         }
-        writeString(" = ");
-        emitExpression(rvalue);
-        endStmt();
     }
 }
 
@@ -1234,7 +1238,8 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             writeIndent();
             writeKeyword(KW_INT);
             writeString(current_err_flag_);
-            writeString(" = 0;\n");
+            writeString(" = 0");
+            endStmt();
         }
 
         for (size_t i = 0; i < node->statements->length(); ++i) {
@@ -1286,24 +1291,29 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
                     current_fn_ret_type_->as.error_union.payload->kind == TYPE_VOID) {
                     writeIndent();
                     if (is_main_function_) {
-                        writeString("return 0;\n");
+                        writeKeyword(KW_RETURN);
+                        writeString("0");
+                        endStmt();
                     } else {
-                        writeString("{\n");
+                        writeBlockOpen();
                         {
-                            IndentScope implicit_indent(*this);
                             const char* mangled = getMangledTypeName(current_fn_ret_type_);
                             writeIndent();
                             writeString(mangled);
-                            writeString(" __implicit_ret = {0};\n");
+                            writeString(" __implicit_ret = {0}");
+                            endStmt();
                             writeIndent();
-                            writeString("return __implicit_ret;\n");
+                            writeKeyword(KW_RETURN);
+                            writeString("__implicit_ret");
+                            endStmt();
                         }
-                        writeIndent();
-                        writeString("}\n");
+                        writeBlockClose();
                     }
                 } else if (is_main_function_) {
                     writeIndent();
-                    writeString("return 0;\n");
+                    writeKeyword(KW_RETURN);
+                    writeString("0");
+                    endStmt();
                 }
             }
         }
@@ -1326,7 +1336,8 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
             writeIndent();
             writeKeyword(KW_INT);
             writeString(current_err_flag_);
-            writeString(" = 0;\n");
+            writeString(" = 0");
+            endStmt();
         }
 
         for (size_t i = 0; i < node->statements->length(); ++i) {
@@ -1440,13 +1451,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         }
         case NODE_COMPOUND_ASSIGNMENT: {
             /* Compound assignment as a statement */
-            writeIndent();
-            emitExpression(node->as.compound_assignment->lvalue);
-            writeString(" ");
-            writeString(getTokenSpelling(node->as.compound_assignment->op));
-            writeString(" ");
-            emitExpression(node->as.compound_assignment->rvalue);
-            endStmt();
+            writeExprStmt(node);
             break;
         }
         case NODE_FUNCTION_CALL: {
@@ -1460,9 +1465,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             if (is_print) {
                 emitPrintCall(node->as.function_call);
             } else {
-                writeIndent();
-                emitExpression(node);
-                endStmt();
+                writeExprStmt(node);
             }
             break;
         }
@@ -1495,12 +1498,9 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_PAREN_EXPR:
         case NODE_ASYNC_EXPR:
         case NODE_AWAIT_EXPR:
-        case NODE_TUPLE_LITERAL: {
-            writeIndent();
-            emitExpression(node);
-            endStmt();
+        case NODE_TUPLE_LITERAL:
+            writeExprStmt(node);
             break;
-        }
         case NODE_EMPTY_STMT:
             writeIndent();
             endStmt();
@@ -1524,9 +1524,8 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
 
     if (is_optional) {
         writeIndent();
-        writeString("{\n");
+        writeBlockOpen();
         {
-            IndentScope scope_indent(*this);
             const char* cond_tmp = var_alloc_.generate("opt_tmp");
             writeIndent();
             emitType(cond_type, cond_tmp);
@@ -1535,18 +1534,20 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
             endStmt();
 
             writeIndent();
-            writeString("if (");
+            writeKeyword(KW_IF);
+            writeString("(");
             writeString(cond_tmp);
-            writeString(".has_value) {\n");
+            writeString(".has_value) ");
+            writeBlockOpen();
             {
-                IndentScope if_indent(*this);
                 if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
                     writeIndent();
                     const char* c_name = var_alloc_.allocate(node->capture_sym);
                     emitType(node->capture_sym->symbol_type, c_name);
                     writeString(" = ");
                     writeString(cond_tmp);
-                    writeString(".value;\n");
+                    writeString(".value");
+                    endStmt();
                 }
                 if (node->then_block->type == NODE_BLOCK_STMT) {
                     emitBlock(&node->then_block->as.block_stmt);
@@ -1557,9 +1558,10 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
             writeIndent();
             writeString("}");
             if (node->else_block) {
-                writeString(" else {\n");
+                writeString(" ");
+                writeKeyword(KW_ELSE);
+                writeBlockOpen();
                 {
-                    IndentScope else_indent(*this);
                     if (node->else_block->type == NODE_IF_STMT) {
                         emitIf(node->else_block->as.if_stmt);
                     } else if (node->else_block->type == NODE_BLOCK_STMT) {
@@ -1568,17 +1570,16 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
                         emitStatement(node->else_block);
                     }
                 }
-                writeIndent();
-                writeString("}\n");
+                writeBlockClose();
             } else {
                 writeLine();
             }
         }
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
     } else {
         writeIndent();
-        writeString("if (");
+        writeKeyword(KW_IF);
+        writeString("(");
         emitExpression(node->condition);
         writeString(") ");
 
@@ -1589,7 +1590,8 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         }
 
         if (node->else_block) {
-            writeString(" else ");
+            writeString(" ");
+            writeKeyword(KW_ELSE);
             if (node->else_block->type == NODE_IF_STMT) {
                 emitIf(node->else_block->as.if_stmt);
             } else if (node->else_block->type == NODE_BLOCK_STMT) {
@@ -1913,10 +1915,8 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     const char* end_label = getLoopEndLabel(node->label_id);
 
     writeIndent();
-    writeString("{\n");
+    writeBlockOpen();
     {
-        IndentScope scope_indent(*this);
-
         /* Iterable evaluate once */
     if (!is_range) {
         writeIndent();
@@ -1972,18 +1972,18 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     writeIndent();
     writeString(start_label);
-    writeString(": ;\n");
+    writeString(": ;");
+    writeLine();
 
         writeIndent();
-        writeString("while (");
+        writeKeyword(KW_WHILE);
+        writeString("(");
         writeString(idx_name);
         writeString(" < ");
         writeString(len_name);
-        writeString(") {\n");
-
+        writeString(") ");
+        writeBlockOpen();
         {
-            IndentScope while_indent(*this);
-
             /* Item capture */
     Type* item_type = NULL;
     if (is_range) {
@@ -2051,28 +2051,27 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
             /* Continue label and Increment */
             writeIndent();
             writeString(cont_label);
-            writeString(": ;\n");
+            writeString(": ;");
+            writeLine();
 
             writeIndent();
             writeString(idx_name);
-            writeString("++;\n");
+            writeString("++");
+            endStmt();
 
             writeIndent();
             writeKeyword(KW_GOTO);
             writeString(start_label);
             endStmt();
         }
-
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
 
         writeIndent();
         writeString(end_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
     }
-
-    writeIndent();
-    writeString("}\n");
+    writeBlockClose();
 
     loop_id_stack_.pop_back();
 }
@@ -2097,13 +2096,14 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     if (node->capture_name) {
         writeIndent();
         writeString(start_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
 
         writeIndent();
-        writeString("while (1) {\n");
+        writeKeyword(KW_WHILE);
+        writeString("(1) ");
+        writeBlockOpen();
         {
-            IndentScope while_indent(*this);
-
             /* Evaluate condition into a temporary */
             const char* tmp = var_alloc_.generate("opt_tmp");
             writeIndent();
@@ -2113,9 +2113,11 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
             endStmt();
 
             writeIndent();
-            writeString("if (!");
+            writeKeyword(KW_IF);
+            writeString("(!");
             writeString(tmp);
-            writeString(".has_value) goto ");
+            writeString(".has_value) ");
+            writeKeyword(KW_GOTO);
             writeString(end_label);
             endStmt();
 
@@ -2126,7 +2128,8 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
                 emitType(node->capture_sym->symbol_type, c_name);
                 writeString(" = ");
                 writeString(tmp);
-                writeString(".value;\n");
+                writeString(".value");
+                endStmt();
             }
 
             /* Emit body */
@@ -2139,11 +2142,12 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
             writeIndent();
             writeString(cont_label);
-            writeString(": ;\n");
+            writeString(": ;");
+            writeLine();
 
             /* Continue expression (if any) */
             if (node->iter_expr) {
-                emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+                writeExprStmt(node->iter_expr);
             }
 
             writeIndent();
@@ -2151,25 +2155,28 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
             writeString(start_label);
             endStmt();
         }
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
 
         writeIndent();
         writeString(end_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
     } else {
         writeIndent();
         writeString(start_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
 
         writeIndent();
-        writeString("if (!(");
+        writeKeyword(KW_IF);
+        writeString("(!(");
         if (node->condition) {
             emitExpression(node->condition);
         } else {
             writeString("1");
         }
-        writeString(")) goto ");
+        writeString(")) ");
+        writeKeyword(KW_GOTO);
         writeString(end_label);
         endStmt();
 
@@ -2183,9 +2190,10 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
         writeIndent();
         writeString(cont_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
         if (node->iter_expr) {
-            emitAssignmentWithLifting(NULL, NULL, node->iter_expr);
+            writeExprStmt(node->iter_expr);
         }
 
         writeIndent();
@@ -2195,7 +2203,8 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
         writeIndent();
         writeString(end_label);
-        writeString(": ;\n");
+        writeString(": ;");
+        writeLine();
     }
 
     loop_id_stack_.pop_back();
@@ -2592,11 +2601,13 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             }
             break;
         case NODE_COMPOUND_ASSIGNMENT:
+            writeString("(void)(");
             emitExpression(node->as.compound_assignment->lvalue);
             writeString(" ");
             writeString(getTokenSpelling(node->as.compound_assignment->op));
             writeString(" ");
             emitExpression(node->as.compound_assignment->rvalue);
+            writeString(")");
             break;
         case NODE_STRUCT_INITIALIZER: {
             if (!node->as.struct_initializer->fields || node->as.struct_initializer->fields->length() == 0) {
