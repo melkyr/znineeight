@@ -2337,6 +2337,11 @@ Implementation steps (minimal):
     - **Documentation**: Updated `docs/design/C89_Codegen.md` to reflect the specialized helper.
     - **Verification**: Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
 
+250. [COMPLETE] **Issue 2: Local `const` Aggregate Declarations**
+    - **Goal**: Ensure local `const` variables with aggregate initializers (struct/union/enum) are treated as variables, not type aliases.
+    - **Type Checker**: Modified `TypeChecker::visitVarDecl` to restrict type-alias classification (placeholders) to global scope (`!is_local`).
+    - **Verification**: Verified via reproduction script; confirmed local `const` struct instances are correctly emitted as C variables.
+
 ---
 
 

@@ -3104,18 +3104,34 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
+    /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
+    is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
+
     /* Capture struct/union name if it's a const declaration. */
     name_to_set = current_struct_name_;
     if (node->is_const && node->initializer &&
         (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL || node->initializer->type == NODE_ERROR_SET_DEFINITION)) {
-        name_to_set = node->name;
+        /* FIX: Only treat as type declaration if not local.
+           Local const struct { ... } is a variable declaration with an anonymous struct. */
+        if (!is_local) {
+            name_to_set = node->name;
+        }
     } else if (node->is_const && node->initializer && node->initializer->type == NODE_TYPE_NAME && !node->type) {
         /* Alias case: const Aliased = Existing; */
-        name_to_set = node->name;
+        if (!is_local) {
+            name_to_set = node->name;
+        }
     }
     StructNameGuard name_guard(*this, name_to_set);
 
-    if (!placeholder && current_struct_name_) {
+    /* INSTRUMENTATION: Log if we are entering type declaration logic */
+#ifdef DEBUG_SYMBOL
+    if (node->is_const && node->initializer && !is_local) {
+        plat_printf_debug("[TYPE] Treating '%s' as possible type declaration (is_local=0)\n", node->name);
+    }
+#endif
+
+    if (!placeholder && current_struct_name_ && !is_local) {
             Module* current_mod = unit_.getModule(unit_.getCurrentModule());
             placeholder = unit_.getTypeRegistry().find(current_mod, node->name);
 
@@ -3152,15 +3168,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 }
             }
 
-        bool is_local_placeholder = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
         Symbol sym = SymbolBuilder(unit_.getArena())
             .withName(node->name)
-            .withModule(is_local_placeholder ? NULL : unit_.getCurrentModule())
+            .withModule(unit_.getCurrentModule())
             .ofType(SYMBOL_VARIABLE) /* Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type */
             .withType(placeholder)
             .atLocation(node->name_loc)
             .definedBy(node)
-            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST) /* Assuming global for now */
+            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST)
             .build();
 
         if (!existing_sym) {

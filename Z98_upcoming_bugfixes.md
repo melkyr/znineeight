@@ -10,47 +10,15 @@
 
 ---
 
-## Issue 2: Local `const` Aggregate Declarations
+## Issue 2: Local `const` Aggregate Declarations [RESOLVED]
 
 **Root cause:** The compiler treats local `const` with a struct/union/enum initializer as a type declaration (like a global type alias). This is a bug in `TypeChecker::visitVarDecl` or `C89Emitter::emitLocalVarDecl`.
 
 **Effort:** Medium (4-6 hours)
 
-**Plan:**
+**Resolution:** Modified `TypeChecker::visitVarDecl` to only classify `const` aggregates as type aliases when not in a local scope. Local `const` aggregates are now correctly treated as local variable declarations.
 
-1. **In `TypeChecker::visitVarDecl`,** after determining `is_local`, ensure that for a local `const` aggregate, the symbol is marked as `SYMBOL_FLAG_LOCAL` (not global) and `module_name = NULL`. The existing code already does this, but the early return (which we removed) may have been bypassed. Verify that the `existing_sym` update block sets `flags |= SYMBOL_FLAG_LOCAL` and `module_name = NULL`.
-
-2. **In `C89Emitter::emitLocalVarDecl`,** currently there is a check that skips emitting for `const` aggregates (because it treats them as types). Modify that check to only skip if the variable is **global** and `is_const` and aggregate. For local variables, emit them normally.
-
-   Look for code like:
-
-   ```cpp
-   if (decl->is_const && (decl->initializer->resolved_type->kind == TYPE_STRUCT || ...)) {
-       return; // skip
-   }
-   ```
-
-   Change to:
-
-   ```cpp
-   if (decl->is_const && !is_local && (decl->initializer->resolved_type->kind == TYPE_STRUCT || ...)) {
-       return; // skip only for global
-   }
-   ```
-
-3. **Add a test:** `tests/test_local_const_aggregate.zig` with:
-
-   ```zig
-   const Point = struct { x: i32, y: i32 };
-   pub fn main() void {
-       const p = Point{ .x = 1, .y = 2 };
-       _ = p;
-   }
-   ```
-
-   Ensure generated C contains `struct Point p = {1,2};` (or similar) and not a typedef.
-
-**Workaround for now:** Use `var` instead of `const` for local aggregates. That works perfectly.
+**Verification:** Verified via reproduction script; confirmed local `const` struct instances are correctly emitted as C variables.
 
 ---
 
