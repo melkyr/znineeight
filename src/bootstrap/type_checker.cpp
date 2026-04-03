@@ -3588,6 +3588,55 @@ Type* TypeChecker::transformExternType(Type* t) {
     return t;
 }
 
+Type* TypeChecker::resolveTypeAlias(Symbol* sym, int depth) {
+    if (!sym || depth > 64) return NULL;
+
+#ifdef DEBUG_SYMBOL
+    plat_printf_debug("[TYPE_ALIAS] resolving '%s' (depth %d)\n", sym->name ? sym->name : "<null>", depth);
+#endif
+
+    // Only follow constants that are variables
+    if (!(sym->flags & SYMBOL_FLAG_CONST) || sym->kind != SYMBOL_VARIABLE) {
+        return sym->symbol_type;
+    }
+
+    Type* t = sym->symbol_type;
+    if (!t) return NULL;
+
+    // If it's already an aggregate, return it
+    if (t->kind == TYPE_TAGGED_UNION || t->kind == TYPE_STRUCT ||
+        t->kind == TYPE_UNION || t->kind == TYPE_ENUM || t->kind == TYPE_ERROR_SET) {
+        return t;
+    }
+
+    // If it's TYPE_TYPE, we need to look at the initializer
+    if (t->kind == TYPE_TYPE || t->kind == TYPE_PLACEHOLDER) {
+        if (t->kind == TYPE_PLACEHOLDER) {
+            t = resolvePlaceholder(t);
+            if (t && t->kind != TYPE_PLACEHOLDER && t->kind != TYPE_TYPE) return t;
+        }
+
+        ASTVarDeclNode* decl = (ASTVarDeclNode*)sym->details;
+        if (decl && decl->initializer) {
+            // If initializer is an identifier, resolve its symbol
+            if (decl->initializer->type == NODE_IDENTIFIER) {
+                Symbol* nested = unit_.getSymbolTable().lookup(decl->initializer->as.identifier.name);
+                if (nested) return resolveTypeAlias(nested, depth + 1);
+            } else {
+                // Otherwise, the initializer's resolved_type should be the aggregate
+                Type* init_type = decl->initializer->resolved_type;
+                if (!init_type) init_type = visit(decl->initializer);
+
+                if (init_type && init_type->kind == TYPE_TYPE && decl->initializer->resolved_type != get_g_type_type()) {
+                    init_type = decl->initializer->resolved_type;
+                }
+                return init_type;
+            }
+        }
+    }
+    return t;
+}
+
 Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 #ifdef DEBUG_SYMBOL
     plat_printf_debug("[SCOPE] FnBody ENTER '%s' depth=%u\n", node->name, unit_.getSymbolTable().getCurrentScopeLevel());
@@ -3981,6 +4030,25 @@ Type* TypeChecker::visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node)
     if (!node->base) return get_g_type_undefined();
     base_type = visit(node->base);
     if (!base_type || is_type_undefined(base_type)) return get_g_type_undefined();
+
+    // Early static detection for identifiers that are type aliases
+    if (!is_type_access && node->base->type == NODE_IDENTIFIER) {
+        Symbol* sym = node->base->as.identifier.symbol;
+        if (sym && (sym->flags & SYMBOL_FLAG_CONST)) {
+            Type* resolved = resolveTypeAlias(sym);
+            if (resolved && (resolved->kind == TYPE_TAGGED_UNION || resolved->kind == TYPE_STRUCT ||
+                             resolved->kind == TYPE_UNION || resolved->kind == TYPE_ENUM ||
+                             resolved->kind == TYPE_ERROR_SET)) {
+#ifdef DEBUG_SYMBOL
+                plat_printf_debug("[TYPE_ALIAS] '%s' detected as static type access to kind %d\n", sym->name, resolved->kind);
+#endif
+                is_type_access = true;
+                // Update base_type to the resolved aggregate
+                base_type = resolved;
+                node->base->resolved_type = resolved;  // cache for later
+            }
+        }
+    }
 
     /* If the base is a type constant (TYPE_TYPE), mark it for static access. */
     if (base_type->kind == TYPE_TYPE) {
