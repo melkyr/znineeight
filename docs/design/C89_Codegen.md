@@ -60,6 +60,51 @@ To ensure consistency and avoid hardcoding strings for standard C89 keywords, th
 
 Using these constants simplifies maintenance and ensures that any necessary mangling or platform-specific keyword variations can be handled in one place.
 
+### 2.3 Combined Block and Statement Helpers
+To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
+
+- **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.
+- **`writeBlockClose()`**: Decrements the indentation level, writes an indented `}`, and a line ending.
+- **`writeExprStmt(const ASTNode* expr)`**: Indents, emits the C representation of the provided expression node, and appents a statement terminator (`endStmt()`).
+
+#### Example: Refactoring `while` loops
+**Before:**
+```cpp
+writeIndent();
+writeString("while (");
+emitExpression(node->condition);
+writeString(") {\n");
+{
+    IndentScope while_indent(*this);
+    emitStatement(node->body);
+}
+writeIndent();
+writeString("}\n");
+```
+
+**After:**
+```cpp
+writeIndent();
+writeKeyword(KW_WHILE);
+writeString("(");
+emitExpression(node->condition);
+writeString(") ");
+writeBlockOpen();
+{
+    emitStatement(node->body);
+}
+writeBlockClose();
+```
+
+These helpers reduce boilerplate, prevent "forgotten dedent" bugs in manual blocks, and centralize the logic for block formatting.
+
+#### 2.3.1 Compound Assignment Emission
+Compound assignments (e.g., `x += y`) are treated as expressions in C. When used as statements in Z98, they are automatically wrapped in a `(void)` cast to suppress "value computed is not used" warnings on legacy compilers. This is handled centrally in `C89Emitter::emitExpression` and is utilized by `writeExprStmt`.
+
+Example:
+Zig: `total += i;`
+Generated C: `(void)(total += i);`
+
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
 

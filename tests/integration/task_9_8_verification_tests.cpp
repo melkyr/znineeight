@@ -98,7 +98,7 @@ TEST_FUNC(Task9_8_WhileContinueExpr) {
         "    __loop_0_start: ;\n"
         "    if (!(i < n)) goto __loop_0_end;\n"
         "    {\n"
-        "        total += i;\n"
+        "        (void)(total += i);\n"
         "    }\n"
         "    __loop_0_continue: ;\n"
         "    (void)(i += 1);\n"

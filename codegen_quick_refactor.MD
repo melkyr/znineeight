@@ -52,7 +52,7 @@ The following integration steps are ordered from the most complex/invasive to th
 **Target:** `emitIf`, `emitWhile`, `emitSwitch`, `emitFor`.
 **Why:** Standardizes how compiler-generated temporaries are allocated and declared, reducing manual `var_alloc_.generate()` calls and associated manual declarations.
 
-### 4. Combined Block and Statement Helpers (Medium Complexity)
+### 4. Combined Block and Statement Helpers (COMPLETED)
 **Target:** `emitIf`, `emitWhile`, `emitFor`, `emitBlock`.
 **Why:** Simplifies the emission of control flow structures by using `writeBlockOpen()` and `writeBlockClose()`, and standardizes expression statements with `writeExprStmt()`.
 
