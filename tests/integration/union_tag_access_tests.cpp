@@ -34,6 +34,29 @@ TEST_FUNC(UnionTagAccess_Basic) {
     return true;
 }
 
+TEST_FUNC(UnionTagAccess_AliasChain) {
+    const char* source =
+        "const Value = union(enum) { A, B };\n"
+        "const V2 = Value;\n"
+        "const V3 = V2;\n"
+        "var t1 = V3.A;\n";
+
+    ArenaAllocator arena(1024 * 1024);
+    StringInterner interner(arena);
+    TestCompilationUnit unit(arena, interner);
+
+    u32 file_id = unit.addSource("test.zig", source);
+    if (!unit.performTestPipeline(file_id)) {
+        printf("FAIL: Pipeline execution failed for:\n%s\n", source);
+        unit.getErrorHandler().printErrors();
+        return false;
+    }
+
+    if (!unit.validateVariableEmission("t1", "enum zE_1_Value_Tag zV_#_t1 = zE_1_Value_Tag_A;")) return false;
+
+    return true;
+}
+
 TEST_FUNC(UnionTagAccess_Alias) {
     const char* source =
         "const Value = union(enum) { A, B };\n"
@@ -52,8 +75,8 @@ TEST_FUNC(UnionTagAccess_Alias) {
         return false;
     }
 
-    if (!unit.validateVariableEmission("t1", "enum zE_1_Value_Tag zV_4_t1 = zE_1_Value_Tag_A;")) return false;
-    if (!unit.validateVariableEmission("t2", "enum zE_1_Value_Tag zV_5_t2 = zE_1_Value_Tag_B;")) return false;
+    if (!unit.validateVariableEmission("t1", "enum zE_1_Value_Tag zV_#_t1 = zE_1_Value_Tag_A;")) return false;
+    if (!unit.validateVariableEmission("t2", "enum zE_1_Value_Tag zV_#_t2 = zE_1_Value_Tag_B;")) return false;
 
     return true;
 }
