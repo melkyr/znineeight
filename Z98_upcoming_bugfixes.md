@@ -1,37 +1,12 @@
-## Issue 1: String Literal Slice Mismatch (Signedness Warning)
+## Issue 1: String Literal Slice Mismatch (Signedness Warning) [RESOLVED]
 
 **Root cause:** The `__make_slice_u8` helper expects `unsigned char*` but string literals are `char*`. C89 allows implicit conversion, but compilers warn.
 
 **Effort:** Low (1-2 hours)
 
-**Plan:**
+**Resolution:** Modified `CBackend::generateSpecialTypesHeader()` to specialize `__make_slice_u8` to accept `const char* ptr` and perform an explicit cast to `(unsigned char*)ptr` internally. This allows string literals to be passed without warnings.
 
-1. **Modify `zig_special_types.h` generation** in `CBackend::generateSpecialTypesHeader()` (or `cbackend.cpp`) to change the slice helper's parameter type to `const char*` instead of `unsigned char*`:
-
-   ```c
-   static RETR_UNUSED_FUNC Slice_u8 __make_slice_u8(const char* ptr, usize len) {
-       Slice_u8 s;
-       s.ptr = (unsigned char*)ptr;  // explicit cast
-       s.len = len;
-       return s;
-   }
-   ```
-
-2. **Alternatively, keep the helper as is and add a cast in the generated C** by modifying the emitter for string literals. In `C89Emitter::emitStringLiteral`, wrap the literal in a cast: `(const unsigned char*)"..."`. This is simpler and avoids changing the helper.
-
-3. **Implement the cast approach:** In `emitStringLiteral`, after writing the opening quote, emit `(const unsigned char*)` before the literal. This ensures the pointer type matches.
-
-   ```cpp
-   // In emitStringLiteral
-   writeString("(const unsigned char*)");
-   write("\"", 1);
-   // ... emit escaped string ...
-   write("\"", 1);
-   ```
-
-   This will generate `(const unsigned char*)"hello"`, which satisfies the helper.
-
-**Verification:** Compile the Lisp interpreter with `-Wpointer-sign` (or default warnings) – no warnings.
+**Verification:** Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
 
 ---
 

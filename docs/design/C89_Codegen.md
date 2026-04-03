@@ -328,6 +328,12 @@ For each unique slice type, a construction helper is generated:
 - **Implementation**: Returns a `Slice_T` struct initialized with the provided pointer and length.
 - **Usage**: Invoked for all slicing expressions (`base[start..end]`) and implicit array-to-slice coercions.
 
+#### String Literal Coercion to Slice
+To avoid signedness warnings when coercing string literals (which are `char*` in C89) to `u8` slices (where `u8` is `unsigned char`), the construction helper for `u8` slices is specialized:
+- **Signature**: `static RETR_UNUSED_FUNC Slice_u8 __make_slice_u8(const char* ptr, usize len)`
+- **Implementation**: The pointer parameter is explicitly cast to `unsigned char*` when assigning to the slice's `ptr` field: `s.ptr = (unsigned char*)ptr;`.
+- **Rationale**: This allows string literals to be passed directly to the helper without generating `-Wpointer-sign` warnings, while maintaining the correct unsigned representation for `u8` data.
+
 ### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
 1. **Positional Initialization**: If a variable is initialized with `{ ... }`, the emitter generates a series of individual assignments for each field or array element.
