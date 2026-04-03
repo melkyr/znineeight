@@ -133,6 +133,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     plat_strcpy(final_buffer, mangled_buffer);
 
     if (isAssigned(final_buffer)) {
+         // plat_printf_debug("[VAR_ALLOC] Name '%s' already assigned, looking for suffix...\n", final_buffer);
         int suffix_num = 1;
         while (true) {
             char suffix_str[16];
@@ -160,6 +161,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
     }
 
     char* interned = arena_.allocString(final_buffer);
+     // plat_printf_debug("[VAR_ALLOC] Assigned name: '%s'\n", interned);
     assigned_names_.append(interned);
     return interned;
 }
@@ -167,6 +169,7 @@ const char* CVariableAllocator::makeUnique(const char* desired) {
 bool CVariableAllocator::isAssigned(const char* name) const {
     for (size_t i = 0; i < assigned_names_.length(); ++i) {
         if (plat_strcmp(assigned_names_[i], name) == 0) {
+             // plat_printf_debug("[VAR_ALLOC] '%s' is already assigned (checked %d names)\n", name, (int)assigned_names_.length());
             return true;
         }
     }

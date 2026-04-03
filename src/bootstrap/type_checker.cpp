@@ -314,7 +314,7 @@ void TypeChecker::check(ASTNode* root) {
     /* Pass 2: Resolve everything else (including local VarDecls) now that function context is active. */
     if (root && root->type == NODE_BLOCK_STMT && root->as.block_stmt.statements) {
 #ifdef DEBUG_SYMBOL
-        plat_printf_debug("[TYPE] starting pass 2 for module %s\n", unit_.getCurrentModule());
+         // plat_printf_debug("[TYPE] starting pass 2 for module %s\n", unit_.getCurrentModule());
 #endif
         for (size_t i = 0; i < root->as.block_stmt.statements->length(); ++i) {
             ASTNode* stmt = (*root->as.block_stmt.statements)[i];
@@ -1672,7 +1672,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 
     if (!node->array) return get_g_type_undefined();
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitArraySlice start\n");
+     // plat_printf_debug("[TYPE] visitArraySlice start\n");
 #endif
     original_base_type = visit(node->array);
     if (!original_base_type || is_type_undefined(original_base_type)) return get_g_type_undefined();
@@ -1684,7 +1684,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
 #ifdef DEBUG_SYMBOL
     char type_buf[128];
     typeToString(original_base_type, type_buf, sizeof(type_buf));
-    plat_printf_debug("[TYPE] visitArraySlice original_base_type=%s kind=%d\n", type_buf, original_base_type->kind);
+     // plat_printf_debug("[TYPE] visitArraySlice original_base_type=%s kind=%d\n", type_buf, original_base_type->kind);
 #endif
 
     base_type = original_base_type;
@@ -1756,7 +1756,7 @@ Type* TypeChecker::visitArraySlice(ASTArraySliceNode* node) {
     /* Bounds checking for arrays. */
     if (base_type->kind == TYPE_ARRAY) {
 #ifdef DEBUG_CONST_EVAL
-        plat_printf_debug("[CONST_EVAL] start_expr type=%d, end_expr type=%d\n",
+         // plat_printf_debug("[CONST_EVAL] start_expr type=%d, end_expr type=%d\n",
             node->start ? node->start->type : -1,
             node->end ? node->end->type : -1);
 #endif
@@ -1948,7 +1948,7 @@ Type* TypeChecker::visitIdentifier(ASTNode* node) {
 
 Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitBlockStmt ENTER\n");
+     // plat_printf_debug("[TYPE] visitBlockStmt ENTER\n");
 #endif
     Type* last_type;
     bool any_error = false;
@@ -1981,7 +1981,7 @@ Type* TypeChecker::visitBlockStmt(ASTBlockStmtNode* node) {
     }
     unit_.getSymbolTable().exitScope();
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitBlockStmt EXIT\n");
+     // plat_printf_debug("[TYPE] visitBlockStmt EXIT\n");
 #endif
     return any_error ? get_g_type_undefined() : last_type;
 }
@@ -2572,7 +2572,7 @@ void TypeChecker::finalizePlaceholder(Type* placeholder, Type* resolved) {
 
 #ifdef DEBUG
     if ((placeholder->kind == TYPE_STRUCT || placeholder->kind == TYPE_UNION || placeholder->kind == TYPE_ENUM || placeholder->kind == TYPE_TAGGED_UNION) && !placeholder->as.struct_details.name) {
-        plat_printf_debug("DEBUG: WARNING: Finalized aggregate '%s' has NULL name!\n", original_name ? original_name : "<null>");
+         // plat_printf_debug("DEBUG: WARNING: Finalized aggregate '%s' has NULL name!\n", original_name ? original_name : "<null>");
     }
 #endif
 
@@ -3070,7 +3070,7 @@ Type* TypeChecker::visitSwitchStmt(ASTSwitchStmtNode* node) {
  */
 Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitVarDecl '%s' line=%d depth=%u module=%s\n",
+     // plat_printf_debug("[TYPE] visitVarDecl '%s' line=%d depth=%u module=%s\n",
                      node->name, node->name_loc.line, unit_.getSymbolTable().getCurrentScopeLevel(), unit_.getCurrentModule() ? unit_.getCurrentModule() : "NULL");
 #endif
     Symbol* existing_sym;
@@ -3365,7 +3365,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
     is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitVarDecl '%s' is_local=%d current_fn_ret=%p level=%u\n", 
+     // plat_printf_debug("[TYPE] visitVarDecl '%s' is_local=%d current_fn_ret=%p level=%u\n",
                      node->name, is_local, (void*)current_fn_return_type_, unit_.getSymbolTable().getCurrentScopeLevel());
 #endif
 
@@ -3376,9 +3376,13 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         placeholder = NULL;
     }
 
+    if (is_local && unit_.isTestMode()) {
+         // plat_printf_debug("[TYPE] is_local and TestMode for '%s' - ensuring SYMBOL_FLAG_LOCAL\n", node->name);
+    }
+
     /* Update the symbol in the current scope with flags. */
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[TYPE] visitVarDecl '%s' lookupInCurrentScope\n", node->name);
+     // plat_printf_debug("[TYPE] visitVarDecl '%s' lookupInCurrentScope\n", node->name);
 #endif
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     if (!existing_sym && is_local) {
@@ -3388,10 +3392,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         if (existing_sym) {
             unsigned int current_level = unit_.getSymbolTable().getCurrentScopeLevel();
             if (existing_sym->scope_level != current_level) {
-                // If it's a global symbol being shadowed, it's not our existing local symbol.
-                if (existing_sym->scope_level <= 1) {
-                    existing_sym = NULL;
-                }
+                // If it's at a different scope level, it's shadowing or shadowed, not the same local.
+                existing_sym = NULL;
             }
         }
     }
@@ -3411,6 +3413,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             /* Local variables do not get a global mangled name. 
                The C89Emitter will handle them via CVariableAllocator. */
             existing_sym->mangled_name = NULL;
+            /* In test mode, we must ensure they are NOT inserted into the test name counters
+               prematurely or with the wrong kind, as they are not global entities. */
         } else if (!existing_sym->mangled_name) {
             char k_char = node->is_const ? 'C' : 'V';
             existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
@@ -3574,7 +3578,7 @@ Type* TypeChecker::transformExternType(Type* t) {
 
 Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
 #ifdef DEBUG_SYMBOL
-    plat_printf_debug("[SCOPE] FnBody ENTER '%s' depth=%u\n", node->name, unit_.getSymbolTable().getCurrentScopeLevel());
+     // plat_printf_debug("[SCOPE] FnBody ENTER '%s' depth=%u\n", node->name, unit_.getSymbolTable().getCurrentScopeLevel());
 #endif
     Symbol* fn_symbol;
     DynamicArray<Type*>* param_types;
@@ -3644,7 +3648,7 @@ Type* TypeChecker::visitFnBody(ASTFnDeclNode* node) {
                     ASTNode* stmt = (*block.statements)[k];
 #ifdef DEBUG_SYMBOL
                     if (stmt->type == NODE_VAR_DECL) {
-                        plat_printf_debug("[TYPE] FnBody visiting VarDecl '%s'\n", stmt->as.var_decl->name);
+                         // plat_printf_debug("[TYPE] FnBody visiting VarDecl '%s'\n", stmt->as.var_decl->name);
                     }
 #endif
                     /* Visit the statement. visitBlockStmt naturally manages its own scope, 
@@ -4117,7 +4121,7 @@ after_module_handling:
             }
         } else {
 #ifdef DEBUG_SYMBOL
-            plat_printf_debug("[TYPE] TaggedUnion member access '%s' on %s\n", 
+             // plat_printf_debug("[TYPE] TaggedUnion member access '%s' on %s\n",
                              node->field_name, base_type->as.tagged_union.name ? base_type->as.tagged_union.name : "(anon)");
 #endif
 
@@ -4204,27 +4208,27 @@ after_module_handling:
         }
 
 #ifdef DEBUG_MEMBER_ACCESS
-        plat_printf_debug("MEMBER_ACCESS: base='%s' field='%s'\n",
+         // plat_printf_debug("MEMBER_ACCESS: base='%s' field='%s'\n",
             exprToString(node->base),
             node->field_name);
-        plat_printf_debug("  base_type->kind=%d\n", (int)base_type->kind);
+         // plat_printf_debug("  base_type->kind=%d\n", (int)base_type->kind);
         if (base_type->kind == TYPE_MODULE) {
-            plat_printf_debug("  module.name='%s' module_ptr=%p\n",
+             // plat_printf_debug("  module.name='%s' module_ptr=%p\n",
                 base_type->as.module.name,
                 (void*)base_type->as.module.module_ptr);
             if (base_type->as.module.module_ptr) {
-                plat_printf_debug("  module_ptr->name='%s'\n",
+                 // plat_printf_debug("  module_ptr->name='%s'\n",
                     base_type->as.module.module_ptr->name);
                 Type* registered = unit_.getTypeRegistry().find(
                     (Module*)base_type->as.module.module_ptr, node->field_name);
-                plat_printf_debug("  registry.find()=%p\n", (void*)registered);
+                 // plat_printf_debug("  registry.find()=%p\n", (void*)registered);
             }
         }
         if (target_mod && target_mod->symbols) {
             Symbol* target_sym = target_mod->symbols->lookup(node->field_name);
-            plat_printf_debug("  symbols.lookup()=%p\n", (void*)target_sym);
+             // plat_printf_debug("  symbols.lookup()=%p\n", (void*)target_sym);
             if (target_sym) {
-                plat_printf_debug("    sym->module_name='%s'\n",
+                 // plat_printf_debug("    sym->module_name='%s'\n",
                     target_sym->module_name ? target_sym->module_name : "NULL");
             }
         }
@@ -4279,7 +4283,7 @@ after_module_handling:
 
         if (is_static_access) {
 #ifdef DEBUG_SYMBOL
-            plat_printf_debug("[TYPE] TaggedUnion static access '%s' on %s\n", 
+             // plat_printf_debug("[TYPE] TaggedUnion static access '%s' on %s\n",
                              node->field_name, base_type->as.tagged_union.name ? base_type->as.tagged_union.name : "(anon)");
 #endif
             Type* tag_type = getTagType(base_type);
@@ -5195,12 +5199,12 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
     char a_str[128], b_str[128];
     typeToString(a, a_str, sizeof(a_str));
     typeToString(b, b_str, sizeof(b_str));
-    plat_printf_debug("areTypesEqual: '%s' (kind %d) vs '%s' (kind %d)\n", a_str, (int)a->kind, b_str, (int)b->kind);
+     // plat_printf_debug("areTypesEqual: '%s' (kind %d) vs '%s' (kind %d)\n", a_str, (int)a->kind, b_str, (int)b->kind);
 #endif
 
     if (a->kind != b->kind) {
 #ifdef DEBUG_TYPE_EQUAL
-        plat_printf_debug("  -> false (kind mismatch)\n");
+         // plat_printf_debug("  -> false (kind mismatch)\n");
 #endif
         return false;
     }
@@ -5291,7 +5295,7 @@ bool TypeChecker::areTypesEqual(Type* a, Type* b) {
 
             bool res = signaturesMatch(params_a, ret_a, params_b, ret_b);
 #ifdef DEBUG_TYPE_EQUAL
-            plat_printf_debug("  -> signaturesMatch returned %s\n", res ? "true" : "false");
+             // plat_printf_debug("  -> signaturesMatch returned %s\n", res ? "true" : "false");
 #endif
             return res;
         }
@@ -5359,7 +5363,7 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
 
     if (!this->areTypesEqual(a_return, b_return)) {
 #ifdef DEBUG_TYPE_EQUAL
-        plat_printf_debug("signaturesMatch: return types differ\n");
+         // plat_printf_debug("signaturesMatch: return types differ\n");
 #endif
         return false;
     }
@@ -5367,14 +5371,14 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
     if (!a_params && !b_params) return true;
     if (!a_params || !b_params) {
 #ifdef DEBUG_TYPE_EQUAL
-        plat_printf_debug("signaturesMatch: one has params, other doesn't\n");
+         // plat_printf_debug("signaturesMatch: one has params, other doesn't\n");
 #endif
         return false;
     }
 
     if (a_params->length() != b_params->length()) {
 #ifdef DEBUG_TYPE_EQUAL
-        plat_printf_debug("signaturesMatch: param count mismatch: %d vs %d\n", (int)a_params->length(), (int)b_params->length());
+         // plat_printf_debug("signaturesMatch: param count mismatch: %d vs %d\n", (int)a_params->length(), (int)b_params->length());
 #endif
         return false;
     }
@@ -5400,7 +5404,7 @@ bool TypeChecker::signaturesMatch(DynamicArray<Type*>* a_params, Type* a_return,
     for (size_t i = 0; i < a_count; ++i) {
         if (!this->areTypesEqual(a_snapshot[i], b_snapshot[i])) {
 #ifdef DEBUG_TYPE_EQUAL
-            plat_printf_debug("signaturesMatch: param %d differs\n", (int)i);
+             // plat_printf_debug("signaturesMatch: param %d differs\n", (int)i);
 #endif
             result = false;
             break;
@@ -6097,7 +6101,7 @@ bool TypeChecker::IsTypeAssignableTo( Type* source_type, Type* target_type, Sour
     }
 
 #ifdef DEBUG_TYPE_EQUAL
-    plat_printf_debug("IsTypeAssignableTo check:\n");
+     // plat_printf_debug("IsTypeAssignableTo check:\n");
 #endif
 
     /* Exact match always works */
@@ -6574,7 +6578,7 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
     switch (node->type) {
         case NODE_INTEGER_LITERAL:
 #ifdef DEBUG_CONST_EVAL
-            plat_printf_debug("[CONST_EVAL] literal value=%llu file=%s:%d\n",
+             // plat_printf_debug("[CONST_EVAL] literal value=%llu file=%s:%d\n",
                 (unsigned long long)node->as.integer_literal.value,
                 unit_.getSourceManager().getFile(node->loc.file_id)->filename,
                 node->loc.line);
@@ -6996,7 +7000,7 @@ Type* TypeChecker::visitImportStmt(ASTImportStmtNode* node) {
     Type* mod_type = createModuleType(unit_.getArena(), name);
     mod_type->as.module.module_ptr = node->module_ptr;
 #ifdef DEBUG_MODULE_PTR
-    plat_printf_debug("IMPORT_STMT: name='%s' module_ptr=%p\n",
+     // plat_printf_debug("IMPORT_STMT: name='%s' module_ptr=%p\n",
         name, (void*)node->module_ptr);
 #endif
     return mod_type;

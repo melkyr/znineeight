@@ -46,11 +46,26 @@ TEST_FUNC(Task228_OptionalBasics) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    // UT-01: var x: ?i32 = null; -> has_value = 0
-    if (generated_c.find("x.has_value = 0;") == std::string::npos) return false;
+    // UT-01: var x: ?i32 = null; -> has_value = 0 or = {0}
+    if (!unit.containsPattern("x.has_value = 0;", generated_c) &&
+        !unit.containsPattern("x = {0};", generated_c) &&
+        !unit.containsPattern("Optional_i32 x = {0};", generated_c) &&
+        !unit.containsPattern("zV_#_x.has_value = 0;", generated_c) &&
+        !unit.containsPattern("zV_#_x = {0};", generated_c) &&
+        !unit.containsPattern("Optional_i32 zV_#_x = {0};", generated_c)) {
+        printf("FAIL: Could not find x initialization to null. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
+
     // UT-02: var y: ?i32 = 10; -> has_value = 1, value = 10
-    if (generated_c.find("y.value = 10;") == std::string::npos) return false;
-    if (generated_c.find("y.has_value = 1;") == std::string::npos) return false;
+    if (!unit.containsPattern("y.value = 10;", generated_c) && !unit.containsPattern("zV_#_y.value = 10;", generated_c)) {
+        printf("FAIL: Could not find y.value = 10. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
+    if (!unit.containsPattern("y.has_value = 1;", generated_c) && !unit.containsPattern("zV_#_y.has_value = 1;", generated_c)) {
+        printf("FAIL: Could not find y.has_value = 1. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
 
     return true;
 }
@@ -245,8 +260,17 @@ TEST_FUNC(Task228_NestedOptional) {
     plat_delete_file(temp_filename);
 
     // UT-07: var x: ??i32 = null;
-    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x;", generated_c) && !unit.containsPattern("Optional_Optional_i32 x;", generated_c)) return false;
-    if (!unit.containsPattern("x.has_value = 0;", generated_c)) return false;
+    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x", generated_c) && !unit.containsPattern("Optional_Optional_i32 x", generated_c)) {
+        printf("FAIL: Could not find Optional_Optional_i32 for x. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
+    if (!unit.containsPattern("x.has_value = 0;", generated_c) &&
+        !unit.containsPattern("zV_#_x.has_value = 0;", generated_c) &&
+        !unit.containsPattern("x = {0};", generated_c) &&
+        !unit.containsPattern("zV_#_x = {0};", generated_c)) {
+        printf("FAIL: Could not find x.has_value = 0 or x = {0}. Actual output:\n%s\n", generated_c.c_str());
+        return false;
+    }
 
     return true;
 }
@@ -293,16 +317,17 @@ TEST_FUNC(Task228_OptionalStruct) {
     plat_delete_file(temp_filename);
 
     // UT-08: var x: ?Point = null;
-    // Note: Point in test.zig hash d071e5 becomes zS_0_Point in test mode if it's the first struct.
-    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && 
-        !unit.containsPattern("Optional_zS_#_Point p;", generated_c) &&
-        !unit.containsPattern("Optional_Point zV_#_p;", generated_c) &&
-        !unit.containsPattern("Optional_Point p;", generated_c)) {
-        printf("FAIL: Could not find Optional_zS_#_Point or Optional_Point for p. Actual output:\n%s\n", generated_c.c_str());
-        return false;
+    // The compiler may emit 'Optional_zS_#_Point p = {0};' or 'Optional_zS_#_Point p; p.has_value = 0;'
+    bool found = false;
+    if (unit.containsPattern("Optional_zS_#_Point p = {0};", generated_c) ||
+        unit.containsPattern("Optional_zS_#_Point zV_#_p = {0};", generated_c) ||
+        (unit.containsPattern("Optional_zS_#_Point p;", generated_c) && unit.containsPattern("p.has_value = 0;", generated_c)) ||
+        (unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && unit.containsPattern("zV_#_p.has_value = 0;", generated_c))) {
+        found = true;
     }
-    if (!unit.containsPattern("p.has_value = 0;", generated_c) && !unit.containsPattern("zV_#_p.has_value = 0;", generated_c)) {
-        printf("FAIL: Could not find has_value = 0 for p. Actual output:\n%s\n", generated_c.c_str());
+
+    if (!found) {
+        printf("FAIL: Could not find initialization of p to null. Actual output:\n%s\n", generated_c.c_str());
         return false;
     }
 

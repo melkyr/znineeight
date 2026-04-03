@@ -871,9 +871,22 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
             writeString(" = {0}");
         } else if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && isConstantInitializer(decl->initializer)) {
-            /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
-            writeString(" = ");
-            emitExpression(decl->initializer);
+            /* Support constant initializers in C89 for globals/statics, or simple locals if optimized.
+               However, we must NOT use direct assignment for types that require wrapping (Optional, ErrorUnion)
+               if the initializer is a primitive, as structs cannot be initialized with primitives in C. */
+            Type* target_type = node->resolved_type;
+            Type* source_type = decl->initializer->resolved_type;
+            bool needs_wrapping = false;
+            if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                if (source_type && source_type->kind != target_type->kind) {
+                    needs_wrapping = true;
+                }
+            }
+
+            if (!needs_wrapping) {
+                writeString(" = ");
+                emitExpression(decl->initializer);
+            }
         } else if (decl->initializer && decl->initializer->type == NODE_UNDEFINED_LITERAL) {
             /* Zig 'undefined' means no initialization in C */
         }
@@ -888,6 +901,21 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             if (decl->initializer->type == NODE_STRUCT_INITIALIZER &&
                 (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
                 return;
+            }
+
+            /* Skip if already handled by constant initializer in declaration */
+            if (isConstantInitializer(decl->initializer)) {
+                Type* target_type = node->resolved_type;
+                Type* source_type = decl->initializer->resolved_type;
+                bool needs_wrapping = false;
+                if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                    if (source_type && source_type->kind != target_type->kind) {
+                        needs_wrapping = true;
+                    }
+                }
+                if (!needs_wrapping) {
+                    return;
+                }
             }
 
             emitAssignmentWithLifting(c_name, node, decl->initializer);

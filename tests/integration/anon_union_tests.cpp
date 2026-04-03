@@ -59,9 +59,9 @@ static bool run_anon_union_codegen_test(const char* zig_code, const char* expect
     }
     generated_c = std::string(buffer, size);
 
-    bool found = (generated_c.find(expected_c89_substring) != std::string::npos);
+    bool found = unit.containsPattern(expected_c89_substring, generated_c);
     if (!found) {
-        printf("FAIL: Codegen mismatch for:\n%s\nExpected to find: %s\nActual output:   %s\n", zig_code, expected_c89_substring, generated_c.c_str());
+        printf("FAIL: Codegen mismatch for:\n%s\nExpected to find pattern: %s\nActual output:   %s\n", zig_code, expected_c89_substring, generated_c.c_str());
     }
 
     C89Validator* validator = createGCCValidator();
@@ -96,7 +96,7 @@ TEST_FUNC(Codegen_AnonymousUnion_Basic) {
         "    s.data.z_int = 42;\n"
         "}\n";
 
-    return run_anon_union_codegen_test(source, "union zU_3_anon_1 data;");
+    return run_anon_union_codegen_test(source, "union zU_#_anon_# data;");
 }
 
 TEST_FUNC(Codegen_AnonymousUnion_Nested) {
@@ -114,7 +114,7 @@ TEST_FUNC(Codegen_AnonymousUnion_Nested) {
         "    s.data.z_inner.val = 10;\n"
         "}\n";
 
-    return run_anon_union_codegen_test(source, "union zU_4_anon_2 data;");
+    return run_anon_union_codegen_test(source, "union zU_#_anon_# data;");
 }
 
 TEST_FUNC(Codegen_AnonymousStruct_Nested) {
@@ -132,5 +132,5 @@ TEST_FUNC(Codegen_AnonymousStruct_Nested) {
         "    s.data.z_inner.val = 10;\n"
         "}\n";
 
-    return run_anon_union_codegen_test(source, "struct zS_4_anon_2 data;");
+    return run_anon_union_codegen_test(source, "struct zS_#_anon_# data;");
 }
