@@ -114,7 +114,7 @@ TEST_FUNC(Codegen_AnonymousUnion_Nested) {
         "    s.data.z_inner.val = 10;\n"
         "}\n";
 
-    return run_anon_union_codegen_test(source, "union zU_4_anon_2 data;");
+    return run_anon_union_codegen_test(source, "union zU_3_anon_1 data;");
 }
 
 TEST_FUNC(Codegen_AnonymousStruct_Nested) {
@@ -132,5 +132,5 @@ TEST_FUNC(Codegen_AnonymousStruct_Nested) {
         "    s.data.z_inner.val = 10;\n"
         "}\n";
 
-    return run_anon_union_codegen_test(source, "struct zS_4_anon_2 data;");
+    return run_anon_union_codegen_test(source, "struct zS_3_anon_1 data;");
 }

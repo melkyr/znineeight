@@ -38,10 +38,7 @@ TEST_FUNC(ForIntegration_Array) {
         "}";
     const char* expected =
         "void zF_0_foo(void) {\n"
-        "    int arr[3];\n"
-        "    arr[0] = 1;\n"
-        "    arr[1] = 2;\n"
-        "    arr[2] = 3;\n"
+        "    int arr[3] = {1, 2, 3};\n"
         "    {\n"
         "        int* __for_iter_1 = arr;\n"
         "        size_t __for_idx_1 = 0;\n"

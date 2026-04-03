@@ -3381,17 +3381,27 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     plat_printf_debug("[TYPE] visitVarDecl '%s' lookupInCurrentScope\n", node->name);
 #endif
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
-    if (!existing_sym && is_local) {
-        // Fallback: the parser might have inserted it but it might be hidden by module filtering
-        // since we are now in a function body.
-        existing_sym = unit_.getSymbolTable().lookup(node->name);
+    if (existing_sym) {
+        if (existing_sym->details != node && existing_sym->details != NULL) {
+            /* Redefinition in the SAME scope. */
+            char msg[256];
+            plat_memset(msg, 0, sizeof(msg));
+            plat_strcpy(msg, "Redefinition of '");
+            plat_strcat(msg, node->name);
+            plat_strcat(msg, "'");
+            unit_.getErrorHandler().report(ERR_REDEFINITION, node->name_loc, msg);
+            return get_g_type_undefined();
+        }
+    } else if (is_local) {
+        /* Fallback: find in any scope to see if this specific declaration was already seen. */
+        existing_sym = unit_.getSymbolTable().findInAnyScope(node->name, unit_.getCurrentModule());
         if (existing_sym) {
-            unsigned int current_level = unit_.getSymbolTable().getCurrentScopeLevel();
-            if (existing_sym->scope_level != current_level) {
-                // If it's a global symbol being shadowed, it's not our existing local symbol.
-                if (existing_sym->scope_level <= 1) {
-                    existing_sym = NULL;
-                }
+            if (existing_sym->details != node) {
+                /* Shadowing an outer symbol. */
+                existing_sym = NULL;
+            } else if (existing_sym->scope_level <= 1) {
+                /* Global symbol should not be reused for local decl. */
+                existing_sym = NULL;
             }
         }
     }
@@ -3421,6 +3431,12 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             existing_sym->flags |= SYMBOL_FLAG_CONST;
         }
         node->symbol = existing_sym;
+
+        /* Ensure it's in the current scope level so lookupInCurrentScope finds it later. */
+        if (unit_.getSymbolTable().lookupInCurrentScope(node->name) == NULL) {
+            unit_.getSymbolTable().insert(*existing_sym);
+            node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
+        }
     } else {
         /* If not found (e.g. injected in tests), create and insert. */
         if (declared_type && !is_type_undefined(declared_type)) {

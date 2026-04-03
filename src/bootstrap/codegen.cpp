@@ -880,9 +880,28 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
             writeString(" = {0}");
         } else if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && isConstantInitializer(decl->initializer)) {
-            /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
-            writeString(" = ");
-            emitExpression(decl->initializer);
+            /* C89: cannot initialize Optional or Error Union with a primitive constant */
+            Type* target_type = node->resolved_type;
+            Type* source_type = decl->initializer->resolved_type;
+
+            bool needs_wrapping = false;
+            if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                if (source_type && source_type->kind != target_type->kind) {
+                    needs_wrapping = true;
+                }
+            }
+
+            if (needs_wrapping) {
+                /* For locals, we prefer splitting declaration and wrapping assignment.
+                   But here emit_assignment is false, meaning we are ONLY emitting the declaration.
+                   We emit the declaration with {0} and let the second pass (emit_assignment=true)
+                   handle the wrapping via emitAssignmentWithLifting. */
+                writeString(" = {0}");
+            } else {
+                /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
+                writeString(" = ");
+                emitExpression(decl->initializer);
+            }
         } else if (decl->initializer && decl->initializer->type == NODE_UNDEFINED_LITERAL) {
             /* Zig 'undefined' means no initialization in C */
         }
@@ -897,6 +916,20 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             if (decl->initializer->type == NODE_STRUCT_INITIALIZER &&
                 (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
                 return;
+            }
+
+            /* For constants, we already emitted an '=' in the declaration if it wasn't a complex type.
+               If it WAS a complex type, we used = {0} and now we MUST emit the full assignment. */
+            if (isConstantInitializer(decl->initializer)) {
+                Type* target_type = node->resolved_type;
+                Type* source_type = decl->initializer->resolved_type;
+                bool was_wrapped = false;
+                if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                    if (source_type && source_type->kind != target_type->kind) {
+                        was_wrapped = true;
+                    }
+                }
+                if (!was_wrapped) return;
             }
 
             emitAssignmentWithLifting(c_name, node, decl->initializer);
