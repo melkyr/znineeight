@@ -1150,6 +1150,7 @@ bool isTypeComplete(Type* type) {
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
         case TYPE_TUPLE:
+        case TYPE_ANONYMOUS_INIT:
         default:
             return false;
     }
@@ -1315,6 +1316,9 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
                 safe_append(current, remaining, "<null>");
             }
             break;
+        case TYPE_ANONYMOUS_INIT:
+            safe_append(current, remaining, "anonymous_init");
+            break;
         default:
             safe_append(current, remaining, "unknown");
             break;
@@ -1442,6 +1446,9 @@ bool areTypesEqual(Type* a, Type* b) {
             }
             return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
         }
+
+        case TYPE_ANONYMOUS_INIT:
+            return a->as.anonymous_init.node == b->as.anonymous_init.node;
 
         default:
             return false;

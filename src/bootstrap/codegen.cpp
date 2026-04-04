@@ -535,7 +535,7 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
             if (t_type && t_type->c_name) {
                 writeString(t_type->c_name);
             } else if (t_type && t_type->as.enum_details.name) {
-                writeString(unit_.getNameMangler().mangleType(t_type));
+                writeString(unit_.getNameMangler().mangleTypeName(t_type->as.enum_details.name, t_type->owner_module ? t_type->owner_module->name : "unknown"));
             } else {
                 writeString("/* enum */");
             }
@@ -965,10 +965,13 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                 Type* target_type = node->resolved_type;
                 Type* source_type = decl->initializer->resolved_type;
                 bool was_wrapped = false;
-                if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION || isTaggedUnion(target_type))) {
                     if (source_type && source_type->kind != target_type->kind) {
                         was_wrapped = true;
                     }
+                    /* For tagged unions, we always want the decomposition for better C89 compliance and clarity,
+                       even if initialized with a constant. */
+                    if (isTaggedUnion(target_type)) was_wrapped = true;
                 }
                 if (!was_wrapped) return;
             }

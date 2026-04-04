@@ -64,7 +64,8 @@ enum TypeKind {
     TYPE_MODULE,
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
-    TYPE_PLACEHOLDER
+    TYPE_PLACEHOLDER,
+    TYPE_ANONYMOUS_INIT
 };
 ```
 
@@ -188,6 +189,15 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
         } placeholder;
+
+        /**
+         * @struct AnonymousInitDetails
+         * @brief Represents an anonymous initializer awaiting resolution.
+         */
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_init;
     } as;
 };
 ```
@@ -1149,7 +1159,25 @@ The `TypeChecker` supports unwrapping multiple levels of type aliases to facilit
 
 This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
 
-## 7. Expected Type Propagation (Downward Inference)
+## 7. Anonymous Initializer Type (`TYPE_ANONYMOUS_INIT`)
+
+Currently, an anonymous struct or tuple initializer (e.g., `.{ .x = 1, .y = 2 }` or `.{ 1, 2 }`) has no type information when visited standalone. To handle this without overloading `TYPE_UNDEFINED`, the bootstrap compiler introduces `TYPE_ANONYMOUS_INIT`.
+
+### Purpose
+This type acts as a placeholder for anonymous initializers that are **awaiting resolution**. It carries enough information (a pointer to the original `ASTNode`) to be resolved later when the target type is known.
+
+### Resolution via Coercion
+Resolution happens only when a target type is provided via the `coerceNode` mechanism:
+1. When `coerceNode` encounters a source type of `TYPE_ANONYMOUS_INIT`, it triggers a re-visit of the underlying `ASTNode` with the `target_type` as an expected type context.
+2. The `visitStructInitializer` or `visitTupleLiteral` method then uses this expected type to perform field validation and return the final resolved type.
+3. The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type.
+
+### Benefits
+- **Predictable Behavior**: Real errors remain distinguishable from unresolved anonymous literals.
+- **Robust Nesting**: Supports deeply nested anonymous structures within tagged unions or other aggregates.
+- **Recursion Safety**: Utilizes the existing `recursion_depth` guard in `coerceNode` to prevent stack overflow.
+
+## 8. Expected Type Propagation (Downward Inference)
 
 The type checker implements a downward type inference mechanism through an **Expected Type Stack**. This allows the compiler to propagate type information from the surrounding context into expressions that might otherwise have an ambiguous or undefined type (e.g., anonymous struct initializers or switch expressions).
 

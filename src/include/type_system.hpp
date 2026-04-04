@@ -46,7 +46,8 @@ enum TypeKind {
     TYPE_MODULE,
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
-    TYPE_PLACEHOLDER
+    TYPE_PLACEHOLDER,
+    TYPE_ANONYMOUS_INIT
 };
 
 /**
@@ -164,6 +165,10 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
         } placeholder;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_init;
     } as;
 };
 
