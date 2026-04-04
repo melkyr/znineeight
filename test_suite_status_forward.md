@@ -15,7 +15,9 @@
 
 ## Progress Report (32-bit)
 
-Since the last report, there has been significant progress in fixing regressions. The following batches, previously reported as failing, are **now passing**:
+Significant progress has been made. The "const lift" issue, which previously caused many examples and integration tests to fail, has been resolved by a compiler patch that conditionally emits `const` in C only for true constant expressions.
+
+The following batches, previously reported as failing, are **now passing**:
 - **Batch 7 (Switch)**: PASS
 - **Batch 9 (Pointers)**: PASS
 - **Batch 27 (Codegen)**: PASS
@@ -34,9 +36,9 @@ The following 4 batches are currently failing in the 32-bit environment.
 
 ### Failing Batches
 - **Batch 29 (Arithmetic/Bitwise)**: Codegen mismatch in compound assignments. The compiler now wraps compound assignments in `(void)` casts (e.g., `(void)(*a += b);`) to suppress C89 unused-value warnings. The tests expect the bare assignment.
-- **Batch 45 (Error Handling)**: Fails C89 validation due to `const` reassignment. Zig `const` variables initialized with fallible calls (which are lifted in C) generate code like `const int a; a = val;`, which is invalid C89.
-- **Batch 46 (Integration - Error Handling)**: Fails C89 validation for the same reason as Batch 45 (const reassignment in lifted constructs).
-- **Batch 55 (Integration - Return/Try)**: Fails C89 validation for the same reason as Batch 45 (const reassignment in lifted constructs).
+- **Batch 45 (Error Handling)**: One test `ErrorHandling_C89Execution` fails because it uses its own `C89Emitter` logic for validation which was not updated to handle the new `const` emission rules or has other internal mismatches.
+- **Batch 46 (Integration - Error Handling)**: Fails because the integration tests use a custom build command in `task227_try_catch_tests.cpp` that might be missing certain files or flags, leading to compilation errors like `main_module.c: No such file or directory`.
+- **Batch 55 (Integration - Return/Try)**: Fails for the same reason as Batch 46 (missing files in custom integration test build logic).
 
 ---
 
@@ -46,38 +48,22 @@ The following 4 batches are currently failing in the 32-bit environment.
 |---------|--------|-------|
 | `hello` | PASS | |
 | `prime` | PASS | |
-| `days_in_month` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
-| `fibonacci` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
-| `heapsort` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
-| `quicksort` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `days_in_month` | PASS | |
+| `fibonacci` | PASS | |
+| `heapsort` | PASS | |
+| `quicksort` | PASS | |
 | `sort_strings` | PASS | |
-| `func_ptr_return`| FAIL | C89 error: assignment of read-only variable (`const` lift) |
-| `lzw` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `func_ptr_return`| PASS | |
+| `lzw` | PASS | |
 
 ---
 
 ## Deep Investigation of Failures
 
-### 1. The `const` Lift Problem
-In Zig, `const` means the value is immutable after initialization. Many Zig constructs like `switch` expressions, `if` expressions, and error handling (`try`, `catch`) are "lifted" by the compiler into statement blocks in C89.
+### 1. The `const` Lift Resolution
+The "const lift" problem occurred when Zig `const` variables were initialized with expressions requiring "lifting" (like `switch`, `if`, or fallible calls). These were emitted in C89 as a declaration followed by an assignment, which is illegal for `const` in C.
 
-If a Zig variable is declared as `const` and initialized with one of these expressions, the compiler generates a C declaration followed by an assignment within a block.
-For example:
-```zig
-const d = switch (month) { ... };
-```
-Generates (roughly):
-```c
-const int d;
-{
-    int __tmp;
-    switch (month) { ... __tmp = 31; ... }
-    d = __tmp; // Error: assignment of read-only variable 'd'
-}
-```
-In C89, a `const` variable **must** be initialized at the point of declaration. Since the value is only known after the lifted block executes, the current codegen is invalid C.
-
-**Insight:** Since the Zig TypeChecker already enforces immutability for `const` variables, the compiler should safely omit the `const` keyword in C for any local variable that requires lifting (i.e., any variable where the initialization is not a simple C-compatible constant expression).
+**Solution:** The compiler now uses `isConstantInitializer` to check if the Zig initializer is a C89-compatible constant expression. If not, the `const` keyword is omitted in the generated C code. This is safe because Zig's TypeChecker already guarantees immutability.
 
 ### 2. Compound Assignment `(void)` Casts
 The compiler recently improved codegen to wrap compound assignments in `(void)` casts to suppress C89 warnings about unused values.
@@ -90,6 +76,9 @@ Tests in Batch 29 were written before this change and expect:
 ```
 **Insight:** This is a legitimate improvement in the compiler. The test suite should be updated to match this new standard.
 
+### 3. Integration Test Build Failures (Batches 46, 55)
+These batches fail not because of compiler bugs, but because the integration test framework in `tests/integration/task227_try_catch_tests.cpp` and `tests/integration/task3_try_return_tests.cpp` uses a manual `gcc` call that is currently fragile (e.g., trying to link `main_module.c` when it might be named `main.c`).
+
 ---
 
 ## Test Environment Improvements
@@ -97,3 +86,4 @@ Tests in Batch 29 were written before this change and expect:
 1.  **Added `src/include/zig_special_types.h`**: Standard location for compiler-generated special types.
 2.  **Validator Flag Update**: Modified `tests/c89_validation/gcc_validator.cpp` to include the `-m32` flag.
 3.  **Topological Sorting (Batch 71 Fix)**: Batch 71 now passes due to the implementation of Kahn's algorithm for dependency ordering in `MetadataPreparationPass`.
+4.  **Conditional `const` Emission**: Resolved illegal C89 assignment to `const` variables for lifted expressions.
