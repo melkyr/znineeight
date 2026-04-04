@@ -420,10 +420,12 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
     /* Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std")) */
-    if (decl->initializer && decl->initializer->resolved_type) {
-        Type* init_type = decl->initializer->resolved_type;
-        if (init_type->kind == TYPE_MODULE ||
-            (decl->is_const && (init_type->kind == TYPE_STRUCT || init_type->kind == TYPE_UNION || init_type->kind == TYPE_ENUM || init_type->kind == TYPE_ERROR_SET))) {
+    if (decl->initializer) {
+        if (decl->initializer->type == NODE_IMPORT_STMT ||
+            (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
+            return;
+        }
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
             return;
         }
     }
@@ -839,6 +841,17 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
+    /* Skip type and module declarations in local scope */
+    if (decl->initializer) {
+        if (decl->initializer->type == NODE_IMPORT_STMT ||
+            (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
+            return;
+        }
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+            return;
+        }
+    }
+
     if (debug_trace_) {
         plat_printf_debug("[CODEGEN] emitLocalVarDecl: name=%s has_symbol=%d\n",
                          decl->name ? decl->name : "NULL",
@@ -877,6 +890,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
     if (!emit_assignment) {
         writeIndent();
+        if (decl->is_const) {
+            writeKeyword(KW_CONST);
+        }
         emitDeclarator(node->resolved_type, c_name);
 
         /* Special case: zero-initialization for catch temporaries and other lifted vars */
