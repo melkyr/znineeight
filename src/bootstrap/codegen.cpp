@@ -442,6 +442,17 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
         writeKeyword(KW_STATIC);
     }
 
+    bool is_const_in_c = false;
+    if (decl->is_const) {
+        if (decl->initializer && isConstantInitializer(decl->initializer)) {
+            is_const_in_c = true;
+        }
+    }
+
+    if (is_const_in_c) {
+        writeKeyword(KW_CONST);
+    }
+
     Type* type = node->resolved_type;
     const char* c_name = NULL;
     if (decl->symbol && (decl->symbol->flags & SYMBOL_FLAG_EXTERN)) {
@@ -890,9 +901,19 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
     if (!emit_assignment) {
         writeIndent();
+
+        bool is_const_in_c = false;
         if (decl->is_const) {
+            /* Only emit 'const' if the initializer is a C89 constant expression */
+            if (decl->initializer && isConstantInitializer(decl->initializer)) {
+                is_const_in_c = true;
+            }
+        }
+
+        if (is_const_in_c) {
             writeKeyword(KW_CONST);
         }
+
         emitDeclarator(node->resolved_type, c_name);
 
         /* Special case: zero-initialization for catch temporaries and other lifted vars */
