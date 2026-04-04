@@ -74,3 +74,19 @@ v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };
 - **Tagged Union Tag Assignment Precedence (FIXED)**: Fixed `*t.tag` vs `(*t).tag`.
 - **Uninitialized `__tmp_catch` (FIXED)**: Lifter now ensures zero-initialization.
 - **Implicit `memcpy` (FIXED)**: `<string.h>` is now included in prologue.
+
+## 5. Deep Analysis of Tagged Union Payload Issue (Milestone 11+)
+
+As documented in `analysis_anon_struct.md`, a critical bug was identified where nested anonymous struct initializers cause the outer tagged union initializer to be marked as `TYPE_UNDEFINED`.
+
+### Root Cause Summary
+1. The TypeChecker's `visit()` pass on an anonymous struct literal ` .{ .car = ... }` correctly returns `TYPE_UNDEFINED` because it lacks context.
+2. `TypeChecker::checkStructInitializerFields` (the caller) incorrectly treats this as a failure and returns `false`.
+3. The outer `Value { .Cons = ... }` is subsequently marked as `TYPE_UNDEFINED`.
+4. `C89Emitter` skips code generation for assignments involving `TYPE_UNDEFINED`.
+
+### Impact on alloc_cons
+In `alloc_cons`, the zeroed memory from the arena defaults to the first variant of `Value`, which is `Nil`. Because the tag assignment for `Cons` is skipped, the function appears to return a `Nil` value instead of a `Cons` cell.
+
+### Recommended Fix
+The TypeChecker should allow `TYPE_UNDEFINED` results during the initial field visit if the value is an anonymous struct or `undefined` literal, relying on the mandatory `coerceNode` call to finalize the resolution once the target type is known.
