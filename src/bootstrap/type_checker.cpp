@@ -3082,6 +3082,33 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     const char* mangled;
     const char* name_to_set;
 
+    /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
+    is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
+
+    /* Reject local type definitions and aliases */
+    if (is_local && node->is_const && node->initializer) {
+        bool is_type_def = false;
+        if (isTypeExpression(node->initializer, unit_.getSymbolTable())) {
+            is_type_def = true;
+        } else if (node->initializer->type == NODE_IDENTIFIER) {
+            Symbol* s = unit_.getSymbolTable().lookup(node->initializer->as.identifier.name);
+            if (s) {
+                Type* t = resolveTypeAlias(s);
+                if (t && (t->kind == TYPE_STRUCT || t->kind == TYPE_UNION || t->kind == TYPE_TAGGED_UNION ||
+                          t->kind == TYPE_ENUM || t->kind == TYPE_ERROR_SET || t->kind == TYPE_TYPE || t->kind == TYPE_PLACEHOLDER)) {
+                    is_type_def = true;
+                }
+            }
+        } else if (node->initializer->resolved_type && node->initializer->resolved_type->kind == TYPE_TYPE) {
+            is_type_def = true;
+        }
+
+        if (is_type_def) {
+            unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->name_loc, "type definitions and aliases are not allowed inside functions");
+            return get_g_type_undefined();
+        }
+    }
+
     /* Avoid double resolution but ensure flags are set. */
     existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
     placeholder = NULL;
@@ -3106,12 +3133,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
 
     /* Capture struct/union name if it's a const declaration. */
     name_to_set = current_struct_name_;
-    if (node->is_const && node->initializer &&
-        (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL || node->initializer->type == NODE_ERROR_SET_DEFINITION)) {
-        name_to_set = node->name;
-    } else if (node->is_const && node->initializer && node->initializer->type == NODE_TYPE_NAME && !node->type) {
-        /* Alias case: const Aliased = Existing; */
-        name_to_set = node->name;
+    if (!is_local) {
+        if (node->is_const && node->initializer &&
+            (node->initializer->type == NODE_STRUCT_DECL || node->initializer->type == NODE_UNION_DECL || node->initializer->type == NODE_ENUM_DECL || node->initializer->type == NODE_ERROR_SET_DEFINITION)) {
+            name_to_set = node->name;
+        } else if (node->is_const && node->initializer && node->initializer->type == NODE_TYPE_NAME && !node->type) {
+            /* Alias case: const Aliased = Existing; */
+            name_to_set = node->name;
+        }
     }
     StructNameGuard name_guard(*this, name_to_set);
 
@@ -3152,15 +3181,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 }
             }
 
-        bool is_local_placeholder = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
         Symbol sym = SymbolBuilder(unit_.getArena())
             .withName(node->name)
-            .withModule(is_local_placeholder ? NULL : unit_.getCurrentModule())
+            .withModule(is_local ? NULL : unit_.getCurrentModule())
             .ofType(SYMBOL_VARIABLE) /* Or SYMBOL_TYPE? VarDecl usually means it's a constant holding a type */
             .withType(placeholder)
             .atLocation(node->name_loc)
             .definedBy(node)
-            .withFlags(SYMBOL_FLAG_GLOBAL | SYMBOL_FLAG_CONST) /* Assuming global for now */
+            .withFlags((is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | SYMBOL_FLAG_CONST)
             .build();
 
         if (!existing_sym) {
@@ -3168,6 +3196,8 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             existing_sym = unit_.getSymbolTable().lookupInCurrentScope(node->name);
         } else {
             existing_sym->symbol_type = placeholder;
+            existing_sym->module_name = is_local ? NULL : unit_.getCurrentModule();
+            existing_sym->flags = (is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | SYMBOL_FLAG_CONST;
         }
     }
 
@@ -3362,8 +3392,6 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
         }
     }
 
-    /* If we are inside a function body, current_fn_return_type_ will be non-NULL. */
-    is_local = (current_fn_return_type_ != NULL || unit_.getSymbolTable().getCurrentScopeLevel() > 1);
 #ifdef DEBUG_SYMBOL
     plat_printf_debug("[TYPE] visitVarDecl '%s' is_local=%d current_fn_ret=%p level=%u\n", 
                      node->name, is_local, (void*)current_fn_return_type_, unit_.getSymbolTable().getCurrentScopeLevel());
@@ -3426,7 +3454,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             existing_sym->mangled_name = unit_.getNameMangler().mangle(k_char, unit_.getCurrentModule(), node->name);
         }
 
-        existing_sym->flags |= is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
+        existing_sym->flags = is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL;
         if (node->is_const) {
             existing_sym->flags |= SYMBOL_FLAG_CONST;
         }
@@ -3456,7 +3484,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                 .withType(declared_type)
                 .atLocation(node->name_loc)
                 .definedBy(node)
-                .withFlags(is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL)
+                .withFlags((is_local ? SYMBOL_FLAG_LOCAL : SYMBOL_FLAG_GLOBAL) | (node->is_const ? SYMBOL_FLAG_CONST : 0))
                 .build();
             unit_.getSymbolTable().insert(var_symbol);
             node->symbol = unit_.getSymbolTable().lookupInCurrentScope(node->name);
@@ -3468,6 +3496,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
     }
 
     if (!declared_type) return NULL;
+
+    if (is_local && node->is_const && declared_type &&
+        (declared_type->kind == TYPE_STRUCT || declared_type->kind == TYPE_UNION ||
+         declared_type->kind == TYPE_TAGGED_UNION || declared_type->kind == TYPE_ENUM)) {
+        /* This is a constant instance, not a type alias.
+           Ensure node->resolved_type is the aggregate type, not TYPE_TYPE. */
+        if (parent) parent->resolved_type = declared_type;
+    }
 
     /* Critical: Set the initializer's resolved_type so visitMemberAccess can unwrap it.
        Only apply to aggregate type declarations (struct, union, enum). */
