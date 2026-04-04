@@ -1,17 +1,16 @@
 #include "test_runner_main.hpp"
-#include "test_framework.hpp"
 
-TEST_FUNC(WhileSwitch_BreakExitsLoop);
-TEST_FUNC(WhileSwitch_ContinueTargetsLoop);
-TEST_FUNC(WhileSwitch_NestedLoops);
-TEST_FUNC(ForSwitch_BreakExitsLoop);
+TEST_FUNC(AnonInit_TaggedUnion_NestedStruct);
+TEST_FUNC(AnonInit_DeeplyNested);
+TEST_FUNC(AnonInit_Alias);
+TEST_FUNC(AnonInit_NakedTag_Coercion);
 
 int main(int argc, char* argv[]) {
     bool (*tests[])() = {
-        test_WhileSwitch_BreakExitsLoop,
-        test_WhileSwitch_ContinueTargetsLoop,
-        test_WhileSwitch_NestedLoops,
-        test_ForSwitch_BreakExitsLoop
+        test_AnonInit_TaggedUnion_NestedStruct,
+        test_AnonInit_DeeplyNested,
+        test_AnonInit_Alias,
+        test_AnonInit_NakedTag_Coercion
     };
 
     return run_batch(argc, argv, tests, sizeof(tests) / sizeof(tests[0]));

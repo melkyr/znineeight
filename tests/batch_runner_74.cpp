@@ -1,7 +1,5 @@
 // Generated batch runner for tests/main_batch74.cpp
 #include "../src/bootstrap/bootstrap_all.cpp"
 #include "test_utils.cpp"
-#include "c89_validation/gcc_validator.cpp"
-#include "c89_validation/msvc6_validator.cpp"
-#include "integration/while_switch_control_flow.cpp"
+#include "integration/anon_init_tests.cpp"
 #include "main_batch74.cpp"

@@ -59,25 +59,29 @@ Existing integration tests (e.g., Batch 57) for anonymous structs often used the
 
 ## Proposed Solution (Fix Strategy)
 
-Modify `TypeChecker::checkStructInitializerFields` to allow `TYPE_UNDEFINED` results from `visit(field_value)` if the field value is a `NODE_STRUCT_INITIALIZER` (anonymous) or a `NODE_UNDEFINED_LITERAL`. Rely on the subsequent `coerceNode` call within the same loop to perform the actual resolution and type-checking once the target field type is known.
+The bug was addressed by introducing a formal `TYPE_ANONYMOUS_INIT` state, rather than relying on `TYPE_UNDEFINED` bypasses.
 
-```cpp
-// src/bootstrap/type_checker.cpp
+## Final Solution: `TYPE_ANONYMOUS_INIT`
 
-bool TypeChecker::checkStructInitializerFields(...) {
-    ...
-    for (...) {
-        Type* val_type = visit(init->value);
-        if (val_type && is_type_undefined(val_type)) {
-            // FIX: Allow anonymous structs and 'undefined' to proceed to coercion
-            if (init->value->type != NODE_STRUCT_INITIALIZER &&
-                init->value->type != NODE_UNDEFINED_LITERAL) {
-                return false;
-            }
-        }
-        ...
-        coerceNode(&init->value, field_type); // This will resolve the type!
-        ...
-    }
+### Implementation
+1.  **New Type Kind**: Introduced `TYPE_ANONYMOUS_INIT` in `src/include/type_system.hpp` to explicitly represent unresolved anonymous struct and tuple literals.
+2.  **Deferred Resolution**: Modified `TypeChecker::visitStructInitializer` and `visitTupleLiteral` to return this new type when no type context is present.
+3.  **Resolution via Coercion**: Updated `TypeChecker::coerceNode` to detect `TYPE_ANONYMOUS_INIT` and trigger a re-visit of the initializer with the `target_type` as the expected context. This ensures nested anonymous payloads are resolved correctly against their variant types.
+4.  **Codegen Fix**: Updated `C89Emitter::emitLocalVarDecl` to ensure that `isTaggedUnion` types always use the assignment decomposition path, ensuring correct tag and field emission even for constant-initialized locals.
+
+## Verification Result
+
+The issue is **Resolved**.
+
+-   **Integration Tests**: Batch 74 verified correct code generation for nested anonymous initializers, type aliases, and naked tags.
+-   **Lisp Interpreter**: The `alloc_cons` function now generates correct C code, and the interpreter successfully evaluates expressions without "Nil tag" corruption.
+
+```c
+/* Correctly generated C code for alloc_cons */
+{
+    struct zS_5ed3ca_Value* init_lval_tmp = &(*v);
+    (*init_lval_tmp).tag = zE_1a36c1_Value_Tag_Cons;
+    (*init_lval_tmp).data.Cons.car = car;
+    (*init_lval_tmp).data.Cons.cdr = cdr;
 }
 ```

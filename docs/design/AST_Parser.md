@@ -2204,6 +2204,16 @@ Represents an array or slice expression (e.g., `base[start..end]`).
     - `base_ptr`: Synthetic expression representing the raw pointer to the first element. Populated during type checking for use in codegen.
     - `len`: Synthetic expression representing the resulting length. Populated during type checking.
 
+## 37. Anonymous Initializers
+
+Anonymous struct and tuple literals (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`) are parsed as `NODE_STRUCT_INITIALIZER` and `NODE_TUPLE_LITERAL` respectively, with their `type_expr` set to `NULL`.
+
+### Initial Typing
+When first visited by the `TypeChecker`, if no expected type context is available, these nodes are assigned the `TYPE_ANONYMOUS_INIT` type. This type acts as a placeholder indicating that the literal is awaiting resolution.
+
+### Resolution
+Resolution is deferred until a target type is known (e.g., during assignment or when passing to a function). The `coerceNode` mechanism then re-visits the node with the target type as an expected type, transforming the node into a concretely typed aggregate.
+
 ### Type Resolution
 The `TypeChecker` resolves slicing expressions and ensures:
 - The base type is a sized array, another slice, or a many-item pointer.
