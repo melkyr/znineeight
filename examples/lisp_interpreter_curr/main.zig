@@ -97,11 +97,11 @@ fn read_line(buf: []u8) i32 {
 }
 
 pub fn main() void {
-    var perm_buf: [1048576]u8 = undefined;
-    var temp_buf: [1048576]u8 = undefined;
+    var perm_buf: [131072]u64 = undefined;
+    var temp_buf: [131072]u64 = undefined;
 
-    var perm_sand = sand_mod.sand_init(perm_buf[0..1048576]);
-    var temp_sand = sand_mod.sand_init(temp_buf[0..1048576]);
+    var perm_sand = sand_mod.sand_init(@ptrCast([*]u8, &perm_buf)[0..1048576]);
+    var temp_sand = sand_mod.sand_init(@ptrCast([*]u8, &temp_buf)[0..1048576]);
 
     var global_env: ?*env_mod.EnvNode = null;
 

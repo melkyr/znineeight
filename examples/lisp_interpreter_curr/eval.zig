@@ -71,10 +71,17 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mo
                                         switch (val_rest.*) {
                                             .Cons => |v_data| {
                                                 const val_expr = v_data.car;
+                                                var slot = try value_mod.alloc_nil(perm_sand);
+                                                env.* = try env_mod.env_extend(sym_name, slot, env.*, perm_sand);
                                                 const val = try eval(val_expr, env, temp_sand, perm_sand);
-                                                const perm_val = try deep_copy_mod.deep_copy(val, perm_sand);
-                                                env.* = try env_mod.env_extend(sym_name, perm_val, env.*, perm_sand);
-                                                return perm_val;
+
+                                                var final_val = val;
+                                                if (sand_mod.points_to_arena(@ptrCast(*void, val), temp_sand.start, temp_sand.pos)) {
+                                                    final_val = try deep_copy_mod.deep_copy(val, perm_sand);
+                                                }
+
+                                                slot.* = final_val.*;
+                                                return final_val;
                                             },
                                             else => return error.InvalidDefine,
                                         }
@@ -93,10 +100,13 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mo
                                 switch (body_rest.*) {
                                     .Cons => |b_data| {
                                         const body = b_data.car;
-                                        const closure_tag = try value_mod.alloc_symbol("closure", perm_sand);
-                                        const params_body = try value_mod.alloc_cons(params, body, perm_sand);
-                                        const env_val = try env_to_value(env.*, perm_sand);
+                                        // Deep copy params and body into permanent sand
+                                        const perm_params = try deep_copy_mod.deep_copy(params, perm_sand);
+                                        const perm_body = try deep_copy_mod.deep_copy(body, perm_sand);
+                                        const params_body = try value_mod.alloc_cons(perm_params, perm_body, perm_sand);
+                                        const env_val = try env_to_value(env.*, perm_sand, temp_sand);
                                         const closure_data = try value_mod.alloc_cons(params_body, env_val, perm_sand);
+                                        const closure_tag = try value_mod.alloc_symbol("closure", perm_sand);
                                         return try value_mod.alloc_cons(closure_tag, closure_data, perm_sand);
                                     },
                                     else => return error.InvalidLambda,
@@ -110,7 +120,6 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mo
             }
 
             const fun = try eval(car, env, temp_sand, perm_sand);
-
             var arg_count: usize = 0;
             var cur = cdr;
             while (true) {
@@ -145,11 +154,15 @@ pub fn eval(expr: *value_mod.Value, env: *?*env_mod.EnvNode, temp_sand: *sand_mo
     }
 }
 
-fn env_to_value(env: ?*env_mod.EnvNode, sand: *sand_mod.Sand) util.LispError!*value_mod.Value {
+fn env_to_value(env: ?*env_mod.EnvNode, sand: *sand_mod.Sand, temp_sand: *sand_mod.Sand) util.LispError!*value_mod.Value {
     if (env) |node| {
         const sym_val = try value_mod.alloc_symbol(node.symbol, sand);
-        const pair = try value_mod.alloc_cons(sym_val, node.value, sand);
-        const next = try env_to_value(node.next, sand);
+        var val = node.value;
+        if (sand_mod.points_to_arena(@ptrCast(*void, val), temp_sand.start, temp_sand.pos)) {
+            val = try deep_copy_mod.deep_copy(val, sand);
+        }
+        const pair = try value_mod.alloc_cons(sym_val, val, sand);
+        const next = try env_to_value(node.next, sand, temp_sand);
         return try value_mod.alloc_cons(pair, next, sand);
     } else {
         return try value_mod.alloc_symbol("nil", sand);
@@ -160,7 +173,8 @@ fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNod
     switch (fun.*) {
         .Builtin => |f_ptr| {
             const f = @ptrCast(fn ([]*value_mod.Value, *sand_mod.Sand) util.LispError!*value_mod.Value, f_ptr);
-            return try f(args, temp_sand);
+            const res = try f(args, temp_sand);
+            return res;
         },
         .Cons => |data| {
             const car = data.car;
@@ -178,8 +192,7 @@ fn apply(fun: *value_mod.Value, args: []*value_mod.Value, env: *?*env_mod.EnvNod
                                         const body = dc_data.cdr;
                                         const saved_env_val = data_cdr;
 
-                                        var new_env = try value_to_env_real(saved_env_val, perm_sand);
-
+                                        var new_env = try value_to_env_real(saved_env_val, temp_sand);
                                         var cur_param = params;
                                         var i: usize = 0;
                                         while (i < args.len) {

@@ -48,7 +48,7 @@ pub fn next_token(self: *Tokenizer) util.LispError!Token {
             self.pos += 1;
         }
         const slice = self.input[start..self.pos];
-        const val = try parse_int_simple(slice);
+        const val = try util.parse_int(slice);
         return Token{ .Int = val };
     }
 
@@ -66,20 +66,4 @@ pub fn peek_token(self: *Tokenizer) util.LispError!Token {
     const tok = try next_token(self);
     self.pos = saved_pos;
     return tok;
-}
-
-fn parse_int_simple(s: []const u8) util.LispError!i64 {
-    var res: i64 = 0;
-    var neg = false;
-    var i: usize = 0;
-    if (s.len > 0 and s[0] == '-') {
-        neg = true;
-        i = 1;
-    }
-    while (i < s.len) {
-        res = res * 10 + @intCast(i64, s[i] - '0');
-        i += 1;
-    }
-    if (neg) return -res;
-    return res;
 }
