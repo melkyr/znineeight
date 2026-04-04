@@ -1563,9 +1563,9 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         writeIndent();
         writeBlockOpen();
         {
-            const char* cond_tmp = var_alloc_.generate("opt_tmp");
+            const char* cond_tmp = makeTempVarForType(cond_type, "opt_tmp", true);
             writeIndent();
-            emitType(cond_type, cond_tmp);
+            writeString(cond_tmp);
             writeString(" = ");
             emitExpression(node->condition);
             endStmt();
@@ -1587,6 +1587,7 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
                     endStmt();
                 }
                 if (node->then_block->type == NODE_BLOCK_STMT) {
+                    writeIndent();
                     emitBlock(&node->then_block->as.block_stmt);
                 } else {
                     emitStatement(node->then_block);
@@ -1602,6 +1603,7 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
                     if (node->else_block->type == NODE_IF_STMT) {
                         emitIf(node->else_block->as.if_stmt);
                     } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                        writeIndent();
                         emitBlock(&node->else_block->as.block_stmt);
                     } else {
                         emitStatement(node->else_block);
@@ -1775,31 +1777,33 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     const char* switch_tmp = NULL;
 
     if (is_tagged_union) {
-        switch_tmp = var_alloc_.generate("switch_tmp");
         writeIndent();
-        writeString("{\n");
+        writeBlockOpen();
         {
-            IndentScope scope_indent(*this);
+            switch_tmp = makeTempVarForType(cond_type, "switch_tmp", true);
             writeIndent();
-            emitType(cond_type, switch_tmp);
+            writeString(switch_tmp);
             writeString(" = ");
             emitExpression(node->expression);
             endStmt();
 
             writeIndent();
-            writeString("switch (");
+            writeKeyword(KW_SWITCH);
+            writeString("(");
             writeString(switch_tmp);
-            writeString(".tag) {\n");
+            writeString(".tag) ");
+            writeBlockOpen();
         }
     } else {
         writeIndent();
-        writeString("switch (");
+        writeKeyword(KW_SWITCH);
+        writeString("(");
         emitExpression(node->expression);
-        writeString(") {\n");
+        writeString(") ");
+        writeBlockOpen();
     }
 
     {
-        IndentScope switch_indent(*this);
         for (size_t i = 0; i < node->prongs->length(); ++i) {
             const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
             if (prong->is_else) {
@@ -1846,17 +1850,14 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                                       item_expr->as.integer_literal.original_name, capture_type->kind);
 
                     writeIndent();
-                    writeString("{\n");
+                    writeBlockOpen();
                     {
-                        IndentScope capture_indent(*this);
                         writeIndent();
                         writeString("/* DEBUG: capture ");
                         writeString(prong->capture_name);
                         writeString(" */\n");
                         const char* c_name = var_alloc_.allocate(prong->capture_sym);
-                        writeIndent();
-                        emitType(capture_type, c_name);
-                        endStmt();
+                        writeFieldDecl(capture_type, c_name);
                         char capture_lval[512];
                         char* cur = capture_lval;
                         size_t rem = sizeof(capture_lval);
@@ -1890,27 +1891,26 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                 }
 
                 if (prong->body->type == NODE_BLOCK_STMT) {
+                    writeIndent();
                     emitBlock(&prong->body->as.block_stmt);
                 } else {
                     emitStatement(prong->body);
                 }
 
                 if (has_non_void_capture) {
-                    writeIndent();
-                    writeString("}\n");
+                    writeBlockClose();
                 }
 
                 writeIndent();
-                writeString("break;\n");
+                writeString(KW_BREAK);
+                writeString(";\n");
             }
         }
     }
-    writeIndent();
-    writeString("}\n");
+    writeBlockClose();
 
     if (is_tagged_union) {
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
     }
 }
 
@@ -1926,24 +1926,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     loop_uses_labels_[node->label_id] = true;
 
     for_loop_counter_++;
-    int current_for_id = for_loop_counter_;
-
-    char idx_name[32];
-    char len_name[32];
-    char iter_name[32];
-    char id_buf[16]; plat_i64_to_string(current_for_id, id_buf, sizeof(id_buf));
-
-    char* cur = idx_name; size_t rem = sizeof(idx_name);
-    safe_append(cur, rem, "__for_idx_");
-    safe_append(cur, rem, id_buf);
-
-    cur = len_name; rem = sizeof(len_name);
-    safe_append(cur, rem, "__for_len_");
-    safe_append(cur, rem, id_buf);
-
-    cur = iter_name; rem = sizeof(iter_name);
-    safe_append(cur, rem, "__for_iter_");
-    safe_append(cur, rem, id_buf);
 
     bool is_range = (node->iterable_expr->type == NODE_RANGE);
 
@@ -1955,23 +1937,25 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeBlockOpen();
     {
         /* Iterable evaluate once */
+    const char* iter_name = NULL;
     if (!is_range) {
-        writeIndent();
         Type* iter_type = node->iterable_expr->resolved_type;
+        Type* effective_iter_type = iter_type;
         if (iter_type->kind == TYPE_ARRAY) {
              /* Emit as pointer */
-             emitType(createPointerType(arena_, iter_type->as.array.element_type, false), iter_name);
-        } else {
-             emitType(iter_type, iter_name);
+             effective_iter_type = createPointerType(arena_, iter_type->as.array.element_type, false);
         }
+        iter_name = makeTempVarForType(effective_iter_type, "for_iter", true);
+        writeIndent();
+        writeString(iter_name);
         writeString(" = ");
         emitExpression(node->iterable_expr);
         endStmt();
     }
 
     /* Initializer */
+    const char* idx_name = makeTempVarForType(get_g_type_usize(), "for_idx", true);
     writeIndent();
-    writeString("size_t ");
     writeString(idx_name);
     writeString(" = ");
     if (is_range) {
@@ -1981,8 +1965,8 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
     endStmt();
 
+    const char* len_name = makeTempVarForType(get_g_type_usize(), "for_len", true);
     writeIndent();
-    writeString("size_t ");
     writeString(len_name);
     writeString(" = ");
     if (is_range) {
@@ -2038,12 +2022,13 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         const char* actual_item_name;
         if (node->item_sym) {
             actual_item_name = var_alloc_.allocate(node->item_sym);
+            writeFieldDecl(item_type, actual_item_name);
         } else {
-            actual_item_name = var_alloc_.generate(node->item_name);
+            actual_item_name = makeTempVarForType(item_type, node->item_name, true);
         }
 
         writeIndent();
-        emitType(item_type, actual_item_name);
+        writeString(actual_item_name);
         writeString(" = ");
         if (is_range) {
             writeString(idx_name);
@@ -2065,12 +2050,12 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         const char* actual_index_name;
         if (node->index_sym) {
             actual_index_name = var_alloc_.allocate(node->index_sym);
+            writeFieldDecl(get_g_type_usize(), actual_index_name);
         } else {
-            actual_index_name = var_alloc_.generate(node->index_name);
+            actual_index_name = makeTempVarForType(get_g_type_usize(), node->index_name, true);
         }
 
         writeIndent();
-        writeString("size_t ");
         writeString(actual_index_name);
         writeString(" = ");
         writeString(idx_name);
@@ -2079,6 +2064,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     /* Emit the actual body */
     if (node->body->type == NODE_BLOCK_STMT) {
+        writeIndent();
         emitBlock(&node->body->as.block_stmt, node->label_id);
     } else {
         emitStatement(node->body);
@@ -2142,9 +2128,9 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         writeBlockOpen();
         {
             /* Evaluate condition into a temporary */
-            const char* tmp = var_alloc_.generate("opt_tmp");
+            const char* tmp = makeTempVarForType(node->condition->resolved_type, "opt_tmp", true);
             writeIndent();
-            emitType(node->condition->resolved_type, tmp);
+            writeString(tmp);
             writeString(" = ");
             emitExpression(node->condition);
             endStmt();
@@ -2171,6 +2157,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
 
             /* Emit body */
             if (node->body->type == NODE_BLOCK_STMT) {
+                writeIndent();
                 emitBlock(&node->body->as.block_stmt, node->label_id);
             } else {
                 emitStatement(node->body);

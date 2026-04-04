@@ -4,5 +4,5 @@
 
 cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c zig_runtime.c
 cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c builtin.c
-cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c test_global_const_aggregate.c
+cl.exe /nologo /W3 /I. /Isrc/include /D_WIN32_WINDOWS=0x0410 /DWINVER=0x0410 /D_WIN32_WINNT=0x0400 /DNTDDI_VERSION=0x04000000 /c test_for.c
 link.exe /nologo /subsystem:console /out:app.exe *.obj

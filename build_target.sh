@@ -4,5 +4,5 @@ set -e
 
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o
 gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -Isrc/include -c builtin.c -o builtin.o
-gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -Isrc/include -c test_global_const_aggregate.c -o test_global_const_aggregate.o
-gcc -m32 -o app zig_runtime.o builtin.o test_global_const_aggregate.o
+gcc -std=c89 -m32 -pedantic -Wall -O2 -I. -Isrc/include -c test_for.c -o test_for.o
+gcc -m32 -o app zig_runtime.o builtin.o test_for.o
