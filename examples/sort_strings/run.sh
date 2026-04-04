@@ -8,5 +8,5 @@ echo "Compiling sort_strings..."
 mkdir -p output
 $ZIG0 sort_strings.zig -o output/
 cd output
-gcc -m32 -std=c89 -pedantic -Wno-pointer-sign -I. -o sort_strings main.c ../../../src/runtime/zig_runtime.c -I../../../src/include
+gcc -m32 -Wno-long-long -std=c89 -pedantic -Wno-pointer-sign -I. -o sort_strings *.c ../../../src/runtime/zig_runtime.c -I../../../src/include
 ./sort_strings

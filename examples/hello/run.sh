@@ -9,5 +9,5 @@ echo "Compiling hello..."
 mkdir -p output
 $ZIG0 main.zig -o output/
 cd output
-gcc -m32 -std=c89 -pedantic -Wno-pointer-sign -I. -o hello main.c ../../../src/runtime/zig_runtime.c -I../../../src/include
+gcc -m32 -Wno-long-long -std=c89 -pedantic -Wno-pointer-sign -I. -o hello *.c ../../../src/runtime/zig_runtime.c -I../../../src/include
 ./hello

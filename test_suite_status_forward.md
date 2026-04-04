@@ -5,28 +5,38 @@
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
 | Total Test Batches | 77 | 77 |
-| Passed Batches | 67 | 67 |
-| Failed Batches | 10 | 10 |
-| Total Pass Rate | 87% | 87% |
+| Passed Batches | 73 | - |
+| Failed Batches | 4 | - |
+| Total Pass Rate | 94.8% | - |
 
-*Note: 32-bit values reflect the current status using `-m32`. 64-bit values are assumed to follow similar trends but were not individually re-verified in this pass.*
+*Note: 32-bit values reflect the current status using `-m32`.*
+
+---
+
+## Progress Report (32-bit)
+
+Since the last report, there has been significant progress in fixing regressions. The following batches, previously reported as failing, are **now passing**:
+- **Batch 7 (Switch)**: PASS
+- **Batch 9 (Pointers)**: PASS
+- **Batch 27 (Codegen)**: PASS
+- **Batch 32 (End-to-End)**: PASS
+- **Batch 41 (For Loops)**: PASS
+- **Batch 47 (Optional Types)**: PASS
+- **Batch 52 (Switch Range)**: PASS
+- **Batch 57 (Anonymous Unions)**: PASS
+- **Batch 67 (Tagged Union Tag)**: PASS
 
 ---
 
 ## Detailed Breakdown of Failures (32-bit)
 
-The following batches are currently failing in the 32-bit environment. Many "failures" are due to improvements in the compiler (e.g., merging declarations and assignments, adding safety braces) that now mismatch older test expectations.
+The following 4 batches are currently failing in the 32-bit environment.
 
 ### Failing Batches
-- **Batch 7 (Switch)**: Emission mismatch in switch structure.
-- **Batch 9 (Pointers)**: Emission mismatch in pointer operations.
-- **Batch 27 (Codegen)**: Fails due to **Declaration/Assignment merging**. The compiler now emits `int x = 42;` while the test expects `int x; x = 42;`.
-- **Batch 32 (End-to-End)**: Fails due to **Output Mismatch**. Hello World and Prime logic work, but the exact string matching fails.
-- **Batch 41 (For Loops)**: Emission mismatch (extra braces in loop body).
-- **Batch 47 (Optional Types)**: Fails on **Nested Optionals** and **Optional Structs** resolution.
-- **Batch 52 (Switch Range)**: Emission mismatch (extra braces in loop/if bodies).
-- **Batch 57 (Anonymous Unions)**: Fails due to **Codegen Mismatch** in naming/numbering of nested anonymous structures (e.g., `zU_3_anon_1` vs `zU_4_anon_2`).
-- **Batch 67 (Tagged Union Tag)**: Emission mismatch in tag access (emits direct member access instead of tag enum constant in some contexts).
+- **Batch 29 (Arithmetic/Bitwise)**: Codegen mismatch in compound assignments. The compiler now wraps compound assignments in `(void)` casts (e.g., `(void)(*a += b);`) to suppress C89 unused-value warnings. The tests expect the bare assignment.
+- **Batch 45 (Error Handling)**: Fails C89 validation due to `const` reassignment. Zig `const` variables initialized with fallible calls (which are lifted in C) generate code like `const int a; a = val;`, which is invalid C89.
+- **Batch 46 (Integration - Error Handling)**: Fails C89 validation for the same reason as Batch 45 (const reassignment in lifted constructs).
+- **Batch 55 (Integration - Return/Try)**: Fails C89 validation for the same reason as Batch 45 (const reassignment in lifted constructs).
 
 ---
 
@@ -36,25 +46,49 @@ The following batches are currently failing in the 32-bit environment. Many "fai
 |---------|--------|-------|
 | `hello` | PASS | |
 | `prime` | PASS | |
-| `days_in_month` | PASS | |
-| `fibonacci` | PASS | |
-| `heapsort` | PASS | |
-| `quicksort` | PASS | |
+| `days_in_month` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `fibonacci` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `heapsort` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `quicksort` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
 | `sort_strings` | PASS | |
-| `func_ptr_return`| PASS | |
-| `lzw` | PASS | |
-| `mandelbrot` | PASS | Requires `-lm` for math library |
-| `lisp_interpreter_curr` | **PARTIAL** | Basic expressions, definitions, and closures work. Recursion fails with `Eval error`. |
+| `func_ptr_return`| FAIL | C89 error: assignment of read-only variable (`const` lift) |
+| `lzw` | FAIL | C89 error: assignment of read-only variable (`const` lift) |
 
-### Lisp Interpreter Verification Details
-Verified with the following expressions:
-- `(+ 1 2)` -> `3` (PASS)
-- `(* 3 4)` -> `12` (PASS)
-- `(define x 10)` -> `10` (PASS)
-- `(if (= x 10) 1 0)` -> `1` (PASS)
-- `(define add1 (lambda (n) (+ n 1)))` -> `<closure>` (PASS)
-- `(add1 5)` -> `6` (PASS)
-- `(define fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))` followed by `(fact 5)` -> `Eval error` (FAIL - Known issue with environment capture in recursion).
+---
+
+## Deep Investigation of Failures
+
+### 1. The `const` Lift Problem
+In Zig, `const` means the value is immutable after initialization. Many Zig constructs like `switch` expressions, `if` expressions, and error handling (`try`, `catch`) are "lifted" by the compiler into statement blocks in C89.
+
+If a Zig variable is declared as `const` and initialized with one of these expressions, the compiler generates a C declaration followed by an assignment within a block.
+For example:
+```zig
+const d = switch (month) { ... };
+```
+Generates (roughly):
+```c
+const int d;
+{
+    int __tmp;
+    switch (month) { ... __tmp = 31; ... }
+    d = __tmp; // Error: assignment of read-only variable 'd'
+}
+```
+In C89, a `const` variable **must** be initialized at the point of declaration. Since the value is only known after the lifted block executes, the current codegen is invalid C.
+
+**Insight:** Since the Zig TypeChecker already enforces immutability for `const` variables, the compiler should safely omit the `const` keyword in C for any local variable that requires lifting (i.e., any variable where the initialization is not a simple C-compatible constant expression).
+
+### 2. Compound Assignment `(void)` Casts
+The compiler recently improved codegen to wrap compound assignments in `(void)` casts to suppress C89 warnings about unused values.
+```c
+(void)(*a += b);
+```
+Tests in Batch 29 were written before this change and expect:
+```c
+*a += b;
+```
+**Insight:** This is a legitimate improvement in the compiler. The test suite should be updated to match this new standard.
 
 ---
 
@@ -63,14 +97,3 @@ Verified with the following expressions:
 1.  **Added `src/include/zig_special_types.h`**: Standard location for compiler-generated special types.
 2.  **Validator Flag Update**: Modified `tests/c89_validation/gcc_validator.cpp` to include the `-m32` flag.
 3.  **Topological Sorting (Batch 71 Fix)**: Batch 71 now passes due to the implementation of Kahn's algorithm for dependency ordering in `MetadataPreparationPass`.
-
----
-
-## Codegen Refactor (Phase 1, Point 6)
-
-The "Line Ending and Statement Terminator Abstraction" is fully integrated into `src/bootstrap/codegen.cpp`.
-
-### Status
-- Replaced 50+ occurrences of manual `;\n` with `endStmt()`.
-- Centralized line ending handling through `C89Emitter`.
-- Verified that while some structural changes (like braces) have introduced test mismatches, the functional logic remains correct.
