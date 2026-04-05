@@ -108,7 +108,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
     NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
     NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
-    NODE_TUPLE_LITERAL,   ///< A tuple literal (e.g., `.{ 1, 2, 3 }`).
+    NODE_TUPLE_LITERAL,   ///< A positional aggregate literal (e.g., `.{ 1, 2, 3 }`). Can resolve to Array or Tuple.
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -2204,17 +2204,25 @@ Represents an array or slice expression (e.g., `base[start..end]`).
     - `base_ptr`: Synthetic expression representing the raw pointer to the first element. Populated during type checking for use in codegen.
     - `len`: Synthetic expression representing the resulting length. Populated during type checking.
 
-## 37. Anonymous Initializers
+### 37. Anonymous Aggregate Literals
 
-Anonymous struct and tuple literals (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`) are parsed as `NODE_STRUCT_INITIALIZER` and `NODE_TUPLE_LITERAL` respectively, with their `type_expr` set to `NULL`.
+Anonymous aggregate literals (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`) are parsed as `NODE_STRUCT_INITIALIZER` and `NODE_TUPLE_LITERAL` respectively, with their `type_expr` set to `NULL`.
 
-### Initial Typing
-When first visited by the `TypeChecker`, if no expected type context is available, these nodes are assigned the `TYPE_ANONYMOUS_INIT` type. This type acts as a placeholder indicating that the literal is awaiting resolution.
+### Initial Typing and Deferred Resolution
+As of Milestone 12, the compiler uses a unified pattern for context-sensitive literals:
 
-### Resolution
-Resolution is deferred until a target type is known (e.g., during assignment or when passing to a function). The `coerceNode` mechanism then re-visits the node with the target type as an expected type, transforming the node into a concretely typed aggregate.
+1.  **Context-Free Parsing**: The parser identifies whether a literal is named (`NODE_STRUCT_INITIALIZER`) or positional (`NODE_TUPLE_LITERAL`).
+2.  **Anonymous Type Kinds**: When first visited, if no downward type information is available, the nodes are assigned one of the following anonymous type kinds:
+    -   `TYPE_ANONYMOUS_INIT`: Ambiguous struct/union initializer.
+    -   `TYPE_ANONYMOUS_ARRAY`: Positional literal intended for an array.
+    -   `TYPE_ANONYMOUS_TUPLE`: Positional literal intended for a tuple.
+    -   `TYPE_ANONYMOUS_UNION`: Named literal intended for a union variant.
+3.  **Coercion-Based Resolution**: Actual resolution is deferred to `coerceNode`. When a target type is provided:
+    -   `coerceNode` triggers a contextual re-visit of the AST node.
+    -   The visitor (`visitStructInitializer` or `visitTupleLiteral`) uses the target type to perform structural matching and element/field coercion.
+    -   The node's `resolved_type` is updated in-place to the concrete type.
 
-### Type Resolution
+### 38. Slice Type Resolution
 The `TypeChecker` resolves slicing expressions and ensures:
 - The base type is a sized array, another slice, or a many-item pointer.
 - Start and end indices are integers.

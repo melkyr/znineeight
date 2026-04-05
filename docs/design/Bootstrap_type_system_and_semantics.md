@@ -65,7 +65,10 @@ enum TypeKind {
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
     TYPE_PLACEHOLDER,
-    TYPE_ANONYMOUS_INIT
+    TYPE_ANONYMOUS_INIT,
+    TYPE_ANONYMOUS_ARRAY,
+    TYPE_ANONYMOUS_TUPLE,
+    TYPE_ANONYMOUS_UNION
 };
 ```
 
@@ -198,6 +201,21 @@ struct Type {
             struct ASTNode* node;
             struct Module* module;
         } anonymous_init;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_array;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_tuple;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_union;
     } as;
 };
 ```
@@ -1197,6 +1215,28 @@ The type checker implements a downward type inference mechanism through an **Exp
 
 ### Coercion Integration
 The `coerceNode` method has been enhanced to use the expected type when encountering an anonymous struct initializer (`.{ .field = value }`). If an expected type (like a tagged union) is available, `coerceNode` validates the initializer against that type and sets its `resolved_type`, enabling seamless downward inference.
+
+## 26. Anonymous Aggregate Literals
+
+As of Milestone 12, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+### 26.1 Anonymous Type Kinds
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+### 26.2 Resolution Strategy
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Contextual Visitation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if `peekExpectedType()` provides a structural target.
+3. **Deferred Coercion**: If visited without context, the literal remains anonymous. It is resolved in `coerceNode` when a target type is finally known.
+4. **Structural Matching**:
+   - **Arrays**: Verified for length and element compatibility.
+   - **Tuples**: Verified for component type compatibility.
+   - **Unions**: Verified for exactly one field matching a valid variant and payload.
+
+### 26.3 Defaulting for `anytype`
+In contexts where the literal is passed to an `anytype` parameter (e.g., `std.debug.print`), the compiler defaults the literal to a concrete type (e.g., a tuple of its element types) to ensure it has a valid C89 representation.
 
 ### `resolvePrimitiveTypeName`
 
