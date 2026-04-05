@@ -11,6 +11,8 @@ const deep_copy_mod = @import("deep_copy.zig");
 extern fn __bootstrap_print(s: [*]const u8) void;
 extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
+var perm_buf_u64: [131072]u64 = undefined;
+var temp_buf_u64: [131072]u64 = undefined;
 
 fn print_str(s: []const u8) void {
     var i: usize = 0;
@@ -97,8 +99,7 @@ fn read_line(buf: []u8) i32 {
 }
 
 pub fn main() void {
-    var perm_buf_u64: [131072]u64 = undefined;
-    var temp_buf_u64: [131072]u64 = undefined;
+
 
     const perm_buf = @ptrCast([*]u8, &perm_buf_u64)[0..1048576];
     const temp_buf = @ptrCast([*]u8, &temp_buf_u64)[0..1048576];
