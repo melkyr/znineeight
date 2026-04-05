@@ -47,7 +47,10 @@ enum TypeKind {
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
     TYPE_PLACEHOLDER,
-    TYPE_ANONYMOUS_INIT
+    TYPE_ANONYMOUS_INIT,
+    TYPE_ANONYMOUS_ARRAY,
+    TYPE_ANONYMOUS_TUPLE,
+    TYPE_ANONYMOUS_UNION
 };
 
 /**
@@ -169,6 +172,18 @@ struct Type {
             struct ASTNode* node;
             struct Module* module;
         } anonymous_init;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_array;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_tuple;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_union;
     } as;
 };
 
@@ -428,6 +443,26 @@ Type* createModuleType(ArenaAllocator& arena, const char* name);
  * @brief Creates a new tuple Type object.
  */
 Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements);
+
+/**
+ * @brief Creates a new anonymous struct Type object.
+ */
+Type* createAnonymousInitType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous array Type object.
+ */
+Type* createAnonymousArrayType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous tuple Type object.
+ */
+Type* createAnonymousTupleType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous union Type object.
+ */
+Type* createAnonymousUnionType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
 
 /**
  * @brief Converts a Type object to its string representation.

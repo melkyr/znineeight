@@ -369,6 +369,11 @@ Type* TypeChecker::visit(ASTNode* node) {
                  node->resolved_type = resolved;
                  return resolved;
              }
+        } else if (node->resolved_type->kind == TYPE_ANONYMOUS_INIT ||
+                   node->resolved_type->kind == TYPE_ANONYMOUS_ARRAY ||
+                   node->resolved_type->kind == TYPE_ANONYMOUS_TUPLE ||
+                   node->resolved_type->kind == TYPE_ANONYMOUS_UNION) {
+             /* Fall through to resolution to attempt matching context */
         } else if (!is_type_undefined(node->resolved_type)) {
              return node->resolved_type;
         }
@@ -993,13 +998,9 @@ Type* TypeChecker::visitFunctionCall(ASTNode* parent, ASTFunctionCallNode* node)
             unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, node->callee->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "std.debug.print expects 2 arguments");
         } else {
             visit((*node->args)[0]); /* format string */
-            Type* tuple_type = visit((*node->args)[1]); /* tuple literal */
-            if (tuple_type && tuple_type->kind != TYPE_TUPLE && tuple_type->kind != TYPE_ANYTYPE) {
-                 unit_.getErrorHandler().report(ERR_TYPE_MISMATCH, (*node->args)[1]->loc, ErrorHandler::getMessage(ERR_TYPE_MISMATCH), unit_.getArena(), "std.debug.print second argument must be a tuple literal");
-            }
+            /* The second argument (tuple) will be handled by the normal loop below,
+               relying on anytype parameter resolution in coerceNode. */
         }
-        /* Even if we lower it, we still want to resolve the callee to avoid undefined identifier errors
-           if the user provided a mock. */
     }
 
     if (!node->callee) return get_g_type_undefined();
@@ -3336,6 +3337,7 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
                    Also allow anonymous initializers and naked tags to proceed to coercion. */
                 if (node->initializer->type != NODE_UNDEFINED_LITERAL &&
                     node->initializer->type != NODE_STRUCT_INITIALIZER &&
+                    node->initializer->type != NODE_TUPLE_LITERAL &&
                     !(node->initializer->type == NODE_MEMBER_ACCESS && node->initializer->as.member_access->base == NULL)) {
                     return get_g_type_undefined();
                 }
@@ -3369,6 +3371,14 @@ Type* TypeChecker::visitVarDecl(ASTNode* parent, ASTVarDeclNode* node) {
             /* Infer type from initializer */
             declared_type = initializer_type;
         }
+    }
+
+    if (declared_type && (declared_type->kind == TYPE_ANONYMOUS_INIT ||
+                          declared_type->kind == TYPE_ANONYMOUS_ARRAY ||
+                          declared_type->kind == TYPE_ANONYMOUS_TUPLE ||
+                          declared_type->kind == TYPE_ANONYMOUS_UNION)) {
+        if (placeholder) placeholder->is_resolving = false;
+        return reportAndReturnUndefined(node->initializer ? node->initializer->loc : node->name_loc, ERR_TYPE_MISMATCH, "anonymous literal used without a target type");
     }
 
     /* Implicit Array to Slice coercion for variable declaration */
@@ -4621,56 +4631,81 @@ bool TypeChecker::checkStructInitializerFields(ASTStructInitializerNode* node, T
 
 Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node) {
     Type* expected = peekExpectedType();
-    if (expected && expected->kind == TYPE_TUPLE) {
-        DynamicArray<Type*>* elements = expected->as.tuple.elements;
-        if (elements && node->elements && elements->length() == node->elements->length()) {
-            for (size_t i = 0; i < node->elements->length(); ++i) {
-                ExpectedTypeGuard guard(*this, (*elements)[i]);
-                visit((*node->elements)[i]);
-                coerceNode(&(*node->elements)[i], (*elements)[i]);
+    if (expected && expected->kind == TYPE_PLACEHOLDER) expected = resolvePlaceholder(expected);
+
+    if (expected && expected->kind == TYPE_ANYTYPE) {
+        /* Default to concrete tuple if passed to anytype without specific structural context */
+        expected = NULL;
+    }
+
+    if (expected && (expected->kind == TYPE_TUPLE || expected->kind == TYPE_ARRAY)) {
+        if (expected->kind == TYPE_ARRAY) {
+            Type* element_type = expected->as.array.element_type;
+            if (node->elements) {
+                if (node->elements->length() != expected->as.array.size) {
+                    return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "array size mismatch in anonymous literal");
+                }
+                for (size_t i = 0; i < node->elements->length(); ++i) {
+                    ExpectedTypeGuard guard(*this, element_type);
+                    visit((*node->elements)[i]);
+                    coerceNode(&(*node->elements)[i], element_type);
+                }
             }
+            parent->resolved_type = expected;
+            return expected;
+        } else {
+            DynamicArray<Type*>* elements = expected->as.tuple.elements;
+            if (elements && node->elements) {
+                if (elements->length() != 0 && elements->length() != node->elements->length()) {
+                    return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "tuple size mismatch");
+                }
+                for (size_t i = 0; i < node->elements->length(); ++i) {
+                    ExpectedTypeGuard guard(*this, (*elements)[i]);
+                    visit((*node->elements)[i]);
+                    coerceNode(&(*node->elements)[i], (*elements)[i]);
+                }
+            }
+            parent->resolved_type = expected;
             return expected;
         }
     }
 
-    /* Check if this is an anonymous positional literal: .{ 1, 2 } */
-    if (!expected || expected->kind != TYPE_TUPLE) {
-        /* If no expected type, or expected is not a tuple, it might still be resolved via coercion later. */
-        Type* anon_type = (Type*)unit_.getArena().alloc(sizeof(Type));
-        plat_memset(anon_type, 0, sizeof(Type));
-        anon_type->kind = TYPE_ANONYMOUS_INIT;
-        anon_type->as.anonymous_init.node = (ASTNode*)node;
-        anon_type->as.anonymous_init.module = unit_.getModule(unit_.getCurrentModule());
-
-#ifdef DEBUG_ANON_INIT
-        plat_printf_debug("[ANON_INIT] Created tuple init type for node %p, module=%s\n", (void*)node, anon_type->as.anonymous_init.module->name);
-#endif
-        return anon_type;
+    if (!expected) {
+        Type* anon = createAnonymousTupleType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
+        parent->resolved_type = anon;
+        return anon;
     }
 
-    void* mem;
-    DynamicArray<Type*>* element_types;
-    size_t i;
-    Type* t;
+    /* If context is anytype/type, resolve to a concrete tuple. */
+    if (expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
+        void* mem;
+        DynamicArray<Type*>* element_types;
+        size_t i;
+        Type* t;
 
-    mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
-    if (!mem) fatalError("Out of memory");
-    element_types = new (mem) DynamicArray<Type*>(unit_.getArena());
+        mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+        if (!mem) fatalError("Out of memory");
+        element_types = new (mem) DynamicArray<Type*>(unit_.getArena());
 
-    if (node->elements) {
-        for (i = 0; i < node->elements->length(); ++i) {
-            ASTNode* elem = (*node->elements)[i];
-            if (!elem) {
-                element_types->append(get_g_type_void());
-                continue;
+        if (node->elements) {
+            for (i = 0; i < node->elements->length(); ++i) {
+                ASTNode* elem = (*node->elements)[i];
+                if (!elem) {
+                    element_types->append(get_g_type_void());
+                    continue;
+                }
+                t = visit(elem);
+                if (!t || is_type_undefined(t)) return get_g_type_undefined();
+                element_types->append(t);
             }
-            t = visit(elem);
-            if (!t || is_type_undefined(t)) return get_g_type_undefined();
-            element_types->append(t);
         }
+
+        Type* tuple_type = createTupleType(unit_.getArena(), element_types);
+        parent->resolved_type = tuple_type;
+        return tuple_type;
     }
 
-    return createTupleType(unit_.getArena(), element_types);
+    return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "anonymous positional literal used where array or tuple was expected");
 }
 
 Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerNode* node) {
@@ -4707,8 +4742,21 @@ Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerN
 
     /* Anonymous struct: check if we have an expected type context. */
     Type* expected = peekExpectedType();
+    if (expected && expected->kind == TYPE_PLACEHOLDER) expected = resolvePlaceholder(expected);
+
+    if (expected && expected->kind == TYPE_ANYTYPE) {
+        /* For anytype, only allow resolution if it's empty .{} which can be a tuple.
+           Otherwise, keep it anonymous to see if more context appears. */
+        if (!node->fields || node->fields->length() == 0) {
+            expected = get_g_type_anytype(); // Force resolution to empty tuple below
+        } else {
+            expected = NULL;
+        }
+    }
+
     if (expected && (expected->kind == TYPE_STRUCT || expected->kind == TYPE_TAGGED_UNION ||
-                     expected->kind == TYPE_ARRAY || expected->kind == TYPE_UNION)) {
+                     expected->kind == TYPE_ARRAY || expected->kind == TYPE_UNION ||
+                     expected->kind == TYPE_TYPE)) {
         if (expected->kind == TYPE_ARRAY) {
             /* Handle array literal: .{ 1, 2 } */
             Type* element_type = expected->as.array.element_type;
@@ -4721,25 +4769,31 @@ Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerN
                 }
             }
             return expected;
-        } else {
+        } else if (expected->kind == TYPE_STRUCT || expected->kind == TYPE_TAGGED_UNION || expected->kind == TYPE_UNION) {
             if (checkStructInitializerFields(node, expected, parent->loc)) {
                 return expected;
             }
+        } else if (expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
+             /* anytype context for anonymous struct/union literal?
+                In Z98, this is only allowed for empty .{} which can be an empty tuple. */
+             if (!node->fields || node->fields->length() == 0) {
+                  void* mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
+                  DynamicArray<Type*>* empty = new (mem) DynamicArray<Type*>(unit_.getArena());
+                  Type* tuple_type = createTupleType(unit_.getArena(), empty);
+                  parent->resolved_type = tuple_type;
+                  return tuple_type;
+             }
         }
     }
 
     /* Still anonymous: create TYPE_ANONYMOUS_INIT placeholder */
-    Type* anon_type = (Type*)unit_.getArena().alloc(sizeof(Type));
-    plat_memset(anon_type, 0, sizeof(Type));
-    anon_type->kind = TYPE_ANONYMOUS_INIT;
-    anon_type->as.anonymous_init.node = (ASTNode*)parent;
-    anon_type->as.anonymous_init.module = unit_.getModule(unit_.getCurrentModule());
+    if (!expected) {
+        Type* anon = createAnonymousInitType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
+        parent->resolved_type = anon;
+        return anon;
+    }
 
-#ifdef DEBUG_ANON_INIT
-    plat_printf_debug("[ANON_INIT] Created struct init type for node %p, module=%s\n", (void*)node, anon_type->as.anonymous_init.module->name);
-#endif
-
-    return anon_type;
+    return reportAndReturnUndefined(parent->loc, ERR_TYPE_MISMATCH, "anonymous literal used where struct, union or array was expected");
 }
 
 Type* TypeChecker::visitEnumDecl(ASTEnumDeclNode* node) {
@@ -7263,19 +7317,30 @@ void TypeChecker::coerceNode(ASTNode** node_slot, Type* target_type) {
         source_type = visit(node);
     }
 
-    if (source_type && source_type->kind == TYPE_ANONYMOUS_INIT) {
+    if (source_type && (source_type->kind == TYPE_ANONYMOUS_INIT ||
+                        source_type->kind == TYPE_ANONYMOUS_ARRAY ||
+                        source_type->kind == TYPE_ANONYMOUS_TUPLE ||
+                        source_type->kind == TYPE_ANONYMOUS_UNION)) {
 #ifdef DEBUG_ANON_INIT
         char target_str[128];
         typeToString(target_type, target_str, sizeof(target_str));
-        plat_printf_debug("[ANON_INIT] Coercing node %p to type %s\n", (void*)node, target_str);
+        plat_printf_debug("[ANON_COERCE] Coercing node %p (kind %d) to type %s\n", (void*)node, (int)source_type->kind, target_str);
 #endif
         ExpectedTypeGuard guard(*this, target_type);
         Type* resolved = visit(node);
-        if (resolved && !is_type_undefined(resolved)) {
+
+        /* If resolved to concrete type, update node and source_type.
+           If target is anytype/type, visit() already resolved to a concrete default aggregate. */
+        if (resolved && !is_type_undefined(resolved) &&
+            resolved->kind != TYPE_ANONYMOUS_INIT &&
+            resolved->kind != TYPE_ANONYMOUS_ARRAY &&
+            resolved->kind != TYPE_ANONYMOUS_TUPLE &&
+            resolved->kind != TYPE_ANONYMOUS_UNION) {
             node->resolved_type = resolved;
             source_type = resolved;
             /* If it was resolved to a concrete type, continue with normal coercion if needed. */
         } else {
+            /* If target_type is anytype, but resolution still returned anonymous? Should not happen if visit handles it. */
             --recursion_depth;
             return;
         }

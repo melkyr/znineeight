@@ -185,10 +185,10 @@ int main(int argc, char* argv[]) {
             unit.finalizeParsing();
         } else {
             success = runCompilationPipeline(unit, file_id);
-            unit.finalizeParsing();
             if (success && output_file) {
                 success = unit.generateCode(output_file);
             }
+            unit.finalizeParsing();
         }
 
         plat_free(source);
