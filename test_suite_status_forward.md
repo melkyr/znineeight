@@ -5,40 +5,46 @@
 | Metric | 32-bit Value | 64-bit Value |
 |--------|--------------|--------------|
 | Total Test Batches | 77 | 77 |
-| Passed Batches | 73 | - |
-| Failed Batches | 4 | - |
-| Total Pass Rate | 94.8% | - |
+| Passed Batches | 72 | - |
+| Failed Batches | 5 | - |
+| Total Pass Rate | 93.5% | - |
 
-*Note: 32-bit values reflect the current status using `-m32`.*
+*Note: 32-bit values reflect the current status using -m32.*
 
 ---
 
 ## Progress Report (32-bit)
 
-Significant progress has been made. The "const lift" issue, which previously caused many examples and integration tests to fail, has been resolved by a compiler patch that conditionally emits `const` in C only for true constant expressions.
-
-The following batches, previously reported as failing, are **now passing**:
+- **Lisp Interpreter (curr)**: **WORKING**. Regenerated and compiled with `gcc -m32`. Simple expressions like `(+ 1 2)`, `cons`, and `lambda` are working correctly without segfaults.
+- **Example Programs**: 9/10 examples are passing. `mandelbrot` was added and is passing.
 - **Batch 7 (Switch)**: PASS
-- **Batch 9 (Pointers)**: PASS
-- **Batch 27 (Codegen)**: PASS
-- **Batch 32 (End-to-End)**: PASS
-- **Batch 41 (For Loops)**: PASS
+- **Batch 27 (Codegen)**: PASS (Previously reported as failing in some environments)
+- **Batch 45 (Error Handling)**: PASS (Now passing after recent compiler updates)
 - **Batch 47 (Optional Types)**: PASS
 - **Batch 52 (Switch Range)**: PASS
-- **Batch 57 (Anonymous Unions)**: PASS
-- **Batch 67 (Tagged Union Tag)**: PASS
 
 ---
 
 ## Detailed Breakdown of Failures (32-bit)
 
-The following 4 batches are currently failing in the 32-bit environment.
+The following 5 batches are currently failing in the 32-bit environment.
 
 ### Failing Batches
-- **Batch 29 (Arithmetic/Bitwise)**: Codegen mismatch in compound assignments. The compiler now wraps compound assignments in `(void)` casts (e.g., `(void)(*a += b);`) to suppress C89 unused-value warnings. The tests expect the bare assignment.
-- **Batch 45 (Error Handling)**: One test `ErrorHandling_C89Execution` fails because it uses its own `C89Emitter` logic for validation which was not updated to handle the new `const` emission rules or has other internal mismatches.
-- **Batch 46 (Integration - Error Handling)**: Fails because the integration tests use a custom build command in `task227_try_catch_tests.cpp` that might be missing certain files or flags, leading to compilation errors like `main_module.c: No such file or directory`.
-- **Batch 55 (Integration - Return/Try)**: Fails for the same reason as Batch 46 (missing files in custom integration test build logic).
+- **Batch 26 (Codegen)**: Regression in constant emission.
+    - *Test*: `const x: i32 = 42;`
+    - *Cause*: The compiler emits `static const int zC_0_x = 42;` but the test expects `static int zC_0_x = 42;` (without `const`).
+- **Batch 29 (Arithmetic/Bitwise)**: Codegen mismatch in compound assignments.
+    - *Test*: `a.* += b;`
+    - *Cause*: The compiler now wraps compound assignments in `(void)` casts (e.g., `(void)(*a += b);`) to suppress C89 unused-value warnings. The tests expect the bare assignment.
+- **Batch 44 (Task 225_2)**: Integration test failure.
+    - *Test*: `test_Task225_2_PrintLowering` (Batch 44, Test 1).
+    - *Cause*: Internal mismatch in expected lowering patterns for `debug.print`.
+- **Batch 46 (Integration - Error Handling)**: Fails during C compilation of generated code.
+    - *Test*: `temp_Integration_Try_Defer_LIFO`
+    - *Cause*: Undefined reference to `zV_8_log` in the generated C code.
+- **Batch 55 (Integration - Return/Try)**: Fails during C compilation of generated code.
+    - *Test*: `Integration_Return_Try_In_Expression`
+    - *Cause*: Failed to compile generated C code (likely due to missing files or scope issues in the test's custom build logic).
 
 ---
 
@@ -48,25 +54,38 @@ The following 4 batches are currently failing in the 32-bit environment.
 |---------|--------|-------|
 | `hello` | PASS | |
 | `prime` | PASS | |
-| `days_in_month` | PASS | |
+| `days_in_month` | FAIL | Regression: Mangled name `zV_ff06ae_year` used but not declared for local constant. |
 | `fibonacci` | PASS | |
 | `heapsort` | PASS | |
 | `quicksort` | PASS | |
 | `sort_strings` | PASS | |
 | `func_ptr_return`| PASS | |
 | `lzw` | PASS | |
+| `mandelbrot` | PASS | Added to the suite. |
 
 ---
 
 ## Deep Investigation of Failures
 
-### 1. The `const` Lift Resolution
-The "const lift" problem occurred when Zig `const` variables were initialized with expressions requiring "lifting" (like `switch`, `if`, or fallible calls). These were emitted in C89 as a declaration followed by an assignment, which is illegal for `const` in C.
-
-**Solution:** The compiler now uses `isConstantInitializer` to check if the Zig initializer is a C89-compatible constant expression. If not, the `const` keyword is omitted in the generated C code. This is safe because Zig's TypeChecker already guarantees immutability.
+### 1. `days_in_month` Local Constant Regression
+The compiler is incorrectly applying global-style mangling to local constants defined inside functions.
+```zig
+pub fn main() void {
+    const year = 2024;
+    std.debug.print("...", .{year});
+}
+```
+Generated C:
+```c
+int main(void) {
+    const int year = 2024;
+    __bootstrap_print_int(zV_ff06ae_year); // ERROR: zV_ff06ae_year not declared
+}
+```
+This indicates that the TypeChecker or Emitter is failing to recognize `year` as a local symbol during the print lowering phase.
 
 ### 2. Compound Assignment `(void)` Casts
-The compiler recently improved codegen to wrap compound assignments in `(void)` casts to suppress C89 warnings about unused values.
+The compiler recently improved codegen to wrap compound assignments in `(void)` casts to suppress C89 warnings.
 ```c
 (void)(*a += b);
 ```
@@ -74,16 +93,14 @@ Tests in Batch 29 were written before this change and expect:
 ```c
 *a += b;
 ```
-**Insight:** This is a legitimate improvement in the compiler. The test suite should be updated to match this new standard.
+**Recommendation**: Update tests to expect the `(void)` cast.
 
-### 3. Integration Test Build Failures (Batches 46, 55)
-These batches fail not because of compiler bugs, but because the integration test framework in `tests/integration/task227_try_catch_tests.cpp` and `tests/integration/task3_try_return_tests.cpp` uses a manual `gcc` call that is currently fragile (e.g., trying to link `main_module.c` when it might be named `main.c`).
+### 3. Batch 26 `const` mismatch
+The test expects `static int` for a global const, but the compiler (correctly for C89 constant initializers) emits `static const int`.
+**Recommendation**: Update tests to expect `const`.
 
----
+### 4. Lisp Interpreter Status
+The `lisp_interpreter_curr` is confirmed to be working in 32-bit mode. The previous reports of segfaults were likely due to 64-bit size mismatches in the `Value` tagged union or stale generated code. Fresh regeneration and 32-bit compilation resolved the issues.
 
-## Test Environment Improvements
-
-1.  **Added `src/include/zig_special_types.h`**: Standard location for compiler-generated special types.
-2.  **Validator Flag Update**: Modified `tests/c89_validation/gcc_validator.cpp` to include the `-m32` flag.
-3.  **Topological Sorting (Batch 71 Fix)**: Batch 71 now passes due to the implementation of Kahn's algorithm for dependency ordering in `MetadataPreparationPass`.
-4.  **Conditional `const` Emission**: Resolved illegal C89 assignment to `const` variables for lifted expressions.
+### 5. Lisp Recursion Limitation
+It is worth noting that while the Lisp interpreter is working, recursive functions defined via `define` cannot call themselves by name due to the current environment capture semantics. The environment is captured at the moment the `lambda` is evaluated, and subsequent updates to the global environment (like the name of the function itself) are not reflected in the closure's captured environment. Passing the function to itself as an argument (Y-combinator style or explicit passing) works correctly, confirming the evaluator logic is sound.
