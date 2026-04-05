@@ -4670,14 +4670,8 @@ Type* TypeChecker::visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node)
         }
     }
 
-    if (!expected) {
-        Type* anon = createAnonymousTupleType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
-        parent->resolved_type = anon;
-        return anon;
-    }
-
     /* If context is anytype/type, resolve to a concrete tuple. */
-    if (expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
+    if (!expected || expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
         void* mem;
         DynamicArray<Type*>* element_types;
         size_t i;
@@ -4744,19 +4738,9 @@ Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerN
     Type* expected = peekExpectedType();
     if (expected && expected->kind == TYPE_PLACEHOLDER) expected = resolvePlaceholder(expected);
 
-    if (expected && expected->kind == TYPE_ANYTYPE) {
-        /* For anytype, only allow resolution if it's empty .{} which can be a tuple.
-           Otherwise, keep it anonymous to see if more context appears. */
-        if (!node->fields || node->fields->length() == 0) {
-            expected = get_g_type_anytype(); // Force resolution to empty tuple below
-        } else {
-            expected = NULL;
-        }
-    }
-
     if (expected && (expected->kind == TYPE_STRUCT || expected->kind == TYPE_TAGGED_UNION ||
                      expected->kind == TYPE_ARRAY || expected->kind == TYPE_UNION ||
-                     expected->kind == TYPE_TYPE)) {
+                     expected->kind == TYPE_TYPE || expected->kind == TYPE_ANYTYPE)) {
         if (expected->kind == TYPE_ARRAY) {
             /* Handle array literal: .{ 1, 2 } */
             Type* element_type = expected->as.array.element_type;
@@ -4774,20 +4758,40 @@ Type* TypeChecker::visitStructInitializer(ASTNode* parent, ASTStructInitializerN
                 return expected;
             }
         } else if (expected->kind == TYPE_ANYTYPE || expected->kind == TYPE_TYPE) {
-             /* anytype context for anonymous struct/union literal?
-                In Z98, this is only allowed for empty .{} which can be an empty tuple. */
+             /* anytype context for anonymous struct/union literal? */
              if (!node->fields || node->fields->length() == 0) {
+                  /* Empty .{} resolves to empty tuple. */
                   void* mem = unit_.getArena().alloc(sizeof(DynamicArray<Type*>));
                   DynamicArray<Type*>* empty = new (mem) DynamicArray<Type*>(unit_.getArena());
                   Type* tuple_type = createTupleType(unit_.getArena(), empty);
                   parent->resolved_type = tuple_type;
                   return tuple_type;
+             } else {
+                  /* Non-empty literal without structural context: resolve elements and stay anonymous for now. */
+                  for (size_t i = 0; i < node->fields->length(); ++i) {
+                      ASTNamedInitializer* init = (*node->fields)[i];
+                      if (init->value) {
+                          visit(init->value);
+                      }
+                  }
+                  Type* anon = createAnonymousInitType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
+                  parent->resolved_type = anon;
+                  return anon;
              }
         }
     }
 
     /* Still anonymous: create TYPE_ANONYMOUS_INIT placeholder */
     if (!expected) {
+        /* Resolve fields if possible to ensure symbols are found. */
+        if (node->fields) {
+            for (size_t i = 0; i < node->fields->length(); ++i) {
+                ASTNamedInitializer* init = (*node->fields)[i];
+                if (init->value) {
+                    visit(init->value);
+                }
+            }
+        }
         Type* anon = createAnonymousInitType(unit_.getArena(), parent, unit_.getModule(unit_.getCurrentModule()));
         parent->resolved_type = anon;
         return anon;
