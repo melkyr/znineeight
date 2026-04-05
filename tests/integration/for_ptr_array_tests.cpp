@@ -46,7 +46,7 @@ TEST_FUNC(Codegen_ForPtrToArray) {
     buffer[bytes] = '\0';
     plat_close_file(f);
 
-    if (strstr(buffer, "__for_len_1 = 5;") == NULL) {
+    if (strstr(buffer, "for_len = 5;") == NULL) {
         printf("FAIL: Loop length 5 not found in emission for pointer-to-array. Emission:\n%s\n", buffer);
         return false;
     }

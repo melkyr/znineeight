@@ -101,14 +101,14 @@ TEST_FUNC(Codegen_Binary_Bitwise) {
 TEST_FUNC(Codegen_Binary_CompoundAssignment) {
     return run_binary_codegen_test(
         "fn my_test(a: *i32, b: i32) void { a.* += b; a.* -= 1; a.* *= 2; a.* /= 2; a.* %= 3; }",
-        "*a += b;\n    *a -= 1;\n    *a *= 2;\n    *a /= 2;\n    *a %= 3;"
+        "(void)(*a += b);\n    (void)(*a -= 1);\n    (void)(*a *= 2);\n    (void)(*a /= 2);\n    (void)(*a %= 3);"
     );
 }
 
 TEST_FUNC(Codegen_Binary_BitwiseCompoundAssignment) {
     return run_binary_codegen_test(
         "fn my_test(a: *u32, b: u32) void { a.* &= b; a.* |= 1; a.* ^= 0xF; a.* <<= 1; a.* >>= 2; }",
-        "*a &= b;\n    *a |= 1;\n    *a ^= 15;\n    *a <<= 1;\n    *a >>= 2;"
+        "(void)(*a &= b);\n    (void)(*a |= 1);\n    (void)(*a ^= 15);\n    (void)(*a <<= 1);\n    (void)(*a >>= 2);"
     );
 }
 
