@@ -103,7 +103,7 @@ public:
     Symbol* lookup(const char* name);
     Symbol* lookupInCurrentScope(const char* name);
     Symbol* lookupWithModule(const char* module_name, const char* symbol_name);
-    Symbol* findInAnyScope(const char* name); // Used by subsequent passes
+    Symbol* findInAnyScope(const char* name, const char* preferred_module = NULL); // Used by subsequent passes
     unsigned int getCurrentScopeLevel() const;
 
     void registerTempSymbol(Symbol* symbol); // Register compiler-generated symbol

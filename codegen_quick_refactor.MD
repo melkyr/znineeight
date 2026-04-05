@@ -48,11 +48,11 @@ The following integration steps are ordered from the most complex/invasive to th
 **Target:** `emitStructBody`, `emitUnionBody`, `emitTaggedUnionBody`, `emitLocalVarDecl`, `emitGlobalVarDecl`.
 **Why:** Replaces repeated `writeIndent()`, `emitType()`, and `writeString(";\n")` sequences. Requires careful verification of type suffix/prefix handling.
 
-### 3. Temporary Variable Helper (Medium Complexity)
+### 3. Temporary Variable Helper (COMPLETED)
 **Target:** `emitIf`, `emitWhile`, `emitSwitch`, `emitFor`.
 **Why:** Standardizes how compiler-generated temporaries are allocated and declared, reducing manual `var_alloc_.generate()` calls and associated manual declarations.
 
-### 4. Combined Block and Statement Helpers (Medium Complexity)
+### 4. Combined Block and Statement Helpers (COMPLETED)
 **Target:** `emitIf`, `emitWhile`, `emitFor`, `emitBlock`.
 **Why:** Simplifies the emission of control flow structures by using `writeBlockOpen()` and `writeBlockClose()`, and standardizes expression statements with `writeExprStmt()`.
 

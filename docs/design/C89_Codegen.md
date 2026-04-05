@@ -44,6 +44,67 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 
+### 2.1 Line Ending and Statement Terminator Abstraction
+To improve portability (e.g., support for CRLF on Windows 98) and centralize formatting, the `C89Emitter` provides abstractions for common C89 terminators. Direct use of hardcoded `";\n"` or `"\n"` is discouraged in favor of these helpers:
+- **`endStmt()`**: Appends a semicolon followed by the configured line ending.
+- **`writeLine()`**: Appends the configured line ending.
+- **`writeLine(const char* str)`**: Appends a string followed by the configured line ending.
+- **`LE()`**: Returns the current line ending string (`\n` or `\r\n`).
+
+This ensures that the generated C code respects the `win_friendly_line_endings` compilation option consistently across all modules.
+
+### 2.2 C Keyword Constants
+To ensure consistency and avoid hardcoding strings for standard C89 keywords, the `C89Emitter` uses centralized constants (`KW_BREAK`, `KW_IF`, `KW_INT`, etc.).
+- **Usage**: Emitter methods should use `writeString(KW_...)` or the `writeKeyword(KW_...)` helper.
+- **`writeKeyword(const char* kw)`**: Emits the keyword followed by a single space. This is the preferred method for keywords that act as prefixes (e.g., `static`, `extern`, `struct`).
+
+Using these constants simplifies maintenance and ensures that any necessary mangling or platform-specific keyword variations can be handled in one place.
+
+### 2.3 Combined Block and Statement Helpers
+To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
+
+- **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.
+- **`writeBlockClose()`**: Decrements the indentation level, writes an indented `}`, and a line ending.
+- **`writeExprStmt(const ASTNode* expr)`**: Indents, emits the C representation of the provided expression node, and appents a statement terminator (`endStmt()`).
+
+#### Example: Refactoring `while` loops
+**Before:**
+```cpp
+writeIndent();
+writeString("while (");
+emitExpression(node->condition);
+writeString(") {\n");
+{
+    IndentScope while_indent(*this);
+    emitStatement(node->body);
+}
+writeIndent();
+writeString("}\n");
+```
+
+**After:**
+```cpp
+writeIndent();
+writeKeyword(KW_WHILE);
+writeString("(");
+emitExpression(node->condition);
+writeString(") ");
+writeBlockOpen();
+{
+    emitStatement(node->body);
+}
+writeBlockClose();
+```
+
+These helpers reduce boilerplate, prevent "forgotten dedent" bugs in manual blocks, and centralize the logic for block formatting.
+
+#### 2.3.1 Compound Assignment Emission
+Compound assignments (e.g., `x += y`) are treated as expressions in C. When used as statements in Z98, they are automatically wrapped in a `(void)` cast to suppress "value computed is not used" warnings on legacy compilers. This is handled centrally in `C89Emitter::emitExpression` and is utilized by `writeExprStmt`.
+
+Example:
+Zig: `total += i;`
+Generated C: `(void)(total += i);`
+
 ### Usage in Pipeline:
 The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
 
@@ -266,6 +327,12 @@ For each unique slice type, a construction helper is generated:
 - **Signature**: `static RETR_UNUSED_FUNC Slice_T __make_slice_T(T* ptr, usize len)`
 - **Implementation**: Returns a `Slice_T` struct initialized with the provided pointer and length.
 - **Usage**: Invoked for all slicing expressions (`base[start..end]`) and implicit array-to-slice coercions.
+
+#### String Literal Coercion to Slice
+To avoid signedness warnings when coercing string literals (which are `char*` in C89) to `u8` slices (where `u8` is `unsigned char`), the construction helper for `u8` slices is specialized:
+- **Signature**: `static RETR_UNUSED_FUNC Slice_u8 __make_slice_u8(const char* ptr, usize len)`
+- **Implementation**: The pointer parameter is explicitly cast to `unsigned char*` when assigning to the slice's `ptr` field: `s.ptr = (unsigned char*)ptr;`.
+- **Rationale**: This allows string literals to be passed directly to the helper without generating `-Wpointer-sign` warnings, while maintaining the correct unsigned representation for `u8` data.
 
 ### 4.5 Array and Struct Initializers
 Standard C89 does not allow array or struct assignment after declaration (e.g., `arr = {1, 2, 3};` is invalid). To support Zig's flexible variable initialization, the `C89Emitter` employs the following strategy for local variables:
@@ -662,6 +729,20 @@ The `C89Emitter::emitBaseType` and `C89Emitter::emitTaggedUnionDefinition` handl
 - **Forward Declarations**: Because tagged unions are lowered to C `struct`s, they **must** be forward-declared using the `struct` keyword in C, even if they are conceptually "unions" in Zig. The `C89Emitter::ensureForwardDeclaration` method handles this automatically by using the correct keyword based on `isTaggedUnion(type)`.
 - **Implicit Enums**: For `union(enum)`, the `tag` field uses the generated enum `UnionName_Tag`.
 - **Field Omitting**: Like bare unions and structs, `void` fields are omitted from the payload union. If all fields are `void`, a `char __dummy;` is injected to maintain valid C syntax.
+
+#### Tagged Union Initialization with Anonymous Structs
+When a tagged union variant has an anonymous struct payload (e.g., `Cons: struct { car: i32, cdr: i32 }`), the compiler transforms the Zig initializer `Value{ .Cons = .{ .car = x, .cdr = y } }` into the following C code:
+```c
+struct zS_xxx_Value v;
+v.tag = zE_xxx_Value_Tag_Cons;
+v.data.Cons.car = x;
+v.data.Cons.cdr = y;
+```
+This ensures correct field ordering and C89 compatibility. The implementation handles:
+- **Detection**: `C89Emitter::emitInitializerAssignments` detects if the value being assigned to a tagged union variant is a nested `NODE_STRUCT_INITIALIZER`.
+- **L-value Capture**: Uses `captureExpression` to safely stringify the base l-value (e.g., `v`).
+- **Field-by-Field Assignment**: Recursively emits assignments for each field of the anonymous payload struct into the `.data.Variant.Field` path in C.
+- **Complex L-values**: To prevent double-evaluation, complex l-values are evaluated into a temporary pointer (e.g., `init_lval_tmp`) before decomposition.
 
 Example Zig (Named):
 ```zig

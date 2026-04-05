@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Running all Z98 Examples ==="
 
-EXAMPLES="hello prime days_in_month fibonacci heapsort quicksort sort_strings func_ptr_return lzw"
+EXAMPLES="hello prime days_in_month fibonacci heapsort quicksort sort_strings func_ptr_return lzw mandelbrot"
 
 for ex in $EXAMPLES; do
     echo ""

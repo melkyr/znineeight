@@ -710,7 +710,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures.
+*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures. Supports static member access for variants (e.g., `Value.Variant`) and instance access for tags (`v.tag`).
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
@@ -1157,3 +1157,26 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 #endif
 #endif // COMMON_HPP
 ```
+
+## 15. Anonymous Aggregate Literal Pattern
+**Concept:** Deferred resolution for syntactically ambiguous aggregate literals (`.{ ... }`).
+
+### 15.1 Motivation
+In Zig, the `.{}` syntax is used for anonymous struct initializers, tuple literals, and array literals. Without type context (e.g., `const x: [3]i32 = .{ 1, 2, 3 };`), the compiler cannot determine which concrete type to represent. To handle this in a single-pass-friendly manner, the bootstrap compiler employs a deferred resolution pattern.
+
+### 15.2 Implementation Strategy
+1. **Parsing**: When the parser encounters `.{ ... }`, it creates a `NODE_TUPLE_LITERAL` (for positional elements) or `NODE_STRUCT_INITIALIZER` (for named elements) and assigns it a specific anonymous type: `TYPE_ANONYMOUS_TUPLE`, `TYPE_ANONYMOUS_ARRAY`, or `TYPE_ANONYMOUS_INIT`.
+2. **Type Checking**:
+   - `visitTupleLiteral` and `visitStructInitializer` check for an "Expected Type" from the parent context (via `peekExpectedType()`).
+   - If a structural context is available (e.g., an array, tuple, or struct type), the literal is resolved immediately to that type.
+   - If no context is available, the node remains in its anonymous state, storing its AST node and defining module.
+3. **Deferred Resolution (Coercion)**:
+   - During `coerceNode`, if the source node has an anonymous type, the compiler re-visits the node using the target type as the "Expected Type".
+   - **Arrays**: Elements are coerced to the array's element type; length is verified.
+   - **Tuples**: Elements are matched to the tuple's component types.
+   - **Structs/Unions**: Named fields are matched and validated against the aggregate's definition.
+4. **Anytype Context**: When an anonymous literal is passed to an `anytype` parameter (e.g., in `std.debug.print`), the compiler "defaults" it to a concrete tuple or struct to ensure a valid C89 representation can be emitted.
+
+### 15.3 Usage Guidelines
+- **Structural Match Required**: Every anonymous literal must eventually resolve to a concrete type with a known memory layout before the code generation phase.
+- **Context Awareness**: Anonymous literals rely on downward type information. They are most effective in assignments, function calls, and return statements where the target type is explicitly defined.

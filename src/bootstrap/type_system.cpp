@@ -98,6 +98,38 @@ Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements) {
     return new_type;
 }
 
+Type* createAnonymousInitType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_ANONYMOUS_INIT;
+    new_type->as.anonymous_init.node = node;
+    new_type->as.anonymous_init.module = mod;
+    return new_type;
+}
+
+Type* createAnonymousArrayType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_ANONYMOUS_ARRAY;
+    new_type->as.anonymous_array.node = node;
+    new_type->as.anonymous_array.module = mod;
+    return new_type;
+}
+
+Type* createAnonymousTupleType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_ANONYMOUS_TUPLE;
+    new_type->as.anonymous_tuple.node = node;
+    new_type->as.anonymous_tuple.module = mod;
+    return new_type;
+}
+
+Type* createAnonymousUnionType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod) {
+    Type* new_type = allocateType(arena);
+    new_type->kind = TYPE_ANONYMOUS_UNION;
+    new_type->as.anonymous_union.node = node;
+    new_type->as.anonymous_union.module = mod;
+    return new_type;
+}
+
 Type* resolvePrimitiveTypeName(const char* name) {
     if (plat_strcmp(name, "void") == 0) return get_g_type_void();
     if (plat_strcmp(name, "bool") == 0) return get_g_type_bool();
@@ -1150,6 +1182,10 @@ bool isTypeComplete(Type* type) {
         case TYPE_UNDEFINED:
         case TYPE_MODULE:
         case TYPE_TUPLE:
+        case TYPE_ANONYMOUS_INIT:
+        case TYPE_ANONYMOUS_ARRAY:
+        case TYPE_ANONYMOUS_TUPLE:
+        case TYPE_ANONYMOUS_UNION:
         default:
             return false;
     }
@@ -1315,6 +1351,18 @@ static void typeToStringInternal(Type* type, char*& current, size_t& remaining) 
                 safe_append(current, remaining, "<null>");
             }
             break;
+        case TYPE_ANONYMOUS_INIT:
+            safe_append(current, remaining, "anonymous_init");
+            break;
+        case TYPE_ANONYMOUS_ARRAY:
+            safe_append(current, remaining, "anonymous_array");
+            break;
+        case TYPE_ANONYMOUS_TUPLE:
+            safe_append(current, remaining, "anonymous_tuple");
+            break;
+        case TYPE_ANONYMOUS_UNION:
+            safe_append(current, remaining, "anonymous_union");
+            break;
         default:
             safe_append(current, remaining, "unknown");
             break;
@@ -1442,6 +1490,18 @@ bool areTypesEqual(Type* a, Type* b) {
             }
             return areTypesEqual(a->as.enum_details.backing_type, b->as.enum_details.backing_type);
         }
+
+        case TYPE_ANONYMOUS_INIT:
+            return a->as.anonymous_init.node == b->as.anonymous_init.node;
+
+        case TYPE_ANONYMOUS_ARRAY:
+            return a->as.anonymous_array.node == b->as.anonymous_array.node;
+
+        case TYPE_ANONYMOUS_TUPLE:
+            return a->as.anonymous_tuple.node == b->as.anonymous_tuple.node;
+
+        case TYPE_ANONYMOUS_UNION:
+            return a->as.anonymous_union.node == b->as.anonymous_union.node;
 
         default:
             return false;

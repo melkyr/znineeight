@@ -108,7 +108,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
     NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
     NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
-    NODE_TUPLE_LITERAL,   ///< A tuple literal (e.g., `.{ 1, 2, 3 }`).
+    NODE_TUPLE_LITERAL,   ///< A positional aggregate literal (e.g., `.{ 1, 2, 3 }`). Can resolve to Array or Tuple.
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -578,6 +578,24 @@ Represents an array slice expression.
         ASTNode* len;      // Computed during type checking
     };
     ```
+
+#### `ASTStructInitializerNode`
+Represents a struct, union, or tagged union initializer.
+*   **Zig Code:** `Point { .x = 1, .y = 2 }`, `Value { .Cons = .{ .car = 1, .cdr = 2 } }`, `.{ .x = 1 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTStructInitializerNode
+     * @brief Represents a struct/union initializer.
+     * @var ASTStructInitializerNode::type_expr The type being initialized (NULL for anonymous).
+     * @var ASTStructInitializerNode::fields A dynamic array of named field initializers.
+     */
+    struct ASTStructInitializerNode {
+        ASTNode* type_expr;
+        DynamicArray<ASTNamedInitializer*>* fields;
+    };
+    ```
+*   **Anonymous Struct Payloads**: To support tagged union variants with anonymous struct payloads, the parser allows nesting `NODE_STRUCT_INITIALIZER` as the value of a field. The `TypeChecker` resolves these nested initializers against the variant's payload type.
 
 #### Parsing Logic (`parsePostfixExpression`)
 The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
@@ -2186,7 +2204,25 @@ Represents an array or slice expression (e.g., `base[start..end]`).
     - `base_ptr`: Synthetic expression representing the raw pointer to the first element. Populated during type checking for use in codegen.
     - `len`: Synthetic expression representing the resulting length. Populated during type checking.
 
-### Type Resolution
+### 37. Anonymous Aggregate Literals
+
+Anonymous aggregate literals (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`) are parsed as `NODE_STRUCT_INITIALIZER` and `NODE_TUPLE_LITERAL` respectively, with their `type_expr` set to `NULL`.
+
+### Initial Typing and Deferred Resolution
+As of Milestone 12, the compiler uses a unified pattern for context-sensitive literals:
+
+1.  **Context-Free Parsing**: The parser identifies whether a literal is named (`NODE_STRUCT_INITIALIZER`) or positional (`NODE_TUPLE_LITERAL`).
+2.  **Anonymous Type Kinds**: When first visited, if no downward type information is available, the nodes are assigned one of the following anonymous type kinds:
+    -   `TYPE_ANONYMOUS_INIT`: Ambiguous struct/union initializer.
+    -   `TYPE_ANONYMOUS_ARRAY`: Positional literal intended for an array.
+    -   `TYPE_ANONYMOUS_TUPLE`: Positional literal intended for a tuple.
+    -   `TYPE_ANONYMOUS_UNION`: Named literal intended for a union variant.
+3.  **Coercion-Based Resolution**: Actual resolution is deferred to `coerceNode`. When a target type is provided:
+    -   `coerceNode` triggers a contextual re-visit of the AST node.
+    -   The visitor (`visitStructInitializer` or `visitTupleLiteral`) uses the target type to perform structural matching and element/field coercion.
+    -   The node's `resolved_type` is updated in-place to the concrete type.
+
+### 38. Slice Type Resolution
 The `TypeChecker` resolves slicing expressions and ensures:
 - The base type is a sized array, another slice, or a many-item pointer.
 - Start and end indices are integers.

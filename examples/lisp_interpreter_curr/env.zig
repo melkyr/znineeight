@@ -8,6 +8,17 @@ pub const EnvNode = struct {
     next: ?*EnvNode,
 };
 
+pub fn env_find_node(name: []const u8, env: ?*EnvNode) ?*EnvNode {
+    var cur = env;
+    while (cur) |node| {
+        if (util.mem_eql(node.symbol, name)) {
+            return node;
+        }
+        cur = node.next;
+    }
+    return null;
+}
+
 pub fn env_lookup(name: []const u8, env: ?*EnvNode) util.LispError!*value_mod.Value {
     var cur = env;
     while (cur) |node| {

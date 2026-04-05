@@ -13,7 +13,8 @@ Semantic analysis at this stage will be limited to what is necessary to support 
 -   **Header Type Topological Sorting:** Ordering types within a module's header based on value dependencies to satisfy C89 definition-before-use requirements.
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
--   **Scope management:** Handling global and function-level scopes.
+-   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
+-   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
@@ -63,7 +64,11 @@ enum TypeKind {
     TYPE_MODULE,
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
-    TYPE_PLACEHOLDER
+    TYPE_PLACEHOLDER,
+    TYPE_ANONYMOUS_INIT,
+    TYPE_ANONYMOUS_ARRAY,
+    TYPE_ANONYMOUS_TUPLE,
+    TYPE_ANONYMOUS_UNION
 };
 ```
 
@@ -187,6 +192,30 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
         } placeholder;
+
+        /**
+         * @struct AnonymousInitDetails
+         * @brief Represents an anonymous initializer awaiting resolution.
+         */
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_init;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_array;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_tuple;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_union;
     } as;
 };
 ```
@@ -302,12 +331,16 @@ Each entry in the symbol table is a `Symbol` struct, which contains all the nece
 // from symbol_table.hpp
 struct Symbol {
     const char* name;
+    const char* module_name; // NULL for local or 'main' module
+    const char* mangled_name;
     SymbolType kind;
-    Type* symbol_type;
+    Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
     void* details;
-    unsigned int scope_level;
-    unsigned int flags;
+    unsigned int scope_level; // Set by SymbolTable on insertion
+    unsigned int flags;        // Bitmask of SymbolFlag
+    bool is_generic;           // True if it's a generic function
+    Type* c_prototype_type;    // For extern/export functions, the C-compatible type
 };
 
 /**
@@ -381,7 +414,8 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 ### Member Access and Struct Initialization
 
-1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
+1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct, union, module, or a single-level pointer to one. It then verifies that the field exists within the definition and resolves to the field's type.
+    -   **Static Variant Access**: Support for accessing variant names on tagged union types (e.g., `Value.Cons`) is implemented, allowing type unwrapping and constant folding.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
     -   The type being initialized is a struct, union, or tagged union.
@@ -437,8 +471,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 8. **Relaxed `isTypeComplete` Rules**: The `isTypeComplete` check has been refined to treat container-like types as inherently complete for declaration purposes. Pointers (`*T`, `[*]T`), slices (`[]T`), optionals (`?T`), and functions (`fn(...) T`) are always considered complete, even if their base/payload/return types are still placeholders. This allows these types to be used as fields in recursive structures without triggering "incomplete type" errors.
 9. **Lightweight Deferral Mechanism**: When `visitStructDecl` or `visitUnionDecl` encounters a field whose type is truly incomplete (e.g., a value-dependency on another placeholder that is not yet resolving), the compiler defers the resolution of that declaration instead of reporting an error.
 10. **Two-Pass Type Checking**: To ensure all types are finalized before they are used in expressions or function bodies, the `TypeChecker::check` method uses a two-pass strategy:
-    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass includes a retry loop that repeatedly attempts to resolve deferred declarations until no further progress can be made or all types are complete.
-    - **Pass 2**: Resolve all other nodes, including function bodies and statements. This ensures that when a function like `fn example(u: U)` is checked, types like `U` and its dependencies are already fully resolved.
+    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass builds the initial type map and resolves top-level constants.
+    - **Pass 2**: Re-visit **all** nodes, including `VarDecl` and function bodies. Re-visiting `VarDecl` nodes in this pass is critical because it allows the `TypeChecker` to re-insert local symbols into the currently active function scope. Since the parser's scope is discarded after its pass, this re-insertion ensures that local variables are "visible" to subsequent statements in the same block during semantic analysis.
 11. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.
@@ -1143,7 +1177,25 @@ The `TypeChecker` supports unwrapping multiple levels of type aliases to facilit
 
 This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
 
-## 7. Expected Type Propagation (Downward Inference)
+## 7. Anonymous Initializer Type (`TYPE_ANONYMOUS_INIT`)
+
+Currently, an anonymous struct or tuple initializer (e.g., `.{ .x = 1, .y = 2 }` or `.{ 1, 2 }`) has no type information when visited standalone. To handle this without overloading `TYPE_UNDEFINED`, the bootstrap compiler introduces `TYPE_ANONYMOUS_INIT`.
+
+### Purpose
+This type acts as a placeholder for anonymous initializers that are **awaiting resolution**. It carries enough information (a pointer to the original `ASTNode`) to be resolved later when the target type is known.
+
+### Resolution via Coercion
+Resolution happens only when a target type is provided via the `coerceNode` mechanism:
+1. When `coerceNode` encounters a source type of `TYPE_ANONYMOUS_INIT`, it triggers a re-visit of the underlying `ASTNode` with the `target_type` as an expected type context.
+2. The `visitStructInitializer` or `visitTupleLiteral` method then uses this expected type to perform field validation and return the final resolved type.
+3. The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type.
+
+### Benefits
+- **Predictable Behavior**: Real errors remain distinguishable from unresolved anonymous literals.
+- **Robust Nesting**: Supports deeply nested anonymous structures within tagged unions or other aggregates.
+- **Recursion Safety**: Utilizes the existing `recursion_depth` guard in `coerceNode` to prevent stack overflow.
+
+## 8. Expected Type Propagation (Downward Inference)
 
 The type checker implements a downward type inference mechanism through an **Expected Type Stack**. This allows the compiler to propagate type information from the surrounding context into expressions that might otherwise have an ambiguous or undefined type (e.g., anonymous struct initializers or switch expressions).
 
@@ -1163,6 +1215,28 @@ The type checker implements a downward type inference mechanism through an **Exp
 
 ### Coercion Integration
 The `coerceNode` method has been enhanced to use the expected type when encountering an anonymous struct initializer (`.{ .field = value }`). If an expected type (like a tagged union) is available, `coerceNode` validates the initializer against that type and sets its `resolved_type`, enabling seamless downward inference.
+
+## 26. Anonymous Aggregate Literals
+
+As of Milestone 12, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+### 26.1 Anonymous Type Kinds
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+### 26.2 Resolution Strategy
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Contextual Visitation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if `peekExpectedType()` provides a structural target.
+3. **Deferred Coercion**: If visited without context, the literal remains anonymous. It is resolved in `coerceNode` when a target type is finally known.
+4. **Structural Matching**:
+   - **Arrays**: Verified for length and element compatibility.
+   - **Tuples**: Verified for component type compatibility.
+   - **Unions**: Verified for exactly one field matching a valid variant and payload.
+
+### 26.3 Defaulting for `anytype`
+In contexts where the literal is passed to an `anytype` parameter (e.g., `std.debug.print`), the compiler defaults the literal to a concrete type (e.g., a tuple of its element types) to ensure it has a valid C89 representation.
 
 ### `resolvePrimitiveTypeName`
 

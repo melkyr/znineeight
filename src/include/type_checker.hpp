@@ -25,8 +25,8 @@ public:
     Type* visitArraySlice(ASTArraySliceNode* node);
     Type* visitMemberAccess(ASTNode* parent, ASTMemberAccessNode* node);
     bool checkStructInitializerFields(ASTStructInitializerNode* node, Type* struct_type, SourceLocation loc);
-    Type* visitStructInitializer(ASTStructInitializerNode* node);
-    Type* visitTupleLiteral(ASTTupleLiteralNode* node);
+    Type* visitStructInitializer(ASTNode* parent, ASTStructInitializerNode* node);
+    Type* visitTupleLiteral(ASTNode* parent, ASTTupleLiteralNode* node);
     Type* visitUnreachable(ASTNode* node);
     Type* visitBoolLiteral(ASTNode* parent, ASTBoolLiteralNode* node);
     Type* visitNullLiteral(ASTNode* node);
@@ -117,7 +117,6 @@ private:
     IndirectType detectIndirectType(ASTNode* callee);
     const char* exprToString(ASTNode* expr);
     const char* generateImplicitEnumName(const char* union_name);
-    Type* findTaggedUnionPayload(Type* union_type, const char* tag);
     Type* transformExternType(Type* t);
     Type* tryPromoteLiteral(ASTNode* node, Type* target_type);
     bool needsStringLiteralCoercion(ASTNode* src, Type* target);
@@ -126,8 +125,9 @@ private:
     Type* resolveNamedType(struct Module* defining_mod, const char* name, Symbol* sym);
     void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
     Type* resolveTypeConstant(Symbol* sym);
+    Type* resolveTypeAlias(Symbol* sym, int depth = 0);
+    Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
     Type* unwrapType(ASTNode* node);
-    Type* getTagType(Type* tu);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
 public:
