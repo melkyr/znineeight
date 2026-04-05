@@ -8,5 +8,5 @@ echo "Compiling prime..."
 mkdir -p output
 $ZIG0 main.zig -o output/
 cd output
-gcc -m32 -Wno-long-long -std=c89 -pedantic -Wno-pointer-sign -I. -o prime *.c ../../../src/runtime/zig_runtime.c -I../../../src/include
-./prime
+gcc -m32 -Wno-long-long -std=c89 -pedantic -Wno-pointer-sign -I. -o app *.c ../../../src/runtime/zig_runtime.c -I../../../src/include -Wno-error=implicit-function-declaration
+./app
