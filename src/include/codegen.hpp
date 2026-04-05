@@ -7,6 +7,7 @@
 #include "ast.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
+#include "text_writer.hpp"
 #include <cstddef>
 
 class CompilationUnit;
@@ -18,7 +19,7 @@ class CompilationUnit;
  * This class provides a 4KB stack buffer for efficient writing and supports
  * indentation and C89-style comments.
  */
-class C89Emitter {
+class C89Emitter : public TextWriter {
 public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
@@ -75,7 +76,7 @@ public:
      * @brief Writes a null-terminated string to the buffer.
      * @param str The string to write.
      */
-    void writeString(const char* str);
+    virtual void writeString(const char* str);
 
     /**
      * @brief Writes a C89-style comment to the buffer.
@@ -386,10 +387,8 @@ public:
      * @brief Line ending and statement terminator helpers.
      */
     inline const char* LE() const { return line_ending_; }
-    inline void writeLine() { writeString(line_ending_); }
-    inline void writeLine(const char* str) { writeString(str); writeString(line_ending_); }
-    inline void writeIndentedLine(const char* str) { writeIndent(); writeString(str); writeString(line_ending_); }
-    inline void endStmt() { writeString(";" ); writeString(line_ending_); }
+    inline void writeIndentedLine(const char* str) { writeIndent(); writeLine(str); }
+    inline void endStmt() { writeString(";" ); writeLine(); }
 
     /**
      * @brief Combined write methods.
@@ -704,7 +703,6 @@ private:
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
-    const char* line_ending_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);
