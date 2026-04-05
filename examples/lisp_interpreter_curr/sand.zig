@@ -13,7 +13,9 @@ pub fn sand_init(buffer: []u8) Sand {
 }
 
 pub fn sand_alloc(sand: *Sand, size: usize, alignment: usize) util.LispError![*]u8 {
-    const mask = alignment - 1;
+    const min_align = @intCast(usize, 8);
+    const actual_align = if (alignment < min_align) min_align else alignment;
+    const mask = actual_align - 1;
     const aligned_pos = (sand.pos + mask) & ~mask;
     if (aligned_pos + size > sand.end) {
         return error.OutOfMemory;
