@@ -1,95 +1,3 @@
-## Issue 1: String Literal Slice Mismatch (Signedness Warning) [RESOLVED]
-
-**Root cause:** The `__make_slice_u8` helper expects `unsigned char*` but string literals are `char*`. C89 allows implicit conversion, but compilers warn.
-
-**Effort:** Low (1-2 hours)
-
-**Resolution:** Modified `CBackend::generateSpecialTypesHeader()` to specialize `__make_slice_u8` to accept `const char* ptr` and perform an explicit cast to `(unsigned char*)ptr` internally. This allows string literals to be passed without warnings.
-
-**Verification:** Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
-
----
-
-## Issue 2: Local `const` Aggregate Declarations
-
-**Root cause:** The compiler treats local `const` with a struct/union/enum initializer as a type declaration (like a global type alias). This is a bug in `TypeChecker::visitVarDecl` or `C89Emitter::emitLocalVarDecl`.
-
-**Effort:** Medium (4-6 hours)
-
-**Plan:**
-
-1. **In `TypeChecker::visitVarDecl`,** after determining `is_local`, ensure that for a local `const` aggregate, the symbol is marked as `SYMBOL_FLAG_LOCAL` (not global) and `module_name = NULL`. The existing code already does this, but the early return (which we removed) may have been bypassed. Verify that the `existing_sym` update block sets `flags |= SYMBOL_FLAG_LOCAL` and `module_name = NULL`.
-
-2. **In `C89Emitter::emitLocalVarDecl`,** currently there is a check that skips emitting for `const` aggregates (because it treats them as types). Modify that check to only skip if the variable is **global** and `is_const` and aggregate. For local variables, emit them normally.
-
-   Look for code like:
-
-   ```cpp
-   if (decl->is_const && (decl->initializer->resolved_type->kind == TYPE_STRUCT || ...)) {
-       return; // skip
-   }
-   ```
-
-   Change to:
-
-   ```cpp
-   if (decl->is_const && !is_local && (decl->initializer->resolved_type->kind == TYPE_STRUCT || ...)) {
-       return; // skip only for global
-   }
-   ```
-
-3. **Add a test:** `tests/test_local_const_aggregate.zig` with:
-
-   ```zig
-   const Point = struct { x: i32, y: i32 };
-   pub fn main() void {
-       const p = Point{ .x = 1, .y = 2 };
-       _ = p;
-   }
-   ```
-
-   Ensure generated C contains `struct Point p = {1,2};` (or similar) and not a typedef.
-
-**Workaround for now:** Use `var` instead of `const` for local aggregates. That works perfectly.
-
----
-
-## Issue 3: Lisp Interpreter Recursion (Closure Capture)
-
-**Root cause:** The interpreter’s environment model does not support self‑reference correctly. The pre‑binding attempt fails because updating the environment node in‑place may not affect the closure’s captured environment.
-
-**Effort:** High (1-2 days) – this is an interpreter bug, not a compiler bug. However, fixing it will make the showcase work.
-
-**Plan (to fix the interpreter, not the compiler):**
-
-1. **Change the environment representation** to use a **boxed value** for the closure binding. Instead of storing the closure directly in the environment node, store a **mutable pointer** (e.g., `*Value`) that can be updated after closure creation.
-
-   - In `env.zig`, change `EnvNode` to hold `value: *Value` (already does). But when we pre‑bind, we set the value to `nil`, then later we need to **update the `*Value` that the closure captured**, not just the node’s value.
-
-2. **Modify closure creation** to capture a **reference to the environment slot**, not the value. When the lambda is evaluated, it should capture a pointer to the `Value` that will eventually hold the closure. Then, after creating the closure, we assign it to that pointer.
-
-   Simplified algorithm:
-
-   ```zig
-   // In define
-   // 1. Create a mutable slot (a pointer to a Value)
-   var slot = try value_mod.alloc_nil(perm_sand);
-   // 2. Bind the name to that slot in the environment
-   env.* = try env_mod.env_extend(sym_name, slot, env.*, perm_sand);
-   // 3. Evaluate the lambda (which captures the slot, not the value)
-   const closure = try eval(lambda_expr, env, temp_sand, perm_sand);
-   // 4. Update the slot's content to the closure
-   slot.* = closure.*;
-   ```
-
-   This requires that the closure captures the slot address, not the value. Modify `lambda` to capture the environment slot for each free variable.
-
-3. **Alternative (simpler):** Use a **mutable environment array** (like a vector) and store indices instead of pointers. This is more complex.
-
-**Workaround for now:** The Lisp interpreter can still be used for non‑recursive functions. For the showcase, you can demonstrate recursion by using a built‑in recursive function (e.g., `fact` implemented in Zig, not Lisp). Or you can note that recursion is a known limitation of the interpreter, not the compiler.
-
----
-
 ## Issue 4: Loop State & Capture Sensitivity
 
 **Effort:** Low to Medium (2-4 hours) – this is a compiler bug that may affect some complex loops.
@@ -109,3 +17,291 @@
 
 **Assessment:** This issue is rare and not a blocker for self‑hosting. Most compiler loops are simple (AST traversal) and do not involve complex captures. You can safely defer it.
 
+
+# Master Plan for C89/C++98 Compatibility
+
+This plan addresses all issues identified in the compatibility report, ensuring the Z98 bootstrap compiler (`zig0`) can be built with legacy C++98 compilers (MSVC 6.0, OpenWatcom) and that the generated C code is C89‑compliant and runs on Windows 98 / MSVC 6.0.
+
+The plan is divided into **phases**. Each phase is self‑contained and can be implemented incrementally.
+
+---
+
+## Phase 0: Preprocessor Compatibility Layer
+
+**Goal:** Create a single header that abstracts compiler and target differences.
+
+**File:** `src/include/compat.hpp` (new)
+
+```cpp
+#ifndef ZIG_COMPAT_HPP
+#define ZIG_COMPAT_HPP
+
+// Detect compilers
+#ifdef _MSC_VER
+    #define ZIG_COMPILER_MSVC
+    #if _MSC_VER == 1200 // MSVC 6.0
+        #define ZIG_COMPILER_MSVC6
+    #endif
+#elif defined(__WATCOMC__)
+    #define ZIG_COMPILER_OPENWATCOM
+#endif
+
+// inline keyword
+#ifdef ZIG_COMPILER_MSVC
+    #define ZIG_INLINE __inline
+#else
+    #define ZIG_INLINE inline
+#endif
+
+// 64-bit integer suffix for literals in generated C
+#ifdef ZIG_COMPILER_MSVC
+    #define ZIG_I64_SUFFIX "i64"
+    #define ZIG_UI64_SUFFIX "ui64"
+#else
+    #define ZIG_I64_SUFFIX "LL"
+    #define ZIG_UI64_SUFFIX "ULL"
+#endif
+
+// Unused parameter/variable macro (already exists in utils.hpp)
+#ifndef RETR_UNUSED
+    #define RETR_UNUSED(x) (void)(x)
+#endif
+
+// Boolean type for C89 (generated code)
+#ifndef ZIG_BOOL_DEFINED
+    #define ZIG_BOOL_DEFINED
+    typedef int bool;
+    #define true 1
+    #define false 0
+#endif
+
+#endif // ZIG_COMPAT_HPP
+```
+
+**Action:** Create `compat.hpp` and include it in `common.hpp` and `codegen.hpp`.
+
+---
+
+## Phase 1: Fix C++98 Non‑Compliant Issues (Compiler Source)
+
+### 1.1 Replace `unsigned long long` casts with `u64`
+
+**File:** `src/bootstrap/type_checker.cpp` (line ~6830)
+
+```cpp
+// Before
+(unsigned long long)node->as.integer_literal.value
+
+// After
+(u64)node->as.integer_literal.value
+```
+
+**Also** search for any other `long long` or `unsigned long long` usage in the compiler source and replace with `i64`/`u64` (defined in `common.hpp`).
+
+### 1.2 Ensure `<cstddef>` / `<stdint.h>` not used directly
+
+`common.hpp` already provides fallbacks. Verify that no file includes `<stdint.h>` or `<cstdint>` unconditionally. If found, replace with `#include "common.hpp"`.
+
+### 1.3 Apply `RETR_UNUSED` consistently
+
+Run a quick scan for functions with unused parameters. Use the macro to silence warnings:
+
+```cpp
+void myFunc(int a, int b) {
+    RETR_UNUSED(b);
+    // use a only
+}
+```
+
+**Action:** Add `RETR_UNUSED` in `type_checker.cpp`, `parser.cpp`, `codegen.cpp` where needed.
+
+---
+
+## Phase 2: Fix C89 Compliance Issues (Generated Code)
+
+### 2.1 Remove `long long` from Runtime Headers
+
+**File:** `src/include/zig_runtime.h`
+
+Replace:
+
+```c
+#ifdef _MSC_VER
+    typedef __int64 i64;
+    typedef unsigned __int64 u64;
+#else
+    typedef long long i64;
+    typedef unsigned long long u64;
+#endif
+```
+
+with:
+
+```c
+#include "zig_compat.h"  // (new header for generated C)
+```
+
+`zig_compat.h` (to be copied to output directory) will contain:
+
+```c
+#ifndef ZIG_COMPAT_H
+#define ZIG_COMPAT_H
+
+#ifdef _MSC_VER
+    typedef __int64 i64;
+    typedef unsigned __int64 u64;
+#elif defined(__WATCOMC__)
+    typedef long long i64;    // OpenWatcom supports long long as extension
+    typedef unsigned long long u64;
+#else
+    typedef long long i64;
+    typedef unsigned long long u64;
+#endif
+
+typedef int bool;
+#define true 1
+#define false 0
+
+#endif
+```
+
+**Action:** Modify `CBackend::copyRuntimeFiles` to also copy `zig_compat.h` to the output directory.
+
+### 2.2 Function Pointer to `void*` Conversion
+
+**Issue:** The Lisp interpreter stores builtins as `void*` and casts back. This triggers a pedantic warning. For the compiler’s own generated code, we can suppress the warning or change the runtime.
+
+**Short‑term fix:** In `C89Emitter::emitExpression` for builtin calls, emit a cast to the correct function pointer type instead of `void*`. However, the builtin is stored in a `void*` field. The warning is harmless. For true compliance, we would need to change the interpreter’s `Value` union to store a function pointer. This is outside the compiler’s scope. **Accept the warning** or add `#pragma` to disable it in MSVC.
+
+**Long‑term fix:** Update the interpreter (separate task) to use a tagged union with a function pointer type.
+
+### 2.3 Signedness Mismatch in `__bootstrap_print`
+
+**Files:** `src/include/zig_runtime.h`, `src/runtime/zig_runtime.c`
+
+Change prototype:
+
+```c
+void __bootstrap_print(const char* s);
+```
+
+In `zig_runtime.c`, cast to `unsigned char*` internally:
+
+```c
+void __bootstrap_print(const char* s) {
+    const unsigned char* us = (const unsigned char*)s;
+    while (*us) {
+        putchar(*us++);
+    }
+}
+```
+
+**Action:** Update both files.
+
+### 2.4 Unused Continue Labels in Loops
+
+**Files:** `src/bootstrap/codegen.cpp` (`emitFor`, `emitWhile`, `emitBreak`, `emitContinue`)
+
+**Solution:** Add a flag `has_continue` to the loop context. Set it when `emitContinue` is called. Only emit the continue label if the flag is true.
+
+**Implementation sketch:**
+
+```cpp
+// In C89Emitter class, add a stack of bools for loops
+DynamicArray<bool> loop_has_continue_;
+
+// In emitFor/emitWhile, before emitting body:
+loop_has_continue_.append(false);
+
+// ... emit body ...
+
+// After body, if loop_has_continue_.back() is true, emit the continue label.
+if (loop_has_continue_.back()) {
+    writeIndent();
+    writeString(cont_label);
+    writeString(": ;\n");
+}
+loop_has_continue_.pop_back();
+
+// In emitContinue, set the flag for the current loop:
+if (loop_id_stack_.length() > 0) {
+    loop_has_continue_[loop_id_stack_.length() - 1] = true;
+}
+```
+
+**Action:** Implement this tracking.
+
+---
+
+## Phase 3: MSVC 6.0 / OpenWatcom Specifics
+
+### 3.1 64‑bit Literal Suffixes
+
+Already handled in `C89Emitter::emitIntegerLiteral`. Verify that for MSVC, suffixes are `i64`/`ui64`. For OpenWatcom, `LL`/`ULL` work.
+
+### 3.2 Identifier Length Limit
+
+The `NameMangler` already truncates to 31 characters and uses hashing. For external symbols, some linkers may only distinguish 6 characters. We currently use a 6‑character hash. This is sufficient.
+
+**Action:** No change.
+
+### 3.3 `inline` Keyword
+
+In generated C, we should not use `inline` because C89 doesn’t have it. Instead, define a macro `ZIG_INLINE` that expands to empty for strict C89. For MSVC, use `__inline`.
+
+**File:** `src/include/zig_compat.h` (in generated output)
+
+```c
+#ifdef _MSC_VER
+    #define ZIG_INLINE __inline
+#else
+    #define ZIG_INLINE
+#endif
+```
+
+**Action:** Update `C89Emitter::emitPrologue` to emit this macro definition, and replace any `static inline` with `static ZIG_INLINE` in generated code.
+
+### 3.4 Mixed Declarations and Code
+
+**Issue:** The compiler already uses a two‑pass approach for blocks, but temporaries created during expression lifting (e.g., in `if` conditions) may be declared after some code.
+
+**Audit:** In `emitIf`, the temporary for the condition is declared before the condition evaluation. That is correct. In `emitWhile`, the temporary for the optional capture is declared before the loop. That is also correct.
+
+**Potential problem:** When lifting a complex expression inside a block, the lifter inserts the temporary declaration at the position of the expression, which may be after some statements. To fix, we would need to hoist all temporaries to the top of the block. This is complex and not required for the current test suite.
+
+**Action:** Document this as a known limitation. For now, the generated code works with MSVC 6.0 and OpenWatcom because they are lenient.
+
+### 3.5 Boolean Type
+
+We already define `bool` as `int`. Ensure no conflict with system headers by guarding with `#ifndef __cplusplus`.
+
+**Action:** In `zig_compat.h`, add:
+
+```c
+#ifndef __cplusplus
+    typedef int bool;
+    #define true 1
+    #define false 0
+#endif
+```
+
+---
+
+## Phase 4: Create and Distribute `zig_compat.h`
+
+**Action:** Add a new file `src/include/zig_compat.h` (for runtime) and modify `CBackend::generateSpecialTypesHeader` to emit a similar header for every module. Alternatively, copy `zig_compat.h` to the output directory once. The runtime already uses `zig_runtime.h`; we can include `zig_compat.h` there.
+
+**Simpler:** Add the compatibility macros directly in `zig_runtime.h` (guarded). That avoids an extra file.
+
+---
+
+## Phase 5: Testing and Validation
+
+After each phase, compile `zig0` with MSVC 6.0 (or a modern compiler with `-std=c++98 -pedantic`) and run the test suite. For generated C, compile with `gcc -std=c89 -pedantic -Werror` and with MSVC 6.0 (if available) to verify no warnings/errors.
+
+**Priority order:**
+
+1. Phase 0 + Phase 1 (fix compiler source) – enables building zig0 on legacy C++98 compilers.
+2. Phase 2.1 + 2.3 + 2.4 (fix common C89 issues) – reduces warnings in generated code.
+3. Phase 3.3 + 3.5 – improves portability.
+4. Phase 2.2 (function pointer cast) – low priority, can be deferred.
