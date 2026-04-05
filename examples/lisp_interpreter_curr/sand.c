@@ -42,19 +42,10 @@ struct zS_148163_Sand zF_148163_sand_init(Slice_u8 buffer) {
 }
 
 ErrorUnion_Ptr_u8 zF_148163_sand_alloc(struct zS_148163_Sand* sand, usize size, usize alignment) {
-    const usize min_align = 8;
-    usize __tmp_if_5_1;
-    usize actual_align;
     usize mask;
     usize aligned_pos;
     unsigned char* res;
-    if (alignment < min_align) {
-        __tmp_if_5_1 = min_align;
-    } else {
-        __tmp_if_5_1 = alignment;
-    }
-    actual_align = __tmp_if_5_1;
-    mask = actual_align - 1;
+    mask = alignment - 1;
     aligned_pos = (sand->pos + mask) & ~mask;
     if (aligned_pos + size > sand->end) {
         {

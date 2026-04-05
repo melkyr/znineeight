@@ -89,13 +89,3 @@ ErrorUnion_i64 zF_a817c9_parse_int(Slice_u8 s) {
         return __return_val;
     }
 }
-
-int zF_a817c9_points_to_arena(void * ptr, unsigned char* sand_start, usize sand_pos) {
-    usize addr;
-    usize start;
-    usize end;
-    addr = (usize)ptr;
-    start = (usize)sand_start;
-    end = start + sand_pos;
-    return addr >= start && addr < end;
-}

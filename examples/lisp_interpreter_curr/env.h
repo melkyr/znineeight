@@ -71,7 +71,6 @@ struct zS_8e8bb4_EnvNode {
 #include "util.h"
 
 
-Optional_Ptr_zS_8e8bb4_EnvNode zF_8e8bb4_env_find_node(Slice_u8, Optional_Ptr_zS_8e8bb4_EnvNode);
 ErrorUnion_Ptr_zS_5ed3ca_Value zF_8e8bb4_env_lookup(Slice_u8, Optional_Ptr_zS_8e8bb4_EnvNode);
 ErrorUnion_Ptr_zS_8e8bb4_EnvNode zF_8e8bb4_env_extend(Slice_u8, struct zS_5ed3ca_Value*, Optional_Ptr_zS_8e8bb4_EnvNode, struct zS_148163_Sand*);
 
