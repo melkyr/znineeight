@@ -40,7 +40,8 @@ const char* const C89Emitter::KW_REGISTER = "register";
 const char* const C89Emitter::KW_VOLATILE = "volatile";
 
 C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
-    : buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
+    : TextWriter(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n"),
+      buffer_pos_(0), output_file_(PLAT_INVALID_FILE), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
@@ -50,14 +51,14 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()),
-      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
+      loop_id_stack_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
 
 C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
-    : buffer_pos_(0), indent_level_(0), owns_file_(true),
+    : TextWriter(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n"),
+      buffer_pos_(0), indent_level_(0), owns_file_(true),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
@@ -67,8 +68,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()),
-      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
+      loop_id_stack_(unit.getTransientArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -76,7 +76,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
 
 
 C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
-    : buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
+    : TextWriter(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n"),
+      buffer_pos_(0), output_file_(file), indent_level_(0), owns_file_(false),
       debug_trace_(false), emit_depth_(0), emitted_decls_(unit.getTransientArena()),
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
@@ -86,8 +87,7 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()),
-      line_ending_(unit.getOptions().win_friendly_line_endings ? "\r\n" : "\n") {
+      loop_id_stack_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
