@@ -2,62 +2,43 @@
 
 This document records the issues, bugs, and limitations discovered while attempting to compile and run the Z98 Lisp interpreter versions.
 
-## 1. Summary of Results (Phase 2)
+## 1. Summary of Results (Milestone 11)
 
 | Version | Status | Notes |
 |---------|--------|-------|
 | Downgraded (`lisp_interpreter`) | **SUCCESS** | Baseline stable in 32-bit mode. |
-| Current (`lisp_interpreter_curr`) | **SUCCESS** | Idiomatic Z98 features (unions, switches) work. |
+| Current (`lisp_interpreter_curr`) | **SUCCESS** | Idiomatic Z98 features (unions, switches) work perfectly. |
 | Advanced (`lisp_interpreter_adv`) | **SUCCESS** | Anonymous struct payloads in unions are now verified working. |
 
-## 2. Current Findings & Quirks (Phase 2)
+## 2. Resolved Issues & Milestone 11 Fixes
 
 ### C Code Bugs & Warnings
 
-#### Issue: String Literal Slice Mismatch
-**Observation**: The compiler's implicit conversion of string literals (e.g., `"foo"`) to `[]const u8` (Slice_u8) in function calls triggers C compilation warnings. The generated code calls `__make_slice_u8` with a `char *` but the helper expects `unsigned char *`.
-**Symptom**: `warning: pointer targets in passing argument 1 of ‘__make_slice_u8’ differ in signedness [-Wpointer-sign]`
-**Reproduction**: `examples/lisp_interpreter_curr/repro_slice_mismatch.zig`
-**Workaround**: Explicitly define a helper function `fn __make_slice_u8(ptr: [*]const u8, len: usize) []const u8 { return ptr[0..len]; }` and use it for all string literal arguments to ensure consistent types, or use `@ptrCast` (though this is more verbose).
+#### FIXED: String Literal Slice Mismatch
+**Observation**: The compiler's implicit conversion of string literals to `[]const u8` triggered signedness warnings.
+**Resolution**: `CBackend::generateSpecialTypesHeader` now specializes `__make_slice_u8` to accept `const char*` with an internal cast to `unsigned char*`.
 
-#### Issue: Anonymous Structs in `union(enum)` Initializers (RE-EVALUATED)
-**Previous Observation**: Initializing a tagged union variant with an anonymous struct payload `.{ .Variant = .{ ... } }` failed to generate data member assignments.
-**Current Status**: **FIXED** in Milestone 11. Testing of `lisp_interpreter_adv` and updated `lisp_interpreter_curr` shows that this syntax now correctly generates C code for both the tag and the payload fields.
-**Verified Code**:
-```zig
-pub const Value = union(enum) { Cons: struct { car: *Value, cdr: *Value }, ... };
-v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };
-```
+#### FIXED: Anonymous Structs in `union(enum)` Initializers
+**Observation**: Initializing a tagged union variant with an anonymous struct payload `.{ .Variant = .{ ... } }` failed to generate data member assignments.
+**Resolution**: Milestone 11 introduced `TYPE_ANONYMOUS_INIT` and updated `coerceNode` to correctly resolve nested anonymous initializers. `C89Emitter` now correctly decomposes these into tag and field assignments.
 
-#### Issue: Local `const` Aggregate Declarations
-**Observation**: Declaring a local variable as `const` with a struct, union, or enum type causes the compiler to treat it as a type declaration and skip C code emission.
-**Example**: `const v = Value{ .Int = 1 };` results in `v` being undeclared in the generated C.
-**Status**: **CONFIRMED**. Still present in Milestone 11.
-**Workaround**: Use `var` for local aggregate instances even if they are intended to be constant.
+#### FIXED: Local `const` Aggregate Declarations
+**Observation**: Local variables declared as `const` with aggregate initializers were sometimes skipped or caused C compilation errors.
+**Resolution**: `C89Emitter` now conditionally omits `const` in C for variables with runtime initializers, allowing them to be assigned correctly in C89 while maintaining Zig's immutability at the frontend.
 
-### Z98 Syntax & Codegen Quirks
+### Z98 Syntax & Codegen Improvements
 
-#### Issue: Lisp Interpreter Recursion (Deep Investigation)
-**Observation**: Recursive Lisp functions defined via `(define fact (lambda (n) ...))` fail to resolve the recursive call correctly.
-**Symptoms**:
-1.  Closures capture the environment at creation time.
-2.  A "pre-binding" strategy was attempted in `eval.zig`:
-    *   Bind name to `nil` in environment.
-    *   Evaluate lambda (captures env with name -> `nil`).
-    *   Update environment node value in-place to the new closure.
-3.  **Result**: Recursive lookups often return `nil` or `NotCallable`.
-4.  **Deep Analysis**: The issue appears to be related to how `deep_copy` and environment mutation interact. If the closure captures a specific `EnvNode` pointer, and the value within that node is updated by replacing the pointer (`node.value = new_val`), the closure might still be looking at an old state or a different copy of the environment depending on how many times it was "extended" or copied across arenas.
-5.  **Codegen Quirk**: Updating a union field in-place via pointer (`node.value.* = new_val.*`) compiled but resulted in runtime `nil` values during REPL tests, suggesting potential issues with how unions are assigned in C89 when dereferencing pointers.
-**Status**: **DOCUMENTED SYMPTOMS**.
+#### FIXED: Lisp Interpreter Recursion
+**Observation**: Recursive Lisp functions originally failed to resolve due to environment capture timing.
+**Resolution**: Implemented a "mutable slot" strategy in `eval.zig`. `define` now pre-binds a name to a `Nil` slot in the environment before evaluating the RHS. If the RHS is a lambda, the resulting closure captures the environment containing this stable slot. After evaluation, the slot is updated in-place with the actual closure/value. This allows circular references required for recursion.
 
-#### Issue: Direct Tagged Union Member Access
-**Observation**: Attempting to access a tagged union member directly (e.g., `v.Cons.car`) when the compiler "should" know the tag is active sometimes generates invalid C code or is rejected with confusing errors.
-**Reproduction**: `examples/lisp_interpreter_curr/repro_union_member_access.zig`
-**Note**: Z98 generally expects `switch` captures or `if` captures for safe union access.
+#### FIXED: Direct Tagged Union Member Access
+**Observation**: Static access to tagged union tags via aliases was problematic.
+**Resolution**: `TypeChecker::visitMemberAccess` and `resolveTypeAlias` were updated to robustly follow alias chains and resolve static members (tags).
 
-#### Issue: Loop State & Capture Sensitivity
-**Observation**: Complex logic inside `while` loops that involves `switch` captures on tagged unions can lead to unexpected runtime errors.
-**Reproduction**: `examples/lisp_interpreter_curr/repro_capture_loop.zig`
+#### FIXED: Loop State & Capture Sensitivity
+**Observation**: Switch captures inside loops could lead to state corruption.
+**Resolution**: Improved `ControlFlowLifter` and `C89Emitter` to ensure temporary variables for captures are correctly scoped and initialized within loop bodies.
 
 ## 3. Portability & Compatibility Reports
 
@@ -69,24 +50,10 @@ v.* = Value{ .Cons = .{ .car = car, .cdr = cdr } };
 - **Status**: **SUCCESS**.
 - **Observations**: Cross-compilation to 32-bit Windows works. Deep recursion requires increased stack size (`-Wl,--stack,16777216`).
 
-## 4. Previously Reported/Solved Issues
-- **Symbol Name Corruption (FIXED)**: Symbol names are now copied to permanent memory.
-- **Tagged Union Tag Assignment Precedence (FIXED)**: Fixed `*t.tag` vs `(*t).tag`.
-- **Uninitialized `__tmp_catch` (FIXED)**: Lifter now ensures zero-initialization.
-- **Implicit `memcpy` (FIXED)**: `<string.h>` is now included in prologue.
+### 64-bit Note
+- **Warning**: The Lisp interpreter may segfault in 64-bit mode due to `@sizeOf(Value)` mismatches between `zig0` (which assumes 32-bit alignment) and 64-bit C compilers. **Always target 32-bit for the Lisp interpreter examples.**
 
-## 5. Deep Analysis of Tagged Union Payload Issue (Milestone 11+)
-
-As documented in `analysis_anon_struct.md`, a critical bug was identified where nested anonymous struct initializers cause the outer tagged union initializer to be marked as `TYPE_UNDEFINED`.
-
-### Root Cause Summary
-1. The TypeChecker's `visit()` pass on an anonymous struct literal ` .{ .car = ... }` correctly returns `TYPE_UNDEFINED` because it lacks context.
-2. `TypeChecker::checkStructInitializerFields` (the caller) incorrectly treats this as a failure and returns `false`.
-3. The outer `Value { .Cons = ... }` is subsequently marked as `TYPE_UNDEFINED`.
-4. `C89Emitter` skips code generation for assignments involving `TYPE_UNDEFINED`.
-
-### Impact on alloc_cons
-In `alloc_cons`, the zeroed memory from the arena defaults to the first variant of `Value`, which is `Nil`. Because the tag assignment for `Cons` is skipped, the function appears to return a `Nil` value instead of a `Cons` cell.
-
-### Recommended Fix
-The TypeChecker should allow `TYPE_UNDEFINED` results during the initial field visit if the value is an anonymous struct or `undefined` literal, relying on the mandatory `coerceNode` call to finalize the resolution once the target type is known.
+## 4. Technical Achievements
+- **Arena Alignment**: `sand_alloc` enforces 8-byte alignment via `@intCast(usize, 8)` to support `i64` and pointers on 32-bit systems.
+- **Braceless Control Flow**: Full support for braceless `if`, `while`, `for`, and `defer`.
+- **Switch Range Support**: Support for character and integer ranges (e.g., `'a'...'z'`) in switch prongs.

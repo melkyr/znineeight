@@ -20,9 +20,11 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Error Handling**: Full support for error unions (`!T`), error sets, `try`, `catch`, and full `errdefer` execution.
 - **Optional Types**: Support for `?T`, `null`, and `orelse`.
 - **Slices**: Full support for `[]T` and slicing expressions `base[start..end]`.
-- **Tagged Unions**: Support for `union(enum)` with payload captures in `switch` statements.
+- **Tagged Unions**: Support for `union(enum)` with payload captures in `switch` and `while` statements, including nested anonymous struct payloads.
 - **Recursive Types**: Support for mutually recursive structs and unions via a robust placeholder resolution mechanism.
-- **Control Flow**: Full support for `defer`, `errdefer`, labeled loops, and `break`/`continue` with scope unwinding.
+- **Control Flow**: Full support for `defer`, `errdefer`, labeled loops, `break`/`continue` with scope unwinding, and braceless `if`/`while`/`for`/`defer` statements.
+- **Switch Features**: Support for range-based prongs (e.g., `1...10 => ...`) and divergent prongs (`return`, `unreachable`).
+- **Built-in Lowering**: Compiler-assisted lowering for `std.debug.print` and safe narrowing casts.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
 
