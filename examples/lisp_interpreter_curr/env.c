@@ -33,36 +33,6 @@
 #include "util.h"
 
 
-Optional_Ptr_zS_8e8bb4_EnvNode zF_8e8bb4_env_find_node(Slice_u8 name, Optional_Ptr_zS_8e8bb4_EnvNode env) {
-    Optional_Ptr_zS_8e8bb4_EnvNode cur;
-    cur = env;
-    __loop_0_start: ;
-    while (1) {
-        Optional_Ptr_zS_8e8bb4_EnvNode opt_tmp = cur;
-        if (!opt_tmp.has_value) goto __loop_0_end;
-        struct zS_8e8bb4_EnvNode* node = opt_tmp.value;
-{
-            if (zF_a817c9_mem_eql(node->symbol, name)) {
-                {
-                    Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                    __return_val.has_value = 1;
-                    __return_val.value = node;
-                    return __return_val;
-                }
-            }
-            cur = node->next;
-        }
-        __loop_0_continue: ;
-        goto __loop_0_start;
-    }
-    __loop_0_end: ;
-    {
-        Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-        __return_val.has_value = 0;
-        return __return_val;
-    }
-}
-
 ErrorUnion_Ptr_zS_5ed3ca_Value zF_8e8bb4_env_lookup(Slice_u8 name, Optional_Ptr_zS_8e8bb4_EnvNode env) {
     Optional_Ptr_zS_8e8bb4_EnvNode cur;
     cur = env;

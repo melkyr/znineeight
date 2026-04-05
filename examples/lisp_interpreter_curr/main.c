@@ -239,10 +239,8 @@ static int zF_90e208_read_line(Slice_u8 buf) {
 }
 
 int main(void) {
-    u64 perm_buf_u64[131072];
-    u64 temp_buf_u64[131072];
-    Slice_u8 perm_buf;
-    Slice_u8 temp_buf;
+    unsigned char perm_buf[1048576];
+    unsigned char temp_buf[1048576];
     struct zS_148163_Sand perm_sand;
     struct zS_148163_Sand temp_sand;
     Optional_Ptr_zS_8e8bb4_EnvNode global_env = {0};
@@ -291,10 +289,8 @@ int main(void) {
     struct zS_8e8bb4_EnvNode* __tmp_catch_8_7 = 0;
     ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_catch_res_8_8;
     unsigned char input_buf[4096];
-    perm_buf = __make_slice_u8((unsigned char*)&perm_buf_u64 + 0, 1048576 - 0);
-    temp_buf = __make_slice_u8((unsigned char*)&temp_buf_u64 + 0, 1048576 - 0);
-    perm_sand = zF_148163_sand_init(perm_buf);
-    temp_sand = zF_148163_sand_init(temp_buf);
+    perm_sand = zF_148163_sand_init(__make_slice_u8(&perm_buf[0], 1048576 - 0));
+    temp_sand = zF_148163_sand_init(__make_slice_u8(&temp_buf[0], 1048576 - 0));
     __tmp_catch_res_11_46 = zF_5ed3ca_alloc_builtin((void *)zF_c1e489_builtin_cons, &perm_sand);
     if (__tmp_catch_res_11_46.is_error) {
         __bootstrap_panic("reached unreachable", __FILE__, __LINE__);

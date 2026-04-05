@@ -47,7 +47,7 @@ struct ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode {
 typedef struct ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode;
 #endif
 
-static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_env_to_value(Optional_Ptr_zS_8e8bb4_EnvNode, struct zS_148163_Sand*, struct zS_148163_Sand*);
+static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_env_to_value(Optional_Ptr_zS_8e8bb4_EnvNode, struct zS_148163_Sand*);
 static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_apply(struct zS_5ed3ca_Value*, Slice_Ptr_zS_5ed3ca_Value, Optional_Ptr_zS_8e8bb4_EnvNode*, struct zS_148163_Sand*, struct zS_148163_Sand*);
 static ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode zF_d22e0f_value_to_env_real(struct zS_5ed3ca_Value*, struct zS_148163_Sand*);
 
@@ -74,8 +74,8 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                 Slice_u8 name;
                 name = switch_tmp.data.Symbol;
 {
-                struct zS_5ed3ca_Value* __tmp_try_9_26;
-                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_27;
+                struct zS_5ed3ca_Value* __tmp_try_9_23;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_24;
                 if (zF_a817c9_mem_eql(name, __make_slice_u8("nil", 3))) {
                     {
                         ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
@@ -85,44 +85,44 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                     }
                 }
                 if (zF_a817c9_mem_eql(name, __make_slice_u8("true", 4))) {
-                    struct zS_5ed3ca_Value* __tmp_try_11_30;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_11_31;
-                    __tmp_try_res_11_31 = zF_5ed3ca_alloc_bool(1, temp_sand);
-                    if (__tmp_try_res_11_31.is_error) {
-                        return __tmp_try_res_11_31;
+                    struct zS_5ed3ca_Value* __tmp_try_11_27;
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_11_28;
+                    __tmp_try_res_11_28 = zF_5ed3ca_alloc_bool(1, temp_sand);
+                    if (__tmp_try_res_11_28.is_error) {
+                        return __tmp_try_res_11_28;
                     }
-                    __tmp_try_11_30 = __tmp_try_res_11_31.data.payload;
+                    __tmp_try_11_27 = __tmp_try_res_11_28.data.payload;
                     {
                         ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                         __return_val.is_error = 0;
-                        __return_val.data.payload = __tmp_try_11_30;
+                        __return_val.data.payload = __tmp_try_11_27;
                         return __return_val;
                     }
                 }
                 if (zF_a817c9_mem_eql(name, __make_slice_u8("false", 5))) {
-                    struct zS_5ed3ca_Value* __tmp_try_11_28;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_11_29;
-                    __tmp_try_res_11_29 = zF_5ed3ca_alloc_bool(0, temp_sand);
-                    if (__tmp_try_res_11_29.is_error) {
-                        return __tmp_try_res_11_29;
+                    struct zS_5ed3ca_Value* __tmp_try_11_25;
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_11_26;
+                    __tmp_try_res_11_26 = zF_5ed3ca_alloc_bool(0, temp_sand);
+                    if (__tmp_try_res_11_26.is_error) {
+                        return __tmp_try_res_11_26;
                     }
-                    __tmp_try_11_28 = __tmp_try_res_11_29.data.payload;
+                    __tmp_try_11_25 = __tmp_try_res_11_26.data.payload;
                     {
                         ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                         __return_val.is_error = 0;
-                        __return_val.data.payload = __tmp_try_11_28;
+                        __return_val.data.payload = __tmp_try_11_25;
                         return __return_val;
                     }
                 }
-                __tmp_try_res_9_27 = zF_8e8bb4_env_lookup(name, (*env));
-                if (__tmp_try_res_9_27.is_error) {
-                    return __tmp_try_res_9_27;
+                __tmp_try_res_9_24 = zF_8e8bb4_env_lookup(name, (*env));
+                if (__tmp_try_res_9_24.is_error) {
+                    return __tmp_try_res_9_24;
                 }
-                __tmp_try_9_26 = __tmp_try_res_9_27.data.payload;
+                __tmp_try_9_23 = __tmp_try_res_9_24.data.payload;
                 {
                     ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                     __return_val.is_error = 0;
-                    __return_val.data.payload = __tmp_try_9_26;
+                    __return_val.data.payload = __tmp_try_9_23;
                     return __return_val;
                 }
             }            }
@@ -135,18 +135,18 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
 {
                 struct zS_5ed3ca_Value* car;
                 struct zS_5ed3ca_Value* cdr;
-                struct zS_5ed3ca_Value* __tmp_try_7_38;
-                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_39;
+                struct zS_5ed3ca_Value* __tmp_try_7_35;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_36;
                 struct zS_5ed3ca_Value* fun;
                 usize arg_count = 0;
                 struct zS_5ed3ca_Value* cur;
-                unsigned char* __tmp_try_7_36;
-                ErrorUnion_Ptr_u8 __tmp_try_res_7_37;
+                unsigned char* __tmp_try_7_33;
+                ErrorUnion_Ptr_u8 __tmp_try_res_7_34;
                 unsigned char* args_mem;
                 Slice_Ptr_zS_5ed3ca_Value args;
                 usize i = 0;
-                struct zS_5ed3ca_Value* __tmp_try_9_32;
-                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_33;
+                struct zS_5ed3ca_Value* __tmp_try_9_29;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_30;
                 car = data.car;
                 cdr = data.cdr;
 /* DEBUG: emitSwitch start */
@@ -217,18 +217,18 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
 {
                                                         struct zS_5ed3ca_Value* then_expr;
                                                         struct zS_5ed3ca_Value* else_rest;
-                                                        struct zS_5ed3ca_Value* __tmp_try_15_69;
-                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_70;
+                                                        struct zS_5ed3ca_Value* __tmp_try_15_59;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_60;
                                                         struct zS_5ed3ca_Value* cond_val;
                                                         int is_truthy = 1;
                                                         then_expr = r_data.car;
                                                         else_rest = r_data.cdr;
-                                                        __tmp_try_res_15_70 = zF_d22e0f_eval(cond_expr, env, temp_sand, perm_sand);
-                                                        if (__tmp_try_res_15_70.is_error) {
-                                                            return __tmp_try_res_15_70;
+                                                        __tmp_try_res_15_60 = zF_d22e0f_eval(cond_expr, env, temp_sand, perm_sand);
+                                                        if (__tmp_try_res_15_60.is_error) {
+                                                            return __tmp_try_res_15_60;
                                                         }
-                                                        __tmp_try_15_69 = __tmp_try_res_15_70.data.payload;
-                                                        cond_val = __tmp_try_15_69;
+                                                        __tmp_try_15_59 = __tmp_try_res_15_60.data.payload;
+                                                        cond_val = __tmp_try_15_59;
 /* DEBUG: emitSwitch start */
                                                         {
                                                             struct zS_5ed3ca_Value switch_tmp_5 = *cond_val;
@@ -263,17 +263,17 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                                                         }
                                                         }
                                                         if (is_truthy) {
-                                                            struct zS_5ed3ca_Value* __tmp_try_19_63;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_19_64;
-                                                            __tmp_try_res_19_64 = zF_d22e0f_eval(then_expr, env, temp_sand, perm_sand);
-                                                            if (__tmp_try_res_19_64.is_error) {
-                                                                return __tmp_try_res_19_64;
+                                                            struct zS_5ed3ca_Value* __tmp_try_19_53;
+                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_19_54;
+                                                            __tmp_try_res_19_54 = zF_d22e0f_eval(then_expr, env, temp_sand, perm_sand);
+                                                            if (__tmp_try_res_19_54.is_error) {
+                                                                return __tmp_try_res_19_54;
                                                             }
-                                                            __tmp_try_19_63 = __tmp_try_res_19_64.data.payload;
+                                                            __tmp_try_19_53 = __tmp_try_res_19_54.data.payload;
                                                             {
                                                                 ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                                 __return_val.is_error = 0;
-                                                                __return_val.data.payload = __tmp_try_19_63;
+                                                                __return_val.data.payload = __tmp_try_19_53;
                                                                 return __return_val;
                                                             }
                                                         } else {
@@ -287,34 +287,34 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                                                                         struct zS_1a36c1_anon_1 e_data;
                                                                         memcpy(&e_data, &switch_tmp_6.data.Cons, sizeof(struct zS_1a36c1_anon_1));
 {
-                                                                        struct zS_5ed3ca_Value* __tmp_try_21_65;
-                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_21_66;
-                                                                        __tmp_try_res_21_66 = zF_d22e0f_eval(e_data.car, env, temp_sand, perm_sand);
-                                                                        if (__tmp_try_res_21_66.is_error) {
-                                                                            return __tmp_try_res_21_66;
+                                                                        struct zS_5ed3ca_Value* __tmp_try_21_55;
+                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_21_56;
+                                                                        __tmp_try_res_21_56 = zF_d22e0f_eval(e_data.car, env, temp_sand, perm_sand);
+                                                                        if (__tmp_try_res_21_56.is_error) {
+                                                                            return __tmp_try_res_21_56;
                                                                         }
-                                                                        __tmp_try_21_65 = __tmp_try_res_21_66.data.payload;
+                                                                        __tmp_try_21_55 = __tmp_try_res_21_56.data.payload;
                                                                         {
                                                                             ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                                             __return_val.is_error = 0;
-                                                                            __return_val.data.payload = __tmp_try_21_65;
+                                                                            __return_val.data.payload = __tmp_try_21_55;
                                                                             return __return_val;
                                                                         }
                                                                     }                                                                    }
                                                                     break;
                                                                 default:
 {
-                                                                        struct zS_5ed3ca_Value* __tmp_try_21_67;
-                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_21_68;
-                                                                        __tmp_try_res_21_68 = zF_5ed3ca_alloc_nil(temp_sand);
-                                                                        if (__tmp_try_res_21_68.is_error) {
-                                                                            return __tmp_try_res_21_68;
+                                                                        struct zS_5ed3ca_Value* __tmp_try_21_57;
+                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_21_58;
+                                                                        __tmp_try_res_21_58 = zF_5ed3ca_alloc_nil(temp_sand);
+                                                                        if (__tmp_try_res_21_58.is_error) {
+                                                                            return __tmp_try_res_21_58;
                                                                         }
-                                                                        __tmp_try_21_67 = __tmp_try_res_21_68.data.payload;
+                                                                        __tmp_try_21_57 = __tmp_try_res_21_58.data.payload;
                                                                         {
                                                                             ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                                             __return_val.is_error = 0;
-                                                                            __return_val.data.payload = __tmp_try_21_67;
+                                                                            __return_val.data.payload = __tmp_try_21_57;
                                                                             return __return_val;
                                                                         }
                                                                     }                                                                    break;
@@ -384,206 +384,583 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                                                                     memcpy(&v_data, &switch_tmp_9.data.Cons, sizeof(struct zS_1a36c1_anon_1));
 {
                                                                     struct zS_5ed3ca_Value* val_expr;
-                                                                    struct zS_5ed3ca_Value* slot;
-                                                                    struct zS_5ed3ca_Value* __tmp_try_17_57;
-                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_58;
+                                                                    struct zS_5ed3ca_Value* __tmp_try_17_51;
+                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_52;
                                                                     struct zS_5ed3ca_Value* val;
-                                                                    struct zS_5ed3ca_Value* __tmp_if_17_54;
+                                                                    struct zS_5ed3ca_Value* __tmp_try_17_49;
+                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_50;
                                                                     struct zS_5ed3ca_Value* perm_val;
+                                                                    struct zS_8e8bb4_EnvNode* __tmp_try_19_47;
+                                                                    ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_19_48;
                                                                     val_expr = v_data.car;
-                                                                    {
-                                                                        Optional_Ptr_zS_8e8bb4_EnvNode opt_tmp = zF_8e8bb4_env_find_node(sym_name, (*env));
-                                                                        if (opt_tmp.has_value) {
-                                                                            struct zS_8e8bb4_EnvNode* node = opt_tmp.value;
-{
-                                                                                slot = node->value;
-                                                                            }                                                                            } else {
-{
-                                                                                    struct zS_5ed3ca_Value* __tmp_try_20_61;
-                                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_20_62;
-                                                                                    struct zS_8e8bb4_EnvNode* __tmp_try_21_59;
-                                                                                    ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_21_60;
-                                                                                    __tmp_try_res_20_62 = zF_5ed3ca_alloc_nil(perm_sand);
-                                                                                    if (__tmp_try_res_20_62.is_error) {
-                                                                                        return __tmp_try_res_20_62;
-                                                                                    }
-                                                                                    __tmp_try_20_61 = __tmp_try_res_20_62.data.payload;
-                                                                                    slot = __tmp_try_20_61;
-                                                                                    __tmp_try_res_21_60 = zF_8e8bb4_env_extend(sym_name, slot, (*env), perm_sand);
-                                                                                    if (__tmp_try_res_21_60.is_error) {
-                                                                                        {
-                                                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                                            __return_val.data.err = __tmp_try_res_21_60.data.err;
-                                                                                            __return_val.is_error = 1;
-                                                                                            return __return_val;
-                                                                                        }
-                                                                                    }
-                                                                                    __tmp_try_21_59 = __tmp_try_res_21_60.data.payload;
-                                                                                    {
-                                                                                        Optional_Ptr_zS_8e8bb4_EnvNode* init_lval_tmp = &((*env));
-                                                                                        (*init_lval_tmp).has_value = 1;
-                                                                                        (*init_lval_tmp).value = __tmp_try_21_59;
-                                                                                    }
-                                                                                }                                                                            }
-                                                                        }
-                                                                        __tmp_try_res_17_58 = zF_d22e0f_eval(val_expr, env, temp_sand, perm_sand);
-                                                                        if (__tmp_try_res_17_58.is_error) {
-                                                                            return __tmp_try_res_17_58;
-                                                                        }
-                                                                        __tmp_try_17_57 = __tmp_try_res_17_58.data.payload;
-                                                                        val = __tmp_try_17_57;
-                                                                        if (zF_a817c9_points_to_arena(val, temp_sand->start, temp_sand->pos)) {
-                                                                            struct zS_5ed3ca_Value* __tmp_try_21_55;
-                                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_21_56;
-                                                                            __tmp_try_res_21_56 = zF_c8d42d_deep_copy(val, perm_sand);
-                                                                            if (__tmp_try_res_21_56.is_error) {
-                                                                                return __tmp_try_res_21_56;
-                                                                            }
-                                                                            __tmp_try_21_55 = __tmp_try_res_21_56.data.payload;
-                                                                            __tmp_if_17_54 = __tmp_try_21_55;
-                                                                        } else {
-                                                                            __tmp_if_17_54 = val;
-                                                                        }
-                                                                        perm_val = __tmp_if_17_54;
-                                                                        *slot = *perm_val;
+                                                                    __tmp_try_res_17_52 = zF_d22e0f_eval(val_expr, env, temp_sand, perm_sand);
+                                                                    if (__tmp_try_res_17_52.is_error) {
+                                                                        return __tmp_try_res_17_52;
+                                                                    }
+                                                                    __tmp_try_17_51 = __tmp_try_res_17_52.data.payload;
+                                                                    val = __tmp_try_17_51;
+                                                                    __tmp_try_res_17_50 = zF_c8d42d_deep_copy(val, perm_sand);
+                                                                    if (__tmp_try_res_17_50.is_error) {
+                                                                        return __tmp_try_res_17_50;
+                                                                    }
+                                                                    __tmp_try_17_49 = __tmp_try_res_17_50.data.payload;
+                                                                    perm_val = __tmp_try_17_49;
+                                                                    __tmp_try_res_19_48 = zF_8e8bb4_env_extend(sym_name, perm_val, (*env), perm_sand);
+                                                                    if (__tmp_try_res_19_48.is_error) {
                                                                         {
                                                                             ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                            __return_val.is_error = 0;
-                                                                            __return_val.data.payload = slot;
+                                                                            __return_val.data.err = __tmp_try_res_19_48.data.err;
+                                                                            __return_val.is_error = 1;
                                                                             return __return_val;
+                                                                        }
+                                                                    }
+                                                                    __tmp_try_19_47 = __tmp_try_res_19_48.data.payload;
+                                                                    {
+                                                                        Optional_Ptr_zS_8e8bb4_EnvNode* init_lval_tmp = &((*env));
+                                                                        (*init_lval_tmp).has_value = 1;
+                                                                        (*init_lval_tmp).value = __tmp_try_19_47;
+                                                                    }
+                                                                    {
+                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                        __return_val.is_error = 0;
+                                                                        __return_val.data.payload = perm_val;
+                                                                        return __return_val;
+                                                                    }
+                                                                }                                                                }
+                                                                break;
+                                                            default:
+{
+                                                                    {
+                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                        __return_val.is_error = 1;
+                                                                        __return_val.data.err = ERROR_InvalidDefine;
+                                                                        return __return_val;
+                                                                    }
+                                                                }                                                                break;
+                                                        }
+                                                        }
+                                                    }                                                    }
+                                                    break;
+                                                default:
+{
+                                                        {
+                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                            __return_val.is_error = 1;
+                                                            __return_val.data.err = ERROR_InvalidDefine;
+                                                            return __return_val;
+                                                        }
+                                                    }                                                    break;
+                                            }
+                                            }
+                                        }                                        }
+                                        break;
+                                    default:
+{
+                                            {
+                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                __return_val.is_error = 1;
+                                                __return_val.data.err = ERROR_InvalidDefine;
+                                                return __return_val;
+                                            }
+                                        }                                        break;
+                                }
+                                }
+                            }
+                            if (zF_a817c9_mem_eql(name_1, __make_slice_u8("lambda", 6))) {
+/* DEBUG: emitSwitch start */
+                                {
+                                    struct zS_5ed3ca_Value switch_tmp_10 = *cdr;
+                                    switch (switch_tmp_10.tag) {
+                                    case zE_1a36c1_Value_Tag_Cons:
+                                        {
+                                            /* DEBUG: capture c_data */
+                                            struct zS_1a36c1_anon_1 c_data_3;
+                                            memcpy(&c_data_3, &switch_tmp_10.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                            struct zS_5ed3ca_Value* params;
+                                            struct zS_5ed3ca_Value* body_rest;
+                                            params = c_data_3.car;
+                                            body_rest = c_data_3.cdr;
+/* DEBUG: emitSwitch start */
+                                            {
+                                                struct zS_5ed3ca_Value switch_tmp_11 = *body_rest;
+                                                switch (switch_tmp_11.tag) {
+                                                case zE_1a36c1_Value_Tag_Cons:
+                                                    {
+                                                        /* DEBUG: capture b_data */
+                                                        struct zS_1a36c1_anon_1 b_data;
+                                                        memcpy(&b_data, &switch_tmp_11.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                                        struct zS_5ed3ca_Value* body;
+                                                        struct zS_5ed3ca_Value* __tmp_try_15_45;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_46;
+                                                        struct zS_5ed3ca_Value* closure_tag;
+                                                        struct zS_5ed3ca_Value* __tmp_try_15_43;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_44;
+                                                        struct zS_5ed3ca_Value* params_body;
+                                                        struct zS_5ed3ca_Value* __tmp_try_15_41;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_42;
+                                                        struct zS_5ed3ca_Value* env_val;
+                                                        struct zS_5ed3ca_Value* __tmp_try_15_39;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_40;
+                                                        struct zS_5ed3ca_Value* closure_data;
+                                                        struct zS_5ed3ca_Value* __tmp_try_17_37;
+                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_38;
+                                                        body = b_data.car;
+                                                        __tmp_try_res_15_46 = zF_5ed3ca_alloc_symbol(__make_slice_u8("closure", 7), perm_sand);
+                                                        if (__tmp_try_res_15_46.is_error) {
+                                                            return __tmp_try_res_15_46;
+                                                        }
+                                                        __tmp_try_15_45 = __tmp_try_res_15_46.data.payload;
+                                                        closure_tag = __tmp_try_15_45;
+                                                        __tmp_try_res_15_44 = zF_5ed3ca_alloc_cons(params, body, perm_sand);
+                                                        if (__tmp_try_res_15_44.is_error) {
+                                                            return __tmp_try_res_15_44;
+                                                        }
+                                                        __tmp_try_15_43 = __tmp_try_res_15_44.data.payload;
+                                                        params_body = __tmp_try_15_43;
+                                                        __tmp_try_res_15_42 = zF_d22e0f_env_to_value((*env), perm_sand);
+                                                        if (__tmp_try_res_15_42.is_error) {
+                                                            return __tmp_try_res_15_42;
+                                                        }
+                                                        __tmp_try_15_41 = __tmp_try_res_15_42.data.payload;
+                                                        env_val = __tmp_try_15_41;
+                                                        __tmp_try_res_15_40 = zF_5ed3ca_alloc_cons(params_body, env_val, perm_sand);
+                                                        if (__tmp_try_res_15_40.is_error) {
+                                                            return __tmp_try_res_15_40;
+                                                        }
+                                                        __tmp_try_15_39 = __tmp_try_res_15_40.data.payload;
+                                                        closure_data = __tmp_try_15_39;
+                                                        __tmp_try_res_17_38 = zF_5ed3ca_alloc_cons(closure_tag, closure_data, perm_sand);
+                                                        if (__tmp_try_res_17_38.is_error) {
+                                                            return __tmp_try_res_17_38;
+                                                        }
+                                                        __tmp_try_17_37 = __tmp_try_res_17_38.data.payload;
+                                                        {
+                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                            __return_val.is_error = 0;
+                                                            __return_val.data.payload = __tmp_try_17_37;
+                                                            return __return_val;
+                                                        }
+                                                    }                                                    }
+                                                    break;
+                                                default:
+{
+                                                        {
+                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                            __return_val.is_error = 1;
+                                                            __return_val.data.err = ERROR_InvalidLambda;
+                                                            return __return_val;
+                                                        }
+                                                    }                                                    break;
+                                            }
+                                            }
+                                        }                                        }
+                                        break;
+                                    default:
+{
+                                            {
+                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                __return_val.is_error = 1;
+                                                __return_val.data.err = ERROR_InvalidLambda;
+                                                return __return_val;
+                                            }
+                                        }                                        break;
+                                }
+                                }
+                            }
+                        }                        }
+                        break;
+                    default:
+{
+                        }                        break;
+                }
+                }
+                __tmp_try_res_7_36 = zF_d22e0f_eval(car, env, temp_sand, perm_sand);
+                if (__tmp_try_res_7_36.is_error) {
+                    return __tmp_try_res_7_36;
+                }
+                __tmp_try_7_35 = __tmp_try_res_7_36.data.payload;
+                fun = __tmp_try_7_35;
+                cur = cdr;
+                __loop_0_start: ;
+                if (!(1)) goto __loop_0_end;
+                {
+/* DEBUG: emitSwitch start */
+                    {
+                        struct zS_5ed3ca_Value switch_tmp_12 = *cur;
+                        switch (switch_tmp_12.tag) {
+                        case zE_1a36c1_Value_Tag_Cons:
+                            {
+                                /* DEBUG: capture c */
+                                struct zS_1a36c1_anon_1 c;
+                                memcpy(&c, &switch_tmp_12.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                (void)(arg_count += 1);
+                                cur = c.cdr;
+                            }                            }
+                            break;
+                        default:
+{
+                                /* defers for break */
+                                goto __loop_0_end;
+                            }                            break;
+                    }
+                    }
+                }
+                __loop_0_continue: ;
+                goto __loop_0_start;
+                __loop_0_end: ;
+                __tmp_try_res_7_34 = zF_148163_sand_alloc(temp_sand, arg_count * 4, 4);
+                if (__tmp_try_res_7_34.is_error) {
+                    {
+                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                        __return_val.data.err = __tmp_try_res_7_34.data.err;
+                        __return_val.is_error = 1;
+                        return __return_val;
+                    }
+                }
+                __tmp_try_7_33 = __tmp_try_res_7_34.data.payload;
+                args_mem = __tmp_try_7_33;
+                args = __make_slice_Ptr_zS_5ed3ca_Value((struct zS_5ed3ca_Value**)args_mem + 0, arg_count - 0);
+                cur = cdr;
+                __loop_1_start: ;
+                if (!(i < arg_count)) goto __loop_1_end;
+                {
+/* DEBUG: emitSwitch start */
+                    {
+                        struct zS_5ed3ca_Value switch_tmp_13 = *cur;
+                        switch (switch_tmp_13.tag) {
+                        case zE_1a36c1_Value_Tag_Cons:
+                            {
+                                /* DEBUG: capture c */
+                                struct zS_1a36c1_anon_1 c_1;
+                                memcpy(&c_1, &switch_tmp_13.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                struct zS_5ed3ca_Value* __tmp_try_12_31;
+                                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_12_32;
+                                __tmp_try_res_12_32 = zF_d22e0f_eval(c_1.car, env, temp_sand, perm_sand);
+                                if (__tmp_try_res_12_32.is_error) {
+                                    return __tmp_try_res_12_32;
+                                }
+                                __tmp_try_12_31 = __tmp_try_res_12_32.data.payload;
+                                args.ptr[i] = __tmp_try_12_31;
+                                cur = c_1.cdr;
+                            }                            }
+                            break;
+                        default:
+{
+                                __bootstrap_panic("reached unreachable", __FILE__, __LINE__);
+                            }                            break;
+                    }
+                    }
+                    (void)(i += 1);
+                }
+                __loop_1_continue: ;
+                goto __loop_1_start;
+                __loop_1_end: ;
+                __tmp_try_res_9_30 = zF_d22e0f_apply(fun, args, env, temp_sand, perm_sand);
+                if (__tmp_try_res_9_30.is_error) {
+                    return __tmp_try_res_9_30;
+                }
+                __tmp_try_9_29 = __tmp_try_res_9_30.data.payload;
+                {
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                    __return_val.is_error = 0;
+                    __return_val.data.payload = __tmp_try_9_29;
+                    return __return_val;
+                }
+            }            }
+            break;
+        default:
+{
+                {
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                    __return_val.is_error = 1;
+                    __return_val.data.err = ERROR_InvalidExpr;
+                    return __return_val;
+                }
+            }            break;
+    }
+    }
+}
+
+static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_env_to_value(Optional_Ptr_zS_8e8bb4_EnvNode env, struct zS_148163_Sand* sand) {
+    {
+        Optional_Ptr_zS_8e8bb4_EnvNode opt_tmp = env;
+        if (opt_tmp.has_value) {
+            struct zS_8e8bb4_EnvNode* node = opt_tmp.value;
+{
+                struct zS_5ed3ca_Value* __tmp_try_7_19;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_20;
+                struct zS_5ed3ca_Value* sym_val;
+                struct zS_5ed3ca_Value* __tmp_try_7_17;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_18;
+                struct zS_5ed3ca_Value* pair;
+                struct zS_5ed3ca_Value* __tmp_try_7_15;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_16;
+                struct zS_5ed3ca_Value* next;
+                struct zS_5ed3ca_Value* __tmp_try_9_13;
+                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_14;
+                __tmp_try_res_7_20 = zF_5ed3ca_alloc_symbol(node->symbol, sand);
+                if (__tmp_try_res_7_20.is_error) {
+                    return __tmp_try_res_7_20;
+                }
+                __tmp_try_7_19 = __tmp_try_res_7_20.data.payload;
+                sym_val = __tmp_try_7_19;
+                __tmp_try_res_7_18 = zF_5ed3ca_alloc_cons(sym_val, node->value, sand);
+                if (__tmp_try_res_7_18.is_error) {
+                    return __tmp_try_res_7_18;
+                }
+                __tmp_try_7_17 = __tmp_try_res_7_18.data.payload;
+                pair = __tmp_try_7_17;
+                __tmp_try_res_7_16 = zF_d22e0f_env_to_value(node->next, sand);
+                if (__tmp_try_res_7_16.is_error) {
+                    return __tmp_try_res_7_16;
+                }
+                __tmp_try_7_15 = __tmp_try_res_7_16.data.payload;
+                next = __tmp_try_7_15;
+                __tmp_try_res_9_14 = zF_5ed3ca_alloc_cons(pair, next, sand);
+                if (__tmp_try_res_9_14.is_error) {
+                    return __tmp_try_res_9_14;
+                }
+                __tmp_try_9_13 = __tmp_try_res_9_14.data.payload;
+                {
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                    __return_val.is_error = 0;
+                    __return_val.data.payload = __tmp_try_9_13;
+                    return __return_val;
+                }
+            }            } else {
+{
+                    struct zS_5ed3ca_Value* __tmp_try_9_21;
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_22;
+                    __tmp_try_res_9_22 = zF_5ed3ca_alloc_symbol(__make_slice_u8("nil", 3), sand);
+                    if (__tmp_try_res_9_22.is_error) {
+                        return __tmp_try_res_9_22;
+                    }
+                    __tmp_try_9_21 = __tmp_try_res_9_22.data.payload;
+                    {
+                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                        __return_val.is_error = 0;
+                        __return_val.data.payload = __tmp_try_9_21;
+                        return __return_val;
+                    }
+                }            }
+        }
+    }
+
+    static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_apply(struct zS_5ed3ca_Value* fun, Slice_Ptr_zS_5ed3ca_Value args, Optional_Ptr_zS_8e8bb4_EnvNode* env, struct zS_148163_Sand* temp_sand, struct zS_148163_Sand* perm_sand) {
+/* DEBUG: emitSwitch start */
+        {
+            struct zS_5ed3ca_Value switch_tmp = *fun;
+            switch (switch_tmp.tag) {
+            case zE_1a36c1_Value_Tag_Builtin:
+                {
+                    /* DEBUG: capture f_ptr */
+                    void * f_ptr;
+                    f_ptr = switch_tmp.data.Builtin;
+{
+                    ErrorUnion_Ptr_zS_5ed3ca_Value (* f)(Slice_Ptr_zS_5ed3ca_Value, struct zS_148163_Sand*);
+                    struct zS_5ed3ca_Value* __tmp_try_9_5;
+                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_6;
+                    f = (ErrorUnion_Ptr_zS_5ed3ca_Value (*)(Slice_Ptr_zS_5ed3ca_Value, struct zS_148163_Sand*))f_ptr;
+                    __tmp_try_res_9_6 = f(args, temp_sand);
+                    if (__tmp_try_res_9_6.is_error) {
+                        return __tmp_try_res_9_6;
+                    }
+                    __tmp_try_9_5 = __tmp_try_res_9_6.data.payload;
+                    {
+                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                        __return_val.is_error = 0;
+                        __return_val.data.payload = __tmp_try_9_5;
+                        return __return_val;
+                    }
+                }                }
+                break;
+            case zE_1a36c1_Value_Tag_Cons:
+                {
+                    /* DEBUG: capture data */
+                    struct zS_1a36c1_anon_1 data;
+                    memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                    struct zS_5ed3ca_Value* car;
+                    car = data.car;
+/* DEBUG: emitSwitch start */
+                    {
+                        struct zS_5ed3ca_Value switch_tmp_1 = *car;
+                        switch (switch_tmp_1.tag) {
+                        case zE_1a36c1_Value_Tag_Symbol:
+                            {
+                                /* DEBUG: capture s */
+                                Slice_u8 s;
+                                s = switch_tmp_1.data.Symbol;
+{
+                                if (zF_a817c9_mem_eql(s, __make_slice_u8("closure", 7))) {
+                                    struct zS_5ed3ca_Value* closure_cdr;
+                                    closure_cdr = data.cdr;
+/* DEBUG: emitSwitch start */
+                                    {
+                                        struct zS_5ed3ca_Value switch_tmp_2 = *closure_cdr;
+                                        switch (switch_tmp_2.tag) {
+                                        case zE_1a36c1_Value_Tag_Cons:
+                                            {
+                                                /* DEBUG: capture c_data */
+                                                struct zS_1a36c1_anon_1 c_data;
+                                                memcpy(&c_data, &switch_tmp_2.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                                struct zS_5ed3ca_Value* data_car;
+                                                struct zS_5ed3ca_Value* data_cdr;
+                                                data_car = c_data.car;
+                                                data_cdr = c_data.cdr;
+/* DEBUG: emitSwitch start */
+                                                {
+                                                    struct zS_5ed3ca_Value switch_tmp_3 = *data_car;
+                                                    switch (switch_tmp_3.tag) {
+                                                    case zE_1a36c1_Value_Tag_Cons:
+                                                        {
+                                                            /* DEBUG: capture dc_data */
+                                                            struct zS_1a36c1_anon_1 dc_data;
+                                                            memcpy(&dc_data, &switch_tmp_3.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                                            struct zS_5ed3ca_Value* params;
+                                                            struct zS_5ed3ca_Value* body;
+                                                            struct zS_5ed3ca_Value* saved_env_val;
+                                                            Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_15_11;
+                                                            ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_15_12;
+                                                            Optional_Ptr_zS_8e8bb4_EnvNode new_env;
+                                                            struct zS_5ed3ca_Value* cur_param;
+                                                            usize i = 0;
+                                                            int too_few = 0;
+                                                            struct zS_5ed3ca_Value* __tmp_try_17_7;
+                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_8;
+                                                            params = dc_data.car;
+                                                            body = dc_data.cdr;
+                                                            saved_env_val = data_cdr;
+                                                            __tmp_try_res_15_12 = zF_d22e0f_value_to_env_real(saved_env_val, perm_sand);
+                                                            if (__tmp_try_res_15_12.is_error) {
+                                                                {
+                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                    __return_val.data.err = __tmp_try_res_15_12.data.err;
+                                                                    __return_val.is_error = 1;
+                                                                    return __return_val;
+                                                                }
+                                                            }
+                                                            __tmp_try_15_11 = __tmp_try_res_15_12.data.payload;
+                                                            new_env = __tmp_try_15_11;
+                                                            cur_param = params;
+                                                            __loop_0_start: ;
+                                                            if (!(i < args.len)) goto __loop_0_end;
+                                                            {
+/* DEBUG: emitSwitch start */
+                                                                {
+                                                                    struct zS_5ed3ca_Value switch_tmp_4 = *cur_param;
+                                                                    switch (switch_tmp_4.tag) {
+                                                                    case zE_1a36c1_Value_Tag_Cons:
+                                                                        {
+                                                                            /* DEBUG: capture cp_data */
+                                                                            struct zS_1a36c1_anon_1 cp_data;
+                                                                            memcpy(&cp_data, &switch_tmp_4.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+{
+                                                                            struct zS_5ed3ca_Value* param_sym;
+                                                                            param_sym = cp_data.car;
+/* DEBUG: emitSwitch start */
+                                                                            {
+                                                                                struct zS_5ed3ca_Value switch_tmp_5 = *param_sym;
+                                                                                switch (switch_tmp_5.tag) {
+                                                                                case zE_1a36c1_Value_Tag_Symbol:
+                                                                                    {
+                                                                                        /* DEBUG: capture p_name */
+                                                                                        Slice_u8 p_name;
+                                                                                        p_name = switch_tmp_5.data.Symbol;
+{
+                                                                                        struct zS_8e8bb4_EnvNode* __tmp_try_23_9;
+                                                                                        ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_23_10;
+                                                                                        __tmp_try_res_23_10 = zF_8e8bb4_env_extend(p_name, args.ptr[i], new_env, temp_sand);
+                                                                                        if (__tmp_try_res_23_10.is_error) {
+                                                                                            {
+                                                                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                                                __return_val.data.err = __tmp_try_res_23_10.data.err;
+                                                                                                __return_val.is_error = 1;
+                                                                                                return __return_val;
+                                                                                            }
+                                                                                        }
+                                                                                        __tmp_try_23_9 = __tmp_try_res_23_10.data.payload;
+                                                                                        new_env.has_value = 1;
+                                                                                        new_env.value = __tmp_try_23_9;
+                                                                                    }                                                                                    }
+                                                                                    break;
+                                                                                default:
+{
+                                                                                        {
+                                                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                                            __return_val.is_error = 1;
+                                                                                            __return_val.data.err = ERROR_InvalidParams;
+                                                                                            return __return_val;
+                                                                                        }
+                                                                                    }                                                                                    break;
+                                                                            }
+                                                                            }
+                                                                            cur_param = cp_data.cdr;
+                                                                        }                                                                        }
+                                                                        break;
+                                                                    default:
+{
+                                                                            {
+                                                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                                __return_val.is_error = 1;
+                                                                                __return_val.data.err = ERROR_TooManyArgs;
+                                                                                return __return_val;
+                                                                            }
+                                                                        }                                                                        break;
+                                                                }
+                                                                }
+                                                                (void)(i += 1);
+                                                            }
+                                                            __loop_0_continue: ;
+                                                            goto __loop_0_start;
+                                                            __loop_0_end: ;
+/* DEBUG: emitSwitch start */
+                                                            {
+                                                                struct zS_5ed3ca_Value switch_tmp_6 = *cur_param;
+                                                                switch (switch_tmp_6.tag) {
+                                                                case zE_1a36c1_Value_Tag_Nil:
+{
+                                                                    }                                                                    break;
+                                                                case zE_1a36c1_Value_Tag_Symbol:
+                                                                    {
+                                                                        /* DEBUG: capture sn */
+                                                                        Slice_u8 sn;
+                                                                        sn = switch_tmp_6.data.Symbol;
+{
+                                                                        if (!zF_a817c9_mem_eql(sn, __make_slice_u8("nil", 3))) {
+                                                                            too_few = 1;
                                                                         }
                                                                     }                                                                    }
                                                                     break;
                                                                 default:
 {
-                                                                        {
-                                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                            __return_val.is_error = 1;
-                                                                            __return_val.data.err = ERROR_InvalidDefine;
-                                                                            return __return_val;
-                                                                        }
+                                                                        too_few = 1;
                                                                     }                                                                    break;
                                                             }
                                                             }
-                                                        }                                                        }
-                                                        break;
-                                                    default:
-{
-                                                            {
-                                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                __return_val.is_error = 1;
-                                                                __return_val.data.err = ERROR_InvalidDefine;
-                                                                return __return_val;
+                                                            if (too_few) {
+                                                                {
+                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                                                                    __return_val.is_error = 1;
+                                                                    __return_val.data.err = ERROR_TooFewArgs;
+                                                                    return __return_val;
+                                                                }
                                                             }
-                                                        }                                                        break;
-                                                }
-                                                }
-                                            }                                            }
-                                            break;
-                                        default:
-{
-                                                {
-                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                    __return_val.is_error = 1;
-                                                    __return_val.data.err = ERROR_InvalidDefine;
-                                                    return __return_val;
-                                                }
-                                            }                                            break;
-                                    }
-                                    }
-                                }
-                                if (zF_a817c9_mem_eql(name_1, __make_slice_u8("lambda", 6))) {
-/* DEBUG: emitSwitch start */
-                                    {
-                                        struct zS_5ed3ca_Value switch_tmp_10 = *cdr;
-                                        switch (switch_tmp_10.tag) {
-                                        case zE_1a36c1_Value_Tag_Cons:
-                                            {
-                                                /* DEBUG: capture c_data */
-                                                struct zS_1a36c1_anon_1 c_data_3;
-                                                memcpy(&c_data_3, &switch_tmp_10.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                                struct zS_5ed3ca_Value* params;
-                                                struct zS_5ed3ca_Value* body_rest;
-                                                params = c_data_3.car;
-                                                body_rest = c_data_3.cdr;
-/* DEBUG: emitSwitch start */
-                                                {
-                                                    struct zS_5ed3ca_Value switch_tmp_11 = *body_rest;
-                                                    switch (switch_tmp_11.tag) {
-                                                    case zE_1a36c1_Value_Tag_Cons:
-                                                        {
-                                                            /* DEBUG: capture b_data */
-                                                            struct zS_1a36c1_anon_1 b_data;
-                                                            memcpy(&b_data, &switch_tmp_11.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                                            struct zS_5ed3ca_Value* body;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_52;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_53;
-                                                            struct zS_5ed3ca_Value* perm_params;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_50;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_51;
-                                                            struct zS_5ed3ca_Value* perm_body;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_48;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_49;
-                                                            struct zS_5ed3ca_Value* closure_tag;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_46;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_47;
-                                                            struct zS_5ed3ca_Value* params_body;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_44;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_45;
-                                                            struct zS_5ed3ca_Value* env_val;
-                                                            struct zS_5ed3ca_Value* __tmp_try_15_42;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_15_43;
-                                                            struct zS_5ed3ca_Value* closure_data;
-                                                            struct zS_5ed3ca_Value* __tmp_try_17_40;
-                                                            ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_41;
-                                                            body = b_data.car;
-                                                            __tmp_try_res_15_53 = zF_c8d42d_deep_copy(params, perm_sand);
-                                                            if (__tmp_try_res_15_53.is_error) {
-                                                                return __tmp_try_res_15_53;
+                                                            __tmp_try_res_17_8 = zF_d22e0f_eval(body, &new_env, temp_sand, perm_sand);
+                                                            if (__tmp_try_res_17_8.is_error) {
+                                                                return __tmp_try_res_17_8;
                                                             }
-                                                            __tmp_try_15_52 = __tmp_try_res_15_53.data.payload;
-                                                            perm_params = __tmp_try_15_52;
-                                                            __tmp_try_res_15_51 = zF_c8d42d_deep_copy(body, perm_sand);
-                                                            if (__tmp_try_res_15_51.is_error) {
-                                                                return __tmp_try_res_15_51;
-                                                            }
-                                                            __tmp_try_15_50 = __tmp_try_res_15_51.data.payload;
-                                                            perm_body = __tmp_try_15_50;
-                                                            __tmp_try_res_15_49 = zF_5ed3ca_alloc_symbol(__make_slice_u8("closure", 7), perm_sand);
-                                                            if (__tmp_try_res_15_49.is_error) {
-                                                                return __tmp_try_res_15_49;
-                                                            }
-                                                            __tmp_try_15_48 = __tmp_try_res_15_49.data.payload;
-                                                            closure_tag = __tmp_try_15_48;
-                                                            __tmp_try_res_15_47 = zF_5ed3ca_alloc_cons(perm_params, perm_body, perm_sand);
-                                                            if (__tmp_try_res_15_47.is_error) {
-                                                                return __tmp_try_res_15_47;
-                                                            }
-                                                            __tmp_try_15_46 = __tmp_try_res_15_47.data.payload;
-                                                            params_body = __tmp_try_15_46;
-                                                            __tmp_try_res_15_45 = zF_d22e0f_env_to_value((*env), temp_sand, perm_sand);
-                                                            if (__tmp_try_res_15_45.is_error) {
-                                                                return __tmp_try_res_15_45;
-                                                            }
-                                                            __tmp_try_15_44 = __tmp_try_res_15_45.data.payload;
-                                                            env_val = __tmp_try_15_44;
-                                                            __tmp_try_res_15_43 = zF_5ed3ca_alloc_cons(params_body, env_val, perm_sand);
-                                                            if (__tmp_try_res_15_43.is_error) {
-                                                                return __tmp_try_res_15_43;
-                                                            }
-                                                            __tmp_try_15_42 = __tmp_try_res_15_43.data.payload;
-                                                            closure_data = __tmp_try_15_42;
-                                                            __tmp_try_res_17_41 = zF_5ed3ca_alloc_cons(closure_tag, closure_data, perm_sand);
-                                                            if (__tmp_try_res_17_41.is_error) {
-                                                                return __tmp_try_res_17_41;
-                                                            }
-                                                            __tmp_try_17_40 = __tmp_try_res_17_41.data.payload;
+                                                            __tmp_try_17_7 = __tmp_try_res_17_8.data.payload;
                                                             {
                                                                 ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                                 __return_val.is_error = 0;
-                                                                __return_val.data.payload = __tmp_try_17_40;
+                                                                __return_val.data.payload = __tmp_try_17_7;
                                                                 return __return_val;
                                                             }
                                                         }                                                        }
@@ -593,7 +970,7 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                                                             {
                                                                 ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                                 __return_val.is_error = 1;
-                                                                __return_val.data.err = ERROR_InvalidLambda;
+                                                                __return_val.data.err = ERROR_InvalidClosure;
                                                                 return __return_val;
                                                             }
                                                         }                                                        break;
@@ -606,7 +983,7 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                                                 {
                                                     ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
                                                     __return_val.is_error = 1;
-                                                    __return_val.data.err = ERROR_InvalidLambda;
+                                                    __return_val.data.err = ERROR_InvalidClosure;
                                                     return __return_val;
                                                 }
                                             }                                            break;
@@ -620,588 +997,152 @@ ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_eval(struct zS_5ed3ca_Value* expr, Opti
                             }                            break;
                     }
                     }
-                    __tmp_try_res_7_39 = zF_d22e0f_eval(car, env, temp_sand, perm_sand);
-                    if (__tmp_try_res_7_39.is_error) {
-                        return __tmp_try_res_7_39;
-                    }
-                    __tmp_try_7_38 = __tmp_try_res_7_39.data.payload;
-                    fun = __tmp_try_7_38;
-                    cur = cdr;
-                    __loop_0_start: ;
-                    if (!(1)) goto __loop_0_end;
-                    {
-/* DEBUG: emitSwitch start */
-                        {
-                            struct zS_5ed3ca_Value switch_tmp_12 = *cur;
-                            switch (switch_tmp_12.tag) {
-                            case zE_1a36c1_Value_Tag_Cons:
-                                {
-                                    /* DEBUG: capture c */
-                                    struct zS_1a36c1_anon_1 c;
-                                    memcpy(&c, &switch_tmp_12.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                    (void)(arg_count += 1);
-                                    cur = c.cdr;
-                                }                                }
-                                break;
-                            default:
-{
-                                    /* defers for break */
-                                    goto __loop_0_end;
-                                }                                break;
-                        }
-                        }
-                    }
-                    __loop_0_continue: ;
-                    goto __loop_0_start;
-                    __loop_0_end: ;
-                    __tmp_try_res_7_37 = zF_148163_sand_alloc(temp_sand, arg_count * 4, 4);
-                    if (__tmp_try_res_7_37.is_error) {
-                        {
-                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                            __return_val.data.err = __tmp_try_res_7_37.data.err;
-                            __return_val.is_error = 1;
-                            return __return_val;
-                        }
-                    }
-                    __tmp_try_7_36 = __tmp_try_res_7_37.data.payload;
-                    args_mem = __tmp_try_7_36;
-                    args = __make_slice_Ptr_zS_5ed3ca_Value((struct zS_5ed3ca_Value**)args_mem + 0, arg_count - 0);
-                    cur = cdr;
-                    __loop_1_start: ;
-                    if (!(i < arg_count)) goto __loop_1_end;
-                    {
-/* DEBUG: emitSwitch start */
-                        {
-                            struct zS_5ed3ca_Value switch_tmp_13 = *cur;
-                            switch (switch_tmp_13.tag) {
-                            case zE_1a36c1_Value_Tag_Cons:
-                                {
-                                    /* DEBUG: capture c */
-                                    struct zS_1a36c1_anon_1 c_1;
-                                    memcpy(&c_1, &switch_tmp_13.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                    struct zS_5ed3ca_Value* __tmp_try_12_34;
-                                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_12_35;
-                                    __tmp_try_res_12_35 = zF_d22e0f_eval(c_1.car, env, temp_sand, perm_sand);
-                                    if (__tmp_try_res_12_35.is_error) {
-                                        return __tmp_try_res_12_35;
-                                    }
-                                    __tmp_try_12_34 = __tmp_try_res_12_35.data.payload;
-                                    args.ptr[i] = __tmp_try_12_34;
-                                    cur = c_1.cdr;
-                                }                                }
-                                break;
-                            default:
-{
-                                    __bootstrap_panic("reached unreachable", __FILE__, __LINE__);
-                                }                                break;
-                        }
-                        }
-                        (void)(i += 1);
-                    }
-                    __loop_1_continue: ;
-                    goto __loop_1_start;
-                    __loop_1_end: ;
-                    __tmp_try_res_9_33 = zF_d22e0f_apply(fun, args, env, temp_sand, perm_sand);
-                    if (__tmp_try_res_9_33.is_error) {
-                        return __tmp_try_res_9_33;
-                    }
-                    __tmp_try_9_32 = __tmp_try_res_9_33.data.payload;
-                    {
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                        __return_val.is_error = 0;
-                        __return_val.data.payload = __tmp_try_9_32;
-                        return __return_val;
-                    }
                 }                }
                 break;
             default:
 {
-                    {
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                        __return_val.is_error = 1;
-                        __return_val.data.err = ERROR_InvalidExpr;
-                        return __return_val;
-                    }
                 }                break;
         }
         }
+        {
+            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+            __return_val.is_error = 1;
+            __return_val.data.err = ERROR_NotCallable;
+            return __return_val;
+        }
     }
 
-    static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_env_to_value(Optional_Ptr_zS_8e8bb4_EnvNode env, struct zS_148163_Sand* temp_sand, struct zS_148163_Sand* perm_sand) {
+    static ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode zF_d22e0f_value_to_env_real(struct zS_5ed3ca_Value* v, struct zS_148163_Sand* sand) {
+/* DEBUG: emitSwitch start */
         {
-            Optional_Ptr_zS_8e8bb4_EnvNode opt_tmp = env;
-            if (opt_tmp.has_value) {
-                struct zS_8e8bb4_EnvNode* node = opt_tmp.value;
+            struct zS_5ed3ca_Value switch_tmp = *v;
+            switch (switch_tmp.tag) {
+            case zE_1a36c1_Value_Tag_Nil:
 {
-                    struct zS_5ed3ca_Value* __tmp_try_7_22;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_23;
-                    struct zS_5ed3ca_Value* sym_val;
-                    struct zS_5ed3ca_Value* __tmp_if_7_19;
-                    struct zS_5ed3ca_Value* val;
-                    struct zS_5ed3ca_Value* __tmp_try_7_17;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_18;
-                    struct zS_5ed3ca_Value* pair;
-                    struct zS_5ed3ca_Value* __tmp_try_7_15;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_7_16;
-                    struct zS_5ed3ca_Value* next;
-                    struct zS_5ed3ca_Value* __tmp_try_9_13;
-                    ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_14;
-                    __tmp_try_res_7_23 = zF_5ed3ca_alloc_symbol(node->symbol, perm_sand);
-                    if (__tmp_try_res_7_23.is_error) {
-                        return __tmp_try_res_7_23;
-                    }
-                    __tmp_try_7_22 = __tmp_try_res_7_23.data.payload;
-                    sym_val = __tmp_try_7_22;
-                    if (zF_a817c9_points_to_arena(node->value, temp_sand->start, temp_sand->pos)) {
-                        struct zS_5ed3ca_Value* __tmp_try_11_20;
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_11_21;
-                        __tmp_try_res_11_21 = zF_c8d42d_deep_copy(node->value, perm_sand);
-                        if (__tmp_try_res_11_21.is_error) {
-                            return __tmp_try_res_11_21;
-                        }
-                        __tmp_try_11_20 = __tmp_try_res_11_21.data.payload;
-                        __tmp_if_7_19 = __tmp_try_11_20;
-                    } else {
-                        __tmp_if_7_19 = node->value;
-                    }
-                    val = __tmp_if_7_19;
-                    __tmp_try_res_7_18 = zF_5ed3ca_alloc_cons(sym_val, val, perm_sand);
-                    if (__tmp_try_res_7_18.is_error) {
-                        return __tmp_try_res_7_18;
-                    }
-                    __tmp_try_7_17 = __tmp_try_res_7_18.data.payload;
-                    pair = __tmp_try_7_17;
-                    __tmp_try_res_7_16 = zF_d22e0f_env_to_value(node->next, temp_sand, perm_sand);
-                    if (__tmp_try_res_7_16.is_error) {
-                        return __tmp_try_res_7_16;
-                    }
-                    __tmp_try_7_15 = __tmp_try_res_7_16.data.payload;
-                    next = __tmp_try_7_15;
-                    __tmp_try_res_9_14 = zF_5ed3ca_alloc_cons(pair, next, perm_sand);
-                    if (__tmp_try_res_9_14.is_error) {
-                        return __tmp_try_res_9_14;
-                    }
-                    __tmp_try_9_13 = __tmp_try_res_9_14.data.payload;
                     {
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
+                        ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
                         __return_val.is_error = 0;
-                        __return_val.data.payload = __tmp_try_9_13;
+                        __return_val.data.payload.has_value = 0;
                         return __return_val;
                     }
-                }                } else {
+                }                break;
+            case zE_1a36c1_Value_Tag_Symbol:
+                {
+                    /* DEBUG: capture s */
+                    Slice_u8 s;
+                    s = switch_tmp.data.Symbol;
 {
-                        struct zS_5ed3ca_Value* __tmp_try_9_24;
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_25;
-                        __tmp_try_res_9_25 = zF_5ed3ca_alloc_symbol(__make_slice_u8("nil", 3), perm_sand);
-                        if (__tmp_try_res_9_25.is_error) {
-                            return __tmp_try_res_9_25;
-                        }
-                        __tmp_try_9_24 = __tmp_try_res_9_25.data.payload;
-                        {
-                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                            __return_val.is_error = 0;
-                            __return_val.data.payload = __tmp_try_9_24;
-                            return __return_val;
-                        }
-                    }                }
-            }
-        }
-
-        static ErrorUnion_Ptr_zS_5ed3ca_Value zF_d22e0f_apply(struct zS_5ed3ca_Value* fun, Slice_Ptr_zS_5ed3ca_Value args, Optional_Ptr_zS_8e8bb4_EnvNode* env, struct zS_148163_Sand* temp_sand, struct zS_148163_Sand* perm_sand) {
-/* DEBUG: emitSwitch start */
-            {
-                struct zS_5ed3ca_Value switch_tmp = *fun;
-                switch (switch_tmp.tag) {
-                case zE_1a36c1_Value_Tag_Builtin:
-                    {
-                        /* DEBUG: capture f_ptr */
-                        void * f_ptr;
-                        f_ptr = switch_tmp.data.Builtin;
-{
-                        ErrorUnion_Ptr_zS_5ed3ca_Value (* f)(Slice_Ptr_zS_5ed3ca_Value, struct zS_148163_Sand*);
-                        struct zS_5ed3ca_Value* __tmp_try_9_5;
-                        ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_9_6;
-                        f = (ErrorUnion_Ptr_zS_5ed3ca_Value (*)(Slice_Ptr_zS_5ed3ca_Value, struct zS_148163_Sand*))f_ptr;
-                        __tmp_try_res_9_6 = f(args, temp_sand);
-                        if (__tmp_try_res_9_6.is_error) {
-                            return __tmp_try_res_9_6;
-                        }
-                        __tmp_try_9_5 = __tmp_try_res_9_6.data.payload;
-                        {
-                            ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                            __return_val.is_error = 0;
-                            __return_val.data.payload = __tmp_try_9_5;
-                            return __return_val;
-                        }
-                    }                    }
-                    break;
-                case zE_1a36c1_Value_Tag_Cons:
-                    {
-                        /* DEBUG: capture data */
-                        struct zS_1a36c1_anon_1 data;
-                        memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                        struct zS_5ed3ca_Value* car;
-                        car = data.car;
-/* DEBUG: emitSwitch start */
-                        {
-                            struct zS_5ed3ca_Value switch_tmp_1 = *car;
-                            switch (switch_tmp_1.tag) {
-                            case zE_1a36c1_Value_Tag_Symbol:
-                                {
-                                    /* DEBUG: capture s */
-                                    Slice_u8 s;
-                                    s = switch_tmp_1.data.Symbol;
-{
-                                    if (zF_a817c9_mem_eql(s, __make_slice_u8("closure", 7))) {
-                                        struct zS_5ed3ca_Value* closure_cdr;
-                                        closure_cdr = data.cdr;
-/* DEBUG: emitSwitch start */
-                                        {
-                                            struct zS_5ed3ca_Value switch_tmp_2 = *closure_cdr;
-                                            switch (switch_tmp_2.tag) {
-                                            case zE_1a36c1_Value_Tag_Cons:
-                                                {
-                                                    /* DEBUG: capture c_data */
-                                                    struct zS_1a36c1_anon_1 c_data;
-                                                    memcpy(&c_data, &switch_tmp_2.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                                    struct zS_5ed3ca_Value* data_car;
-                                                    struct zS_5ed3ca_Value* data_cdr;
-                                                    data_car = c_data.car;
-                                                    data_cdr = c_data.cdr;
-/* DEBUG: emitSwitch start */
-                                                    {
-                                                        struct zS_5ed3ca_Value switch_tmp_3 = *data_car;
-                                                        switch (switch_tmp_3.tag) {
-                                                        case zE_1a36c1_Value_Tag_Cons:
-                                                            {
-                                                                /* DEBUG: capture dc_data */
-                                                                struct zS_1a36c1_anon_1 dc_data;
-                                                                memcpy(&dc_data, &switch_tmp_3.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                                                struct zS_5ed3ca_Value* params;
-                                                                struct zS_5ed3ca_Value* body;
-                                                                struct zS_5ed3ca_Value* saved_env_val;
-                                                                Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_15_11;
-                                                                ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_15_12;
-                                                                Optional_Ptr_zS_8e8bb4_EnvNode new_env;
-                                                                struct zS_5ed3ca_Value* cur_param;
-                                                                usize i = 0;
-                                                                int too_few = 0;
-                                                                struct zS_5ed3ca_Value* __tmp_try_17_7;
-                                                                ErrorUnion_Ptr_zS_5ed3ca_Value __tmp_try_res_17_8;
-                                                                params = dc_data.car;
-                                                                body = dc_data.cdr;
-                                                                saved_env_val = data_cdr;
-                                                                __tmp_try_res_15_12 = zF_d22e0f_value_to_env_real(saved_env_val, temp_sand);
-                                                                if (__tmp_try_res_15_12.is_error) {
-                                                                    {
-                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                        __return_val.data.err = __tmp_try_res_15_12.data.err;
-                                                                        __return_val.is_error = 1;
-                                                                        return __return_val;
-                                                                    }
-                                                                }
-                                                                __tmp_try_15_11 = __tmp_try_res_15_12.data.payload;
-                                                                new_env = __tmp_try_15_11;
-                                                                cur_param = params;
-                                                                __loop_0_start: ;
-                                                                if (!(i < args.len)) goto __loop_0_end;
-                                                                {
-/* DEBUG: emitSwitch start */
-                                                                    {
-                                                                        struct zS_5ed3ca_Value switch_tmp_4 = *cur_param;
-                                                                        switch (switch_tmp_4.tag) {
-                                                                        case zE_1a36c1_Value_Tag_Cons:
-                                                                            {
-                                                                                /* DEBUG: capture cp_data */
-                                                                                struct zS_1a36c1_anon_1 cp_data;
-                                                                                memcpy(&cp_data, &switch_tmp_4.data.Cons, sizeof(struct zS_1a36c1_anon_1));
-{
-                                                                                struct zS_5ed3ca_Value* param_sym;
-                                                                                param_sym = cp_data.car;
-/* DEBUG: emitSwitch start */
-                                                                                {
-                                                                                    struct zS_5ed3ca_Value switch_tmp_5 = *param_sym;
-                                                                                    switch (switch_tmp_5.tag) {
-                                                                                    case zE_1a36c1_Value_Tag_Symbol:
-                                                                                        {
-                                                                                            /* DEBUG: capture p_name */
-                                                                                            Slice_u8 p_name;
-                                                                                            p_name = switch_tmp_5.data.Symbol;
-{
-                                                                                            struct zS_8e8bb4_EnvNode* __tmp_try_23_9;
-                                                                                            ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_23_10;
-                                                                                            __tmp_try_res_23_10 = zF_8e8bb4_env_extend(p_name, args.ptr[i], new_env, temp_sand);
-                                                                                            if (__tmp_try_res_23_10.is_error) {
-                                                                                                {
-                                                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                                                    __return_val.data.err = __tmp_try_res_23_10.data.err;
-                                                                                                    __return_val.is_error = 1;
-                                                                                                    return __return_val;
-                                                                                                }
-                                                                                            }
-                                                                                            __tmp_try_23_9 = __tmp_try_res_23_10.data.payload;
-                                                                                            new_env.has_value = 1;
-                                                                                            new_env.value = __tmp_try_23_9;
-                                                                                        }                                                                                        }
-                                                                                        break;
-                                                                                    default:
-{
-                                                                                            {
-                                                                                                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                                                __return_val.is_error = 1;
-                                                                                                __return_val.data.err = ERROR_InvalidParams;
-                                                                                                return __return_val;
-                                                                                            }
-                                                                                        }                                                                                        break;
-                                                                                }
-                                                                                }
-                                                                                cur_param = cp_data.cdr;
-                                                                            }                                                                            }
-                                                                            break;
-                                                                        default:
-{
-                                                                                {
-                                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                                    __return_val.is_error = 1;
-                                                                                    __return_val.data.err = ERROR_TooManyArgs;
-                                                                                    return __return_val;
-                                                                                }
-                                                                            }                                                                            break;
-                                                                    }
-                                                                    }
-                                                                    (void)(i += 1);
-                                                                }
-                                                                __loop_0_continue: ;
-                                                                goto __loop_0_start;
-                                                                __loop_0_end: ;
-/* DEBUG: emitSwitch start */
-                                                                {
-                                                                    struct zS_5ed3ca_Value switch_tmp_6 = *cur_param;
-                                                                    switch (switch_tmp_6.tag) {
-                                                                    case zE_1a36c1_Value_Tag_Nil:
-{
-                                                                        }                                                                        break;
-                                                                    case zE_1a36c1_Value_Tag_Symbol:
-                                                                        {
-                                                                            /* DEBUG: capture sn */
-                                                                            Slice_u8 sn;
-                                                                            sn = switch_tmp_6.data.Symbol;
-{
-                                                                            if (!zF_a817c9_mem_eql(sn, __make_slice_u8("nil", 3))) {
-                                                                                too_few = 1;
-                                                                            }
-                                                                        }                                                                        }
-                                                                        break;
-                                                                    default:
-{
-                                                                            too_few = 1;
-                                                                        }                                                                        break;
-                                                                }
-                                                                }
-                                                                if (too_few) {
-                                                                    {
-                                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                        __return_val.is_error = 1;
-                                                                        __return_val.data.err = ERROR_TooFewArgs;
-                                                                        return __return_val;
-                                                                    }
-                                                                }
-                                                                __tmp_try_res_17_8 = zF_d22e0f_eval(body, &new_env, temp_sand, perm_sand);
-                                                                if (__tmp_try_res_17_8.is_error) {
-                                                                    return __tmp_try_res_17_8;
-                                                                }
-                                                                __tmp_try_17_7 = __tmp_try_res_17_8.data.payload;
-                                                                {
-                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                    __return_val.is_error = 0;
-                                                                    __return_val.data.payload = __tmp_try_17_7;
-                                                                    return __return_val;
-                                                                }
-                                                            }                                                            }
-                                                            break;
-                                                        default:
-{
-                                                                {
-                                                                    ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                                    __return_val.is_error = 1;
-                                                                    __return_val.data.err = ERROR_InvalidClosure;
-                                                                    return __return_val;
-                                                                }
-                                                            }                                                            break;
-                                                    }
-                                                    }
-                                                }                                                }
-                                                break;
-                                            default:
-{
-                                                    {
-                                                        ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                                                        __return_val.is_error = 1;
-                                                        __return_val.data.err = ERROR_InvalidClosure;
-                                                        return __return_val;
-                                                    }
-                                                }                                                break;
-                                        }
-                                        }
-                                    }
-                                }                                }
-                                break;
-                            default:
-{
-                                }                                break;
-                        }
-                        }
-                    }                    }
-                    break;
-                default:
-{
-                    }                    break;
-            }
-            }
-            {
-                ErrorUnion_Ptr_zS_5ed3ca_Value __return_val = {0};
-                __return_val.is_error = 1;
-                __return_val.data.err = ERROR_NotCallable;
-                return __return_val;
-            }
-        }
-
-        static ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode zF_d22e0f_value_to_env_real(struct zS_5ed3ca_Value* v, struct zS_148163_Sand* sand) {
-/* DEBUG: emitSwitch start */
-            {
-                struct zS_5ed3ca_Value switch_tmp = *v;
-                switch (switch_tmp.tag) {
-                case zE_1a36c1_Value_Tag_Nil:
-{
+                    if (zF_a817c9_mem_eql(s, __make_slice_u8("nil", 3))) {
                         {
                             ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
                             __return_val.is_error = 0;
                             __return_val.data.payload.has_value = 0;
                             return __return_val;
                         }
-                    }                    break;
-                case zE_1a36c1_Value_Tag_Symbol:
+                    }
                     {
-                        /* DEBUG: capture s */
-                        Slice_u8 s;
-                        s = switch_tmp.data.Symbol;
+                        ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                        __return_val.is_error = 1;
+                        __return_val.data.err = ERROR_InvalidEnv;
+                        return __return_val;
+                    }
+                }                }
+                break;
+            case zE_1a36c1_Value_Tag_Cons:
+                {
+                    /* DEBUG: capture data */
+                    struct zS_1a36c1_anon_1 data;
+                    memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_1a36c1_anon_1));
 {
-                        if (zF_a817c9_mem_eql(s, __make_slice_u8("nil", 3))) {
+                    struct zS_5ed3ca_Value* pair;
+                    pair = data.car;
+/* DEBUG: emitSwitch start */
+                    {
+                        struct zS_5ed3ca_Value switch_tmp_1 = *pair;
+                        switch (switch_tmp_1.tag) {
+                        case zE_1a36c1_Value_Tag_Cons:
                             {
-                                ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                                __return_val.is_error = 0;
-                                __return_val.data.payload.has_value = 0;
-                                return __return_val;
-                            }
-                        }
-                        {
-                            ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                            __return_val.is_error = 1;
-                            __return_val.data.err = ERROR_InvalidEnv;
-                            return __return_val;
-                        }
-                    }                    }
-                    break;
-                case zE_1a36c1_Value_Tag_Cons:
-                    {
-                        /* DEBUG: capture data */
-                        struct zS_1a36c1_anon_1 data;
-                        memcpy(&data, &switch_tmp.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+                                /* DEBUG: capture p_data */
+                                struct zS_1a36c1_anon_1 p_data;
+                                memcpy(&p_data, &switch_tmp_1.data.Cons, sizeof(struct zS_1a36c1_anon_1));
 {
-                        struct zS_5ed3ca_Value* pair;
-                        pair = data.car;
+                                struct zS_5ed3ca_Value* sym_val;
+                                struct zS_5ed3ca_Value* val;
+                                sym_val = p_data.car;
+                                val = p_data.cdr;
 /* DEBUG: emitSwitch start */
-                        {
-                            struct zS_5ed3ca_Value switch_tmp_1 = *pair;
-                            switch (switch_tmp_1.tag) {
-                            case zE_1a36c1_Value_Tag_Cons:
                                 {
-                                    /* DEBUG: capture p_data */
-                                    struct zS_1a36c1_anon_1 p_data;
-                                    memcpy(&p_data, &switch_tmp_1.data.Cons, sizeof(struct zS_1a36c1_anon_1));
+                                    struct zS_5ed3ca_Value switch_tmp_2 = *sym_val;
+                                    switch (switch_tmp_2.tag) {
+                                    case zE_1a36c1_Value_Tag_Symbol:
+                                        {
+                                            /* DEBUG: capture name */
+                                            Slice_u8 name;
+                                            name = switch_tmp_2.data.Symbol;
 {
-                                    struct zS_5ed3ca_Value* sym_val;
-                                    struct zS_5ed3ca_Value* val;
-                                    sym_val = p_data.car;
-                                    val = p_data.cdr;
-/* DEBUG: emitSwitch start */
-                                    {
-                                        struct zS_5ed3ca_Value switch_tmp_2 = *sym_val;
-                                        switch (switch_tmp_2.tag) {
-                                        case zE_1a36c1_Value_Tag_Symbol:
-                                            {
-                                                /* DEBUG: capture name */
-                                                Slice_u8 name;
-                                                name = switch_tmp_2.data.Symbol;
-{
-                                                Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_16_1;
-                                                ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_16_2;
-                                                struct zS_8e8bb4_EnvNode* __tmp_try_14_3;
-                                                ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_14_4;
-                                                __tmp_try_res_16_2 = zF_d22e0f_value_to_env_real(data.cdr, sand);
-                                                if (__tmp_try_res_16_2.is_error) {
-                                                    return __tmp_try_res_16_2;
-                                                }
-                                                __tmp_try_16_1 = __tmp_try_res_16_2.data.payload;
-                                                __tmp_try_res_14_4 = zF_8e8bb4_env_extend(name, val, __tmp_try_16_1, sand);
-                                                if (__tmp_try_res_14_4.is_error) {
-                                                    {
-                                                        ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                                                        __return_val.data.err = __tmp_try_res_14_4.data.err;
-                                                        __return_val.is_error = 1;
-                                                        return __return_val;
-                                                    }
-                                                }
-                                                __tmp_try_14_3 = __tmp_try_res_14_4.data.payload;
+                                            Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_16_1;
+                                            ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_16_2;
+                                            struct zS_8e8bb4_EnvNode* __tmp_try_14_3;
+                                            ErrorUnion_Ptr_zS_8e8bb4_EnvNode __tmp_try_res_14_4;
+                                            __tmp_try_res_16_2 = zF_d22e0f_value_to_env_real(data.cdr, sand);
+                                            if (__tmp_try_res_16_2.is_error) {
+                                                return __tmp_try_res_16_2;
+                                            }
+                                            __tmp_try_16_1 = __tmp_try_res_16_2.data.payload;
+                                            __tmp_try_res_14_4 = zF_8e8bb4_env_extend(name, val, __tmp_try_16_1, sand);
+                                            if (__tmp_try_res_14_4.is_error) {
                                                 {
                                                     ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                                                    __return_val.is_error = 0;
-                                                    __return_val.data.payload.has_value = 1;
-                                                    __return_val.data.payload.value = __tmp_try_14_3;
-                                                    return __return_val;
-                                                }
-                                            }                                            }
-                                            break;
-                                        default:
-{
-                                                {
-                                                    ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                                                    __return_val.data.err = __tmp_try_res_14_4.data.err;
                                                     __return_val.is_error = 1;
-                                                    __return_val.data.err = ERROR_InvalidEnv;
                                                     return __return_val;
                                                 }
-                                            }                                            break;
-                                    }
-                                    }
-                                }                                }
-                                break;
-                            default:
+                                            }
+                                            __tmp_try_14_3 = __tmp_try_res_14_4.data.payload;
+                                            {
+                                                ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                                                __return_val.is_error = 0;
+                                                __return_val.data.payload.has_value = 1;
+                                                __return_val.data.payload.value = __tmp_try_14_3;
+                                                return __return_val;
+                                            }
+                                        }                                        }
+                                        break;
+                                    default:
 {
-                                    {
-                                        ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                                        __return_val.is_error = 1;
-                                        __return_val.data.err = ERROR_InvalidEnv;
-                                        return __return_val;
-                                    }
-                                }                                break;
-                        }
-                        }
-                    }                    }
-                    break;
-                default:
+                                            {
+                                                ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                                                __return_val.is_error = 1;
+                                                __return_val.data.err = ERROR_InvalidEnv;
+                                                return __return_val;
+                                            }
+                                        }                                        break;
+                                }
+                                }
+                            }                            }
+                            break;
+                        default:
 {
-                        {
-                            ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
-                            __return_val.is_error = 1;
-                            __return_val.data.err = ERROR_InvalidEnv;
-                            return __return_val;
-                        }
-                    }                    break;
-            }
-            }
+                                {
+                                    ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                                    __return_val.is_error = 1;
+                                    __return_val.data.err = ERROR_InvalidEnv;
+                                    return __return_val;
+                                }
+                            }                            break;
+                    }
+                    }
+                }                }
+                break;
+            default:
+{
+                    {
+                        ErrorUnion_Optional_Ptr_zS_8e8bb4_EnvNode __return_val = {0};
+                        __return_val.is_error = 1;
+                        __return_val.data.err = ERROR_InvalidEnv;
+                        return __return_val;
+                    }
+                }                break;
         }
+        }
+    }

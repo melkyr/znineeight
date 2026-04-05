@@ -23,6 +23,5 @@ extern int zV_244d28_LispError;
 
 int zF_a817c9_mem_eql(Slice_u8, Slice_u8);
 ErrorUnion_i64 zF_a817c9_parse_int(Slice_u8);
-int zF_a817c9_points_to_arena(void *, unsigned char*, usize);
 
 #endif
