@@ -1565,56 +1565,60 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
     if (is_optional) {
         writeIndent();
         writeBlockOpen();
-        {
-            const char* cond_tmp = var_alloc_.generate("opt_tmp");
-            writeIndent();
-            emitType(cond_type, cond_tmp);
-            writeString(" = ");
-            emitExpression(node->condition);
-            endStmt();
 
+        const char* cond_tmp = makeTempVarForType(cond_type, "opt_tmp", true);
+        writeIndent();
+        writeString(cond_tmp);
+        writeString(" = ");
+        emitExpression(node->condition);
+        endStmt();
+
+        writeIndent();
+        writeKeyword(KW_IF);
+        writeString("(");
+        writeString(cond_tmp);
+        writeString(".has_value) ");
+        writeBlockOpen();
+
+        if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+            const char* c_name = var_alloc_.allocate(node->capture_sym);
             writeIndent();
-            writeKeyword(KW_IF);
-            writeString("(");
+            writeDecl(node->capture_sym->symbol_type, c_name);
+            writeIndent();
+            writeString(c_name);
+            writeString(" = ");
             writeString(cond_tmp);
-            writeString(".has_value) ");
-            writeBlockOpen();
-            {
-                if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
-                    writeIndent();
-                    const char* c_name = var_alloc_.allocate(node->capture_sym);
-                    emitType(node->capture_sym->symbol_type, c_name);
-                    writeString(" = ");
-                    writeString(cond_tmp);
-                    writeString(".value");
-                    endStmt();
-                }
-                if (node->then_block->type == NODE_BLOCK_STMT) {
-                    emitBlock(&node->then_block->as.block_stmt);
-                } else {
-                    emitStatement(node->then_block);
-                }
-            }
-            writeIndent();
-            writeString("}");
-            if (node->else_block) {
-                writeString(" ");
-                writeKeyword(KW_ELSE);
-                writeBlockOpen();
-                {
-                    if (node->else_block->type == NODE_IF_STMT) {
-                        emitIf(node->else_block->as.if_stmt);
-                    } else if (node->else_block->type == NODE_BLOCK_STMT) {
-                        emitBlock(&node->else_block->as.block_stmt);
-                    } else {
-                        emitStatement(node->else_block);
-                    }
-                }
-                writeBlockClose();
-            } else {
-                writeLine();
-            }
+            writeString(".value");
+            endStmt();
         }
+        if (node->then_block->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->then_block->as.block_stmt);
+        } else {
+            emitStatement(node->then_block);
+        }
+
+        dedent();
+        writeIndent();
+        writeString("}");
+
+        if (node->else_block) {
+            writeString(" ");
+            writeKeyword(KW_ELSE);
+            writeBlockOpen();
+
+            if (node->else_block->type == NODE_IF_STMT) {
+                emitIf(node->else_block->as.if_stmt);
+            } else if (node->else_block->type == NODE_BLOCK_STMT) {
+                emitBlock(&node->else_block->as.block_stmt);
+            } else {
+                emitStatement(node->else_block);
+            }
+
+            writeBlockClose();
+        } else {
+            writeLine();
+        }
+
         writeBlockClose();
     } else {
         writeIndent();
@@ -1778,31 +1782,33 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
     const char* switch_tmp = NULL;
 
     if (is_tagged_union) {
-        switch_tmp = var_alloc_.generate("switch_tmp");
         writeIndent();
-        writeString("{\n");
-        {
-            IndentScope scope_indent(*this);
-            writeIndent();
-            emitType(cond_type, switch_tmp);
-            writeString(" = ");
-            emitExpression(node->expression);
-            endStmt();
+        writeBlockOpen();
 
-            writeIndent();
-            writeString("switch (");
-            writeString(switch_tmp);
-            writeString(".tag) {\n");
-        }
+        switch_tmp = makeTempVarForType(cond_type, "switch_tmp", true);
+        writeIndent();
+        writeString(switch_tmp);
+        writeString(" = ");
+        emitExpression(node->expression);
+        endStmt();
+
+        writeIndent();
+        writeKeyword(KW_SWITCH);
+        writeString("(");
+        writeString(switch_tmp);
+        writeString(".tag) ");
+        writeBlockOpen();
+
     } else {
         writeIndent();
-        writeString("switch (");
+        writeKeyword(KW_SWITCH);
+        writeString("(");
         emitExpression(node->expression);
-        writeString(") {\n");
+        writeString(") ");
+        writeBlockOpen();
     }
 
     {
-        IndentScope switch_indent(*this);
         for (size_t i = 0; i < node->prongs->length(); ++i) {
             const ASTSwitchStmtProngNode* prong = (*node->prongs)[i];
             if (prong->is_else) {
@@ -1818,7 +1824,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                             i64 effective_end = item->as.range->is_inclusive ? end : end - 1;
                             for (i64 k = start; k <= effective_end; ++k) {
                                 writeIndent();
-                                writeString("case ");
+                                writeKeyword(KW_CASE);
                                 char buf[32];
                                 plat_i64_to_string(k, buf, sizeof(buf));
                                 writeString(buf);
@@ -1830,7 +1836,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                         }
                     } else {
                         writeIndent();
-                        writeString("case ");
+                        writeKeyword(KW_CASE);
                         emitExpression(item);
                         writeString(":\n");
                     }
@@ -1849,46 +1855,38 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                                       item_expr->as.integer_literal.original_name, capture_type->kind);
 
                     writeIndent();
-                    writeString("{\n");
-                    {
-                        IndentScope capture_indent(*this);
-                        writeIndent();
-                        writeString("/* DEBUG: capture ");
-                        writeString(prong->capture_name);
-                        writeString(" */\n");
-                        const char* c_name = var_alloc_.allocate(prong->capture_sym);
-                        writeIndent();
-                        emitType(capture_type, c_name);
+                    writeBlockOpen();
+
+                    writeIndent();
+                    writeString("/* DEBUG: capture ");
+                    writeString(prong->capture_name);
+                    writeString(" */\n");
+                    const char* c_name = var_alloc_.allocate(prong->capture_sym);
+                    writeIndent();
+                    writeDecl(capture_type, c_name);
+
+                    /* Field name is preserved in original_name of the case item literal */
+                    char rvalue_buf[512];
+                    char* r_cur = rvalue_buf;
+                    size_t r_rem = sizeof(rvalue_buf);
+                    safe_append(r_cur, r_rem, switch_tmp);
+                    safe_append(r_cur, r_rem, ".data.");
+                    safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
+
+                    writeIndent();
+                    if (capture_type->kind == TYPE_STRUCT || capture_type->kind == TYPE_UNION) {
+                        writeString("memcpy(&");
+                        writeString(c_name);
+                        writeString(", &");
+                        writeString(rvalue_buf);
+                        writeString(", sizeof(");
+                        emitType(capture_type);
+                        writeString("));\n");
+                    } else {
+                        writeString(c_name);
+                        writeString(" = ");
+                        writeString(rvalue_buf);
                         endStmt();
-                        char capture_lval[512];
-                        char* cur = capture_lval;
-                        size_t rem = sizeof(capture_lval);
-                        safe_append(cur, rem, c_name);
-
-                        /* Field name is preserved in original_name of the case item literal */
-                        ASTNode* item_expr = (*prong->items)[0];
-                        char rvalue_buf[512];
-                        char* r_cur = rvalue_buf;
-                        size_t r_rem = sizeof(rvalue_buf);
-                        safe_append(r_cur, r_rem, switch_tmp);
-                        safe_append(r_cur, r_rem, ".data.");
-                        safe_append(r_cur, r_rem, getSafeFieldName(item_expr->as.integer_literal.original_name));
-
-                        writeIndent();
-                        if (capture_type->kind == TYPE_STRUCT || capture_type->kind == TYPE_UNION) {
-                            writeString("memcpy(&");
-                            writeString(capture_lval);
-                            writeString(", &");
-                            writeString(rvalue_buf);
-                            writeString(", sizeof(");
-                            emitType(capture_type);
-                            writeString("));\n");
-                        } else {
-                            writeString(capture_lval);
-                            writeString(" = ");
-                            writeString(rvalue_buf);
-                            endStmt();
-                        }
                     }
                 }
 
@@ -1899,8 +1897,7 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                 }
 
                 if (has_non_void_capture) {
-                    writeIndent();
-                    writeString("}\n");
+                    writeBlockClose();
                 }
 
                 writeIndent();
@@ -1908,12 +1905,10 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
             }
         }
     }
-    writeIndent();
-    writeString("}\n");
+    writeBlockClose();
 
     if (is_tagged_union) {
-        writeIndent();
-        writeString("}\n");
+        writeBlockClose();
     }
 }
 
@@ -1929,24 +1924,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     loop_uses_labels_[node->label_id] = true;
 
     for_loop_counter_++;
-    int current_for_id = for_loop_counter_;
-
-    char idx_name[32];
-    char len_name[32];
-    char iter_name[32];
-    char id_buf[16]; plat_i64_to_string(current_for_id, id_buf, sizeof(id_buf));
-
-    char* cur = idx_name; size_t rem = sizeof(idx_name);
-    safe_append(cur, rem, "__for_idx_");
-    safe_append(cur, rem, id_buf);
-
-    cur = len_name; rem = sizeof(len_name);
-    safe_append(cur, rem, "__for_len_");
-    safe_append(cur, rem, id_buf);
-
-    cur = iter_name; rem = sizeof(iter_name);
-    safe_append(cur, rem, "__for_iter_");
-    safe_append(cur, rem, id_buf);
 
     bool is_range = (node->iterable_expr->type == NODE_RANGE);
 
@@ -1954,19 +1931,28 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     const char* cont_label = getLoopContinueLabel(node->label_id);
     const char* end_label = getLoopEndLabel(node->label_id);
 
+    const char* iter_name = NULL;
+    const char* idx_name = NULL;
+    const char* len_name = NULL;
+
     writeIndent();
     writeBlockOpen();
-    {
-        /* Iterable evaluate once */
+
+    /* Declarations FIRST for C89 compliance */
+    if (!is_range) {
+        Type* iter_type = node->iterable_expr->resolved_type;
+        Type* ptr_type = (iter_type->kind == TYPE_ARRAY) ?
+            createPointerType(arena_, iter_type->as.array.element_type, false, false, &unit_.getTypeInterner()) :
+            iter_type;
+        iter_name = makeTempVarForType(ptr_type, "for_iter", true);
+    }
+    idx_name = makeTempVarForType(get_g_type_usize(), "for_idx", true);
+    len_name = makeTempVarForType(get_g_type_usize(), "for_len", true);
+
+    /* Assignments */
     if (!is_range) {
         writeIndent();
-        Type* iter_type = node->iterable_expr->resolved_type;
-        if (iter_type->kind == TYPE_ARRAY) {
-             /* Emit as pointer */
-             emitType(createPointerType(arena_, iter_type->as.array.element_type, false), iter_name);
-        } else {
-             emitType(iter_type, iter_name);
-        }
+        writeString(iter_name);
         writeString(" = ");
         emitExpression(node->iterable_expr);
         endStmt();
@@ -1974,7 +1960,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     /* Initializer */
     writeIndent();
-    writeString("size_t ");
     writeString(idx_name);
     writeString(" = ");
     if (is_range) {
@@ -1985,7 +1970,6 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     endStmt();
 
     writeIndent();
-    writeString("size_t ");
     writeString(len_name);
     writeString(" = ");
     if (is_range) {
@@ -2015,16 +1999,16 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeString(": ;");
     writeLine();
 
-        writeIndent();
-        writeKeyword(KW_WHILE);
-        writeString("(");
-        writeString(idx_name);
-        writeString(" < ");
-        writeString(len_name);
-        writeString(") ");
-        writeBlockOpen();
-        {
-            /* Item capture */
+    writeIndent();
+    writeKeyword(KW_WHILE);
+    writeString("(");
+    writeString(idx_name);
+    writeString(" < ");
+    writeString(len_name);
+    writeString(") ");
+    writeBlockOpen();
+
+    /* Item capture */
     Type* item_type = NULL;
     if (is_range) {
         item_type = get_g_type_usize();
@@ -2046,7 +2030,9 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         }
 
         writeIndent();
-        emitType(item_type, actual_item_name);
+        writeDecl(item_type, actual_item_name);
+        writeIndent();
+        writeString(actual_item_name);
         writeString(" = ");
         if (is_range) {
             writeString(idx_name);
@@ -2073,7 +2059,8 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
         }
 
         writeIndent();
-        writeString("size_t ");
+        writeDecl(get_g_type_usize(), actual_index_name);
+        writeIndent();
         writeString(actual_index_name);
         writeString(" = ");
         writeString(idx_name);
@@ -2088,29 +2075,29 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
     writeLine();
 
-            /* Continue label and Increment */
-            writeIndent();
-            writeString(cont_label);
-            writeString(": ;");
-            writeLine();
+    /* Continue label and Increment */
+    writeIndent();
+    writeString(cont_label);
+    writeString(": ;");
+    writeLine();
 
-            writeIndent();
-            writeString(idx_name);
-            writeString("++");
-            endStmt();
+    writeIndent();
+    writeString(idx_name);
+    writeString("++");
+    endStmt();
 
-            writeIndent();
-            writeKeyword(KW_GOTO);
-            writeString(start_label);
-            endStmt();
-        }
-        writeBlockClose();
+    writeIndent();
+    writeKeyword(KW_GOTO);
+    writeString(start_label);
+    endStmt();
 
-        writeIndent();
-        writeString(end_label);
-        writeString(": ;");
-        writeLine();
-    }
+    writeBlockClose();
+
+    writeIndent();
+    writeString(end_label);
+    writeString(": ;");
+    writeLine();
+
     writeBlockClose();
 
     loop_id_stack_.pop_back();
@@ -2143,58 +2130,65 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         writeKeyword(KW_WHILE);
         writeString("(1) ");
         writeBlockOpen();
-        {
-            /* Evaluate condition into a temporary */
-            const char* tmp = var_alloc_.generate("opt_tmp");
+
+        /* Declarations FIRST for C89 compliance */
+        const char* tmp = makeTempVarForType(node->condition->resolved_type, "opt_tmp", true);
+        const char* c_name = NULL;
+        if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+            c_name = var_alloc_.allocate(node->capture_sym);
             writeIndent();
-            emitType(node->condition->resolved_type, tmp);
+            writeDecl(node->capture_sym->symbol_type, c_name);
+        }
+
+        /* Evaluate condition into a temporary */
+        writeIndent();
+        writeString(tmp);
+        writeString(" = ");
+        emitExpression(node->condition);
+        endStmt();
+
+        writeIndent();
+        writeKeyword(KW_IF);
+        writeString("(!");
+        writeString(tmp);
+        writeString(".has_value) ");
+        writeKeyword(KW_GOTO);
+        writeString(end_label);
+        endStmt();
+
+        /* Unwrap capture if non-void */
+        if (c_name) {
+            writeIndent();
+            writeString(c_name);
             writeString(" = ");
-            emitExpression(node->condition);
-            endStmt();
-
-            writeIndent();
-            writeKeyword(KW_IF);
-            writeString("(!");
             writeString(tmp);
-            writeString(".has_value) ");
-            writeKeyword(KW_GOTO);
-            writeString(end_label);
-            endStmt();
-
-            /* Unwrap capture if non-void */
-            if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
-                writeIndent();
-                const char* c_name = var_alloc_.allocate(node->capture_sym);
-                emitType(node->capture_sym->symbol_type, c_name);
-                writeString(" = ");
-                writeString(tmp);
-                writeString(".value");
-                endStmt();
-            }
-
-            /* Emit body */
-            if (node->body->type == NODE_BLOCK_STMT) {
-                emitBlock(&node->body->as.block_stmt, node->label_id);
-            } else {
-                emitStatement(node->body);
-            }
-            writeLine();
-
-            writeIndent();
-            writeString(cont_label);
-            writeString(": ;");
-            writeLine();
-
-            /* Continue expression (if any) */
-            if (node->iter_expr) {
-                writeExprStmt(node->iter_expr);
-            }
-
-            writeIndent();
-            writeKeyword(KW_GOTO);
-            writeString(start_label);
+            writeString(".value");
             endStmt();
         }
+
+        /* Emit body */
+        if (node->body->type == NODE_BLOCK_STMT) {
+            emitBlock(&node->body->as.block_stmt, node->label_id);
+        } else {
+            emitStatement(node->body);
+        }
+        writeLine();
+
+        writeIndent();
+        writeString(cont_label);
+        writeString(": ;");
+        writeLine();
+
+        /* Continue expression (if any) */
+        if (node->iter_expr) {
+            writeExprStmt(node->iter_expr);
+        }
+
+        writeIndent();
+        writeKeyword(KW_GOTO);
+        writeString(start_label);
+        endStmt();
+
         writeBlockClose();
 
         writeIndent();
