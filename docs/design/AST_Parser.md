@@ -595,6 +595,23 @@ Represents a struct, union, or tagged union initializer.
         DynamicArray<ASTNamedInitializer*>* fields;
     };
     ```
+*   **Anonymous Literals**: When `type_expr` is `NULL`, the node carries one of the `TYPE_ANONYMOUS_*` types until resolved via the coercion mechanism.
+
+#### `ASTTupleLiteralNode`
+Represents a positional aggregate literal.
+*   **Zig Code:** `.{ 1, 2, 3 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTTupleLiteralNode
+     * @brief Represents a positional aggregate literal.
+     * @var ASTTupleLiteralNode::elements A dynamic array of element expressions.
+     */
+    struct ASTTupleLiteralNode {
+        DynamicArray<ASTNode*>* elements;
+    };
+    ```
+*   **Anonymous Types**: This node is initially assigned `TYPE_ANONYMOUS_TUPLE` or `TYPE_ANONYMOUS_ARRAY` and is resolved into a concrete array or tuple type during type checking or coercion.
 *   **Anonymous Struct Payloads**: To support tagged union variants with anonymous struct payloads, the parser allows nesting `NODE_STRUCT_INITIALIZER` as the value of a field. The `TypeChecker` resolves these nested initializers against the variant's payload type.
 
 #### Parsing Logic (`parsePostfixExpression`)

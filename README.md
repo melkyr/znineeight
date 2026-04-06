@@ -66,6 +66,16 @@ On Windows (MinGW 3.x):
 g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe
 ```
 
+### Build Flags and Options
+The Z98 compiler (`zig0`) supports several command-line options to control the build process:
+
+-   `-o <file>`: Specify the output C source file path. The compiler will also generate a corresponding `.h` file in the same directory.
+-   `-I <path>`: Add a directory to the module search path for `@import` resolution. Multiple `-I` flags can be provided.
+-   `--win-line-endings`: Forces the compiler to use CRLF (`\r\n`) line endings in all generated C source and header files. This is recommended for maximum compatibility when building with MSVC 6.0 on Windows 9x.
+-   `--debug-lifter`: Enables verbose logging of the AST lifting pass, showing how expression-flow is transformed into statements.
+-   `--debug-codegen`: Enables debug tracing in the C89 code generator, including variable allocation and scope tracking.
+-   `--test-mode`: Enables deterministic name mangling (using counters instead of hashes) for stable integration testing.
+
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.
 ```bash

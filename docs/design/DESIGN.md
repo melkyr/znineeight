@@ -511,7 +511,22 @@ struct Type {
   | []T | [*]T / [*]const T | ✓ | - |
   | [N]T | [*]T / [*]const T | ✓ | - |
 
-#### 4.4.1 Type Coercions
+#### 4.4.1 Anonymous Aggregate Literals
+As of Milestone 11, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+**Anonymous Type Kinds:**
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+**Resolution Strategy:**
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Contextual Visitation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" is provided by the surrounding context.
+3. **Deferred Coercion**: If visited without context, the literal remains anonymous. It is resolved during the coercion phase when a target type is finally known.
+4. **Anytype Defaulting**: In contexts like `std.debug.print` where the literal is passed to an `anytype` parameter, the compiler defaults the literal to a concrete tuple or struct type to ensure valid C89 emission.
+
+#### 4.4.2 Type Coercions
 To improve interoperability with C89 code, the compiler supports the following implicit coercions in specific contexts (assignments, function arguments, and return statements):
 - **Slice to Many-Item Pointer**: A slice `[]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by automatically accessing the `.ptr` field of the slice.
 - **Array to Many-Item Pointer**: A fixed-size array `[N]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by taking the address of the first element (`&arr[0]`).

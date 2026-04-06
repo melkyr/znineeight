@@ -56,6 +56,13 @@ private:
     bool generateBuildBat(const char* output_dir);
 
     /**
+     * @brief Generates an experimental b_nativ_exp.bat file for MSVC 6.0 and OpenWatcom.
+     * @param output_dir The output directory.
+     * @return True if successful.
+     */
+    bool generateExperimentalBuildBat(const char* output_dir);
+
+    /**
      * @brief Generates a Makefile for Unix.
      * @param output_dir The output directory.
      * @return True if successful.

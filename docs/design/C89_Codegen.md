@@ -41,6 +41,19 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
     - `emitTaggedUnionBody`: Emits the full body (tag + data union) of a tagged union.
     - `emitTaggedUnionPayloadBody`: Emits the `union` part of a tagged union.
 
+### C89 Compatibility Layer (`zig_compat.h`)
+All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
+- **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
+- **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
+- **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
+- **Unused labels**: Provides `RETR_UNUSED_FUNC` and other macros to suppress warnings.
+
+### Unused Continue Labels
+To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
+- **Mechanism**: A stack `loop_has_continue_` is maintained alongside `loop_id_stack_`.
+- **Flag Activation**: The flag for the current loop is set to `true` whenever `emitContinue` is called for that loop's ID.
+- **Conditional Emission**: The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if the flag is true.
+
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 
