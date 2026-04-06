@@ -649,12 +649,12 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         table.insert(sym_free);
     }
 
-    // __bootstrap_print(s: [*]const u8) -> void
+    // __bootstrap_print(s: [*]const c_char) -> void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
         if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
-        params->append(createPointerType(arena_, get_g_type_u8(), true, true, &type_interner_));
+        params->append(createPointerType(arena_, get_g_type_c_char(), true, true, &type_interner_));
         Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
 
         const char* name = interner_.intern("__bootstrap_print");

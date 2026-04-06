@@ -1051,6 +1051,12 @@ To ensure the `TypeChecker` and the rest of the compiler can be built on 1990s-e
 - **No `long long`**: Use the `u64` and `i64` typedefs from `common.hpp`, which map to `__int64` on MSVC 6.0. This is especially important in `evaluateConstantExpression` and when handling integer literals.
 - **Explicit `RETR_UNUSED`**: The `TypeChecker` often has visitor methods or guard classes where some parameters (like `loc` in a guard constructor) are not used in all build configurations. These must be explicitly marked with `RETR_UNUSED(param)` to ensure a warning-free build under strict `-Wunused-parameter` flags.
 - **Single Header Compatibility**: All source files include `common.hpp`, which incorporates `compat.hpp` to provide a unified abstraction layer for compiler-specific keywords like `inline` (mapped to `ZIG_INLINE`).
+
+#### C89 Compliance of Generated Code
+The generated C code is designed for maximum compatibility with legacy environments:
+- **Header Abstraction**: Inclusion of `zig_compat.h` handles 64-bit integers and boolean types across different compilers.
+- **IO Sanitization**: Runtime IO helpers (`__bootstrap_print`, `__bootstrap_write`) use `const char*` to avoid signedness warnings with string literals.
+- **Unused Label Elimination**: `C89Emitter` tracks `continue` statement usage to only emit necessary labels, ensuring warning-free builds on strict C89 compilers.
 - **Maximum Depth**: Defined by `MAX_VISIT_DEPTH` (200). This limit is chosen to be conservative enough to prevent stack exhaustion while allowing for reasonably complex ASTs.
 - **Enforcement**: A `visit_depth_` counter is incremented upon entry to `visit` and decremented upon exit.
 - **Error Handling**: If the limit is exceeded, the compiler reports a fatal internal error (`ERR_INTERNAL_ERROR`) and returns `get_g_type_undefined()` to prevent further recursive calls.

@@ -1,4 +1,4 @@
-extern fn __bootstrap_print(s: *const u8) void;
+extern fn __bootstrap_print(s: *const c_char) void;
 
 fn strLessThan(a: [*]const u8, b: [*]const u8) bool {
     if (a == null or b == null) { return false; }

@@ -51,7 +51,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      loop_has_continue_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -68,7 +69,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      loop_has_continue_(unit.getTransientArena()) {
     output_file_ = plat_open_file(path, true);
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
@@ -87,7 +89,8 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
       module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
-      loop_id_stack_(unit.getTransientArena()) {
+      loop_id_stack_(unit.getTransientArena()),
+      loop_has_continue_(unit.getTransientArena()) {
     type_def_buffer_ = (char*)transient_arena_.alloc(type_def_cap_);
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
 }
@@ -1921,6 +1924,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     }
 
     loop_id_stack_.append(node->label_id);
+    loop_has_continue_.append(false);
     loop_uses_labels_[node->label_id] = true;
 
     for_loop_counter_++;
@@ -2076,10 +2080,12 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeLine();
 
     /* Continue label and Increment */
-    writeIndent();
-    writeString(cont_label);
-    writeString(": ;");
-    writeLine();
+    if (loop_has_continue_.back()) {
+        writeIndent();
+        writeString(cont_label);
+        writeString(": ;");
+        writeLine();
+    }
 
     writeIndent();
     writeString(idx_name);
@@ -2101,6 +2107,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
     writeBlockClose();
 
     loop_id_stack_.pop_back();
+    loop_has_continue_.pop_back();
 }
 
 
@@ -2113,6 +2120,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     }
 
     loop_id_stack_.append(node->label_id);
+    loop_has_continue_.append(false);
 
     /* Always mark this loop as using labels, so that any break/continue will be emitted as goto. */
     loop_uses_labels_[node->label_id] = true;
@@ -2174,10 +2182,12 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         }
         writeLine();
 
-        writeIndent();
-        writeString(cont_label);
-        writeString(": ;");
-        writeLine();
+        if (loop_has_continue_.back()) {
+            writeIndent();
+            writeString(cont_label);
+            writeString(": ;");
+            writeLine();
+        }
 
         /* Continue expression (if any) */
         if (node->iter_expr) {
@@ -2222,10 +2232,12 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         }
         writeLine();
 
-        writeIndent();
-        writeString(cont_label);
-        writeString(": ;");
-        writeLine();
+        if (loop_has_continue_.back()) {
+            writeIndent();
+            writeString(cont_label);
+            writeString(": ;");
+            writeLine();
+        }
         if (node->iter_expr) {
             writeExprStmt(node->iter_expr);
         }
@@ -2242,6 +2254,7 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
     }
 
     loop_id_stack_.pop_back();
+    loop_has_continue_.pop_back();
 }
 
 
@@ -3621,18 +3634,10 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
                 writeString("U");
                 break;
             case TYPE_I64:
-                #ifdef _MSC_VER
-                writeString("i64");
-                #else
-                writeString("LL");
-                #endif
+                writeString(ZIG_I64_SUFFIX);
                 break;
             case TYPE_U64:
-                #ifdef _MSC_VER
-                writeString("ui64");
-                #else
-                writeString("ULL");
-                #endif
+                writeString(ZIG_UI64_SUFFIX);
                 break;
             default:
                 /* i32, u8, i8, u16, i16, usize, isize get no suffix */
@@ -4603,6 +4608,15 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
+        /* Set has_continue flag for the target loop */
+        if (target_id >= 0 && loop_id_stack_.length() > 0) {
+            for (int i = (int)loop_id_stack_.length() - 1; i >= 0; --i) {
+                if (loop_id_stack_[i] == target_id) {
+                    loop_has_continue_[i] = true;
+                    break;
+                }
+            }
+        }
         writeKeyword(KW_GOTO);
         writeString(getLoopContinueLabel(target_id));
         endStmt();

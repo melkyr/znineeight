@@ -156,7 +156,7 @@ void arena_free(void* ptr) {
     (void)ptr;
 }
 
-void __bootstrap_write(const unsigned char* s, usize len) {
+void __bootstrap_write(const char* s, usize len) {
     if (!s || len == 0) return;
 #ifdef _WIN32
     {
@@ -171,7 +171,7 @@ void __bootstrap_write(const unsigned char* s, usize len) {
         /* Try WriteConsoleA first - it works better with Win9x console */
         if (!WriteConsoleA(hOut, (LPCSTR)s, (DWORD)len, &written, NULL)) {
             /* Fallback to WriteFile for redirected output */
-            WriteFile(hOut, s, (DWORD)len, &written, NULL);
+            WriteFile(hOut, (const void*)s, (DWORD)len, &written, NULL);
         }
     }
 #else
@@ -179,7 +179,7 @@ void __bootstrap_write(const unsigned char* s, usize len) {
     {
         size_t total_written = 0;
         while (total_written < len) {
-            ssize_t written = write(1, (const char*)s + total_written, len - total_written);
+            ssize_t written = write(1, s + total_written, len - total_written);
             if (written <= 0) break;
             total_written += (size_t)written;
         }
@@ -187,9 +187,9 @@ void __bootstrap_write(const unsigned char* s, usize len) {
 #endif
 }
 
-void __bootstrap_print(const unsigned char* s) {
+void __bootstrap_print(const char* s) {
     if (!s) return;
-    __bootstrap_write(s, strlen((const char*)s));
+    __bootstrap_write(s, strlen(s));
 }
 
 void __bootstrap_panic(const char* msg, const char* file, int line) {
@@ -197,15 +197,15 @@ void __bootstrap_panic(const char* msg, const char* file, int line) {
     int i = 0;
     unsigned int val;
 
-    __bootstrap_print((const unsigned char*)"PANIC: ");
-    __bootstrap_print((const unsigned char*)msg);
-    __bootstrap_print((const unsigned char*)" at ");
-    __bootstrap_print((const unsigned char*)file);
-    __bootstrap_print((const unsigned char*)":");
+    __bootstrap_print("PANIC: ");
+    __bootstrap_print(msg);
+    __bootstrap_print(" at ");
+    __bootstrap_print(file);
+    __bootstrap_print(":");
 
     val = (unsigned int)line;
     if (val == 0) {
-        __bootstrap_print((const unsigned char*)"0");
+        __bootstrap_print("0");
     } else {
         while (val > 0) {
             buf[i++] = '0' + (val % 10);
@@ -216,10 +216,10 @@ void __bootstrap_panic(const char* msg, const char* file, int line) {
             char s[2];
             s[0] = c;
             s[1] = '\0';
-            __bootstrap_print((const unsigned char*)s);
+            __bootstrap_print(s);
         }
     }
-    __bootstrap_print((const unsigned char*)"\n");
+    __bootstrap_print("\n");
     abort();
 }
 
@@ -229,14 +229,14 @@ void __bootstrap_print_int(i32 n) {
     unsigned int val;
 
     if (n < 0) {
-        __bootstrap_print((const unsigned char*)"-");
+        __bootstrap_print("-");
         val = (unsigned int)(-n);
     } else {
         val = (unsigned int)n;
     }
 
     if (val == 0) {
-        __bootstrap_print((const unsigned char*)"0");
+        __bootstrap_print("0");
         return;
     }
 
@@ -252,7 +252,7 @@ void __bootstrap_print_int(i32 n) {
         char s[2];
         s[0] = c;
         s[1] = '\0';
-        __bootstrap_print((const unsigned char*)s);
+        __bootstrap_print(s);
     }
 }
 

@@ -44,6 +44,15 @@ The `C89Emitter` is the primary interface for writing C89 code to a file. It is 
 #### Base Type Mapping
 - **c_char**: Mapped to C `char`. This is distinct from `u8` (mapped to `unsigned char`) to ensure compatibility with standard C library function signatures (e.g., `fopen` expects `const char*`).
 
+#### C89 Compatibility Layer (`zig_compat.h`)
+All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
+- **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
+- **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
+- **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
+
+#### Sign-Correct IO Helpers
+The runtime IO helpers `__bootstrap_print` and `__bootstrap_write` accept `const char*` instead of `const unsigned char*`. This eliminates pointer-sign mismatch warnings when passing string literals (which are `char*` in C) to these functions. Internal casts to `unsigned char*` are performed within the runtime implementation where necessary.
+
 ### 2.1 Line Ending and Statement Terminator Abstraction
 To improve portability (e.g., support for CRLF on Windows 98) and centralize formatting, the `C89Emitter` provides abstractions for common C89 terminators. Direct use of hardcoded `";\n"` or `"\n"` is discouraged in favor of these helpers:
 - **`endStmt()`**: Appends a semicolon followed by the configured line ending.
@@ -60,7 +69,13 @@ To ensure consistency and avoid hardcoding strings for standard C89 keywords, th
 
 Using these constants simplifies maintenance and ensures that any necessary mangling or platform-specific keyword variations can be handled in one place.
 
-### 2.3 Combined Block and Statement Helpers
+### 2.3 Unused Continue Labels
+To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
+- **Mechanism**: A stack `loop_has_continue_` is maintained alongside `loop_id_stack_`.
+- **Flag Activation**: The flag for the current loop is set to `true` whenever `emitContinue` is called for that loop's ID.
+- **Conditional Emission**: The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if the flag is true.
+
+### 2.4 Combined Block and Statement Helpers
 To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
 
 - **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.

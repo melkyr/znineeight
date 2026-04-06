@@ -7,7 +7,7 @@ const eval_mod = @import("eval.zig");
 const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 
-extern fn __bootstrap_print(s: [*]const u8) void;
+extern fn __bootstrap_print(s: [*]const c_char) void;
 extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
 
