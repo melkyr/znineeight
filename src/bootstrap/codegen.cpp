@@ -3634,10 +3634,18 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
                 writeString("U");
                 break;
             case TYPE_I64:
+#ifdef ZIG_COMPILER_OPENWATCOM
+                writeString("LL");
+#else
                 writeString(ZIG_I64_SUFFIX);
+#endif
                 break;
             case TYPE_U64:
+#ifdef ZIG_COMPILER_OPENWATCOM
+                writeString("ULL");
+#else
                 writeString(ZIG_UI64_SUFFIX);
+#endif
                 break;
             default:
                 /* i32, u8, i8, u16, i16, usize, isize get no suffix */
