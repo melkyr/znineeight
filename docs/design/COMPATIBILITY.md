@@ -59,4 +59,5 @@ The following features were finalized in Milestone 11 and are fully supported by
 - **Payload Captures**: `while` and `if` statements support optional and error union payload captures, implemented via temporary variables and block-scoped declarations.
 - **Pointer Arithmetic**: Many-item pointers (`[*]T`) support arithmetic and indexing, mapped directly to C pointer operations.
 - **@intToPtr and @ptrToInt**: Supported for low-level memory operations, respecting the target's pointer size.
+- **@intToFloat**: Supported for converting integers to floating-point types, with constant folding for literals.
 - **Braceless Control Flow**: Single-statement `if`, `while`, and `for` bodies are supported and normalized into braced blocks during the lifting pass.

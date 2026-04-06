@@ -146,7 +146,7 @@ This section tracks the implementation status of all tokens required for the Z98
 | `TOKEN_AND` | `and` |
 | `TOKEN_ANYFRAME` | `anyframe` |
 | `TOKEN_ANYTYPE` | `anytype` |
-| `TOKEN_TYPE` | `type` |
+| `TOKEN_TYPE_KEYWORD` | `type` |
 | `TOKEN_CALLCONV` | `callconv` |
 | `TOKEN_NOALIAS` | `noalias` |
 | `TOKEN_NOSUSPEND` | `nosuspend` |
@@ -171,6 +171,9 @@ The following keywords for compile-time and special functions are also implement
 
 | Token Type | Keyword |
 | --- | --- |
+| `TOKEN_FN` | `fn` |
+| `TOKEN_VAR` | `var` |
+| `TOKEN_DEFER` | `defer` |
 | `TOKEN_ASM` | `asm` |
 | `TOKEN_COMPTIME` | `comptime` |
 | `TOKEN_ERRDEFER` | `errdefer` |

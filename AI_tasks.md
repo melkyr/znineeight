@@ -2325,6 +2325,10 @@ Implementation steps (minimal):
 
 248. [COMPLETE] **Task 9.24: Guard Against Null Dereferences and Type Mismatches**
     - **Goal**: Stabilize the compiler by adding robust guards and structural-aware type equality.
+249. [COMPLETE] **Task 9.25: Batch 32 Regression Fix (DONE)**
+    - **Issue**: compilation failure in `EndToEnd_HelloWorld` due to `__bootstrap_print` type mismatch.
+    - **Fix**: Updated test source to use `*const c_char` for `__bootstrap_print` extern declaration.
+    - **Verification**: Confirmed Batch 32 passes all 2 tests (Hello World and Prime Numbers).
     - **Type Checker**: Moved `areTypesEqual` and `signaturesMatch` into `TypeChecker` to support placeholder resolution during comparison.
     - **Structural Equality**: Implemented deep structural comparison in `TypeChecker::areTypesEqual`, including cross-module nominal type identity (matching by name and module name).
     - **Safety Guards**: Audited and added null checks and `kind` validation in `visitUnaryOp`, `visitFunctionCall`, `visitArrayAccess`, `IsTypeAssignableTo`, and other critical methods.
