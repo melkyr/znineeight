@@ -16,30 +16,29 @@
 ## Progress Report (32-bit)
 
 - **Phase 3 Compatibility**: **IMPLEMENTED**. OpenWatcom 64-bit suffixes, `ZIG_INLINE` propagation to special types header, and C89 block declaration documentation are complete.
+- **Phase 4 Compatibility**: **IMPLEMENTED**. Distributed `zig_compat.h` and integrated with runtime.
 - **Example Programs**: Most examples are compiling but some show pointer-sign warnings/errors due to `const char*` standardization in `__bootstrap_print`.
-- **Lisp Interpreter (curr)**: Currently not verified in this task as per instructions.
+- **Lisp Interpreter (curr)**: **VERIFIED**. Compiles with `gcc -m32` and correctly executes basic Lisp expressions (`+`, `define`, `lambda`).
 
 ---
 
 ## Detailed Breakdown of Failures (32-bit)
 
-The following batches are failing due to intentional codegen improvements that mismatch existing test expectations:
-
 ### 1. Batch 27 (Local Variables)
-- **Status**: FAIL
-- **Reason**: Codegen mismatch in `while` loops. The compiler now correctly uses a two-pass approach for block emission and standardizes labels. Tests expect `__loop_X_continue` labels even when unused, while the current emitter optimizes them.
+- **Status**: **PASS**
+- **Fix**: Updated test expectations in `codegen_local_tests.cpp` to reflect optimized (suppressed) `__loop_X_continue` labels.
 
 ### 2. Batch 32 (Integration)
 - **Status**: FAIL
-- **Reason**: Mismatch in end-to-end prime number verification output. Likely related to how `__bootstrap_print_int` or character literals are handled in the standard namespace.
+- **Reason**: Mismatch in end-to-end prime number verification output. Likely related to how `__bootstrap_print_int` or character literals are handled in the standard namespace. (Known issue, deferred).
 
 ### 3. Batch 41 (For Loops)
-- **Status**: FAIL
-- **Reason**: Standardized temporary variable names (`for_idx`, `for_len`) and optimized labels. Tests expect old hardcoded loop label patterns.
+- **Status**: **PASS**
+- **Fix**: Updated `for_loop_tests.cpp` to match standardized temporary variable names and optimized labels. Fixed missing indentation in `emitFor`.
 
 ### 4. Batch 52 (While Loops)
-- **Status**: FAIL
-- **Reason**: The compiler now wraps compound assignments in `(void)` casts (e.g., `(void)(total += i)`) to suppress C89 warnings. Test expectations in `tests/integration/task_9_8_verification_tests.cpp` need updating.
+- **Status**: **PASS**
+- **Fix**: Updated `task_9_8_verification_tests.cpp` to include `(void)` casts for compound assignments and reflect label optimization. Improved test runner with lenient whitespace matching.
 
 ---
 

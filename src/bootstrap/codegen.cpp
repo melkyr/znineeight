@@ -2073,6 +2073,7 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     /* Emit the actual body */
     if (node->body->type == NODE_BLOCK_STMT) {
+        writeIndent();
         emitBlock(&node->body->as.block_stmt, node->label_id);
     } else {
         emitStatement(node->body);

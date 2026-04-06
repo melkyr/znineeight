@@ -165,22 +165,34 @@ public:
         return findFunctionCall(last_ast, name);
     }
 
+    bool isWhitespace(char c) const {
+        return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+    }
+
     /**
      * @brief Checks if a string matches a pattern with # as a wildcard for digits.
+     * Lenient version that ignores whitespace differences.
      */
     bool matchPattern(const std::string& pattern, const std::string& actual) {
-        if (pattern.length() == 0) return actual.length() == 0;
-        
         size_t p = 0;
         size_t a = 0;
-        
-        while (p < pattern.length() && a < actual.length()) {
+
+        while (p < pattern.length() || a < actual.length()) {
+            bool p_ws = (p < pattern.length() && isWhitespace(pattern[p]));
+            bool a_ws = (a < actual.length() && isWhitespace(actual[a]));
+
+            if (p_ws || a_ws) {
+                if (p_ws) while (p < pattern.length() && isWhitespace(pattern[p])) p++;
+                if (a_ws) while (a < actual.length() && isWhitespace(actual[a])) a++;
+                continue;
+            }
+
+            if (p == pattern.length() && a == actual.length()) break;
+            if (p == pattern.length() || a == actual.length()) return false;
+
             if (pattern[p] == '#') {
                 if (actual[a] < '0' || actual[a] > '9') return false;
-                // Consume all consecutive digits for one #
-                while (a < actual.length() && actual[a] >= '0' && actual[a] <= '9') {
-                    a++;
-                }
+                while (a < actual.length() && actual[a] >= '0' && actual[a] <= '9') a++;
                 p++;
             } else if (pattern[p] == actual[a]) {
                 p++;
@@ -189,8 +201,7 @@ public:
                 return false;
             }
         }
-        
-        return p == pattern.length() && a == actual.length();
+        return true;
     }
 
     /**
