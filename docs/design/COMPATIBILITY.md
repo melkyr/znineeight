@@ -35,3 +35,28 @@ g++ -std=c++98 -pedantic -Wunused-parameter -Werror -Isrc/include -c src/bootstr
 ```
 
 Phase 1 of the compatibility plan ensures that this command passes for all core compiler files.
+
+## Generated C89 Code Compatibility
+
+The Z98 bootstrap compiler generates C89-compliant code intended to be built with legacy toolchains like MSVC 6.0 and OpenWatcom.
+
+### Mixed Declarations and Code
+
+C89 requires all variable declarations to appear at the beginning of a block, before any executable statements.
+
+- **Current Implementation**: The compiler uses a two-pass approach in `C89Emitter::emitBlock` to hoist variable declarations (`NODE_VAR_DECL`) to the top of their respective C blocks.
+- **Known Limitation**: Temporaries generated during expression lifting (e.g., in `if` conditions or complex assignments) are currently emitted at their point of use. While many legacy compilers (like MSVC 6.0 and OpenWatcom) are lenient with this, strict C89 compilers may issue warnings or errors.
+- **Workaround**: The `ControlFlowLifter` pass ensures most complex control flow is transformed into statement form, which helps in grouping declarations.
+- **Future Work**: A full hoisting pass is planned to ensure *all* compiler-generated temporaries are also moved to the top of the block, achieving 100% strict C89 compliance.
+
+## Milestone 11 Achievements
+
+The following features were finalized in Milestone 11 and are fully supported by the C89/C++98 compatibility layer:
+
+- **Recursion Support**: Recursive type definitions (structs, unions) are handled via a placeholder resolution mechanism.
+- **Anonymous Struct Payloads**: Tagged unions can now have nested anonymous struct payloads, which are correctly decomposed into field assignments in C89.
+- **Switch Ranges**: Switch prongs now support inclusive (`...`) and exclusive (`..`) ranges, which are expanded into individual C `case` labels.
+- **Payload Captures**: `while` and `if` statements support optional and error union payload captures, implemented via temporary variables and block-scoped declarations.
+- **Pointer Arithmetic**: Many-item pointers (`[*]T`) support arithmetic and indexing, mapped directly to C pointer operations.
+- **@intToPtr and @ptrToInt**: Supported for low-level memory operations, respecting the target's pointer size.
+- **Braceless Control Flow**: Single-statement `if`, `while`, and `for` bodies are supported and normalized into braced blocks during the lifting pass.
