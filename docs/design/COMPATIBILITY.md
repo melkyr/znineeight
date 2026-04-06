@@ -49,6 +49,14 @@ C89 requires all variable declarations to appear at the beginning of a block, be
 - **Workaround**: The `ControlFlowLifter` pass ensures most complex control flow is transformed into statement form, which helps in grouping declarations.
 - **Future Work**: A full hoisting pass is planned to ensure *all* compiler-generated temporaries are also moved to the top of the block, achieving 100% strict C89 compliance.
 
+### Runtime IO Signature Fix
+
+Standard Zig string literals and slices often use `u8` (`unsigned char`). However, many standard C functions (and the Win32 `WriteConsoleA` API) expect `const char*`.
+
+- **Problem**: Passing `unsigned char*` to functions expecting `char*` produces `pointer-sign` warnings on many compilers.
+- **Fix**: The runtime functions `__bootstrap_print` and `__bootstrap_write` now use `const char*` for their string arguments. Internal casts to `unsigned char*` are performed within the runtime implementation where needed.
+- **Generated Code**: The `C89Emitter` explicitly casts string arguments to `(const char*)` when calling these functions to ensure warning-free compilation.
+
 ## Milestone 11 Achievements
 
 The following features were finalized in Milestone 11 and are fully supported by the C89/C++98 compatibility layer:

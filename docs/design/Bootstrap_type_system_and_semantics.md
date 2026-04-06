@@ -1189,18 +1189,23 @@ The `TypeChecker` supports unwrapping multiple levels of type aliases to facilit
 
 This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
 
-## 7. Anonymous Initializer Type (`TYPE_ANONYMOUS_INIT`)
+### 7. Anonymous Aggregate Literals
 
-Currently, an anonymous struct or tuple initializer (e.g., `.{ .x = 1, .y = 2 }` or `.{ 1, 2 }`) has no type information when visited standalone. To handle this without overloading `TYPE_UNDEFINED`, the bootstrap compiler introduces `TYPE_ANONYMOUS_INIT`.
+As of Milestone 11, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
 
-### Purpose
-This type acts as a placeholder for anonymous initializers that are **awaiting resolution**. It carries enough information (a pointer to the original `ASTNode`) to be resolved later when the target type is known.
+#### 7.1 Anonymous Type Kinds
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
 
-### Resolution via Coercion
-Resolution happens only when a target type is provided via the `coerceNode` mechanism:
-1. When `coerceNode` encounters a source type of `TYPE_ANONYMOUS_INIT`, it triggers a re-visit of the underlying `ASTNode` with the `target_type` as an expected type context.
-2. The `visitStructInitializer` or `visitTupleLiteral` method then uses this expected type to perform field validation and return the final resolved type.
-3. The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type.
+#### 7.2 Resolution via Coercion
+Resolution happens when a target type is provided via the `coerceNode` mechanism or structural expectation:
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Structural Expectation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" (from `peekExpectedType()`) provides a structural target (array, tuple, struct, or union).
+3. **Deferred Coercion**: If visited without context, the literal remains in its anonymous state. It is resolved in `coerceNode` when a target type is finally known.
+4. **Re-visitation**: When `coerceNode` encounters an anonymous type, it triggers a re-visit of the underlying `ASTNode` using the target type as the explicit expected type context.
+5. **Updating**: The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type (e.g., `TYPE_STRUCT`).
 
 ### Benefits
 - **Predictable Behavior**: Real errors remain distinguishable from unresolved anonymous literals.
