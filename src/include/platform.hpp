@@ -2,7 +2,6 @@
 #define PLATFORM_HPP
 
 #include "common.hpp"
-#include <cstddef>
 
 #ifdef _WIN32
 #include "platform_win98.h"

@@ -5,7 +5,6 @@
 #include "memory.hpp"
 #include "ast.hpp"
 #include "symbol_table.hpp"
-#include <cstddef> // For size_t
 #include <cassert> // For assert()
 
 // Define the maximum recursion depth for the parser to prevent stack overflows.

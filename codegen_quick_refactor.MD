@@ -63,3 +63,7 @@ The following integration steps are ordered from the most complex/invasive to th
 ### 6. Line Ending and Statement Terminator Abstraction (Low Complexity)
 **Target:** Everywhere `writeString(";\n")` or `writeString("\n")` is used.
 **Why:** Replaces hardcoded line endings with `endStmt()` or `writeLine()`. Simplest to implement but covers the most lines.
+
+### 7. C++98 Portability Layer (COMPLETED)
+**Target:** Compiler source (`src/bootstrap/`).
+**Why:** Integrated `compat.hpp` and `common.hpp` to ensure the compiler source is building with legacy toolchains like MSVC 6.0. Use of `RETR_UNUSED(param)` is now mandatory for any unused parameters in the compiler source to maintain a warning-free build.

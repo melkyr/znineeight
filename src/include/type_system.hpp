@@ -1,7 +1,7 @@
 #ifndef TYPE_SYSTEM_HPP
 #define TYPE_SYSTEM_HPP
 
-#include <cstddef> // For size_t
+#include "common.hpp"
 #include "memory.hpp" // For DynamicArray
 #include "source_manager.hpp" // For SourceLocation
 

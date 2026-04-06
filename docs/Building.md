@@ -13,8 +13,8 @@ On a modern Linux system, you need `g++` (C++98 compatible) and `make`.
 g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 
-### 1.2 Windows 98 / MinGW 3.x (Required)
-On Windows 98, you must build the bootstrap compiler using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit). MSVC 6.0 is supported for compiling the *generated* C89 code, but MinGW is the required host toolchain for `zig0`.
+### 1.2 Windows 98 / MinGW 3.x (Legacy Support)
+On Windows 98, the bootstrap compiler can be built using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit). While MSVC 6.0 is primarily used for compiling the *generated* C89 code, recent refactors (Milestone 11+) aim to support building `zig0` itself with MSVC 6.0 using the C++98 compatibility layer.
 
 #### Compilation
 ```batch

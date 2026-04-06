@@ -1045,6 +1045,12 @@ The `TypeChecker` uses the visitor pattern to traverse the AST. It has a `visit`
 
 #### Recursion Depth Guard (Task 9.5.9)
 To prevent stack overflows on memory-constrained 1990s hardware (e.g., Windows 98 with a 1MB default stack), the `TypeChecker` implements a recursion depth guard in the `visit` method.
+
+#### C++98 Compliance for TypeChecker
+To ensure the `TypeChecker` and the rest of the compiler can be built on 1990s-era toolchains (MSVC 6.0, OpenWatcom), the following rules are enforced:
+- **No `long long`**: Use the `u64` and `i64` typedefs from `common.hpp`, which map to `__int64` on MSVC 6.0. This is especially important in `evaluateConstantExpression` and when handling integer literals.
+- **Explicit `RETR_UNUSED`**: The `TypeChecker` often has visitor methods or guard classes where some parameters (like `loc` in a guard constructor) are not used in all build configurations. These must be explicitly marked with `RETR_UNUSED(param)` to ensure a warning-free build under strict `-Wunused-parameter` flags.
+- **Single Header Compatibility**: All source files include `common.hpp`, which incorporates `compat.hpp` to provide a unified abstraction layer for compiler-specific keywords like `inline` (mapped to `ZIG_INLINE`).
 - **Maximum Depth**: Defined by `MAX_VISIT_DEPTH` (200). This limit is chosen to be conservative enough to prevent stack exhaustion while allowing for reasonably complex ASTs.
 - **Enforcement**: A `visit_depth_` counter is incremented upon entry to `visit` and decremented upon exit.
 - **Error Handling**: If the limit is exceeded, the compiler reports a fatal internal error (`ERR_INTERNAL_ERROR`) and returns `get_g_type_undefined()` to prevent further recursive calls.

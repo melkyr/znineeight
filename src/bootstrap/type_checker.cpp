@@ -46,6 +46,7 @@ struct TypeChecker::LoopContextGuard {
         : tc(tc_arg), prev_depth(tc_arg.current_loop_depth_),
           prev_label_stack_size(tc_arg.label_stack_.length())
     {
+        RETR_UNUSED(loc);
         tc.current_loop_depth_++;
         TypeChecker::LoopLabel ll;
         ll.name = label;
@@ -2803,6 +2804,7 @@ bool TypeChecker::validateRange(ASTRangeNode* range, Type* cond_type) {
 }
 
 bool TypeChecker::validateSwitch(ASTNode* cond, DynamicArray<ASTSwitchProngNode*>* prongs, bool is_expr, Type*& result_type, SourceLocation loc, Type* expected_type) {
+    RETR_UNUSED(loc);
     Type* cond_type = visit(cond);
     if (!cond_type || is_type_undefined(cond_type)) return false;
 
@@ -6827,7 +6829,7 @@ bool TypeChecker::evaluateConstantExpression(ASTNode* node, i64* out_value) {
         case NODE_INTEGER_LITERAL:
 #ifdef DEBUG_CONST_EVAL
             plat_printf_debug("[CONST_EVAL] literal value=%llu file=%s:%d\n",
-                (unsigned long long)node->as.integer_literal.value,
+                (u64)node->as.integer_literal.value,
                 unit_.getSourceManager().getFile(node->loc.file_id)->filename,
                 node->loc.line);
 #endif
@@ -7283,6 +7285,7 @@ Type* TypeChecker::visitFunctionType(ASTFunctionTypeNode* node) {
 }
 
 void TypeChecker::fatalError(const char* message) {
+    RETR_UNUSED(message);
     plat_abort();
 }
 

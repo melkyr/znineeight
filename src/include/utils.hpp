@@ -2,7 +2,6 @@
 #define UTILS_HPP
 
 #include "common.hpp"
-#include <cstddef> // For size_t
 
 /**
  * @brief Appends a source string to a destination buffer, ensuring no overflow.
