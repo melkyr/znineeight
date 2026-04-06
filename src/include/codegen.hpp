@@ -8,7 +8,6 @@
 #include "type_system.hpp"
 #include "error_handler.hpp"
 #include "text_writer.hpp"
-#include <cstddef>
 
 class CompilationUnit;
 

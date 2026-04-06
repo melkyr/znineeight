@@ -1847,6 +1847,14 @@ The `Parser` is designed with clear ownership semantics to ensure memory safety 
 
 This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
 
+## 21.1 C++98 Compliance
+
+To ensure the parser and the rest of the compiler can be built on 1990s-era toolchains (MSVC 6.0, OpenWatcom), the following rules are enforced:
+- **No modern STL**: Usage of `std::vector`, `std::string`, etc., is avoided in favor of `DynamicArray` and `StringInterner`.
+- **C-Style Headers**: Use `<stddef.h>` and `<stdint.h>` (via `common.hpp`) instead of C++ wrappers like `<cstddef>`.
+- **No `long long`**: Use the `u64` and `i64` typedefs from `common.hpp`, which map to `__int64` on MSVC 6.0.
+- **Explicit `RETR_UNUSED`**: Parameters not used in parsing functions (e.g., due to placeholder implementations or interface requirements) must be explicitly marked with `RETR_UNUSED(param)` to maintain a warning-free build.
+
 ## 22. Lifetime Analysis Phase
 
 The Lifetime Analysis phase is a critical semantic analysis pass that follows the Type Checker. Its purpose is to identify memory safety issues at compile-time, specifically dangling pointers created by returning pointers to local (stack-allocated) variables.

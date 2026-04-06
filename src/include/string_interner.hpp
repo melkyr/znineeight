@@ -1,7 +1,6 @@
 #ifndef STRING_INTERNER_HPP
 #define STRING_INTERNER_HPP
 
-#include <cstddef>
 #include "memory.hpp"
 
 /**

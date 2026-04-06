@@ -3,7 +3,6 @@
 
 #include "common.hpp"
 #include "platform.hpp"
-#include <cstddef> // For size_t
 #include <cassert> // For assert
 #include <cstdlib> // For abort()
 #include <new>     // For placement new

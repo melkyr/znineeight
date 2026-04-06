@@ -425,6 +425,7 @@ void MetadataPreparationPass::collectReachableTypes(Module* mod, Type* type, Dyn
 }
 
 void MetadataPreparationPass::prepareTypeMetadata(Module* mod, Type* type) {
+    RETR_UNUSED(mod);
     if (!type) return;
 
     // 1. Resolve placeholder if still present

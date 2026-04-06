@@ -325,6 +325,7 @@ ASTNode* ControlFlowLifter::wrapInBlock(ASTNode* stmt) {
 }
 
 void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
+    RETR_UNUSED(parent);
     ASTNode* node = *node_slot;
     processed_calls_.append(node);
 
@@ -513,6 +514,7 @@ void ControlFlowLifter::lowerExportPrologue(ASTFnDeclNode* fn) {
 }
 
 void ControlFlowLifter::lowerExportReturn(ASTNode** node_slot, ASTNode* parent) {
+    RETR_UNUSED(parent);
     if (fn_stack_.length() == 0) return;
     ASTFnDeclNode* fn = fn_stack_.back();
     if (!fn->is_export) return;
@@ -1293,6 +1295,7 @@ int ControlFlowLifter::findStatementIndex(ASTBlockStmtNode* block, ASTNode* stmt
 }
 
 void ControlFlowLifter::liftNode(ASTNode** node_slot, ASTNode* parent, const char* prefix, bool needs_wrapping) {
+    RETR_UNUSED(parent);
     ASTNode* node = *node_slot;
     if (!node) return;
 
