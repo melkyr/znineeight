@@ -1735,7 +1735,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
             /* Print what we have so far */
             if (p > start) {
                 writeIndent();
-                writeString("__bootstrap_print(\"");
+                writeString("__bootstrap_print((const char*)\"");
                 const char* s = start;
                 while (s < p) {
                     emitEscapedByte((unsigned char)*s, false);
@@ -1753,7 +1753,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
                 element_idx++;
             } else {
                 writeIndent();
-                writeString("__bootstrap_print(\"{}\");\n");
+                writeString("__bootstrap_print((const char*)\"{}\");\n");
             }
 
             p += 2;
@@ -1766,7 +1766,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
     /* Print remaining part */
     if (*start) {
         writeIndent();
-        writeString("__bootstrap_print(\"");
+        writeString("__bootstrap_print((const char*)\"");
         const char* s = start;
         while (*s) {
             emitEscapedByte((unsigned char)*s, false);
