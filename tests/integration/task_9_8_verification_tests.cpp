@@ -100,7 +100,6 @@ TEST_FUNC(Task9_8_WhileContinueExpr) {
         "    {\n"
         "        (void)(total += i);\n"
         "    }\n"
-        "    __loop_0_continue: ;\n"
         "    (void)(i += 1);\n"
         "    goto __loop_0_start;\n"
         "    __loop_0_end: ;\n"

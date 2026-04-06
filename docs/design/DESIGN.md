@@ -280,6 +280,12 @@ To maintain strict compatibility with C89, the compiler employs a multi-layered 
 2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`, `ErrorFunctionCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
 3. **Formal Rejection (C89FeatureValidator):** The `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls, error-returning functions, and `try` expressions.
 
+### 4.0.1.1 Verification Strategy (Integration Tests)
+To maintain stability across codegen improvements, integration tests utilize a **Lenient Matcher** (`matchPattern`). This matcher:
+1. **Ignores Whitespace**: Differences in indentation, newlines, and carriage returns are ignored.
+2. **Wildcard Support**: Uses `#` as a wildcard for numeric literals, allowing robust matching of mangled identifiers (e.g., `zF_#_foo`).
+3. **Substring Matching**: Focuses on verify critical syntax structures rather than 1:1 file parity.
+
 #### 4.0.2 Error Handling Detection (Tasks 143-144)
 Modern Zig error handling features are detected and catalogued for documentation. While these features are rejected in the bootstrap phase to maintain C89 compatibility, they are tracked to support a future mapping strategy.
 - **Error Sets**: Catalogued in `ErrorSetCatalogue` during parsing.

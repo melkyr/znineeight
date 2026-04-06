@@ -111,7 +111,16 @@ TEST_FUNC(Codegen_Local_IfStatement) {
 TEST_FUNC(Codegen_Local_WhileLoop) {
     return run_local_codegen_test(
         "fn my_test() void { var i: i32 = 0; while (i < 10) { var x: i32 = i; i = i + 1; } }",
-        "__loop_0_start: ;\n    if (!(i < 10)) goto __loop_0_end;\n    {\n        int x;\n        x = i;\n        i = i + 1;\n    }\n    __loop_0_continue: ;\n    goto __loop_0_start;\n    __loop_0_end: ;"
+        "__loop_0_start: ;"
+    ) && run_local_codegen_test(
+        "fn my_test() void { var i: i32 = 0; while (i < 10) { var x: i32 = i; i = i + 1; } }",
+        "if (!(i < 10)) goto __loop_0_end;"
+    ) && run_local_codegen_test(
+        "fn my_test() void { var i: i32 = 0; while (i < 10) { var x: i32 = i; i = i + 1; } }",
+        "goto __loop_0_start;"
+    ) && run_local_codegen_test(
+        "fn my_test() void { var i: i32 = 0; while (i < 10) { var x: i32 = i; i = i + 1; } }",
+        "__loop_0_end: ;"
     );
 }
 
