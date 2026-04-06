@@ -614,7 +614,10 @@ Generated C:
 ```
 
 ### Known Limitations
-Deeply nested `try`, `catch`, or `orelse` expressions within complex binary operations or array indices may not be fully supported by the current lifting mechanism. A more robust second-pass lifter is planned for a future enhancement.
+
+1. **Mixed Declarations and Code**: C89 requires all variable declarations at the start of a block. While the emitter uses a two-pass approach to hoist variable declarations, compiler-generated temporaries from expression lifting may still be emitted after some statements. Legacy compilers like MSVC 6.0 and OpenWatcom are lenient, but strict C89 compilers may issue warnings.
+2. **Nesting Depth**: Deeply nested `try`, `catch`, or `orelse` expressions within complex binary operations or array indices may encounter lifting issues.
+3. **Empty Macro Arguments**: The compiler avoids emitting macros with empty arguments (e.g., `#define FOO()`) to maintain compatibility with MSVC 6.0.
 
 ## 6.2 Optional Types Code Generation (Milestone 7)
 

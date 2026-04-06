@@ -106,11 +106,10 @@ This section tracks the implementation status of all tokens required for the Z98
 | `TOKEN_DOT_ASTERISK`| `.*`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_DOT_QUESTION`| `.?`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_QUESTION`   | `?`    | Yes         | Also used for Optional types (?T) |
-| `TOKEN_PLUS2`      | `++`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_PLUSPERCENT`| `+%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_MINUSPERCENT`| `-%`   | Yes         | Implemented as part of Task 22. |
 | `TOKEN_STARPERCENT`| `*%`   | Yes         | Implemented as part of Task 22. |
-| `TOKEN_MINUS2`     | `--`   | Yes         | Decrement operator.             |
+| `TOKEN_STAR2`      | `**`   | Yes         | Array/string repetition (detected). |
 
 ### 2.3. Keywords
 
@@ -162,6 +161,11 @@ This section tracks the implementation status of all tokens required for the Z98
 | `TOKEN_AT_INTCAST` | `@intCast` |
 | `TOKEN_AT_FLOATCAST` | `@floatCast` |
 | `TOKEN_AT_OFFSETOF` | `@offsetOf` |
+| `TOKEN_AT_ENUM_TO_INT` | `@enumToInt` |
+| `TOKEN_AT_PTR_TO_INT` | `@ptrToInt` |
+| `TOKEN_AT_INT_TO_PTR` | `@intToPtr` |
+| `TOKEN_AT_INT_TO_ENUM` | `@intToEnum` |
+| `TOKEN_AT_INT_TO_FLOAT` | `@intToFloat` |
 
 The following keywords for compile-time and special functions are also implemented:
 

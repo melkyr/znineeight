@@ -247,7 +247,8 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
 
     emitter.writeString("#ifndef ZIG_SPECIAL_TYPES_H\n");
     emitter.writeString("#define ZIG_SPECIAL_TYPES_H\n\n");
-    emitter.writeString("#include <stddef.h>\n\n");
+    emitter.writeString("#include <stddef.h>\n");
+    emitter.writeString("#include \"zig_compat.h\"\n\n");
 
     const DynamicArray<Type*>& slices = unit_.getGlobalSliceTypes();
     for (size_t i = 0; i < slices.length(); ++i) {
