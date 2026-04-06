@@ -43,4 +43,11 @@
     #endif
 #endif
 
+/* Unused function macro for generated C code */
+#ifdef _MSC_VER
+    #define RETR_UNUSED_FUNC
+#else
+    #define RETR_UNUSED_FUNC __attribute__((unused))
+#endif
+
 #endif /* ZIG_COMPAT_H */
