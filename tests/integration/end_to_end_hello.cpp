@@ -19,8 +19,8 @@ TEST_FUNC(EndToEnd_HelloWorld) {
     unit.injectRuntimeSymbols();
 
     const char* std_debug_source =
-        "extern fn __bootstrap_print(s: *const u8) void;\n"
-        "pub fn print(fmt: *const u8, args: anytype) void {\n"
+        "extern fn __bootstrap_print(s: *const c_char) void;\n"
+        "pub fn print(fmt: *const c_char, args: anytype) void {\n"
         "    __bootstrap_print(fmt);\n"
         "}\n";
 

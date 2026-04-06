@@ -693,6 +693,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Built-ins (Codegen)**: Intrinsics mapped to C constructs or runtime helpers:
     *   `@ptrCast(T, v)` -> C-style cast `(T*)v`.
     *   `@intCast(T, v)`, `@floatCast(T, v)` -> C-style casts (for safe widening) or runtime checked conversion functions.
+    *   `@intToPtr(T, v)`, `@ptrToInt(v)` -> C-style casts or pointer conversions.
+    *   `@intToFloat(T, v)` -> C-style casts or constant folding.
 
 ### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
 For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
