@@ -46,7 +46,14 @@ The suffixes `i64` and `ui64` are specific to **MSVC 6.0**. To support other com
 
 Every generated `.c` file should include `zig_runtime.h` at the top.
 
-### 1.3 `noreturn` Type
+### 1.3 C89 Compatibility Layer (`zig_compat.h`)
+
+All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`. This header provides a unified abstraction for:
+- **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
+- **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
+- **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
+
+### 1.4 `noreturn` Type
 
 The `noreturn` type is used for expressions that never produce a value (diverge). In C89 emission, `noreturn` is mapped to `void` for function return types, but it is primarily used for static analysis.
 
@@ -57,6 +64,7 @@ The `zig_runtime.h` header serves several purposes:
 - **64-bit Literal Suffixes**: Provides macros for `i64` and `ui64` suffixes. On MSVC, these are used directly. On other compilers, they are mapped to `LL` and `ULL` via the preprocessor.
 - **Runtime Safety**: Contains the `__bootstrap_panic` handler and checked numeric conversion helpers (like `__bootstrap_i32_from_u64`).
 - **Debugging**: Provides `__bootstrap_print(const char*)` for string output and `__bootstrap_print_int(i32)` for integer output.
+- **Sign-Correct IO**: Runtime IO helpers (`__bootstrap_print`, `__bootstrap_write`) use `const char*` to avoid signedness warnings with string literals.
 
 ## 2. Float Literals
 
@@ -423,6 +431,9 @@ Zig `if` statements are mapped to C `if` statements. Braces are always emitted f
 ### 14.2 While Loops
 
 Zig `while` loops are mapped to C `while` loops.
+
+#### 14.2.1 Unused Continue Labels
+To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop. The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if it is actually used by a `goto` from an `emitContinue` call.
 
 | Zig Syntax | C89 Emission |
 |------------|--------------|

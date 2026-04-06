@@ -2,7 +2,7 @@ const Width: usize = 80;
 const Height: usize = 24;
 const MaxIter: u8 = 100;
 
-extern fn __bootstrap_print(s: [*]const u8) void;
+extern fn __bootstrap_print(s: [*]const c_char) void;
 
 fn mandelbrot(cx: f64, cy: f64) u8 {
     var x: f64 = 0.0;

@@ -397,8 +397,26 @@ bool CBackend::generateMakefile(const char* output_dir) {
 }
 
 bool CBackend::copyRuntimeFiles(const char* output_dir) {
+    const char* compat_h = "src/include/zig_compat.h";
     const char* runtime_h = "src/include/zig_runtime.h";
     const char* runtime_c = "src/runtime/zig_runtime.c";
+
+    char* content_compat = NULL;
+    size_t size_compat = 0;
+    if (plat_file_read(compat_h, &content_compat, &size_compat)) {
+        char dest_compat[1024];
+        char* cur_compat = dest_compat;
+        size_t rem_compat = sizeof(dest_compat);
+        safe_append(cur_compat, rem_compat, output_dir);
+        safe_append(cur_compat, rem_compat, "/zig_compat.h");
+
+        PlatFile f_compat = plat_open_file(dest_compat, true);
+        if (f_compat != PLAT_INVALID_FILE) {
+            plat_write_file(f_compat, content_compat, size_compat);
+            plat_close_file(f_compat);
+        }
+        plat_free(content_compat);
+    }
 
     char* content_h = NULL;
     size_t size_h = 0;

@@ -702,6 +702,7 @@ private:
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
+    DynamicArray<bool> loop_has_continue_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);
