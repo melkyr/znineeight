@@ -129,20 +129,33 @@ pub fn main() void {
         if (len < 0) break;
         if (len == 0) continue;
         const line = input_buf[0..@intCast(usize, len)];
+        if (util.mem_eql(line, "exit")) break;
 
         var tokenizer = token_mod.Tokenizer{ .input = line, .pos = @intCast(usize, 0) };
         const expr = parser_mod.parse_expr(&tokenizer, &perm_sand, &temp_sand) catch |err| {
+            var nl: [1]u8 = undefined;
+            nl[0] = 10;
             print_str("Parse error\n");
+            print_str(nl[0..1]);
             continue;
         };
 
         const result = eval_mod.eval(expr, &global_env, &temp_sand, &perm_sand) catch |err| {
-            print_str("Eval error\n");
+            var nl: [1]u8 = undefined;
+            nl[0] = 10;
+            print_str("Eval error: ");
+            if (err == error.OutOfMemory) print_str("OutOfMemory")
+            else if (err == error.UnboundSymbol) print_str("UnboundSymbol")
+            else if (err == error.NotCallable) print_str("NotCallable")
+            else print_str("Other");
+            print_str(nl[0..1]);
             continue;
         };
 
         print_value(result);
-        print_str("\n");
+        var nl2: [1]u8 = undefined;
+        nl2[0] = 10;
+        print_str(nl2[0..1]);
         sand_mod.sand_reset(&temp_sand);
     }
 }
