@@ -1009,6 +1009,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
         writeString(");");
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_write") == 0 ||
                plat_strcmp(node->name, "__bootstrap_panic") == 0) {
         /* Skip internal runtime prototypes in module headers to avoid conflicts with zig_runtime.h */
     } else {
@@ -1199,10 +1200,10 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
         is_main_function_ = true;
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
+               plat_strcmp(node->name, "__bootstrap_write") == 0 ||
                plat_strcmp(node->name, "__bootstrap_panic") == 0) {
-        /* Use standard prototypes from zig_runtime.h for internal helpers */
-        const char* mangled_name = node->name;
-        emitDeclarator(ret_type, mangled_name, node);
+        /* Skip internal runtime prototypes as they are already in zig_runtime.h with correct signatures */
+        return;
     } else {
         if (node->is_extern) {
             writeKeyword(KW_EXTERN);
@@ -1735,13 +1736,13 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
             /* Print what we have so far */
             if (p > start) {
                 writeIndent();
-                writeString("__bootstrap_print((const char*)\"");
+                writeString("__bootstrap_print((const char*)(\"");
                 const char* s = start;
                 while (s < p) {
                     emitEscapedByte((unsigned char)*s, false);
                     s++;
                 }
-                writeString("\");\n");
+                writeString("\"));\n");
             }
 
             /* Print the element */
@@ -1753,7 +1754,7 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
                 element_idx++;
             } else {
                 writeIndent();
-                writeString("__bootstrap_print((const char*)\"{}\");\n");
+                writeString("__bootstrap_print((const char*)(\"{}\"));\n");
             }
 
             p += 2;
@@ -1766,13 +1767,13 @@ void C89Emitter::emitPrintCall(const ASTFunctionCallNode* node) {
     /* Print remaining part */
     if (*start) {
         writeIndent();
-        writeString("__bootstrap_print((const char*)\"");
+        writeString("__bootstrap_print((const char*)(\"");
         const char* s = start;
         while (*s) {
             emitEscapedByte((unsigned char)*s, false);
             s++;
         }
-        writeString("\");\n");
+        writeString("\"));\n");
     }
 }
 
@@ -2526,7 +2527,7 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         }
         case NODE_UNREACHABLE:
-            writeString("__bootstrap_panic(\"reached unreachable\", __FILE__, __LINE__)");
+            writeString("__bootstrap_panic((const char*)(\"reached unreachable\"), (const char*)(__FILE__), __LINE__)");
             break;
         case NODE_IDENTIFIER:
             if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
@@ -2597,6 +2598,43 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             break;
         case NODE_FUNCTION_CALL: {
             const ASTFunctionCallNode* call = node->as.function_call;
+
+            /* Special handling for runtime string helpers to force char* casts */
+            const char* target_name = NULL;
+            if (call->callee->type == NODE_IDENTIFIER) {
+                target_name = call->callee->as.identifier.name;
+            } else if (call->callee->type == NODE_MEMBER_ACCESS) {
+                target_name = call->callee->as.member_access->field_name;
+            }
+
+            if (target_name && (plat_strcmp(target_name, "__bootstrap_print") == 0 ||
+                                plat_strcmp(target_name, "__bootstrap_write") == 0 ||
+                                plat_strcmp(target_name, "__bootstrap_panic") == 0)) {
+                writeString(target_name);
+                writeString("(");
+                if (call->args && call->args->length() > 0) {
+                    bool is_panic = (plat_strcmp(target_name, "__bootstrap_panic") == 0);
+
+                    /* First argument for print/write/panic is always the string to be cast */
+                    writeString("(const char*)(");
+                    emitExpression((*call->args)[0]);
+                    writeString(")");
+                    for (size_t i = 1; i < call->args->length(); ++i) {
+                        writeString(", ");
+                        /* Second argument of panic is also a string (filename) */
+                        if (is_panic && i == 1) {
+                            writeString("(const char*)(");
+                            emitExpression((*call->args)[i]);
+                            writeString(")");
+                        } else {
+                            emitExpression((*call->args)[i]);
+                        }
+                    }
+                }
+                writeString(")");
+                break;
+            }
+
             const char* builtin_name = NULL;
             if (call->callee->type == NODE_IDENTIFIER && call->callee->as.identifier.name[0] == '@') {
                 builtin_name = call->callee->as.identifier.name;
@@ -3748,6 +3786,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
     /* Check if it's a known runtime intrinsic that should never be mangled */
     if (plat_strcmp(zig_name, "__bootstrap_print") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_print_int") == 0 ||
+        plat_strcmp(zig_name, "__bootstrap_write") == 0 ||
         plat_strcmp(zig_name, "__bootstrap_panic") == 0) {
         is_extern = true;
     }
