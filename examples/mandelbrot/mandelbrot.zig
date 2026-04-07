@@ -46,10 +46,10 @@ pub fn main() void {
         }
 
         // Build null‑terminated string for C-interop
-        var c_str: [Width + 1]u8 = undefined;
+        var c_str: [Width + 1]c_char = undefined;
         var i: usize = 0;
         while (i < Width) {
-            c_str[i] = line[i];
+            c_str[i] = @intCast(c_char, line[i]);
             i += 1;
         }
         c_str[Width] = 0;
