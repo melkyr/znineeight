@@ -28,6 +28,9 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
 
+<img width="646" height="562" alt="Zni01" src="https://github.com/user-attachments/assets/d17def92-f577-4a9b-9415-022a4ee1ebfd" />
+
+
 ### Technical Constraints
 To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
 - **Language**: C++98 (maximum) for the bootstrap compiler.
