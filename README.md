@@ -9,6 +9,10 @@ Z98 is an ambitious project to build a somewhat Zig compiler (or at least a good
 
 We start with a **Stage 0** bootstrap compiler written in C++98, which compiles a **Stage 1** compiler written in a subset of Zig. Finally, **Stage 1** compiles itself to become the fully self-hosted **Stage 2** compiler.
 
+<img width="646" height="562" alt="Zni01" src="https://github.com/user-attachments/assets/d17def92-f577-4a9b-9415-022a4ee1ebfd" />
+<img width="643" height="559" alt="Zni03" src="https://github.com/user-attachments/assets/654e2f81-917c-4250-b9d0-5ec7d7536f66" />
+
+
 ## Current Status: Milestone 11 finished. Stable Bootstrap Compiler
 The project has successfully completed Milestone 11.
 The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of generating C89 code using a separate compilation model with full `defer` and `errdefer` support.
@@ -27,9 +31,6 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Built-in Lowering**: Compiler-assisted lowering for `std.debug.print` and safe narrowing casts.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
-
-<img width="646" height="562" alt="Zni01" src="https://github.com/user-attachments/assets/d17def92-f577-4a9b-9415-022a4ee1ebfd" />
-
 
 ### Technical Constraints
 To ensure compatibility with 1998-era hardware (e.g., Pentium I/II, 32MB RAM):
