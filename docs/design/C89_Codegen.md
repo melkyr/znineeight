@@ -64,7 +64,9 @@ All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`
 - **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
 
 #### Sign-Correct IO Helpers
-The runtime IO helpers `__bootstrap_print` and `__bootstrap_write` accept `const char*` instead of `const unsigned char*`. This eliminates pointer-sign mismatch warnings when passing string literals (which are `char*` in C) to these functions. Internal casts to `unsigned char*` are performed within the runtime implementation where necessary.
+The runtime IO helpers `__bootstrap_print`, `__bootstrap_write`, and `__bootstrap_panic` accept `const char*` instead of `const unsigned char*`. This eliminates pointer-sign mismatch warnings when passing string literals (which are `char*` in C) to these functions. Internal casts to `unsigned char*` are performed within the runtime implementation where necessary.
+
+To ensure compliance even when passing Zig's `u8` pointers (which map to `unsigned char*` in C), the `C89Emitter` automatically injects an explicit `(const char*)` cast at the call site for the string arguments of these functions.
 
 ### 2.1 Line Ending and Statement Terminator Abstraction
 To improve portability (e.g., support for CRLF on Windows 98) and centralize formatting, the `C89Emitter` provides abstractions for common C89 terminators. Direct use of hardcoded `";\n"` or `"\n"` is discouraged in favor of these helpers:

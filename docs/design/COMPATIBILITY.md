@@ -54,8 +54,8 @@ C89 requires all variable declarations to appear at the beginning of a block, be
 Standard Zig string literals and slices often use `u8` (`unsigned char`). However, many standard C functions (and the Win32 `WriteConsoleA` API) expect `const char*`.
 
 - **Problem**: Passing `unsigned char*` to functions expecting `char*` produces `pointer-sign` warnings on many compilers.
-- **Fix**: The runtime functions `__bootstrap_print` and `__bootstrap_write` now use `const char*` for their string arguments. Internal casts to `unsigned char*` are performed within the runtime implementation where needed.
-- **Generated Code**: The `C89Emitter` explicitly casts string arguments to `(const char*)` when calling these functions to ensure warning-free compilation.
+- **Fix**: The runtime functions `__bootstrap_print`, `__bootstrap_write`, and `__bootstrap_panic` now use `const char*` for their string arguments. Internal casts to `unsigned char*` are performed within the runtime implementation where needed.
+- **Generated Code**: The `C89Emitter` explicitly casts string arguments to `(const char*)` when calling these functions. To avoid redefinition errors on MinGW/Win32, the emitter also skips generating redundant C prototypes for these helpers in module source files, relying on the central definition in `zig_runtime.h`.
 
 ## Milestone 11 Achievements
 
