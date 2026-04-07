@@ -55,6 +55,17 @@ static void __bootstrap_panic(const char* msg, const char* file, int line)
 ```
 Reports a fatal runtime error and aborts the program. Used for out-of-memory conditions, null pointer dereferences (if checked), and failed numeric casts.
 
+## 2.2 Console Output (`__bootstrap_print`, `__bootstrap_write`)
+The Z98 runtime provides low-level print functions for debugging and standard output.
+- **`__bootstrap_print(s: [*]const u8) void`**: Prints a null-terminated string.
+- **`__bootstrap_write(s: [*]const u8, len: usize) void`**: Prints `len` bytes from a buffer.
+
+### Windows 98 Compatibility
+On Windows, these functions utilize `STD_OUTPUT_HANDLE` with a fallback to `STD_ERROR_HANDLE`. They prefer the `WriteConsoleA` API for direct console output, which is more reliable on Windows 9x than the generic `WriteFile`.
+
+## 2.3 Memory Strategy (Large Blocks)
+For memory allocations greater than 4MB, the runtime bypasses the process heap and uses `VirtualAlloc` directly. This avoids the 255.9MB per-allocation ceiling on Windows 98 and improves performance for large memory arenas. The runtime automatically detects and manages these blocks during arena destruction.
+
 ## 3. Usage Examples
 
 ### 3.1 Basic Allocation

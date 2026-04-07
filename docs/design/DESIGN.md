@@ -8,7 +8,7 @@
 **Target Environment:**
 * **OS:** Windows 95/98/ME/NT 4.0
 * **Hardware:** Intel Pentium I/II (i586), 32-64MB RAM
-* **Host Compiler:** MSVC 6.0 (Visual C++ 98)
+* **Host Compiler:** MinGW 3.x (Required for Stage 0)
 * **Output:** 32-bit Win32 PE Executables (no external linker dependency in final stage)
 
 ## 2. Technical Constraints
@@ -39,9 +39,12 @@ This matches the target Win32/x86 environment of the late 90s.
   * **Allowed:** Headers that are generally implemented by the compiler and have no external runtime library dependencies or hidden memory allocations. This includes headers like `<new>` (for placement new), `<cstddef>` (for `size_t`), `<cassert>` (for `assert`), and `<climits>`.
   * **Forbidden:** Headers that depend on a C/C++ runtime library (like `msvcrt.dll` beyond `kernel32.dll`) or perform dynamic memory allocation. This includes headers like `<cstdio>` (`fprintf`), `<cstdlib>` (`malloc`), `<iostream>`, `<string>` (`std::string`), and `<vector>` (`std::vector`).
   * **Exceptions:** `<cstdlib>` is allowed *only* for `strtol`/`strtod`. Process termination MUST use `plat_abort()` from `platform.hpp`.
-* **Specific MSVC 6.0 Hacks:**
-  * Use `__int64` instead of `long long`
-  * Define `bool`, `true`, `false` manually if missing
+* **Toolchain Requirements (Windows 98):**
+  * **Host Compiler**: MinGW 3.x is required to build the bootstrap compiler (`zig0`).
+  * **C89 Target**: MSVC 6.0 is supported for compiling the generated C89 code.
+  * **MSVC 6.0 Compatibility Hacks**:
+    * Use `__int64` instead of `long long` for 64-bit integer support in the generated C code.
+    * Define `bool`, `true`, `false` manually if missing in the C runtime.
 * **Dynamic Memory:** Standard C dynamic memory allocation functions (e.g., `malloc`, `free`) are forbidden. The compiler will produce a fatal error if calls to these functions are detected.
 
 ## 3. Architecture & Memory Strategy
@@ -54,8 +57,8 @@ To fit within the strict 16MB peak memory constraint, the compiler employs a mul
 - **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
 
 ### 3.1 Memory Management
-## Current Status: Milestone 11 finished.
-The project has successfully completed Milestone 11, including full cross-module visibility and `defer`/`errdefer` support.
+## Current Status: Milestone 11 finished (para-Cresol Release).
+The project has successfully completed Milestone 11, including full cross-module visibility, Switch Ranges, Braceless Control Flow, and `defer`/`errdefer` support.
 
 
 The Z98 project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
@@ -276,6 +279,12 @@ To maintain strict compatibility with C89, the compiler employs a multi-layered 
 1.  **Syntactic Detection (Parser):** The parser is equipped to recognize modern Zig syntax (e.g., error sets, error unions, optionals, `@import`, `comptime` parameters) for the sole purpose of detection and cataloguing.
 2.  **Feature Cataloguing:** Detected features like error sets and generic function instantiations are logged into specialized structures (e.g., `ErrorSetCatalogue`, `GenericCatalogue`, `ErrorFunctionCatalogue`) during parsing and semantic analysis. This provides a comprehensive overview of non-C89 features used in the source code for documentation and analysis purposes.
 3. **Formal Rejection (C89FeatureValidator):** The `C89FeatureValidator` pass traverses the AST and issues fatal errors for any modern Zig constructs, including explicit and implicit generic function calls, error-returning functions, and `try` expressions.
+
+### 4.0.1.1 Verification Strategy (Integration Tests)
+To maintain stability across codegen improvements, integration tests utilize a **Lenient Matcher** (`matchPattern`). This matcher:
+1. **Ignores Whitespace**: Differences in indentation, newlines, and carriage returns are ignored.
+2. **Wildcard Support**: Uses `#` as a wildcard for numeric literals, allowing robust matching of mangled identifiers (e.g., `zF_#_foo`).
+3. **Substring Matching**: Focuses on verify critical syntax structures rather than 1:1 file parity.
 
 #### 4.0.2 Error Handling Detection (Tasks 143-144)
 Modern Zig error handling features are detected and catalogued for documentation. While these features are rejected in the bootstrap phase to maintain C89 compatibility, they are tracked to support a future mapping strategy.
@@ -502,7 +511,22 @@ struct Type {
   | []T | [*]T / [*]const T | ✓ | - |
   | [N]T | [*]T / [*]const T | ✓ | - |
 
-#### 4.4.1 Type Coercions
+#### 4.4.1 Anonymous Aggregate Literals
+As of Milestone 11, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+**Anonymous Type Kinds:**
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+**Resolution Strategy:**
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Contextual Visitation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" is provided by the surrounding context.
+3. **Deferred Coercion**: If visited without context, the literal remains anonymous. It is resolved during the coercion phase when a target type is finally known.
+4. **Anytype Defaulting**: In contexts like `std.debug.print` where the literal is passed to an `anytype` parameter, the compiler defaults the literal to a concrete tuple or struct type to ensure valid C89 emission.
+
+#### 4.4.2 Type Coercions
 To improve interoperability with C89 code, the compiler supports the following implicit coercions in specific contexts (assignments, function arguments, and return statements):
 - **Slice to Many-Item Pointer**: A slice `[]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by automatically accessing the `.ptr` field of the slice.
 - **Array to Many-Item Pointer**: A fixed-size array `[N]T` can be implicitly coerced to a many-item pointer `[*]T`. This is implemented by taking the address of the first element (`&arr[0]`).
@@ -660,7 +684,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   **Property**: `.len` property returns `usize`.
     *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers. In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
     *   **Coercion**: Implicit coercion from `[N]T` to `[]T`.
-*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`.
+*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`. Supports nested anonymous struct payloads in tagged unions.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`. Supports qualified member access `mod.E.Member`.
 *   **Unions**: Named bare unions via `const U = union { ... };`.
 *   **Functions**: Function declarations with standard C89 parameter limits. Supports recursion and forward references.
@@ -690,6 +714,8 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
 *   **Built-ins (Codegen)**: Intrinsics mapped to C constructs or runtime helpers:
     *   `@ptrCast(T, v)` -> C-style cast `(T*)v`.
     *   `@intCast(T, v)`, `@floatCast(T, v)` -> C-style casts (for safe widening) or runtime checked conversion functions.
+    *   `@intToPtr(T, v)`, `@ptrToInt(v)` -> C-style casts or pointer conversions.
+    *   `@intToFloat(T, v)` -> C-style casts or constant folding.
 
 ### 5.2 Runtime Safety & Panic Strategy (Milestone 5)
 For operations that cannot be proven safe at compile-time (e.g., unsafe `@intCast`, array indexing with dynamic indices), the compiler will emit calls to runtime helper functions.
@@ -707,7 +733,7 @@ To maintain C89 compatibility and compiler simplicity:
 *   **No Generics**: `comptime` parameters, `anytype`, and `type` parameters/variables are rejected.
 *   **No Anonymous Types**: Structs, enums, and unions must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
 *   **No Struct Methods**: Functions cannot be declared inside a struct.
-*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures.
+*   **Tagged Unions**: Fully supported via `union(enum)` and switch captures. Supports static member access for variants (e.g., `Value.Variant`) and instance access for tags (`v.tag`).
 *   **No Variadic Functions**: Ellipsis `...` is not supported.
 *   **No Generic Built-ins**: Most Zig built-ins and `@import` are rejected, except for the documented supported subset.
 *   **No SIMD Vectors**: SIMD vector types and operations are not supported.
@@ -1039,11 +1065,31 @@ The ultimate verification of the bootstrap toolchain is the successful compilati
 - [ ] Test self-compilation cycle (Stage 1 -> Stage 2)
 - [ ] Verify bootstrap integrity with binary comparison
 
-## 11. Specific Win9x Constraints
-* **Filename lengths:** Keep source filenames < 8.3 characters if possible to avoid VFAT issues in pure DOS mode
-* **Stack Size:** Default stack is 1MB. Recursion depth is limited
-* **Memory Fragmentation:** Use arena allocators to minimize fragmentation
-* **Error Reporting:** No stack traces on Win9x; errors must be clear and contextual
+## 11. Specific Win9x Constraints & Portability
+To ensure robust operation on Windows 98 and compatibility with legacy toolchains:
+
+### 11.1 Platform Detection & Target Level
+The compiler and generated code utilize a common header `platform_win98.h` to force the Windows 98 API level (`0x0410`). This ensures that only APIs available on Windows 98 are used and prevents issues with modern headers.
+
+### 11.2 Console Output
+Standard output and error streams are handled defensively:
+- **Stream Preference**: The generated code prioritizes `stdout` for normal output, falling back to `stderr` only if necessary.
+- **WriteConsoleA**: On Windows, the PAL uses `WriteConsoleA` as the primary output method for console handles. This is more reliable on Windows 9x than `WriteFile` for console I/O.
+- **Handle Validation**: All handles from `GetStdHandle` are validated against `INVALID_HANDLE_VALUE` and `NULL`.
+
+### 11.3 Memory Allocation (The 255MB Heap Ceiling)
+To avoid the ~255MB per-allocation limit on Windows 9x and improve performance for large arenas:
+- **VirtualAlloc**: Allocations larger than 4MB use `VirtualAlloc` instead of `HeapAlloc`. `VirtualAlloc` provides page-aligned memory directly from the system.
+- **Automatic Detection**: The PAL automatically detects whether a pointer was allocated via `VirtualAlloc` or `HeapAlloc` during free operations using `VirtualQuery`.
+
+### 11.4 Filename Constraints
+- **8.3 Format**: While VFAT supports long filenames, the compiler issues a portability warning if a source file does not adhere to the 8.3 format (8 characters for name, 3 for extension).
+- **ANSI Pathnames**: Non-ANSI characters in file paths are flagged, as legacy Windows APIs often lack full Unicode support without additional libraries.
+
+### 11.5 Build Configuration
+Generated build scripts (`build_target.bat`, `build_target.sh`) are optimized for legacy toolchains:
+- **MinGW 3.x**: Recommended for Windows 98. Uses `-mconsole` and `-static-libgcc`.
+- **MSVC 6.0**: Uses `/subsystem:console` and explicit target defines.
 
 ## 12. Directory Structure
 ```text
@@ -1134,3 +1180,26 @@ The compiler utilizes a buffered emission system and a robust variable name allo
 #endif
 #endif // COMMON_HPP
 ```
+
+## 15. Anonymous Aggregate Literal Pattern
+**Concept:** Deferred resolution for syntactically ambiguous aggregate literals (`.{ ... }`).
+
+### 15.1 Motivation
+In Zig, the `.{}` syntax is used for anonymous struct initializers, tuple literals, and array literals. Without type context (e.g., `const x: [3]i32 = .{ 1, 2, 3 };`), the compiler cannot determine which concrete type to represent. To handle this in a single-pass-friendly manner, the bootstrap compiler employs a deferred resolution pattern.
+
+### 15.2 Implementation Strategy
+1. **Parsing**: When the parser encounters `.{ ... }`, it creates a `NODE_TUPLE_LITERAL` (for positional elements) or `NODE_STRUCT_INITIALIZER` (for named elements) and assigns it a specific anonymous type: `TYPE_ANONYMOUS_TUPLE`, `TYPE_ANONYMOUS_ARRAY`, or `TYPE_ANONYMOUS_INIT`.
+2. **Type Checking**:
+   - `visitTupleLiteral` and `visitStructInitializer` check for an "Expected Type" from the parent context (via `peekExpectedType()`).
+   - If a structural context is available (e.g., an array, tuple, or struct type), the literal is resolved immediately to that type.
+   - If no context is available, the node remains in its anonymous state, storing its AST node and defining module.
+3. **Deferred Resolution (Coercion)**:
+   - During `coerceNode`, if the source node has an anonymous type, the compiler re-visits the node using the target type as the "Expected Type".
+   - **Arrays**: Elements are coerced to the array's element type; length is verified.
+   - **Tuples**: Elements are matched to the tuple's component types.
+   - **Structs/Unions**: Named fields are matched and validated against the aggregate's definition.
+4. **Anytype Context**: When an anonymous literal is passed to an `anytype` parameter (e.g., in `std.debug.print`), the compiler "defaults" it to a concrete tuple or struct to ensure a valid C89 representation can be emitted.
+
+### 15.3 Usage Guidelines
+- **Structural Match Required**: Every anonymous literal must eventually resolve to a concrete type with a known memory layout before the code generation phase.
+- **Context Awareness**: Anonymous literals rely on downward type information. They are most effective in assignments, function calls, and return statements where the target type is explicitly defined.

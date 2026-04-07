@@ -46,9 +46,10 @@ TEST_FUNC(Task228_OptionalBasics) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    // UT-01: var x: ?i32 = null; -> has_value = 0
-    if (generated_c.find("x.has_value = 0;") == std::string::npos) return false;
-    // UT-02: var y: ?i32 = 10; -> has_value = 1, value = 10
+    // UT-01: var x: ?i32 = null; -> {0}
+    if (generated_c.find("Optional_i32 x = {0};") == std::string::npos) return false;
+    // UT-02: var y: ?i32 = 10; -> {0} and then wrapping assignment
+    if (generated_c.find("Optional_i32 y = {0};") == std::string::npos) return false;
     if (generated_c.find("y.value = 10;") == std::string::npos) return false;
     if (generated_c.find("y.has_value = 1;") == std::string::npos) return false;
 
@@ -245,8 +246,7 @@ TEST_FUNC(Task228_NestedOptional) {
     plat_delete_file(temp_filename);
 
     // UT-07: var x: ??i32 = null;
-    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x;", generated_c) && !unit.containsPattern("Optional_Optional_i32 x;", generated_c)) return false;
-    if (!unit.containsPattern("x.has_value = 0;", generated_c)) return false;
+    if (!unit.containsPattern("Optional_Optional_i32 zV_#_x = {0};", generated_c) && !unit.containsPattern("Optional_Optional_i32 x = {0};", generated_c)) return false;
 
     return true;
 }
@@ -294,15 +294,11 @@ TEST_FUNC(Task228_OptionalStruct) {
 
     // UT-08: var x: ?Point = null;
     // Note: Point in test.zig hash d071e5 becomes zS_0_Point in test mode if it's the first struct.
-    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p;", generated_c) && 
-        !unit.containsPattern("Optional_zS_#_Point p;", generated_c) &&
-        !unit.containsPattern("Optional_Point zV_#_p;", generated_c) &&
-        !unit.containsPattern("Optional_Point p;", generated_c)) {
+    if (!unit.containsPattern("Optional_zS_#_Point zV_#_p = {0};", generated_c) && 
+        !unit.containsPattern("Optional_zS_#_Point p = {0};", generated_c) &&
+        !unit.containsPattern("Optional_Point zV_#_p = {0};", generated_c) &&
+        !unit.containsPattern("Optional_Point p = {0};", generated_c)) {
         printf("FAIL: Could not find Optional_zS_#_Point or Optional_Point for p. Actual output:\n%s\n", generated_c.c_str());
-        return false;
-    }
-    if (!unit.containsPattern("p.has_value = 0;", generated_c) && !unit.containsPattern("zV_#_p.has_value = 0;", generated_c)) {
-        printf("FAIL: Could not find has_value = 0 for p. Actual output:\n%s\n", generated_c.c_str());
         return false;
     }
 
@@ -430,7 +426,7 @@ TEST_FUNC(Task228_OptionalOrelseUnreachable) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    if (generated_c.find("__bootstrap_panic(\"reached unreachable\"") == std::string::npos) return false;
+    if (generated_c.find("__bootstrap_panic((const char*)(\"reached unreachable\"") == std::string::npos) return false;
 
     return true;
 }

@@ -116,7 +116,7 @@ TEST_FUNC(Task225_2_PrintLowering) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    if (generated_c.find("__bootstrap_print(\"Result: \");") == std::string::npos) return false;
+    if (generated_c.find("__bootstrap_print((const char*)(\"Result: \"));") == std::string::npos) return false;
     if (generated_c.find("__bootstrap_print_int(x);") == std::string::npos) {
         remove("std_debug.zig");
         return false;

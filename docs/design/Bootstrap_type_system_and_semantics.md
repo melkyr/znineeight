@@ -10,9 +10,11 @@ The bootstrap type system is intentionally minimal. It is not designed to handle
 
 Semantic analysis at this stage will be limited to what is necessary to support this C89-compatible subset, including:
 -   **Import Resolution & Topological Sorting:** Discovering all module dependencies and ordering them such that each module is processed after its imports.
+-   **Header Type Topological Sorting:** Ordering types within a module's header based on value dependencies to satisfy C89 definition-before-use requirements.
 -   **Type checking:** Verifying that operations are performed on compatible types in topological order.
 -   **Symbol resolution:** Looking up variables and functions in the symbol table.
--   **Scope management:** Handling global and function-level scopes.
+-   **Symbol Module Naming:** Ensuring local variables and parameters have `module_name` set to `NULL` to match the `NULL` filter used during local scope lookups, while global symbols retain their defining module's name.
+-   **Scope management:** Handling global and function-level scopes. Double-nesting in function bodies is avoided by processing body statements directly. Identifier lookup includes a fallback to all active scopes to ensure local symbols in nested blocks are correctly resolved.
 -   **Recursion depth control:** Preventing stack overflow during AST traversal.
 
 ## 2. Type Representation
@@ -62,7 +64,11 @@ enum TypeKind {
     TYPE_MODULE,
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
-    TYPE_PLACEHOLDER
+    TYPE_PLACEHOLDER,
+    TYPE_ANONYMOUS_INIT,
+    TYPE_ANONYMOUS_ARRAY,
+    TYPE_ANONYMOUS_TUPLE,
+    TYPE_ANONYMOUS_UNION
 };
 ```
 
@@ -186,6 +192,30 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
         } placeholder;
+
+        /**
+         * @struct AnonymousInitDetails
+         * @brief Represents an anonymous initializer awaiting resolution.
+         */
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_init;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_array;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_tuple;
+
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_union;
     } as;
 };
 ```
@@ -301,12 +331,16 @@ Each entry in the symbol table is a `Symbol` struct, which contains all the nece
 // from symbol_table.hpp
 struct Symbol {
     const char* name;
+    const char* module_name; // NULL for local or 'main' module
+    const char* mangled_name;
     SymbolType kind;
-    Type* symbol_type;
+    Type* symbol_type; // The actual type of the symbol (e.g., i32, *u8)
     SourceLocation location;
     void* details;
-    unsigned int scope_level;
-    unsigned int flags;
+    unsigned int scope_level; // Set by SymbolTable on insertion
+    unsigned int flags;        // Bitmask of SymbolFlag
+    bool is_generic;           // True if it's a generic function
+    Type* c_prototype_type;    // For extern/export functions, the C-compatible type
 };
 
 /**
@@ -380,7 +414,8 @@ When visiting a struct declaration (`ASTStructDeclNode`), the `TypeChecker` crea
 
 ### Member Access and Struct Initialization
 
-1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct or a single-level pointer to a struct. It then verifies that the field exists within the struct's definition and resolves to the field's type.
+1.  **Member Access (`s.field`):** The `TypeChecker` validates that the base expression is a struct, union, module, or a single-level pointer to one. It then verifies that the field exists within the definition and resolves to the field's type.
+    -   **Static Variant Access**: Support for accessing variant names on tagged union types (e.g., `Value.Cons`) is implemented, allowing type unwrapping and constant folding.
 
 2.  **Struct Initialization (`S { .x = 1, .y = 2 }`):** The `TypeChecker` ensures that:
     -   The type being initialized is a struct, union, or tagged union.
@@ -436,8 +471,8 @@ The bootstrap compiler supports recursive and mutually recursive structs and uni
 8. **Relaxed `isTypeComplete` Rules**: The `isTypeComplete` check has been refined to treat container-like types as inherently complete for declaration purposes. Pointers (`*T`, `[*]T`), slices (`[]T`), optionals (`?T`), and functions (`fn(...) T`) are always considered complete, even if their base/payload/return types are still placeholders. This allows these types to be used as fields in recursive structures without triggering "incomplete type" errors.
 9. **Lightweight Deferral Mechanism**: When `visitStructDecl` or `visitUnionDecl` encounters a field whose type is truly incomplete (e.g., a value-dependency on another placeholder that is not yet resolving), the compiler defers the resolution of that declaration instead of reporting an error.
 10. **Two-Pass Type Checking**: To ensure all types are finalized before they are used in expressions or function bodies, the `TypeChecker::check` method uses a two-pass strategy:
-    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass includes a retry loop that repeatedly attempts to resolve deferred declarations until no further progress can be made or all types are complete.
-    - **Pass 2**: Resolve all other nodes, including function bodies and statements. This ensures that when a function like `fn example(u: U)` is checked, types like `U` and its dependencies are already fully resolved.
+    - **Pass 1**: Resolve only `VarDecl`s, `StructDecl`s, `UnionDecl`s, and `EnumDecl`s. This pass builds the initial type map and resolves top-level constants.
+    - **Pass 2**: Re-visit **all** nodes, including `VarDecl` and function bodies. Re-visiting `VarDecl` nodes in this pass is critical because it allows the `TypeChecker` to re-insert local symbols into the currently active function scope. Since the parser's scope is discarded after its pass, this re-insertion ensures that local variables are "visible" to subsequent statements in the same block during semantic analysis.
 11. **Value-Dependency Cycle Detection**: The `TypeChecker` explicitly detects and rejects cycles of types that depend on each other by value (e.g., `struct A { b: B }` and `struct B { a: A }`). This produces a descriptive `ERR_TYPE_MISMATCH` diagnostic.
 12. **Stable In-place Mutation**: The `finalizePlaceholder` mechanism ensures that placeholders are correctly mutated into their resolved types even when the mutation happens in-place (e.g., when `createStructType` is passed a placeholder). It also handles the unification of multiple placeholder objects that might have been created for the same named type across different module contexts.
 13. **Placeholder Name Restoration**: When a placeholder is finalized, the resolved type may be anonymous (e.g., a struct defined inline). To prevent the generated C code from using `/* anonymous */` for named types, the `finalizePlaceholder` function explicitly restores the original name and ensures that the `c_name` is correctly mangled if it was missing.
@@ -1010,6 +1045,18 @@ The `TypeChecker` uses the visitor pattern to traverse the AST. It has a `visit`
 
 #### Recursion Depth Guard (Task 9.5.9)
 To prevent stack overflows on memory-constrained 1990s hardware (e.g., Windows 98 with a 1MB default stack), the `TypeChecker` implements a recursion depth guard in the `visit` method.
+
+#### C++98 Compliance for TypeChecker
+To ensure the `TypeChecker` and the rest of the compiler can be built on 1990s-era toolchains (MSVC 6.0, OpenWatcom), the following rules are enforced:
+- **No `long long`**: Use the `u64` and `i64` typedefs from `common.hpp`, which map to `__int64` on MSVC 6.0. This is especially important in `evaluateConstantExpression` and when handling integer literals.
+- **Explicit `RETR_UNUSED`**: The `TypeChecker` often has visitor methods or guard classes where some parameters (like `loc` in a guard constructor) are not used in all build configurations. These must be explicitly marked with `RETR_UNUSED(param)` to ensure a warning-free build under strict `-Wunused-parameter` flags.
+- **Single Header Compatibility**: All source files include `common.hpp`, which incorporates `compat.hpp` to provide a unified abstraction layer for compiler-specific keywords like `inline` (mapped to `ZIG_INLINE`).
+
+#### C89 Compliance of Generated Code
+The generated C code is designed for maximum compatibility with legacy environments:
+- **Header Abstraction**: Inclusion of `zig_compat.h` handles 64-bit integers and boolean types across different compilers.
+- **IO Sanitization**: Runtime IO helpers (`__bootstrap_print`, `__bootstrap_write`) use `const char*` to avoid signedness warnings with string literals.
+- **Unused Label Elimination**: `C89Emitter` tracks `continue` statement usage to only emit necessary labels, ensuring warning-free builds on strict C89 compilers.
 - **Maximum Depth**: Defined by `MAX_VISIT_DEPTH` (200). This limit is chosen to be conservative enough to prevent stack exhaustion while allowing for reasonably complex ASTs.
 - **Enforcement**: A `visit_depth_` counter is incremented upon entry to `visit` and decremented upon exit.
 - **Error Handling**: If the limit is exceeded, the compiler reports a fatal internal error (`ERR_INTERNAL_ERROR`) and returns `get_g_type_undefined()` to prevent further recursive calls.
@@ -1118,7 +1165,14 @@ The bootstrap compiler supports multi-module programs. Types and constants defin
 Before code generation, the `MetadataPreparationPass` performs a transitive scan of all modules to identify all types and symbols that need to be emitted in headers.
 - **Transitive Reachability**: The pass recursively collects all types used in public function signatures, public global variables, and public type constants (`pub const`).
 - **Type Alias Resolution**: It explicitly follows `pub const` type aliases to ensure that the underlying types are correctly marked for emission in headers, even if the original type is defined in a different module.
-- **Header Order**: It populates `module->header_types` in topological dependency order, which is used by the `CBackend` to emit definitions after forward declarations and module inclusions.
+- **Header Type Topological Sort**: It populates `module->header_types` and sorts them in topological dependency order using Kahn's algorithm. This is a **second topological sort** (independent of the module-level import sort) that operates at the type level within each module.
+
+#### Value Dependencies vs. Pointer Dependencies
+The sort strictly uses **value dependencies** to determine the order. A type `A` depends on `B` by value if `A` contains `B` directly (as a field, array element, or error union payload). In C89, `B` must be fully defined before `A` can be defined if `A` contains `B` by value.
+
+Dependencies via pointers or function signatures do **not** force an order, as they only require a forward declaration (e.g., `struct Node;`). These are excluded from the sort to allow for circular pointer relationships (e.g., linked list nodes).
+
+The `CBackend` uses this sorted list to emit definitions, ensuring that `struct Node` is defined before `ErrorUnion_Node` if the latter contains the former by value.
 
 ### Type Alias Unwrapping (Phase 9a)
 
@@ -1135,7 +1189,30 @@ The `TypeChecker` supports unwrapping multiple levels of type aliases to facilit
 
 This mechanism ensures that type aliases can be used interchangeably with the original types when accessing static members.
 
-## 7. Expected Type Propagation (Downward Inference)
+### 7. Anonymous Aggregate Literals
+
+As of Milestone 11, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+#### 7.1 Anonymous Type Kinds
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+#### 7.2 Resolution via Coercion
+Resolution happens when a target type is provided via the `coerceNode` mechanism or structural expectation:
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Structural Expectation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if an "Expected Type" (from `peekExpectedType()`) provides a structural target (array, tuple, struct, or union).
+3. **Deferred Coercion**: If visited without context, the literal remains in its anonymous state. It is resolved in `coerceNode` when a target type is finally known.
+4. **Re-visitation**: When `coerceNode` encounters an anonymous type, it triggers a re-visit of the underlying `ASTNode` using the target type as the explicit expected type context.
+5. **Updating**: The `ASTNode`'s `resolved_type` is updated in-place with the concrete resolved type (e.g., `TYPE_STRUCT`).
+
+### Benefits
+- **Predictable Behavior**: Real errors remain distinguishable from unresolved anonymous literals.
+- **Robust Nesting**: Supports deeply nested anonymous structures within tagged unions or other aggregates.
+- **Recursion Safety**: Utilizes the existing `recursion_depth` guard in `coerceNode` to prevent stack overflow.
+
+## 8. Expected Type Propagation (Downward Inference)
 
 The type checker implements a downward type inference mechanism through an **Expected Type Stack**. This allows the compiler to propagate type information from the surrounding context into expressions that might otherwise have an ambiguous or undefined type (e.g., anonymous struct initializers or switch expressions).
 
@@ -1155,6 +1232,28 @@ The type checker implements a downward type inference mechanism through an **Exp
 
 ### Coercion Integration
 The `coerceNode` method has been enhanced to use the expected type when encountering an anonymous struct initializer (`.{ .field = value }`). If an expected type (like a tagged union) is available, `coerceNode` validates the initializer against that type and sets its `resolved_type`, enabling seamless downward inference.
+
+## 26. Anonymous Aggregate Literals
+
+As of Milestone 12, the bootstrap compiler supports deferred resolution for anonymous literals (`.{ ... }`). This allows the same syntax to represent arrays, tuples, or unions depending on the context.
+
+### 26.1 Anonymous Type Kinds
+- `TYPE_ANONYMOUS_ARRAY`: Represents a positional literal `.{ 1, 2, 3 }` that is intended to be an array.
+- `TYPE_ANONYMOUS_TUPLE`: Represents a positional literal `.{ a, b, c }` that is intended to be a tuple.
+- `TYPE_ANONYMOUS_UNION`: Represents a named literal `.{ .field = value }` intended for a union or tagged union.
+- `TYPE_ANONYMOUS_INIT`: A general-purpose kind for ambiguous anonymous struct initializers.
+
+### 26.2 Resolution Strategy
+1. **Creation**: When the parser or type checker encounters a literal without enough context, it assigns one of the `TYPE_ANONYMOUS_*` kinds.
+2. **Contextual Visitation**: `visitTupleLiteral` and `visitStructInitializer` attempt to resolve the literal immediately if `peekExpectedType()` provides a structural target.
+3. **Deferred Coercion**: If visited without context, the literal remains anonymous. It is resolved in `coerceNode` when a target type is finally known.
+4. **Structural Matching**:
+   - **Arrays**: Verified for length and element compatibility.
+   - **Tuples**: Verified for component type compatibility.
+   - **Unions**: Verified for exactly one field matching a valid variant and payload.
+
+### 26.3 Defaulting for `anytype`
+In contexts where the literal is passed to an `anytype` parameter (e.g., `std.debug.print`), the compiler defaults the literal to a concrete type (e.g., a tuple of its element types) to ensure it has a valid C89 representation.
 
 ### `resolvePrimitiveTypeName`
 

@@ -1,151 +1,307 @@
-Great progress! The instrumentation and reproduction cases have confirmed that:
+## Issue 4: Loop State & Capture Sensitivity
 
-- **Switch capture** now uses `memcpy` (C89‑compliant) and the struct is declared (but not defined).
-- **Pointer member access** (`v.*.tag`) emits `(*v).tag` – correct.
-- **Tag assignment** (`t.* = .Eof`) still emits `*t.tag` – the fix is missing parentheses wrapping.
+**Effort:** Low to Medium (2-4 hours) – this is a compiler bug that may affect some complex loops.
 
-The remaining blocker for the advanced Lisp interpreter is **the missing definition of anonymous structs** used as union payloads. Let’s address both issues.
+**Plan:**
 
----
+1. **Create a minimal repro** that isolates the problem. For example, a loop that captures a tagged union payload and uses it across iterations.
 
-## 1. Missing Anonymous Struct Definitions (Blocker)
+2. **Analyze the generated C code** for the loop. Look for:
+   - Temporaries declared outside the loop (should be inside).
+   - Payload captures being reused incorrectly.
+   - Missing `break` or `continue` labels.
 
-**Problem:**  
-When a `union(enum)` variant uses an anonymous struct, the compiler declares the struct (e.g., `struct zS_0cb520_anon_1;`) but never defines its fields. In the generated header, only a forward declaration appears; the definition is missing.
+3. **Fix the `ControlFlowLifter`** to ensure that temporaries for `switch` captures inside loops are declared **inside the loop body**, not outside. The lifter already inserts temporaries at the position of the node; if the node is inside a loop, the temporary should be inside the loop’s block. Verify that the lifter correctly handles this.
 
-**Root cause:**  
-Anonymous structs are created in the type system but their definition is not emitted in any header because they are not named. They are only used as the type of a union field. The C89 backend currently emits the full definition of named structs, but for anonymous ones it only emits a forward declaration (if at all).
+4. **If the issue is specific to the Lisp interpreter**, you can restructure the interpreter’s code to avoid the problematic pattern (e.g., move the loop body into a separate function). That is a workaround.
 
-**Fix:**  
-When emitting the header for a module that contains a tagged union with an anonymous struct payload, we must emit the **complete definition** of that anonymous struct **before** the union definition. This is analogous to how we emit the tag enum first.
+**Assessment:** This issue is rare and not a blocker for self‑hosting. Most compiler loops are simple (AST traversal) and do not involve complex captures. You can safely defer it.
 
-**Implementation outline:**
 
-1. **In `C89Emitter::emitTypeDefinition`**, when we encounter a tagged union (or a union with an anonymous struct field), we should recursively emit the definitions of all its payload structs that are anonymous and have not been emitted yet.
-2. To avoid duplication, we need a way to track which anonymous types have been emitted. Since anonymous types are identified by their generated name (e.g., `zS_..._anon_1`), we can reuse the existing per‑module cache (`emitted_structs_` or similar) to avoid emitting the same struct twice.
-3. In `emitTaggedUnionDefinition`, before emitting the union body, iterate over the payload fields. For each field whose type is a struct (or union) and is anonymous (i.e., has no user‑defined name), call `emitTypeDefinition` on that type. That will write the struct definition (if not already emitted) into the same header.
+# Master Plan for C89/C++98 Compatibility
 
-**Pseudocode (in `emitTaggedUnionDefinition`):**
+This plan addresses all issues identified in the compatibility report, ensuring the Z98 bootstrap compiler (`zig0`) can be built with legacy C++98 compilers (MSVC 6.0, OpenWatcom) and that the generated C code is C89‑compliant and runs on Windows 98 / MSVC 6.0.
 
-```cpp
-void C89Emitter::emitTaggedUnionDefinition(Type* type) {
-    // ... ensure tag enum is emitted first ...
-
-    // Emit definitions for anonymous payload structs
-    DynamicArray<StructField>* payload_fields = (type->kind == TYPE_TAGGED_UNION) ?
-        type->as.tagged_union.payload_fields : type->as.struct_details.fields;
-    if (payload_fields) {
-        for (size_t i = 0; i < payload_fields->length(); ++i) {
-            Type* field_type = (*payload_fields)[i].type;
-            if (field_type && (field_type->kind == TYPE_STRUCT || field_type->kind == TYPE_UNION)) {
-                const char* name = (field_type->kind == TYPE_STRUCT) ? field_type->as.struct_details.name : field_type->as.struct_details.name;
-                if (!name) { // anonymous
-                    emitTypeDefinition(field_type); // this will write its body
-                }
-            }
-        }
-    }
-
-    // Then emit the forward declaration and body of the tagged union
-    ensureForwardDeclaration(type);
-    writeIndent();
-    writeString("struct ");
-    writeString(type->c_name);
-    writeString(" ");
-    emitTaggedUnionBody(type);
-    writeString(";\n\n");
-}
-```
-
-**Important:** `emitTypeDefinition` for an anonymous struct must write the full body, not just a forward declaration. Currently `emitTypeDefinition` for a struct writes:
-
-```cpp
-if (type->kind == TYPE_STRUCT) {
-    writeIndent();
-    writeString("struct ");
-    writeString(type->c_name);
-    if (type->as.struct_details.fields) {
-        writeString(" ");
-        emitStructBody(type);
-        writeString(";\n\n");
-    } else {
-        writeString("; /* opaque */\n\n");
-    }
-}
-```
-
-This already writes the body if fields exist. So we can simply call `emitTypeDefinition(field_type)` for anonymous payload structs before the union. This will place the definition in the same header.
-
-**Testing:** After applying, the generated header for `value.h` should contain the full definition of `struct zS_0cb520_anon_1` with its `car` and `cdr` fields. Then `eval.c` will see a complete type for `data` and the `memcpy` will work.
+The plan is divided into **phases**. Each phase is self‑contained and can be implemented incrementally.
 
 ---
 
-## 2. Tag Assignment Precedence (Fix)
+## Phase 0: Preprocessor Compatibility Layer
 
-**Problem:**  
-The branch for assigning a tag literal to a tagged union does not wrap the lvalue when it is a dereference, leading to `*t.tag` instead of `(*t).tag`.
+**Goal:** Create a single header that abstracts compiler and target differences.
 
-**Fix:**  
-In `emitAssignmentWithLifting`, the tag‑literal branch currently does:
+**File:** `src/include/compat.hpp` (new)
 
 ```cpp
-if (target_type && isTaggedUnion(target_type) &&
-    rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
-    writeIndent();
-    if (effective_target) {
-        writeString(effective_target);
-    } else if (lvalue_node) {
-        emitExpression(lvalue_node);
-    }
-    writeString(".tag = ");
-    emitExpression(rvalue);
-    writeString(";\n");
-    return;
-}
+#ifndef ZIG_COMPAT_HPP
+#define ZIG_COMPAT_HPP
+
+// Detect compilers
+#ifdef _MSC_VER
+    #define ZIG_COMPILER_MSVC
+    #if _MSC_VER == 1200 // MSVC 6.0
+        #define ZIG_COMPILER_MSVC6
+    #endif
+#elif defined(__WATCOMC__)
+    #define ZIG_COMPILER_OPENWATCOM
+#endif
+
+// inline keyword
+#ifdef ZIG_COMPILER_MSVC
+    #define ZIG_INLINE __inline
+#else
+    #define ZIG_INLINE inline
+#endif
+
+// 64-bit integer suffix for literals in generated C
+#ifdef ZIG_COMPILER_MSVC
+    #define ZIG_I64_SUFFIX "i64"
+    #define ZIG_UI64_SUFFIX "ui64"
+#else
+    #define ZIG_I64_SUFFIX "LL"
+    #define ZIG_UI64_SUFFIX "ULL"
+#endif
+
+// Unused parameter/variable macro (already exists in utils.hpp)
+#ifndef RETR_UNUSED
+    #define RETR_UNUSED(x) (void)(x)
+#endif
+
+// Boolean type for C89 (generated code)
+#ifndef ZIG_BOOL_DEFINED
+    #define ZIG_BOOL_DEFINED
+    typedef int bool;
+    #define true 1
+    #define false 0
+#endif
+
+#endif // ZIG_COMPAT_HPP
 ```
 
-We must wrap the lvalue in parentheses if it is a dereference. Use the same logic as in `emitAccess`:
-
-```cpp
-if (target_type && isTaggedUnion(target_type) &&
-    rvalue->type == NODE_INTEGER_LITERAL && rvalue->as.integer_literal.original_name) {
-    writeIndent();
-    if (effective_target) {
-        writeString(effective_target);
-    } else if (lvalue_node) {
-        if (lvalue_node->type == NODE_UNARY_OP &&
-            (lvalue_node->as.unary_op.op == TOKEN_STAR ||
-             lvalue_node->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
-            writeString("(*");
-            emitExpression(lvalue_node->as.unary_op.operand);
-            writeString(")");
-        } else {
-            emitExpression(lvalue_node);
-        }
-    }
-    writeString(".tag = ");
-    emitExpression(rvalue);
-    writeString(";\n");
-    return;
-}
-```
-
-This will generate `(*t).tag = zE_...` for `t.* = .Eof`.
+**Action:** Create `compat.hpp` and include it in `common.hpp` and `codegen.hpp`.
 
 ---
 
-## 3. Cross‑Module Slice Definitions
+## Phase 1: Fix C++98 Non‑Compliant Issues (Compiler Source)
 
-Your central header `zig_special_types.h` is already included via `zig_runtime.h`. However, ensure that every generated `.c` and `.h` file actually includes `zig_runtime.h`. The `emitPrologue` writes `#include "zig_runtime.h"` at the top of every generated file, so this should be covered. If some headers still miss slice definitions, it may be because the slice type is used in a prototype that appears before `zig_runtime.h` is included? But `zig_runtime.h` is included at the very top, so slice definitions should be visible. If errors persist, double‑check that the slice typedefs are actually written to `zig_special_types.h` (they are, via `unit_.registerSliceType` and the final header generation). Also verify that the build script compiles all modules with the same include path (`-I.`).
+### 1.1 Replace `unsigned long long` casts with `u64`
+
+**File:** `src/bootstrap/type_checker.cpp` (line ~6830)
+
+```cpp
+// Before
+(unsigned long long)node->as.integer_literal.value
+
+// After
+(u64)node->as.integer_literal.value
+```
+
+**Also** search for any other `long long` or `unsigned long long` usage in the compiler source and replace with `i64`/`u64` (defined in `common.hpp`).
+
+### 1.2 Ensure `<cstddef>` / `<stdint.h>` not used directly
+
+`common.hpp` already provides fallbacks. Verify that no file includes `<stdint.h>` or `<cstdint>` unconditionally. If found, replace with `#include "common.hpp"`.
+
+### 1.3 Apply `RETR_UNUSED` consistently
+
+Run a quick scan for functions with unused parameters. Use the macro to silence warnings:
+
+```cpp
+void myFunc(int a, int b) {
+    RETR_UNUSED(b);
+    // use a only
+}
+```
+
+**Action:** Add `RETR_UNUSED` in `type_checker.cpp`, `parser.cpp`, `codegen.cpp` where needed.
 
 ---
 
-## 4. Summary of Actions
+## Phase 2: Fix C89 Compliance Issues (Generated Code)
 
-1. **Implement anonymous struct definition emission** in `emitTaggedUnionDefinition` (or `emitUnionDecl` in the type system) as described.
-2. **Fix tag assignment precedence** by wrapping dereferences in parentheses in the `emitAssignmentWithLifting` branch.
-3. **Test** with the advanced Lisp interpreter. After these changes, the generated C should compile without “incomplete type” errors and with correct syntax.
+### 2.1 Remove `long long` from Runtime Headers
 
-The `memcpy` approach for captures is fine for now; if you later want to optimize it to direct assignment, that can be a separate task. The current fixes will make the advanced Lisp interpreter compile and run.
+**File:** `src/include/zig_runtime.h`
 
-Let me know if you need further details on any of these modifications.
+Replace:
+
+```c
+#ifdef _MSC_VER
+    typedef __int64 i64;
+    typedef unsigned __int64 u64;
+#else
+    typedef long long i64;
+    typedef unsigned long long u64;
+#endif
+```
+
+with:
+
+```c
+#include "zig_compat.h"  // (new header for generated C)
+```
+
+`zig_compat.h` (to be copied to output directory) will contain:
+
+```c
+#ifndef ZIG_COMPAT_H
+#define ZIG_COMPAT_H
+
+#ifdef _MSC_VER
+    typedef __int64 i64;
+    typedef unsigned __int64 u64;
+#elif defined(__WATCOMC__)
+    typedef long long i64;    // OpenWatcom supports long long as extension
+    typedef unsigned long long u64;
+#else
+    typedef long long i64;
+    typedef unsigned long long u64;
+#endif
+
+typedef int bool;
+#define true 1
+#define false 0
+
+#endif
+```
+
+**Action:** Modify `CBackend::copyRuntimeFiles` to also copy `zig_compat.h` to the output directory.
+
+### 2.2 Function Pointer to `void*` Conversion
+
+**Issue:** The Lisp interpreter stores builtins as `void*` and casts back. This triggers a pedantic warning. For the compiler’s own generated code, we can suppress the warning or change the runtime.
+
+**Short‑term fix:** In `C89Emitter::emitExpression` for builtin calls, emit a cast to the correct function pointer type instead of `void*`. However, the builtin is stored in a `void*` field. The warning is harmless. For true compliance, we would need to change the interpreter’s `Value` union to store a function pointer. This is outside the compiler’s scope. **Accept the warning** or add `#pragma` to disable it in MSVC.
+
+**Long‑term fix:** Update the interpreter (separate task) to use a tagged union with a function pointer type.
+
+### 2.3 Signedness Mismatch in `__bootstrap_print`
+
+**Files:** `src/include/zig_runtime.h`, `src/runtime/zig_runtime.c`
+
+Change prototype:
+
+```c
+void __bootstrap_print(const char* s);
+```
+
+In `zig_runtime.c`, cast to `unsigned char*` internally:
+
+```c
+void __bootstrap_print(const char* s) {
+    const unsigned char* us = (const unsigned char*)s;
+    while (*us) {
+        putchar(*us++);
+    }
+}
+```
+
+**Action:** Update both files.
+
+### 2.4 Unused Continue Labels in Loops
+
+**Files:** `src/bootstrap/codegen.cpp` (`emitFor`, `emitWhile`, `emitBreak`, `emitContinue`)
+
+**Solution:** Add a flag `has_continue` to the loop context. Set it when `emitContinue` is called. Only emit the continue label if the flag is true.
+
+**Implementation sketch:**
+
+```cpp
+// In C89Emitter class, add a stack of bools for loops
+DynamicArray<bool> loop_has_continue_;
+
+// In emitFor/emitWhile, before emitting body:
+loop_has_continue_.append(false);
+
+// ... emit body ...
+
+// After body, if loop_has_continue_.back() is true, emit the continue label.
+if (loop_has_continue_.back()) {
+    writeIndent();
+    writeString(cont_label);
+    writeString(": ;\n");
+}
+loop_has_continue_.pop_back();
+
+// In emitContinue, set the flag for the current loop:
+if (loop_id_stack_.length() > 0) {
+    loop_has_continue_[loop_id_stack_.length() - 1] = true;
+}
+```
+
+**Action:** Implement this tracking.
+
+---
+
+## Phase 3: MSVC 6.0 / OpenWatcom Specifics
+
+### 3.1 64‑bit Literal Suffixes
+
+Already handled in `C89Emitter::emitIntegerLiteral`. Verify that for MSVC, suffixes are `i64`/`ui64`. For OpenWatcom, `LL`/`ULL` work.
+
+### 3.2 Identifier Length Limit
+
+The `NameMangler` already truncates to 31 characters and uses hashing. For external symbols, some linkers may only distinguish 6 characters. We currently use a 6‑character hash. This is sufficient.
+
+**Action:** No change.
+
+### 3.3 `inline` Keyword
+
+In generated C, we should not use `inline` because C89 doesn’t have it. Instead, define a macro `ZIG_INLINE` that expands to empty for strict C89. For MSVC, use `__inline`.
+
+**File:** `src/include/zig_compat.h` (in generated output)
+
+```c
+#ifdef _MSC_VER
+    #define ZIG_INLINE __inline
+#else
+    #define ZIG_INLINE
+#endif
+```
+
+**Action:** Update `C89Emitter::emitPrologue` to emit this macro definition, and replace any `static inline` with `static ZIG_INLINE` in generated code.
+
+### 3.4 Mixed Declarations and Code
+
+**Issue:** The compiler already uses a two‑pass approach for blocks, but temporaries created during expression lifting (e.g., in `if` conditions) may be declared after some code.
+
+**Audit:** In `emitIf`, the temporary for the condition is declared before the condition evaluation. That is correct. In `emitWhile`, the temporary for the optional capture is declared before the loop. That is also correct.
+
+**Potential problem:** When lifting a complex expression inside a block, the lifter inserts the temporary declaration at the position of the expression, which may be after some statements. To fix, we would need to hoist all temporaries to the top of the block. This is complex and not required for the current test suite.
+
+**Action:** Document this as a known limitation. For now, the generated code works with MSVC 6.0 and OpenWatcom because they are lenient.
+
+### 3.5 Boolean Type
+
+We already define `bool` as `int`. Ensure no conflict with system headers by guarding with `#ifndef __cplusplus`.
+
+**Action:** In `zig_compat.h`, add:
+
+```c
+#ifndef __cplusplus
+    typedef int bool;
+    #define true 1
+    #define false 0
+#endif
+```
+
+---
+
+## Phase 4: Create and Distribute `zig_compat.h`
+
+**Action:** Add a new file `src/include/zig_compat.h` (for runtime) and modify `CBackend::generateSpecialTypesHeader` to emit a similar header for every module. Alternatively, copy `zig_compat.h` to the output directory once. The runtime already uses `zig_runtime.h`; we can include `zig_compat.h` there.
+
+**Simpler:** Add the compatibility macros directly in `zig_runtime.h` (guarded). That avoids an extra file.
+
+---
+
+## Phase 5: Testing and Validation
+
+After each phase, compile `zig0` with MSVC 6.0 (or a modern compiler with `-std=c++98 -pedantic`) and run the test suite. For generated C, compile with `gcc -std=c89 -pedantic -Werror` and with MSVC 6.0 (if available) to verify no warnings/errors.
+
+**Priority order:**
+
+1. Phase 0 + Phase 1 (fix compiler source) – enables building zig0 on legacy C++98 compilers.
+2. Phase 2.1 + 2.3 + 2.4 (fix common C89 issues) – reduces warnings in generated code.
+3. Phase 3.3 + 3.5 – improves portability.
+4. Phase 2.2 (function pointer cast) – low priority, can be deferred.

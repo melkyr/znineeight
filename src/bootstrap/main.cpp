@@ -110,6 +110,7 @@ int main(int argc, char* argv[]) {
     bool parse_only = false;
     bool full_pipeline = false;
     bool test_mode = false;
+    bool win_line_endings = false;
     RETR_UNUSED(full_pipeline);
 
     // We'll use a simple fixed-size array for temporary include path storage
@@ -130,6 +131,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (plat_strcmp(argv[i], "--test-mode") == 0) {
             test_mode = true;
+        } else if (plat_strcmp(argv[i], "--win-line-endings") == 0) {
+            win_line_endings = true;
         } else if (plat_strcmp(argv[i], "parse") == 0) {
             parse_only = true;
             if (i + 1 < argc) input_file = argv[++i];
@@ -169,6 +172,7 @@ int main(int argc, char* argv[]) {
         opts.enable_lifetime_analysis = true;
         opts.debug_lifter = debug_lifter;
         opts.debug_codegen = debug_codegen;
+        opts.win_friendly_line_endings = win_line_endings;
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource(input_file, source);
@@ -181,10 +185,10 @@ int main(int argc, char* argv[]) {
             unit.finalizeParsing();
         } else {
             success = runCompilationPipeline(unit, file_id);
-            unit.finalizeParsing();
             if (success && output_file) {
                 success = unit.generateCode(output_file);
             }
+            unit.finalizeParsing();
         }
 
         plat_free(source);
@@ -200,6 +204,7 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --test-mode             Enable deterministic name mangling for tests\n");
     plat_print_info("  --debug-lifter          Enable debug logging in AST lifter\n");
     plat_print_info("  --debug-codegen         Enable debug tracing in C89 code generator\n");
+    plat_print_info("  --win-line-endings      Use CRLF line endings in generated C code\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 

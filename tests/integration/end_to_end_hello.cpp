@@ -19,8 +19,8 @@ TEST_FUNC(EndToEnd_HelloWorld) {
     unit.injectRuntimeSymbols();
 
     const char* std_debug_source =
-        "extern fn __bootstrap_print(s: *const u8) void;\n"
-        "pub fn print(fmt: *const u8, args: anytype) void {\n"
+        "extern fn __bootstrap_print(s: *const c_char) void;\n"
+        "pub fn print(fmt: *const c_char, args: anytype) void {\n"
         "    __bootstrap_print(fmt);\n"
         "}\n";
 
@@ -88,7 +88,7 @@ TEST_FUNC(EndToEnd_HelloWorld) {
     }
 
     // Run and capture output portably
-    run_command("./temp_hello/app 2>temp_hello/output.txt");
+    run_command("./temp_hello/app >temp_hello/output.txt 2>&1");
 
     char* buffer = NULL;
     size_t size = 0;
@@ -167,7 +167,7 @@ TEST_FUNC(EndToEnd_PrimeNumbers) {
         return false;
     }
 
-    run_command("./temp_prime/app 2>temp_prime/output.txt");
+    run_command("./temp_prime/app >temp_prime/output.txt 2>&1");
 
     char* buffer = NULL;
     size_t size = 0;

@@ -47,3 +47,10 @@ pub fn parse_int(s: []const u8) LispError!i64 {
     if (neg) return -res;
     return res;
 }
+
+pub fn points_to_arena(ptr: *const void, sand_start: [*]u8, sand_pos: usize) bool {
+    const addr = @ptrToInt(ptr);
+    const start = @ptrToInt(sand_start);
+    const end = start + sand_pos;
+    return addr >= start and addr < end;
+}

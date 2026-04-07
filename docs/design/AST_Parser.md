@@ -108,7 +108,7 @@ enum NodeType {
     NODE_ARRAY_SLICE,     ///< An array slice expression (e.g., `arr[start..end]`).
     NODE_MEMBER_ACCESS,   ///< A member access expression (e.g., `s.field`).
     NODE_STRUCT_INITIALIZER, ///< A struct initializer (e.g., `S { .x = 1 }`).
-    NODE_TUPLE_LITERAL,   ///< A tuple literal (e.g., `.{ 1, 2, 3 }`).
+    NODE_TUPLE_LITERAL,   ///< A positional aggregate literal (e.g., `.{ 1, 2, 3 }`). Can resolve to Array or Tuple.
 
     // ~~~~~~~~~~~~~~~~~~~~~~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~
     NODE_BOOL_LITERAL,    ///< A boolean literal (`true` or `false`).
@@ -578,6 +578,41 @@ Represents an array slice expression.
         ASTNode* len;      // Computed during type checking
     };
     ```
+
+#### `ASTStructInitializerNode`
+Represents a struct, union, or tagged union initializer.
+*   **Zig Code:** `Point { .x = 1, .y = 2 }`, `Value { .Cons = .{ .car = 1, .cdr = 2 } }`, `.{ .x = 1 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTStructInitializerNode
+     * @brief Represents a struct/union initializer.
+     * @var ASTStructInitializerNode::type_expr The type being initialized (NULL for anonymous).
+     * @var ASTStructInitializerNode::fields A dynamic array of named field initializers.
+     */
+    struct ASTStructInitializerNode {
+        ASTNode* type_expr;
+        DynamicArray<ASTNamedInitializer*>* fields;
+    };
+    ```
+*   **Anonymous Literals**: When `type_expr` is `NULL`, the node carries one of the `TYPE_ANONYMOUS_*` types until resolved via the coercion mechanism.
+
+#### `ASTTupleLiteralNode`
+Represents a positional aggregate literal.
+*   **Zig Code:** `.{ 1, 2, 3 }`
+*   **Structure:**
+    ```cpp
+    /**
+     * @struct ASTTupleLiteralNode
+     * @brief Represents a positional aggregate literal.
+     * @var ASTTupleLiteralNode::elements A dynamic array of element expressions.
+     */
+    struct ASTTupleLiteralNode {
+        DynamicArray<ASTNode*>* elements;
+    };
+    ```
+*   **Anonymous Types**: This node is initially assigned `TYPE_ANONYMOUS_TUPLE` or `TYPE_ANONYMOUS_ARRAY` and is resolved into a concrete array or tuple type during type checking or coercion.
+*   **Anonymous Struct Payloads**: To support tagged union variants with anonymous struct payloads, the parser allows nesting `NODE_STRUCT_INITIALIZER` as the value of a field. The `TypeChecker` resolves these nested initializers against the variant's payload type.
 
 #### Parsing Logic (`parsePostfixExpression`)
 The `parsePostfixExpression` function is responsible for handling postfix operations, which have a higher precedence than unary or binary operators. It follows a loop-based approach to handle chained operations like `get_array()[0]()`.
@@ -1298,7 +1333,7 @@ The parser distinguishes between `switch` as a statement and `switch` as an expr
 The parser supports both inclusive (`...`) and exclusive (`..`) range syntax within `switch` case items:
 - `1...10`: An inclusive range from 1 to 10.
 - `1..10`: An exclusive range from 1 to 9 (10 is excluded).
-Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag.
+Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag. Character literals are supported in ranges and are resolved to their integer values.
 
 ### Range Validation in Type Checker
 Ranges are validated during the type checking phase:
@@ -1829,6 +1864,14 @@ The `Parser` is designed with clear ownership semantics to ensure memory safety 
 
 This design decouples the parser from memory management concerns, making it a focused and predictable component responsible solely for syntactic analysis.
 
+## 21.1 C++98 Compliance
+
+To ensure the parser and the rest of the compiler can be built on 1990s-era toolchains (MSVC 6.0, OpenWatcom), the following rules are enforced:
+- **No modern STL**: Usage of `std::vector`, `std::string`, etc., is avoided in favor of `DynamicArray` and `StringInterner`.
+- **C-Style Headers**: Use `<stddef.h>` and `<stdint.h>` (via `common.hpp`) instead of C++ wrappers like `<cstddef>`.
+- **No `long long`**: Use the `u64` and `i64` typedefs from `common.hpp`, which map to `__int64` on MSVC 6.0.
+- **Explicit `RETR_UNUSED`**: Parameters not used in parsing functions (e.g., due to placeholder implementations or interface requirements) must be explicitly marked with `RETR_UNUSED(param)` to maintain a warning-free build.
+
 ## 22. Lifetime Analysis Phase
 
 The Lifetime Analysis phase is a critical semantic analysis pass that follows the Type Checker. Its purpose is to identify memory safety issues at compile-time, specifically dangling pointers created by returning pointers to local (stack-allocated) variables.
@@ -2169,6 +2212,8 @@ The bootstrap compiler supports several Zig built-in functions, implemented eith
 | `@enumToInt(e)` | Expr `e` (enum) | Backing Type | Constant folded or `(Backing)e`. |
 | `@ptrToInt(e)` | Expr `e` (ptr) | `usize` | Emitted as `(usize)e`. |
 | `@intToEnum(T, e)` | Type `T` (enum), Expr `e` | Type `T` | Constant folded or `(T)e`. |
+| `@intToPtr(T, e)` | Type `T`, Expr `e` | Type `T` | Emitted as `(T)e`. |
+| `@intToFloat(T, e)` | Type `T`, Expr `e` | Type `T` | Constant folded or `(T)e`. |
 
 ### Recursive Type Resolution in Built-ins
 For built-ins that take a type argument (`@sizeOf`, `@alignOf`, `@offsetOf`), the `TypeChecker` ensures that if the type is a `TYPE_PLACEHOLDER`, it is resolved via `resolvePlaceholder` before accessing its layout properties. This ensures correctness for mutually recursive structures.
@@ -2186,7 +2231,25 @@ Represents an array or slice expression (e.g., `base[start..end]`).
     - `base_ptr`: Synthetic expression representing the raw pointer to the first element. Populated during type checking for use in codegen.
     - `len`: Synthetic expression representing the resulting length. Populated during type checking.
 
-### Type Resolution
+### 37. Anonymous Aggregate Literals
+
+Anonymous aggregate literals (e.g., `.{ .x = 1 }` or `.{ 1, 2 }`) are parsed as `NODE_STRUCT_INITIALIZER` and `NODE_TUPLE_LITERAL` respectively, with their `type_expr` set to `NULL`.
+
+### Initial Typing and Deferred Resolution
+As of Milestone 12, the compiler uses a unified pattern for context-sensitive literals:
+
+1.  **Context-Free Parsing**: The parser identifies whether a literal is named (`NODE_STRUCT_INITIALIZER`) or positional (`NODE_TUPLE_LITERAL`).
+2.  **Anonymous Type Kinds**: When first visited, if no downward type information is available, the nodes are assigned one of the following anonymous type kinds:
+    -   `TYPE_ANONYMOUS_INIT`: Ambiguous struct/union initializer.
+    -   `TYPE_ANONYMOUS_ARRAY`: Positional literal intended for an array.
+    -   `TYPE_ANONYMOUS_TUPLE`: Positional literal intended for a tuple.
+    -   `TYPE_ANONYMOUS_UNION`: Named literal intended for a union variant.
+3.  **Coercion-Based Resolution**: Actual resolution is deferred to `coerceNode`. When a target type is provided:
+    -   `coerceNode` triggers a contextual re-visit of the AST node.
+    -   The visitor (`visitStructInitializer` or `visitTupleLiteral`) uses the target type to perform structural matching and element/field coercion.
+    -   The node's `resolved_type` is updated in-place to the concrete type.
+
+### 38. Slice Type Resolution
 The `TypeChecker` resolves slicing expressions and ensures:
 - The base type is a sized array, another slice, or a many-item pointer.
 - Start and end indices are integers.

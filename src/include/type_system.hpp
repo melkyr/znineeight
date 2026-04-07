@@ -1,7 +1,7 @@
 #ifndef TYPE_SYSTEM_HPP
 #define TYPE_SYSTEM_HPP
 
-#include <cstddef> // For size_t
+#include "common.hpp"
 #include "memory.hpp" // For DynamicArray
 #include "source_manager.hpp" // For SourceLocation
 
@@ -46,7 +46,11 @@ enum TypeKind {
     TYPE_MODULE,
     TYPE_TUPLE,
     TYPE_TAGGED_UNION,
-    TYPE_PLACEHOLDER
+    TYPE_PLACEHOLDER,
+    TYPE_ANONYMOUS_INIT,
+    TYPE_ANONYMOUS_ARRAY,
+    TYPE_ANONYMOUS_TUPLE,
+    TYPE_ANONYMOUS_UNION
 };
 
 /**
@@ -164,6 +168,22 @@ struct Type {
             struct ASTNode* decl_node;
             struct Module* module;
         } placeholder;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_init;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_array;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_tuple;
+        struct {
+            struct ASTNode* node;
+            struct Module* module;
+        } anonymous_union;
     } as;
 };
 
@@ -177,6 +197,50 @@ static inline bool isTaggedUnion(const Type* type) {
     if (type->kind == TYPE_TAGGED_UNION) return true;
     if (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) return true;
     return false;
+}
+
+/**
+ * @brief Unifies access to payload fields for both TYPE_TAGGED_UNION and TYPE_UNION with the is_tagged flag.
+ * @param type The type to get payload fields from.
+ * @return A pointer to the dynamic array of struct fields, or NULL if not a tagged union.
+ */
+static inline DynamicArray<StructField>* getTaggedUnionPayloadFields(Type* type) {
+    if (!type) return NULL;
+    if (type->kind == TYPE_TAGGED_UNION) {
+        return type->as.tagged_union.payload_fields;
+    } else if (type->kind == TYPE_UNION && type->as.struct_details.is_tagged) {
+        return type->as.struct_details.fields;
+    }
+    return NULL;
+}
+
+/**
+ * @brief Gets the tag enum type for a tagged union.
+ * @param tu The tagged union type.
+ * @return The tag enum type, or NULL if not a tagged union.
+ */
+static inline Type* getTagType(Type* tu) {
+    if (!tu) return NULL;
+    if (tu->kind == TYPE_TAGGED_UNION) return tu->as.tagged_union.tag_type;
+    if (tu->kind == TYPE_UNION && tu->as.struct_details.is_tagged) return tu->as.struct_details.tag_type;
+    return NULL;
+}
+
+/**
+ * @brief Finds the payload type for a specific tag in a tagged union.
+ * @param union_type The tagged union type.
+ * @param tag The tag name.
+ * @return The payload type, or NULL if the tag is not found or not a tagged union.
+ */
+static inline Type* findTaggedUnionPayload(Type* union_type, const char* tag) {
+    if (!union_type) return NULL;
+    DynamicArray<StructField>* fields = getTaggedUnionPayloadFields(union_type);
+    if (!fields) return NULL;
+    for (size_t i = 0; i < fields->length(); ++i) {
+        if (plat_strcmp((*fields)[i].name, tag) == 0)
+            return (*fields)[i].type;
+    }
+    return NULL;
 }
 
 /**
@@ -379,6 +443,26 @@ Type* createModuleType(ArenaAllocator& arena, const char* name);
  * @brief Creates a new tuple Type object.
  */
 Type* createTupleType(ArenaAllocator& arena, DynamicArray<Type*>* elements);
+
+/**
+ * @brief Creates a new anonymous struct Type object.
+ */
+Type* createAnonymousInitType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous array Type object.
+ */
+Type* createAnonymousArrayType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous tuple Type object.
+ */
+Type* createAnonymousTupleType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
+
+/**
+ * @brief Creates a new anonymous union Type object.
+ */
+Type* createAnonymousUnionType(ArenaAllocator& arena, struct ASTNode* node, struct Module* mod);
 
 /**
  * @brief Converts a Type object to its string representation.

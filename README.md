@@ -1,6 +1,6 @@
 > **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-# Z98 Compiler - 0.10.0 "Xylene"
+# Z98 Compiler - 0.11.0 "para-Cresol"
 **A self-hosting subset of Zig → C89 bootstrap compiler for Windows 9x.**
 
 ## Project Overview
@@ -8,6 +8,10 @@ Z98 is a subset of the Zig language. This compiler is not affiliated with the of
 Z98 is an ambitious project to build a somewhat Zig compiler (or at least a good subset of my interpretation of the lang spec) from scratch that targets the Windows 9x era (Windows 95, 98, ME). To achieve this while adhering to the hardware and software constraints of that period, the compiler uses a "Progressive Enhancement" strategy.
 
 We start with a **Stage 0** bootstrap compiler written in C++98, which compiles a **Stage 1** compiler written in a subset of Zig. Finally, **Stage 1** compiles itself to become the fully self-hosted **Stage 2** compiler.
+
+<img width="646" height="562" alt="Zni01" src="https://github.com/user-attachments/assets/d17def92-f577-4a9b-9415-022a4ee1ebfd" />
+<img width="643" height="559" alt="Zni03" src="https://github.com/user-attachments/assets/654e2f81-917c-4250-b9d0-5ec7d7536f66" />
+
 
 ## Current Status: Milestone 11 finished. Stable Bootstrap Compiler
 The project has successfully completed Milestone 11.
@@ -20,9 +24,11 @@ The Stage 0 compiler (`zig0`) is a robust multi-module compiler capable of gener
 - **Error Handling**: Full support for error unions (`!T`), error sets, `try`, `catch`, and full `errdefer` execution.
 - **Optional Types**: Support for `?T`, `null`, and `orelse`.
 - **Slices**: Full support for `[]T` and slicing expressions `base[start..end]`.
-- **Tagged Unions**: Support for `union(enum)` with payload captures in `switch` statements.
+- **Tagged Unions**: Support for `union(enum)` with payload captures in `switch` and `while` statements, including nested anonymous struct payloads.
 - **Recursive Types**: Support for mutually recursive structs and unions via a robust placeholder resolution mechanism.
-- **Control Flow**: Full support for `defer`, `errdefer`, labeled loops, and `break`/`continue` with scope unwinding.
+- **Control Flow**: Full support for `defer`, `errdefer`, labeled loops, `break`/`continue` with scope unwinding, and braceless `if`/`while`/`for`/`defer` statements.
+- **Switch Features**: Support for range-based prongs (e.g., `1...10 => ...`) and divergent prongs (`return`, `unreachable`).
+- **Built-in Lowering**: Compiler-assisted lowering for `std.debug.print` and safe narrowing casts.
 - **Memory Strategy**: Multi-tiered arena system (Global, Token, Transient) for < 16MB peak usage.
 - **Static Analysis**: Lifetime analysis, null pointer detection, and double-free detection.
 
@@ -51,7 +57,7 @@ Just as a side note through the docs I will use zig0/z98 but they will refer to 
 
 ### Prerequisites
 - **Linux**: `gcc` (C++98 compatible), `make`.
-- **Windows 98**: MSVC 6.0 SP6.
+- **Windows 98**: MinGW 3.x (Required for `zig0`). MSVC 6.0 SP6 (Supported for C89 target only).
 
 ### Building the Compiler
 Detailed instructions are available in [docs/Building.md](docs/Building.md).
@@ -59,16 +65,62 @@ On Linux:
 ```bash
 g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
-On Windows (MSVC 6.0):
+On Windows (MinGW 3.x):
 ```batch
-cl /Za /W3 /Isrc/include src\bootstrap\bootstrap_all.cpp /Fezig0.exe
+g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0.exe
 ```
+
+### Build Flags and Options
+The Z98 compiler (`zig0`) supports several command-line options to control the build process:
+
+-   `-o <file>`: Specify the output C source file path. The compiler will also generate a corresponding `.h` file in the same directory, along with build scripts and the required runtime headers in the same output folder.
+-   `-I <path>`: Add a directory to the module search path for `@import` resolution. Multiple `-I` flags can be provided.
+-   `--win-line-endings`: Forces the compiler to use CRLF (`\r\n`) line endings in all generated C source and header files. This is recommended for maximum compatibility when building with MSVC 6.0 on Windows 9x.
+-   `--debug-lifter`: Enables verbose logging of the AST lifting pass, showing how expression-flow is transformed into statements.
+-   `--debug-codegen`: Enables debug tracing in the C89 code generator, including variable allocation and scope tracking.
+-   `--test-mode`: Enables deterministic name mangling (using counters instead of hashes) for stable integration testing.
 
 ### Running Tests
 The project features a comprehensive suite of over 500 unit and integration tests.
 ```bash
 ./test.sh    # Runs all test batches
 ```
+
+## Minimal Distribution & Building Applications
+To distribute a minimal version of the Z98 toolchain or to build an application on a target system without the full source tree, you require the following files:
+
+1.  **`zig0` (or `zig0.exe`)**: The bootstrap compiler binary.
+2.  **Runtime Source & Headers**:
+    -   `src/include/zig_runtime.h`: Core runtime definitions.
+    -   `src/include/zig_compat.h`: C89/Platform compatibility macros.
+    -   `src/include/platform_win98.h`: Windows 9x API level enforcement (Required for Windows).
+    -   `src/runtime/zig_runtime.c`: Implementation of runtime helpers (arenas, IO, panics).
+
+### Building a Z98 Program (Manual Step-by-Step)
+If you have a file `hello.zig`, you can build it into an executable as follows:
+
+1.  **Compile to C**:
+    ```bash
+    ./zig0 hello.zig -o hello.c
+    ```
+    This will generate `hello.c`, `hello.h`, `zig_special_types.h`, `build_target.sh` (or `.bat`), and copy the runtime files into your current directory.
+
+2.  **Build the Executable**:
+    You can simply run the generated build script:
+    ```bash
+    ./build_target.sh  # On Linux/Unix
+    # OR
+    build_target.bat   # On Windows (MinGW)
+    ```
+    Alternatively, you can manually compile and link:
+    ```bash
+    # 1. Compile the runtime
+    gcc -std=c89 -m32 -I. -c zig_runtime.c -o zig_runtime.o
+    # 2. Compile your program
+    gcc -std=c89 -m32 -I. -c hello.c -o hello.o
+    # 3. Link everything
+    gcc -m32 hello.o zig_runtime.o -o hello
+    ```
 
 ## Documentation
 - [Language Specification](docs/reference/Language_Spec_Z98.md): Supported syntax and Z98-specific patterns.

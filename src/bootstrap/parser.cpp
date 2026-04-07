@@ -1022,7 +1022,7 @@ ASTNode* Parser::parseStructInitializer(ASTNode* type_expr) {
 ASTNode* Parser::parseAnonymousLiteral() {
     Token lbrace = expect(TOKEN_LBRACE, "Expected '{' to start anonymous literal");
 
-    if (peek().type == TOKEN_DOT) {
+    if (peek().type == TOKEN_DOT && peekNext().type == TOKEN_IDENTIFIER) {
         // Named fields -> anonymous struct initializer
         ASTStructInitializerNode* init_data = (ASTStructInitializerNode*)arena_->alloc(sizeof(ASTStructInitializerNode));
         if (!init_data) error("Out of memory");
@@ -1526,7 +1526,7 @@ ASTNode* Parser::parseVarDecl(bool is_pub, bool is_extern, bool is_export) {
 
     Symbol symbol = SymbolBuilder(*arena_)
         .withName(name_token.value.identifier)
-        .withModule(module_name_)
+        .withModule(symbol_table_->getCurrentScopeLevel() > 1 ? NULL : module_name_)
         .ofType(SYMBOL_VARIABLE)
         .withType(symbol_type)
         .atLocation(name_token.location)

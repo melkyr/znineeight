@@ -1565,6 +1565,17 @@ Key changes:
     - **Modification**: Modified `NameMangler` to bypass module prefixing for `__` names.
     - **Verification**: Verified that Batch 55 and Batch 45 integration tests pass, resolving "undeclared identifier" errors in generated C code.
 
+236.6 [COMPLETE] **Task 9.17: Line Ending and Statement Terminator Abstraction (Point 6)**
+    - **Modification**: Verified and formalized the abstraction of statement terminators and line endings in `src/bootstrap/codegen.cpp`.
+    - **Documentation**: Updated `docs/design/C89_Codegen.md` to include the official standard for using `endStmt()` and `writeLine()`.
+    - **Abstraction**: Ensured that the `win_friendly_line_endings` option is consistently respected via the `C89Emitter` helpers.
+
+236.7 [COMPLETE] **Task 9.18: C Keyword Constants (Point 5)**
+    - **Modification**: Refactored `src/bootstrap/codegen.cpp` to use centralized `KW_*` constants for C89 keywords.
+    - **Abstraction**: Replaced hardcoded strings like `"extern "`, `"static "`, and `"struct "` with `writeKeyword(KW_...)` calls.
+    - **Expansion**: Added missing C89 keywords (`char`, `short`, `float`, `double`, `signed`, `unsigned`, `typedef`, `goto`) to `codegen.hpp`.
+    - **Documentation**: Added a section to `docs/design/C89_Codegen.md` explaining the keyword constant infrastructure.
+
 ## Milestone 8: Unified Control‑Flow Lifting (AST Second Pass)
 
 
@@ -2314,11 +2325,21 @@ Implementation steps (minimal):
 
 248. [COMPLETE] **Task 9.24: Guard Against Null Dereferences and Type Mismatches**
     - **Goal**: Stabilize the compiler by adding robust guards and structural-aware type equality.
+249. [COMPLETE] **Task 9.25: Batch 32 Regression Fix (DONE)**
+    - **Issue**: compilation failure in `EndToEnd_HelloWorld` due to `__bootstrap_print` type mismatch.
+    - **Fix**: Updated test source to use `*const c_char` for `__bootstrap_print` extern declaration.
+    - **Verification**: Confirmed Batch 32 passes all 2 tests (Hello World and Prime Numbers).
     - **Type Checker**: Moved `areTypesEqual` and `signaturesMatch` into `TypeChecker` to support placeholder resolution during comparison.
     - **Structural Equality**: Implemented deep structural comparison in `TypeChecker::areTypesEqual`, including cross-module nominal type identity (matching by name and module name).
     - **Safety Guards**: Audited and added null checks and `kind` validation in `visitUnaryOp`, `visitFunctionCall`, `visitArrayAccess`, `IsTypeAssignableTo`, and other critical methods.
     - **Internal Invariants**: Used `fatalError` to abort on internal compiler errors (e.g., unexpected null types) while maintaining recoverable reporting for user errors.
     - **Documentation**: Updated `docs/type_checker.md` with details on the new equality and safety logic.
+
+249. [COMPLETE] **Issue 1: String Literal Slice Mismatch (Signedness Warning)**
+    - **Goal**: Resolve `-Wpointer-sign` warnings when passing string literals to `u8` slice helpers.
+    - **CBackend**: Specialized `__make_slice_u8` to accept `const char*` and perform an explicit cast to `unsigned char*` internally.
+    - **Documentation**: Updated `docs/design/C89_Codegen.md` to reflect the specialized helper.
+    - **Verification**: Verified via reproduction script and manual GCC compilation with `-Wpointer-sign`.
 
 ---
 

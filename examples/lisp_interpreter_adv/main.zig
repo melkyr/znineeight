@@ -8,15 +8,15 @@ const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 const deep_copy_mod = @import("deep_copy.zig");
 
-extern fn __bootstrap_print(s: [*]const u8) void;
+extern fn __bootstrap_print(s: [*]const c_char) void;
 extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
 
 fn print_str(s: []const u8) void {
     var i: usize = 0;
     while (i < s.len) {
-        var buf: [2]u8 = undefined;
-        buf[0] = s[i];
+        var buf: [2]c_char = undefined;
+        buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
         __bootstrap_print(&buf[0]);
         i += 1;

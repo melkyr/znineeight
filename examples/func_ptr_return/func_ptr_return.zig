@@ -1,4 +1,4 @@
-extern fn __bootstrap_print(s: *const u8) void;
+extern fn __bootstrap_print(s: *const c_char) void;
 extern fn __bootstrap_print_int(n: i32) void;
 
 fn add(a: i32, b: i32) i32 { return a + b; }

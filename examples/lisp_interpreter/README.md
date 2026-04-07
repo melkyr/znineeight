@@ -48,5 +48,13 @@ To attempt a build of the Lisp interpreter:
 
 **Note**: Without the compiler patches described in `missing_features_lisp.md`, the Zig compilation phase may fail with "type mismatch" errors across modules, and the generated C code may fail to compile due to C89 scoping rules or `main` function return type mismatches.
 
+## Basic Test Expressions
+
+You can use the following expressions to verify the interpreter's functionality:
+
+- **Arithmetic**: `(+ 1 2)` -> `3`, `(* 3 4)` -> `12`
+- **Definitions**: `(define x 10)` -> `10`
+- **Conditionals**: `(if (= x 10) 1 0)` -> `1`
+
 For a detailed analysis of the compiler challenges and the required fixes, please refer to:
 `examples/lisp_interpreter/missing_features_lisp.md`

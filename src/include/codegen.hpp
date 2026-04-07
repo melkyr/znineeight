@@ -7,7 +7,7 @@
 #include "ast.hpp"
 #include "type_system.hpp"
 #include "error_handler.hpp"
-#include <cstddef>
+#include "text_writer.hpp"
 
 class CompilationUnit;
 
@@ -18,7 +18,7 @@ class CompilationUnit;
  * This class provides a 4KB stack buffer for efficient writing and supports
  * indentation and C89-style comments.
  */
-class C89Emitter {
+class C89Emitter : public TextWriter {
 public:
     /**
      * @brief Constructs an uninitialized emitter. Call open() before use.
@@ -75,7 +75,7 @@ public:
      * @brief Writes a null-terminated string to the buffer.
      * @param str The string to write.
      */
-    void writeString(const char* str);
+    virtual void writeString(const char* str);
 
     /**
      * @brief Writes a C89-style comment to the buffer.
@@ -326,6 +326,12 @@ public:
     void emitExpression(const ASTNode* node);
 
     /**
+     * @brief Emits the base expression with proper parentheses if needed.
+     * @param base The base expression node.
+     */
+    void emitBaseWithParens(const ASTNode* base);
+
+    /**
      * @brief Ensures a type is forward-declared.
      */
     void ensureForwardDeclaration(Type* type);
@@ -375,6 +381,84 @@ public:
      * @brief Gets a mangled name for a type (e.g. "ptr_i32" for *i32).
      */
     const char* getMangledTypeName(Type* type);
+
+    /**
+     * @brief Line ending and statement terminator helpers.
+     */
+    inline const char* LE() const { return line_ending_; }
+    inline void writeIndentedLine(const char* str) { writeIndent(); writeLine(str); }
+    inline void endStmt() { writeString(";" ); writeLine(); }
+
+    /**
+     * @brief Combined write methods.
+     */
+    inline void writeStmt(const char* str) { writeIndent(); writeString(str); endStmt(); }
+    inline void writeKeyword(const char* kw) { writeString(kw); writeString(" "); }
+    inline void writeBlockOpen() { writeLine("{"); indent(); }
+    inline void writeBlockClose() { dedent(); writeIndentedLine("}"); }
+
+    /**
+     * @brief Type and variable declaration helpers.
+     */
+    inline void writeDecl(Type* type, const char* name) { emitType(type, name); endStmt(); }
+    inline void writeFieldDecl(Type* type, const char* name) { writeIndent(); writeDecl(type, name); }
+
+    /**
+     * @brief Expression statement helper.
+     */
+    inline void writeExprStmt(const ASTNode* expr) { writeIndent(); emitExpression(expr); endStmt(); }
+
+    /**
+     * @brief Temporary variable helpers.
+     */
+    inline const char* makeTempVar(const char* prefix) { return var_alloc_.generate(prefix); }
+    const char* makeTempVarForType(Type* type, const char* prefix, bool emit_decl = false);
+
+    /**
+     * @brief RAII-style guard helper for header definitions.
+     */
+    class GuardScope {
+        C89Emitter& emitter_;
+        const char* name_;
+        bool started_;
+    public:
+        GuardScope(C89Emitter& emitter, const char* guard_name);
+        ~GuardScope();
+    };
+
+    /**
+     * @brief C89 Keywords.
+     */
+    static const char* const KW_BREAK;
+    static const char* const KW_CONTINUE;
+    static const char* const KW_RETURN;
+    static const char* const KW_GOTO;
+    static const char* const KW_IF;
+    static const char* const KW_ELSE;
+    static const char* const KW_WHILE;
+    static const char* const KW_FOR;
+    static const char* const KW_SWITCH;
+    static const char* const KW_CASE;
+    static const char* const KW_DEFAULT;
+    static const char* const KW_STRUCT;
+    static const char* const KW_UNION;
+    static const char* const KW_ENUM;
+    static const char* const KW_TYPEDEF;
+    static const char* const KW_EXTERN;
+    static const char* const KW_STATIC;
+    static const char* const KW_CONST;
+    static const char* const KW_VOID;
+    static const char* const KW_INT;
+    static const char* const KW_SIZEOF;
+    static const char* const KW_CHAR;
+    static const char* const KW_SHORT;
+    static const char* const KW_LONG;
+    static const char* const KW_FLOAT;
+    static const char* const KW_DOUBLE;
+    static const char* const KW_SIGNED;
+    static const char* const KW_UNSIGNED;
+    static const char* const KW_REGISTER;
+    static const char* const KW_VOLATILE;
 
     /**
      * @brief Returns true if the node is a simple l-value (identifier or dereference of a simple l-value).
@@ -618,6 +702,7 @@ private:
 
     DynamicArray<int> loop_id_stack_;
     bool loop_uses_labels_[1024];
+    DynamicArray<bool> loop_has_continue_;
 
     // Prevent copying
     C89Emitter(const C89Emitter&);

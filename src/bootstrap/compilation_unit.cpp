@@ -649,12 +649,12 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         table.insert(sym_free);
     }
 
-    // __bootstrap_print(s: [*]const u8) -> void
+    // __bootstrap_print(s: *const c_char) -> void
     {
         void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
         if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_print");
         DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
-        params->append(createPointerType(arena_, get_g_type_u8(), true, true, &type_interner_));
+        params->append(createPointerType(arena_, get_g_type_c_char(), true, false, &type_interner_));
         Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
 
         const char* name = interner_.intern("__bootstrap_print");
@@ -678,6 +678,27 @@ void CompilationUnit::injectRuntimeSymbols(SymbolTable& table) {
         Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
 
         const char* name = interner_.intern("__bootstrap_print_int");
+        Symbol sym = SymbolBuilder(arena_)
+            .withName(name)
+            .withModule(builtin_name)
+            .withMangledName(name)
+            .ofType(SYMBOL_FUNCTION)
+            .withType(fn_type)
+            .withFlags(SYMBOL_FLAG_EXTERN | SYMBOL_FLAG_GLOBAL)
+            .build();
+        table.insert(sym);
+    }
+
+    // __bootstrap_write(s: *const c_char, len: usize) -> void
+    {
+        void* params_mem = arena_.alloc(sizeof(DynamicArray<Type*>));
+        if (params_mem == NULL) fatalError("Out of memory allocating params for __bootstrap_write");
+        DynamicArray<Type*>* params = new (params_mem) DynamicArray<Type*>(arena_);
+        params->append(createPointerType(arena_, get_g_type_c_char(), true, false, &type_interner_));
+        params->append(get_g_type_usize());
+        Type* fn_type = createFunctionType(arena_, params, get_g_type_void());
+
+        const char* name = interner_.intern("__bootstrap_write");
         Symbol sym = SymbolBuilder(arena_)
             .withName(name)
             .withModule(builtin_name)
@@ -1381,6 +1402,50 @@ bool CompilationUnit::resolveImportsRecursive(Module* module, DynamicArray<const
             plat_strcat(error_msg, rel_path);
             error_handler_.report(ERR_FILE_NOT_FOUND, import_node->loc, ErrorHandler::getMessage(ERR_FILE_NOT_FOUND), error_msg);
             return false;
+        }
+
+        /* Windows 98 Compatibility Check: 8.3 filename and ANSI characters */
+        {
+            const char* last_slash = plat_strrchr(abs_path, '/');
+            const char* last_backslash = plat_strrchr(abs_path, '\\');
+            const char* filename_only = NULL;
+            if (last_slash && last_backslash) {
+                filename_only = (last_slash > last_backslash) ? last_slash : last_backslash;
+            } else {
+                filename_only = last_slash ? last_slash : last_backslash;
+            }
+            if (filename_only) filename_only++;
+            else filename_only = abs_path;
+
+            bool is_83 = true;
+            const char* dot = plat_strchr(filename_only, '.');
+            if (dot) {
+                if (dot - filename_only > 8) is_83 = false;
+                if (plat_strlen(dot + 1) > 3) is_83 = false;
+                if (plat_strchr(dot + 1, '.')) is_83 = false; /* Multiple dots */
+            } else {
+                if (plat_strlen(filename_only) > 8) is_83 = false;
+            }
+
+            bool is_ansi = true;
+            for (const char* p = abs_path; *p; p++) {
+                if ((unsigned char)*p > 127) {
+                    is_ansi = false;
+                    break;
+                }
+            }
+
+            if (!is_83 || !is_ansi) {
+                char warn_msg[1024];
+                char* w_cur = warn_msg;
+                size_t w_rem = sizeof(warn_msg);
+                safe_append(w_cur, w_rem, "Path '");
+                safe_append(w_cur, w_rem, abs_path);
+                safe_append(w_cur, w_rem, "' may cause issues on Windows 98.");
+                if (!is_83) safe_append(w_cur, w_rem, " Non-8.3 filename detected.");
+                if (!is_ansi) safe_append(w_cur, w_rem, " Non-ANSI characters detected.");
+                error_handler_.reportWarning(WARN_PORTABILITY_WIN98, import_node->loc, warn_msg, arena_);
+            }
         }
 
         const char* interned_abs_path = interner_.intern(abs_path);

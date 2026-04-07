@@ -39,6 +39,7 @@ Z98 is a restricted subset of the Zig programming language designed to be compil
     - **Bare Unions**: `const U = union { field: T, ... };` (standard C union).
     - **Tagged Unions**: `const U = union(enum) { field: T, ... };`. Automatically managed tag and payload.
         - **Naked Tags**: In tagged unions, fields without an explicit type (e.g., `A,` instead of `A: void,`) are automatically treated as having a `void` payload. This sugar is NOT allowed in bare unions or structs.
+        - **Anonymous Payloads**: Tagged union variants can have nested anonymous struct payloads (e.g., `Cons: struct { car: *Value, cdr: *Value }`). The compiler handles the C89 declaration and initialization of these internal structures.
 - **Tuples**: `.{ val1, val2 }` positional anonymous literals. Primarily supported for `std.debug.print`.
 
 ### 1.4 Arrays and Slices
@@ -237,6 +238,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 - `@ptrCast(T, expr)`: Explicit pointer cast.
 - `@intCast(T, expr)`: Checked integer conversion.
 - `@floatCast(T, expr)`: Checked float conversion.
+- `@intToPtr(T, expr)`: Converts an integer to a pointer of type `T`.
 - `unreachable`: Diverges with a panic. Has type `noreturn`.
 
 ## 5. Known Limitations and Workarounds
@@ -245,10 +247,8 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
 
 - **No `anyerror`**: The `anyerror` keyword is explicitly rejected.
   - **Workaround**: Use explicit error sets (e.g., `const MyError = error { Bad };`) or anonymous error unions `!T`.
-- **Anonymous Union Payloads**: Using anonymous structs directly as payloads for `union(enum)` (e.g., `Cons: struct { car: *V, cdr: *V }`) results in the C89 backend declaring but not defining the internal struct.
-  - **Workaround**: Define a named struct for the payload and use it in the union (see `examples/lisp_interpreter_curr/value.zig`).
 - **No Generics**: `comptime` parameters and `anytype` are not supported.
-- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers in certain contexts).
+- **No Anonymous Structs/Enums**: All aggregates must be named via `const` assignment (except for tuple literals `.{}` and anonymous tagged union initializers).
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: `std.debug.print`).
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.

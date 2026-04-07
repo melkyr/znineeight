@@ -8,15 +8,17 @@ const builtins_mod = @import("builtins.zig");
 const util = @import("util.zig");
 const deep_copy_mod = @import("deep_copy.zig");
 
-extern fn __bootstrap_print(s: [*]const u8) void;
+extern fn __bootstrap_print(s: [*]const c_char) void;
 extern fn __bootstrap_print_int(i: i32) void;
 extern fn getchar() i32;
+var perm_buf_u64: [131072]u64 = undefined;
+var temp_buf_u64: [131072]u64 = undefined;
 
 fn print_str(s: []const u8) void {
     var i: usize = 0;
     while (i < s.len) {
-        var buf: [2]u8 = undefined;
-        buf[0] = s[i];
+        var buf: [2]c_char = undefined;
+        buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
         __bootstrap_print(&buf[0]);
         i += 1;
@@ -97,11 +99,13 @@ fn read_line(buf: []u8) i32 {
 }
 
 pub fn main() void {
-    var perm_buf: [1048576]u8 = undefined;
-    var temp_buf: [1048576]u8 = undefined;
 
-    var perm_sand = sand_mod.sand_init(perm_buf[0..1048576]);
-    var temp_sand = sand_mod.sand_init(temp_buf[0..1048576]);
+
+    const perm_buf = @ptrCast([*]u8, &perm_buf_u64)[0..1048576];
+    const temp_buf = @ptrCast([*]u8, &temp_buf_u64)[0..1048576];
+
+    var perm_sand = sand_mod.sand_init(perm_buf);
+    var temp_sand = sand_mod.sand_init(temp_buf);
 
     var global_env: ?*env_mod.EnvNode = null;
 
