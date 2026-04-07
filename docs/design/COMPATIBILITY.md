@@ -8,9 +8,9 @@ This document describes the strategy and implementation details for ensuring the
 2.  **Generated Code Compliance**: The C code emitted by `zig0` must be valid C89, conforming to definition-before-statement rules and avoiding non-standard extensions unless wrapped in compatibility macros.
 3.  **Platform Abstraction**: Use a centralized compatibility layer to handle compiler-specific quirks (e.g., MSVC 6.0's `__int64` and `__inline`).
 
-## Compatibility Layer: `compat.hpp`
+## Compatibility Layer: `compat.hpp` (Compiler)
 
-The `src/include/compat.hpp` header is the single source of truth for compiler and target abstractions. It provides:
+The `src/include/compat.hpp` header is the single source of truth for compiler and target abstractions (for the `zig0` bootstrap compiler). It provides:
 
 -   **Compiler Detection**: Macros like `ZIG_COMPILER_MSVC` and `ZIG_COMPILER_OPENWATCOM`.
 -   **Fixed-Width Types**: Definitions for `i8`, `u8`, `i32`, `u32`, `i64`, `u64`, etc., using compiler-specific extensions where necessary (e.g., `__int64` on MSVC).
@@ -39,6 +39,20 @@ Phase 1 of the compatibility plan ensures that this command passes for all core 
 ## Generated C89 Code Compatibility
 
 The Z98 bootstrap compiler generates C89-compliant code intended to be built with legacy toolchains like MSVC 6.0 and OpenWatcom.
+
+### Generated Code Compatibility Layer: `zig_compat.h`
+
+To ensure the generated C code is portable, the compiler includes a dedicated C89 compatibility header, `src/include/zig_compat.h`, which is copied to the output directory and included by `zig_runtime.h`.
+
+Key macros provided for generated code:
+
+-   **`ZIG_UNUSED`**: Expands to `__attribute__((unused))` on GCC/MinGW and to nothing on strict C89 compilers like OpenWatcom or MSVC 6.0. This is used for helper functions (like slice constructors) that may not be used in every module.
+-   **`ZIG_INLINE`**: Resolves to the compiler-specific inline keyword (e.g., `__inline` on MSVC) or remains empty on strict C89 compilers that do not support inlining.
+-   **Fixed-Width Types**: Definitions for `i64` and `u64` using `__int64` (MSVC) or `long long` (OpenWatcom/GCC).
+-   **Boolean Support**: Provides `bool`, `true`, and `false` for C89.
+
+This header ensures that even if a feature (like `inline`) is missing from a legacy compiler, the generated code will still compile correctly.
+
 
 ### Mixed Declarations and Code
 

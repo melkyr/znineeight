@@ -192,7 +192,7 @@ bool CBackend::generateBuildBat(const char* output_dir) {
     // Compile zig_runtime.c
     writer.writeString("gcc -std=c89 -m32 ");
     writer.writeString(extra_flags);
-    writer.writeLine("-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o");
+    writer.writeLine("-pedantic -Wall -O2 -Isrc/include -I. -c zig_runtime.c -o zig_runtime.o");
 
     // Compile all modules
     for (size_t i = 0; i < generated_sources_.length(); ++i) {
@@ -205,7 +205,7 @@ bool CBackend::generateBuildBat(const char* output_dir) {
 
         writer.writeString("gcc -std=c89 -m32 ");
         writer.writeString(extra_flags);
-        writer.writeString("-pedantic -Wall -O2 -I. -Isrc/include -c ");
+        writer.writeString("-pedantic -Wall -O2 -Isrc/include -I. -c ");
         writer.writeString(source);
         writer.writeString(" -o ");
         writer.writeLine(obj);
@@ -357,7 +357,7 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
         emitter.writeString(";\n");
 
         emitter.writeIndent();
-        emitter.writeString("static RETR_UNUSED_FUNC ");
+        emitter.writeString("static ZIG_UNUSED ");
         emitter.writeString(mangled_name);
         emitter.writeString(" __make_slice_");
         emitter.writeString(emitter.getMangledTypeName(elem_type));
@@ -422,7 +422,7 @@ bool CBackend::generateMakefile(const char* output_dir) {
         plat_write_file(f, extra_flags, plat_strlen(extra_flags));
         plat_write_file(f, " ", 1);
     }
-    const char* runtime_cmd_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c zig_runtime.c -o zig_runtime.o\n";
+    const char* runtime_cmd_rest = "-pedantic -Wall -O2 -Isrc/include -I. -c zig_runtime.c -o zig_runtime.o\n";
     plat_write_file(f, runtime_cmd_rest, plat_strlen(runtime_cmd_rest));
 
     // Compile all modules
@@ -439,7 +439,7 @@ bool CBackend::generateMakefile(const char* output_dir) {
             plat_write_file(f, extra_flags, plat_strlen(extra_flags));
             plat_write_file(f, " ", 1);
         }
-        const char* cmd_part1_rest = "-pedantic -Wall -O2 -I. -Isrc/include -c ";
+        const char* cmd_part1_rest = "-pedantic -Wall -O2 -Isrc/include -I. -c ";
         plat_write_file(f, cmd_part1_rest, plat_strlen(cmd_part1_rest));
         plat_write_file(f, source, len);
         plat_write_file(f, " -o ", 4);

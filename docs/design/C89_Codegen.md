@@ -46,7 +46,7 @@ All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`
 - **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
 - **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
 - **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
-- **Unused labels**: Provides `RETR_UNUSED_FUNC` and other macros to suppress warnings.
+- **Unused functions**: Provides `ZIG_UNUSED` (aliased as `RETR_UNUSED_FUNC`) to suppress "unused function" warnings on compilers that support `__attribute__((unused))`, like GCC and MinGW. It expands to nothing on strict compilers like OpenWatcom.
 
 ### Unused Continue Labels
 To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.

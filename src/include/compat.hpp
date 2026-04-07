@@ -97,10 +97,12 @@
 #endif
 
 /* Unused function macro */
-#ifdef ZIG_COMPILER_MSVC
-    #define RETR_UNUSED_FUNC
-#else
+#ifdef __GNUC__
     #define RETR_UNUSED_FUNC __attribute__((unused))
+    #define ZIG_UNUSED __attribute__((unused))
+#else
+    #define RETR_UNUSED_FUNC
+    #define ZIG_UNUSED
 #endif
 
 #endif /* ZIG_COMPAT_HPP */
