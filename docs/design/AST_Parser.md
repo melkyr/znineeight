@@ -1333,7 +1333,7 @@ The parser distinguishes between `switch` as a statement and `switch` as an expr
 The parser supports both inclusive (`...`) and exclusive (`..`) range syntax within `switch` case items:
 - `1...10`: An inclusive range from 1 to 10.
 - `1..10`: An exclusive range from 1 to 9 (10 is excluded).
-Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag.
+Ranges are represented by `NODE_RANGE` nodes, which store the start and end expressions and an `is_inclusive` flag. Character literals are supported in ranges and are resolved to their integer values.
 
 ### Range Validation in Type Checker
 Ranges are validated during the type checking phase:

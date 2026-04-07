@@ -84,13 +84,16 @@ To ensure consistency and avoid hardcoding strings for standard C89 keywords, th
 
 Using these constants simplifies maintenance and ensures that any necessary mangling or platform-specific keyword variations can be handled in one place.
 
-### 2.3 Unused Continue Labels
+### 2.3 Temporary Variable Allocation
+As of the "para-Cresol" release, `C89Emitter` employs a unified strategy for generating temporary variables via `makeTempVarForType`. This ensures that all compiler-generated symbols (like `opt_tmp` for optionals or `for_idx` for loops) are declared at the beginning of their respective C blocks, adhering to strict C89 rules.
+
+### 2.4 Unused Continue Labels
 To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
 - **Mechanism**: A stack `loop_has_continue_` is maintained alongside `loop_id_stack_`.
 - **Flag Activation**: The flag for the current loop is set to `true` whenever `emitContinue` is called for that loop's ID.
 - **Conditional Emission**: The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if the flag is true.
 
-### 2.4 Combined Block and Statement Helpers
+### 2.5 Combined Block and Statement Helpers
 To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
 
 - **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.
