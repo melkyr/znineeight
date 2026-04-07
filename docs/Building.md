@@ -14,7 +14,7 @@ g++ -std=c++98 -Isrc/include src/bootstrap/bootstrap_all.cpp -o zig0
 ```
 
 ### 1.2 Windows 98 / MinGW 3.x (Legacy Support)
-On Windows 98, the bootstrap compiler can be built using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit). While MSVC 6.0 is primarily used for compiling the *generated* C89 code, recent refactors (Milestone 11+) aim to support building `zig0` itself with MSVC 6.0 using the C++98 compatibility layer.
+On Windows 98, the bootstrap compiler is primarily built using **MinGW 3.x** (e.g., the original MinGW 3.1.0 or MinGW-w64 targeting 32-bit). While MSVC 6.0 and OpenWatcom support is under development via the C++98 compatibility layer, **MinGW is currently the recommended host compiler** due to ongoing incompatibilities with other legacy toolchains for the bootstrap compiler's own source.
 
 #### Compilation
 ```batch

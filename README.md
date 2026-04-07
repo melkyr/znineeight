@@ -1,6 +1,6 @@
 > **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-# Z98 Compiler - 0.10.0 "Xylene"
+# Z98 Compiler - 0.11.0 "para-Cresol"
 **A self-hosting subset of Zig → C89 bootstrap compiler for Windows 9x.**
 
 ## Project Overview

@@ -57,8 +57,8 @@ To fit within the strict 16MB peak memory constraint, the compiler employs a mul
 - **Transient Arena**: Managed by the `CompilationUnit` and reset between major code generation steps (e.g., between each generated `.c` and `.h` file). This arena handles per-file data such as C variable names, stringified expressions for l-value capture, and type definition buffers.
 
 ### 3.1 Memory Management
-## Current Status: Milestone 11 finished.
-The project has successfully completed Milestone 11, including full cross-module visibility and `defer`/`errdefer` support.
+## Current Status: Milestone 11 finished (para-Cresol Release).
+The project has successfully completed Milestone 11, including full cross-module visibility, Switch Ranges, Braceless Control Flow, and `defer`/`errdefer` support.
 
 
 The Z98 project utilizes arena-based allocation for both the compiler itself (C++) and the generated programs (C89). This strategy ensures high performance on legacy hardware by minimizing fragmentation and the overhead of individual `malloc`/`free` calls.
@@ -684,7 +684,7 @@ This is the restricted version of Zig the bootstrap compiler supports as of Mile
     *   **Property**: `.len` property returns `usize`.
     *   **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers. In the current bootstrap compiler, both `start` and `end` indices **must** be explicitly provided for all types (e.g., `arr[0..arr.len]`). Implicit start/end (e.g., `arr[5..]`) is not yet supported.
     *   **Coercion**: Implicit coercion from `[N]T` to `[]T`.
-*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`.
+*   **Structs**: Named structs via `const S = struct { ... };`. Supports initialization `S { .x = 1 }` and member access `s.x`. Supports qualified access `mod.S`. Supports nested anonymous struct payloads in tagged unions.
 *   **Enums**: Named enums via `const E = enum { ... };` or `enum(backing_type) { ... };`. Supports qualified member access `mod.E.Member`.
 *   **Unions**: Named bare unions via `const U = union { ... };`.
 *   **Functions**: Function declarations with standard C89 parameter limits. Supports recursion and forward references.
