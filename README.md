@@ -69,7 +69,7 @@ g++ -std=c++98 -m32 -mconsole -static-libgcc -Isrc/include src/bootstrap/bootstr
 ### Build Flags and Options
 The Z98 compiler (`zig0`) supports several command-line options to control the build process:
 
--   `-o <file>`: Specify the output C source file path. The compiler will also generate a corresponding `.h` file in the same directory.
+-   `-o <file>`: Specify the output C source file path. The compiler will also generate a corresponding `.h` file in the same directory, along with build scripts and the required runtime headers in the same output folder.
 -   `-I <path>`: Add a directory to the module search path for `@import` resolution. Multiple `-I` flags can be provided.
 -   `--win-line-endings`: Forces the compiler to use CRLF (`\r\n`) line endings in all generated C source and header files. This is recommended for maximum compatibility when building with MSVC 6.0 on Windows 9x.
 -   `--debug-lifter`: Enables verbose logging of the AST lifting pass, showing how expression-flow is transformed into statements.
@@ -81,6 +81,42 @@ The project features a comprehensive suite of over 500 unit and integration test
 ```bash
 ./test.sh    # Runs all test batches
 ```
+
+## Minimal Distribution & Building Applications
+To distribute a minimal version of the Z98 toolchain or to build an application on a target system without the full source tree, you require the following files:
+
+1.  **`zig0` (or `zig0.exe`)**: The bootstrap compiler binary.
+2.  **Runtime Source & Headers**:
+    -   `src/include/zig_runtime.h`: Core runtime definitions.
+    -   `src/include/zig_compat.h`: C89/Platform compatibility macros.
+    -   `src/include/platform_win98.h`: Windows 9x API level enforcement (Required for Windows).
+    -   `src/runtime/zig_runtime.c`: Implementation of runtime helpers (arenas, IO, panics).
+
+### Building a Z98 Program (Manual Step-by-Step)
+If you have a file `hello.zig`, you can build it into an executable as follows:
+
+1.  **Compile to C**:
+    ```bash
+    ./zig0 hello.zig -o hello.c
+    ```
+    This will generate `hello.c`, `hello.h`, `zig_special_types.h`, `build_target.sh` (or `.bat`), and copy the runtime files into your current directory.
+
+2.  **Build the Executable**:
+    You can simply run the generated build script:
+    ```bash
+    ./build_target.sh  # On Linux/Unix
+    # OR
+    build_target.bat   # On Windows (MinGW)
+    ```
+    Alternatively, you can manually compile and link:
+    ```bash
+    # 1. Compile the runtime
+    gcc -std=c89 -m32 -I. -c zig_runtime.c -o zig_runtime.o
+    # 2. Compile your program
+    gcc -std=c89 -m32 -I. -c hello.c -o hello.o
+    # 3. Link everything
+    gcc -m32 hello.o zig_runtime.o -o hello
+    ```
 
 ## Documentation
 - [Language Specification](docs/reference/Language_Spec_Z98.md): Supported syntax and Z98-specific patterns.
