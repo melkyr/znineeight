@@ -17,8 +17,8 @@ var temp_buf_u64: [131072]u64 = undefined;
 fn print_str(s: []const u8) void {
     var i: usize = 0;
     while (i < s.len) {
-        var buf: [2]u8 = undefined;
-        buf[0] = s[i];
+        var buf: [2]c_char = undefined;
+        buf[0] = @intCast(c_char, s[i]);
         buf[1] = 0;
         __bootstrap_print(&buf[0]);
         i += 1;
