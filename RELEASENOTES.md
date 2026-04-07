@@ -1,3 +1,51 @@
+# Z98 0.11.0 “para-Cresol” Release Notes
+
+We are proud to announce the release of Z98 version **0.11.0**, codenamed **“para-Cresol”**.
+
+Following the foundational work of "Xylene", **para-Cresol** represents a phase of refinement and aromatic enhancement. Just as para-cresol is an essential precursor in the creation of fine fragrances and antioxidants, this release focuses on smoothing out the remaining rough edges of the bootstrap compiler and introducing the final set of language features required for the next stage of our journey: the self-hosted Zig compiler.
+
+This release completes Milestone 11, bringing a suite of quality-of-life improvements and robustness fixes that make the Z98 subset feel more expressive and reliable.
+
+## ✨ Milestone 11: The Refinement Phase
+
+### 🎨 Expressive Control Flow
+Z98 now supports **Braceless Control Flow**. For simple `if`, `while`, `for`, and `defer` statements, braces are now optional, allowing for more concise and idiomatic Zig code. The compiler's lifting pass has been updated to handle these cases seamlessly, ensuring they are correctly transformed into safe C89 blocks.
+
+### 🔢 Switch Enhancements
+We have introduced support for **Switch Ranges**. You can now use inclusive (`...`) and exclusive (`..`) ranges within switch prongs, significantly simplifying logic for character classes and numeric intervals.
+
+### 🎣 Robust Payload Captures
+Payload captures are now fully supported in both `while` loops and `switch` expressions. This allows for safe and elegant unwrapping of Optional types and Tagged Unions, with the compiler ensuring that captures are correctly scoped and initialized even in complex nested loops.
+
+### 🖨️ Print Lowering
+A major architectural addition in this release is **Print Lowering**. Calls to `std.debug.print` are now automatically decomposed by the compiler into a series of efficient, direct runtime calls (`__bootstrap_print`, `__bootstrap_print_int`). This eliminates the need for a complex `printf` implementation in the bootstrap runtime and improves reliability on legacy systems.
+
+## 🛠️ Stabilization & Compatibility
+
+### 🏗️ C89 Compliance: Block-Top Declarations
+To adhere to the strictest C89 standards (and ensure compatibility with MSVC 6.0), the `C89Emitter` now guarantees that all compiler-generated temporary variables—such as those used for loop indices or expression lifting—are declared at the absolute top of their respective C blocks.
+
+### 🔄 Recursion & Type Resolution
+This release fully resolves several deep-seated issues related to recursion. The Lisp interpreter example now runs flawlessly thanks to a "mutable slot" strategy for recursive definitions and a more robust `TYPE_ANONYMOUS_INIT` resolution system for nested aggregate initializers.
+
+### 🔌 Standardized Runtime API
+We have standardized the signatures of our core runtime IO functions. `__bootstrap_print`, `__bootstrap_write`, and `__bootstrap_panic` now consistently use `const char*` signatures, resolving signedness warnings and improving interop with standard C libraries.
+
+## 📂 New & Updated Examples
+- **[Mandelbrot](examples/mandelbrot/)**: A new example demonstrating floating-point performance and the new braceless syntax.
+- **[Lisp Interpreter](examples/lisp_interpreter_curr/)**: Now fully functional with recursive `define` and improved 32-bit alignment.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent)*
+
+---
+**Note:** Z98 is an independent project and is not affiliated with the official Zig project. It continues to serve as a bridge between the modern world of Zig and the classic hardware of the late 90s.
+
+***
+
 # Z98 0.10.0 “Xylene” Release Notes
 
 We are pleased to announce the first official release of the Z98 compiler, version **0.10.0**, codenamed **“Xylene”**.
@@ -50,8 +98,8 @@ The compiler now supports error unions (`!T`), `try`, `catch`, and full `defer` 
 ## 👥 Contributors
 Z98 is made possible by the dedicated work of its contributors.
 
-*@melkyr-Andres Hernandez* 
-*Jules (AI-Agent used to help out)* 
+*@melkyr-Andres Hernandez*
+*Jules (AI-Agent used to help out)*
 
 ---
 **Note:** Z98 is an independent project and is not affiliated with the official Zig project. It does not aim to replace Zig or C89, but rather to offer a compatible subset that can run on extremely limited hardware. This release is the first step in that journey; we expect it to have limitations and welcome feedback.
