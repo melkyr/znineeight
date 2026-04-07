@@ -426,7 +426,7 @@ TEST_FUNC(Task228_OptionalOrelseUnreachable) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    if (generated_c.find("__bootstrap_panic(\"reached unreachable\"") == std::string::npos) return false;
+    if (generated_c.find("__bootstrap_panic((const char*)(\"reached unreachable\"") == std::string::npos) return false;
 
     return true;
 }

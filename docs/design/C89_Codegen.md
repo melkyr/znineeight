@@ -46,7 +46,7 @@ All generated C files include `zig_runtime.h`, which incorporates `zig_compat.h`
 - **Fixed-width types**: Maps Zig types like `i64` and `u64` to their C89 equivalents (e.g., `__int64` on MSVC 6.0).
 - **Boolean types**: Provides `bool`, `true`, and `false` for strict C89 compilers.
 - **Inline keyword**: Defines `ZIG_INLINE` to handle compiler-specific inline syntax or lack thereof.
-- **Unused labels**: Provides `RETR_UNUSED_FUNC` and other macros to suppress warnings.
+- **Unused labels**: Provides `ZIG_UNUSED` and other macros to suppress warnings.
 
 ### Unused Continue Labels
 To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
@@ -354,13 +354,13 @@ For each unique slice type encountered, the compiler generates a `typedef` and a
 
 #### Helper Functions
 For each unique slice type, a construction helper is generated:
-- **Signature**: `static RETR_UNUSED_FUNC Slice_T __make_slice_T(T* ptr, usize len)`
+- **Signature**: `ZIG_INLINE ZIG_UNUSED Slice_T __make_slice_T(T* ptr, usize len)`
 - **Implementation**: Returns a `Slice_T` struct initialized with the provided pointer and length.
 - **Usage**: Invoked for all slicing expressions (`base[start..end]`) and implicit array-to-slice coercions.
 
 #### String Literal Coercion to Slice
 To avoid signedness warnings when coercing string literals (which are `char*` in C89) to `u8` slices (where `u8` is `unsigned char`), the construction helper for `u8` slices is specialized:
-- **Signature**: `static RETR_UNUSED_FUNC Slice_u8 __make_slice_u8(const char* ptr, usize len)`
+- **Signature**: `ZIG_INLINE ZIG_UNUSED Slice_u8 __make_slice_u8(const char* ptr, usize len)`
 - **Implementation**: The pointer parameter is explicitly cast to `unsigned char*` when assigning to the slice's `ptr` field: `s.ptr = (unsigned char*)ptr;`.
 - **Rationale**: This allows string literals to be passed directly to the helper without generating `-Wpointer-sign` warnings, while maintaining the correct unsigned representation for `u8` data.
 
