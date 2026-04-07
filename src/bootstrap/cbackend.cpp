@@ -357,7 +357,7 @@ bool CBackend::generateSpecialTypesHeader(const char* output_dir) {
         emitter.writeString(";\n");
 
         emitter.writeIndent();
-        emitter.writeString("static RETR_UNUSED_FUNC ");
+        emitter.writeString("ZIG_INLINE ZIG_UNUSED ");
         emitter.writeString(mangled_name);
         emitter.writeString(" __make_slice_");
         emitter.writeString(emitter.getMangledTypeName(elem_type));

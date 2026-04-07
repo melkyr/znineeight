@@ -49,7 +49,7 @@ TEST_FUNC(Unreachable_Statement) {
     plat_free(buffer);
     plat_delete_file(temp_filename);
 
-    if (generated_c.find("__bootstrap_panic(\"reached unreachable\"") == std::string::npos) {
+    if (generated_c.find("__bootstrap_panic((const char*)(\"reached unreachable\"") == std::string::npos) {
         printf("FAIL: Expected __bootstrap_panic call, got:\n%s\n", generated_c.c_str());
         return false;
     }

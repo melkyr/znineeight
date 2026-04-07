@@ -40,6 +40,17 @@ Phase 1 of the compatibility plan ensures that this command passes for all core 
 
 The Z98 bootstrap compiler generates C89-compliant code intended to be built with legacy toolchains like MSVC 6.0 and OpenWatcom.
 
+### Generated Code Headers
+
+The generated C code relies on a dedicated compatibility header, `src/include/zig_compat.h`, which provides abstractions for C89 environments:
+
+- **ZIG_UNUSED**: Expands to `__attribute__((unused))` on GCC-compatible compilers and to nothing on others (like MSVC 6.0 and OpenWatcom), preventing "unused function" warnings.
+- **ZIG_INLINE**: Defined as `static` by default to ensure strict C89 compliance while allowing compilers to inline functions. On MSVC and GCC, it may use compiler-specific keywords like `__inline` or `__inline__`.
+- **Fixed-width types**: Maps `i64` and `u64` to `long long` or `__int64` as appropriate.
+- **Boolean support**: Provides `bool`, `true`, and `false` typedefs/macros for C89.
+
+All generated `.c` and `.h` files include `zig_runtime.h`, which in turn includes `zig_compat.h`.
+
 ### Mixed Declarations and Code
 
 C89 requires all variable declarations to appear at the beginning of a block, before any executable statements.
