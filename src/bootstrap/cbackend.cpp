@@ -479,6 +479,7 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
     const char* compat_h = "src/include/zig_compat.h";
     const char* runtime_h = "src/include/zig_runtime.h";
     const char* runtime_c = "src/runtime/zig_runtime.c";
+    const char* win98_h = "src/include/platform_win98.h";
 
     char* content_compat = NULL;
     size_t size_compat = 0;
@@ -534,6 +535,23 @@ bool CBackend::copyRuntimeFiles(const char* output_dir) {
         plat_close_file(f_c);
     }
     plat_free(content_c);
+
+    char* content_win98 = NULL;
+    size_t size_win98 = 0;
+    if (plat_file_read(win98_h, &content_win98, &size_win98)) {
+        char dest_win98[1024];
+        char* cur_win98 = dest_win98;
+        size_t rem_win98 = sizeof(dest_win98);
+        safe_append(cur_win98, rem_win98, output_dir);
+        safe_append(cur_win98, rem_win98, "/platform_win98.h");
+
+        PlatFile f_win98 = plat_open_file(dest_win98, true);
+        if (f_win98 != PLAT_INVALID_FILE) {
+            plat_write_file(f_win98, content_win98, size_win98);
+            plat_close_file(f_win98);
+        }
+        plat_free(content_win98);
+    }
 
     return true;
 }
