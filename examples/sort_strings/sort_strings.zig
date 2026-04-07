@@ -34,7 +34,7 @@ fn printStrings(ptr: [*][*]const u8, len: usize) void {
     if (ptr == null) { return; }
     var i: usize = 0;
     while (i < len) {
-        __bootstrap_print(@ptrCast(*const u8, ptr[i]));
+        __bootstrap_print(@ptrCast(*const c_char, ptr[i]));
         __bootstrap_print(" ");
         i += 1;
     }
