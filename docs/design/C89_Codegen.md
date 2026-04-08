@@ -87,13 +87,34 @@ Using these constants simplifies maintenance and ensures that any necessary mang
 ### 2.3 Temporary Variable Allocation
 As of the "para-Cresol" release, `C89Emitter` employs a unified strategy for generating temporary variables via `makeTempVarForType`. This ensures that all compiler-generated symbols (like `opt_tmp` for optionals or `for_idx` for loops) are declared at the beginning of their respective C blocks, adhering to strict C89 rules.
 
-### 2.4 Unused Continue Labels
+### 2.4 Type and Field Declaration Helpers
+To standardize the emission of variable and field declarations and ensure correct placement of semicolons and line endings, the `C89Emitter` provides two primary helpers:
+
+- **`writeDecl(Type* type, const char* name)`**: Emits a C declaration (`type name;`) followed by a statement terminator (`endStmt()`). This is used for top-level variables and local variables that do not require immediate C-level initialization.
+- **`writeFieldDecl(Type* type, const char* name)`**: Similar to `writeDecl`, but automatically includes the current indentation. This is the preferred method for emitting fields within `struct` and `union` bodies.
+
+These helpers reduce manual string manipulation and ensure that type-specific formatting (like function pointer syntax) is handled correctly through the underlying `emitType` and `emitDeclarator` calls.
+
+#### Example: Refactoring `struct` field emission
+**Before:**
+```cpp
+writeIndent();
+emitType(field_type, field_name);
+writeString(";\n");
+```
+
+**After:**
+```cpp
+writeFieldDecl(field_type, field_name);
+```
+
+### 2.5 Unused Continue Labels
 To reduce compiler warnings (`-Wunused-label`) in the generated C code, `C89Emitter` tracks whether a `continue` statement actually occurs within each loop.
 - **Mechanism**: A stack `loop_has_continue_` is maintained alongside `loop_id_stack_`.
 - **Flag Activation**: The flag for the current loop is set to `true` whenever `emitContinue` is called for that loop's ID.
 - **Conditional Emission**: The continue label (e.g., `__loop_1_continue: ;`) is only emitted at the end of the loop body if the flag is true.
 
-### 2.5 Combined Block and Statement Helpers
+### 2.6 Combined Block and Statement Helpers
 To simplify the emission of control flow structures and ensure consistent formatting of blocks and expression-statements, the `C89Emitter` provides several higher-level helpers:
 
 - **`writeBlockOpen()`**: Writes `{`, a line ending, and increments the indentation level.

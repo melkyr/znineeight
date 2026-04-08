@@ -468,18 +468,18 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
         c_name = getC89GlobalName(decl->name);
     }
 
-    emitDeclarator(type, c_name);
-
     if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
+        emitDeclarator(type, c_name);
         writeString(" = ");
         if (type && type->kind == TYPE_OPTIONAL && decl->initializer->type == NODE_NULL_LITERAL) {
             writeString("{0}");
         } else {
             emitExpression(decl->initializer);
         }
+        endStmt();
+    } else {
+        writeDecl(type, c_name);
     }
-
-    endStmt();
 }
 
 void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode* init_node) {
@@ -903,54 +903,62 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 
     if (!emit_assignment) {
-        writeIndent();
-
-        bool is_const_in_c = false;
-        if (decl->is_const) {
-            /* Only emit 'const' if the initializer is a C89 constant expression */
-            if (decl->initializer && isConstantInitializer(decl->initializer)) {
-                is_const_in_c = true;
-            }
-        }
-
-        if (is_const_in_c) {
-            writeKeyword(KW_CONST);
-        }
-
-        emitDeclarator(node->resolved_type, c_name);
-
-        /* Special case: zero-initialization for catch temporaries and other lifted vars */
+        bool has_c_init = false;
         if (decl->initializer && decl->initializer->type == NODE_STRUCT_INITIALIZER &&
             (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
-            writeString(" = {0}");
+            has_c_init = true;
         } else if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL && isConstantInitializer(decl->initializer)) {
-            /* C89: cannot initialize Optional or Error Union with a primitive constant */
-            Type* target_type = node->resolved_type;
-            Type* source_type = decl->initializer->resolved_type;
+            has_c_init = true;
+        }
 
-            bool needs_wrapping = false;
-            if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
-                if (source_type && source_type->kind != target_type->kind) {
-                    needs_wrapping = true;
+        writeIndent();
+        if (has_c_init) {
+            bool is_const_in_c = false;
+            if (decl->is_const) {
+                /* Only emit 'const' if the initializer is a C89 constant expression */
+                if (decl->initializer && isConstantInitializer(decl->initializer)) {
+                    is_const_in_c = true;
                 }
             }
 
-            if (needs_wrapping) {
-                /* For locals, we prefer splitting declaration and wrapping assignment.
-                   But here emit_assignment is false, meaning we are ONLY emitting the declaration.
-                   We emit the declaration with {0} and let the second pass (emit_assignment=true)
-                   handle the wrapping via emitAssignmentWithLifting. */
+            if (is_const_in_c) {
+                writeKeyword(KW_CONST);
+            }
+
+            emitDeclarator(node->resolved_type, c_name);
+
+            /* Special case: zero-initialization for catch temporaries and other lifted vars */
+            if (decl->initializer && decl->initializer->type == NODE_STRUCT_INITIALIZER &&
+                (!decl->initializer->as.struct_initializer->fields || decl->initializer->as.struct_initializer->fields->length() == 0)) {
                 writeString(" = {0}");
             } else {
-                /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
-                writeString(" = ");
-                emitExpression(decl->initializer);
-            }
-        } else if (decl->initializer && decl->initializer->type == NODE_UNDEFINED_LITERAL) {
-            /* Zig 'undefined' means no initialization in C */
-        }
+                /* C89: cannot initialize Optional or Error Union with a primitive constant */
+                Type* target_type = node->resolved_type;
+                Type* source_type = decl->initializer->resolved_type;
 
-        endStmt();
+                bool needs_wrapping = false;
+                if (target_type && (target_type->kind == TYPE_OPTIONAL || target_type->kind == TYPE_ERROR_UNION)) {
+                    if (source_type && source_type->kind != target_type->kind) {
+                        needs_wrapping = true;
+                    }
+                }
+
+                if (needs_wrapping) {
+                    /* For locals, we prefer splitting declaration and wrapping assignment.
+                       But here emit_assignment is false, meaning we are ONLY emitting the declaration.
+                       We emit the declaration with {0} and let the second pass (emit_assignment=true)
+                       handle the wrapping via emitAssignmentWithLifting. */
+                    writeString(" = {0}");
+                } else {
+                    /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
+                    writeString(" = ");
+                    emitExpression(decl->initializer);
+                }
+            }
+            endStmt();
+        } else {
+            writeDecl(node->resolved_type, c_name);
+        }
         if (debug_trace_) {
             plat_printf_debug("[CODEGEN] Emitted decl: %s\n", c_name);
         }
@@ -3311,13 +3319,10 @@ void C89Emitter::emitStructBody(Type* type) {
             for (size_t i = 0; i < fields->length(); ++i) {
                 /* Skip void fields in C */
                 if ((*fields)[i].type->kind == TYPE_VOID) continue;
-                writeIndent();
 
                 Type* field_type = (*fields)[i].type;
                 const char* field_name = getSafeFieldName((*fields)[i].name);
-
-                emitType(field_type, field_name);
-                endStmt();
+                writeFieldDecl(field_type, field_name);
             }
         }
     }
@@ -3344,12 +3349,9 @@ void C89Emitter::emitUnionBody(Type* type) {
                 }
 
                 if (field_type->kind == TYPE_VOID) continue;
-                writeIndent();
 
                 const char* field_name = getSafeFieldName((*fields)[i].name);
-
-                emitType(field_type, field_name);
-                endStmt();
+                writeFieldDecl(field_type, field_name);
                 emitted_fields++;
             }
         }
@@ -3370,10 +3372,8 @@ void C89Emitter::emitTaggedUnionBody(Type* type) {
         IndentScope struct_indent(*this);
 
         /* tag */
-        writeIndent();
         Type* tag_type = (type->kind == TYPE_TAGGED_UNION) ? type->as.tagged_union.tag_type : type->as.struct_details.tag_type;
-        emitType(tag_type, "tag");
-        endStmt();
+        writeFieldDecl(tag_type, "tag");
 
         /* union of payloads */
         writeIndent();
@@ -3397,13 +3397,10 @@ void C89Emitter::emitTaggedUnionPayloadBody(Type* type) {
             for (size_t i = 0; i < fields->length(); ++i) {
                 /* Skip void fields in C */
                 if ((*fields)[i].type->kind == TYPE_VOID) continue;
-                writeIndent();
 
                 Type* field_type = (*fields)[i].type;
                 const char* field_name = getSafeFieldName((*fields)[i].name);
-
-                emitType(field_type, field_name);
-                endStmt();
+                writeFieldDecl(field_type, field_name);
                 emitted_fields++;
             }
         }
