@@ -102,9 +102,11 @@ Scope::Scope(ArenaAllocator& arena, size_t initial_bucket_count)
 
 void Scope::insert(Symbol& symbol) {
 #ifdef DEBUG_VISIBILITY
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("DEBUG_VISIBILITY: Inserting symbol '%s' (module: %s, pub: %d, kind: %d)\n",
                      symbol.name, symbol.module_name ? symbol.module_name : "NULL",
                      (symbol.flags & SYMBOL_FLAG_PUB) != 0, (int)symbol.kind);
+#endif
 #endif
     // Resize if load factor exceeds 0.75
     if (symbol_count + 1 > bucket_count * 0.75) {
@@ -208,14 +210,18 @@ void SymbolTable::enterScope() {
     scopes.append(new_scope);
     all_scopes_.append(new_scope);
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] ENTER_SCOPE depth=%zu\n", scopes.length());
+#endif
 #endif
 }
 
 void SymbolTable::exitScope() {
     if (scopes.length() > 1) { // Do not exit the global scope.
 #ifdef DEBUG_SYMBOL
-        plat_printf_debug("[SYMBOL] EXIT_SCOPE depth=%zu\n", scopes.length());
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOL] EXIT_SCOPE depth=%zu\n", scopes.length());
+#endif
 #endif
         scopes.pop_back();
         current_scope_level_--;
@@ -224,7 +230,9 @@ void SymbolTable::exitScope() {
 
 bool SymbolTable::insert(Symbol& symbol) {
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] INSERT '%s' module=%s scope_level=%u depth=%zu\n", symbol.name, symbol.module_name ? symbol.module_name : "NULL", symbol.scope_level, scopes.length());
+#endif
 #endif
     // Check for redeclaration in the current scope.
     // If it's the global scope, we must check for collisions within the same module
@@ -241,7 +249,9 @@ bool SymbolTable::insert(Symbol& symbol) {
     symbol.scope_level = getCurrentScopeLevel();
     // Add the symbol to the current scope.
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] INSERTED '%s' into scope level %zu\n", symbol.name, scopes.length());
+#endif
 #endif
     scopes.back()->insert(symbol);
     return true;
@@ -249,7 +259,9 @@ bool SymbolTable::insert(Symbol& symbol) {
 
 Symbol* SymbolTable::lookup(const char* name) {
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] LOOKUP '%s' current_module=%s scopes=%zu\n", name, current_module_ ? current_module_ : "NULL", scopes.length());
+#endif
 #endif
     // Search from the innermost scope to the outermost.
     for (int i = (int)scopes.length() - 1; i >= 0; --i) {
@@ -262,23 +274,31 @@ Symbol* SymbolTable::lookup(const char* name) {
 
         if (symbol) {
 #ifdef DEBUG_SYMBOL
-            plat_printf_debug("[SYMBOL] FOUND '%s' at level %d module=%s\n", name, i, symbol->module_name ? symbol->module_name : "NULL");
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOL] FOUND '%s' at level %d module=%s\n", name, i, symbol->module_name ? symbol->module_name : "NULL");
+#endif
 #endif
 #ifdef DEBUG_VISIBILITY
-            plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' level %d -> FOUND (module_name: %s, pub: %d)\n",
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' level %d -> FOUND (module_name: %s, pub: %d)\n",
                              name, current_module_ ? current_module_ : "NULL", i,
                              symbol->module_name ? symbol->module_name : "NULL",
                              (symbol->flags & SYMBOL_FLAG_PUB) != 0);
+#endif
 #endif
             return symbol;
         }
     }
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] NOT FOUND '%s'\n", name);
 #endif
+#endif
 #ifdef DEBUG_VISIBILITY
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("DEBUG_VISIBILITY: SymbolTable::lookup('%s') in module '%s' -> NOT FOUND\n",
                      name, current_module_ ? current_module_ : "NULL");
+#endif
 #endif
     return NULL; // Not found in any scope.
 }
@@ -291,17 +311,23 @@ Symbol* SymbolTable::lookupInCurrentScope(const char* name) {
     // For the global scope (depth == 1), we want module-level symbols.
     const char* mod_filter = (scopes.length() == 1) ? current_module_ : NULL;
 #ifdef DEBUG_SYMBOL
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOL] LOOKUP_IN_CURRENT_SCOPE '%s' depth=%zu mod_filter=%s\n", 
                      name, scopes.length(), mod_filter ? mod_filter : "NULL");
+#endif
 #endif
     Symbol* sym = scopes.back()->find(name, mod_filter);
 
 #ifdef DEBUG_SYMBOL
     if (sym) {
-        plat_printf_debug("[SYMBOL] FOUND_IN_CURRENT_SCOPE '%s' module=%s\n", 
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOL] FOUND_IN_CURRENT_SCOPE '%s' module=%s\n",
                          name, sym->module_name ? sym->module_name : "NULL");
+#endif
     } else {
-        plat_printf_debug("[SYMBOL] NOT_FOUND_IN_CURRENT_SCOPE '%s'\n", name);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOL] NOT_FOUND_IN_CURRENT_SCOPE '%s'\n", name);
+#endif
     }
 #endif
 
@@ -315,8 +341,10 @@ Symbol* SymbolTable::lookupWithModule(const char* module_name, const char* symbo
         result = scopes[0]->find(symbol_name, module_name);
     }
 #ifdef DEBUG_VISIBILITY
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("DEBUG_VISIBILITY: lookupWithModule(module: %s, symbol: %s) -> %p\n",
                      module_name, symbol_name, result);
+#endif
 #endif
     return result;
 }
@@ -361,19 +389,27 @@ void SymbolTable::registerTempSymbol(Symbol* symbol) {
 }
 
 void SymbolTable::dumpSymbols(const char* context) {
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOLS] === Dump: %s ===\n", context);
+#endif
     for (size_t i = 0; i < scopes.length(); ++i) {
-        plat_printf_debug("[SYMBOLS]  Scope level %d:\n", (int)i + 1);
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOLS]  Scope level %d:\n", (int)i + 1);
+#endif
         Scope* scope = scopes[i];
         for (size_t j = 0; j < scope->bucket_count; ++j) {
             Scope::SymbolEntry* entry = scope->buckets[j];
             while (entry) {
                 Symbol& sym = entry->symbol;
-                plat_printf_debug("[SYMBOLS]    name=%s kind=%d flags=0x%x\n",
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[SYMBOLS]    name=%s kind=%d flags=0x%x\n",
                                  sym.name ? sym.name : "NULL", (int)sym.kind, sym.flags);
+#endif
                 entry = entry->next;
             }
         }
     }
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[SYMBOLS] === End Dump ===\n");
+#endif
 }

@@ -155,6 +155,7 @@ extern Arena* zig_default_arena;
   - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase.
   - **Runtime Control**: `--no-logs` for quiet mode, `--verbose` for console debug output.
 * **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
+* **Instrumentation Guarding**: Internal compiler instrumentation (e.g., `TypeRegistry` lookups, `LIFTER` traces) is guarded by the `Z98_ENABLE_DEBUG_LOGS` compile-time macro. When enabled, these logs are routed to `LOG_DEBUG` and can be viewed on the console using the `--verbose` flag.
 * **`plat_i64_to_string(i64 value, char* buffer, size_t buffer_size)`**: Converts an `i64` to a string without using `sprintf`. Part of the Platform Abstraction Layer.
 * **`plat_u64_to_string(u64 value, char* buffer, size_t buffer_size)`**: Converts a `u64` to a string.
 * **`plat_float_to_string(double value, char* buffer, size_t buffer_size)`**: Converts a `double` to a string using scientific or fixed-point notation.

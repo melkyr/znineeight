@@ -522,7 +522,9 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
         if (is_tagged) {
 #ifdef DEBUG_TAGGED_UNION
-            plat_printf_debug("[CODEGEN] emitInitializerAssignments (tagged union): base_name=%s\n", base_name);
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] emitInitializerAssignments (tagged union): base_name=%s\n", base_name);
+#endif
 #endif
             /* Emit tag assignment */
             const char* field_name = NULL;
@@ -556,7 +558,9 @@ void C89Emitter::emitInitializerAssignments(const char* base_name, const ASTNode
 
                 if (variant_type && variant_type->kind == TYPE_VOID) {
 #ifdef DEBUG_TAGGED_UNION
-                    plat_printf_debug("[CODEGEN] Variant %s is VOID, skipping payload emission\n", variant_init->field_name);
+                    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] Variant %s is VOID, skipping payload emission\n", variant_init->field_name);
+#endif
 #endif
                     handled = true; /* Nothing to emit for void payload */
                 } else if (variant_init->value && variant_init->value->type == NODE_STRUCT_INITIALIZER) {
@@ -867,9 +871,11 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     }
 
     if (debug_trace_) {
-        plat_printf_debug("[CODEGEN] emitLocalVarDecl: name=%s has_symbol=%d\n",
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] emitLocalVarDecl: name=%s has_symbol=%d\n",
                          decl->name ? decl->name : "NULL",
                          decl->symbol ? 1 : 0);
+#endif
     }
 
     const char* c_name = NULL;
@@ -879,12 +885,16 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                               plat_strncmp(decl->name, "__return_", 9) == 0)) {
         c_name = decl->name;
         if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
+#endif
         }
     } else {
         if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
                              decl->name ? decl->name : "NULL");
+#endif
         }
         return;
     }
@@ -960,7 +970,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
             writeDecl(node->resolved_type, c_name);
         }
         if (debug_trace_) {
-            plat_printf_debug("[CODEGEN] Emitted decl: %s\n", c_name);
+            #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] Emitted decl: %s\n", c_name);
+#endif
         }
     } else {
         if (decl->initializer && decl->initializer->type != NODE_UNDEFINED_LITERAL) {
@@ -989,7 +1001,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
 
             emitAssignmentWithLifting(c_name, node, decl->initializer);
             if (debug_trace_) {
-                plat_printf_debug("[CODEGEN] Emitted assignment for: %s\n", c_name);
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] Emitted assignment for: %s\n", c_name);
+#endif
             }
         }
     }
@@ -1863,8 +1877,10 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                 if (has_non_void_capture) {
                     ASTNode* item_expr = (*prong->items)[0];
                     Type* capture_type = prong->capture_sym->symbol_type;
+#ifdef Z98_ENABLE_DEBUG_LOGS
                     plat_printf_debug("[emitSwitch] Non-void capture for tag '%s', capture type = %d\n",
-                                      item_expr->as.integer_literal.original_name, capture_type->kind);
+                                      item_expr->as.integer_literal.original_name, (int)capture_type->kind);
+#endif
 
                     writeIndent();
                     writeBlockOpen();
@@ -2455,9 +2471,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 
     if (debug_trace_ && node->type == NODE_IDENTIFIER) {
         const char* name = node->as.identifier.name;
-        plat_printf_debug("[CODEGEN] emitExpression IDENT: name=%s has_symbol=%d\n",
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] emitExpression IDENT: name=%s has_symbol=%d\n",
                          name ? name : "NULL",
                          node->as.identifier.symbol ? 1 : 0);
+#endif
     }
 
     switch (node->type) {
@@ -2555,7 +2573,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                         }
                     }
                     if (!found && debug_trace_) {
-                        plat_printf_debug("[CODEGEN] WARNING: Using undeclared var: %s\n", c_name);
+                        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] WARNING: Using undeclared var: %s\n", c_name);
+#endif
                     }
 
                     writeString(c_name);
@@ -2577,7 +2597,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                         }
                     }
                     if (!found && debug_trace_) {
-                        plat_printf_debug("[CODEGEN] WARNING: Using undeclared temp: %s\n", name);
+                        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] WARNING: Using undeclared temp: %s\n", name);
+#endif
                     }
 
                     writeString(name);
@@ -2713,7 +2735,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
             if (struct_type && isTaggedUnion(struct_type)) {
                 const ASTStructInitializerNode* init = node->as.struct_initializer;
 #ifdef DEBUG_TAGGED_UNION
-                plat_printf_debug("[CODEGEN] NODE_STRUCT_INITIALIZER (tagged union expression)\n");
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] NODE_STRUCT_INITIALIZER (tagged union expression)\n");
+#endif
 #endif
                 if (init->fields && init->fields->length() > 0) {
                     /* Emit tag: .tag = TagConstant */
@@ -2915,10 +2939,12 @@ void C89Emitter::emitAccess(const ASTNode* node) {
     if (node->type == NODE_MEMBER_ACCESS) {
         const ASTMemberAccessNode* member = node->as.member_access;
         Type* base_type = member->base->resolved_type;
-        plat_printf_debug("[EMITTER] MEMBER_ACCESS: field='%s' base_type=%p base_type_kind=%d\n",
+        #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[EMITTER] MEMBER_ACCESS: field='%s' base_type=%p base_type_kind=%d\n",
                          member->field_name,
                          (void*)base_type,
                          base_type ? base_type->kind : -1);
+#endif
     }
 #endif
     switch (node->type) {
@@ -3022,7 +3048,9 @@ void C89Emitter::emitAccess(const ASTNode* node) {
 
             if (base->type == NODE_UNARY_OP &&
                 (base->as.unary_op.op == TOKEN_STAR || base->as.unary_op.op == TOKEN_DOT_ASTERISK)) {
-                plat_printf_debug("[emitAccess] Wrapping dereference base\n");
+                #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[emitAccess] Wrapping dereference base\n");
+#endif
                 writeString("(");
                 emitExpression(base);
                 writeString(")");
@@ -3599,7 +3627,9 @@ void C89Emitter::emitIntCast(const ASTNumericCastNode* node) {
     Type* dest_type = node->target_type->resolved_type;
 
     if (!src_type || !dest_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("Error: Missing type info in @intCast\n");
+#endif
         plat_abort();
     }
 
@@ -3626,7 +3656,9 @@ void C89Emitter::emitFloatCast(const ASTNumericCastNode* node) {
     Type* dest_type = node->target_type->resolved_type;
 
     if (!src_type || !dest_type) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug("Error: Missing type info in @floatCast\n");
+#endif
         plat_abort();
     }
 
@@ -4672,8 +4704,10 @@ void C89Emitter::emitContinue(const ASTContinueStmtNode* node) {
 
 void C89Emitter::validateEmission() {
     if (!debug_trace_) return;
+    #ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[CODEGEN] Validation: %d declarations emitted in function %s\n",
                      (int)emitted_decls_.length(), current_fn_name_ ? current_fn_name_ : "unknown");
+#endif
 }
 
 void C89Emitter::emitReturn(const ASTReturnStmtNode* node) {

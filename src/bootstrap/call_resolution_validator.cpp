@@ -4,7 +4,9 @@
 #include "utils.hpp"
 
 bool CallResolutionValidator::validate(CompilationUnit& unit, ASTNode* root) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_print_debug("Running CallResolutionValidator...\n");
+#endif
     if (!root) return true;
 
     Context ctx(unit);

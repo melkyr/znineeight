@@ -96,7 +96,9 @@ void ControlFlowLifter::transformNode(ASTNode** node_slot, ASTNode* parent) {
     if (!node) return;
 
     if (debug_mode_) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_printf_debug("[LIFTER] transformNode type=%d\n", (int)node->type);
+#endif
     }
 
     depth_++;
@@ -340,7 +342,9 @@ void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
 
     if (!sym || !sym->c_prototype_type) return;
 
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[LIFTER] lowerExternCall for sym=%s\n", sym->name);
+#endif
 
     // 1. Lower arguments
     DynamicArray<Type*>* abi_params = sym->c_prototype_type->as.function.params;
@@ -365,7 +369,9 @@ void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
             ASTNode* current_stmt = stmt_stack_.back();
             int insert_idx = findStatementIndex(current_block, current_stmt);
             if (insert_idx == -1) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
                  plat_printf_debug("[LIFTER] WARNING: Could not find insertion point for arg unwrapping!\n");
+#endif
                  continue;
             }
             current_block->statements->insert((size_t)insert_idx, opt_tmp_decl);
@@ -414,7 +420,9 @@ void ControlFlowLifter::lowerExternCall(ASTNode** node_slot, ASTNode* parent) {
         ASTNode* current_stmt = stmt_stack_.back();
         int insert_idx = findStatementIndex(current_block, current_stmt);
         if (insert_idx == -1) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
              plat_printf_debug("[LIFTER] WARNING: Could not find insertion point for call res wrapping!\n");
+#endif
              return;
         }
 
@@ -452,7 +460,9 @@ void ControlFlowLifter::lowerExportPrologue(ASTFnDeclNode* fn) {
     Symbol* sym = (unit_ && module_name_) ? unit_->getSymbolTable(module_name_).lookup(fn->name) : NULL;
     if (!sym || !sym->c_prototype_type || !fn->body) return;
 
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[LIFTER] lowerExportPrologue for %s\n", fn->name);
+#endif
 
     DynamicArray<Type*>* abi_params = sym->c_prototype_type->as.function.params;
     ASTBlockStmtNode* body = &fn->body->as.block_stmt;
@@ -466,7 +476,9 @@ void ControlFlowLifter::lowerExportPrologue(ASTFnDeclNode* fn) {
         Type* abi_type = (*abi_params)[i];
 
         if (abi_type->kind == TYPE_POINTER && isOptionalPointer(param.symbol->symbol_type)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("[LIFTER]   Wrapping param %s\n", param.name);
+#endif
             // Wrap raw pointer parameter in Zig-side optional
             const char* wrapped_name = generateTempName(param.name);
             ASTNode* wrapped_decl = createVarDecl(wrapped_name, param.symbol->symbol_type, NULL, false);
@@ -528,7 +540,9 @@ void ControlFlowLifter::lowerExportReturn(ASTNode** node_slot, ASTNode* parent) 
 
     bool abi_ret_is_ptr = (abi_ret->kind == TYPE_POINTER || abi_ret->kind == TYPE_FUNCTION_POINTER);
     if (ret.expression && abi_ret_is_ptr && isOptionalPointer(ret.expression->resolved_type)) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_printf_debug("[LIFTER] lowerExportReturn for fn=%s\n", fn->name);
+#endif
 
         // Fix double-evaluation: evaluate expression into an optional temporary first
         const char* opt_tmp_name = generateTempName("ret_opt");
@@ -544,7 +558,9 @@ void ControlFlowLifter::lowerExportReturn(ASTNode** node_slot, ASTNode* parent) 
         ASTNode* current_stmt = stmt_stack_.back();
         int insert_idx = findStatementIndex(current_block, current_stmt);
         if (insert_idx == -1) {
+#ifdef Z98_ENABLE_DEBUG_LOGS
              plat_printf_debug("[LIFTER] WARNING: Could not find insertion point for return unwrapping!\n");
+#endif
              return;
         }
         current_block->statements->insert((size_t)insert_idx, opt_tmp_decl);
@@ -1431,8 +1447,10 @@ const char* ControlFlowLifter::generateTempName(const char* prefix) {
 void ControlFlowLifter::validateLifting(Module* mod) {
     if (!debug_mode_) return;
 
+#ifdef Z98_ENABLE_DEBUG_LOGS
     plat_printf_debug("[LIFTER] Validation: %d temp variables registered in module %s\n",
                      (int)registered_temps_.length(), mod->name);
+#endif
 
     for (size_t i = 0; i < registered_temps_.length(); ++i) {
         for (size_t j = i + 1; j < registered_temps_.length(); ++j) {
@@ -1454,8 +1472,10 @@ void ControlFlowLifter::validateASTIntegrity(ASTNode* node, const char* context)
         if (!node->resolved_type) {
             char loc_buf[128];
             formatSourceLocation(node->loc, loc_buf, sizeof(loc_buf));
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_printf_debug("[LIFTER] WARNING: Node type=%d has NULL resolved_type at %s context=%s\n",
                              (int)node->type, loc_buf, context);
+#endif
         }
     }
 

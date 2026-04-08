@@ -207,7 +207,9 @@ void ErrorHandler::printErrors() {
         append_string(buffer, "\n");
         buffer.append('\0'); // Null-terminate
         plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(buffer.getData());
+#endif
 
         if (file) {
             // Find and print the line of code
@@ -233,7 +235,9 @@ void ErrorHandler::printErrors() {
             append_string(buffer, "\n");
             buffer.append('\0');
             plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_print_debug(buffer.getData());
+#endif
 
             // Print the caret
             buffer.clear();
@@ -242,7 +246,9 @@ void ErrorHandler::printErrors() {
             append_string(buffer, "^\n");
             buffer.append('\0');
             plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_print_debug(buffer.getData());
+#endif
         }
 
         if (report.hint) {
@@ -252,7 +258,9 @@ void ErrorHandler::printErrors() {
             append_string(buffer, "\n");
             buffer.append('\0');
             plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_print_debug(buffer.getData());
+#endif
         }
     }
 }
@@ -303,7 +311,9 @@ void ErrorHandler::printInfos() {
         append_string(buffer, "\n");
         buffer.append('\0');
         plat_print_info(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(buffer.getData());
+#endif
     }
 }
 
@@ -327,7 +337,9 @@ void ErrorHandler::printWarnings() {
         append_string(buffer, "\n");
         buffer.append('\0');
         plat_print_error(buffer.getData()); // Warnings go to stderr
+#ifdef Z98_ENABLE_DEBUG_LOGS
         plat_print_debug(buffer.getData());
+#endif
 
         if (file) {
             // Find and print the line of code
@@ -353,7 +365,9 @@ void ErrorHandler::printWarnings() {
             append_string(buffer, "\n");
             buffer.append('\0');
             plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_print_debug(buffer.getData());
+#endif
 
             // Print the caret
             buffer.clear();
@@ -362,7 +376,9 @@ void ErrorHandler::printWarnings() {
             append_string(buffer, "^\n");
             buffer.append('\0');
             plat_print_error(buffer.getData());
+#ifdef Z98_ENABLE_DEBUG_LOGS
             plat_print_debug(buffer.getData());
+#endif
         }
     }
 }
