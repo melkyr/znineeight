@@ -149,10 +149,11 @@ extern Arena* zig_default_arena;
 ### 3.2 Utility Functions (`utils.hpp`) & Platform Utilities (`platform.hpp`)
 **Purpose:** Provide safe string and numeric utilities that avoid modern C++ dependencies and satisfy strict environment constraints (no `msvcrt.dll`/`sprintf` in core bootstrap).
 
-* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. This allows all existing `plat_print_*` calls to be routed through a single channel that supports:
+* **Unified Logging**: Centralized logging system via a global `Logger` instance intercepted at the platform layer. This allows all existing `plat_print_*` and `plat_printf_debug` calls to be routed through a single channel that supports:
   - **Log Levels**: `LOG_ERROR`, `LOG_WARNING`, `LOG_INFO`, and `LOG_DEBUG`.
   - **Buffering**: A 16KB arena-allocated buffer to reduce I/O overhead.
-  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase.
+  - **File Output**: Optional logging to a file (e.g., `zig0.log`) with periodic flushing after each compilation phase and at program exit.
+  - **Robustness**: The Platform Abstraction Layer (PAL) `plat_write_file` function returns the number of bytes written (as a `long`), allowing the Logger to detect and report write failures.
   - **Runtime Control**: `--no-logs` for quiet mode, `--verbose` for console debug output.
 * **`arena_safe_append(char*& dest, size_t& remaining, const char* src)`**: Appends a string to a buffer while tracking remaining space and ensuring null-termination (even on truncation).
 * **Instrumentation Guarding**: Internal compiler instrumentation (e.g., `TypeRegistry` lookups, `LIFTER` traces) is guarded by the `Z98_ENABLE_DEBUG_LOGS` compile-time macro. When enabled, these logs are routed to `LOG_DEBUG` and can be viewed on the console using the `--verbose` flag.

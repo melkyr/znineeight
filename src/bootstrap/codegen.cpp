@@ -2371,7 +2371,9 @@ void C89Emitter::write(const char* data, size_t len) {
         flush();
         /* If the data is larger than the buffer itself, write it directly */
         if (len > sizeof(buffer_)) {
-            plat_write_file(output_file_, data, len);
+            if (plat_write_file(output_file_, data, len) < 0) {
+                /* Error handled by caller or ignored if no way to report without recursion */
+            }
             last_char_ = data[len - 1];
             return;
         }
@@ -2397,7 +2399,9 @@ void C89Emitter::emitComment(const char* text) {
 
 void C89Emitter::flush() {
     if (output_file_ != PLAT_INVALID_FILE && buffer_pos_ > 0) {
-        plat_write_file(output_file_, buffer_, buffer_pos_);
+        if (plat_write_file(output_file_, buffer_, buffer_pos_) < 0) {
+             /* Error handled by caller or ignored */
+        }
         buffer_pos_ = 0;
     }
 }

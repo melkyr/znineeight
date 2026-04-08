@@ -24,7 +24,7 @@ typedef int PlatFile;
 #endif
 
 PlatFile plat_open_file(const char* path, bool write);
-void plat_write_file(PlatFile file, const void* data, size_t size);
+long plat_write_file(PlatFile file, const void* data, size_t size);
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size);
 void plat_close_file(PlatFile file);
 bool plat_file_read(const char* path, char** buffer, size_t* size);
