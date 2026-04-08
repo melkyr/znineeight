@@ -9,6 +9,7 @@
 #include "symbol_table.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include <new>
 
 // Default arena size for the bootstrap compiler: 16MB
 static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
@@ -45,6 +46,9 @@ RETR_UNUSED_FUNC static bool runCompilationPipeline(CompilationUnit& unit, u32 f
 int main(int argc, char* argv[]) {
     bool debug_lifter = false;
     bool debug_codegen = false;
+    bool no_logs = false;
+    bool verbose = false;
+    const char* log_file_path = NULL;
 
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
         plat_print_info("Executing self-test...\n");
@@ -113,6 +117,16 @@ int main(int argc, char* argv[]) {
     bool win_line_endings = false;
     RETR_UNUSED(full_pipeline);
 
+    for (int i = 1; i < argc; ++i) {
+        if (plat_strcmp(argv[i], "--no-logs") == 0) {
+            no_logs = true;
+        } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
+            verbose = true;
+        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0) {
+            log_file_path = argv[i] + 11;
+        }
+    }
+
     // We'll use a simple fixed-size array for temporary include path storage
     // before the CompilationUnit is created.
     const char* temp_include_paths[64];
@@ -139,6 +153,11 @@ int main(int argc, char* argv[]) {
         } else if (plat_strcmp(argv[i], "--compile") == 0 || plat_strcmp(argv[i], "full_pipeline") == 0) {
             full_pipeline = true;
             if (i + 1 < argc) input_file = argv[++i];
+        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0 ||
+                   plat_strcmp(argv[i], "--no-logs") == 0 ||
+                   plat_strcmp(argv[i], "--verbose") == 0 ||
+                   plat_strcmp(argv[i], "-v") == 0) {
+            // Already handled in first pass
         } else if (input_file == NULL) {
             input_file = argv[i];
             full_pipeline = true;
@@ -156,6 +175,12 @@ int main(int argc, char* argv[]) {
         }
 
         ArenaAllocator arena(DEFAULT_ARENA_SIZE);
+
+        Logger* logger = new (arena.alloc(sizeof(Logger))) Logger(arena, !no_logs, log_file_path);
+        logger->setSuppressAll(no_logs);
+        logger->setVerbose(verbose);
+        plat_set_logger(logger);
+
         StringInterner interner(arena);
         CompilationUnit unit(arena, interner);
 
@@ -173,6 +198,9 @@ int main(int argc, char* argv[]) {
         opts.debug_lifter = debug_lifter;
         opts.debug_codegen = debug_codegen;
         opts.win_friendly_line_endings = win_line_endings;
+        opts.no_logs = no_logs;
+        opts.verbose = verbose;
+        opts.log_file_path = log_file_path;
         unit.setOptions(opts);
 
         u32 file_id = unit.addSource(input_file, source);
@@ -205,6 +233,9 @@ int main(int argc, char* argv[]) {
     plat_print_info("  --debug-lifter          Enable debug logging in AST lifter\n");
     plat_print_info("  --debug-codegen         Enable debug tracing in C89 code generator\n");
     plat_print_info("  --win-line-endings      Use CRLF line endings in generated C code\n");
+    plat_print_info("  --log-file=<path>       Enable logging to a file\n");
+    plat_print_info("  --no-logs               Suppress all non-essential output\n");
+    plat_print_info("  --verbose, -v           Enable verbose debug logging on console\n");
     plat_print_info("  parse <file>            Parse only\n");
     plat_print_info("  full_pipeline <file>    Execute full pipeline and optionally generate code\n");
 

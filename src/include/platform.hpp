@@ -2,6 +2,7 @@
 #define PLATFORM_HPP
 
 #include "common.hpp"
+#include <stdarg.h>
 
 #ifdef _WIN32
 #include "platform_win98.h"
@@ -28,13 +29,21 @@ size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size);
 void plat_close_file(PlatFile file);
 bool plat_file_read(const char* path, char** buffer, size_t* size);
 
+// Logger integration
+class Logger;
+void plat_set_logger(Logger* logger);
+Logger* plat_get_logger();
+
 // Console output
 void plat_print_info(const char* message);  // stdout
 void plat_print_error(const char* message); // stderr
 void plat_print_debug(const char* message); // debugger only
 void plat_printf_debug(const char* format, ...); // variadic debug print
 int plat_snprintf(char* str, size_t size, const char* format, ...);
+int plat_vsnprintf(char* str, size_t size, const char* format, va_list args);
 void plat_write_str(const char* s);         // low-level stderr write
+void plat_write_stderr(const char* s);      // explicit stderr bypass
+void plat_write_stdout(const char* s);      // explicit stdout bypass
 
 // String operations (CRT-free on Windows)
 void plat_i64_to_string(i64 value, char* buffer, size_t buffer_size);

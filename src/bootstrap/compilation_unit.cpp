@@ -15,6 +15,7 @@
 #include "type_system.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include "logger.hpp"
 
 #ifdef MEASURE_MEMORY
 class PhaseMemoryTracker {
@@ -888,6 +889,7 @@ bool CompilationUnit::generateCode(const char* output_path) {
 }
 
 bool CompilationUnit::performFullPipeline(u32 file_id) {
+    Logger* logger = plat_get_logger();
 #ifdef MEASURE_MEMORY
     PhaseMemoryTracker tracker(*this);
 #endif
@@ -900,6 +902,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     last_ast_ = ast;
     if (!ast) return false;
@@ -926,7 +929,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
     if (!resolveImports(mod)) {
         return false;
     }
-
+    if (logger) logger->flush();
 
     // Topological Sort of modules to respect import dependencies
     {
@@ -1008,6 +1011,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         // Replace modules_ with sorted order
         modules_ = sorted;
     }
+    if (logger) logger->flush();
 
     // Phase 0: Register Placeholders for all modules
     for (size_t i = 0; i < modules_.length(); ++i) {
@@ -1017,6 +1021,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
         TypeChecker checker(*this);
         checker.registerPlaceholders(m->ast_root);
     }
+    if (logger) logger->flush();
 
     // Phase 0.5: Resolve Named Placeholders (Pass 2)
     {
@@ -1026,6 +1031,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
             checker.resolveNamedPlaceholder(pending[i].placeholder);
         }
     }
+    if (logger) logger->flush();
 
     // Now run semantic analysis on ALL modules
     bool all_success = true;
@@ -1045,6 +1051,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
     if (!all_success) return false;
 
     // Phase 2: Type Checking
@@ -1073,6 +1080,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 2.1: AST Lifting
 #ifdef MEASURE_MEMORY
@@ -1086,6 +1094,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 2.5: Metadata Preparation
 #ifdef MEASURE_MEMORY
@@ -1098,6 +1107,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
 #ifdef DEBUG
     plat_print_debug("CompilationUnit: DEBUG is defined. Running CallResolutionValidator on all modules...\n");
@@ -1129,6 +1139,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     // Phase 4: C89 Validation
 #ifdef MEASURE_MEMORY
@@ -1145,6 +1156,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 #ifdef MEASURE_MEMORY
     tracker.end_phase();
 #endif
+    if (logger) logger->flush();
 
     validation_completed_ = true;
     c89_validation_passed_ = validation_success && !signature_errors;
@@ -1181,6 +1193,7 @@ bool CompilationUnit::performFullPipeline(u32 file_id) {
 
         m->is_analyzed = true;
     }
+    if (logger) logger->flush();
 
     // Task 163: Report unresolved call sites
     if (call_site_table_.getUnresolvedCount() > 0) {
