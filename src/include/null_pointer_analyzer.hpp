@@ -69,6 +69,10 @@ private:
     void visitWhileStmt(ASTWhileStmtNode* node);
     void visitForStmt(ASTForStmtNode* node);
     void visitReturnStmt(ASTReturnStmtNode* node);
+    void visitOrelseExpr(ASTOrelseExprNode* node);
+    void visitTryExpr(ASTTryExprNode* node);
+    void visitCatchExpr(ASTCatchExprNode* node);
+    void visitMemberAccess(ASTMemberAccessNode* node);
 
     void pushScope(bool copy_parent = false);
     void popScope();

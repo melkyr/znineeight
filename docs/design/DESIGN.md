@@ -409,9 +409,13 @@ The `NullPointerAnalyzer` is a read-only pass that identifies potential null poi
     - `SAFE` + `SAFE` = `SAFE`
     - `NULL` + `NULL` = `NULL`
     - Anything + `MAYBE` = `MAYBE`
-- **Null Guards:**
+- **Null Guards and Captures:**
     - **If Statements:** Recognizes patterns like `if (p != null)`, `if (p == null)`, `if (p)`, and `if (!p)`. It refines the state of `p` within the `then` and `else` blocks accordingly.
     - **While Loops:** Recognizes `while (p != null)` and treats `p` as `SAFE` within the loop body. After the loop, variables modified within the loop are conservatively set to `MAYBE`.
+    - **Payload Captures:** Recognizes `if (opt) |val|` and `while (opt) |val|` for both Optional types and Error Unions. The captured variable `val` is treated as `SAFE` within the scope of the block.
+- **Operator Support:**
+    - **Orelse:** Correctly merges the state of the optional payload (treated as `SAFE` on the success path) with the fallback expression state.
+    - **Try/Catch:** Supports state propagation for error-union unwrapping. `try` results for pointer payloads are treated as `SAFE`. `catch` merges the success payload state with the fallback state.
 - **Violation Detection:**
     - **Definite Null Dereference (`ERR_NULL_POINTER_DEREFERENCE` - 2004):** Reported when a pointer explicitly set to `null` or `0` is dereferenced.
     - **Uninitialized Pointer Warning (`WARN_UNINITIALIZED_POINTER` - 6001):** Reported when a pointer declared without an initializer is dereferenced before being assigned a value.

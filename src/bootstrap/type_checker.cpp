@@ -2013,23 +2013,27 @@ Type* TypeChecker::visitIfStmt(ASTIfStmtNode* node) {
     if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
 
     bool is_optional = (condition_type->kind == TYPE_OPTIONAL);
+    bool is_error_union = (condition_type->kind == TYPE_ERROR_UNION);
 
     if (condition_type->kind == TYPE_VOID) {
         return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if statement condition cannot be void");
     } else if (condition_type->kind != TYPE_BOOL &&
                !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
                condition_type->kind != TYPE_POINTER &&
-               condition_type->kind != TYPE_OPTIONAL) {
-        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if statement condition must be a bool, integer, pointer, or optional");
+               condition_type->kind != TYPE_OPTIONAL &&
+               condition_type->kind != TYPE_ERROR_UNION) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "if statement condition must be a bool, integer, pointer, optional, or error union");
     }
 
     if (node->capture_name) {
-        if (!is_optional) {
-            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture in 'if' requires an optional type condition");
+        if (!is_optional && !is_error_union) {
+            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture in 'if' requires an optional or error union type condition");
         }
 
         unit_.getSymbolTable().enterScope();
-        Type* unwrapped_type = is_optional ? condition_type->as.optional.payload : get_g_type_void();
+        Type* unwrapped_type = get_g_type_void();
+        if (is_optional) unwrapped_type = condition_type->as.optional.payload;
+        else if (is_error_union) unwrapped_type = condition_type->as.error_union.payload;
         Symbol sym_data = SymbolBuilder(unit_.getArena())
             .withName(node->capture_name)
             .withType(unwrapped_type)
@@ -2151,19 +2155,21 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     if (!condition_type || is_type_undefined(condition_type)) return get_g_type_undefined();
 
     bool is_optional = (condition_type->kind == TYPE_OPTIONAL);
+    bool is_error_union = (condition_type->kind == TYPE_ERROR_UNION);
 
     if (condition_type->kind == TYPE_VOID) {
         return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition cannot be void");
     } else if (condition_type->kind != TYPE_BOOL &&
                !(condition_type->kind >= TYPE_I8 && condition_type->kind <= TYPE_USIZE) &&
                condition_type->kind != TYPE_POINTER &&
-               condition_type->kind != TYPE_OPTIONAL) {
-        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition must be a bool, integer, pointer, or optional");
+               condition_type->kind != TYPE_OPTIONAL &&
+               condition_type->kind != TYPE_ERROR_UNION) {
+        return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "while statement condition must be a bool, integer, pointer, optional, or error union");
     }
 
     if (node->capture_name) {
-        if (!is_optional) {
-            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture requires optional type condition");
+        if (!is_optional && !is_error_union) {
+            return reportAndReturnUndefined(node->condition->loc, ERR_TYPE_MISMATCH, "Capture requires optional or error union type condition");
         }
     }
 
@@ -2175,7 +2181,10 @@ Type* TypeChecker::visitWhileStmt(ASTWhileStmtNode* node) {
     LoopContextGuard guard(*this, node->label, node->label_id, node->condition->loc);
 
     if (node->capture_name) {
-        Type* payload = condition_type->as.optional.payload;
+        Type* payload = get_g_type_void();
+        if (is_optional) payload = condition_type->as.optional.payload;
+        else if (is_error_union) payload = condition_type->as.error_union.payload;
+
         payload = resolveAllPlaceholders(payload);
 
         unit_.getSymbolTable().enterScope();
