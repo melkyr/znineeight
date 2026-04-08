@@ -85,6 +85,8 @@ int main(int argc, char* argv[]) {
         if (runCompilationPipeline(unit, file_id)) {
             // We expect an error in this self-test because of the double free
             plat_print_error("Self-test failed: expected double free error not detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 1;
         }
 
@@ -100,11 +102,15 @@ int main(int argc, char* argv[]) {
 
         if (has_double_free && has_null_deref && has_lifetime_violation) {
             plat_print_info("Self-test passed: All memory safety violations correctly detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 0;
         } else {
             if (!has_double_free) plat_print_error("Self-test failed: ERR_DOUBLE_FREE not detected.\n");
             if (!has_null_deref) plat_print_error("Self-test failed: ERR_NULL_POINTER_DEREFERENCE not detected.\n");
             if (!has_lifetime_violation) plat_print_error("Self-test failed: ERR_LIFETIME_VIOLATION not detected.\n");
+            Logger* logger = plat_get_logger();
+            if (logger) logger->flush();
             return 1;
         }
     }
@@ -220,6 +226,7 @@ int main(int argc, char* argv[]) {
         }
 
         plat_free(source);
+        if (logger) logger->flush();
         return success ? 0 : 1;
     }
 

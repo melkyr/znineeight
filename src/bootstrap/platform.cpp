@@ -1,7 +1,7 @@
 #include "platform.hpp"
 #include "logger.hpp"
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 static Logger* g_logger = NULL;
 
@@ -55,10 +55,13 @@ PlatFile plat_open_file(const char* path, bool write) {
     return CreateFileA(path, access, FILE_SHARE_READ, NULL, creation, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 
-void plat_write_file(PlatFile file, const void* data, size_t size) {
-    if (file == PLAT_INVALID_FILE) return;
+long plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return -1;
     DWORD written;
-    WriteFile(file, data, (DWORD)size, &written, NULL);
+    if (WriteFile(file, data, (DWORD)size, &written, NULL)) {
+        return (long)written;
+    }
+    return -1;
 }
 
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
@@ -166,7 +169,13 @@ void plat_printf_debug(const char* format, ...) {
     plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     buffer[sizeof(buffer)-1] = '\0';
-    plat_print_debug(buffer);
+
+    Logger* logger = plat_get_logger();
+    if (logger) {
+        logger->log(LOG_DEBUG, buffer);
+    } else {
+        plat_write_stderr(buffer);
+    }
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
@@ -245,10 +254,9 @@ void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
     /*
      * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
      * in the final kernel32-only bootstrap.
-     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     * For now, we use plat_snprintf to maintain %.15g behavior required by tests.
      */
-    (void)buffer_size;
-    sprintf(buffer, "%.15g", value);
+    plat_snprintf(buffer, buffer_size, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {
@@ -422,14 +430,18 @@ PlatFile plat_open_file(const char* path, bool write) {
     return open(path, flags, mode);
 }
 
-void plat_write_file(PlatFile file, const void* data, size_t size) {
-    if (file == PLAT_INVALID_FILE) return;
+long plat_write_file(PlatFile file, const void* data, size_t size) {
+    if (file == PLAT_INVALID_FILE) return -1;
     size_t total_written = 0;
     while (total_written < size) {
         ssize_t written = write(file, (const char*)data + total_written, size - total_written);
-        if (written <= 0) break;
-        total_written += written;
+        if (written <= 0) {
+            if (total_written > 0) return (long)total_written;
+            return -1;
+        }
+        total_written += (size_t)written;
     }
+    return (long)total_written;
 }
 
 size_t plat_read_file_raw(PlatFile file, void* buffer, size_t size) {
@@ -592,10 +604,9 @@ void plat_float_to_string(double value, char* buffer, size_t buffer_size) {
     /*
      * TODO: Implement a custom dtoa to fully avoid msvcrt.dll dependency
      * in the final kernel32-only bootstrap.
-     * For now, we use sprintf to maintain %.15g behavior required by tests.
+     * For now, we use plat_snprintf to maintain %.15g behavior required by tests.
      */
-    (void)buffer_size;
-    sprintf(buffer, "%.15g", value);
+    plat_snprintf(buffer, buffer_size, "%.15g", value);
 }
 
 size_t plat_strlen(const char* s) {

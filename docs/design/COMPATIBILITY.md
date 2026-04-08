@@ -23,6 +23,7 @@ The `src/include/compat.hpp` header is the single source of truth for compiler a
 
 -   **Include `common.hpp`**: All source files should include `common.hpp`, which in turn includes `compat.hpp`.
 -   **Avoid `long long`**: Use the `i64` and `u64` typedefs instead of `long long` or `unsigned long long` to ensure compatibility with MSVC 6.0.
+-   **Large Decimal Constants**: Decimal constants larger than 2^31-1 (2147483647) MUST have a `U` suffix (e.g., `2166136261U`) to ensure they are treated as unsigned in C90/C89 mode and prevent "unsigned only in ISOC90" warnings.
 -   **No `<stdint.h>` or `<cstddef>`**: Use `common.hpp` which provides `size_t` and fixed-width types via `compat.hpp`.
 -   **Silence Warnings**: Use `RETR_UNUSED(param)` at the beginning of functions with unused parameters to maintain a warning-free build on strict compilers.
 

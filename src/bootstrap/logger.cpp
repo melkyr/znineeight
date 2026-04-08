@@ -95,7 +95,9 @@ void Logger::writeToBuffer(const char* s, size_t len) {
     if (len >= buffer_capacity_) {
         // Message too large for buffer, write directly to file
         if (log_file_ != PLAT_INVALID_FILE) {
-            plat_write_file(log_file_, s, len);
+            if (plat_write_file(log_file_, s, len) != (long)len) {
+                plat_print_error("Error: Failed to write large message to log file\n");
+            }
         }
         return;
     }
@@ -114,6 +116,8 @@ void Logger::flushBuffer() {
         return;
     }
 
-    plat_write_file(log_file_, buffer_, buffer_pos_);
+    if (plat_write_file(log_file_, buffer_, buffer_pos_) != (long)buffer_pos_) {
+        plat_print_error("Error: Failed to flush log buffer to file\n");
+    }
     buffer_pos_ = 0;
 }
