@@ -9,12 +9,12 @@
 
 #ifndef NDEBUG
     /* Forward declarations to avoid including platform.hpp here */
-    void plat_write_str(const char* s);
+    void plat_print_error(const char* s);
     void plat_abort();
 
     #define Z98_ASSERT(cond) do { \
         if (!(cond)) { \
-            plat_write_str("Assertion failed: " #cond " at " __FILE__ ":" Z98_STRINGIFY(__LINE__) "\n"); \
+            plat_print_error("Assertion failed: " #cond " at " __FILE__ ":" Z98_STRINGIFY(__LINE__) "\n"); \
             plat_abort(); \
         } \
     } while(0)

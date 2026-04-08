@@ -160,7 +160,7 @@ Zig: `total += i;`
 Generated C: `(void)(total += i);`
 
 ### Usage in Pipeline:
-The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase.
+The `C89Emitter` is typically owned by the `CompilationUnit` and instantiated during the code generation phase. All compiler output and diagnostics during code generation are routed through the centralized logging system. Users can capture this output using the `--log-file=<path>` flag, while `--verbose` enables detailed emission tracing on the console.
 
 ```cpp
 C89Emitter emitter(arena, "output.c");

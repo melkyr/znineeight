@@ -4,9 +4,26 @@
 #include <stdio.h>
 
 static Logger* g_logger = NULL;
+static bool g_logging_in_progress = false;
 
 void plat_set_logger(Logger* logger) { g_logger = logger; }
 Logger* plat_get_logger() { return g_logger; }
+
+// Internal low-level write functions (bypassing logger)
+#ifdef _WIN32
+void plat_write_stdout_internal(const char* message);
+void plat_write_stderr_internal(const char* message);
+#else
+#include <unistd.h>
+void plat_write_stdout_internal(const char* message) {
+    if (!message) return;
+    write(STDOUT_FILENO, message, plat_strlen(message));
+}
+void plat_write_stderr_internal(const char* message) {
+    if (!message) return;
+    write(STDERR_FILENO, message, plat_strlen(message));
+}
+#endif
 
 static void plat_reverse(char* str, int length) {
     int start = 0;
@@ -110,7 +127,7 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
     return true;
 }
 
-void plat_write_stdout(const char* message) {
+void plat_write_stdout_internal(const char* message) {
     if (!message) return;
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE || hOut == NULL) {
@@ -125,7 +142,7 @@ void plat_write_stdout(const char* message) {
     }
 }
 
-void plat_write_stderr(const char* message) {
+void plat_write_stderr_internal(const char* message) {
     if (!message) return;
     HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
     if (hErr == INVALID_HANDLE_VALUE || hErr == NULL) return;
@@ -138,27 +155,33 @@ void plat_write_stderr(const char* message) {
 }
 
 void plat_print_info(const char* message) {
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_INFO, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stdout(message);
+        plat_write_stdout_internal(message);
     }
 }
 
 void plat_print_error(const char* message) {
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_ERROR, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stderr(message);
+        plat_write_stderr_internal(message);
     }
 }
 
 void plat_print_debug(const char* message) {
     OutputDebugStringA(message);
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_DEBUG, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stderr(message);
+        plat_write_stderr_internal(message);
     }
 }
 
@@ -169,13 +192,7 @@ void plat_printf_debug(const char* format, ...) {
     plat_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     buffer[sizeof(buffer)-1] = '\0';
-
-    Logger* logger = plat_get_logger();
-    if (logger) {
-        logger->log(LOG_DEBUG, buffer);
-    } else {
-        plat_write_stderr(buffer);
-    }
+    plat_print_debug(buffer);
 }
 
 int plat_snprintf(char* str, size_t size, const char* format, ...) {
@@ -194,9 +211,6 @@ int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
 #endif
 }
 
-void plat_write_str(const char* s) {
-    plat_write_stderr(s);
-}
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;
@@ -487,38 +501,34 @@ bool plat_file_read(const char* path, char** buffer, size_t* size) {
     return true;
 }
 
-void plat_write_stdout(const char* message) {
-    if (!message) return;
-    write(STDOUT_FILENO, message, plat_strlen(message));
-}
-
-void plat_write_stderr(const char* message) {
-    if (!message) return;
-    write(STDERR_FILENO, message, plat_strlen(message));
-}
-
 void plat_print_info(const char* message) {
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_INFO, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stdout(message);
+        plat_write_stdout_internal(message);
     }
 }
 
 void plat_print_error(const char* message) {
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_ERROR, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stderr(message);
+        plat_write_stderr_internal(message);
     }
 }
 
 void plat_print_debug(const char* message) {
-    if (g_logger) {
+    if (g_logger && !g_logging_in_progress) {
+        g_logging_in_progress = true;
         g_logger->log(LOG_DEBUG, message);
+        g_logging_in_progress = false;
     } else {
-        plat_write_stderr("[DEBUG] ");
-        plat_write_stderr(message);
+        plat_write_stderr_internal("[DEBUG] ");
+        plat_write_stderr_internal(message);
     }
 }
 
@@ -544,9 +554,6 @@ int plat_vsnprintf(char* str, size_t size, const char* format, va_list args) {
     return vsnprintf(str, size, format, args);
 }
 
-void plat_write_str(const char* s) {
-    plat_write_stderr(s);
-}
 
 void plat_u64_to_string(u64 value, char* buffer, size_t buffer_size) {
     if (buffer_size == 0) return;

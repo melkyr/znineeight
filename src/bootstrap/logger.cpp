@@ -1,8 +1,8 @@
 #include "logger.hpp"
 
 // Low-level bypasses and helpers to be implemented/exposed in platform.cpp/hpp
-extern void plat_write_stderr(const char* s);
-extern void plat_write_stdout(const char* s);
+void plat_write_stderr_internal(const char* s);
+void plat_write_stdout_internal(const char* s);
 extern int plat_vsnprintf(char* str, size_t size, const char* format, va_list args);
 
 Logger::Logger(ArenaAllocator& arena, bool console_enabled, const char* log_file_path)
@@ -20,9 +20,9 @@ Logger::Logger(ArenaAllocator& arena, bool console_enabled, const char* log_file
         if (log_file_ == PLAT_INVALID_FILE) {
             file_enabled_ = false;
             // Use low-level bypass to avoid logger recursion
-            plat_write_stderr("Warning: Could not open log file: ");
-            plat_write_stderr(log_file_path);
-            plat_write_stderr("\n");
+            plat_write_stderr_internal("Warning: Could not open log file: ");
+            plat_write_stderr_internal(log_file_path);
+            plat_write_stderr_internal("\n");
         }
     }
 }
@@ -48,7 +48,7 @@ void Logger::log(LogLevel level, const char* msg) {
 
     // If it's an error and logs are suppressed, print directly to stderr and don't buffer/file-log
     if (suppress_all_ && level == LOG_ERROR) {
-        plat_write_stderr(msg);
+        plat_write_stderr_internal(msg);
         return;
     }
 
@@ -59,9 +59,9 @@ void Logger::log(LogLevel level, const char* msg) {
 
     if (show_on_console) {
         if (level == LOG_ERROR || level == LOG_WARNING) {
-            plat_write_stderr(msg);
+            plat_write_stderr_internal(msg);
         } else {
-            plat_write_stdout(msg);
+            plat_write_stdout_internal(msg);
         }
     }
 

@@ -50,7 +50,23 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     const char* log_file_path = NULL;
 
+    for (int i = 1; i < argc; ++i) {
+        if (plat_strcmp(argv[i], "--no-logs") == 0) {
+            no_logs = true;
+        } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
+            verbose = true;
+        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0) {
+            log_file_path = argv[i] + 11;
+        }
+    }
+
     if (argc >= 2 && plat_strcmp(argv[1], "--self-test") == 0) {
+        ArenaAllocator logger_arena(1024 * 1024);
+        Logger* logger = new (logger_arena.alloc(sizeof(Logger))) Logger(logger_arena, !no_logs, log_file_path);
+        logger->setSuppressAll(no_logs);
+        logger->setVerbose(verbose);
+        plat_set_logger(logger);
+
         plat_print_info("Executing self-test...\n");
 
         const char* source =
@@ -122,16 +138,6 @@ int main(int argc, char* argv[]) {
     bool test_mode = false;
     bool win_line_endings = false;
     RETR_UNUSED(full_pipeline);
-
-    for (int i = 1; i < argc; ++i) {
-        if (plat_strcmp(argv[i], "--no-logs") == 0) {
-            no_logs = true;
-        } else if (plat_strcmp(argv[i], "--verbose") == 0 || plat_strcmp(argv[i], "-v") == 0) {
-            verbose = true;
-        } else if (plat_strncmp(argv[i], "--log-file=", 11) == 0) {
-            log_file_path = argv[i] + 11;
-        }
-    }
 
     // We'll use a simple fixed-size array for temporary include path storage
     // before the CompilationUnit is created.
