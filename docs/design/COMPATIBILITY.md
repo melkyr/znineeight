@@ -80,3 +80,11 @@ The following features were finalized in Milestone 11 and are fully supported by
 - **@intToPtr and @ptrToInt**: Supported for low-level memory operations, respecting the target's pointer size.
 - **@intToFloat**: Supported for converting integers to floating-point types, with constant folding for literals.
 - **Braceless Control Flow**: Single-statement `if`, `while`, and `for` bodies are supported and normalized into braced blocks during the lifting pass.
+
+## Milestone 11 Analyzer Upgrades
+
+To support the full Z98 feature set, the static analysis passes have been upgraded:
+
+- **SignatureAnalyzer**: Now correctly accepts modern Z98 types that map to C89 (slices `[]T`, optionals `?T`, error unions `!T`, error sets `error{...}`, and tagged unions). It also enforces completeness checks for all aggregate types (structs, unions, tagged unions) used in function signatures.
+- **NullPointerAnalyzer**: Understands optional types and handles `orelse` and `if` captures as non-null.
+- **LifetimeAnalyzer**: Tracks pointer provenance through field and slice accesses.

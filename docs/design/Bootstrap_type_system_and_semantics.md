@@ -619,6 +619,20 @@ When visiting a function call (`ASTFunctionCallNode`), the `TypeChecker` perform
     -   **`@intToEnum(T, val)`**: Converts an integer to an enum of type `T`. Constant folded if `val` is a literal.
     -   **`@import("module")`**: Supported for discovering and loading Zig modules.
 
+### C89 Compatibility of Types
+
+To ensure generated code is compatible with C89 backend constraints, the bootstrap compiler performs a dedicated signature analysis pass (`SignatureAnalyzer`) after type resolution. The following rules govern which Z98 types are considered C89-compatible for use in function signatures (parameters and return types):
+
+1.  **Primitive Types**: All standard integer types (`i8`-`i64`, `u8`-`u64`, `isize`, `usize`), floating-point types (`f32`, `f64`), `bool`, and `c_char` are C89-compatible.
+2.  **Pointers and Function Pointers**: Both single-item (`*T`) and many-item (`[*]T`) pointers, as well as function pointers, are C89-compatible if their base/parameter/return types are also compatible.
+3.  **Aggregates (Structs, Unions, Tagged Unions)**: These are C89-compatible **only if they have a complete definition** (i.e., their size and layout are known). Incomplete or opaque types are rejected in signatures to ensure the C89 compiler can allocate space for them or access their fields.
+4.  **Modern Z98 Types**: Slices (`[]T`), Optionals (`?T`), Error Unions (`!T`), and Error Sets (`error{...}`) are considered C89-compatible because they are lowered into C structures or integers by the backend.
+5.  **Arrays**: Array parameters (e.g., `[N]T`) are accepted but trigger a warning (`WARN_ARRAY_PARAMETER`), as they decay to pointers in C89.
+6.  **Rejected Types**:
+    -   `anytype`: Rejected everywhere (formerly allowed only for `print`).
+    -   `void`: Allowed as a return type, but strictly rejected as a parameter type (`ERR_TYPE_MISMATCH`).
+    -   Truly non-C89 types (e.g., `type`, `anyerror`) are rejected.
+
 #### Call Resolution Completeness (Task 168)
 
 The bootstrap compiler includes a `CallResolutionValidator` (active in DEBUG builds) that verifies the following after Pass 0 (Type Checking):
