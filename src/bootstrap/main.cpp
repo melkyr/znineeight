@@ -9,6 +9,7 @@
 #include "symbol_table.hpp"
 #include "utils.hpp"
 #include "platform.hpp"
+#include <new>
 
 // Default arena size for the bootstrap compiler: 16MB
 static const size_t DEFAULT_ARENA_SIZE = 16 * 1024 * 1024;
