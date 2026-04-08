@@ -17,12 +17,24 @@ The analyzer validates that all types used in function signatures have a direct 
 
 ## 2. LifetimeAnalyzer (Dangling Pointers)
 
-Detects potential dangling pointers by tracking the provenance of local variable addresses.
+Detects potential dangling pointers by tracking the provenance of local variable addresses. It supports Milestone 11 features including field access, array indexing, and slices.
+
+### Enhanced Provenance Tracking
+The analyzer uses a recursive "origin" resolver to track pointers back to their base local variables:
+- **Field Access**: Detects returning addresses of fields (`return &s.x;`) or pointers derived from local fields.
+- **Array Indexing**: Recognizes that `&arr[i]` points to the local array `arr`.
+- **Slices**: Understands that slicing a local array (`arr[0..5]`) results in a slice whose lifetime is tied to that array.
+- **Composition**: Handles nested structures like `&outer.inner.field`.
 
 ### Checks
-- **Returning Local Address**: Rejects `return &local;`.
-- **Dangling Assignments**: Tracks when a local pointer variable is assigned the address of a local (e.g., `ptr = &local;`). If that pointer is later returned, it is flagged as a violation.
-- **Parameter Safety**: Returning a parameter value is safe, but returning the address of a parameter (`&param`) is rejected.
+- **Returning Local Address**: Rejects returning the address of a local variable or any of its sub-fields/elements.
+- **Dangling Assignments**: Tracks when a local pointer or slice variable is assigned a local address. If that variable is later returned, it is flagged.
+- **Differentiated Reporting**: Distinguishes between "returning address of" (direct `&local`) and "returning pointer to" (via tracked variable).
+
+### Known Limitations
+- **No Field-Level Assignment Tracking**: Tracking assignments to fields (e.g., `s.ptr = &local;`) is currently deferred.
+- **No Capture Propagation**: Provancance is not yet tracked through optional/error union captures (`if (opt) |ptr|`).
+- **Minimal Aliasing**: Does not track provenance through pointer dereferences (`*ptr = &local;`).
 
 ## 3. NullPointerAnalyzer
 

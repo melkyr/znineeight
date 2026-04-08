@@ -34,8 +34,6 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
             visitAssignment(node->as.assignment);
             break;
         case NODE_COMPOUND_ASSIGNMENT:
-            // For now, just visit children. Compound assignment doesn't
-            // create new pointer provenance in our simple model.
             visit(node->as.compound_assignment->lvalue);
             visit(node->as.compound_assignment->rvalue);
             break;
@@ -53,6 +51,28 @@ void LifetimeAnalyzer::visit(ASTNode* node) {
             break;
         case NODE_UNARY_OP:
             visit(node->as.unary_op.operand);
+            break;
+        case NODE_MEMBER_ACCESS:
+            visit(node->as.member_access->base);
+            break;
+        case NODE_ARRAY_ACCESS:
+            visit(node->as.array_access->array);
+            visit(node->as.array_access->index);
+            break;
+        case NODE_ARRAY_SLICE:
+            visit(node->as.array_slice->array);
+            visit(node->as.array_slice->start);
+            visit(node->as.array_slice->end);
+            break;
+        case NODE_PAREN_EXPR:
+            visit(node->as.paren_expr.expr);
+            break;
+        case NODE_PTR_CAST:
+            visit(node->as.ptr_cast->expr);
+            break;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+            visit(node->as.numeric_cast->expr);
             break;
         case NODE_BINARY_OP:
             visit(node->as.binary_op->left);
@@ -86,10 +106,15 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
     if (isDangerousLocalPointer(node->expression)) {
         const char* var_name = extractVariableName(node->expression);
 
+        const char* prefix = "Returning pointer to local variable '";
+        if (node->expression->type == NODE_UNARY_OP && node->expression->as.unary_op.op == TOKEN_AMPERSAND) {
+            prefix = "Returning address of local variable '";
+        }
+
         char* msg_buffer = (char*)unit_.getArena().alloc(1024);
         char* current = msg_buffer;
         size_t remaining = 1024;
-        safe_append(current, remaining, "Returning pointer to local variable '");
+        safe_append(current, remaining, prefix);
         safe_append(current, remaining, var_name);
         safe_append(current, remaining, "' creates dangling pointer");
 
@@ -98,8 +123,11 @@ void LifetimeAnalyzer::visitReturnStmt(ASTReturnStmtNode* node) {
 }
 
 void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
+    if (node->initializer) {
+        visit(node->initializer);
+    }
     Symbol* sym = unit_.getSymbolTable().findInAnyScope(node->name);
-    if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
+    if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
         if (node->initializer) {
             trackLocalPointerAssignment(node->name, node->initializer);
         }
@@ -107,13 +135,15 @@ void LifetimeAnalyzer::visitVarDecl(ASTVarDeclNode* node) {
 }
 
 void LifetimeAnalyzer::visitAssignment(ASTAssignmentNode* node) {
+    visit(node->rvalue);
     if (node->lvalue->type == NODE_IDENTIFIER) {
         const char* name = node->lvalue->as.identifier.name;
         Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
-        if (sym && sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
+        if (sym && sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE)) {
             trackLocalPointerAssignment(name, node->rvalue);
         }
     }
+    visit(node->lvalue);
 }
 
 void LifetimeAnalyzer::visitIfStmt(ASTIfStmtNode* node) {
@@ -135,35 +165,32 @@ void LifetimeAnalyzer::visitForStmt(ASTForStmtNode* node) {
 }
 
 bool LifetimeAnalyzer::isDangerousLocalPointer(ASTNode* expr) {
-    if (expr->type == NODE_UNARY_OP && expr->as.unary_op.op == TOKEN_AMPERSAND) {
-        ASTNode* operand = expr->as.unary_op.operand;
-        if (operand->type == NODE_IDENTIFIER) {
-            Symbol* sym = unit_.getSymbolTable().findInAnyScope(operand->as.identifier.name);
-            return sym && (sym->flags & SYMBOL_FLAG_LOCAL);
-        }
+    if (!expr) return false;
+
+    // String literals are global/static and never dangerous.
+    if (expr->type == NODE_STRING_LITERAL) return false;
+
+    // Handle initializers by checking their value
+    if (expr->type == NODE_STRUCT_INITIALIZER || expr->type == NODE_TUPLE_LITERAL) {
+        return false;
     }
-    else if (expr->type == NODE_IDENTIFIER) {
-        const char* name = expr->as.identifier.name;
-        Symbol* sym = unit_.getSymbolTable().findInAnyScope(name);
-        if (sym && (sym->flags & SYMBOL_FLAG_LOCAL)) {
-            if (sym->symbol_type && sym->symbol_type->kind == TYPE_POINTER) {
-                bool is_parameter = (sym->flags & SYMBOL_FLAG_PARAM) != 0;
-                if (current_assignments_) {
-                    for (size_t i = 0; i < current_assignments_->length(); ++i) {
-                        if (identifiers_equal((*current_assignments_)[i].pointer_name, name)) {
-                            const char* source = (*current_assignments_)[i].points_to_name;
-                            if (source) {
-                                return isSymbolLocalVariable(source);
-                            }
-                            return false;
-                        }
-                    }
-                }
-                return !is_parameter;
-            }
-        }
+
+    const char* provenance = getPointerProvenance(expr);
+    if (!provenance) return false;
+
+    char base_name[256];
+    const char* dot = plat_strchr(provenance, '.');
+    if (dot) {
+        size_t len = dot - provenance;
+        if (len >= 256) len = 255;
+        plat_strncpy(base_name, provenance, len);
+        base_name[len] = '\0';
+    } else {
+        plat_strncpy(base_name, provenance, 255);
+        base_name[255] = '\0';
     }
-    return false;
+
+    return isSymbolLocalVariable(base_name);
 }
 
 bool LifetimeAnalyzer::isSymbolLocalVariable(const char* name) {
@@ -176,16 +203,58 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
     if (!current_assignments_) return;
     const char* points_to_name = NULL;
 
-    if (rvalue->type == NODE_UNARY_OP && rvalue->as.unary_op.op == TOKEN_AMPERSAND) {
-        ASTNode* operand = rvalue->as.unary_op.operand;
-        if (operand->type == NODE_IDENTIFIER) {
-            const char* name = operand->as.identifier.name;
-            if (isSymbolLocalVariable(name)) {
-                points_to_name = name;
+    // 0. Explicitly handle NULL to clear assignments
+    if (rvalue->type == NODE_NULL_LITERAL) {
+        points_to_name = NULL;
+    } else
+    // 1. Resolve aliases: if rvalue is an identifier, check if it's already a tracked pointer
+    if (rvalue->type == NODE_IDENTIFIER) {
+        const char* rname = rvalue->as.identifier.name;
+        for (size_t i = 0; i < current_assignments_->length(); ++i) {
+            if (identifiers_equal((*current_assignments_)[i].pointer_name, rname)) {
+                points_to_name = (*current_assignments_)[i].points_to_name;
+                break;
             }
         }
     }
 
+    // 2. If not an alias, or we want to follow member access to a tracked base
+    if (!points_to_name) {
+        const char* origin = getPointerOrigin(rvalue);
+        if (origin) {
+            char base_name[256];
+            const char* dot = plat_strchr(origin, '.');
+            if (dot) {
+                size_t len = dot - origin;
+                if (len >= 256) len = 255;
+                plat_strncpy(base_name, origin, len);
+                base_name[len] = '\0';
+            } else {
+                plat_strncpy(base_name, origin, 255);
+                base_name[255] = '\0';
+            }
+
+            // Check if base_name is a local variable
+            Symbol* sym = unit_.getSymbolTable().findInAnyScope(base_name);
+            if (sym && (sym->flags & SYMBOL_FLAG_LOCAL)) {
+                // If base is a pointer, check if it's tracked
+                bool base_is_pointer = (sym->symbol_type && (sym->symbol_type->kind == TYPE_POINTER || sym->symbol_type->kind == TYPE_SLICE));
+                if (base_is_pointer) {
+                    for (size_t i = 0; i < current_assignments_->length(); ++i) {
+                        if (plat_strcmp((*current_assignments_)[i].pointer_name, base_name) == 0) {
+                            points_to_name = (*current_assignments_)[i].points_to_name;
+                            break;
+                        }
+                    }
+                } else {
+                    // Base is a local variable (struct, array, etc), so this pointer points to a local
+                    points_to_name = sym->name;
+                }
+            }
+        }
+    }
+
+    // Update existing assignment or append new one
     for (size_t i = 0; i < current_assignments_->length(); ++i) {
         if (identifiers_equal((*current_assignments_)[i].pointer_name, pointer_name)) {
             (*current_assignments_)[i].points_to_name = points_to_name;
@@ -200,13 +269,71 @@ void LifetimeAnalyzer::trackLocalPointerAssignment(const char* pointer_name, AST
 }
 
 const char* LifetimeAnalyzer::extractVariableName(ASTNode* expr) {
-    if (expr->type == NODE_UNARY_OP && expr->as.unary_op.op == TOKEN_AMPERSAND) {
-        ASTNode* operand = expr->as.unary_op.operand;
-        if (operand->type == NODE_IDENTIFIER) {
-            return operand->as.identifier.name;
-        }
-    } else if (expr->type == NODE_IDENTIFIER) {
-        return expr->as.identifier.name;
-    }
+    const char* origin = getPointerOrigin(expr);
+    if (origin) return origin;
     return "local variable";
+}
+
+const char* LifetimeAnalyzer::getPointerProvenance(ASTNode* expr) {
+    if (!expr) return NULL;
+
+    if (expr->type == NODE_IDENTIFIER) {
+        const char* name = expr->as.identifier.name;
+        if (current_assignments_) {
+            for (size_t i = 0; i < current_assignments_->length(); ++i) {
+                if (identifiers_equal((*current_assignments_)[i].pointer_name, name)) {
+                    return (*current_assignments_)[i].points_to_name;
+                }
+            }
+        }
+    }
+
+    return getPointerOrigin(expr);
+}
+
+const char* LifetimeAnalyzer::getPointerOrigin(ASTNode* expr) {
+    if (!expr) return NULL;
+
+    switch (expr->type) {
+        case NODE_IDENTIFIER:
+            return expr->as.identifier.name;
+
+        case NODE_UNARY_OP:
+            if (expr->as.unary_op.op == TOKEN_AMPERSAND) {
+                return getPointerOrigin(expr->as.unary_op.operand);
+            }
+            break;
+
+        case NODE_MEMBER_ACCESS: {
+            if (expr->as.member_access->base) {
+                const char* base_origin = getPointerOrigin(expr->as.member_access->base);
+                if (!base_origin) return NULL;
+
+                size_t base_len = plat_strlen(base_origin);
+                size_t field_len = plat_strlen(expr->as.member_access->field_name);
+                char* combined = (char*)unit_.getArena().alloc(base_len + field_len + 2);
+                plat_strcpy(combined, base_origin);
+                plat_strcat(combined, ".");
+                plat_strcat(combined, expr->as.member_access->field_name);
+                return combined;
+            }
+            break;
+        }
+
+        case NODE_ARRAY_ACCESS: {
+            return getPointerOrigin(expr->as.array_access->array);
+        }
+
+        case NODE_ARRAY_SLICE: {
+            if (expr->as.array_slice->array) {
+                return getPointerOrigin(expr->as.array_slice->array);
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return NULL;
 }

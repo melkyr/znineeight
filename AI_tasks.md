@@ -2348,6 +2348,13 @@ Implementation steps (minimal):
     - **Parameter Restrictions**: Strictly rejected `void` as a parameter type and removed the legacy `anytype` exception for `print`.
     - **Documentation**: Updated `Bootstrap_type_system_and_semantics.md` and created `static_analyzers.md`.
 
+252. [COMPLETE] **Task 252: LifetimeAnalyzer Upgrade (Milestone 11)**
+    - **Provenance Tracking**: Implemented recursive `getPointerOrigin` and assignment-aware `getPointerProvenance`.
+    - **Modern Type Support**: Enhanced detection for dangling pointers in struct fields, array indexing, and slices of local variables.
+    - **Safety**: Correctly handles parameter safety and tracks pointer reassignments to global/safe addresses.
+    - **Error Reporting**: Improved messages with specific field paths and differentiated "returning address of" vs "returning pointer to".
+    - **Documentation**: Updated `static_analyzers.md` with new capabilities and documented limitations.
+
 ---
 
 
